@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- `depends_on` in a loop body, group substep or per-item stage can now name an earlier
+  artifact-producing step of an enclosing level, not only an earlier sibling. `d685543`
 - When a task needs the user, ww now reports `control: awaiting_operator`, `next_role: operator` and an
   `operator_reason` in instruction and status output, instead of `blocked`. `07d34ec`
 - A fresh `init` no longer writes a default workflow or `task_format` that a machine or local
