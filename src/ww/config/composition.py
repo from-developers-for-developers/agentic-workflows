@@ -16,7 +16,7 @@ overrides an earlier one and a lower level overrides the ones above it:
   handlers that reuse an overridden one still find it earlier in the list;
 - ``hooks`` add each phase's entries after those already folded, since hook
   entries carry no name to override;
-- any other key, such as ``task_format``, takes the later value.
+- any other key takes the later value.
 
 A level extends the ones above unless one of its files says ``extends: false``;
 then folding starts again at that level.
@@ -34,7 +34,12 @@ from typing import Any
 
 import yaml
 
-from ww.config_files import ConfigurationLevel, display_path, workflow_levels
+from ww.config_files import (
+    ConfigurationLevel,
+    display_path,
+    task_format_moved,
+    workflow_levels,
+)
 from ww.errors import ConfigurationError
 
 IMPORTS_KEY = "imports"
@@ -118,6 +123,8 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
             return ComposedConfiguration(text, {}, sources=(label,))
         if not isinstance(root, dict) or not {IMPORTS_KEY, EXTENDS_KEY} & set(root):
             raw = root if isinstance(root, dict) else {}
+            if "task_format" in raw:
+                raise ConfigurationError(task_format_moved(label))
             return ComposedConfiguration(text, raw, sources=(label,))
     seen = {level.path.resolve() for level in present}
     levels = [_read_level(level, base, seen) for level in present]
@@ -178,6 +185,8 @@ def _read_file(file: Path, label: str) -> dict[str, Any]:
         raise ConfigurationError(f"invalid YAML in {label}: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{label} must contain a mapping")
+    if "task_format" in raw:
+        raise ConfigurationError(task_format_moved(label))
     return raw
 
 

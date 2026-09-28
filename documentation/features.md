@@ -161,7 +161,7 @@ step:
 | One task, otherwise | Start `catchall` on it; the printed `start` command is ready to run. |
 | Several tasks | Ask the operator which one, then continue or start on it. |
 | No task | Ask the operator to confirm creating the ID the reference names, `FORMS-99` for `99`. |
-| No reference | Ask the operator whether to create a new task; under `task_format: explicit` they give its ID. |
+| No reference | Ask the operator whether to create a new task; under `"task_format": "explicit"` they give its ID. |
 
 Asking goes through the agent's own choice menu, the same mechanism as an
 interactive step's [choices](#interactive-steps), and every menu also offers
@@ -236,7 +236,6 @@ workflows:
 
 ```yaml
 # workflows/shared.yaml
-task_format: "TASK-{digit}"
 handlers:
   - name: test
     argv: [pytest]
@@ -248,14 +247,18 @@ workflows:
 
 ```yaml
 # workflows/local.yaml
-task_format: "LOCAL-{digit}"
+workflows:
+  - hotfix: Fix a production bug, verifying it first.
+    steps:
+      - reproduce: Reproduce it.
+      - fix: Fix it.
 ```
 
 An imported file can define anything `ww-agentic-workflows.yaml` can, except further
 imports, so every file is listed in one place. Files apply in order, the root
 file last, and a later definition overrides an earlier one of the same name:
 here `ww-agentic-workflows.yaml`'s `test` handler replaces the shared one, and
-`local.yaml`'s `task_format` replaces `shared.yaml`'s. Named entries of
+`local.yaml`'s `hotfix` workflow replaces `shared.yaml`'s. Named entries of
 `workflows`, `modes`, `documents`, `handlers`, and `profiles` are replaced one
 by one, other entries from every file are kept, and `hooks` from every file are
 combined, later files' entries running after earlier ones.
@@ -266,7 +269,7 @@ Overriding is never an error. `lint` reports each override as a notice:
 $ ww-agentic-workflows lint
 ww-agentic-workflows.yaml is valid.
 Configuration files: workflows/shared.yaml, workflows/local.yaml, ww-agentic-workflows.yaml
-Notice: task_format from workflows/shared.yaml is overridden by workflows/local.yaml.
+Notice: workflow 'hotfix' from workflows/shared.yaml is overridden by workflows/local.yaml.
 Notice: handler 'test' from workflows/shared.yaml is overridden by ww-agentic-workflows.yaml.
 ```
 
@@ -313,28 +316,28 @@ workflows:
       - review: Review it.
 ```
 
-```yaml
-# ww-agentic-workflows.local.yaml
-task_format: "DEV-{digit}"
+```json
+// ww-agentic-workflows.local.json
+{"task_format": "DEV-{digit}"}
 ```
 
-With the repo file defining its own `test` handler and `task_format`, the
-project gets the machine's `review` workflow, the repo's `test` handler, and
-the local task format. `lint` lists the files it read, machine to local, the
-YAML files first and the JSON ones after, and names the file behind each
-override; `plan` ends with the same list:
+With the repo file defining its own `test` handler and its
+`ww-agentic-workflows.json` a `task_format`, the project gets the machine's
+`review` workflow, the repo's `test` handler, and the local task format. `lint`
+lists the files it read, machine to local, the YAML files first and the JSON
+ones after, and names the file behind each YAML override; `plan` ends with the
+same list:
 
 ```console
 $ ww-agentic-workflows lint
 ww-agentic-workflows.yaml is valid.
-Configuration files: ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml, ww-agentic-workflows.yaml, ww-agentic-workflows.local.yaml, ww-agentic-workflows.json
+Configuration files: ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml, ww-agentic-workflows.yaml, ww-agentic-workflows.json, ww-agentic-workflows.local.json
 Notice: handler 'test' from ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml is overridden by ww-agentic-workflows.yaml.
-Notice: task_format from ww-agentic-workflows.yaml is overridden by ww-agentic-workflows.local.yaml.
 ```
 
 A configured project's own `ww-agentic-workflows.json` and
 `ww-agentic-workflows.local.json` add one more level for tasks working there,
-limited to the `extensions` section; see
+limited to the `extensions` section and `task_format`; see
 [A project's own extension settings](#a-projects-own-extension-settings).
 
 A level that should not build on the ones above sets `extends: false` in its
@@ -368,8 +371,8 @@ set `{"runtime": "auto"}` for every project while one checkout's
 the repo's `ww/git` settings.
 
 `init` writes only the repo-level files, and decides what to add from the
-composed result: it adds no default workflow and no `task_format` when another
-level already provides them.
+composed result: it adds no default workflow to the YAML, and no `task_format`
+to the JSON, when another level already provides them.
 
 ## Configuration
 
@@ -896,13 +899,15 @@ differ from the root's states them in its own settings file, described next.
 
 A configured project may carry `ww-agentic-workflows.json` and
 `ww-agentic-workflows.local.json` in its own directory. Of those files ww reads
-only the `extensions` section, repo file then local file, and applies it over
-the root's effective section for the same extension with the same rule as
-between configuration levels: nested objects merge key by key, any other value
-replaces the root's. A project therefore states only what differs:
+exactly two keys, repo file then local file: the `extensions` section, applied
+over the root's effective section for the same extension with the same rule as
+between configuration levels (nested objects merge key by key, any other value
+replaces the root's), and `task_format`, which replaces the root's for tasks
+started in that project. A project therefore states only what differs:
 
 ```json
 {
+  "task_format": "WEB-{digit}",
   "extensions": {
     "ww/git": {
       "base_branches": {"default": "master"},
@@ -913,6 +918,15 @@ replaces the root's. A project therefore states only what differs:
   }
 }
 ```
+
+With that file, `start --workflow feature --project frontend` without a task
+ID generates `WEB-1`, `WEB-2`, and so on, and `add-child ... --project
+frontend` without `--id` names the child the same way under its parent, while
+tasks started without `--project`, or in a project that sets no format, keep
+the root's. A project may set `"task_format": "explicit"` to require an ID for
+its tasks while the root generates them, and the other way round. `lookup`
+resolves references with the root's format. `discover` names a project's
+format after its entry when it has one of its own.
 
 Every other key of a project's file (`enabled`, `runtime`, `executable`,
 `projects`, `workflows`, and anything else) is ignored here: those describe
@@ -947,7 +961,8 @@ Project frontend extension settings: frontend/ww-agentic-workflows.json, fronten
 `plan --project <name>` compiles a workflow as a task in that project would
 get it, `extension ww/git settings --project <name>` prints the settings such
 a task's handlers receive, and `discover` names each project's branch
-strategies when they differ from the root's.
+strategies when they differ from the root's, and its task ID format when it
+has one.
 
 One consequence of per-project worktrees: run ww through the root launcher
 `./ww` or with `--root`. Invoked from inside a project's checkout or worktree
@@ -1865,7 +1880,8 @@ While the collection step is active, record each child:
 ww-agentic-workflows add-child TASK-123 --description "Implement the API"
 ```
 
-Without `--id`, ww uses the configured root `task_format`, or the usual
+Without `--id`, ww uses the configured `task_format`, the child's project's
+own when `--project` names one that sets it, else the root's, or the usual
 generated `TASK-<timestamp>` ID when no format is configured. `{timestamp}`,
 `{digit}`, and `{uuid}` are the supported placeholders. Supply `--id TASK-123.1` when you
 want a stable, human-chosen child label instead. When the child workflow's first
@@ -2259,19 +2275,24 @@ Successful commands return exit code `0`. Handled `ww` errors and rendered
 failed or interrupted workflow states return `1`. Invalid command-line syntax
 is still reported by `argparse` with exit code `2`.
 
-The task ID may be omitted from `start`. Root `task_format` in `../ww-agentic-workflows.yaml`
-then controls generation with `{timestamp}`, `{digit}`, and/or `{uuid}`; without it, ww
-uses `TASK-{timestamp}`.
+The task ID may be omitted from `start`. `task_format` in
+`../ww-agentic-workflows.json` then controls generation with `{timestamp}`,
+`{digit}`, and/or `{uuid}`; without it, ww uses `TASK-{timestamp}`. It is a
+setting of the checkout and of the tracker a repository uses, not of what a
+workflow does, so it lives in the JSON settings, at any of their
+[levels](#machine-repo-and-local-configuration), and a configured project may
+carry [its own](#a-projects-own-extension-settings). A `task_format` key in
+any YAML file is an error that names the file and points here.
 
-```yaml
-task_format: TASK-{digit}
+```json
+{"task_format": "TASK-{digit}"}
 ```
 
 Prefer an explicit ID whenever the request names an external ticket, so the
 task matches the issue it works on; `discover` and the embedded agent
 instructions say so. Avoid a generated format that imitates your tracker's keys,
 such as `FORMS-{digit}` next to Jira's `FORMS-10859`. To rule generated IDs out,
-set `task_format: explicit`: `start` and `add-child` then require an ID, and the
+set `"task_format": "explicit"`: `start` and `add-child` then require an ID, and the
 only exception is a workflow that obtains its own ID in its first step.
 
 When a task has more than one run, `instruction TASK-123` shows every run and its

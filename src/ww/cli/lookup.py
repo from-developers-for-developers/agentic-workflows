@@ -65,13 +65,14 @@ def lookup(
         raise ConfigurationError(
             f"the {CATCHALL} workflow is switched off in {FILE_NAME}"
         )
-    explicit = configuration.task_format == EXPLICIT_TASK_FORMAT
+    task_format = extensions.task_format()
+    explicit = task_format == EXPLICIT_TASK_FORMAT
     known = tasks.task_ids()
     if reference is not None and "/" in reference and tasks.task_exists(reference):
         # A child task is named by its full ID; top-level listing leaves it out.
         known = (*known, reference)
     resolution = (
-        resolve_task_reference(reference, configuration.task_format, known)
+        resolve_task_reference(reference, task_format, known)
         if reference is not None
         else None
     )

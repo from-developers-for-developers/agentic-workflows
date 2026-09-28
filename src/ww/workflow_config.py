@@ -419,7 +419,6 @@ class WorkflowConfiguration:
     handlers: tuple[HandlerDefinition, ...]
     global_hooks: tuple[HookDefinition, ...]
     workflows: tuple[WorkflowDefinition, ...]
-    task_format: str | None = None
     documents: tuple[DocumentDefinition, ...] = ()
 
     @property

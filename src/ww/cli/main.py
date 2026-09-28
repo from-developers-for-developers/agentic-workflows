@@ -220,7 +220,7 @@ def _configuration_files(storage: Storage, extensions: ExtensionRegistry) -> str
     )
     rendered = "Configuration files: " + ", ".join(files) + "\n"
     for project in extensions.config.projects:
-        sources = extensions.project_extensions(project.name).sources
+        sources = extensions.project_settings(project.name).sources
         if sources:
             rendered += (
                 f"Project {project.name} extension settings: "

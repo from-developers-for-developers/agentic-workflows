@@ -13,7 +13,7 @@ from ww.project_config import (
     ProjectConfig,
     ProjectDefinition,
     load_project_config,
-    load_project_extensions,
+    load_project_settings,
     overlay_settings,
 )
 
@@ -197,7 +197,7 @@ def _workspace(
 
 
 def test_a_project_without_settings_files_has_no_sections(tmp_path: Path) -> None:
-    loaded = load_project_extensions(tmp_path, _workspace(tmp_path))
+    loaded = load_project_settings(tmp_path, _workspace(tmp_path))
 
     assert loaded.project == "backend"
     assert loaded.sources == ()
@@ -222,7 +222,7 @@ def test_only_the_extensions_section_of_a_project_file_is_read(
         },
     )
 
-    loaded = load_project_extensions(tmp_path, project)
+    loaded = load_project_settings(tmp_path, project)
 
     assert loaded.sources == (tmp_path / "backend" / "ww-agentic-workflows.json",)
     assert loaded.sections.sections == {
@@ -237,7 +237,7 @@ def test_a_projects_local_file_extends_its_repo_file(tmp_path: Path) -> None:
         {"extensions": {"ww/git": {"worktree_dir": "../elsewhere"}, "git": {}}},
     )
 
-    loaded = load_project_extensions(tmp_path, project)
+    loaded = load_project_settings(tmp_path, project)
 
     assert loaded.sources == (
         tmp_path / "backend" / "ww-agentic-workflows.json",
@@ -275,14 +275,14 @@ def test_invalid_project_files_name_the_project(
     project = _workspace(tmp_path, payload)
 
     with pytest.raises(ConfigurationError, match=message):
-        load_project_extensions(tmp_path, project)
+        load_project_settings(tmp_path, project)
 
 
 def test_project_sections_are_validated_against_installed_extensions(
     tmp_path: Path,
 ) -> None:
     project = _workspace(tmp_path, {"extensions": {"acme/nope": {}}})
-    loaded = load_project_extensions(tmp_path, project)
+    loaded = load_project_settings(tmp_path, project)
 
     with pytest.raises(
         ConfigurationError,
@@ -300,7 +300,7 @@ def test_project_validation_names_the_file_that_holds_the_section(
         {"extensions": {"ww/git": {"worktrees": False}}},
         {"extensions": {"acme/nope": {}}},
     )
-    loaded = load_project_extensions(tmp_path, project)
+    loaded = load_project_settings(tmp_path, project)
 
     with pytest.raises(
         ConfigurationError,
@@ -333,16 +333,96 @@ def test_overlay_settings_merges_nested_objects_and_replaces_other_values() -> N
     assert base["base_branches"] == {"default": "dev", "hotfix": "main"}
 
 
-def test_project_extensions_require_a_configured_project(tmp_path: Path) -> None:
+def test_project_settings_require_a_configured_project(tmp_path: Path) -> None:
     config = load_project_config(
         write(tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]})
     )
     (tmp_path / "backend").mkdir()
 
-    assert config.project_extensions(tmp_path, "backend").sources == ()
+    assert config.project_settings(tmp_path, "backend").sources == ()
     with pytest.raises(
         ConfigurationError, match="unknown project 'web'; configured projects: backend"
     ):
-        config.project_extensions(tmp_path, "web")
+        config.project_settings(tmp_path, "web")
     with pytest.raises(ConfigurationError, match="no projects are configured"):
-        ProjectConfig().project_extensions(tmp_path, "web")
+        ProjectConfig().project_settings(tmp_path, "web")
+
+
+# task_format
+
+
+@pytest.mark.parametrize(
+    "value", ["WORK-{timestamp}-{digit}", "TASK-{uuid}", "explicit", "PLAIN"]
+)
+def test_task_format_loads_from_the_settings_file(tmp_path: Path, value: str) -> None:
+    assert load_project_config(write(tmp_path, {"task_format": value})).task_format == (
+        value
+    )
+
+
+def test_task_format_is_absent_by_default(tmp_path: Path) -> None:
+    assert load_project_config(write(tmp_path, {})).task_format is None
+    assert ProjectConfig().task_format is None
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("", "task_format must be a non-empty string"),
+        (7, "task_format must be a non-empty string"),
+        ("WORK-{random}", r"task_format has unknown placeholder\(s\): \{random\}"),
+        ("WORK-{digit", "task_format has invalid placeholders"),
+        ("WORK-}digit{", "task_format has invalid placeholders"),
+    ],
+)
+def test_task_format_is_validated(tmp_path: Path, value: object, message: str) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        load_project_config(write(tmp_path, {"task_format": value}))
+
+
+def test_a_lower_settings_level_replaces_task_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    machine = tmp_path / "machine"
+    machine.mkdir()
+    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(machine))
+    (machine / "ww-agentic-workflows.machine.json").write_text(
+        json.dumps({"task_format": "M-{digit}"}), encoding="utf-8"
+    )
+    path = write(tmp_path, {"enabled": True})
+    assert load_project_config(path).task_format == "M-{digit}"
+
+    (tmp_path / "ww-agentic-workflows.local.json").write_text(
+        json.dumps({"task_format": "L-{digit}"}), encoding="utf-8"
+    )
+    assert load_project_config(path).task_format == "L-{digit}"
+
+
+def test_a_project_file_may_carry_its_own_task_format(tmp_path: Path) -> None:
+    project = _workspace(
+        tmp_path,
+        {"task_format": "BE-{digit}", "enabled": False},
+        {"task_format": "explicit"},
+    )
+
+    assert load_project_settings(tmp_path, project).task_format == "explicit"
+    (tmp_path / "backend" / "ww-agentic-workflows.local.json").unlink()
+    assert load_project_settings(tmp_path, project).task_format == "BE-{digit}"
+    workspace_without_files = _workspace_without_files(tmp_path)
+    assert load_project_settings(tmp_path, workspace_without_files).task_format is None
+
+
+def _workspace_without_files(tmp_path: Path) -> ProjectDefinition:
+    (tmp_path / "frontend").mkdir(exist_ok=True)
+    return ProjectDefinition("frontend", "./frontend")
+
+
+def test_an_invalid_project_task_format_names_the_project(tmp_path: Path) -> None:
+    project = _workspace(tmp_path, {"task_format": "BE-{nope}"})
+
+    with pytest.raises(
+        ConfigurationError,
+        match=r"backend/ww-agentic-workflows.json \(project 'backend'\)\.task_format "
+        r"has unknown placeholder\(s\): \{nope\}",
+    ):
+        load_project_settings(tmp_path, project)

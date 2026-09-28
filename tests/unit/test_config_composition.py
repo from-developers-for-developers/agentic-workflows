@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Composing ww-agentic-workflows.yaml from its imports and configuration levels."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import machine_directory
+from ww.core_workflows import CATCHALL
 from ww.errors import ConfigurationError
 from ww.project_config import compose_settings, load_project_config
 
@@ -54,22 +56,48 @@ def test_a_single_file_passes_through_unchanged(repo: Path) -> None:
 def test_the_root_overrides_the_last_import_which_overrides_the_first(
     repo: Path,
 ) -> None:
-    _write(repo / "first.yaml", "task_format: FIRST-{digit}\n")
-    _write(repo / "second.yaml", "task_format: SECOND-{digit}\n")
+    _write(repo / "first.yaml", "banner: first\n")
+    _write(repo / "second.yaml", "banner: second\n")
     root = _write(
         repo / "ww-agentic-workflows.yaml",
         "imports: [first.yaml, second.yaml]\n" + _WORKFLOW,
     )
-    assert compose_configuration(root).raw["task_format"] == "SECOND-{digit}"
+    assert compose_configuration(root).raw["banner"] == "second"
 
-    _write(root, "imports: [first.yaml, second.yaml]\ntask_format: ROOT-{digit}\n")
+    _write(root, "imports: [first.yaml, second.yaml]\nbanner: root\n")
     composed = compose_configuration(root)
 
-    assert composed.raw["task_format"] == "ROOT-{digit}"
+    assert composed.raw["banner"] == "root"
     assert [override.notice for override in composed.overrides] == [
-        "task_format from first.yaml is overridden by second.yaml.",
-        "task_format from second.yaml is overridden by ww-agentic-workflows.yaml.",
+        "banner from first.yaml is overridden by second.yaml.",
+        "banner from second.yaml is overridden by ww-agentic-workflows.yaml.",
     ]
+
+
+@pytest.mark.parametrize("where", ["root", "import", "machine", "local"])
+def test_task_format_in_any_yaml_file_points_at_the_settings_file(
+    machine: Path, repo: Path, where: str
+) -> None:
+    files = {
+        "root": repo / "ww-agentic-workflows.yaml",
+        "import": repo / "ids.yaml",
+        "machine": machine / "ww-agentic-workflows.machine.yaml",
+        "local": repo / "ww-agentic-workflows.local.yaml",
+    }
+    _write(files[where], "task_format: X-{digit}\n")
+    if where != "root":
+        _write(
+            repo / "ww-agentic-workflows.yaml",
+            ("imports: [ids.yaml]\n" if where == "import" else "") + _WORKFLOW,
+        )
+
+    with pytest.raises(
+        ConfigurationError,
+        match=r"task_format in \S*"
+        + re.escape(files[where].name)
+        + r" now lives in ww-agentic-workflows.json",
+    ):
+        load_configuration(repo / "ww-agentic-workflows.yaml")
 
 
 def test_named_entries_are_replaced_in_place_by_name(repo: Path) -> None:
@@ -199,7 +227,7 @@ def test_a_name_repeated_within_one_file_is_still_a_duplicate(repo: Path) -> Non
     ("root", "files", "message"),
     [
         (
-            "task_format: X-{digit}\nimports: [a.yaml]\n",
+            "banner: x\nimports: [a.yaml]\n",
             {"a.yaml": "modes: []\n"},
             "imports must come before every key but extends",
         ),
@@ -267,17 +295,13 @@ def test_levels_fold_from_machine_to_local_with_imports_first(
     _write(
         machine / "ww-agentic-workflows.machine.yaml",
         """imports: [lib/modes.yaml]
-task_format: MACHINE-{digit}
 workflows:
   - machine-only: From the machine.
     steps:
       - work: Machine work.
 """,
     )
-    root = _write(
-        repo / "ww-agentic-workflows.yaml",
-        "task_format: REPO-{digit}\n" + _WORKFLOW,
-    )
+    root = _write(repo / "ww-agentic-workflows.yaml", _WORKFLOW)
     _write(repo / "mine.yaml", "modes:\n  - economy: Local economy.\n")
     _write(repo / "ww-agentic-workflows.local.yaml", "imports: [mine.yaml]\n")
 
@@ -290,21 +314,24 @@ workflows:
         "mine.yaml",
         "ww-agentic-workflows.local.yaml",
     )
-    assert composed.raw["task_format"] == "REPO-{digit}"
     assert composed.raw["modes"] == [{"economy": "Local economy."}]
     assert [next(iter(entry)) for entry in composed.raw["workflows"]] == [
         "machine-only",
         "task",
     ]
     configuration = load_configuration(root)
-    assert configuration.task_format == "REPO-{digit}"
+    assert [workflow.name for workflow in configuration.workflows] == [
+        "machine-only",
+        "task",
+        CATCHALL,
+    ]
 
 
 @pytest.mark.parametrize("where", ["root", "import"])
 def test_extends_false_leaves_out_the_levels_above(
     machine: Path, repo: Path, where: str
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", "task_format: M-{digit}\n")
+    _write(machine / "ww-agentic-workflows.machine.yaml", "banner: machine\n")
     if where == "root":
         root = _write(
             repo / "ww-agentic-workflows.yaml",
@@ -319,7 +346,7 @@ def test_extends_false_leaves_out_the_levels_above(
 
     composed = compose_configuration(root)
 
-    assert "task_format" not in composed.raw
+    assert "banner" not in composed.raw
     assert "extends" not in composed.raw
     assert composed.ignored == (str(machine / "ww-agentic-workflows.machine.yaml"),)
     assert composed.notices[0] == (
@@ -329,12 +356,12 @@ def test_extends_false_leaves_out_the_levels_above(
 
 
 def test_extends_true_changes_nothing(machine: Path, repo: Path) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", "task_format: M-{digit}\n")
+    _write(machine / "ww-agentic-workflows.machine.yaml", "banner: machine\n")
     root = _write(repo / "ww-agentic-workflows.yaml", "extends: true\n" + _WORKFLOW)
 
     composed = compose_configuration(root)
 
-    assert composed.raw["task_format"] == "M-{digit}"
+    assert composed.raw["banner"] == "machine"
     assert composed.ignored == ()
 
 

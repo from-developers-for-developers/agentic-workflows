@@ -89,7 +89,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     if not extensions.config.enabled:
         return {"enabled": False, "message": DISABLED_MESSAGE}
     configuration = load_configuration(storage.config_path, extensions)
-    explicit_ids = configuration.task_format == EXPLICIT_TASK_FORMAT
+    explicit_ids = extensions.task_format() == EXPLICIT_TASK_FORMAT
     default_runtime = extensions.config.runtime
     modes = load_modes(storage.config_path, extensions)
     modes.update({mode.name: mode for mode in extensions.qualified_modes()})
@@ -100,6 +100,8 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             {
                 **project.to_dict(),
                 "branch_strategies": list(extensions.branch_strategies(project.name)),
+                # The project's own task ID format; null when the root's applies.
+                "task_format": extensions.project_settings(project.name).task_format,
             }
             for project in extensions.config.projects
         ],
@@ -250,12 +252,20 @@ def _markdown(report: dict[str, object]) -> list[str]:
                 line += " Branch strategies there: " + (
                     ", ".join(f"`{name}`" for name in project_strategies) or "none"
                 ) + "."
+            task_format = project.get("task_format")
+            if isinstance(task_format, str):
+                line += (
+                    " Tasks there require an explicit ID."
+                    if task_format == EXPLICIT_TASK_FORMAT
+                    else f" Generated task IDs there follow `{task_format}`."
+                )
             lines.append(line)
         lines.append(
             "A task works in one project directory when started with "
             "`--project <name>`; without it, the task works in the root. A "
             f"project's own `{FILE_NAME}` may carry an `extensions` section, "
-            "which applies over the root's for work done in that project."
+            "which applies over the root's for work done in that project, and "
+            "a `task_format` of its own."
         )
     lines.extend(["", "## Modes", ""])
     lines.extend(f"- `{mode['name']}` — {mode['description']}" for mode in modes)

@@ -36,16 +36,23 @@ the file — that ``extensions`` is a mapping of mappings — and nothing about 
 is inside a section, because it cannot know a third party's schema. Each
 extension validates its own settings and reports its own errors.
 
+``task_format`` is the generated task ID format: a template over the
+``{timestamp}``, ``{digit}``, and ``{uuid}`` placeholders, or ``explicit`` to
+require an ID for every task. It is a setting of the checkout and of the
+tracker a repository uses, not of what a workflow does, so it lives here.
+
 A configured project may carry its own ``ww-agentic-workflows.json`` and
-``ww-agentic-workflows.local.json``. Of those files ww reads only the
-``extensions`` section, applied over the root's for work done in that
-project; every other key describes the project as a ww root of its own, and
-the workspace root owns those.
+``ww-agentic-workflows.local.json``. Of those files ww reads only the keys in
+``PROJECT_FILE_KEYS``, ``extensions`` applied over the root's and
+``task_format`` replacing it, for work done in that project; every other key
+describes the project as a ww root of its own, and the workspace root owns
+those.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,6 +79,13 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
 DEFAULT_LOOP_MAX_TIMES = 3
+# A ``task_format`` that forbids generated IDs: every task is started with an
+# explicit ID, or binds one in its workflow's first step.
+EXPLICIT_TASK_FORMAT = "explicit"
+TASK_FORMAT_PLACEHOLDERS = frozenset({"{digit}", "{timestamp}", "{uuid}"})
+# The keys ww takes from a configured project's own settings files. Anything
+# else in such a file describes the project as a ww root of its own.
+PROJECT_FILE_KEYS = ("extensions", "task_format")
 
 
 @dataclass(frozen=True)
@@ -152,11 +166,17 @@ class ExtensionSections:
 
 
 @dataclass(frozen=True)
-class ProjectExtensions:
-    """The extension settings a configured project carries in its directory."""
+class ProjectSettings:
+    """What a configured project's own settings files contribute.
+
+    Exactly the keys in ``PROJECT_FILE_KEYS``: the project's extension
+    sections, and its task ID format when it sets one (``None`` means the
+    root's applies).
+    """
 
     project: str
     sections: ExtensionSections
+    task_format: str | None = None
     # The files read, repo level then local; empty when the project has none.
     sources: tuple[Path, ...] = ()
     # Each file's own section, in the same order, so a section that applies
@@ -189,6 +209,8 @@ class ProjectConfig:
     # means the project launcher, ``./ww``, which falls back to the standard
     # name.
     executable: str | None = None
+    # The generated task ID format; ``None`` keeps ww's ``TASK-{timestamp}``.
+    task_format: str | None = None
 
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
@@ -223,12 +245,12 @@ class ProjectConfig:
             else f"no projects are configured in {FILE_NAME}"
         )
 
-    def project_extensions(self, root: Path, project: str) -> ProjectExtensions:
-        """Load the extension settings the configured ``project`` carries."""
+    def project_settings(self, root: Path, project: str) -> ProjectSettings:
+        """Load what the configured ``project``'s own settings files contribute."""
         definition = self.projects_by_name.get(project)
         if definition is None:
             raise ConfigurationError(self.unknown_project(project))
-        return load_project_extensions(root, definition)
+        return load_project_settings(root, definition)
 
 
 def load_project_config(path: Path) -> ProjectConfig:
@@ -252,19 +274,19 @@ def compose_settings(path: Path) -> tuple[dict[str, Any], tuple[Path, ...]]:
     return _compose_levels(settings_levels(path))
 
 
-def load_project_extensions(
-    root: Path, project: ProjectDefinition
-) -> ProjectExtensions:
-    """Read the ``extensions`` section of a project's own settings files.
+def load_project_settings(root: Path, project: ProjectDefinition) -> ProjectSettings:
+    """Read the keys in ``PROJECT_FILE_KEYS`` from a project's own settings files.
 
-    The project's repo and local files apply in that order, each optional,
-    and only their ``extensions`` section is kept: the rest of such a file
-    describes the project as a ww root of its own. Errors name the project so
-    a mistake is found in the right directory.
+    The project's repo and local files apply in that order, each optional:
+    extension sections merge key by key and a later ``task_format`` replaces
+    an earlier one. Every other key describes the project as a ww root of its
+    own and is left alone. Errors name the project so a mistake is found in
+    the right directory.
     """
     sources: list[Path] = []
     levels: list[ExtensionSections] = []
     merged: dict[str, dict[str, Any]] = {}
+    task_format: str | None = None
     for level in project_settings_levels(project.directory(root)):
         raw = _read_level(level)
         if raw is None:
@@ -272,12 +294,15 @@ def load_project_extensions(
         label = f"{display_path(level.path, root)} (project {project.name!r})"
         sections = ExtensionSections(_parse_extensions(raw, label), label)
         _deep_merge(merged, sections.sections)
+        if "task_format" in raw:
+            task_format = _parse_task_format(raw["task_format"], label)
         sources.append(level.path)
         levels.append(sections)
     source = " + ".join(display_path(path, root) for path in sources)
-    return ProjectExtensions(
+    return ProjectSettings(
         project.name,
         ExtensionSections(merged, f"{source} (project {project.name!r})"),
+        task_format,
         tuple(sources),
         tuple(levels),
     )
@@ -354,6 +379,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "update_check",
         "workflows",
         "executable",
+        "task_format",
     }
     if unknown:
         raise ConfigurationError(
@@ -409,7 +435,27 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         update_check,
         _parse_workflows(raw.get("workflows"), path),
         _parse_executable(raw.get("executable"), path),
+        task_format=_parse_task_format(raw.get("task_format"), path),
     )
+
+
+def _parse_task_format(data: Any, path: str) -> str | None:
+    if data is None:
+        return None
+    if not isinstance(data, str) or not data:
+        raise ConfigurationError(f"{path}.task_format must be a non-empty string")
+    if data == EXPLICIT_TASK_FORMAT:
+        return data
+    tokens = re.findall(r"\{[^{}]*\}", data)
+    if data.count("{") != len(tokens) or data.count("}") != len(tokens):
+        raise ConfigurationError(f"{path}.task_format has invalid placeholders")
+    unknown = set(tokens) - TASK_FORMAT_PLACEHOLDERS
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.task_format has unknown placeholder(s): "
+            + ", ".join(sorted(unknown))
+        )
+    return data
 
 
 def _parse_executable(data: Any, path: str) -> str | None:

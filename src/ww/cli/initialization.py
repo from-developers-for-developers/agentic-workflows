@@ -17,6 +17,7 @@ from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.output_adapters.terminal import initialization_progress
+from ww.project_config import compose_settings
 from ww.results import InitializationResult
 from ww.storage import Storage
 
@@ -120,17 +121,16 @@ def _initialization_options(
             ("uuid", "digit", "timestamp"),
             "uuid",
         )
-    task_kind = task_kind or "uuid"
-    workflows = (
-        f"task_format: TASK-{{{task_kind}}}\n\n"
-        "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
-    )
+    workflows = "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
 
     project: dict[str, object] = {
         "enabled": True,
         "executable": DEFAULT_EXECUTABLE,
         "extensions": {},
     }
+    # A format another level already provides is not repeated in the repo file.
+    if task_kind is not None or not _configured_task_format(storage):
+        project["task_format"] = f"TASK-{{{task_kind or 'uuid'}}}"
     has_git = (storage.root / ".git").exists()
     if has_git:
         existing_git = _existing_git_settings(storage)
@@ -187,8 +187,7 @@ def _initialization_options(
                 }
             )
         project = {
-            "enabled": True,
-            "executable": DEFAULT_EXECUTABLE,
+            **project,
             "extensions": {"ww/git": git},
         }
 
@@ -482,11 +481,10 @@ def _progress(progress: bool, percent: int, question: str) -> str:
 
 
 def _configured_task_format(storage: Storage) -> bool:
-    if not storage.config_path.is_file():
-        return False
+    """Whether a settings level, machine to local, already sets ``task_format``."""
     try:
-        raw = compose_configuration(storage.config_path).raw
-    except (OSError, ConfigurationError):
+        raw, _ = compose_settings(storage.project_config_path)
+    except ConfigurationError:
         return False
     return bool(raw.get("task_format"))
 

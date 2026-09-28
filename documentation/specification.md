@@ -26,12 +26,16 @@ Names must be unique within their catalog or sibling step list.
 | `extends` | boolean | no | `false` makes this file's level ignore the levels above it; see [Configuration levels](#configuration-levels). Defaults to `true`. |
 | `imports` | list of file paths | no | Other YAML files composed into this one; see [Imports](#imports). Must come before every key but `extends`. |
 | `workflows` | list of workflows | yes | At least one workflow is required in the composed configuration: in this file, an imported one, or another level. |
-| `task_format` | string | no | Generated task ID format. Supports `{timestamp}`, `{digit}`, and `{uuid}`. The value `explicit` forbids generated IDs: every task needs an explicit ID unless its workflow binds one. |
 | `modes` | list of modes | no | Reusable agent guidance. |
 | `profiles` | mapping | no | Named agent profiles. |
 | `documents` | list of documents | no | Durable, free-format files that workflows read and update across runs. |
 | `handlers` | list of handlers | no | Reusable actions referenced by hooks. |
 | `hooks` | hooks mapping | no | Hooks applying across workflows. |
+
+The generated task ID format, `task_format`, is not a key of this file: it
+lives in `ww-agentic-workflows.json` (see the features guide), and a
+`task_format` key in any YAML file, at any level or in an import, is an error
+naming that file.
 
 The legacy root key `tasks` is rejected.
 
@@ -70,7 +74,7 @@ workflows:
     in that entry's original position;
   - `hooks` entries carry no name, so each phase's entries from a later file
     run after those from earlier files;
-  - any other key, such as `task_format`, takes the later file's value.
+  - any other key takes the later file's value.
 - Overriding across files is not an error. `lint` prints one notice per
   overridden definition, naming the file that defined it and the file that
   overrode it. A name repeated within a single file is still reported as a
@@ -114,12 +118,13 @@ handlers:
 
 ```yaml
 # ww-agentic-workflows.local.yaml
-task_format: "DEV-{digit}"
+modes:
+  - economy: Keep answers short.
 ```
 
 `ww-agentic-workflows.json` has matching `.machine.json` and `.local.json`
-levels, which are always deep-merged and take no `extends` key; see the
-features guide.
+levels, which are always deep-merged and take no `extends` key; `task_format`
+is one of its keys, so a lower JSON level replaces it. See the features guide.
 
 Projects, the directories a task may work in, are configured in
 `ww-agentic-workflows.json` rather than here because their locations differ per

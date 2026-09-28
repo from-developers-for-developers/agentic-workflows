@@ -60,40 +60,16 @@ def test_workflow_supports_named_entry_shorthand(tmp_path: Path) -> None:
     )
 
 
-def test_task_format_is_normalized_and_validated(tmp_path: Path) -> None:
-    configuration = load_configuration(
-        _write(
-            tmp_path / "ww-agentic-workflows.yaml",
-            """task_format: WORK-{timestamp}-{digit}
-workflows:
-  - name: task
-    steps:
-      - name: work
-""",
-        )
-    )
-
-    assert configuration.task_format == "WORK-{timestamp}-{digit}"
-
-
-def test_task_format_accepts_uuid(tmp_path: Path) -> None:
-    path = tmp_path / "ww-agentic-workflows.yaml"
-    path.write_text(
-        "task_format: TASK-{uuid}\nworkflows:\n  - name: task\n    steps: []\n",
-        encoding="utf-8",
-    )
-
-    assert load_configuration(path).task_format == "TASK-{uuid}"
-
-    with pytest.raises(ConfigurationError, match="unknown placeholder"):
+def test_task_format_in_yaml_points_at_the_settings_file(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match="task_format in ww-agentic-workflows.yaml now lives in "
+        "ww-agentic-workflows.json",
+    ):
         load_configuration(
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
-                """task_format: WORK-{random}
-workflows:
-  - name: task
-    steps: [{name: work}]
-""",
+                "task_format: TASK-{uuid}\nworkflows:\n  - name: task\n    steps: []\n",
             )
         )
 

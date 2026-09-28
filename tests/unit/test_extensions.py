@@ -566,7 +566,7 @@ def test_a_projects_settings_apply_over_the_roots(tmp_path: Path) -> None:
         "b": 2,
         "nested": {"x": 1, "y": 3},
     }
-    assert registry.project_extensions("backend").sources == (
+    assert registry.project_settings("backend").sources == (
         tmp_path / "backend" / "ww-agentic-workflows.json",
     )
     with pytest.raises(ConfigurationError, match="unknown project 'web'"):
@@ -578,7 +578,7 @@ def test_a_project_without_settings_keeps_the_roots(tmp_path: Path) -> None:
     registry = _project_registry(tmp_path, demo, root_settings={"acme/demo": {"a": 1}})
 
     assert registry.settings("acme/demo", "backend") == {"a": 1}
-    assert registry.project_extensions("backend").sources == ()
+    assert registry.project_settings("backend").sources == ()
 
 
 def test_a_project_section_naming_an_unknown_extension_names_the_project(
@@ -630,3 +630,20 @@ def test_branch_strategies_and_reserved_paths_follow_the_project(
     assert registry.reserved_paths("T-1", "task", "backend") == (
         (tmp_path / "backend").resolve() / "wt",
     )
+
+
+def test_task_format_follows_the_project_when_it_sets_one(tmp_path: Path) -> None:
+    registry = _project_registry(tmp_path, root_settings={})
+    registry._config = ProjectConfig(
+        projects=(ProjectDefinition("backend", "./backend"),),
+        task_format="ROOT-{digit}",
+    )
+
+    assert registry.task_format() == "ROOT-{digit}"
+    assert registry.task_format("backend") == "ROOT-{digit}"
+    _write_project_settings(tmp_path, {"task_format": "BE-{digit}"})
+    registry = ExtensionRegistry(tmp_path, (), registry.config)
+    assert registry.task_format("backend") == "BE-{digit}"
+    assert registry.task_format() == "ROOT-{digit}"
+    with pytest.raises(ConfigurationError, match="unknown project 'web'"):
+        registry.task_format("web")

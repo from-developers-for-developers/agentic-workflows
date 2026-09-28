@@ -102,12 +102,14 @@ def test_projects_are_parsed_and_listed_by_discover(
             "path": "./backend",
             "description": "Python API service.",
             "branch_strategies": [],
+            "task_format": None,
         },
         {
             "name": "frontend",
             "path": "./frontend",
             "description": "",
             "branch_strategies": [],
+            "task_format": None,
         },
     ]
     assert "may carry an `extensions` section" in text
@@ -605,3 +607,96 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
         "backend/ww-agentic-workflows.json (project 'backend') configures unknown "
         "extension 'acme/nope'"
     ) in capsys.readouterr().err
+
+
+# A project's own task ID format
+
+
+def test_generated_ids_follow_the_projects_task_format(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _workspace(tmp_path)
+    _write_json(
+        root / "ww-agentic-workflows.json",
+        {"projects": PROJECTS, "task_format": "ROOT-{digit}", "extensions": {}},
+    )
+    _write_json(
+        root / "backend" / "ww-agentic-workflows.json", {"task_format": "BE-{digit}"}
+    )
+    service = WorkflowService(Storage(root))
+
+    assert start_after_init(service, "feature", None, agent="codex").task_id == "ROOT-1"
+    assert (
+        start_after_init(
+            service, "feature", None, agent="codex", project="backend"
+        ).task_id
+        == "BE-1"
+    )
+    assert (
+        start_after_init(
+            service, "feature", None, agent="codex", project="backend"
+        ).task_id
+        == "BE-2"
+    )
+    # The frontend carries no format of its own, so the root's applies.
+    assert (
+        start_after_init(
+            service, "feature", None, agent="codex", project="frontend"
+        ).task_id
+        == "ROOT-2"
+    )
+
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    assert service.add_child("P", None, "Backend part", project="backend").id == "BE-1"
+    assert service.add_child("P", None, "Web part", project="frontend").id == "ROOT-1"
+    assert service.add_child("P", None, "Root part").id == "ROOT-2"
+
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert [(entry["name"], entry["task_format"]) for entry in report["projects"]] == [
+        ("backend", "BE-{digit}"),
+        ("frontend", None),
+    ]
+    assert main(["--root", str(root), "discover"]) == 0
+    text = capsys.readouterr().out
+    expected = (
+        "- `backend` at `./backend` — Python API service. Generated task IDs there "
+        "follow `BE-{digit}`."
+    )
+    assert expected in text
+    assert "- `frontend` at `./frontend`\n" in text
+
+
+def test_a_project_may_require_explicit_ids_while_the_root_generates_them(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _workspace(tmp_path)
+    _write_json(
+        root / "ww-agentic-workflows.json",
+        {"projects": PROJECTS, "task_format": "ROOT-{digit}", "extensions": {}},
+    )
+    _write_json(
+        root / "backend" / "ww-agentic-workflows.json", {"task_format": "explicit"}
+    )
+    service = WorkflowService(Storage(root))
+
+    assert start_after_init(service, "feature", None, agent="codex").task_id == "ROOT-1"
+    with pytest.raises(StateError, match="requires an explicit task ID"):
+        service.start("feature", None, agent="codex", project="backend")
+    assert (
+        start_after_init(
+            service, "feature", "BE-7", agent="codex", project="backend"
+        ).task_id
+        == "BE-7"
+    )
+
+    assert main(["--root", str(root), "discover"]) == 0
+    text = capsys.readouterr().out
+    assert (
+        "- `backend` at `./backend` — Python API service. Tasks there require an "
+        "explicit ID."
+        in text
+    )
+    # The root's guidance still describes the root: generated IDs are fine there.
+    assert "ww never generates one here" not in text

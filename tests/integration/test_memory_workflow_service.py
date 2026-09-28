@@ -86,9 +86,11 @@ def test_generated_task_id_start_works_without_shared_storage(tmp_path: Path) ->
 
 
 def test_configured_task_format_drives_generated_ids(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.json").write_text(
+        '{"task_format": "WORK-{digit}"}', encoding="utf-8"
+    )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        """task_format: WORK-{digit}
-workflows:
+        """workflows:
   - name: task
     steps:
       - name: work
@@ -105,9 +107,11 @@ workflows:
 
 
 def test_configured_uuid_task_format_drives_generated_ids(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.json").write_text(
+        '{"task_format": "TASK-{uuid}"}', encoding="utf-8"
+    )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        """task_format: TASK-{uuid}
-workflows:
+        """workflows:
   - name: task
     steps: []
 """,
@@ -122,9 +126,11 @@ workflows:
 
 
 def test_generated_task_id_skips_existing_task_directories(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.json").write_text(
+        '{"task_format": "TASK-{digit}"}', encoding="utf-8"
+    )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        """task_format: TASK-{digit}
-workflows:
+        """workflows:
   - name: task
     steps:
       - name: work
@@ -142,8 +148,7 @@ workflows:
 
 def test_generated_task_id_skips_existing_configured_worktree(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        """task_format: TASK-{digit}
-workflows:
+        """workflows:
   - name: task
     steps: []
 """,
@@ -151,6 +156,7 @@ workflows:
     )
     (tmp_path / "ww-agentic-workflows.json").write_text(
         """{
+  "task_format": "TASK-{digit}",
   "extensions": {
     "ww/git": {
       "worktrees": true,

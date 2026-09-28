@@ -94,6 +94,14 @@ def project_settings_levels(directory: Path) -> tuple[ConfigurationLevel, ...]:
         ConfigurationLevel("local", directory / LOCAL_SETTINGS_FILE),
     )
 
+def task_format_moved(label: str) -> str:
+    """The error for a ``task_format`` key still written in a YAML file."""
+    return (
+        f"task_format in {label} now lives in {SETTINGS_FILE} (or its machine or "
+        "local file); move it there and remove it from the YAML"
+    )
+
+
 # Each former name and the name that replaced it.
 LEGACY_FILES = {
     "workflows.yaml": WORKFLOWS_FILE,

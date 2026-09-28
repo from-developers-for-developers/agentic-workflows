@@ -148,11 +148,17 @@ def test_the_project_root_is_found_by_either_workflow_file_name(
 def test_lint_lists_the_files_read_and_the_overrides(
     machine: Path, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", "task_format: M-{digit}\n")
+    _write(
+        machine / "ww-agentic-workflows.machine.yaml",
+        "handlers:\n  - name: test\n    argv: [pytest]\n",
+    )
     _write(machine / "ww-agentic-workflows.machine.json", "{}")
     _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
     _write(project / "ww-agentic-workflows.json", "{}")
-    _write(project / "ww-agentic-workflows.local.yaml", "task_format: L-{digit}\n")
+    _write(
+        project / "ww-agentic-workflows.local.yaml",
+        "handlers:\n  - name: test\n    argv: [pytest, -q]\n",
+    )
     _write(project / "ww-agentic-workflows.local.json", "{}")
     machine_yaml = machine / "ww-agentic-workflows.machine.yaml"
     machine_json = machine / "ww-agentic-workflows.machine.json"
@@ -164,7 +170,7 @@ def test_lint_lists_the_files_read_and_the_overrides(
         f"Configuration files: {machine_yaml}, ww-agentic-workflows.yaml, "
         f"ww-agentic-workflows.local.yaml, {machine_json}, "
         "ww-agentic-workflows.json, ww-agentic-workflows.local.json\n"
-        f"Notice: task_format from {machine_yaml} is overridden by "
+        f"Notice: handler 'test' from {machine_yaml} is overridden by "
         "ww-agentic-workflows.local.yaml.\n"
     )
 
@@ -173,7 +179,7 @@ def test_the_markdown_plan_ends_with_the_files_read(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
-    _write(project / "ww-agentic-workflows.local.yaml", "task_format: L-{digit}\n")
+    _write(project / "ww-agentic-workflows.local.yaml", "modes: []\n")
 
     assert main(["--root", str(project), "plan", "-w", "task", "-a", "codex"]) == 0
     markdown = capsys.readouterr().out

@@ -12,12 +12,10 @@ from datetime import datetime, timezone
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX
 from ww.errors import StateError
 from ww.extensions import ExtensionRegistry
+from ww.project_config import EXPLICIT_TASK_FORMAT
 from ww.storage_adapters import TaskStorageAdapter
 
 GENERATED_TASK_PREFIX = "TASK-"
-# A ``task_format`` that forbids generated IDs: every task is started with an
-# explicit ID, such as a tracker key, unless its workflow binds one itself.
-EXPLICIT_TASK_FORMAT = "explicit"
 # A task ID is ``parent`` or ``parent/child``; deeper nesting is unsupported.
 MAX_TASK_ID_SEGMENTS = 2
 # Suffixed candidates tried for a template without a ``{digit}`` counter.

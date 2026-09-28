@@ -1,5 +1,6 @@
 {
   "enabled": true,
+  "task_format": "TASK-{digit}",
 
   "extensions": {
     "ww/git": {

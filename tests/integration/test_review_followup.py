@@ -614,10 +614,12 @@ def test_parent_refresh_does_not_retry_a_hook_that_just_failed(
 
 
 def test_numeric_task_generation_continues_past_fifty(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.json").write_text(
+        '{"task_format": "TASK-{digit}"}', encoding="utf-8"
+    )
     service = _service(
         tmp_path,
-        """task_format: TASK-{digit}
-workflows:
+        """workflows:
   - name: task
     steps:
       - name: work

@@ -12,9 +12,7 @@ from ww.config_files import (
 )
 from ww.executable import DEFAULT_EXECUTABLE
 
-DEFAULT_WORKFLOWS_YAML = """task_format: TASK-{uuid}
-
-modes: []
+DEFAULT_WORKFLOWS_YAML = """modes: []
 handlers: []
 hooks: {}
 workflows: []
@@ -24,6 +22,7 @@ DEFAULT_PROJECT_CONFIG_JSON = f"""{{
   "enabled": true,
   "executable": "{DEFAULT_EXECUTABLE}",
   "loop_max_times": 3,
+  "task_format": "TASK-{{uuid}}",
   "extensions": {{}}
 }}
 """

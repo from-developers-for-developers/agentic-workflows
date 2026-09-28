@@ -83,8 +83,10 @@ def test_a_new_request_on_the_same_task_starts_a_new_run(tmp_path: Path) -> None
 
 
 def _lookup_project(tmp_path: Path, task_format: str = "FORMS-{digit}") -> Path:
+    (tmp_path / "ww-agentic-workflows.json").write_text(
+        json.dumps({"task_format": task_format}), encoding="utf-8"
+    )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        f"task_format: {task_format}\n"
         "workflows:\n  - name: task\n    steps:\n      - develop: Develop.\n",
         encoding="utf-8",
     )

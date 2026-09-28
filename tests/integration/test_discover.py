@@ -433,10 +433,9 @@ def test_discover_tells_agents_to_use_the_ticket_key(
 def test_explicit_task_format_requires_an_id(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = _project(tmp_path)
+    root = _project(tmp_path, {"task_format": "explicit"})
     (root / "ww-agentic-workflows.yaml").write_text(
-        "task_format: explicit\n"
-        + WORKFLOWS
+        WORKFLOWS
         + """  - name: tracked
     steps:
       - create: Create the issue and return its key.

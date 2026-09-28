@@ -33,7 +33,7 @@ from ww.extensions.store import ExtensionStore
 from ww.project_config import (
     FILE_NAME,
     ProjectConfig,
-    ProjectExtensions,
+    ProjectSettings,
     load_project_config,
     overlay_settings,
 )
@@ -122,7 +122,7 @@ class ExtensionRegistry:
     ) -> None:
         self.root = Path(root)
         self._config = config
-        self._project_extensions: dict[str, ProjectExtensions] = {}
+        self._project_settings: dict[str, ProjectSettings] = {}
         self._providers: dict[str, _ExtensionProvider] = {}
         for extension in extensions:
             self._add_provider(
@@ -158,7 +158,7 @@ class ExtensionRegistry:
         """Check the root's sections, and a project's own when one is named."""
         self.config.validate_against(self.identifiers)
         if project is not None:
-            self.project_extensions(project).validate_against(self.identifiers)
+            self.project_settings(project).validate_against(self.identifiers)
 
     @property
     def config(self) -> ProjectConfig:
@@ -166,13 +166,21 @@ class ExtensionRegistry:
             self._config = load_project_config(self.root / FILE_NAME)
         return self._config
 
-    def project_extensions(self, project: str) -> ProjectExtensions:
-        """The extension sections a configured project carries, read once."""
-        loaded = self._project_extensions.get(project)
+    def project_settings(self, project: str) -> ProjectSettings:
+        """What a configured project's own settings files contribute, read once."""
+        loaded = self._project_settings.get(project)
         if loaded is None:
-            loaded = self.config.project_extensions(self.root, project)
-            self._project_extensions[project] = loaded
+            loaded = self.config.project_settings(self.root, project)
+            self._project_settings[project] = loaded
         return loaded
+
+    def task_format(self, project: str | None = None) -> str | None:
+        """The generated task ID format: the project's own, else the root's."""
+        if project is not None:
+            own = self.project_settings(project).task_format
+            if own is not None:
+                return own
+        return self.config.task_format
 
     def settings(
         self, identifier: str, project: str | None = None
@@ -190,7 +198,7 @@ class ExtensionRegistry:
         if project is not None:
             settings = overlay_settings(
                 settings,
-                self.project_extensions(project).sections.settings_for(identifier),
+                self.project_settings(project).sections.settings_for(identifier),
             )
         try:
             json.dumps(settings, sort_keys=True)
@@ -375,7 +383,7 @@ class ExtensionRegistry:
             if self.config.settings_for(identifier)
             or (
                 project is not None
-                and self.project_extensions(project).sections.settings_for(
+                and self.project_settings(project).sections.settings_for(
                     identifier
                 )
             )

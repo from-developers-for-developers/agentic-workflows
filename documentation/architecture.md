@@ -81,10 +81,17 @@ notation. `CommandAction` rejects string commands and emits typed
 reinterpret YAML command grammar; another frontend must emit the same typed
 actions directly.
 
-Root `task_format` is part of that normalized authored contract. It accepts
-only the explicit `{timestamp}`, `{digit}`, and `{uuid}` placeholders and drives generated
-top-level and child task IDs; when it is absent, ww retains the standard
-`TASK-<timestamp>` convention. Numeric formats allocate the first free positive
+`task_format` is not part of that contract: it describes the checkout and the
+tracker a repository uses, not what a workflow does, so it is a key of
+`../ww-agentic-workflows.json`, parsed and validated in
+`../src/ww/project_config.py` at every settings level, and the YAML frontend
+rejects the key in any file with an error that names the file. It accepts
+only the explicit `{timestamp}`, `{digit}`, and `{uuid}` placeholders, or
+`explicit`, and drives generated top-level and child task IDs; when it is
+absent, ww retains the standard `TASK-<timestamp>` convention. A task started
+in a configured project follows that project's own format when its settings
+file sets one (`ExtensionRegistry.task_format(project)`); reference
+resolution keeps the root's. Numeric formats allocate the first free positive
 integer without a fixed ceiling; timestamp collisions use a bounded suffix retry.
 When `ww/git` worktrees are enabled, generated IDs also reserve the configured
 rendered worktree path. This prevents a task whose persisted state is gone from
@@ -1180,14 +1187,18 @@ back to its primary checkout through the shared git directory, so one
 extension serves single-repository projects and multi-repository workspaces
 without configuration.
 
-A repository's conventions, such as its base branch, commit subject format, or
-worktree layout, belong to that repository, so a configured project may carry
-`ww-agentic-workflows.json` and `ww-agentic-workflows.local.json` of its own.
-Core reads only their `extensions` section (`ww.project_config.
-load_project_extensions`) and applies it over the root's effective section
-with the same deep merge as between levels; every other key of such a file
-describes the project as a ww root of its own, and the workspace root keeps
-that authority. The root also remains the only place that decides which
+A repository's conventions, such as its base branch, commit subject format,
+worktree layout, or tracker key format, belong to that repository, so a
+configured project may carry `ww-agentic-workflows.json` and
+`ww-agentic-workflows.local.json` of its own. Core reads exactly the keys
+`ww.project_config.PROJECT_FILE_KEYS` names, `extensions` and `task_format`
+(`ww.project_config.load_project_settings`, cached per project by the
+extension registry), and applies the sections over the root's effective
+section with the same deep merge as between levels, while a project's
+`task_format` replaces the root's for IDs generated in that project; every
+other key of such a file describes the project as a ww root of its own, and
+the workspace root keeps that authority. Adding a key a project may contribute
+is a change to that one tuple and its reader. The root also remains the only place that decides which
 extensions are configured: each project file's sections are validated against
 the installed extensions with the file named in the error. The overlay is
 resolved per plan item, not per task, because an item may work in the root

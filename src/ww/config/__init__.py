@@ -3,17 +3,16 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
 import yaml
 
+from ww.config_files import task_format_moved
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
-from ww.task_ids import EXPLICIT_TASK_FORMAT
 from ww.workflow_config import (
     DocumentDefinition,
     HandlerDefinition,
@@ -92,7 +91,6 @@ def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguratio
         handlers,
         _extend_to_heirs(global_hooks, workflows),
         workflows,
-        task_format=_parse_task_format(raw.get("task_format")),
         documents=_parse_documents(raw.get("documents", [])),
     )
 
@@ -124,9 +122,10 @@ def _raw_from_text(text: str, source: str) -> dict[str, Any]:
         "handlers",
         "hooks",
         "workflows",
-        "task_format",
         "tasks",
     }
+    if "task_format" in raw:
+        raise ConfigurationError(task_format_moved(source))
     unknown = set(raw) - allowed
     if unknown:
         raise ConfigurationError(
@@ -399,22 +398,3 @@ def _extend_to_heirs(
         else hook
         for hook in hooks
     )
-
-
-def _parse_task_format(data: Any) -> str | None:
-    if data is None:
-        return None
-    if not isinstance(data, str) or not data:
-        raise ConfigurationError("task_format must be a non-empty string")
-    if data == EXPLICIT_TASK_FORMAT:
-        return data
-    tokens = re.findall(r"\{[^{}]*\}", data)
-    if data.count("{") != len(tokens) or data.count("}") != len(tokens):
-        raise ConfigurationError("task_format has invalid placeholders")
-    unknown = set(tokens) - {"{digit}", "{timestamp}", "{uuid}"}
-    if unknown:
-        raise ConfigurationError(
-            "task_format has unknown placeholder(s): " + ", ".join(sorted(unknown))
-        )
-    return data
-

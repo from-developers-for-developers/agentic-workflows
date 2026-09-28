@@ -575,8 +575,11 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
     output = capsys.readouterr().out
     assert not (tmp_path / ".ww" / "templates").exists()
     assert (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8") == (
-        "task_format: TASK-{uuid}\n\n"
         "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
+    )
+    assert (
+        json.loads((tmp_path / "ww-agentic-workflows.json").read_text())["task_format"]
+        == "TASK-{uuid}"
     )
     assert "Create your first workflow" in output
     assert "Define the steps in ww-agentic-workflows.yaml." in output
@@ -774,12 +777,10 @@ def test_init_interactive_wizard_collects_project_choices(
 
     assert main(["--root", str(tmp_path), "init"]) == 0
     capsys.readouterr()
-    workflows = (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
-    settings = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())[
-        "extensions"
-    ]["ww/git"]
+    project = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
+    settings = project["extensions"]["ww/git"]
 
-    assert "task_format: TASK-{digit}" in workflows
+    assert project["task_format"] == "TASK-{digit}"
     assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{task_id}}"
     assert settings["worktrees"] is True
     assert (tmp_path / "git-worktrees").is_dir()

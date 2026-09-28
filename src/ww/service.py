@@ -379,7 +379,7 @@ class WorkflowService:
         Each candidate is locked before it is checked, and released again if
         it turns out to be taken.
         """
-        task_format = self._load_configuration().task_format
+        task_format = self.extensions.task_format(project)
         for candidate in candidate_task_ids(task_format):
             validate_task_id(candidate)
             with self.tasks.lock_task(candidate):
@@ -1898,7 +1898,7 @@ class WorkflowService:
                 while any(entry.id == child_id for entry in children):
                     child_id = generated_bootstrap_id()
             elif child_id is None:
-                child_id = self._generated_child_id(task_id, children)
+                child_id = self._generated_child_id(task_id, children, project)
             validate_child_id(child_id)
             if any(child.id == child_id for child in children):
                 raise StateError(f"child {child_id!r} already exists")
@@ -2476,11 +2476,17 @@ class WorkflowService:
         )
 
     def _generated_child_id(
-        self, parent_task_id: str, children: tuple[ChildTask, ...]
+        self,
+        parent_task_id: str,
+        children: tuple[ChildTask, ...],
+        project: str | None = None,
     ) -> str:
-        """Use the ordinary task-ID convention inside a parent namespace."""
+        """Use the ordinary task-ID convention inside a parent namespace.
+
+        A child added with ``--project`` follows that project's task format.
+        """
         existing = {child.id for child in children}
-        for candidate in candidate_task_ids(self._load_configuration().task_format):
+        for candidate in candidate_task_ids(self.extensions.task_format(project)):
             validate_child_id(candidate)
             if candidate not in existing and not self._task_exists(
                 f"{parent_task_id}/{candidate}"
