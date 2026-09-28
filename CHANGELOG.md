@@ -11,6 +11,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- `ww hook install --agent <agent>` (Claude Code, Codex, Cursor, Antigravity; `--local` for Claude Code) adds hooks that list unfinished tasks at session start, remind once about an open step, and mark interrupted sessions; see `ww interrupted`. `784f805`
 - `task_format` moves from `ww-agentic-workflows.yaml` to `ww-agentic-workflows.json` (any level); a
   YAML `task_format` is now an error naming the file, `init` writes it into the JSON, and a configured
   project's own JSON may set the format for IDs generated with `--project`. `ecbbe17`
