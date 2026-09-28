@@ -26,9 +26,11 @@ pull of `main`, and there is no deprecation period before a change lands.
 In practice the surfaces have settled. `workflows.yaml` and the command line
 have been stable for a while, and most work now is internal refactoring, new
 capabilities, and fixes. Incompatible changes are possible but uncommon; when
-one lands it is deliberate and called out in the changelog. The exception is
-persisted task state, which is versioned and strictly rejected across formats
-— finish or reset a task before upgrading rather than expecting it to load.
+one lands it is deliberate and called out in the changelog. Persisted task
+state written by another ww version loads as long as its state format is the
+same: fields that version knew and this one does not are left alone. A change
+of the state format itself is still refused, so finish or reset a task before
+an upgrade that changes it; the changelog says when one does.
 
 Once releases exist, the policy becomes the usual one. The package version
 will identify a release rather than promising that every internal

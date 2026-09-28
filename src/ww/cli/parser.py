@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ww import __version__
+from ww import STAGE, __version__
 from ww.contracts import CALLER_ROLES
 from ww.errors import StateError
 from ww.runtimes import RUNTIME_INSTRUCTIONS
@@ -44,7 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="ww-agentic-workflows", description="Resumable agentic workflows."
     )
     parser.add_argument(
-        "--version", action="version", version=f"ww-agentic-workflows {__version__}"
+        "--version",
+        action="version",
+        version=f"ww-agentic-workflows {__version__} ({STAGE})",
     )
     parser.add_argument(
         "--root",

@@ -11,6 +11,11 @@ actions, saved artifacts, and a durable record of what ran.
 
 Website: <https://agenticworkflows.dev>
 
+> **ww is in beta.** `workflows.yaml` syntax, task state, and commands may
+> still change; [documentation/limitations.md](documentation/limitations.md)
+> says what is not promised yet. `ww-agentic-workflows --version` and `init`
+> say so too.
+
 ## See it run
 
 `scripts/demo.sh` builds a throwaway project in a temporary directory,
