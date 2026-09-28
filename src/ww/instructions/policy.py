@@ -8,16 +8,18 @@ from enum import Enum
 from ww.actions import actions
 from ww.assignments import active_assignment, input_only
 from ww.contracts import (
-    CallerRole,
     Control,
     InstructionStatus,
     ItemStatus,
+    NextRole,
+    OperatorReason,
     PlanItemKind,
 )
-from ww.control import child_workflow, loop_control
+from ww.control import child_workflow, loop_control, replays_harmlessly
 from ww.errors import StateError
 from ww.execution_models import ExecutionState
 from ww.plan import WorkflowPlan
+from ww.transitions import loop_limit_reached
 from ww.validation import expect_literal
 
 from .models import Instruction
@@ -43,7 +45,10 @@ def audience(instruction: Instruction) -> Audience:
         return Audience.SINGLE_SESSION
     if instruction.caller_role == "manager" and instruction.next_role == "worker":
         return Audience.MANAGER_DELEGATING
-    if instruction.caller_role == "worker" and instruction.next_role == "manager":
+    if instruction.caller_role == "worker" and instruction.next_role in {
+        "manager",
+        "operator",
+    }:
         return Audience.WORKER_RETURNING
     return Audience.WORKER if instruction.next_role == "worker" else Audience.MANAGER
 
@@ -100,7 +105,32 @@ def _index_for_id(plan: WorkflowPlan, item_id: str) -> int:
     raise StateError(f"plan item {item_id!r} is not in the task snapshot")
 
 
-def _control(state: ExecutionState, plan: WorkflowPlan) -> tuple[Control, CallerRole]:
+def operator_reason(state: ExecutionState, plan: WorkflowPlan) -> OperatorReason | None:
+    """Why the task waits for the operator, or ``None`` when it does not."""
+    item = plan.items[state.cursor] if state.cursor < len(plan.items) else None
+    if state.status == "interrupted":
+        # ``next`` replays a harmless handler without asking anyone.
+        if item is not None and replays_harmlessly(item):
+            return None
+        return "interrupted_command"
+    if state.status == "failed":
+        if item is not None and child_workflow(item) is not None:
+            return "child_failed"
+        if item is not None and item.owner == "agent":
+            return "work_failed"
+        return "handler_failed"
+    if (
+        state.status != "awaiting_input"
+        and item is not None
+        and loop_limit_reached(state, item)
+    ):
+        return "loop_limit"
+    return None
+
+
+def _control(state: ExecutionState, plan: WorkflowPlan) -> tuple[Control, NextRole]:
+    if operator_reason(state, plan) is not None:
+        return "awaiting_operator", "operator"
     if state.status in {"failed", "interrupted"}:
         return "blocked", "manager"
     if state.status in {"completed", "abandoned"}:

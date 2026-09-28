@@ -28,6 +28,7 @@ from ww.actions import (
     actions,
 )
 from ww.completion_inputs import validate_values
+from ww.control import replays_harmlessly
 from ww.errors import StateError
 from ww.execution_models import ExecutionState, PlanItemExecution, PlanSnapshot
 from ww.instructions import Instruction
@@ -190,15 +191,7 @@ class RecoveryCoordinator:
             return None
         item = snapshot.plan.items[state.cursor]
         record = state.item_executions[state.cursor]
-        if (
-            record.status != "interrupted"
-            or not isinstance(item.operation, PlannedAction)
-            or not actions.contains(item.kind)
-        ):
-            return None
-        implementation = actions.get(item.kind)
-        planned = item.payload_as(implementation.planned_type)
-        if not implementation.traits(planned).idempotent:
+        if record.status != "interrupted" or not replays_harmlessly(item):
             return None
         return resume_interrupted_item(
             state,

@@ -719,7 +719,11 @@ One manager `next` dispatches a structural assignment. For a leaf step, that
 assignment contains its preparation hooks, main action, and completion hooks.
 Each worker completion records one agent result, runs eligible automatic work,
 and activates the next agent hook in the same assignment. The response exposes
-`continue_worker`, `handoff_manager`, or `blocked` together with `next_role`.
+`continue_worker`, `handoff_manager`, `blocked`, or `awaiting_operator`
+together with `next_role`. `blocked` means ww is waiting on its own work, such
+as a child workflow, a loop boundary, or a running automatic handler, and the
+manager continues. `awaiting_operator` means a human must decide; see
+[Awaiting the operator](#awaiting-the-operator).
 At handoff only the manager runs the displayed `next --role manager` command.
 In the `auto` runtime the manager's delegate page and the requested worker
 describe the step that drives selection, not whichever hook the cursor is on,
@@ -773,11 +777,49 @@ summary trails the final assignment. A newly materialized item, child-workflow
 coordinator, workflow transition, or successor execution instance is always a
 manager boundary.
 
-On automatic failure or interruption, the response reports `blocked`, returns
-recovery to the manager, and states whether a preceding worker result was
-already saved. `instruction --role worker` reconstructs the same continuation or
-handoff from persisted state after a restart. Caller roles do not add stale
-assignment tokens or change the existing concurrency guarantees.
+On a failure or an interruption, the response reports `awaiting_operator`
+and states whether a preceding worker result was already saved.
+`instruction --role worker` reconstructs the same continuation or handoff from
+persisted state after a restart. Caller roles do not add stale assignment
+tokens or change the existing concurrency guarantees.
+
+### Awaiting the operator
+
+The operator is the human running the agent. When only they can decide how a
+task goes on, the response says so in a machine-readable way instead of in
+prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
+`operator_reason` says why.
+
+| `operator_reason` | When |
+| --- | --- |
+| `handler_failed` | An automatic handler failed. |
+| `work_failed` | An agent step was recorded with `fail`, or the bootstrap failed. |
+| `child_failed` | A child task failed. |
+| `interrupted_command` | An automatic handler was interrupted and its outcome is unknown. |
+| `loop_limit` | A loop reached its `loop_max_times` iteration limit. |
+
+An interrupted handler declared `idempotent: true` is not a reason: `next`
+replays it without asking anyone, so the task stays `blocked` for the manager.
+`operator_reason` is `null` whenever `control` is anything else. The same three
+fields appear in `instruction` and `status` JSON:
+
+```json
+{
+  "control": "awaiting_operator",
+  "next_role": "operator",
+  "operator_reason": "handler_failed"
+}
+```
+
+Markdown heads the page with the decision, for example
+`## Operator decision: the automatic handler failed`, and tells the agent to
+stop and ask the operator. The recovery commands, `next --retry` and
+`next --force --force-reason`, are still shown, as the operator's choices; the
+agent runs one only after the operator picks it. A delegated worker is not told
+to ask anyone: it returns to its manager as before, and the manager asks.
+
+The operator is someone ww waits for, not a caller: `--role` still accepts only
+`manager` and `worker`, and `--role operator` is rejected.
 
 ## Lock cleanup and command attempts
 
@@ -1654,8 +1696,8 @@ positive integer in `../ww-agentic-workflows.json`, or override one wrapper in
 
 The effective limit is saved in the compiled plan. When the completed iteration
 count reaches it, ww does not begin another round or provide a continuation
-command. The response remains blocked with manager control and explicitly tells
-the manager to escalate the saved results and warning to the user for manual
+command. The response reports `awaiting_operator` with `operator_reason:
+loop_limit` and explicitly tells the manager to escalate the saved results and warning to the user for manual
 resolution. It also shows the operator's one way past the limit: once the user
 has resolved or accepted the remaining findings, `next --force --force-reason`
 leaves the loop, records the reason on the repeat boundary, and continues with
@@ -2116,8 +2158,10 @@ with the handler's own message and records nothing, so the agent corrects the
 value and completes again. `ww` then
 executes those handlers itself before it activates the next worker item or
 returns control to the manager. If an automatic command fails, the worker stops
-and reports the failure to the manager. The manager reports it to the ww
-operator for manual intervention; its instruction lists the two operator
+and reports the failure to the manager. The response reports
+`awaiting_operator` with `operator_reason: handler_failed`, so the manager
+reports it to the ww operator for manual intervention; its instruction lists
+the two operator
 options, `next --retry` to run the handler again once the cause is fixed and
 `next --force --force-reason` to skip it, so the agent can run the one the
 operator chooses without guessing. A retried handler that takes provided

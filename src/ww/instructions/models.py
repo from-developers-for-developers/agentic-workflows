@@ -12,6 +12,8 @@ from ww.contracts import (
     Control,
     InstructionStatus,
     ItemStatus,
+    NextRole,
+    OperatorReason,
     PlanItemKind,
     RecoveryAction,
 )
@@ -224,8 +226,10 @@ class Instruction:
     manager_intro: bool = False
     completion_registered: bool = False
     caller_role: CallerRole | None = None
-    next_role: CallerRole | None = None
+    next_role: NextRole | None = None
     control: Control | None = None
+    # Set exactly when ``control`` is ``awaiting_operator``.
+    operator_reason: OperatorReason | None = None
     result_saved: bool | None = None
     # Internal capability markers let presentation and service refresh paths
     # avoid rediscovering a saved plan or matching built-in action names.
@@ -333,5 +337,6 @@ class Instruction:
             "caller_role": self.caller_role,
             "next_role": self.next_role,
             "control": self.control,
+            "operator_reason": self.operator_reason,
             "result_saved": self.result_saved,
         }

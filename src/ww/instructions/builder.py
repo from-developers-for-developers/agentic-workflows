@@ -21,7 +21,14 @@ from ww.assignments import (
     loop_span,
     selection_item,
 )
-from ww.contracts import CallerRole, Control, InstructionStatus, ItemStatus
+from ww.contracts import (
+    CallerRole,
+    Control,
+    InstructionStatus,
+    ItemStatus,
+    NextRole,
+    OperatorReason,
+)
 from ww.control import child_workflow, is_coordinator, loop_control
 from ww.documents import DocumentStore
 from ww.errors import StateError
@@ -60,6 +67,7 @@ from .policy import (
     _next_steps,
     _plan_item_kind,
     _result_saved,
+    operator_reason,
 )
 from .text import _stage, action_text
 
@@ -202,6 +210,7 @@ class InstructionBuilder:
             caller_role=caller_role,
             next_role=next_role,
             control=control,
+            operator_reason=operator_reason(state, plan),
             result_saved=(
                 _result_saved(state, plan)
                 if state.status in {"failed", "interrupted"} or automatic_running
@@ -772,7 +781,7 @@ def _assignment_preview(
     state: ExecutionState,
     plan: WorkflowPlan,
     item: PlanItem | None,
-    next_role: CallerRole,
+    next_role: NextRole,
 ) -> dict[str, object] | None:
     """What a delegating manager should know about the upcoming assignment."""
     if state.workflow_runtime != "auto" or next_role != "manager":
@@ -842,7 +851,7 @@ def _guidance(
     state: ExecutionState,
     item: PlanItem | None,
     selection: _Selection,
-    next_role: CallerRole,
+    next_role: NextRole,
 ) -> tuple[str, ...]:
     """Runtime guidance plus notes about worker selection."""
     guidance = runtime_instruction(state.workflow_runtime, next_role)
@@ -917,12 +926,16 @@ def build_bootstrap_instruction(request: dict[str, object], root: Path) -> Instr
             next_role="manager",
             control="handoff_manager",
         )
-    next_role: CallerRole = "worker" if in_progress else "manager"
+    # A failed bootstrap is agent work that failed: the operator decides.
+    reason: OperatorReason | None = "work_failed" if status == "failed" else None
+    next_role: NextRole = (
+        "worker" if in_progress else "operator" if reason else "manager"
+    )
     control: Control = (
         "continue_worker"
         if in_progress
-        else "blocked"
-        if status == "failed"
+        else "awaiting_operator"
+        if reason
         else "handoff_manager"
     )
     return Instruction(
@@ -979,4 +992,5 @@ def build_bootstrap_instruction(request: dict[str, object], root: Path) -> Instr
         ),
         next_role=next_role,
         control=control,
+        operator_reason=reason,
     )

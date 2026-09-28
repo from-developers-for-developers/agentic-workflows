@@ -506,6 +506,24 @@ assignment or manager handoff and a live automatic operation as unfinished
 rather than guessing that its process died. Roles describe caller responsibility,
 not authorization, and omitted roles preserve the earlier service behavior.
 
+Who acts next is a separate type from who may call. `CallerRole` is `manager`
+or `worker`; `NextRole` adds `operator`, the human ww waits for, who is never a
+caller. `operator_reason` in `../src/ww/instructions/policy.py` derives from
+the saved state alone whether a task needs that human, and why: a failed item
+is `child_failed`, `work_failed`, or `handler_failed` by the kind of item at the
+cursor; an interrupted item is `interrupted_command` unless its handler replays
+harmlessly; and a repeat boundary at its limit is `loop_limit`. The control
+decision asks that function first, so every such state is `awaiting_operator`
+with next role `operator`, and `blocked` is left to states where ww waits on
+its own work: a child workflow, a loop boundary, a running automatic handler,
+or an idempotent interrupted handler that `next` replays. `replays_harmlessly`
+in `../src/ww/control.py` is the one rule for that last case, shared with
+`RecoveryCoordinator.replay_if_idempotent`, so the instruction never asks the
+operator about a replay that recovery would perform on its own. The reason
+travels on the `Instruction`, so instruction JSON, status JSON, and Markdown
+read one value; a worker caller whose next role is the operator is still told
+to return to its manager.
+
 The ledger records command segments separately, so a partial CLI failure retries
 only the failed or unrun segment. Every finished segment is committed the moment
 its process exits, success or failure, so the ledger is a durable boundary in

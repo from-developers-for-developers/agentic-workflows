@@ -328,8 +328,8 @@ dispatches the first step again until the effective maximum is reached. The
 effective value comes from the wrapper's `loop_max_times`, or from
 `../ww-agentic-workflows.json` when the wrapper omits it, and is frozen in the saved
 workflow plan. At the limit, ww does not expose a continuation command: it
-blocks manager control with a warning that must be escalated to the user for
-manual resolution, and shows the operator's exit, `next --force --force-reason`,
+reports `awaiting_operator` with `operator_reason: loop_limit` and a warning
+that must be escalated to the user for manual resolution, and shows the operator's exit, `next --force --force-reason`,
 which leaves the loop and continues with the steps after it.
 
 `loop_max_times` is invalid without `loop`. The obsolete `stop` spelling is

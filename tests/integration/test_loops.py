@@ -277,10 +277,14 @@ def test_loop_stops_and_escalates_when_default_limit_is_reached(
     assert limited.loop_iteration == 3
     assert limited.loop_max_times == 3
     assert limited.loop_limit_reached is True
-    assert limited.control == "blocked"
-    assert limited.next_role == "manager"
+    assert limited.control == "awaiting_operator"
+    assert limited.next_role == "operator"
+    assert limited.operator_reason == "loop_limit"
     assert limited.continuation_command is None
-    assert "## Manager: escalate the `review-and-fix` loop limit" in rendered
+    assert (
+        "## Operator decision: the loop reached its iteration limit" in rendered
+    )
+    assert "(`operator_reason: loop_limit`)" in rendered
     assert "### Loop limit reached" in rendered
     assert "Report the saved loop results and this warning to the user" in rendered
     assert "### Operator recovery" in rendered

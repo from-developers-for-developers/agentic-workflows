@@ -235,15 +235,16 @@ workflows:
         summary_for_next="Done.",
     )
     assert failed.status == "failed"
-    assert failed.control == "blocked"
-    assert failed.next_role == "manager"
+    assert failed.control == "awaiting_operator"
+    assert failed.next_role == "operator"
+    assert failed.operator_reason == "handler_failed"
     assert failed.result_saved is True
     assert failed.continuation_command is None
 
     reloaded = WorkflowService(Storage(tmp_path))
     visible = reloaded.status("TASK-1", caller_role="worker")
     assert visible.result_saved is True
-    assert visible.control == "blocked"
+    assert visible.control == "awaiting_operator"
 
 
 def test_materialized_item_and_successor_run_are_manager_boundaries(
@@ -358,7 +359,9 @@ workflows:
 
     interrupted_state = resumed.next("TASK-1", caller_role="manager")
     assert interrupted_state.status == "interrupted"
-    assert interrupted_state.control == "blocked"
+    assert interrupted_state.control == "awaiting_operator"
+    assert interrupted_state.next_role == "operator"
+    assert interrupted_state.operator_reason == "interrupted_command"
     summary = resumed.recover("TASK-1", mark_succeeded=True, caller_role="manager")
     assert summary.item_name == "update-workflow-summary"
     assert summary.item_status == "in_progress"

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Workflow-runtime definitions for agent orchestration."""
 
-from ww.contracts import CallerRole
+from ww.contracts import NextRole
 from ww.errors import ConfigurationError
 from ww.executable import ww_command
 
@@ -71,7 +71,7 @@ def cli_ownership_warning() -> str:
 
 
 def runtime_instruction(
-    name: str, next_role: CallerRole | None = None
+    name: str, next_role: NextRole | None = None
 ) -> tuple[str, ...]:
     """Return a validated instruction for a persisted workflow runtime."""
     try:
@@ -88,6 +88,12 @@ def runtime_instruction(
                 "Manager responsibility: dispatch the next assignment or handle "
                 "the displayed recovery action. Do not ask a worker to run a "
                 "manager command.",
+            )
+        elif next_role == "operator":
+            role_instruction = (
+                "Operator decision: ww waits for the operator, the user. Stop "
+                "and report the situation to them; run a displayed recovery "
+                "command only after they choose it.",
             )
         else:
             role_instruction = ()

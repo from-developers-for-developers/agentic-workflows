@@ -66,3 +66,11 @@ def test_a_retired_runtime_names_the_supported_ones() -> None:
         runtime_instruction("delegate")
 
     assert "auto, single" in str(error.value)
+
+
+def test_operator_guidance_says_to_stop_and_ask() -> None:
+    operator = "\n".join(runtime_instruction("auto", "operator"))
+
+    assert "ww waits for the operator" in operator
+    assert "Manager responsibility" not in operator
+    assert "Worker responsibility" not in operator

@@ -14,6 +14,7 @@ from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.config_files import SETTINGS_FILE
+from ww.contracts import OperatorReason
 from ww.executable import DEFAULT_EXECUTABLE, ww_command
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
@@ -365,14 +366,38 @@ def _heading(lines: Lines, instruction: Instruction) -> None:
         # A delegating manager keeps the "delegate the assignment" heading:
         # the worker it selects is the one who provides the input.
         heading = f"{_role(instruction)}: provide required input"
-    if instruction.item_status == "failed":
-        heading = "Manager: retry or force-skip the failed automatic handler"
-    if instruction.item_status == "interrupted":
-        heading = "Manager: resolve the interrupted automatic handler"
+    if instruction.operator_reason is not None:
+        heading = f"Operator decision: {_OPERATOR_REASONS[instruction.operator_reason]}"
     if instruction.operation_id and instruction.item_status == "in_progress":
         heading = "Manager: resolve the active automatic handler"
     lines.extend([f"## {heading}", ""])
+    lines.extend(_awaiting_operator(instruction))
     lines.extend(_role_instruction(instruction))
+
+
+_OPERATOR_REASONS: dict[OperatorReason, str] = {
+    "handler_failed": "the automatic handler failed",
+    "work_failed": "the step's work failed",
+    "child_failed": "a child task failed",
+    "interrupted_command": "an automatic handler was interrupted",
+    "loop_limit": "the loop reached its iteration limit",
+}
+
+
+def _awaiting_operator(instruction: Instruction) -> Lines:
+    """Say that ww now waits for the operator, to whoever may reach them."""
+    if instruction.operator_reason is None or (
+        instruction.workflow_runtime != "single"
+        and instruction.caller_role == "worker"
+    ):
+        return []
+    return [
+        "`ww` is waiting for the operator, the user "
+        f"(`operator_reason: {instruction.operator_reason}`). Stop and ask "
+        "them: the recovery commands below are theirs to choose, and nothing "
+        "runs until they do.",
+        "",
+    ]
 
 
 def _worker_selection(lines: Lines, instruction: Instruction) -> None:

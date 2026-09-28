@@ -92,10 +92,21 @@ InstructionStatus = Literal[
 ]
 RecoveryAction = Literal["retry", "force"]
 CallerRole = Literal["manager", "worker"]
-Control = Literal["continue_worker", "handoff_manager", "blocked"]
+# Who acts next. The operator is the human ww waits for; never a caller role.
+NextRole = Literal["manager", "worker", "operator"]
+Control = Literal["continue_worker", "handoff_manager", "blocked", "awaiting_operator"]
+# Why a task waits for the operator.
+OperatorReason = Literal[
+    "handler_failed",
+    "work_failed",
+    "child_failed",
+    "interrupted_command",
+    "loop_limit",
+]
 CALLER_ROLES: tuple[CallerRole, ...] = ("manager", "worker")
 CONTROL_VALUES: tuple[Control, ...] = (
     "continue_worker",
     "handoff_manager",
     "blocked",
+    "awaiting_operator",
 )

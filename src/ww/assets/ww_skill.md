@@ -24,9 +24,9 @@ description: Carry out the user's request through ww, this project's workflow to
    placeholders replaced, and keep going until ww reports that the workflow
    is complete or reports an error.
 5. Never run a ww-owned handler yourself, edit ww state, or read
-   `ww-agentic-workflows.yaml` or ww's source to work out what to do next. On a handler
-   failure, stop and report the task and the exact error to the user; when
-   they decide, run the recovery command ww showed, `./ww next <task-id>
-   --retry` to run the handler again or `--force --force-reason` to skip it.
-   A loop at its iteration limit is escalated the same way, and the force
-   leaves the loop.
+   `ww-agentic-workflows.yaml` or ww's source to work out what to do next. When
+   ww reports `awaiting_operator` (a failed handler or work, an interrupted
+   command, a loop at its iteration limit), stop and report the task, its
+   `operator_reason` and the exact error to the user; when they decide, run
+   the recovery command ww showed, `./ww next <task-id> --retry` to run the
+   handler again or `--force --force-reason` to skip it or leave the loop.

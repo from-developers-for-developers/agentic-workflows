@@ -824,7 +824,8 @@ workflows:
     )
     assert (tmp_path / "audit.txt").exists()
     assert blocked.loop_limit_reached is True
-    assert blocked.control == "blocked"
+    assert blocked.control == "awaiting_operator"
+    assert blocked.operator_reason == "loop_limit"
     state = service.tasks.read_execution_state("T", "01-task")
     assert state is not None
     assert dict(state.loop_iterations) == {"cycle": 1}
