@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- A fresh `init` no longer writes a default workflow or `task_format` that a machine or local
+  configuration file already provides. `6f30237`
 - ww also reads `ww-agentic-workflows.machine.{yaml,json}` from `~/.config/ww-agentic-workflows/` and
   `ww-agentic-workflows.local.{yaml,json}` in the project; lower levels extend or override (`extends: false` opts out). `c39d4d0`
 - `workflows.yaml` and `agentic-workflows.json` are now `ww-agentic-workflows.yaml` and
