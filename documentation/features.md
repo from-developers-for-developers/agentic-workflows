@@ -2105,6 +2105,23 @@ already exists, then a single comma-separated question for the agents without
 one. `--skills` and `--no-skills` skip the interaction entirely, and
 `--no-input` takes the defaults.
 
+`init-choices.json` also remembers which bundled skills you accepted. When a
+later ww version bundles a new one, the next `init` asks about that skill
+alone, into the directories you already chose, without the agent questions:
+
+```text
+ww now ships the `noww` skill. Install into .claude? [Y/n]:
+```
+
+Either answer is remembered, so it is asked once; a skill you declined is not
+installed later on its own. A project set up before this record counts a
+skill already present in a chosen directory as accepted.
+
+The rest of the summary adapts to repeat runs too. The box asking you to allow
+ww in your agent's permissions is shown the first time only, and the next
+steps for getting started only while `workflows.yaml` defines no workflow. The
+documentation links are always shown.
+
 ## Choosing a runtime
 
 `single` is the default, and an agent reading `discover` used to be told

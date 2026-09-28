@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- Tasks saved by another ww version load again, and `init` offers a new skill
+  once and repeats its setup notes only when they apply. `a381d2d`
 - Plan and instruction JSON no longer carry the always-null `gate_prompt`
   field; the handler decision gate it held could not be configured. `690a69b`
 - An assessment outcome can be `stop_workflow: true`, ending the run when

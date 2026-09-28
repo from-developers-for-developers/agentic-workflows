@@ -237,12 +237,7 @@ class CommandAction(AutomaticAction[Commands, Commands]):
         return data
 
     def decode(self, data: dict[str, Any]) -> Commands:
-        keys = set(data)
-        if not {"commands", "assert"} <= keys or keys - {
-            "commands",
-            "assert",
-            "idempotent",
-        }:
+        if not {"commands", "assert"} <= set(data):
             raise ValueError(f"action {self.identifier!r} payload has invalid fields")
         idempotent = data.get("idempotent", False)
         if not isinstance(idempotent, bool):
@@ -258,8 +253,8 @@ def _command_from_dict(data: Any) -> CommandDefinition:
     if not isinstance(data, dict):
         raise ValueError("plan command must be a mapping")
     if "argv" in data:
-        if set(data) != {"argv"}:
-            raise ValueError("plan argv command has unknown fields")
+        if "shell" in data:
+            raise ValueError("plan command cannot be both argv and shell")
         argv = data["argv"]
         if (
             not isinstance(argv, list)
@@ -268,8 +263,6 @@ def _command_from_dict(data: Any) -> CommandDefinition:
         ):
             raise ValueError("plan command argv must be a list of strings")
         return CommandDefinition(argv=tuple(argv))
-    if set(data) - {"shell", "args", "env"}:
-        raise ValueError("plan shell command has unknown fields")
     script = data.get("shell")
     args = data.get("args", [])
     env = data.get("env", {})
@@ -292,7 +285,7 @@ def _assertion_from_dict(value: Any, item_path: str) -> AssertionDefinition | No
         raise ValueError(f"{item_path}.assert must be an object or null")
     if value is None:
         return None
-    if set(value) != {"operator", "expected"}:
+    if not {"operator", "expected"} <= set(value):
         raise ValueError(f"{item_path}.assert has invalid fields")
     if value["operator"] != "eq":
         raise ValueError("invalid assertion operator")

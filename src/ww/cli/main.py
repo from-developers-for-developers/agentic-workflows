@@ -136,18 +136,20 @@ def _init(context: _Context) -> _Outcome:
         sys.stdout.write(welcome)
         sys.stdout.flush()
         print(f"Setting up ww in: {context.storage.root}\n", flush=True)
-    workflows, project_config, ignore_runtime, skill_directories = (
+    workflows, project_config, ignore_runtime, skill_installs = (
         _initialization_options(context.storage, context.args)
     )
     result = context.service.initialize(
         workflows=workflows,
         project_config=project_config,
         ignore_runtime=ignore_runtime,
-        skill_directories=skill_directories,
+        skill_installs=skill_installs,
     )
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
-    result = _finish_initialization(context.storage, result)
+    result = _finish_initialization(
+        context.storage, result, shown=not context.args.json_output
+    )
     return _Outcome(render_initialization(result, context.args.json_output) + "\n")
 
 

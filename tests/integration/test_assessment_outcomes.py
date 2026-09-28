@@ -174,6 +174,13 @@ def test_a_delegating_manager_chooses_without_a_worker_preview(
             "TASK-1", artifact="Done.", summary_for_next="Done.", caller_role="worker"
         )
 
+    returned = md.render_instruction(
+        service.instruction("TASK-1", caller_role="worker")
+    )
+    # The worker that assessed hands back; choosing is the manager's.
+    assert "## Worker: return control to the manager" in returned
+    assert "choose the outcome" not in returned.split("\n### ")[0]
+
     shown = service.status("TASK-1", caller_role="manager")
 
     assert shown.choosing_outcome_of == "assess"

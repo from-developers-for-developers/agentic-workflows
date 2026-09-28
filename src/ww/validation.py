@@ -157,6 +157,10 @@ def expect_keys(
     *,
     error: type[Exception] = ValueError,
 ) -> None:
-    """Require exactly the ``expected`` keys, no more and no fewer."""
-    if data.keys() != set(expected):
+    """Require every ``expected`` key; leave any other key alone.
+
+    Used for stored data: a field ww no longer knows, such as one a newer or
+    older version wrote, is ignored rather than refused.
+    """
+    if not set(expected) <= data.keys():
         raise error(f"{context} has invalid fields")

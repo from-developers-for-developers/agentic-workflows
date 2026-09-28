@@ -150,7 +150,7 @@ class PlannedAction:
 
     @classmethod
     def from_dict(cls, data: object) -> PlannedAction:
-        if not isinstance(data, dict) or set(data) != {"identifier", "payload"}:
+        if not isinstance(data, dict) or not {"identifier", "payload"} <= set(data):
             raise ValueError("plan action must have identifier and payload")
         identifier = expect_string(data["identifier"], "action identifier")
         payload = data["payload"]

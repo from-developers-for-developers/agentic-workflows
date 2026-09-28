@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ww.actions import PlannedAction, actions
@@ -84,13 +84,20 @@ class TaskRunAggregate:
             raise ValueError("run.items must be a list")
         if not isinstance(raw_children, list):
             raise ValueError("run.children must be a list")
+        snapshot = _from_path(PlanSnapshot.from_dict, data["snapshot"], "run.snapshot")
+        state = _from_path(ExecutionState.from_dict, data["state"], "run.state")
+        if state.plan_digest is not None:
+            # The digest is derived from the plan stored beside it, and how a
+            # plan serializes depends on the ww version that wrote it: a
+            # field it knew and this one does not, or a default only one of
+            # them fills in. Re-derive it from this version's reading of the
+            # same plan, so state another version wrote keeps loading.
+            state = replace(state, plan_digest=snapshot.plan_digest)
         return cls(
             run_id=run_id,
             workflow=expect_string(data["workflow"], "run.workflow"),
-            snapshot=_from_path(
-                PlanSnapshot.from_dict, data["snapshot"], "run.snapshot"
-            ),
-            state=_from_path(ExecutionState.from_dict, data["state"], "run.state"),
+            snapshot=snapshot,
+            state=state,
             items=tuple(
                 _from_path(WorkItem.from_dict, item, f"run.items[{index}]")
                 for index, item in enumerate(raw_items)

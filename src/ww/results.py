@@ -14,12 +14,18 @@ class ResetResult:
     removed: bool
 
 
+# The setup note initialization adds while workflows.yaml defines no workflow.
+NO_WORKFLOWS_ACTION = "Define at least one workflow in workflows.yaml."
+
+
 @dataclass(frozen=True)
 class InitializationResult:
     root: str
     created: tuple[str, ...] = ()
     preserved: tuple[str, ...] = ()
     actions: tuple[str, ...] = ()
+    # The operator has not been shown the agent-permission notice yet.
+    permission_notice: bool = True
 
 
 @dataclass(frozen=True)

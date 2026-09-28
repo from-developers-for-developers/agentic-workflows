@@ -2053,9 +2053,9 @@ class WorkflowService:
         workflows: str = DEFAULT_WORKFLOWS_YAML,
         project_config: str = DEFAULT_PROJECT_CONFIG_JSON,
         ignore_runtime: bool = False,
-        skill_directories: tuple[str, ...] = (),
+        skill_installs: tuple[tuple[str, str], ...] = (),
     ) -> InitializationResult:
-        """Create the project files, with every bundled skill in each directory."""
+        """Create the project files, with each chosen skill in its directory."""
         return self.storage.initialize_project(
             workflows,
             project_config,
@@ -2063,9 +2063,8 @@ class WorkflowService:
             AGENT_INSTRUCTIONS,
             ignore_runtime=ignore_runtime,
             skills=tuple(
-                (skill_location(directory, name), content)
-                for directory in skill_directories
-                for name, content in SKILLS.items()
+                (skill_location(directory, name), SKILLS[name])
+                for directory, name in skill_installs
             ),
         )
 

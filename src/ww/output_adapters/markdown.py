@@ -27,7 +27,7 @@ from ww.instructions.commands import (
 from ww.instructions.policy import Audience, audience
 from ww.output_adapters.base import OutputAdapter
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
-from ww.results import InitializationResult, ResetResult
+from ww.results import NO_WORKFLOWS_ACTION, InitializationResult, ResetResult
 from ww.runtimes import requested_setting
 
 Lines = list[str]
@@ -106,7 +106,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                 tuple(
                     action
                     for action in result.actions
-                    if action != "Define at least one workflow in workflows.yaml."
+                    if action != NO_WORKFLOWS_ACTION
                 ),
             ),
         ):
@@ -122,26 +122,33 @@ class MarkdownOutputAdapter(OutputAdapter):
                     "  https://github.com/from-developers-for-developers/agentic-workflows/blob/main/documentation/features.md#configuring-one",
                 ]
             )
+        lines.append("")
+        if result.permission_notice:
+            lines.extend(_permission_notice())
+        # Getting started matters only until the first workflow exists.
+        if NO_WORKFLOWS_ACTION in result.actions:
+            lines.extend(
+                [
+                    terminal_accent("Next steps"),
+                    "",
+                    "  " + terminal_accent("1. Create your first workflow"),
+                    "     Define the steps in workflows.yaml.",
+                    "",
+                    "  " + terminal_accent("2. Start developing with your agent"),
+                    "     For example, type:",
+                    "",
+                    "     /ww implement a user sign-in page",
+                    "",
+                    "  " + terminal_accent("Run commands manually"),
+                    "     Use the project launcher for any ww command:",
+                    "",
+                    "     ./ww workflows",
+                    "",
+                    *_initialization_shortcut(),
+                ]
+            )
         lines.extend(
             [
-                "",
-                *_permission_notice(),
-                terminal_accent("Next steps"),
-                "",
-                "  " + terminal_accent("1. Create your first workflow"),
-                "     Define the steps in workflows.yaml.",
-                "",
-                "  " + terminal_accent("2. Start developing with your agent"),
-                "     For example, type:",
-                "",
-                "     /ww implement a user sign-in page",
-                "",
-                "  " + terminal_accent("Run commands manually"),
-                "     Use the project launcher for any ww command:",
-                "",
-                "     ./ww workflows",
-                "",
-                *_initialization_shortcut(),
                 terminal_accent("Documentation"),
                 "",
                 "  " + terminal_accent("README"),
@@ -1374,6 +1381,9 @@ def _action_heading(instruction: Instruction) -> str:
     name = instruction.item_name or "workflow"
     reader = audience(instruction)
     if instruction.choosing_outcome_of is not None:
+        # Choosing is the manager's; the worker that assessed hands back.
+        if reader is Audience.WORKER_RETURNING:
+            return "return control to the manager"
         return f"choose the outcome of `{instruction.choosing_outcome_of}`"
     if instruction.loop_limit_reached:
         return f"escalate the `{name}` loop limit"

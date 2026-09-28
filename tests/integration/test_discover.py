@@ -254,7 +254,7 @@ def test_init_without_skills_suggests_installing_them(
 def test_init_asks_before_installing_each_skill(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ww.cli.initialization import _skill_directories
+    from ww.cli.initialization import _skill_installs
 
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".cursor").mkdir()
@@ -272,22 +272,22 @@ def test_init_asks_before_installing_each_skill(
 
     monkeypatch.setattr("builtins.input", answer)
 
-    paths = _skill_directories(Storage(tmp_path), None, interactive=True)
+    paths = _skill_installs(Storage(tmp_path), None, interactive=True)
 
-    assert paths == (".claude",)
+    assert paths == ((".claude", "ww"), (".claude", "noww"))
     # A directory that exists is asked about on its own...
     assert "Install the ww and noww skills into .claude/skills? [Y/n]: " in prompts
     assert "Install the ww and noww skills into .cursor/skills? [Y/n]: " in prompts
     # ...and every agent without one shares a single question.
     assert "Create which? (comma-separated, or none): " in prompts
     assert len(prompts) == 3
-    assert _skill_directories(Storage(tmp_path), False, interactive=True) == ()
+    assert _skill_installs(Storage(tmp_path), False, interactive=True) == ()
 
 
 def test_init_offers_the_absent_agent_directories_in_one_question(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ww.cli.initialization import _known_agent_directories, _skill_directories
+    from ww.cli.initialization import _known_agent_directories, _skill_installs
 
     prompts: list[str] = []
 
@@ -297,18 +297,23 @@ def test_init_offers_the_absent_agent_directories_in_one_question(
 
     monkeypatch.setattr("builtins.input", answer)
 
-    paths = _skill_directories(Storage(tmp_path), None, interactive=True)
+    paths = _skill_installs(Storage(tmp_path), None, interactive=True)
 
     # One question, not one per agent ww knows about.
     assert len(prompts) == 1
     assert len(_known_agent_directories()) > 1
-    assert paths == (".codex", ".claude")
+    assert paths == (
+        (".codex", "ww"),
+        (".codex", "noww"),
+        (".claude", "ww"),
+        (".claude", "noww"),
+    )
 
 
 def test_declining_every_agent_directory_takes_one_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ww.cli.initialization import _skill_directories
+    from ww.cli.initialization import _skill_installs
 
     prompts: list[str] = []
 
@@ -318,8 +323,99 @@ def test_declining_every_agent_directory_takes_one_answer(
 
     monkeypatch.setattr("builtins.input", answer)
 
-    assert _skill_directories(Storage(tmp_path), None, interactive=True) == ()
+    assert _skill_installs(Storage(tmp_path), None, interactive=True) == ()
     assert len(prompts) == 1
+
+
+def _answers(monkeypatch: pytest.MonkeyPatch, reply: str) -> list[str]:
+    """Answer every init question with ``reply`` and record the questions."""
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return reply
+
+    monkeypatch.setattr("builtins.input", answer)
+    return prompts
+
+
+@pytest.mark.parametrize(("reply", "installed"), [("", True), ("n", False)])
+def test_a_newly_bundled_skill_is_offered_once_into_the_chosen_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reply: str, installed: bool
+) -> None:
+    from ww.cli.initialization import _skill_installs
+
+    (tmp_path / ".claude").mkdir()
+    # Yes for the existing .claude directory, none of the absent ones.
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: "none" if "Create which?" in prompt else "y",
+    )
+    bundled = tuple((".claude", name) for name in SKILLS)
+    assert _skill_installs(Storage(tmp_path), None, interactive=True) == bundled
+
+    # A later ww version bundles another skill.
+    monkeypatch.setitem(SKILLS, "extra", "---\nname: extra\n---\n")
+    prompts = _answers(monkeypatch, reply)
+    installs = _skill_installs(Storage(tmp_path), None, interactive=True)
+
+    # One question, about the skill only: the directories are remembered.
+    assert prompts == ["ww now ships the `extra` skill. Install into .claude? [Y/n]: "]
+    assert ((".claude", "extra") in installs) is installed
+    # Either answer is remembered, so the next run asks nothing.
+    prompts = _answers(monkeypatch, "y")
+    assert _skill_installs(Storage(tmp_path), None, interactive=True) == installs
+    assert prompts == []
+
+
+def test_a_project_set_up_before_skills_were_remembered_is_asked_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ww.cli.initialization import _known_agent_directories, _skill_installs
+
+    (tmp_path / ".claude/skills/ww").mkdir(parents=True)
+    (tmp_path / ".claude/skills/ww/SKILL.md").write_text("ww", encoding="utf-8")
+    choices = tmp_path / ".ww/init-choices.json"
+    choices.parent.mkdir()
+    agents = {name: name == ".claude" for name in _known_agent_directories()}
+    choices.write_text(json.dumps({"agents": agents}), encoding="utf-8")
+    monkeypatch.setitem(SKILLS, "extra", "---\nname: extra\n---\n")
+
+    prompts = _answers(monkeypatch, "")
+    installs = _skill_installs(Storage(tmp_path), None, interactive=True)
+
+    # The installed ww skill counts as accepted; only the new one is asked.
+    # The installed ww skill counts as accepted; only the others are asked.
+    new = [name for name in SKILLS if name != "ww"]
+    label = ", ".join(f"`{name}`" for name in new)
+    plural = "s" if len(new) > 1 else ""
+    assert prompts == [
+        f"ww now ships the {label} skill{plural}. Install into .claude? [Y/n]: "
+    ]
+    assert installs == tuple((".claude", name) for name in SKILLS)
+
+
+def test_the_permission_notice_is_shown_once_and_next_steps_until_a_workflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    init = ["--root", str(tmp_path), "init", "--no-input"]
+
+    assert main(init) == 0
+    first = capsys.readouterr().out
+    assert "ACTION NEEDED" in first
+    assert "Next steps" in first
+
+    (tmp_path / "workflows.yaml").write_text(
+        "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
+        encoding="utf-8",
+    )
+    assert main(init) == 0
+    second = capsys.readouterr().out
+    assert "ACTION NEEDED" not in second
+    assert "Next steps" not in second
+    # The documentation links always stay.
+    assert "Documentation" in second
+    assert "documentation/specification.md" in second
 
 
 def test_discover_tells_agents_to_use_the_ticket_key(

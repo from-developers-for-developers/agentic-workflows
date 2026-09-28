@@ -208,11 +208,6 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             raw = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict) or raw.get("task_id") != task_id:
                 raise ValueError("task metadata has a mismatched task ID")
-            unknown = set(raw) - {"task_id", "metadata"}
-            if unknown:
-                raise ValueError(
-                    "task metadata has unknown field(s): " + ", ".join(sorted(unknown))
-                )
             values = flatten_metadata(raw.get("metadata", {}), "task metadata")
             return TaskMetadata(task_id, values)
         except (OSError, json.JSONDecodeError, ValueError) as error:

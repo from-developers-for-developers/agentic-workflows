@@ -596,7 +596,13 @@ repeated immutable extension identity/settings snapshots into a root
 content-addressed table. Action data stays inside its typed payload in the
 expanded plan; the compact document references extension snapshots from that
 payload. Decoding restores dense records before existing model
-and plan-digest validation, so compaction cannot change execution semantics. Run
+and plan-digest validation, so compaction cannot change execution semantics.
+Stored data may come from another ww version, so decoders require the fields
+they read and leave any other field alone; they reject contradictions, not
+fields they do not know. For the same reason the stored plan digest is
+re-derived from this version's reading of the plan when a run is decoded: how a
+plan serializes, including which defaults are filled in, depends on the
+version, so a digest another version computed cannot be reproduced. Run
 directories exist only for artifacts and command output; their names are not an
 execution index.
 
@@ -687,7 +693,9 @@ The guarantees for the current local execution model are:
 - Plan/state identity includes task, workflow, agent, configuration and
   plan digests, plan revision, ordered item IDs and positions, cursor bounds,
   active-item identity, and command-record correspondence. A storage adapter must
-  reject an aggregate that breaks those relationships.
+  reject an aggregate that breaks those relationships. The plan digest is
+  compared within one ww version: decoding re-derives it, and the runtime
+  compares it to catch a plan revised by another process.
 - Writes to the same extension-store file are serialized, and replacement
   writes are atomic for unlocked readers. A dependent read-modify-write is
   protected only when the extension uses `update_text`; separate reads and

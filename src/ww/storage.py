@@ -11,7 +11,7 @@ from typing import Any
 
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
-from ww.results import InitializationResult
+from ww.results import NO_WORKFLOWS_ACTION, InitializationResult
 from ww.storage_adapters import (
     FileProjectMetadataStorageAdapter,
     FileTaskStorageAdapter,
@@ -242,7 +242,7 @@ class Storage:
         except (OSError, yaml.YAMLError):
             raw = {}
         if not isinstance(raw, dict) or not raw.get("workflows"):
-            actions.append("Define at least one workflow in workflows.yaml.")
+            actions.append(NO_WORKFLOWS_ACTION)
         return actions
 
     def append_log(self, record: dict[str, Any]) -> None:

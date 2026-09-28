@@ -230,7 +230,6 @@ def test_command_idempotent_default_is_omitted_from_saved_plans() -> None:
     ("identifier", "data"),
     [
         ("prompt", {}),
-        ("prompt", {"text": "a", "extra": 1}),
         ("prompt", {"text": 3}),
         ("skill", {"name": None}),
         ("slash_command", {"title": "x"}),
@@ -241,7 +240,6 @@ def test_command_idempotent_default_is_omitted_from_saved_plans() -> None:
         ("cli", {"commands": [["true"]], "assert": None}),
         ("cli", {"commands": [{"argv": []}], "assert": None}),
         ("cli", {"commands": [{"argv": ["a"], "shell": "b"}], "assert": None}),
-        ("cli", {"commands": [{"shell": "a", "cwd": "/"}], "assert": None}),
         ("cli", {"commands": [{"shell": "a", "env": {"A": 1}}], "assert": None}),
         ("cli", {"commands": [{"argv": ["a"]}], "assert": "x"}),
         ("cli", {"commands": [{"argv": ["a"]}], "assert": {"operator": "eq"}}),
@@ -264,6 +262,19 @@ def test_decode_rejects_malformed_payloads(
 ) -> None:
     with pytest.raises((ValueError, TypeError)):
         actions.get(identifier).decode(data)
+
+
+@pytest.mark.parametrize(
+    ("kind", "data"),
+    [
+        ("prompt", {"text": "a", "extra": 1}),
+        ("cli", {"commands": [{"shell": "a", "cwd": "/"}], "assert": None}),
+        ("cli", {"commands": [{"argv": ["a"], "retired": True}], "assert": None}),
+    ],
+)
+def test_decode_leaves_fields_it_does_not_know_alone(kind: str, data: dict) -> None:
+    # A stored plan may carry fields another ww version wrote.
+    actions.get(kind).decode(data)
 
 
 # --- command parsing ----------------------------------------------------------

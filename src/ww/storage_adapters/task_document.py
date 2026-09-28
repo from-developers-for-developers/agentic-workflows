@@ -131,21 +131,6 @@ def decode_task_document(
     data = _migrate(data)
     if data.get("task_id") != task_id:
         raise ValueError("task state task ID does not match its path")
-    unknown = set(data) - {
-        "format",
-        "schema_version",
-        "task_id",
-        "revision",
-        "active_run",
-        "extension_snapshots",
-        "runs",
-        "handoff",
-        "ledger",
-    }
-    if unknown:
-        raise ValueError(
-            "task state has unknown field(s): " + ", ".join(sorted(unknown))
-        )
     revision = data.get("revision")
     if not is_strict_int(revision) or revision < 0:
         raise ValueError("task state revision must be non-negative")
@@ -358,7 +343,7 @@ def _validate_extension_snapshots(value: object) -> dict[str, dict[str, object]]
     for snapshot_id, raw in value.items():
         if not isinstance(snapshot_id, str) or not isinstance(raw, dict):
             raise ValueError("extension snapshot entries are invalid")
-        if set(raw) != required:
+        if not required <= set(raw):
             raise ValueError("extension snapshot has invalid fields")
         if not isinstance(raw["identifier"], str):
             raise ValueError("extension snapshot identifier must be a string")

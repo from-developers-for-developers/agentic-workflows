@@ -39,6 +39,8 @@ def test_key_checks_report_exactly_what_is_wrong() -> None:
     with pytest.raises(ValueError, match="record has invalid fields"):
         expect_keys({"a": 1}, {"a", "b"}, "record")
     expect_keys({"a": 1, "b": 2}, {"a", "b"}, "record")
+    # Stored data may carry fields ww no longer knows; they are left alone.
+    expect_keys({"a": 1, "b": 2, "gone": 3}, {"a", "b"}, "record")
 
 
 def test_literal_membership_uses_the_alias_members() -> None:
