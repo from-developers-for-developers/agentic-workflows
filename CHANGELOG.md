@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- When a task needs the user, ww now reports `control: awaiting_operator`, `next_role: operator` and an
+  `operator_reason` in instruction and status output, instead of `blocked`. `07d34ec`
 - A fresh `init` no longer writes a default workflow or `task_format` that a machine or local
   configuration file already provides. `6f30237`
 - ww also reads `ww-agentic-workflows.machine.{yaml,json}` from `~/.config/ww-agentic-workflows/` and
