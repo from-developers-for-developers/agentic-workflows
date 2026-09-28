@@ -11,7 +11,7 @@ from ww.completion_inputs import validate_requested_values, validate_values
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
 from ww.instructions import Instruction, action_text, build_bootstrap_instruction
-from ww.plan import PlanItem, compile_workflow_plan
+from ww.plan import PlanCompilationOptions, PlanItem, compile_workflow_plan
 from ww.storage import Storage
 from ww.storage_adapters import ArtifactAddress, TaskStorageAdapter
 from ww.task_ids import validate_child_id
@@ -90,6 +90,7 @@ class BootstrapCoordinator:
         mode_names: tuple[str, ...],
         agent: str,
         unknown_modes_for: Callable[[tuple[str, ...], WorkflowConfiguration], set[str]],
+        project: str | None = None,
     ) -> PlanItem | None:
         """Return the first agent step that establishes an external task ID."""
         if workflow_name not in configuration.workflows_by_name:
@@ -129,7 +130,8 @@ class BootstrapCoordinator:
             agent,
             None,
             self.extensions,
-            project_config=self.extensions.config,
+            PlanCompilationOptions(project=project),
+            self.extensions.config,
         )
         item = next(
             (

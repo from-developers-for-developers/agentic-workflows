@@ -97,9 +97,20 @@ def test_projects_are_parsed_and_listed_by_discover(
     assert "- `frontend` at `./frontend`" in text
     assert "- `--project`: `backend`, `frontend`. Omit it to work in the root." in text
     assert report["projects"] == [
-        {"name": "backend", "path": "./backend", "description": "Python API service."},
-        {"name": "frontend", "path": "./frontend", "description": ""},
+        {
+            "name": "backend",
+            "path": "./backend",
+            "description": "Python API service.",
+            "branch_strategies": [],
+        },
+        {
+            "name": "frontend",
+            "path": "./frontend",
+            "description": "",
+            "branch_strategies": [],
+        },
     ]
+    assert "may carry an `extensions` section" in text
 
 
 def test_discover_without_projects_shows_no_project_option(
@@ -291,13 +302,26 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
                     "ww/git": {
                         "use_separate_branch": True,
                         "base_branches": {"default": "main"},
-                        "project_base_branches": {"frontend": "master"},
                         "branch_name_formats": {"default": "feature/{{task_id}}"},
                     }
                 },
             }
         ),
         encoding="utf-8",
+    )
+    # The frontend repository states its own conventions; the rest of its file
+    # describes it as a ww root of its own and is ignored here.
+    _commit_settings(
+        root / "frontend",
+        {
+            "enabled": False,
+            "extensions": {
+                "ww/git": {
+                    "base_branches": {"default": "master"},
+                    "commit_format": "[{{task_id}}] {{commit_message}}",
+                }
+            },
+        },
     )
     service = WorkflowService(Storage(root))
 
@@ -328,7 +352,7 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
     finish("F1", "Frontend change")
     assert (
         _git(root / "frontend", "log", "--format=%s", "feature/f1").splitlines()[0]
-        == "F1: Frontend change"
+        == "[F1] Frontend change"
     )
     assert (
         _git(root / "frontend", "merge-base", "--is-ancestor", "master", "feature/f1")
@@ -380,3 +404,204 @@ def test_projects_catalog_and_variables(
     )
     start_after_init(service, "feature", "T2", agent="codex")
     assert service.next("T2").action_text == "Implement  in  among backend,frontend."
+
+
+# A project's own extension settings
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _commit_settings(repo: Path, payload: object) -> None:
+    """Give a project repository its own settings file, committed like any."""
+    _write_json(repo / "ww-agentic-workflows.json", payload)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "Add ww settings")
+
+
+ROOT_GIT_SETTINGS = {
+    "use_separate_branch": True,
+    "base_branches": {"default": "main"},
+    "branch_name_formats": {"default": "feature/{{task_id}}"},
+    "commit_format": "{{task_id}}: {{commit_message}}",
+}
+
+
+def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _workspace(tmp_path)
+    (root / "ww-agentic-workflows.yaml").write_text(
+        WORKFLOWS.replace(
+            "          after_complete:\n            - name: where\n",
+            "          after_complete:\n            - name: where\n"
+            "            - ext/ww/git/handlers:git-commit: ~\n"
+            "            - ext/ww/git/handlers:git-commit: ~\n"
+            "              workdir: root\n"
+            "            - ext/ww/git/handlers:git-commit: ~\n"
+            "              workdir: project\n",
+        ),
+        encoding="utf-8",
+    )
+    _write_json(
+        root / "ww-agentic-workflows.json",
+        {"projects": PROJECTS, "extensions": {"ww/git": ROOT_GIT_SETTINGS}},
+    )
+    _write_json(
+        root / "backend" / "ww-agentic-workflows.json",
+        {
+            "extensions": {
+                "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+            }
+        },
+    )
+    service = WorkflowService(Storage(root))
+
+    def formats(task_id: str) -> dict[str, str]:
+        snapshot = service.tasks.read_plan_snapshot(task_id, "01-feature")
+        assert snapshot is not None
+        return {
+            item.workdir: item.operation.payload.settings["commit_format"]
+            for item in snapshot.plan.items
+            if item.kind == "extension"
+        }
+
+    start_after_init(service, "feature", "T1", agent="codex", project="backend")
+    assert formats("T1") == {
+        "task": "[{{task_id}}] {{commit_message}}",
+        "project": "[{{task_id}}] {{commit_message}}",
+        "root": "{{task_id}}: {{commit_message}}",
+    }
+    # The rest of the root's section is kept: the project stated only what differs.
+    snapshot = service.tasks.read_plan_snapshot("T1", "01-feature")
+    assert snapshot is not None
+    settings = next(
+        item.operation.payload.settings
+        for item in snapshot.plan.items
+        if item.kind == "extension" and item.workdir == "task"
+    )
+    assert settings["branch_name_formats"] == {"default": "feature/{{task_id}}"}
+
+    start_after_init(service, "feature", "T2", agent="codex", project="frontend")
+    assert set(formats("T2").values()) == {"{{task_id}}: {{commit_message}}"}
+    start_after_init(service, "feature", "T3", agent="codex")
+    assert set(formats("T3").values()) == {"{{task_id}}: {{commit_message}}"}
+
+    # ``plan --project`` compiles the plan a task in that project would get.
+    assert main(
+        ["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json",
+         "--project", "backend"]
+    ) == 0
+    assert "[{{task_id}}] {{commit_message}}" in capsys.readouterr().out
+    assert main(
+        ["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json"]
+    ) == 0
+    assert "[{{task_id}}] {{commit_message}}" not in capsys.readouterr().out
+
+
+def test_a_projects_worktree_settings_open_its_worktree_beside_the_project(
+    tmp_path: Path,
+) -> None:
+    root = _workspace(tmp_path, git=True)
+    (root / "ww-agentic-workflows.yaml").write_text(
+        "hooks:\n  before_start_workflow:\n    - workflows: [feature]\n"
+        "      handlers:\n        - ext/ww/git/handlers:is-git-clean: ~\n"
+        "        - ext/ww/git/handlers:start-task-branch: ~\n"
+        "        - ext/ww/git/handlers:create-worktree: ~\n" + WORKFLOWS,
+        encoding="utf-8",
+    )
+    _write_json(
+        root / "ww-agentic-workflows.json",
+        {"projects": PROJECTS, "extensions": {"ww/git": ROOT_GIT_SETTINGS}},
+    )
+    _commit_settings(
+        root / "backend",
+        {
+            "extensions": {
+                "ww/git": {"worktrees": True, "worktree_dir": "../backend-wt"}
+            }
+        },
+    )
+    service = WorkflowService(Storage(root))
+
+    start_after_init(service, "feature", "B1", agent="codex", project="backend")
+    service.next("B1")
+    service.complete("B1", artifact="done", summary_for_next="Done.")
+    worktree = (root / "backend-wt").resolve()
+    assert _stdout(service, "B1").startswith(str(worktree))
+    assert str(worktree) in _git(root / "backend", "worktree", "list")
+    assert _git(root / "backend", "rev-parse", "--abbrev-ref", "HEAD") == "main"
+
+    # The frontend carries no settings of its own, so the root's apply: a
+    # branch in the checkout itself and no worktree.
+    start_after_init(service, "feature", "F1", agent="codex", project="frontend")
+    service.next("F1")
+    service.complete("F1", artifact="done", summary_for_next="Done.")
+    assert _stdout(service, "F1") == str((root / "frontend").resolve())
+    assert len(_git(root / "frontend", "worktree", "list").splitlines()) == 1
+    assert _git(root / "frontend", "rev-parse", "--abbrev-ref", "HEAD") == "feature/f1"
+
+
+def test_lint_plan_and_the_settings_command_show_a_projects_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _workspace(tmp_path)
+    _write_json(
+        root / "ww-agentic-workflows.json",
+        {"projects": PROJECTS, "extensions": {"ww/git": ROOT_GIT_SETTINGS}},
+    )
+    _write_json(
+        root / "backend" / "ww-agentic-workflows.json",
+        {
+            "extensions": {
+                "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+            }
+        },
+    )
+    _write_json(
+        root / "backend" / "ww-agentic-workflows.local.json",
+        {"extensions": {"ww/git": {"worktrees": True, "worktree_dir": "../wt"}}},
+    )
+
+    assert main(["--root", str(root), "lint"]) == 0
+    assert capsys.readouterr().out == (
+        "ww-agentic-workflows.yaml is valid.\n"
+        "Configuration files: ww-agentic-workflows.yaml, ww-agentic-workflows.json\n"
+        "Project backend extension settings: backend/ww-agentic-workflows.json, "
+        "backend/ww-agentic-workflows.local.json\n"
+    )
+
+    assert main(["--root", str(root), "plan", "-w", "feature", "-a", "codex"]) == 0
+    assert capsys.readouterr().out.endswith(
+        "Configuration files: ww-agentic-workflows.yaml, ww-agentic-workflows.json\n"
+        "Project backend extension settings: backend/ww-agentic-workflows.json, "
+        "backend/ww-agentic-workflows.local.json\n"
+    )
+
+    assert main(["--root", str(root), "extension", "ww/git", "settings"]) == 0
+    assert json.loads(capsys.readouterr().out)["commit_format"] == (
+        "{{task_id}}: {{commit_message}}"
+    )
+    assert (
+        main(
+            ["--root", str(root), "extension", "ww/git", "settings",
+             "--project", "backend"]
+        )
+        == 0
+    )
+    resolved = json.loads(capsys.readouterr().out)
+    assert resolved["commit_format"] == "[{{task_id}}] {{commit_message}}"
+    assert resolved["worktrees"] is True
+    assert resolved["worktree_dir"] == "../wt"
+    assert resolved["branch_name_formats"] == {"default": "feature/{{task_id}}"}
+
+    _write_json(
+        root / "backend" / "ww-agentic-workflows.json",
+        {"extensions": {"acme/nope": {}}},
+    )
+    assert main(["--root", str(root), "lint"]) != 0
+    assert (
+        "backend/ww-agentic-workflows.json (project 'backend') configures unknown "
+        "extension 'acme/nope'"
+    ) in capsys.readouterr().err

@@ -1180,6 +1180,28 @@ back to its primary checkout through the shared git directory, so one
 extension serves single-repository projects and multi-repository workspaces
 without configuration.
 
+A repository's conventions, such as its base branch, commit subject format, or
+worktree layout, belong to that repository, so a configured project may carry
+`ww-agentic-workflows.json` and `ww-agentic-workflows.local.json` of its own.
+Core reads only their `extensions` section (`ww.project_config.
+load_project_extensions`) and applies it over the root's effective section
+with the same deep merge as between levels; every other key of such a file
+describes the project as a ww root of its own, and the workspace root keeps
+that authority. The root also remains the only place that decides which
+extensions are configured: each project file's sections are validated against
+the installed extensions with the file named in the error. The overlay is
+resolved per plan item, not per task, because an item may work in the root
+while its task works in a project: `PlanCompilationOptions.project` reaches the
+action resolver, which asks `ExtensionRegistry.settings(identifier, project)`
+for items whose `workdir` is `task` or `project` and for the root's settings
+otherwise, and the result is frozen into the plan like every extension
+setting. Dispatch, preflight checks, and recovery take the frozen copy from
+one place, `ActionExecutor.item_settings`, which falls back to the same
+per-item resolution. Reserved-path and branch-strategy queries take the
+project too, so ID generation and `discover` see what a task there will see.
+`ww/git` no longer has a per-project base-branch map; the project's file is
+the one place for that.
+
 A plan item may work somewhere other than the task's working directory. The
 compiler freezes each item's `workdir` (`task`, `project`, or `root`) in the
 plan: a step inherits it along the step chain, as it inherits a profile, while

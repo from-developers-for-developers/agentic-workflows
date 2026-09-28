@@ -82,6 +82,18 @@ def settings_levels(repo_file: Path) -> tuple[ConfigurationLevel, ...]:
         ConfigurationLevel("local", repo_file.with_name(LOCAL_SETTINGS_FILE)),
     )
 
+
+def project_settings_levels(directory: Path) -> tuple[ConfigurationLevel, ...]:
+    """The JSON levels a configured project carries in its own directory.
+
+    A project has a repo and a local level, like the root; the machine level
+    is shared by every project on the machine and is read once, at the root.
+    """
+    return (
+        ConfigurationLevel("repo", directory / SETTINGS_FILE),
+        ConfigurationLevel("local", directory / LOCAL_SETTINGS_FILE),
+    )
+
 # Each former name and the name that replaced it.
 LEGACY_FILES = {
     "workflows.yaml": WORKFLOWS_FILE,

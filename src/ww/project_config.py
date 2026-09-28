@@ -35,6 +35,12 @@ An extension's settings are handed to it untouched. ww validates the shape of
 the file — that ``extensions`` is a mapping of mappings — and nothing about what
 is inside a section, because it cannot know a third party's schema. Each
 extension validates its own settings and reports its own errors.
+
+A configured project may carry its own ``ww-agentic-workflows.json`` and
+``ww-agentic-workflows.local.json``. Of those files ww reads only the
+``extensions`` section, applied over the root's for work done in that
+project; every other key describes the project as a ww root of its own, and
+the workspace root owns those.
 """
 
 from __future__ import annotations
@@ -45,7 +51,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ww.config_files import SETTINGS_FILE, settings_levels
+from ww.config_files import (
+    SETTINGS_FILE,
+    ConfigurationLevel,
+    display_path,
+    project_settings_levels,
+    settings_levels,
+)
 from ww.core_workflows import CORE_WORKFLOW_NAMES
 from ww.errors import ConfigurationError
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
@@ -74,8 +86,87 @@ class ProjectDefinition:
     path: str
     description: str = ""
 
+    def directory(self, root: Path) -> Path:
+        """The project's directory, resolved against ``root`` when relative."""
+        return (root / self.path).resolve()
+
     def to_dict(self) -> dict[str, str]:
         return {"name": self.name, "path": self.path, "description": self.description}
+
+
+@dataclass(frozen=True)
+class ExtensionSections:
+    """The ``extensions`` section of one settings source, keyed by extension.
+
+    ``source`` names the file or files in messages, so a section that applies
+    to nothing is reported where it was written: at the root or in a project.
+    """
+
+    sections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    source: str = SETTINGS_FILE
+
+    def settings_for(self, identifier: str) -> dict[str, Any]:
+        """Return one extension's settings, addressed by id or by bare name.
+
+        ``"ww/git"`` is the canonical key, because two vendors may each ship an
+        extension called ``git``. A bare ``"git"`` also resolves, as long as it
+        is unambiguous for the extension being asked about.
+        """
+        if identifier in self.sections:
+            return deepcopy(self.sections[identifier])
+        _, _, name = identifier.partition("/")
+        bare = [key for key in self.sections if "/" not in key and key == name]
+        if bare:
+            return deepcopy(self.sections[bare[0]])
+        return {}
+
+    def validate_against(self, identifiers: tuple[str, ...]) -> None:
+        """Reject sections that name no installed extension, or name two.
+
+        A settings block that silently applies to nothing is worse than an
+        error: the file looks configured and the behaviour never changes.
+        """
+        for key in sorted(self.sections):
+            if "/" in key:
+                if key not in identifiers:
+                    raise ConfigurationError(
+                        f"{self.source} configures unknown extension {key!r}; "
+                        + _available(identifiers)
+                    )
+                continue
+            matches = [
+                identifier
+                for identifier in identifiers
+                if identifier.partition("/")[2] == key
+            ]
+            if not matches:
+                raise ConfigurationError(
+                    f"{self.source} configures unknown extension {key!r}; "
+                    + _available(identifiers)
+                )
+            if len(matches) > 1:
+                raise ConfigurationError(
+                    f"{self.source} key {key!r} is ambiguous; use the full "
+                    "identifier: " + ", ".join(sorted(matches))
+                )
+
+
+@dataclass(frozen=True)
+class ProjectExtensions:
+    """The extension settings a configured project carries in its directory."""
+
+    project: str
+    sections: ExtensionSections
+    # The files read, repo level then local; empty when the project has none.
+    sources: tuple[Path, ...] = ()
+    # Each file's own section, in the same order, so a section that applies
+    # to nothing is reported in the file that holds it.
+    levels: tuple[ExtensionSections, ...] = ()
+
+    def validate_against(self, identifiers: tuple[str, ...]) -> None:
+        """Reject sections that name no installed extension, file by file."""
+        for level in self.levels:
+            level.validate_against(identifiers)
 
 
 @dataclass(frozen=True)
@@ -111,50 +202,33 @@ class ProjectConfig:
         """Return a built-in's complete model/reasoning request."""
         return {**BUILTIN_DEFAULTS[name], **self.builtins.get(name, {})}
 
-    def settings_for(self, identifier: str) -> dict[str, Any]:
-        """Return one extension's settings, addressed by id or by bare name.
+    @property
+    def sections(self) -> ExtensionSections:
+        return ExtensionSections(self.extensions, FILE_NAME)
 
-        ``"ww/git"`` is the canonical key, because two vendors may each ship an
-        extension called ``git``. A bare ``"git"`` also resolves, as long as it
-        is unambiguous for the extension being asked about.
-        """
-        if identifier in self.extensions:
-            return deepcopy(self.extensions[identifier])
-        _, _, name = identifier.partition("/")
-        bare = [key for key in self.extensions if "/" not in key and key == name]
-        if bare:
-            return deepcopy(self.extensions[bare[0]])
-        return {}
+    def settings_for(self, identifier: str) -> dict[str, Any]:
+        """Return one extension's settings, addressed by id or by bare name."""
+        return self.sections.settings_for(identifier)
 
     def validate_against(self, identifiers: tuple[str, ...]) -> None:
-        """Reject sections that name no installed extension, or name two.
+        """Reject sections that name no installed extension, or name two."""
+        self.sections.validate_against(identifiers)
 
-        A settings block that silently applies to nothing is worse than an
-        error: the file looks configured and the behaviour never changes.
-        """
-        for key in sorted(self.extensions):
-            if "/" in key:
-                if key not in identifiers:
-                    raise ConfigurationError(
-                        f"{FILE_NAME} configures unknown extension {key!r}; "
-                        + _available(identifiers)
-                    )
-                continue
-            matches = [
-                identifier
-                for identifier in identifiers
-                if identifier.partition("/")[2] == key
-            ]
-            if not matches:
-                raise ConfigurationError(
-                    f"{FILE_NAME} configures unknown extension {key!r}; "
-                    + _available(identifiers)
-                )
-            if len(matches) > 1:
-                raise ConfigurationError(
-                    f"{FILE_NAME} key {key!r} is ambiguous; use the full "
-                    "identifier: " + ", ".join(sorted(matches))
-                )
+    def unknown_project(self, project: str) -> str:
+        """The message for a ``--project`` value no entry of ``projects`` has."""
+        configured = ", ".join(entry.name for entry in self.projects)
+        return f"unknown project {project!r}; " + (
+            f"configured projects: {configured}"
+            if configured
+            else f"no projects are configured in {FILE_NAME}"
+        )
+
+    def project_extensions(self, root: Path, project: str) -> ProjectExtensions:
+        """Load the extension settings the configured ``project`` carries."""
+        definition = self.projects_by_name.get(project)
+        if definition is None:
+            raise ConfigurationError(self.unknown_project(project))
+        return load_project_extensions(root, definition)
 
 
 def load_project_config(path: Path) -> ProjectConfig:
@@ -175,20 +249,77 @@ def compose_settings(path: Path) -> tuple[dict[str, Any], tuple[Path, ...]]:
     Nested objects merge key by key; any other value, lists included, replaces
     the one above it.
     """
+    return _compose_levels(settings_levels(path))
+
+
+def load_project_extensions(
+    root: Path, project: ProjectDefinition
+) -> ProjectExtensions:
+    """Read the ``extensions`` section of a project's own settings files.
+
+    The project's repo and local files apply in that order, each optional,
+    and only their ``extensions`` section is kept: the rest of such a file
+    describes the project as a ww root of its own. Errors name the project so
+    a mistake is found in the right directory.
+    """
+    sources: list[Path] = []
+    levels: list[ExtensionSections] = []
+    merged: dict[str, dict[str, Any]] = {}
+    for level in project_settings_levels(project.directory(root)):
+        raw = _read_level(level)
+        if raw is None:
+            continue
+        label = f"{display_path(level.path, root)} (project {project.name!r})"
+        sections = ExtensionSections(_parse_extensions(raw, label), label)
+        _deep_merge(merged, sections.sections)
+        sources.append(level.path)
+        levels.append(sections)
+    source = " + ".join(display_path(path, root) for path in sources)
+    return ProjectExtensions(
+        project.name,
+        ExtensionSections(merged, f"{source} (project {project.name!r})"),
+        tuple(sources),
+        tuple(levels),
+    )
+
+
+def overlay_settings(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Apply one extension's project settings over its root settings.
+
+    The same rule as between configuration levels: nested objects merge key
+    by key, any other value replaces the one above it, so a project states
+    only what differs.
+    """
+    merged = deepcopy(base)
+    _deep_merge(merged, overlay)
+    return merged
+
+
+def _compose_levels(
+    levels: tuple[ConfigurationLevel, ...],
+) -> tuple[dict[str, Any], tuple[Path, ...]]:
     merged: dict[str, Any] = {}
     sources: list[Path] = []
-    for level in settings_levels(path):
-        if not level.path.is_file():
+    for level in levels:
+        raw = _read_level(level)
+        if raw is None:
             continue
-        try:
-            raw = json.loads(level.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise ConfigurationError(f"invalid {level.path}: {error}") from error
-        if not isinstance(raw, dict):
-            raise ConfigurationError(f"{level.path} must contain a JSON object")
         _deep_merge(merged, raw)
         sources.append(level.path)
     return merged, tuple(sources)
+
+
+def _read_level(level: ConfigurationLevel) -> dict[str, Any] | None:
+    """The JSON object one settings file holds, or ``None`` when it is absent."""
+    if not level.path.is_file():
+        return None
+    try:
+        raw = json.loads(level.path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ConfigurationError(f"invalid {level.path}: {error}") from error
+    if not isinstance(raw, dict):
+        raise ConfigurationError(f"{level.path} must contain a JSON object")
+    return raw
 
 
 def _deep_merge(target: dict[str, Any], overlay: dict[str, Any]) -> None:
@@ -198,6 +329,18 @@ def _deep_merge(target: dict[str, Any], overlay: dict[str, Any]) -> None:
             _deep_merge(current, value)
         else:
             target[key] = deepcopy(value)
+
+
+def _parse_extensions(raw: dict[str, Any], path: str) -> dict[str, dict[str, Any]]:
+    extensions = raw.get("extensions", {})
+    if not isinstance(extensions, dict):
+        raise ConfigurationError(f"{path}.extensions must be an object")
+    for key, value in extensions.items():
+        if not isinstance(value, dict):
+            raise ConfigurationError(
+                f"{path}.extensions[{key!r}] must be an object of settings"
+            )
+    return dict(extensions)
 
 
 def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
@@ -216,14 +359,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         raise ConfigurationError(
             f"{path} has unknown key(s): {', '.join(sorted(unknown))}"
         )
-    extensions = raw.get("extensions", {})
-    if not isinstance(extensions, dict):
-        raise ConfigurationError(f"{path}.extensions must be an object")
-    for key, value in extensions.items():
-        if not isinstance(value, dict):
-            raise ConfigurationError(
-                f"{path}.extensions[{key!r}] must be an object of settings"
-            )
+    extensions = _parse_extensions(raw, path)
     enabled = raw.get("enabled", True)
     if not isinstance(enabled, bool):
         raise ConfigurationError(f"{path}.enabled must be true or false")
@@ -264,7 +400,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
                 )
         normalized[name] = dict(value)
     return ProjectConfig(
-        dict(extensions),
+        extensions,
         normalized,
         loop_max_times,
         enabled,

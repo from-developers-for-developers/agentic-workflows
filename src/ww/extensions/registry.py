@@ -30,7 +30,13 @@ from ww.extensions.api import (
     ExtensionHandler,
 )
 from ww.extensions.store import ExtensionStore
-from ww.project_config import FILE_NAME, ProjectConfig, load_project_config
+from ww.project_config import (
+    FILE_NAME,
+    ProjectConfig,
+    ProjectExtensions,
+    load_project_config,
+    overlay_settings,
+)
 from ww.variables import OVERRIDABLE_CORE_VARIABLE_NAMES
 from ww.workflow_config import ModeDefinition
 
@@ -116,6 +122,7 @@ class ExtensionRegistry:
     ) -> None:
         self.root = Path(root)
         self._config = config
+        self._project_extensions: dict[str, ProjectExtensions] = {}
         self._providers: dict[str, _ExtensionProvider] = {}
         for extension in extensions:
             self._add_provider(
@@ -147,8 +154,11 @@ class ExtensionRegistry:
         """Return discovered identifiers without importing extension code."""
         return tuple(sorted(self._providers))
 
-    def validate_configuration(self) -> None:
+    def validate_configuration(self, project: str | None = None) -> None:
+        """Check the root's sections, and a project's own when one is named."""
         self.config.validate_against(self.identifiers)
+        if project is not None:
+            self.project_extensions(project).validate_against(self.identifiers)
 
     @property
     def config(self) -> ProjectConfig:
@@ -156,11 +166,32 @@ class ExtensionRegistry:
             self._config = load_project_config(self.root / FILE_NAME)
         return self._config
 
-    def settings(self, identifier: str) -> dict[str, object]:
-        """Return a detached copy of one extension's validated settings."""
+    def project_extensions(self, project: str) -> ProjectExtensions:
+        """The extension sections a configured project carries, read once."""
+        loaded = self._project_extensions.get(project)
+        if loaded is None:
+            loaded = self.config.project_extensions(self.root, project)
+            self._project_extensions[project] = loaded
+        return loaded
+
+    def settings(
+        self, identifier: str, project: str | None = None
+    ) -> dict[str, object]:
+        """Return a detached copy of one extension's validated settings.
+
+        With ``project``, that project's own section for the extension is
+        applied over the root's, so work done in the project follows the
+        project's conventions while the root stays the only place that
+        decides which extensions are configured at all.
+        """
         self.get(identifier)
-        self.validate_configuration()
-        settings = deepcopy(self.config.settings_for(identifier))
+        self.validate_configuration(project)
+        settings = self.config.settings_for(identifier)
+        if project is not None:
+            settings = overlay_settings(
+                settings,
+                self.project_extensions(project).sections.settings_for(identifier),
+            )
         try:
             json.dumps(settings, sort_keys=True)
         except (TypeError, ValueError) as error:
@@ -332,25 +363,44 @@ class ExtensionRegistry:
                     result[variable.name] = value
         return result
 
-    def reserved_paths(self, task_id: str, workflow: str | None) -> tuple[Path, ...]:
-        """Paths configured extensions claim for ``task_id`` outside ww state.
+    def configured(self, project: str | None = None) -> tuple[str, ...]:
+        """The extensions with a settings section at the root or in ``project``.
 
-        Only extensions with a settings section are consulted: those are the
-        ones the project has chosen, and loading them is the cost of asking.
+        Those are the ones the project has chosen, and loading them is the
+        cost of asking.
         """
+        return tuple(
+            identifier
+            for identifier in self.identifiers
+            if self.config.settings_for(identifier)
+            or (
+                project is not None
+                and self.project_extensions(project).sections.settings_for(
+                    identifier
+                )
+            )
+        )
+
+    def reserved_paths(
+        self, task_id: str, workflow: str | None, project: str | None = None
+    ) -> tuple[Path, ...]:
+        """Paths configured extensions claim for ``task_id`` outside ww state."""
         paths: list[Path] = []
-        for identifier in self.identifiers:
-            if not self.config.settings_for(identifier):
-                continue
+        for identifier in self.configured(project):
             extension = self.get(identifier)
             if extension.reserved_paths is None:
                 continue
             context = ExtensionContext(
                 root=self.root,
                 store=self.store(identifier),
-                config=self.settings(identifier),
+                config=self.settings(identifier, project),
                 task_id=task_id,
                 workflow=workflow,
+                workspace=(
+                    self.config.projects_by_name[project].directory(self.root)
+                    if project is not None
+                    else None
+                ),
             )
             try:
                 claimed = extension.reserved_paths(context)
@@ -363,17 +413,17 @@ class ExtensionRegistry:
             paths.extend(Path(path) for path in claimed)
         return tuple(paths)
 
-    def branch_strategies(self) -> tuple[str, ...]:
+    def branch_strategies(self, project: str | None = None) -> tuple[str, ...]:
         """Names configured extensions accept for ``start --branch-strategy``."""
         names: list[str] = []
-        for identifier in self.identifiers:
-            if not self.config.settings_for(identifier):
-                continue
+        for identifier in self.configured(project):
             extension = self.get(identifier)
             if extension.branch_strategies is None:
                 continue
             try:
-                declared = extension.branch_strategies(self.settings(identifier))
+                declared = extension.branch_strategies(
+                    self.settings(identifier, project)
+                )
             except ConfigurationError:
                 raise
             except Exception as error:  # noqa: BLE001 - add extension context

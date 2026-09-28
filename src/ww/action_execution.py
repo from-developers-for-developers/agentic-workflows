@@ -44,7 +44,7 @@ from ww.extensions import (
 )
 from ww.plan import PlanItem, WorkflowPlan
 from ww.storage_adapters import CommandOutputAddress
-from ww.variables import item_workspace_values
+from ww.variables import PROJECT, item_workspace_values
 from ww.workspace import relative_workspace
 
 _OUTPUT_LIMIT = 16_000
@@ -251,11 +251,7 @@ class _ExtensionService:
         return ExtensionContext(
             root=executor.root,
             store=executor.extensions.store(reference.identifier),
-            config=(
-                deepcopy(planned.settings)
-                if planned.settings is not None
-                else executor.extensions.settings(reference.identifier)
-            ),
+            config=executor.item_settings(state, item, planned),
             task_id=state.task_id,
             run_id=state.run_id,
             workflow=state.workflow,
@@ -391,11 +387,7 @@ class _RecoveryExtensionService:
         context = ExtensionContext(
             root=self._executor.root,
             store=self._executor.extensions.store(reference.identifier),
-            config=(
-                deepcopy(planned.settings)
-                if planned.settings is not None
-                else self._executor.extensions.settings(reference.identifier)
-            ),
+            config=self._executor.item_settings(self._state, self._item, planned),
             task_id=self._state.task_id,
             run_id=self._state.run_id,
             workflow=self._state.workflow,
@@ -472,6 +464,25 @@ class ActionExecutor:
         self.write_command_output = write_command_output
         self.read_command_output = read_command_output
         self.task_values = task_values
+
+    def item_settings(
+        self, state: ExecutionState, item: PlanItem, planned: Extension
+    ) -> dict[str, object]:
+        """The extension settings ``item`` runs with.
+
+        The plan's frozen copy when it has one; otherwise the settings of the
+        directory the item acts on, which are the run's project's for an item
+        working in the task workspace or the project directory, and the
+        root's for one working in the root.
+        """
+        if planned.settings is not None:
+            return deepcopy(planned.settings)
+        project = (
+            dict(state.workflow_values).get(PROJECT) if item.workdir != "root" else None
+        )
+        return self.extensions.settings(
+            parse_reference(planned.reference).identifier, project or None
+        )
 
     def item_scope(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

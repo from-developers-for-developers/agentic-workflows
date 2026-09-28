@@ -327,9 +327,25 @@ def _parse_hook_handler(data: Any, path: str) -> HandlerDefinition:
     mapping = _named_entry(
         _mapping(data, path), path, allowed=_handler_keys() | {"workflow"}
     )
-    if set(mapping) == {"name"} and is_extension_reference(mapping["name"]):
-        return HandlerDefinition(mapping["name"])
+    if _bare_extension_reference(mapping):
+        return HandlerDefinition(
+            mapping["name"], workdir=_optional_workdir(mapping, path)
+        )
     return _parse_handler(mapping, path, inline=True)
+
+
+def _bare_extension_reference(mapping: dict[str, Any]) -> bool:
+    """Whether ``mapping`` names an extension handler as is.
+
+    Such an entry carries at most the directory it works in; everything else
+    about the handler is the extension's to define.
+    """
+    name = mapping.get("name")
+    return (
+        isinstance(name, str)
+        and is_extension_reference(name)
+        and set(mapping) <= {"name", "workdir"}
+    )
 
 
 def _parse_update_document(data: Any, path: str) -> tuple[DocumentUpdate, ...]:

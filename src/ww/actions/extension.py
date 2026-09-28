@@ -145,7 +145,7 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
             identity.api_version,
             identity.source,
             identity.fingerprint,
-            context.extensions.settings(reference.identifier),
+            context.extensions.settings(reference.identifier, context.project),
         )
 
     def instruction(

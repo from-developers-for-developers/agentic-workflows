@@ -96,7 +96,13 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     catchall = configuration.workflows_by_name.get(CATCHALL)
     return {
         "enabled": True,
-        "projects": [project.to_dict() for project in extensions.config.projects],
+        "projects": [
+            {
+                **project.to_dict(),
+                "branch_strategies": list(extensions.branch_strategies(project.name)),
+            }
+            for project in extensions.config.projects
+        ],
         "workflows": [
             {
                 "name": workflow.name,
@@ -235,14 +241,21 @@ def _markdown(report: dict[str, object]) -> list[str]:
     projects = _entries(report["projects"])
     if projects:
         lines.extend(["", "## Projects", ""])
-        lines.extend(
-            f"- `{project['name']}` at `{project['path']}`"
-            + (f" — {project['description']}" if project["description"] else "")
-            for project in projects
-        )
+        for project in projects:
+            line = f"- `{project['name']}` at `{project['path']}`"
+            if project["description"]:
+                line += f" — {project['description']}"
+            project_strategies = _strings(project.get("branch_strategies", []))
+            if project_strategies != strategies:
+                line += " Branch strategies there: " + (
+                    ", ".join(f"`{name}`" for name in project_strategies) or "none"
+                ) + "."
+            lines.append(line)
         lines.append(
             "A task works in one project directory when started with "
-            "`--project <name>`; without it, the task works in the root."
+            "`--project <name>`; without it, the task works in the root. A "
+            f"project's own `{FILE_NAME}` may carry an `extensions` section, "
+            "which applies over the root's for work done in that project."
         )
     lines.extend(["", "## Modes", ""])
     lines.extend(f"- `{mode['name']}` — {mode['description']}" for mode in modes)

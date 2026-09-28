@@ -23,6 +23,7 @@ from ww.workflow_config import (
     HandlerDefinition,
     WorkflowConfiguration,
 )
+from ww.workspace import Workdir
 
 
 class ActionResolver:
@@ -35,12 +36,14 @@ class ActionResolver:
         extensions: ExtensionRegistry | None,
         available: AvailableActions,
         builtins: dict[str, str],
+        project: str | None = None,
     ) -> None:
         self.configuration = configuration
         self.agent = agent
         self.extensions = extensions
         self.available = available
         self.builtins = builtins
+        self.project = project
 
     def _handler(
         self, value: HandlerDefinition, *, resolve_reference: bool = False
@@ -87,13 +90,22 @@ class ActionResolver:
             kind = "prompt"
         return kind, actions.get(kind).owner, DefinedAction(kind, payload)
 
-    def plan_action(self, action: DefinedAction, allowed: set[str]) -> object:
+    def plan_action(
+        self, action: DefinedAction, allowed: set[str], workdir: Workdir = "task"
+    ) -> object:
+        """Plan one action as the item working in ``workdir`` will run it.
+
+        An item working in the root follows the root's extension settings;
+        one working in the task workspace or the project directory follows
+        the run's project, when it has one.
+        """
         context = ResolutionContext(
             self.agent,
             self.available,
             self.extensions,
             self.builtins,
             frozenset(allowed),
+            project=self.project if workdir != "root" else None,
         )
         return actions.get(action.identifier).plan(action.payload, context)
 

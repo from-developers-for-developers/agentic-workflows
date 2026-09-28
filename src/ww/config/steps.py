@@ -14,7 +14,6 @@ from ww.actions import (
 )
 from ww.contracts import ItemAssignment, LoopAssignment
 from ww.errors import ConfigurationError
-from ww.extensions import is_extension_reference
 from ww.items import FIELD_NAME
 from ww.validation import is_positive_int
 from ww.workflow_config import (
@@ -24,7 +23,13 @@ from ww.workflow_config import (
     StepDefinition,
 )
 
-from .actions import _handler_keys, _parse_handler, _parse_hooks
+from .actions import (
+    _bare_extension_reference,
+    _handler_keys,
+    _optional_workdir,
+    _parse_handler,
+    _parse_hooks,
+)
 from .values import (
     _NAME,
     _description,
@@ -255,8 +260,10 @@ def _parse_step(
         raise ConfigurationError(f"{path}.stop is obsolete; use break")
     _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"workflow"}, path)
     base = (
-        HandlerDefinition(mapping["name"])
-        if set(mapping) == {"name"} and is_extension_reference(mapping["name"])
+        HandlerDefinition(
+            mapping["name"], workdir=_optional_workdir(mapping, path)
+        )
+        if _bare_extension_reference(mapping)
         else _parse_handler(
             mapping, path, transition=True, allowed_extra=STEP_ONLY_KEYS
         )

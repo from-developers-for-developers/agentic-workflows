@@ -247,3 +247,40 @@ def _plan_items(service: WorkflowService, task_id: str, workflow: str) -> list:
     snapshot = service.tasks.read_plan_snapshot(task_id, f"01-{workflow}")
     assert snapshot is not None
     return [item for item in snapshot.plan.items if item.phase == "step"][1:]
+
+
+def test_an_extension_handler_entry_may_choose_its_workdir(tmp_path: Path) -> None:
+    root = _root(
+        tmp_path,
+        "workflows:\n  - name: task\n    steps:\n"
+        "      - work: Work.\n        hooks:\n          after_complete:\n"
+        "            - ext/ww/git/handlers:git-commit: ~\n"
+        "            - ext/ww/git/handlers:git-commit: ~\n"
+        "              workdir: root\n"
+        "      - ext/ww/git/handlers:git-commit: ~\n"
+        "        workdir: project\n",
+    )
+    service = WorkflowService(Storage(root))
+
+    start_after_init(service, "task", "T1", agent="codex", project="backend")
+
+    snapshot = service.tasks.read_plan_snapshot("T1", "01-task")
+    assert snapshot is not None
+    assert [
+        item.workdir for item in snapshot.plan.items if item.kind == "extension"
+    ] == ["task", "root", "project"]
+
+
+def test_an_extension_handler_entry_carries_nothing_but_its_workdir(
+    tmp_path: Path,
+) -> None:
+    root = _root(
+        tmp_path,
+        "workflows:\n  - name: task\n    steps:\n"
+        "      - ext/ww/git/handlers:git-commit: ~\n"
+        "        argv: [pwd]\n",
+    )
+    service = WorkflowService(Storage(root))
+
+    with pytest.raises(ConfigurationError, match="normalized name"):
+        service.start("task", "T1", agent="codex")

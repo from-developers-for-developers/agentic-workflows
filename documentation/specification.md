@@ -393,9 +393,11 @@ workflows:
         handler: code-review
 ```
 
-A name-only extension handler reference can be used directly as a step, for
+An extension handler reference can be used directly as a step, for
 example `- ext/ww/git/handlers:is-git-clean: ~`. It is resolved and validated
 when the workflow plan is compiled, just like an extension handler in a hook.
+Such an entry, as a step or as a hook, may carry `workdir` and no other key;
+everything else about the handler is the extension's to define.
 
 ### Items
 

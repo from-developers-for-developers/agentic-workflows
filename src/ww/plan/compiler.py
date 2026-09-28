@@ -116,6 +116,9 @@ class PlanCompilationOptions:
 
     task_id: str | None = None
     completed_bootstrap_step: str | None = None
+    # The configured project the run works in; extension items working there
+    # freeze that project's settings instead of the root's.
+    project: str | None = None
 
 
 @dataclass(frozen=True)
@@ -202,6 +205,7 @@ class WorkflowPlanCompiler:
             self.extensions,
             self.available,
             self.builtins,
+            self.options.project,
         )
         self.construct_planners = construct_planners or builtin_construct_planners()
         self.construct_normalizer = construct_normalizer
@@ -764,7 +768,7 @@ class WorkflowPlanCompiler:
             compiled_operation = operation
         else:
             assert action is not None
-            planned_payload = self.actions.plan_action(action, allowed)
+            planned_payload = self.actions.plan_action(action, allowed, workdir)
             compiled_operation = PlannedAction(kind, planned_payload)
         description = (
             self.actions._interpolate(handler.description, allowed)

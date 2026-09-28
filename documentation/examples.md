@@ -421,8 +421,23 @@ task works, and the git extension follows.
     "ww/git": {
       "use_separate_branch": true,
       "base_branches": {"default": "main"},
-      "project_base_branches": {"frontend": "master"},
       "branch_name_formats": {"default": "feature/{{task_id}}"}
+    }
+  }
+}
+```
+
+A repository with conventions of its own states them in its own
+`ww-agentic-workflows.json`; only its `extensions` section is read, key by
+key over the root's, so `frontend/ww-agentic-workflows.json` needs nothing
+but what differs:
+
+```json
+{
+  "extensions": {
+    "ww/git": {
+      "base_branches": {"default": "master"},
+      "commit_format": "[{{task_id}}] {{commit_message}}"
     }
   }
 }

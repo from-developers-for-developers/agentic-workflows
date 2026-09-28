@@ -133,6 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     extension.add_argument("extension_id", metavar="VENDOR/NAME")
     extension.add_argument("extension_command", metavar="COMMAND")
+    extension.add_argument(
+        "--project",
+        default=None,
+        metavar="NAME",
+        help="Use the extension settings a task in this configured project sees.",
+    )
     extension.add_argument("extension_arguments", metavar="ARG", nargs="*", default=[])
 
     plan = subparsers.add_parser(
@@ -143,6 +149,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("-w", "--workflow", required=True)
     plan.add_argument("-a", "--agent", required=True)
     plan.add_argument("--task-id", default=None)
+    plan.add_argument(
+        "--project",
+        default=None,
+        metavar="NAME",
+        help="Compile the plan as a task working in this configured project.",
+    )
     subparsers.add_parser(
         "lint",
         help="Validate ww-agentic-workflows.yaml without compiling a "

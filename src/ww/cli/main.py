@@ -41,7 +41,7 @@ from ww.output import (
     render_reset,
     render_status,
 )
-from ww.plan import compile_workflow_plan
+from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import compose_settings
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -182,35 +182,52 @@ def _plan(context: _Context) -> _Outcome:
         args.agent,
         args.task_id,
         context.extensions,
-        project_config=context.extensions.config,
+        PlanCompilationOptions(task_id=args.task_id, project=args.project),
+        context.extensions.config,
     )
     rendered = render_plan(plan, args.json_output)
     if not args.json_output:
-        rendered += f"\n{_configuration_files(context.storage)}"
+        rendered += f"\n{_configuration_files(context.storage, context.extensions)}"
     return _Outcome(rendered)
 
 
 def _lint(context: _Context) -> _Outcome:
     load_configuration(context.storage.config_path, context.extensions)
+    for project in context.extensions.config.projects:
+        context.extensions.validate_configuration(project.name)
     notices = "".join(
         f"Notice: {notice}\n"
         for notice in compose_configuration(context.storage.config_path).notices
     )
     return _Outcome(
-        f"{WORKFLOWS_FILE} is valid.\n{_configuration_files(context.storage)}"
+        f"{WORKFLOWS_FILE} is valid.\n"
+        f"{_configuration_files(context.storage, context.extensions)}"
         f"{notices}"
     )
 
 
-def _configuration_files(storage: Storage) -> str:
-    """The configuration files this project reads, from machine to local."""
+def _configuration_files(storage: Storage, extensions: ExtensionRegistry) -> str:
+    """The configuration files this project reads, from machine to local.
+
+    A configured project's own settings files follow on their own line, so an
+    extension setting that applies only there is visible where it was read.
+    """
     workflows = compose_configuration(storage.config_path).sources
     _, settings = compose_settings(storage.project_config_path)
     files = (
         *workflows,
         *(display_path(path, storage.root) for path in settings),
     )
-    return "Configuration files: " + ", ".join(files) + "\n"
+    rendered = "Configuration files: " + ", ".join(files) + "\n"
+    for project in extensions.config.projects:
+        sources = extensions.project_extensions(project.name).sources
+        if sources:
+            rendered += (
+                f"Project {project.name} extension settings: "
+                + ", ".join(display_path(path, storage.root) for path in sources)
+                + "\n"
+            )
+    return rendered
 
 
 def _start(context: _Context) -> _Outcome:
@@ -485,7 +502,7 @@ def _extension(context: _Context) -> _Outcome:
             ExtensionContext(
                 root=context.storage.root,
                 store=context.extensions.store(args.extension_id),
-                config=context.extensions.settings(args.extension_id),
+                config=context.extensions.settings(args.extension_id, args.project),
                 arguments=tuple(args.extension_arguments),
             )
         )

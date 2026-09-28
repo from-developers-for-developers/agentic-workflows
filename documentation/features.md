@@ -332,6 +332,11 @@ Notice: handler 'test' from ~/.config/ww-agentic-workflows/ww-agentic-workflows.
 Notice: task_format from ww-agentic-workflows.yaml is overridden by ww-agentic-workflows.local.yaml.
 ```
 
+A configured project's own `ww-agentic-workflows.json` and
+`ww-agentic-workflows.local.json` add one more level for tasks working there,
+limited to the `extensions` section; see
+[A project's own extension settings](#a-projects-own-extension-settings).
+
 A level that should not build on the ones above sets `extends: false` in its
 root file or any of its imports; that level then starts afresh, and `lint`
 reports each file it leaves out. `extends: true` is allowed and changes
@@ -884,9 +889,70 @@ before.
 
 The `ww/git` extension follows the working directory: branches, worktrees, and
 commits act on the repository the task works in, and a task in a worktree still
-resolves to that repository's primary checkout. `project_base_branches` gives a
-project its own base branch, taking precedence over every `base_branches`
-entry. Branch formats and commit subjects are not split by project.
+resolves to that repository's primary checkout. A repository whose conventions
+differ from the root's states them in its own settings file, described next.
+
+### A project's own extension settings
+
+A configured project may carry `ww-agentic-workflows.json` and
+`ww-agentic-workflows.local.json` in its own directory. Of those files ww reads
+only the `extensions` section, repo file then local file, and applies it over
+the root's effective section for the same extension with the same rule as
+between configuration levels: nested objects merge key by key, any other value
+replaces the root's. A project therefore states only what differs:
+
+```json
+{
+  "extensions": {
+    "ww/git": {
+      "base_branches": {"default": "master"},
+      "commit_format": "[{{task_id}}] {{commit_message}}",
+      "worktrees": true,
+      "worktree_dir": "../frontend-worktrees"
+    }
+  }
+}
+```
+
+Every other key of a project's file (`enabled`, `runtime`, `executable`,
+`projects`, `workflows`, and anything else) is ignored here: those describe
+the project as a ww root of its own, which it may also be when used on its
+own, and the workspace root owns them. A project file never marks a ww root,
+and a project without such files, or a task started without `--project`, gets
+the root's settings unchanged. The root stays the only place that decides
+which extensions are configured: a project section naming an extension that is
+not installed is an error that names the project's file, for example
+`frontend/ww-agentic-workflows.json (project 'frontend') configures unknown
+extension 'acme/notes'`.
+
+The settings follow the directory a step or hook acts on, not the task as a
+whole, and are frozen into the plan when the task starts like every extension
+setting. An item working in the task workspace or the project directory
+(`workdir` `task` or `project`) gets the project's settings; one working in the
+root (`workdir: root`) gets the root's. Relative paths inside a project's
+section, such as `worktree_dir`, resolve against that project's repository,
+never the workspace root. Generated task IDs also reserve a project's worktree
+paths under the project's settings when the task starts with `--project`.
+
+`lint` validates every project's sections and, like `plan`, lists the project
+files it read after the root's:
+
+```console
+$ ww-agentic-workflows lint
+ww-agentic-workflows.yaml is valid.
+Configuration files: ww-agentic-workflows.yaml, ww-agentic-workflows.json
+Project frontend extension settings: frontend/ww-agentic-workflows.json, frontend/ww-agentic-workflows.local.json
+```
+
+`plan --project <name>` compiles a workflow as a task in that project would
+get it, `extension ww/git settings --project <name>` prints the settings such
+a task's handlers receive, and `discover` names each project's branch
+strategies when they differ from the root's.
+
+One consequence of per-project worktrees: run ww through the root launcher
+`./ww` or with `--root`. Invoked from inside a project's checkout or worktree
+without either, ww resolves the root through the Git common directory to that
+project's own checkout, not to the workspace.
 
 ### Choosing where a step works
 
@@ -922,6 +988,8 @@ workflows:
               workdir: project
 ```
 
+An extension handler entry, such as `- ext/ww/git/handlers:git-commit: ~`,
+may carry `workdir` as well, and nothing else: the extension defines the rest.
 For `update-local-notes`, the instruction's working-directory `cd` names the
 root and `{{__task_workspace_dir}}` resolves to it; an `argv` or `shell` step
 runs its command there. Nested steps, loop bodies, and per-item stages inherit
@@ -1961,7 +2029,8 @@ ignored, because a block that silently applies to nothing looks configured and
 is not.
 
 For `ww/git`, `ww-agentic-workflows extension ww/git settings` prints what actually resolved,
-which is the first thing to run after editing the file.
+which is the first thing to run after editing the file; `--project <name>`
+prints what a task in that configured project receives.
 
 When `worktrees` is enabled, generated task IDs reserve any existing path
 rendered by `worktree_dir` and `worktree_name_format`. For example, an existing
@@ -1969,9 +2038,10 @@ rendered by `worktree_dir` and `worktree_name_format`. For example, an existing
 than adopting that checkout for a new task.
 
 `base_branches` maps exact workflow names to base branches, and its `default`
-entry covers every other workflow, the same shape as `branch_name_formats`.
-`project_base_branches` maps configured project names to base branches that
-take precedence over it. Each value may be either a literal branch name or an
+entry covers every other workflow, the same shape as `branch_name_formats`. A
+repository under a configured project with a base branch of its own sets
+`base_branches` in [its own settings file](#a-projects-own-extension-settings).
+Each value may be either a literal branch name or an
 object with a non-empty `argv` array. A top-level `base_branch` is refused
 with a message pointing at `base_branches.default`, which replaced it. An argv command runs directly without a shell in
 the project root; its single non-empty stdout line becomes the base branch.
@@ -1999,8 +2069,8 @@ instead of silently falling back.
 | Handler | Settings it acts on |
 | --- | --- |
 | `git-commit` | `commit_format` |
-| `start-task-branch` | `base_branches`, `project_base_branches`, `use_separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
-| `return-to-base-branch` | `base_branches`, `project_base_branches`, `use_separate_branch` |
+| `start-task-branch` | `base_branches`, `use_separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
+| `return-to-base-branch` | `base_branches`, `use_separate_branch` |
 | `remove-task-worktree` | `worktrees` |
 | `is-git-clean` | — |
 

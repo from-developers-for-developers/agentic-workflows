@@ -849,31 +849,12 @@ def test_branches_lists_what_was_opened(repository: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_project_base_branch_wins_over_workflow_and_default() -> None:
-    settings = git_extension.settings_from(
-        {
-            "base_branches": {"default": "main", "bugfix": "develop"},
-            "project_base_branches": {"frontend": "master"},
-        }
-    )
-
-    assert settings.base_branch_for("bugfix") == "develop"
-    assert settings.base_branch_for("bugfix", "frontend") == "master"
-    assert settings.base_branch_for("task", "backend") == "main"
-    assert settings.to_dict()["project_base_branches"] == {"frontend": "master"}
-
-
-@pytest.mark.parametrize(
-    ("config", "message"),
-    [
-        ({"project_base_branches": []}, "map project names to base branches"),
-        ({"project_base_branches": {"": "main"}}, "map project names to base"),
-        ({"project_base_branches": {"web": {"argv": []}}}, "non-empty array"),
-    ],
-)
-def test_project_base_branches_are_validated(config: dict, message: str) -> None:
-    with pytest.raises(ConfigurationError, match=message):
-        git_extension.settings_from(config)
+def test_project_base_branches_is_no_longer_a_setting() -> None:
+    """A project's base branch lives in that project's own settings file."""
+    with pytest.raises(
+        ConfigurationError, match="unknown setting.*project_base_branches"
+    ):
+        git_extension.settings_from({"project_base_branches": {"frontend": "master"}})
 
 
 def test_repository_resolves_the_task_workspace_and_its_worktrees(

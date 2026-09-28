@@ -275,6 +275,7 @@ class WorkflowService:
                 mode_names,
                 agent,
                 self._unknown_modes,
+                project=project,
             )
             if bootstrap is not None:
                 return replace(
@@ -341,10 +342,7 @@ class WorkflowService:
         definition = self.extensions.config.projects_by_name.get(project)
         if definition is None:
             return None
-        directory = Path(definition.path)
-        if not directory.is_absolute():
-            directory = self.storage.root / directory
-        return str(directory.resolve())
+        return str(definition.directory(self.storage.root))
 
     def _project_directory(self, project: str | None) -> str | None:
         """Resolve a configured project to the directory its tasks work in.
@@ -354,18 +352,9 @@ class WorkflowService:
         """
         if project is None:
             return None
-        config = self.extensions.config
         path = self._project_path(project)
         if path is None:
-            configured = ", ".join(entry.name for entry in config.projects)
-            raise StateError(
-                f"unknown project {project!r}; "
-                + (
-                    f"configured projects: {configured}"
-                    if configured
-                    else "no projects are configured in ww-agentic-workflows.json"
-                )
-            )
+            raise StateError(self.extensions.config.unknown_project(project))
         directory = Path(path)
         if not directory.is_dir():
             raise StateError(
@@ -394,7 +383,7 @@ class WorkflowService:
         for candidate in candidate_task_ids(task_format):
             validate_task_id(candidate)
             with self.tasks.lock_task(candidate):
-                if not self._task_exists(candidate, workflow_name):
+                if not self._task_exists(candidate, workflow_name, project):
                     return self._start(
                         candidate,
                         workflow_name,
@@ -448,6 +437,7 @@ class WorkflowService:
             PlanCompilationOptions(
                 task_id=task_id,
                 completed_bootstrap_step=bootstrap_step,
+                project=project,
             ),
             self.extensions.config,
         )
@@ -1950,6 +1940,7 @@ class WorkflowService:
             (),
             parent.agent,
             self._unknown_modes,
+            project=child.project,
         )
         if item is None:
             raise StateError(
@@ -2206,7 +2197,11 @@ class WorkflowService:
                 state.agent,
                 state.task_id,
                 self.extensions,
-                project_config=self.extensions.config,
+                PlanCompilationOptions(
+                    task_id=state.task_id,
+                    project=dict(state.workflow_values).get(PROJECT) or None,
+                ),
+                self.extensions.config,
             ),
         )
         # The selection workflow is a run in its own right: finish it, and give
@@ -2466,12 +2461,18 @@ class WorkflowService:
                 unknown.add(name)
         return unknown
 
-    def _task_exists(self, task_id: str, workflow_name: str | None = None) -> bool:
+    def _task_exists(
+        self,
+        task_id: str,
+        workflow_name: str | None = None,
+        project: str | None = None,
+    ) -> bool:
         return task_id_claimed(
             task_id,
             tasks=self.tasks,
             extensions=self.extensions,
             workflow_name=workflow_name,
+            project=project,
         )
 
     def _generated_child_id(

@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from ww.errors import ConfigurationError
-from ww.project_config import ProjectConfig, load_project_config
+from ww.project_config import (
+    ProjectConfig,
+    ProjectDefinition,
+    load_project_config,
+    load_project_extensions,
+    overlay_settings,
+)
 
 
 def write(root: Path, payload: object) -> Path:
@@ -168,3 +174,175 @@ def test_the_core_workflow_switches_are_validated(
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
         load_project_config(write(tmp_path, {"workflows": workflows}))
+
+
+# A configured project's own settings files
+
+
+def _workspace(
+    tmp_path: Path, repo: object | None = None, local: object | None = None
+) -> ProjectDefinition:
+    directory = tmp_path / "backend"
+    directory.mkdir()
+    for name, payload in (
+        ("ww-agentic-workflows.json", repo),
+        ("ww-agentic-workflows.local.json", local),
+    ):
+        if payload is not None:
+            (directory / name).write_text(
+                payload if isinstance(payload, str) else json.dumps(payload),
+                encoding="utf-8",
+            )
+    return ProjectDefinition("backend", "./backend")
+
+
+def test_a_project_without_settings_files_has_no_sections(tmp_path: Path) -> None:
+    loaded = load_project_extensions(tmp_path, _workspace(tmp_path))
+
+    assert loaded.project == "backend"
+    assert loaded.sources == ()
+    assert loaded.sections.settings_for("ww/git") == {}
+
+
+def test_only_the_extensions_section_of_a_project_file_is_read(
+    tmp_path: Path,
+) -> None:
+    project = _workspace(
+        tmp_path,
+        {
+            "enabled": False,
+            "runtime": "auto",
+            "executable": "elsewhere",
+            "projects": [{"name": "nested", "path": "./nested"}],
+            "workflows": {"catchall": {"enabled": False}},
+            "something_new": True,
+            "extensions": {
+                "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+            },
+        },
+    )
+
+    loaded = load_project_extensions(tmp_path, project)
+
+    assert loaded.sources == (tmp_path / "backend" / "ww-agentic-workflows.json",)
+    assert loaded.sections.sections == {
+        "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+    }
+
+
+def test_a_projects_local_file_extends_its_repo_file(tmp_path: Path) -> None:
+    project = _workspace(
+        tmp_path,
+        {"extensions": {"ww/git": {"worktrees": True, "worktree_dir": "./wt"}}},
+        {"extensions": {"ww/git": {"worktree_dir": "../elsewhere"}, "git": {}}},
+    )
+
+    loaded = load_project_extensions(tmp_path, project)
+
+    assert loaded.sources == (
+        tmp_path / "backend" / "ww-agentic-workflows.json",
+        tmp_path / "backend" / "ww-agentic-workflows.local.json",
+    )
+    assert loaded.sections.settings_for("ww/git") == {
+        "worktrees": True,
+        "worktree_dir": "../elsewhere",
+    }
+    assert loaded.sections.source == (
+        "backend/ww-agentic-workflows.json + backend/ww-agentic-workflows.local.json"
+        " (project 'backend')"
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ("[]", "backend/ww-agentic-workflows.json must contain a JSON object"),
+        ("{not json", "invalid .*backend/ww-agentic-workflows.json"),
+        (
+            {"extensions": []},
+            r"backend/ww-agentic-workflows.json \(project 'backend'\)\.extensions "
+            "must be an object",
+        ),
+        (
+            {"extensions": {"ww/git": "yes"}},
+            r"\(project 'backend'\)\.extensions\['ww/git'\] must be an object",
+        ),
+    ],
+)
+def test_invalid_project_files_name_the_project(
+    tmp_path: Path, payload: object, message: str
+) -> None:
+    project = _workspace(tmp_path, payload)
+
+    with pytest.raises(ConfigurationError, match=message):
+        load_project_extensions(tmp_path, project)
+
+
+def test_project_sections_are_validated_against_installed_extensions(
+    tmp_path: Path,
+) -> None:
+    project = _workspace(tmp_path, {"extensions": {"acme/nope": {}}})
+    loaded = load_project_extensions(tmp_path, project)
+
+    with pytest.raises(
+        ConfigurationError,
+        match=r"backend/ww-agentic-workflows.json \(project 'backend'\) configures "
+        "unknown extension 'acme/nope'",
+    ):
+        loaded.sections.validate_against(("ww/git",))
+
+
+def test_project_validation_names_the_file_that_holds_the_section(
+    tmp_path: Path,
+) -> None:
+    project = _workspace(
+        tmp_path,
+        {"extensions": {"ww/git": {"worktrees": False}}},
+        {"extensions": {"acme/nope": {}}},
+    )
+    loaded = load_project_extensions(tmp_path, project)
+
+    with pytest.raises(
+        ConfigurationError,
+        match=r"backend/ww-agentic-workflows.local.json \(project 'backend'\) "
+        "configures unknown extension 'acme/nope'",
+    ):
+        loaded.validate_against(("ww/git",))
+
+
+def test_overlay_settings_merges_nested_objects_and_replaces_other_values() -> None:
+    base = {
+        "commit_format": "{{task_id}}: {{commit_message}}",
+        "base_branches": {"default": "dev", "hotfix": "main"},
+        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "worktrees": True,
+    }
+
+    merged = overlay_settings(
+        base,
+        {"base_branches": {"default": "master"}, "worktrees": False, "extra": [1]},
+    )
+
+    assert merged == {
+        "commit_format": "{{task_id}}: {{commit_message}}",
+        "base_branches": {"default": "master", "hotfix": "main"},
+        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "worktrees": False,
+        "extra": [1],
+    }
+    assert base["base_branches"] == {"default": "dev", "hotfix": "main"}
+
+
+def test_project_extensions_require_a_configured_project(tmp_path: Path) -> None:
+    config = load_project_config(
+        write(tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]})
+    )
+    (tmp_path / "backend").mkdir()
+
+    assert config.project_extensions(tmp_path, "backend").sources == ()
+    with pytest.raises(
+        ConfigurationError, match="unknown project 'web'; configured projects: backend"
+    ):
+        config.project_extensions(tmp_path, "web")
+    with pytest.raises(ConfigurationError, match="no projects are configured"):
+        ProjectConfig().project_extensions(tmp_path, "web")

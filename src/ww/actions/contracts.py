@@ -196,6 +196,10 @@ class ResolutionContext:
     extensions: ExtensionRegistry | None
     builtins: dict[str, str]
     allowed_variables: frozenset[str]
+    # The configured project whose extension settings the item follows: the
+    # run's project for an item working in the task workspace or the project
+    # directory, none for one working in the root.
+    project: str | None = None
 
     def interpolate(self, value: str) -> str:
         unknown = {

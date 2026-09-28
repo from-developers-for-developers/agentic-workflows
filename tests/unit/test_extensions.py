@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,7 +24,7 @@ from ww.extensions import (
     parse_reference,
 )
 from ww.extensions import registry as registry_module
-from ww.project_config import ProjectConfig
+from ww.project_config import ProjectConfig, ProjectDefinition
 from ww.workflow_config import ModeDefinition
 
 EXTENSION_SOURCE = """
@@ -519,3 +520,113 @@ def test_reserved_paths_come_only_from_configured_extensions(tmp_path: Path) -> 
     )
     with pytest.raises(TypeError, match="reserved_paths must be callable"):
         Extension(vendor="acme", name="bad", reserved_paths="not callable")  # type: ignore[arg-type]
+
+
+# A configured project's own extension settings
+
+
+def _project_registry(
+    tmp_path: Path, *extensions: Extension, root_settings: dict[str, object]
+) -> ExtensionRegistry:
+    (tmp_path / "backend").mkdir(exist_ok=True)
+    return ExtensionRegistry(
+        tmp_path,
+        extensions,
+        ProjectConfig(
+            extensions=dict(root_settings),
+            projects=(ProjectDefinition("backend", "./backend"),),
+        ),
+    )
+
+
+def _write_project_settings(tmp_path: Path, payload: object) -> None:
+    (tmp_path / "backend" / "ww-agentic-workflows.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+
+def test_a_projects_settings_apply_over_the_roots(tmp_path: Path) -> None:
+    demo = Extension(vendor="acme", name="demo")
+    registry = _project_registry(
+        tmp_path,
+        demo,
+        root_settings={"acme/demo": {"a": 1, "nested": {"x": 1, "y": 2}}},
+    )
+    _write_project_settings(
+        tmp_path,
+        {
+            "enabled": False,
+            "extensions": {"demo": {"b": 2, "nested": {"y": 3}}},
+        },
+    )
+
+    assert registry.settings("acme/demo") == {"a": 1, "nested": {"x": 1, "y": 2}}
+    assert registry.settings("acme/demo", "backend") == {
+        "a": 1,
+        "b": 2,
+        "nested": {"x": 1, "y": 3},
+    }
+    assert registry.project_extensions("backend").sources == (
+        tmp_path / "backend" / "ww-agentic-workflows.json",
+    )
+    with pytest.raises(ConfigurationError, match="unknown project 'web'"):
+        registry.settings("acme/demo", "web")
+
+
+def test_a_project_without_settings_keeps_the_roots(tmp_path: Path) -> None:
+    demo = Extension(vendor="acme", name="demo")
+    registry = _project_registry(tmp_path, demo, root_settings={"acme/demo": {"a": 1}})
+
+    assert registry.settings("acme/demo", "backend") == {"a": 1}
+    assert registry.project_extensions("backend").sources == ()
+
+
+def test_a_project_section_naming_an_unknown_extension_names_the_project(
+    tmp_path: Path,
+) -> None:
+    demo = Extension(vendor="acme", name="demo")
+    registry = _project_registry(tmp_path, demo, root_settings={})
+    _write_project_settings(tmp_path, {"extensions": {"acme/nope": {"a": 1}}})
+
+    with pytest.raises(
+        ConfigurationError,
+        match=r"backend/ww-agentic-workflows.json \(project 'backend'\) configures "
+        "unknown extension 'acme/nope'; installed: acme/demo",
+    ):
+        registry.settings("acme/demo", "backend")
+    # The root's own settings stay usable: the project is consulted only when named.
+    assert registry.settings("acme/demo") == {}
+
+
+def test_branch_strategies_and_reserved_paths_follow_the_project(
+    tmp_path: Path,
+) -> None:
+    def claim(context: ExtensionContext) -> tuple[Path, ...]:
+        assert context.workspace == (tmp_path / "backend").resolve()
+        return ((context.workspace or context.root) / str(context.config["dir"]),)
+
+    naming = Extension(
+        "acme",
+        "naming",
+        branch_strategies=lambda settings: tuple(settings["strategies"]),
+        reserved_paths=claim,
+    )
+    registry = _project_registry(tmp_path, naming, root_settings={})
+    _write_project_settings(
+        tmp_path,
+        {
+            "extensions": {
+                "acme/naming": {"strategies": ["main", "hotfix"], "dir": "wt"}
+            }
+        },
+    )
+
+    # Configured only in the project: consulted there, idle at the root.
+    assert registry.configured() == ()
+    assert registry.configured("backend") == ("acme/naming",)
+    assert registry.branch_strategies() == ()
+    assert registry.branch_strategies("backend") == ("main", "hotfix")
+    assert registry.reserved_paths("T-1", "task") == ()
+    assert registry.reserved_paths("T-1", "task", "backend") == (
+        (tmp_path / "backend").resolve() / "wt",
+    )

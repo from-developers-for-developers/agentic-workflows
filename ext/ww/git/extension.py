@@ -72,7 +72,7 @@ from ww.extensions.api import (
     ProvidedVariable,
 )
 from ww.interpolation import dependencies, interpolate
-from ww.variables import BRANCH_NAMING_STRATEGY, PROJECT
+from ww.variables import BRANCH_NAMING_STRATEGY
 
 COMMITS_FILE = "commits.jsonl"
 BRANCHES_FILE = "branches.jsonl"
@@ -85,7 +85,6 @@ _SETTING_KEYS = {
     "commit_message",
     "commit_format",
     "base_branches",
-    "project_base_branches",
     "use_separate_branch",
     "branch_name_formats",
     "worktrees",
@@ -99,12 +98,10 @@ class Settings:
     """The ``ww/git`` section of ``ww-agentic-workflows.json``, validated."""
 
     commit_format: str = DEFAULT_COMMIT_FORMAT
-    # Per workflow name, with ``default`` for every other workflow.
+    # Per workflow name, with ``default`` for every other workflow.  A
+    # repository with its own conventions states them in its own
+    # ``ww-agentic-workflows.json``, which ww applies for tasks working there.
     base_branches: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
-    # Per configured ww project, for workspaces that span several repositories.
-    project_base_branches: dict[str, str | tuple[str, ...]] = field(
-        default_factory=dict
-    )
     use_separate_branch: bool = False
     branch_name_formats: dict[str, str] = field(
         default_factory=lambda: {"default": DEFAULT_BRANCH_FORMAT}
@@ -123,12 +120,8 @@ class Settings:
             return self.branch_name_formats[workflow]
         return self.branch_name_formats.get("default", DEFAULT_BRANCH_FORMAT)
 
-    def base_branch_for(
-        self, workflow: str | None, project: str | None = None
-    ) -> str | tuple[str, ...] | None:
-        """Return the project, then the workflow, then the ``default`` entry."""
-        if project and project in self.project_base_branches:
-            return self.project_base_branches[project]
+    def base_branch_for(self, workflow: str | None) -> str | tuple[str, ...] | None:
+        """Return the workflow's entry, then the ``default`` entry."""
         if workflow and workflow in self.base_branches:
             return self.base_branches[workflow]
         return self.base_branches.get("default")
@@ -139,10 +132,6 @@ class Settings:
             "base_branches": {
                 workflow: _base_branch_dict(definition)
                 for workflow, definition in self.base_branches.items()
-            },
-            "project_base_branches": {
-                project: _base_branch_dict(definition)
-                for project, definition in self.project_base_branches.items()
             },
             "use_separate_branch": self.use_separate_branch,
             "branch_name_formats": dict(self.branch_name_formats),
@@ -196,14 +185,6 @@ def settings_from(config: Any) -> Settings:
             "ww/git base_branches must map workflow names, or default, to base "
             "branches"
         )
-    project_base_branches = config.get("project_base_branches", {})
-    if not isinstance(project_base_branches, dict) or not all(
-        isinstance(project, str) and project.strip()
-        for project in project_base_branches
-    ):
-        raise ConfigurationError(
-            "ww/git project_base_branches must map project names to base branches"
-        )
     settings = Settings(
         commit_format=_string(
             config,
@@ -213,12 +194,6 @@ def settings_from(config: Any) -> Settings:
         base_branches={
             workflow: _required_base_branch(definition, f"base_branches[{workflow!r}]")
             for workflow, definition in base_branches.items()
-        },
-        project_base_branches={
-            project: _required_base_branch(
-                definition, f"project_base_branches[{project!r}]"
-            )
-            for project, definition in project_base_branches.items()
         },
         use_separate_branch=_bool(config, "use_separate_branch"),
         branch_name_formats=dict(formats),
@@ -600,8 +575,7 @@ def _task_branch(
     configured_base = None
     if not parent_branch and not recorded_base:
         configured_base, base_error = _resolve_base_branch(
-            context,
-            settings.base_branch_for(context.workflow, context.values.get(PROJECT)),
+            context, settings.base_branch_for(context.workflow)
         )
         if base_error:
             return None, None, base_error
@@ -989,8 +963,7 @@ def _return_to_base(context: ExtensionContext) -> ExtensionResult:
     base = record.get("base")
     if not isinstance(base, str) or not base:
         base, error = _resolve_base_branch(
-            context,
-            settings.base_branch_for(context.workflow, context.values.get(PROJECT)),
+            context, settings.base_branch_for(context.workflow)
         )
         if error:
             return ExtensionResult(False, error=error)
