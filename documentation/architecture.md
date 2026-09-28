@@ -934,7 +934,14 @@ development, but Hatch includes it as package data and the registry loads it as
 a bundle; editable installs fall back to that source path. This means a target
 project never has to copy `ww/git` merely because ww was installed elsewhere.
 Duplicate identifiers remain an error rather than a precedence rule, so a
-project cannot silently replace a bundled extension. Packaged entry points use
+project cannot silently replace a bundled extension. The one exception is a
+project root that is itself a source checkout of ww, recognised by
+`src/ww/extensions/registry.py`: its `ext/ww/*` is a copy of ww's own bundled
+extensions, possibly another version, rather than something the project adds,
+so discovery skips it and the running install's bundled copy is used. Without
+that, an install from one checkout (such as a development install) could not
+run in another checkout of ww. Other vendors' extensions in such a checkout
+are discovered as usual. Packaged entry points use
 `vendor.name` as their entry-point name so the registry can identify and
 deduplicate them without importing their modules. On load, the public API
 version, contribution types, normalized names, unique handler/mode/command/variable

@@ -2757,6 +2757,13 @@ A project that should use the second then sets
 `"executable": "ww-agentic-workflows-dev"`. The update notice, `--version`,
 and the audit log keep naming the package, `ww-agentic-workflows`.
 
+Either install also runs inside the other checkout, for example the
+development install used for all work in the `dev` checkout. ww recognises a
+checkout of its own source by `src/ww/extensions/registry.py` and then uses the
+running install's bundled `ww/git`, ignoring the checkout's own `ext/ww/*`
+copy. In any other project, an `ext/ww/<name>` of its own is still refused as
+a duplicate of the bundled extension.
+
 ## Staying current with the ww checkout
 
 ww is installed from a Git clone in editable mode, so whether a newer ww

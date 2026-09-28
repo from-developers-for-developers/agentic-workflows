@@ -42,6 +42,8 @@ from ww.workflow_config import ModeDefinition
 
 ENTRY_POINT_GROUP = "ww.extensions"
 EXTENSION_DIRECTORY = "ext"
+# The vendor of the extensions ww bundles; a project may not provide them.
+BUNDLED_VENDOR = "ww"
 SECTIONS = ("handlers", "modes")
 
 _SEGMENT = r"[a-z0-9][a-z0-9_-]*"
@@ -509,10 +511,16 @@ def _project_providers(root: Path) -> tuple[_ExtensionProvider, ...]:
     if not directory.is_dir():
         return ()
     found = []
+    ww_checkout = is_ww_checkout(root)
     for module_path in sorted(directory.glob("*/*/extension.py")):
         if module_path.resolve() == _bundled_source_path().resolve():
             continue
         name, vendor = module_path.parent.name, module_path.parent.parent.name
+        if ww_checkout and vendor == BUNDLED_VENDOR:
+            # Another checkout of ww itself: its ext/ww is a copy of ww's own
+            # bundled extensions, possibly another version, not something the
+            # project adds. The running install's bundled copy is used.
+            continue
         identifier = f"{vendor}/{name}"
         relative = module_path.relative_to(root).as_posix()
         found.append(
@@ -557,6 +565,16 @@ def _bundled_providers() -> tuple[_ExtensionProvider, ...]:
             ),
         )
     return ()
+
+
+def is_ww_checkout(root: Path) -> bool:
+    """Whether ``root`` is a source checkout of ww itself.
+
+    Two checkouts of ww may sit side by side, one for developing ww and one
+    kept on ``dev``, each with its own install; either install then runs in
+    the other checkout. The test is one file only ww's source tree holds.
+    """
+    return (root / "src" / "ww" / "extensions" / "registry.py").is_file()
 
 
 def _bundled_source_path() -> Path:

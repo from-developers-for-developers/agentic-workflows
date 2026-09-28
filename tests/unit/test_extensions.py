@@ -211,6 +211,40 @@ def test_a_project_cannot_shadow_the_bundled_git_extension(tmp_path: Path) -> No
         ExtensionRegistry.discover(tmp_path)
 
 
+def _ww_checkout(root: Path) -> None:
+    """Lay ``root`` out as another ww source checkout, such as a dev clone."""
+    marker = root / "src" / "ww" / "extensions" / "registry.py"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("# another ww checkout\n", encoding="utf-8")
+    source = Path(__file__).parents[2] / "ext" / "ww" / "git" / "extension.py"
+    target = root / "ext" / "ww" / "git"
+    target.mkdir(parents=True)
+    # A different file from the running install's bundled source.
+    (target / "extension.py").write_text(
+        source.read_text(encoding="utf-8") + "\n# another version\n"
+    )
+
+
+def test_another_ww_checkout_uses_the_running_installs_bundled_git(
+    tmp_path: Path,
+) -> None:
+    _ww_checkout(tmp_path)
+
+    registry = ExtensionRegistry.discover(tmp_path)
+
+    assert registry.identifiers.count("ww/git") == 1
+    assert registry.identity("ww/git").source == "bundled:ww/git"
+
+
+def test_another_ww_checkout_still_discovers_other_vendors(tmp_path: Path) -> None:
+    _ww_checkout(tmp_path)
+    write_extension(tmp_path)
+
+    registry = ExtensionRegistry.discover(tmp_path)
+
+    assert registry.identity("acme/demo").source == "project:ext/acme/demo/extension.py"
+
+
 def test_a_directory_that_disagrees_with_its_extension_is_an_error(
     tmp_path: Path,
 ) -> None:
