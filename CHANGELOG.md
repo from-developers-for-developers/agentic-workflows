@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- `workflows.yaml` and `agentic-workflows.json` are now `ww-agentic-workflows.yaml` and
+  `ww-agentic-workflows.json`; ww stops on the old names, and `init` renames them. `c65a0ef`
 - `workflows.yaml` can import other YAML files listed under `imports`; later files
   override earlier ones, and `lint` notes each override. `6287457`
 - A project can name its ww binary with `"executable"` in
