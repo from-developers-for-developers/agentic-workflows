@@ -1335,9 +1335,19 @@ Agent-owned steps save their full Markdown result as an artifact by default.
 Use `artifact: false` for work that has no durable output. A loop wrapper also
 saves the final result supplied by its successful stop command as its main
 artifact; `artifact: false` on the wrapper disables that file independently of
-its body-step artifacts. `depends_on` names an earlier artifact-producing
-sibling and adds that artifact to the later step's instruction; execution still
+its body-step artifacts. `depends_on` names an earlier artifact-producing step
+and adds that artifact to the later step's instruction; execution still
 follows the written step order.
+
+A nested step, in a group, a loop body, an assessment outcome, or a per-item
+stage, may also name an earlier step of any enclosing level. The nearest match
+wins: an earlier sibling first, then an earlier step of the parent's level,
+and so on up to the workflow's top-level steps and `init`. An outcome may name
+its assessment and a per-item stage its `items` step, whose work has finished
+by then; a loop body cannot name its own running loop, and no step can name a
+plain group, which saves no artifact of its own. The instruction names the
+dependency by its step path, such as `review/check`, which is how
+`ww artifacts` lists it.
 
 Filesystem artifact names begin with each step's one-based declaration ordinal
 among its siblings. Nested containers reset the ordinal for their children, so
@@ -1380,6 +1390,12 @@ workflows:
       - name: implement
         description: Implement the change.
         depends_on: research
+      - name: review-and-fix
+        loop:
+          - name: fix
+            description: Fix what the review found.
+            depends_on: research
+            break: Nothing is left to fix.
       - name: notify
         description: Report that implementation is complete.
         artifact: false

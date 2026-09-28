@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
+from types import MappingProxyType
 
 from ww.actions import DefinedAction, Prompt
 from ww.core_workflows import with_core_workflows
@@ -138,7 +139,16 @@ def _validate_steps(
     *,
     top_level: bool = False,
     inside_loop: bool = False,
+    enclosing: Mapping[str, StepDefinition] = MappingProxyType({}),
 ) -> None:
+    """Validate one sibling list; ``enclosing`` holds earlier upper-level steps.
+
+    ``depends_on`` resolves to the nearest earlier step of that name: an
+    earlier sibling first, then an earlier step of each enclosing level.  A
+    container's own step is visible to its nested steps only when its work
+    has finished before them: an assessment to its outcomes and an item
+    collection to its per-item stages, but never a running loop.
+    """
     _unique((step.name for step in steps), f"step in workflow {workflow_name!r}")
     prior: dict[str, StepDefinition] = (
         {INIT_STEP_NAME: implicit_init_step()} if top_level else {}
@@ -186,21 +196,43 @@ def _validate_steps(
                 f"{control} but does not directly execute worker work"
             )
         if step.artifact_dependency is not None:
-            dependency = prior.get(step.artifact_dependency)
+            dependency = prior.get(step.artifact_dependency) or enclosing.get(
+                step.artifact_dependency
+            )
             if dependency is None:
                 raise ConfigurationError(
                     f"step {step.name!r} in workflow {workflow_name!r} depends_on "
-                    f"unknown or later sibling step {step.artifact_dependency!r}"
+                    f"step {step.artifact_dependency!r}, which is not an earlier "
+                    "step at its own or an enclosing level"
                 )
-            if not dependency.artifact:
+            # A plain group runs only its children and saves nothing itself.
+            if not dependency.artifact or dependency.child_steps:
                 raise ConfigurationError(
                     f"step {step.name!r} in workflow {workflow_name!r} depends_on "
                     f"step {dependency.name!r}, which does not produce an artifact"
                 )
         _validate_hooks(step.hooks, set(), expected_scope="step")
-        _validate_steps(workflow_name, step.child_steps, inside_loop=inside_loop)
-        _validate_steps(workflow_name, step.loop_steps, inside_loop=True)
-        _validate_steps(workflow_name, _item_steps(step), inside_loop=inside_loop)
+        visible = {**enclosing, **prior}
+        _validate_steps(
+            workflow_name, step.child_steps, inside_loop=inside_loop, enclosing=visible
+        )
+        _validate_steps(
+            workflow_name, step.loop_steps, inside_loop=True, enclosing=visible
+        )
+        _validate_steps(
+            workflow_name,
+            _item_steps(step),
+            inside_loop=inside_loop,
+            enclosing={**visible, step.name: step},
+        )
+        # Outcomes are alternatives, so none is an earlier sibling of another.
+        for outcome in step.assessment_outcomes:
+            _validate_steps(
+                workflow_name,
+                (outcome,),
+                inside_loop=inside_loop,
+                enclosing={**visible, step.name: step},
+            )
         prior[step.name] = step
 
 

@@ -80,6 +80,69 @@ workflows:
     assert summary.summary
 
 
+def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "ww-agentic-workflows.yaml"
+    path.write_text(
+        """workflows:
+  - name: task
+    steps:
+      - name: plan
+      - name: group
+        steps:
+          - name: plan
+          - name: inner
+            steps:
+              - name: fix
+                depends_on: plan
+      - name: review
+        loop:
+          - name: check
+            depends_on: plan
+          - name: decide
+            depends_on: check
+            break: Done
+      - assess:
+          question: Is it good?
+          outcomes:
+            positive:
+              steps:
+                - name: ship
+                  depends_on: assess
+            negative:
+              steps:
+                - name: redo
+                  depends_on: review
+      - name: triage
+        items:
+          steps:
+            - name: fix-item
+              depends_on: triage
+            - name: report
+              depends_on: fix-item
+""",
+        encoding="utf-8",
+    )
+
+    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
+
+    dependencies = {
+        item.step: item.artifact_dependency
+        for item in plan.items
+        if item.artifact_dependency is not None
+    }
+    assert dependencies == {
+        "group/inner/fix": "group/plan",
+        "review/check": "plan",
+        "review/decide": "review/check",
+        "assess/positive/ship": "assess",
+        "assess/negative/redo": "review",
+        "triage/{item}/fix-item": "triage",
+        "triage/{item}/report": "triage/{item}/fix-item",
+    }
+
+
 def test_extension_handler_can_be_used_as_a_step(tmp_path: Path) -> None:
     path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(

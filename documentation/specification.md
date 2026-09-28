@@ -287,7 +287,7 @@ A step accepts every [handler key](#handlers), plus:
 | `break` | non-empty string | On an agent-owned loop-body step, grants permission to break its enclosing loop when this condition holds. |
 | `continue` | non-empty string | On an agent-owned loop-body step, grants permission to continue from the beginning of its enclosing loop when this condition holds. |
 | `artifact` | boolean | Whether agent completion requires an artifact; default `true`. |
-| `depends_on` | name | Earlier artifact-producing sibling whose artifact is supplied to this step. |
+| `depends_on` | name | Earlier artifact-producing step whose artifact is supplied to this step: an earlier sibling, or an earlier step of an enclosing level, the nearest one first. Inside assessment outcomes the assessment itself is eligible, and inside per-item stages the `items` step; an enclosing loop or plain group is not. |
 | `items` | `null`, string, or mapping | Collects work items, then runs per-item stages for each; see [Items](#items). |
 | `workflow` | workflow name or `{{variable}}` | Ends a `handoff: true` workflow by starting that workflow as the task's next run. Valid only on the last step, with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). |
 | `process_item` | `null` | Marks the step as updating processed item data. |

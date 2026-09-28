@@ -832,7 +832,11 @@ class WorkflowPlanCompiler:
                 child_operation=annotations.child_operation,
                 ancestors=ancestors,
                 artifact_dependency=(
-                    step.artifact_dependency if phase == "step" else None
+                    _artifact_dependency_path(
+                        step.artifact_dependency, ancestors, items
+                    )
+                    if phase == "step" and step.artifact_dependency is not None
+                    else None
                 ),
                 loop_break=step.loop_break if phase == "step" else None,
                 loop_continue=step.loop_continue if phase == "step" else None,
@@ -953,6 +957,25 @@ def _with_annotations(item: PlanItem, annotations: ItemAnnotations) -> PlanItem:
         assessment_parent=annotations.assessment_parent,
         assessment_outcome=annotations.assessment_outcome,
     )
+
+
+def _artifact_dependency_path(
+    name: str, ancestors: tuple[str, ...], items: list[PlanItem]
+) -> str:
+    """Return the plan path of the nearest earlier step named ``name``.
+
+    Validation has already chosen the step: an earlier sibling, else an
+    earlier step of the nearest enclosing level.  The same search over the
+    already-compiled items gives its path, skipping a loop that is still
+    running around the dependent step.
+    """
+    earlier = {item.step: item for item in items if item.phase == "step"}
+    for container in (*reversed(ancestors), None):
+        path = f"{container}/{name}" if container else name
+        found = earlier.get(path)
+        if found is not None and not (path in ancestors and found.kind == "loop"):
+            return path
+    return name
 
 
 def _logical_step_paths(

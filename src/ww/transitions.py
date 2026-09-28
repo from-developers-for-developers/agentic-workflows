@@ -978,6 +978,11 @@ def materialize_item_plan(
                             path.replace("{item}", item_path)
                             for path in template.ancestors
                         ),
+                        artifact_dependency=(
+                            template.artifact_dependency.replace("{item}", item_path)
+                            if template.artifact_dependency is not None
+                            else None
+                        ),
                         item_template=False,
                         item_id=work_item.id,
                     )

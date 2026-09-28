@@ -156,7 +156,8 @@ workflows:
 
 `steps` groups related work under a parent step that becomes in progress with
 its first child and completes with its last. `depends_on` hands an earlier
-sibling's artifact to a later one, at the same nesting level.
+step's artifact to a later one: a sibling at the same nesting level, or an
+earlier step of an enclosing level, as `write-migration` does with `analyze`.
 
 ```yaml
 workflows:
@@ -166,6 +167,7 @@ workflows:
       - implement:
         steps:
           - write-migration: Write the migration.
+            depends_on: analyze
           - adapt-code: Adapt the code that reads the changed tables.
             depends_on: write-migration
       - verify: Run the migration against a scratch database.

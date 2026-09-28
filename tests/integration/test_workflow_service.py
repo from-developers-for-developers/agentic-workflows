@@ -139,6 +139,36 @@ def test_depends_on_is_visible_with_an_explicit_prompt(tmp_path: Path) -> None:
     assert "artifact produced by the `research` step" in (instruction.action_text or "")
 
 
+def test_nested_depends_on_names_the_upper_level_step_path(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        """workflows:
+  - name: task
+    steps:
+      - name: group
+        steps:
+          - name: research
+          - name: review
+            loop:
+              - name: fix
+                depends_on: research
+                break: Done
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    _start_after_init(service, "task", "TASK-1", agent="codex")
+    service.next("TASK-1")
+    service.complete("TASK-1", artifact="research result", summary_for_next="Done.")
+
+    instruction = service.next("TASK-1")
+    while instruction.item_name != "fix":
+        instruction = service.next("TASK-1")
+
+    assert "artifact produced by the `group/research` step" in (
+        instruction.action_text or ""
+    )
+
+
 def test_in_progress_instruction_lists_later_sibling_steps(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:

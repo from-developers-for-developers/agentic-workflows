@@ -202,10 +202,17 @@ projection. The executor therefore never has to infer hierarchy from display
 paths.
 
 `depends_on` is deliberately an artifact-reference hint, not a scheduler. The
-semantic validator requires it to name an earlier artifact-producing sibling,
-the compiler retains the reference in the immutable plan, and the instruction
-builder makes that artifact an explicit input even when the step supplies its
-own prompt. Execution order remains the authored step order.
+semantic validator resolves it to the nearest earlier artifact-producing step
+of that name: an earlier sibling, else an earlier step of an enclosing level.
+An enclosing container is visible to its nested steps only when its own work
+has finished before them, as an assessment's has for its outcomes and an item
+collection's for its per-item stages; a running loop and a plain group are
+not. The compiler repeats that search over the items it has already emitted
+and records the dependency's plan step path in the immutable plan, and item
+materialization substitutes the item path in it like any other path. The
+instruction builder makes that artifact an explicit input, named by the same
+path as its `ww artifacts` entry, even when the step supplies its own prompt.
+Execution order remains the authored step order.
 
 Assessments add a deliberately bounded form of conditional topology. The
 compiler retains every declared outcome as a labeled nested subtree in the

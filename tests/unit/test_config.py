@@ -126,7 +126,84 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
 """,
     )
 
-    with pytest.raises(ConfigurationError, match="unknown or later sibling"):
+    with pytest.raises(ConfigurationError, match="not an earlier step"):
+        load_configuration(path)
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        pytest.param(
+            """      - name: group
+        steps:
+          - name: consume
+            depends_on: produce
+      - name: produce
+""",
+            id="later-upper-level-step",
+        ),
+        pytest.param(
+            """      - name: review
+        loop:
+          - name: consume
+            depends_on: review
+            break: Done
+""",
+            id="running-loop",
+        ),
+        pytest.param(
+            """      - name: group
+        steps:
+          - name: inner
+            steps:
+              - name: consume
+                depends_on: inner
+""",
+            id="enclosing-group",
+        ),
+        pytest.param(
+            """      - assess:
+          question: Is it good?
+          outcomes:
+            positive:
+              handler: ship
+            negative:
+              steps:
+                - name: consume
+                  depends_on: positive
+""",
+            id="other-outcome",
+        ),
+    ],
+)
+def test_depends_on_rejects_steps_that_have_not_run(
+    tmp_path: Path, steps: str
+) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        "handlers:\n  - name: ship\n    description: Ship it.\n    prompt: true\n"
+        "workflows:\n  - name: task\n    steps:\n" + steps,
+    )
+
+    with pytest.raises(ConfigurationError, match="not an earlier step"):
+        load_configuration(path)
+
+
+def test_depends_on_rejects_a_group_that_saves_no_artifact(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        """workflows:
+  - name: task
+    steps:
+      - name: group
+        steps:
+          - name: work
+      - name: consume
+        depends_on: group
+""",
+    )
+
+    with pytest.raises(ConfigurationError, match="does not produce an artifact"):
         load_configuration(path)
 
 
