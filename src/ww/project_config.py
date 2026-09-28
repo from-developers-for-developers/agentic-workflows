@@ -16,7 +16,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
     {"name": "backend", "path": "./backend", "description": "Python API service."}
   ],
   "extensions": {
-    "ww/git": {"base_branch": "main", "use_separate_branch": true}
+    "ww/git": {"base_branches": {"default": "main"}, "use_separate_branch": true}
   }
 }
 ```

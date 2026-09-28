@@ -703,7 +703,7 @@ def test_init_enables_git_with_safe_defaults(tmp_path: Path, capsys) -> None:
 
     assert settings == {
         "commit_message": "{{task_id}}: {{commit_message}}",
-        "base_branch": "master",
+        "base_branches": {"default": "master"},
         "use_separate_branch": True,
         "branch_name_formats": {"default": "feature/{{task_id}}"},
         "worktrees": False,
@@ -1048,10 +1048,10 @@ def test_current_reformatted_project_file_compiles_without_running_handlers(
         for item in items
         if item["phase"] == "before_complete_workflow"
     ] == [
-        ("update-architecture-documentation", "agent"),
-        ("update-readme", "agent"),
-        ("update-feature-documentation", "agent"),
-        ("update-yaml-specification", "agent"),
+        ("update-documentation", "agent"),
+        ("update-agent-instructions", "agent"),
+        ("git-commit", "ww"),
+        ("update-changelog", "agent"),
         ("git-commit", "ww"),
         ("update-workflow-summary", "agent"),
     ]

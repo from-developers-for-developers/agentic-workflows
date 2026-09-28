@@ -45,14 +45,7 @@ class ActionResolver:
     def _handler(
         self, value: HandlerDefinition, *, resolve_reference: bool = False
     ) -> tuple[HandlerDefinition, str | None, HandlerDefinition | None]:
-        has_action = bool(
-            value.action is not None
-            or value.operation is not None
-            or value.description
-            or value.provide
-            or value.save_metadata
-        )
-        if not resolve_reference or has_action:
+        if not resolve_reference or not value.is_reference:
             return value, None, None
         if is_extension_reference(value.name):
             definition = self._extension_handler(value.name)

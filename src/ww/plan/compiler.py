@@ -291,6 +291,7 @@ class WorkflowPlanCompiler:
             handoff=workflow.handoff,
             items=number_step_paths(tuple(items)),
             documents=self.configuration.documents,
+            recommended_next_workflow=workflow.recommended_next_workflow,
         )
         return self._apply_options(plan)
 
@@ -584,6 +585,7 @@ class WorkflowPlanCompiler:
                 loop_continue=None,
                 assessment_question=annotations.assessment_question,
                 assessment_outcomes=annotations.assessment_outcomes,
+                assessment_stops=annotations.assessment_stops,
                 assessment_parent=annotations.assessment_parent,
                 assessment_outcome=annotations.assessment_outcome,
             )
@@ -843,6 +845,7 @@ class WorkflowPlanCompiler:
                 loop_continue=step.loop_continue if phase == "step" else None,
                 assessment_question=annotations.assessment_question,
                 assessment_outcomes=annotations.assessment_outcomes,
+                assessment_stops=annotations.assessment_stops,
                 assessment_parent=annotations.assessment_parent,
                 assessment_outcome=annotations.assessment_outcome,
             )
@@ -916,6 +919,11 @@ def _merge_annotations(
             emitted.assessment_outcomes
             if emitted.assessment_outcomes
             else inherited.assessment_outcomes
+        ),
+        assessment_stops=(
+            emitted.assessment_stops
+            if emitted.assessment_outcomes
+            else inherited.assessment_stops
         ),
         assessment_parent=(
             emitted.assessment_parent

@@ -290,7 +290,7 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
                 "extensions": {
                     "ww/git": {
                         "use_separate_branch": True,
-                        "base_branch": "main",
+                        "base_branches": {"default": "main"},
                         "project_base_branches": {"frontend": "master"},
                         "branch_name_formats": {"default": "feature/{{task_id}}"},
                     }

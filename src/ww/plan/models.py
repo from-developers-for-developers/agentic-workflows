@@ -105,6 +105,8 @@ class PlanItem:
     loop_continue: str | None = None
     assessment_question: str | None = None
     assessment_outcomes: tuple[str, ...] = ()
+    # The outcomes that end the workflow; they emit no items of their own.
+    assessment_stops: tuple[str, ...] = ()
     assessment_parent: str | None = None
     assessment_outcome: str | None = None
 
@@ -316,6 +318,12 @@ class PlanItem:
             "assessment_outcomes": list(self.assessment_outcomes),
             "assessment_parent": self.assessment_parent,
             "assessment_outcome": self.assessment_outcome,
+            # Written only when set, so earlier plans keep their exact form.
+            **(
+                {"assessment_stops": list(self.assessment_stops)}
+                if self.assessment_stops
+                else {}
+            ),
         }
 
 
@@ -355,6 +363,9 @@ class WorkflowPlan:
     # The root documents, frozen with the plan so a run resolves their paths
     # without reading the configuration again.
     documents: tuple[DocumentDefinition, ...] = ()
+    # Offered to the operator when the run completes; frozen with the plan so
+    # a later configuration change does not alter a finished run's page.
+    recommended_next_workflow: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -368,4 +379,6 @@ class WorkflowPlan:
         }
         if self.documents:
             data["documents"] = [document.to_dict() for document in self.documents]
+        if self.recommended_next_workflow is not None:
+            data["recommended_next_workflow"] = self.recommended_next_workflow
         return data

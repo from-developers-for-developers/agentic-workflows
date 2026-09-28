@@ -852,7 +852,7 @@ def test_git_start_branch_hook_keeps_first_declared_step_filter(
             {
                 "extensions": {
                     "ww/git": {
-                        "base_branch": "main",
+                        "base_branches": {"default": "main"},
                         "use_separate_branch": True,
                         "branch_name_formats": {"default": "feature/{{task_id}}"},
                     }
@@ -892,7 +892,7 @@ workflows:
         hook.payload_as(Extension).reference == "ext/ww/git/handlers:start-task-branch"
     )
     assert hook.payload_as(Extension).settings == {
-        "base_branch": "main",
+        "base_branches": {"default": "main"},
         "use_separate_branch": True,
         "branch_name_formats": {"default": "feature/{{task_id}}"},
     }
@@ -917,7 +917,7 @@ def test_start_branch_strategy_is_persisted_for_extension_hooks(
             {
                 "extensions": {
                     "ww/git": {
-                        "base_branch": "main",
+                        "base_branches": {"default": "main"},
                         "use_separate_branch": True,
                         "branch_name_formats": {
                             "default": "feature/{{task_id}}",
@@ -977,7 +977,7 @@ def test_develop_preparation_hooks_select_worktree_after_earlier_steps(
             {
                 "extensions": {
                     "ww/git": {
-                        "base_branch": "main",
+                        "base_branches": {"default": "main"},
                         "worktrees": True,
                         "worktree_dir": str(tmp_path / "trees"),
                         "worktree_name_format": "{{task_id}}",

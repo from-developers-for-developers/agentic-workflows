@@ -435,8 +435,8 @@ names the branch:
 {
   "extensions": {
     "ww/git": {
-      "base_branch": "main",
       "base_branches": {
+        "default": "main",
         "bugfix": "develop",
         "task": {"argv": ["./scripts/base-branch", "{{workflow}}"]}
       }
@@ -445,7 +445,7 @@ names the branch:
 }
 ```
 
-The exact workflow override wins over `base_branch`. Commands run directly,
+An entry named after the workflow wins over `default`. Commands run directly,
 without a shell, from the project root and may interpolate `{{task_id}}`,
 `{{workflow}}`, and `{{run_id}}`. Child tasks still branch from their recorded
 parent branch.

@@ -126,6 +126,8 @@ def validate_configuration(
         expected_scope="global",
     )
     _validate_workflow_boundary_hooks(normalized)
+    _validate_hook_references(normalized)
+    _validate_recommendations(normalized)
     _validate_child_tasks(normalized.workflows)
     return normalized
 
@@ -142,6 +144,14 @@ def _validate_steps(
         {INIT_STEP_NAME: implicit_init_step()} if top_level else {}
     )
     for step in steps:
+        if step.assessment_outcomes and all(
+            outcome.stop_workflow for outcome in step.assessment_outcomes
+        ):
+            raise ConfigurationError(
+                f"assess {step.name!r} in workflow {workflow_name!r} has only "
+                "outcomes that stop the workflow; give one of them steps, or use "
+                "the compact form"
+            )
         _validate_execution_hints(step, f"step {step.name!r}")
         if step.name == INIT_STEP_NAME:
             raise ConfigurationError(
@@ -313,6 +323,72 @@ def _validate_hooks(
                 f"{hook.path or 'hook'} references unknown step(s): "
                 + ", ".join(sorted(unknown_steps))
             )
+
+
+def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
+    """Reject a hook naming a root handler that is a whole step tree.
+
+    A hook runs one action. A handler defining ``loop``, ``steps``, or
+    ``items`` is only usable as a workflow step; run as a hook it would lose
+    its tree and become a prompt carrying nothing but its name.
+    """
+    handlers = configuration.handlers_by_name
+    for hook in _every_hook(configuration):
+        if not hook.handler.is_reference:
+            continue
+        registered = handlers.get(hook.handler.name)
+        if isinstance(registered, StepDefinition) and _is_container(registered):
+            raise ConfigurationError(
+                f"{hook.path or 'hook'} runs handler {registered.name!r}, which "
+                "defines a loop, steps, or items; a hook runs a single action, "
+                f"so use {registered.name!r} as a workflow step instead"
+            )
+
+
+def _validate_recommendations(configuration: WorkflowConfiguration) -> None:
+    """A recommended next workflow must exist and must not race a handoff."""
+    known = configuration.workflows_by_name
+    for workflow in configuration.workflows:
+        recommended = workflow.recommended_next_workflow
+        if recommended is None:
+            continue
+        if recommended not in known:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} recommends unknown workflow "
+                f"{recommended!r}"
+            )
+        if workflow.handoff:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} hands off at its end and cannot "
+                "also recommend a next workflow"
+            )
+
+
+def _is_container(step: StepDefinition) -> bool:
+    return bool(step.child_steps or step.loop_steps or step.items)
+
+
+def _every_hook(configuration: WorkflowConfiguration) -> Iterable[HookDefinition]:
+    yield from configuration.global_hooks
+    for workflow in configuration.workflows:
+        yield from workflow.hooks
+        yield from _step_hooks(workflow.steps)
+    for handler in configuration.handlers:
+        if isinstance(handler, StepDefinition):
+            yield from _step_hooks((handler,))
+
+
+def _step_hooks(steps: tuple[StepDefinition, ...]) -> Iterable[HookDefinition]:
+    for step in steps:
+        yield from step.hooks
+        yield from _step_hooks(
+            (
+                *step.child_steps,
+                *step.loop_steps,
+                *_item_steps(step),
+                *step.assessment_outcomes,
+            )
+        )
 
 
 def _walk_steps(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...]:

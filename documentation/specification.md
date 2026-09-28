@@ -65,7 +65,7 @@ Each item in `workflows` accepts:
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `name` | name | yes | Workflow identifier. |
-| `steps` | list of steps | yes | Ordered declared steps; may be empty. The implicit `init` step is not listed. |
+| `steps` | list of steps | yes, unless `inherit` is set | Ordered declared steps; may be empty. The implicit `init` step is not listed. |
 | `description` | string | no | Human-readable purpose. |
 | `hooks` | hooks mapping | no | Hooks for this workflow. |
 | `modes` | list of names or extension references | no | Default modes; every local name must exist. |
@@ -76,6 +76,8 @@ Each item in `workflows` accepts:
 | `handoff` | boolean | no | If `true`, the workflow must end with its single workflow transition; a task hands off at most once, and a transition never returns. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `agentic-workflows.json`, and the flag outranks it. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
+| `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
+| `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid together with `handoff`. |
 
 Execution settings inherit from workflow to enclosing steps to the current
 step. Hooks then apply the referenced root handler and the invocation override.
@@ -429,7 +431,6 @@ key and its optional description in the value:
 ```yaml
 handlers:
   - update-yaml-specification: Update specification.md.
-    prompt: Did the YAML syntax change?
   - no-description: ~
 
 workflows:
@@ -483,9 +484,30 @@ material uncertainty. Select the result with `next --outcome <label>`.
 ```
 
 Each outcome is one ordinary step shape: a direct handler/action, `handler`,
-`handlers`, or `steps`. These work types remain mutually exclusive. The compact
-form, `- assess: <question>`, accepts `positive` or `negative`; positive
-continues to the next step and negative completes the workflow.
+`handlers`, or `steps`. These work types remain mutually exclusive. After the
+chosen outcome's work, the workflow continues with the step after `assess`.
+An outcome may instead be `stop_workflow: true`, alone: choosing it completes
+the workflow, skipping everything after it, completion hooks included. At
+least one outcome must have work. The standard answers `positive`, `negative`,
+and `mixed` are always accepted: one the assessment does not declare runs
+nothing and continues after the assessment, so a gate declares only the outcome
+that has work. Any other label must be declared. The compact form, `- assess: <question>`,
+accepts `positive` or `negative`; positive continues to the next step and
+negative completes the workflow, like an outcome with `stop_workflow: true`.
+
+```yaml
+- assess:
+    question: Were conflicts resolved in non-trivial code?
+    outcomes:
+      positive:
+        steps:
+          - review: Review the resolutions.
+      negative:
+        stop_workflow: true
+```
+
+The assessment's page lists every outcome with what it does, and the page
+after it offers one `next --outcome <label>` command per outcome.
 
 `update_metadata` entries accept:
 
@@ -577,7 +599,9 @@ The other phases run in global, workflow, then step order for each matching step
 For one action, put the shared [handler keys](#handlers) directly on the hook.
 A name-only handler references the root catalog; action keys define an inline
 handler. Use `handlers` to apply the same filters to multiple ordered handlers.
-Every item has exactly the same shape and may define its own prompt gate:
+A hook runs a single action, so it cannot reference a root handler that defines
+`loop`, `steps`, or `items`; use such a handler as a workflow step instead.
+Every item has exactly the same shape:
 
 ```yaml
 hooks:
@@ -586,12 +610,10 @@ hooks:
       steps: [develop]
       handlers:
         - name: update-architecture-documentation
-          prompt: Were there architectural changes?
         - name: update-readme
         - name: publish-documentation
           mcp: github
           description: Publish the updated documentation.
-          prompt: Is the documentation ready to publish?
 ```
 
 Grouped and singular hook handlers accept the shorthand too. Hook filters are

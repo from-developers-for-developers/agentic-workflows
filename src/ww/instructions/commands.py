@@ -48,6 +48,7 @@ def next_command(
     selected_agent: str | None = None,
     model: str | None = None,
     reasoning: str | None = None,
+    outcome: str | None = None,
 ) -> str:
     """The manager command that advances a task, with optional recovery flags."""
     parts = ["next", _arg(task_id)]
@@ -60,6 +61,7 @@ def next_command(
         ("--selected-agent", selected_agent),
         ("--model", model),
         ("--reasoning", reasoning),
+        ("--outcome", outcome),
     ):
         if value is not None:
             parts.extend((flag, _arg(value)))

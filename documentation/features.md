@@ -191,7 +191,6 @@ optional lifecycle hooks.
 ```yaml
 handlers:
   - update-yaml-specification: Update specification.md.
-    prompt: Did the YAML syntax change?
   - no-description: ~
 
 workflows:
@@ -388,8 +387,49 @@ declared route with `ww next <task-id> --outcome <label> --role manager`.
 
 Every outcome uses one ordinary step shape: a global `handler`, an inline
 action, `handlers`, or nested `steps`. Outcome work types are mutually
-exclusive. For a simple gate, `- assess: <question>` accepts `positive` or
+exclusive. After the chosen outcome's work, the workflow continues with the
+step after `assess`. An outcome that should end the run instead is
+`stop_workflow: true` on its own:
+
+```yaml
+- assess:
+    question: Were conflicts resolved in non-trivial code?
+    outcomes:
+      positive:
+        steps:
+          - review: Review the resolutions.
+      negative:
+        stop_workflow: true
+```
+
+Choosing it completes the workflow, skipping every later step and hook. An
+assessment needs at least one outcome with work; one that only stops is the
+compact form.
+
+A gate declares only the outcome that has work. `positive`, `negative`, and
+`mixed` are accepted whether declared or not, and an undeclared one runs nothing
+and continues after the assessment:
+
+```yaml
+- assess:
+    question: Were conflicts resolved in non-trivial code?
+    outcomes:
+      positive:
+        steps:
+          - review: Review the resolutions.
+- verify: Run the tests.
+```
+
+Here `negative` and `mixed` go straight to `verify`. A label of your own, such
+as `partial`, is accepted only when declared. For a simple gate, `- assess: <question>` accepts `positive` or
 `negative`; positive continues normally and negative completes the workflow.
+
+The agent sees the choice before it answers: the assessment's page lists each
+outcome and what it does, for example "`negative` — ends the workflow here".
+Once the assessment is complete, the next page asks for the outcome and shows
+one `next --outcome <label>` command per outcome, never a plain `next`, which
+ww would refuse. A delegating manager chooses it itself; no worker preview is
+shown until the outcome decides which work comes next.
 
 `profile` may be a name or a mapping containing `name` and/or `description`.
 The mapping form supplies an inline description. ww resolves a named profile by
@@ -480,7 +520,7 @@ workflows:
         agent: custom:coordinator
         model: gpt-5-mini
         reasoning: low
-        prompt: Coordinate the next action locally.
+        description: Coordinate the next action locally.
 ```
 
 ## Manager and worker assignments
@@ -613,8 +653,8 @@ before.
 The `ww/git` extension follows the working directory: branches, worktrees, and
 commits act on the repository the task works in, and a task in a worktree still
 resolves to that repository's primary checkout. `project_base_branches` gives a
-project its own base branch, taking precedence over `base_branches` and
-`base_branch`. Branch formats and commit subjects are not split by project.
+project its own base branch, taking precedence over every `base_branches`
+entry. Branch formats and commit subjects are not split by project.
 
 ## External task IDs
 
@@ -669,6 +709,50 @@ failure handling: a crash halfway through the split can no longer leave stories
 without children, and a retried request that already bound its child simply
 reports the bound task. A child added with an explicit `--id` skips the request,
 as an explicit ID does for `start`.
+
+## Inheriting a workflow
+
+A workflow that should do exactly what another does, but branch or merge
+differently, inherits it instead of repeating it:
+
+```yaml
+workflows:
+  - hotfix: Fix a bug on main.
+    steps:
+      - investigate: Find the cause.
+      - fix: Fix it.
+  - bugfix: Fix a bug on dev.
+    inherit: hotfix
+```
+
+`bugfix` gets `hotfix`'s steps, workflow hooks, modes, runtime, and every other
+setting. Its own keys replace the copied ones, so it can change its
+description, runtime, or recommendation; it cannot declare `steps` or `hooks`,
+because a workflow with other steps is a workflow of its own. A global hook
+filtered to `workflows: [hotfix]` also runs for `bugfix`, and for anything that
+inherits `bugfix` in turn. Only the name differs, and that is the point:
+`ww/git` reads `branch_name_formats.bugfix` and `base_branches.bugfix`, so the
+copy branches from and names its branches after its own entries. `discover`
+marks the copy with "Same steps as `hotfix`."
+
+## Recommending the next workflow
+
+A workflow that is usually followed by another names it:
+
+```yaml
+- hotfix: Fix a bug on main.
+  recommended_next_workflow: merge-to-dev
+  steps:
+    - fix: Fix it.
+```
+
+When a `hotfix` run completes, its page tells the agent not to start anything
+on its own but to ask the operator, through its choice menu, whether to start
+`merge-to-dev` on the same task, and shows the `start` command to run if they
+agree. Nothing starts without that answer. An inheriting workflow keeps the
+recommendation unless it sets its own, or `recommended_next_workflow: ~` to
+clear it. A `handoff` workflow already starts its successor and cannot
+recommend one.
 
 ## Hooks, variables, and transitions
 
@@ -1558,8 +1642,8 @@ separate from `../workflows.yaml`, which describes what a workflow *does*:
   "extensions": {
     "ww/git": {
       "commit_message": "{{task_id}}: {{commit_message}}",
-      "base_branch": "main",
       "base_branches": {
+        "default": "main",
         "bugfix": "develop",
         "task": {"argv": ["./scripts/base-branch", "{{workflow}}"]}
       },
@@ -1589,10 +1673,12 @@ rendered by `worktree_dir` and `worktree_name_format`. For example, an existing
 `worktrees/TASK-1` makes the next `{digit}`-formatted task use `TASK-2`, rather
 than adopting that checkout for a new task.
 
-`base_branch` is the global fallback. `base_branches` maps exact workflow names
-to overrides, `project_base_branches` maps configured project names to overrides
-that take precedence over both, and each value may be either a literal branch
-name or an object with a non-empty `argv` array. An argv command runs directly without a shell in
+`base_branches` maps exact workflow names to base branches, and its `default`
+entry covers every other workflow, the same shape as `branch_name_formats`.
+`project_base_branches` maps configured project names to base branches that
+take precedence over it. Each value may be either a literal branch name or an
+object with a non-empty `argv` array. A top-level `base_branch` is refused
+with a message pointing at `base_branches.default`, which replaced it. An argv command runs directly without a shell in
 the project root; its single non-empty stdout line becomes the base branch.
 Arguments may interpolate `{{task_id}}`, `{{workflow}}`, and `{{run_id}}`.
 The resolved base is recorded with the task branch so retries, worktree creation,
@@ -1618,8 +1704,8 @@ instead of silently falling back.
 | Handler | Settings it acts on |
 | --- | --- |
 | `git-commit` | `commit_format` |
-| `start-task-branch` | `base_branch`, `base_branches`, `project_base_branches`, `use_separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
-| `return-to-base-branch` | `base_branch`, `base_branches`, `project_base_branches`, `use_separate_branch` |
+| `start-task-branch` | `base_branches`, `project_base_branches`, `use_separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
+| `return-to-base-branch` | `base_branches`, `project_base_branches`, `use_separate_branch` |
 | `remove-task-worktree` | `worktrees` |
 | `is-git-clean` | — |
 

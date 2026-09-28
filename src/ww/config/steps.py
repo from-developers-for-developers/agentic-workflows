@@ -752,6 +752,14 @@ def _parse_assessment_outcomes(
             raise ConfigurationError(f"{path}.outcomes.{label} must be a step mapping")
         if "name" in value:
             raise ConfigurationError(f"{path}.outcomes.{label} must not set name")
+        if "stop_workflow" in value:
+            if value != {"stop_workflow": True}:
+                raise ConfigurationError(
+                    f"{path}.outcomes.{label}.stop_workflow must be true and "
+                    "stand alone: the outcome ends the workflow and runs nothing"
+                )
+            result.append(StepDefinition(label, stop_workflow=True))
+            continue
         result.append(
             _parse_step(
                 {"name": label, **value},

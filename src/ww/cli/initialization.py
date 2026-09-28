@@ -170,7 +170,7 @@ def _initialization_options(
                     formats[workflow] = value
         git: dict[str, object] = {
             "commit_message": "{{task_id}}: {{commit_message}}",
-            "base_branch": _git_base_branch(storage.root),
+            "base_branches": {"default": _git_base_branch(storage.root)},
             "use_separate_branch": True,
             "branch_name_formats": formats,
             "worktrees": worktrees,

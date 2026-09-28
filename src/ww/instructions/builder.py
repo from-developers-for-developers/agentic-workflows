@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ww.agents import choice_mechanism
+from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
     ItemSpan,
@@ -141,8 +142,24 @@ class InstructionBuilder:
             if entry.owner == "agent" or entry.requires_agent_input
         )
         built = self._build(state, snapshot)
+        choosing = pending_assessment(state, plan)
         return replace(
             built,
+            assessment_outcomes=(
+                choosing.outcomes
+                if choosing is not None
+                else assessment_outcomes(plan, state.cursor)
+                if item is not None and item.assessment_question is not None
+                else ()
+            ),
+            choosing_outcome_of=(
+                plan.items[choosing.index].name if choosing is not None else None
+            ),
+            continuation_command=(
+                next_command(state.task_id, outcome="<outcome>")
+                if choosing is not None
+                else built.continuation_command
+            ),
             run_id=state.run_id,
             workflow_runtime=state.workflow_runtime,
             agent=state.agent,
@@ -168,7 +185,12 @@ class InstructionBuilder:
             selected_agent=selection.agent,
             selected_model=selection.model,
             selected_reasoning=selection.reasoning,
-            assignment_preview=_assignment_preview(state, plan, item, next_role),
+            # Which work comes next depends on the outcome still to be chosen.
+            assignment_preview=(
+                None
+                if choosing is not None
+                else _assignment_preview(state, plan, item, next_role)
+            ),
             assignment_step=driver.name if driver else None,
             assignment_items=tuple(entry.name for entry in covered),
             assignment_continues=(
@@ -197,14 +219,19 @@ class InstructionBuilder:
         if state.status == "completed":
             handoff = self.tasks.read_handoff(state.task_id)
             return replace(
-                _base(state, None), handoff=handoff.rstrip() if handoff else None
+                _base(state, None),
+                handoff=handoff.rstrip() if handoff else None,
+                recommended_workflow=plan.recommended_next_workflow,
             )
         if state.status == "awaiting_input":
             return self._awaiting_input(state, plan)
         if state.status in {"failed", "interrupted"}:
             return self._stopped(state, plan)
         if state.cursor >= len(plan.items):
-            return _base(state, None, status="completed")
+            return replace(
+                _base(state, None, status="completed"),
+                recommended_workflow=plan.recommended_next_workflow,
+            )
         item = plan.items[state.cursor]
         record = state.item_executions[state.cursor]
         if child_workflow(item) is not None:

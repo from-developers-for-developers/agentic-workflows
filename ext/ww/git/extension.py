@@ -14,8 +14,8 @@ settings from the ``ww/git`` section of ``agentic-workflows.json``:
 "extensions": {
   "ww/git": {
     "commit_message": "{{task_id}}: {{commit_message}}",
-    "base_branch": "main",
     "base_branches": {
+      "default": "main",
       "bugfix": "develop",
       "task": {"argv": ["./scripts/base-branch", "{{workflow}}"]}
     },
@@ -84,7 +84,6 @@ DEFAULT_BRANCH_FORMAT = "{{task_id}}"
 _SETTING_KEYS = {
     "commit_message",
     "commit_format",
-    "base_branch",
     "base_branches",
     "project_base_branches",
     "use_separate_branch",
@@ -100,7 +99,7 @@ class Settings:
     """The ``ww/git`` section of ``agentic-workflows.json``, validated."""
 
     commit_format: str = DEFAULT_COMMIT_FORMAT
-    base_branch: str | tuple[str, ...] | None = None
+    # Per workflow name, with ``default`` for every other workflow.
     base_branches: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
     # Per configured ww project, for workspaces that span several repositories.
     project_base_branches: dict[str, str | tuple[str, ...]] = field(
@@ -127,17 +126,16 @@ class Settings:
     def base_branch_for(
         self, workflow: str | None, project: str | None = None
     ) -> str | tuple[str, ...] | None:
-        """Return the project or workflow override, else the global setting."""
+        """Return the project, then the workflow, then the ``default`` entry."""
         if project and project in self.project_base_branches:
             return self.project_base_branches[project]
         if workflow and workflow in self.base_branches:
             return self.base_branches[workflow]
-        return self.base_branch
+        return self.base_branches.get("default")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "commit_format": self.commit_format,
-            "base_branch": _base_branch_dict(self.base_branch),
             "base_branches": {
                 workflow: _base_branch_dict(definition)
                 for workflow, definition in self.base_branches.items()
@@ -165,6 +163,11 @@ def settings_from(config: Any) -> Settings:
         return Settings()
     if not isinstance(config, dict):
         raise ConfigurationError("ww/git settings must be an object")
+    if "base_branch" in config:
+        raise ConfigurationError(
+            'ww/git base_branch is now the "default" entry of base_branches: '
+            'use "base_branches": {"default": ...}'
+        )
     unknown = set(config) - _SETTING_KEYS
     if unknown:
         raise ConfigurationError(
@@ -190,7 +193,8 @@ def settings_from(config: Any) -> Settings:
         isinstance(workflow, str) and workflow.strip() for workflow in base_branches
     ):
         raise ConfigurationError(
-            "ww/git base_branches must map workflow names to base branches"
+            "ww/git base_branches must map workflow names, or default, to base "
+            "branches"
         )
     project_base_branches = config.get("project_base_branches", {})
     if not isinstance(project_base_branches, dict) or not all(
@@ -206,7 +210,6 @@ def settings_from(config: Any) -> Settings:
             "commit_message" if "commit_message" in config else "commit_format",
             DEFAULT_COMMIT_FORMAT,
         ),
-        base_branch=_base_branch(config.get("base_branch"), "base_branch"),
         base_branches={
             workflow: _required_base_branch(definition, f"base_branches[{workflow!r}]")
             for workflow, definition in base_branches.items()
@@ -268,12 +271,6 @@ def _optional_string(config: dict[str, Any], key: str) -> str | None:
     return value
 
 
-def _base_branch(value: Any, path: str) -> str | tuple[str, ...] | None:
-    if value is None:
-        return None
-    return _required_base_branch(value, path)
-
-
 def _required_base_branch(value: Any, path: str) -> str | tuple[str, ...]:
     if isinstance(value, str):
         if value.strip():
@@ -296,8 +293,8 @@ def _required_base_branch(value: Any, path: str) -> str | tuple[str, ...]:
 
 
 def _base_branch_dict(
-    definition: str | tuple[str, ...] | None,
-) -> str | dict[str, list[str]] | None:
+    definition: str | tuple[str, ...],
+) -> str | dict[str, list[str]]:
     if isinstance(definition, tuple):
         return {"argv": list(definition)}
     return definition

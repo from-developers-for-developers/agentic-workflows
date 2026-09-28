@@ -75,6 +75,9 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         handoff=data["handoff"],
         items=items,
         documents=_documents_from_list(data.get("documents", [])),
+        recommended_next_workflow=expect_optional_string(
+            data.get("recommended_next_workflow"), "recommended next workflow"
+        ),
     )
 
 
@@ -182,6 +185,9 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         ),
         assessment_outcomes=tuple(
             _string_list(raw.get("assessment_outcomes", []), "assessment outcomes")
+        ),
+        assessment_stops=tuple(
+            _string_list(raw.get("assessment_stops", []), "assessment stops")
         ),
         assessment_parent=expect_optional_string(
             raw.get("assessment_parent"), "assessment parent"

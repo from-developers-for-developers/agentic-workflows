@@ -138,9 +138,10 @@ def test_an_unknown_setting_is_rejected() -> None:
         ({"use_separate_branch": "yes"}, "must be true or false"),
         ({"commit_format": ""}, "must be a non-empty string"),
         ({"branch_name_formats": ["a"]}, "map workflow names to formats"),
-        ({"base_branch": {"shell": "echo main"}}, "containing argv"),
-        ({"base_branch": {"argv": []}}, "non-empty array"),
-        ({"base_branches": []}, "map workflow names to base branches"),
+        ({"base_branches": {"default": {"shell": "echo main"}}}, "containing argv"),
+        ({"base_branches": {"default": {"argv": []}}}, "non-empty array"),
+        ({"base_branches": []}, "map workflow names, or default, to base"),
+        ({"base_branch": "main"}, 'is now the "default" entry of base_branches'),
         (
             {"base_branches": {"task": {"argv": ["echo", ""]}}},
             "non-empty array",
@@ -175,14 +176,18 @@ def test_the_settings_command_prints_what_resolved(repository: Path) -> None:
         context(
             repository,
             {
-                "base_branch": "master",
-                "base_branches": {"task": {"argv": ["./find-base"]}},
+                "base_branches": {
+                    "default": "master",
+                    "task": {"argv": ["./find-base"]},
+                },
             },
         )
     )
 
-    assert json.loads(output)["base_branch"] == "master"
-    assert json.loads(output)["base_branches"] == {"task": {"argv": ["./find-base"]}}
+    assert json.loads(output)["base_branches"] == {
+        "default": "master",
+        "task": {"argv": ["./find-base"]},
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -404,7 +409,7 @@ def test_a_task_branch_is_created_from_the_base(repository: Path) -> None:
             repository,
             {
                 "use_separate_branch": True,
-                "base_branch": "main",
+                "base_branches": {"default": "main"},
                 "branch_name_formats": {"default": "feature/{{task_id}}"},
             },
         )
@@ -423,7 +428,7 @@ def test_a_task_branch_is_created_from_the_base(repository: Path) -> None:
 def test_a_child_task_branch_uses_its_parent_task_branch(repository: Path) -> None:
     config = {
         "use_separate_branch": True,
-        "base_branch": "main",
+        "base_branches": {"default": "main"},
         "branch_name_formats": {"default": "feature/{{task_id}}"},
     }
     parent = handler("start-task-branch")(context(repository, config, task_id="TASK-1"))
@@ -501,8 +506,7 @@ def test_the_base_branch_is_chosen_per_workflow(repository: Path) -> None:
     _run("git", "branch", "develop", cwd=repository)
     config = {
         "use_separate_branch": True,
-        "base_branch": "main",
-        "base_branches": {"bugfix": "develop"},
+        "base_branches": {"default": "main", "bugfix": "develop"},
     }
 
     result = handler("start-task-branch")(
@@ -517,8 +521,8 @@ def test_an_argv_command_can_choose_the_base_branch(repository: Path) -> None:
     _run("git", "branch", "develop", cwd=repository)
     config = {
         "use_separate_branch": True,
-        "base_branch": "main",
         "base_branches": {
+            "default": "main",
             "task": {
                 "argv": [
                     sys.executable,
@@ -526,7 +530,7 @@ def test_an_argv_command_can_choose_the_base_branch(repository: Path) -> None:
                     "import sys; print(sys.argv[1])",
                     "develop",
                 ]
-            }
+            },
         },
     }
 
@@ -540,13 +544,15 @@ def test_base_branch_command_arguments_support_context_tokens(repository: Path) 
     _run("git", "branch", "task-base", cwd=repository)
     config = {
         "use_separate_branch": True,
-        "base_branch": {
-            "argv": [
-                sys.executable,
-                "-c",
-                "import sys; print(sys.argv[1] + '-base')",
-                "{{workflow}}",
-            ]
+        "base_branches": {
+            "default": {
+                "argv": [
+                    sys.executable,
+                    "-c",
+                    "import sys; print(sys.argv[1] + '-base')",
+                    "{{workflow}}",
+                ]
+            }
         },
     }
 
@@ -572,7 +578,7 @@ def test_an_invalid_base_branch_command_fails_cleanly(
             repository,
             {
                 "use_separate_branch": True,
-                "base_branch": {"argv": [sys.executable, "-c", script]},
+                "base_branches": {"default": {"argv": [sys.executable, "-c", script]}},
             },
         )
     )
@@ -614,7 +620,7 @@ def test_a_task_is_required_to_name_a_branch(repository: Path) -> None:
 
 
 def test_returning_to_base_switches_back(repository: Path) -> None:
-    config = {"use_separate_branch": True, "base_branch": "main"}
+    config = {"use_separate_branch": True, "base_branches": {"default": "main"}}
     handler("start-task-branch")(context(repository, config))
     assert branch_of(repository) == "task-1"
 
@@ -643,7 +649,7 @@ def _worktree_config(repository: Path) -> dict[str, object]:
         "worktrees": True,
         "worktree_dir": str(repository / "trees"),
         "worktree_name_format": "{{task_id}}",
-        "base_branch": "main",
+        "base_branches": {"default": "main"},
         "branch_name_formats": {"default": "feature/{{task_id}}"},
     }
 
@@ -827,7 +833,7 @@ def test_removing_a_worktree_is_a_noop_when_none_was_recorded(
 
 
 def test_branches_lists_what_was_opened(repository: Path) -> None:
-    config = {"use_separate_branch": True, "base_branch": "main"}
+    config = {"use_separate_branch": True, "base_branches": {"default": "main"}}
     handler("start-task-branch")(context(repository, config))
 
     assert "No branches recorded" in command("branches")(
@@ -843,11 +849,10 @@ def test_branches_lists_what_was_opened(repository: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_project_base_branch_wins_over_workflow_and_global() -> None:
+def test_project_base_branch_wins_over_workflow_and_default() -> None:
     settings = git_extension.settings_from(
         {
-            "base_branch": "main",
-            "base_branches": {"bugfix": "develop"},
+            "base_branches": {"default": "main", "bugfix": "develop"},
             "project_base_branches": {"frontend": "master"},
         }
     )

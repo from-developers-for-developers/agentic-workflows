@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.contracts import (
     CallerRole,
@@ -182,6 +183,13 @@ class Instruction:
     continuation_command: str | None = None
     error: str | None = None
     handoff: str | None = None
+    # The workflow a completed run offers the operator next.
+    recommended_workflow: str | None = None
+    # An assessment's answers and what each does: on the assessment's own
+    # page, and on the page that asks ``next`` for the chosen one.
+    assessment_outcomes: tuple[AssessmentOutcome, ...] = ()
+    # This page asks for the outcome of the named, completed assessment.
+    choosing_outcome_of: str | None = None
     profile_instruction: str | None = None
     run_id: str | None = None
     task_runs: tuple[WorkflowRunSummary, ...] = ()
@@ -286,6 +294,16 @@ class Instruction:
             "continuation_command": self.continuation_command,
             "error": self.error,
             "handoff": self.handoff,
+            "recommended_workflow": self.recommended_workflow,
+            "assessment_outcomes": [
+                {
+                    "label": outcome.label,
+                    "stops": outcome.stops,
+                    "first_step": outcome.first_step,
+                }
+                for outcome in self.assessment_outcomes
+            ],
+            "choosing_outcome_of": self.choosing_outcome_of,
             "profile_instruction": self.profile_instruction,
             "run_id": self.run_id,
             "task_runs": [item.to_dict() for item in self.task_runs],

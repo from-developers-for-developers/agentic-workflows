@@ -39,6 +39,7 @@ class ItemAnnotations:
     child_operation: ChildOperation | None = None
     assessment_question: str | None = None
     assessment_outcomes: tuple[str, ...] = ()
+    assessment_stops: tuple[str, ...] = ()
     assessment_parent: str | None = None
     assessment_outcome: str | None = None
     # Carried by every per-item stage and hook of an ``items`` step.
@@ -238,6 +239,11 @@ class AssessmentPlanner(ConstructPlanner[AssessmentDefinition]):
                     assessment_outcomes=tuple(
                         outcome.name for outcome in definition.outcomes
                     ),
+                    assessment_stops=tuple(
+                        outcome.name
+                        for outcome in definition.outcomes
+                        if outcome.stop_workflow
+                    ),
                 ),
             )
         )
@@ -246,6 +252,9 @@ class AssessmentPlanner(ConstructPlanner[AssessmentDefinition]):
             parent_ancestors=context.scope.ancestors,
         )
         for outcome in definition.outcomes:
+            if outcome.stop_workflow:
+                # Selecting it completes the workflow; there is nothing to run.
+                continue
             context.compile_scoped_region(
                 (outcome,),
                 scope,

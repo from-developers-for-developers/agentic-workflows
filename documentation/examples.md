@@ -388,8 +388,7 @@ workflows:
   "extensions": {
     "ww/git": {
       "commit_format": "{{task_id}}: {{commit_message}}",
-      "base_branch": "main",
-      "base_branches": {"hotfix": "release"},
+      "base_branches": {"default": "main", "hotfix": "release"},
       "use_separate_branch": true,
       "branch_name_formats": {
         "default": "feature/{{task_id}}",
@@ -419,7 +418,7 @@ task works, and the git extension follows.
   "extensions": {
     "ww/git": {
       "use_separate_branch": true,
-      "base_branch": "main",
+      "base_branches": {"default": "main"},
       "project_base_branches": {"frontend": "master"},
       "branch_name_formats": {"default": "feature/{{task_id}}"}
     }
@@ -460,3 +459,61 @@ workflows:
 ./ww add-child CHANGE-1 --id api --description "API part" --project backend
 ./ww add-child CHANGE-1 --id web --description "Web part" --project frontend
 ```
+
+## 16. A copied workflow, an early stop, and a recommended successor
+
+`bugfix` is `hotfix` under another name, so `ww/git` gives it its own branch
+format and base branch. `hotfix` recommends `merge-to-dev` when it completes,
+and the operator confirms before it starts. The merge's assessment stops the
+workflow outright when nothing needs a second look.
+
+```json
+{
+  "extensions": {
+    "ww/git": {
+      "use_separate_branch": true,
+      "base_branches": {"default": "main", "bugfix": "dev"},
+      "branch_name_formats": {
+        "default": "feature/{{task_id}}",
+        "hotfix": "hotfix/{{task_id}}",
+        "bugfix": "bugfix/{{task_id}}"
+      }
+    }
+  }
+}
+```
+
+```yaml
+hooks:
+  before_start_workflow:
+    - workflows: [hotfix]
+      handlers:
+        - ext/ww/git/handlers:start-task-branch: ~
+
+workflows:
+  - hotfix: Fix a bug on main.
+    recommended_next_workflow: merge-to-dev
+    steps:
+      - investigate: Find the cause.
+      - fix: Fix it.
+
+  - bugfix: Fix a bug on dev.
+    inherit: hotfix
+    recommended_next_workflow: ~
+
+  - merge-to-dev: Merge the task's branch into dev.
+    steps:
+      - merge: Merge the branch into dev and resolve any conflicts.
+      - assess:
+          question: Were conflicts resolved in non-trivial code?
+          outcomes:
+            positive:
+              steps:
+                - review: Review each resolution against both branches.
+            negative:
+              stop_workflow: true
+      - verify: Run the tests and fix what fails.
+```
+
+The `start-task-branch` hook is written for `hotfix` and also runs for
+`bugfix`, which clears the recommendation it would otherwise inherit.

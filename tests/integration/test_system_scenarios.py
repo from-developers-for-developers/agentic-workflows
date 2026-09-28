@@ -104,7 +104,7 @@ workflows:
 
 GIT_SETTINGS = {
     "commit_format": "{{task_id}}: {{commit_message}}",
-    "base_branch": "main",
+    "base_branches": {"default": "main"},
     "use_separate_branch": True,
     "branch_name_formats": {"default": "feature/{{task_id}}"},
 }

@@ -1,18 +1,25 @@
 {
-  "loop_max_times": 3,
+  "enabled": true,
+
   "extensions": {
     "ww/git": {
       "commit_format": "{{task_id}}: {{commit_message}}",
-      "base_branch": "main",
       "use_separate_branch": true,
+
+      "base_branches": {
+        "default": "dev",
+        "hotfix": "main",
+        "bugfix": "dev"
+      },
+
       "branch_name_formats": {
         "default": "feature/{{task_id}}",
-        "bugfix": "hotfix/{{task_id}}"
+        "hotfix": "hotfix/{{task_id}}"
       },
+
       "worktrees": true,
       "worktree_dir": "./ww-worktrees",
       "worktree_name_format": "{{task_id}}"
     }
-  },
-  "enabled": true
+  }
 }

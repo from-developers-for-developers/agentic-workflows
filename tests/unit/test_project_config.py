@@ -35,18 +35,22 @@ def test_global_loop_limit_loads_from_project_config(tmp_path: Path) -> None:
 def test_extension_settings_load(tmp_path: Path) -> None:
     path = write(
         tmp_path,
-        {"extensions": {"ww/git": {"base_branch": "master"}}},
+        {"extensions": {"ww/git": {"base_branches": {"default": "master"}}}},
     )
 
     config = load_project_config(path)
 
-    assert config.settings_for("ww/git") == {"base_branch": "master"}
+    assert config.settings_for("ww/git") == {"base_branches": {"default": "master"}}
 
 
 def test_a_bare_name_resolves_to_the_extension(tmp_path: Path) -> None:
-    path = write(tmp_path, {"extensions": {"git": {"base_branch": "master"}}})
+    path = write(
+        tmp_path, {"extensions": {"git": {"base_branches": {"default": "master"}}}}
+    )
 
-    assert load_project_config(path).settings_for("ww/git") == {"base_branch": "master"}
+    assert load_project_config(path).settings_for("ww/git") == {
+        "base_branches": {"default": "master"}
+    }
 
 
 def test_an_extension_sees_only_its_own_section(tmp_path: Path) -> None:

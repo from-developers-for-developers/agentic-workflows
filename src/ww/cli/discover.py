@@ -105,6 +105,8 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 "description": workflow.description,
                 "default_modes": list(workflow.modes),
                 "runtime": workflow.runtime,
+                "inherits": workflow.inherits,
+                "recommended_next_workflow": workflow.recommended_next_workflow,
                 "delegation_requests": list(delegation_requests(workflow)),
             }
             for workflow in configuration.workflows
@@ -199,6 +201,13 @@ def _markdown(report: dict[str, object]) -> list[str]:
             text += " Default modes: " + ", ".join(f"`{m}`" for m in defaults) + "."
         if workflow.get("runtime"):
             text += f" Runtime: `{workflow['runtime']}`."
+        if workflow.get("inherits"):
+            text += f" Same steps as `{workflow['inherits']}`."
+        if workflow.get("recommended_next_workflow"):
+            text += (
+                f" Offers `{workflow['recommended_next_workflow']}` next, "
+                "on the operator's confirmation."
+            )
         requests = _strings(workflow.get("delegation_requests", []))
         if requests:
             text += (

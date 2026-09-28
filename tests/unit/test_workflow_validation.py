@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from ww.actions import DefinedAction, Prompt
+from ww.config import load_configuration
 from ww.core_workflows import CATCHALL_WORKFLOW, with_core_workflows
 from ww.errors import ConfigurationError
 from ww.plan import compile_workflow_plan
@@ -170,3 +171,64 @@ def test_a_switched_off_core_workflow_is_not_added() -> None:
     config = ProjectConfig(disabled_workflows=frozenset({"catchall"}))
 
     assert with_core_workflows(configuration, config) == configuration
+
+
+LOOPING_HANDLER = """handlers:
+  - run-tests:
+    loop:
+      - test: Run the tests and fix the failures.
+        break: All tests pass.
+"""
+
+
+@pytest.mark.parametrize(
+    "hooked",
+    [
+        # Global.
+        """hooks:
+  before_complete_workflow:
+    - handlers:
+        - run-tests: ~
+workflows:
+  - name: task
+    steps:
+      - develop: Develop.
+""",
+        # Workflow.
+        """workflows:
+  - name: task
+    hooks:
+      before_complete_workflow:
+        - handlers:
+            - run-tests: ~
+    steps:
+      - develop: Develop.
+""",
+        # Step.
+        """workflows:
+  - name: task
+    steps:
+      - develop: Develop.
+        hooks:
+          after_complete:
+            - handlers:
+                - run-tests: ~
+""",
+    ],
+    ids=["global", "workflow", "step"],
+)
+def test_a_hook_may_not_run_a_handler_that_is_a_step_tree(
+    tmp_path: Path, hooked: str
+) -> None:
+    path = tmp_path / "workflows.yaml"
+    path.write_text(LOOPING_HANDLER + hooked, encoding="utf-8")
+
+    # As a hook the loop would be dropped; as a step it runs.
+    with pytest.raises(ConfigurationError, match="use 'run-tests' as a workflow step"):
+        load_configuration(path)
+    path.write_text(
+        LOOPING_HANDLER
+        + "workflows:\n  - name: task\n    steps:\n      - run-tests: ~\n",
+        encoding="utf-8",
+    )
+    assert load_configuration(path).workflows[0].steps[0].loop_steps

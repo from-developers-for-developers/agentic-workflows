@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from ww.assessments import outcome_region, pending_assessment
 from ww.contracts import StepStatus
 from ww.control import loop_control
 from ww.errors import StateError
@@ -1087,75 +1088,47 @@ def _required_loop_control(item: PlanItem) -> LoopBoundary:
 def select_assessment_outcome(
     state: ExecutionState, plan: WorkflowPlan, outcome: str | None, now: Clock
 ) -> ExecutionState:
-    """Select one conditional assessment subtree before it is dispatched."""
-    if state.cursor < len(plan.items):
-        item = plan.items[state.cursor]
-        if item.assessment_parent is not None:
-            group = [
-                index
-                for index, candidate in enumerate(plan.items)
-                if candidate.assessment_parent == item.assessment_parent
-            ]
-            first = min(group)
-            labels = tuple(
-                dict.fromkeys(plan.items[index].assessment_outcome for index in group)
-            )
-            if state.cursor == first:
-                if outcome is None:
-                    raise StateError(
-                        "pending assess requires --outcome "
-                        + "<"
-                        + "|".join(label for label in labels if label)
-                        + ">"
-                    )
-                if outcome not in labels:
-                    raise StateError(
-                        f"unknown assessment outcome {outcome!r}; expected "
-                        + ", ".join(label for label in labels if label)
-                    )
-                records = list(state.item_executions)
-                for index in group:
-                    if plan.items[index].assessment_outcome != outcome:
-                        records[index] = replace(
-                            records[index],
-                            status="completed",
-                            completed_at=now(),
-                            result=f"skipped: assessment selected {outcome}",
-                        )
-                selected = next(
-                    index
-                    for index in group
-                    if plan.items[index].assessment_outcome == outcome
-                )
-                return replace(state, cursor=selected, item_executions=tuple(records))
-            if outcome is not None:
-                raise StateError(
-                    "--outcome is only valid when selecting a pending assess"
-                )
-            return state
-    # Compact assess has no conditional children.  Its result controls the
-    # ordinary continuation immediately following the assessment item.
-    previous = plan.items[state.cursor - 1] if state.cursor else None
-    if (
-        previous is not None
-        and previous.assessment_question
-        and not previous.assessment_outcomes
-    ):
-        if outcome is None:
-            raise StateError("pending assess requires --outcome <positive|negative>")
-        if outcome not in {"positive", "negative"}:
-            raise StateError("compact assess outcome must be positive or negative")
-        if outcome == "negative":
-            records = list(state.item_executions)
-            for index in range(state.cursor, len(records)):
-                records[index] = replace(
-                    records[index],
-                    status="completed",
-                    completed_at=now(),
-                    result="skipped: assessment selected negative",
-                )
-            return replace(state, cursor=len(records), item_executions=tuple(records))
+    """Apply the answer to a completed assessment before its work is dispatched.
+
+    An outcome with steps moves the cursor to them and skips the others; one
+    that stops the workflow, including the compact form's ``negative``, skips
+    everything left, so the run completes.
+    """
+    pending = pending_assessment(state, plan)
+    if pending is None:
+        if outcome is not None:
+            raise StateError("--outcome is only valid when selecting a pending assess")
         return state
-    if outcome is not None:
-        raise StateError("--outcome is only valid when selecting a pending assess")
-    return state
+    if outcome is None:
+        raise StateError(
+            "pending assess requires --outcome <" + "|".join(pending.labels) + ">"
+        )
+    chosen = pending.outcome(outcome)
+    if chosen is None:
+        raise StateError(
+            f"unknown assessment outcome {outcome!r}; expected "
+            + ", ".join(pending.labels)
+        )
+    records = list(state.item_executions)
+    skipped = f"skipped: assessment selected {outcome}"
+    if chosen.stops:
+        for index in range(state.cursor, len(records)):
+            records[index] = replace(
+                records[index], status="completed", completed_at=now(), result=skipped
+            )
+        return replace(state, cursor=len(records), item_executions=tuple(records))
+    if not pending.declared:
+        return state
+    group = outcome_region(plan, pending.index)
+    for index in group:
+        if plan.items[index].assessment_outcome != outcome:
+            records[index] = replace(
+                records[index], status="completed", completed_at=now(), result=skipped
+            )
+    # An undeclared standard outcome has no work of its own: continue after
+    # every outcome's work.
+    selected = next(
+        (index for index in group if plan.items[index].assessment_outcome == outcome),
+        max(group) + 1,
+    )
+    return replace(state, cursor=selected, item_executions=tuple(records))

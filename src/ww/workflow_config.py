@@ -231,6 +231,21 @@ class HandlerDefinition:
     model: str | None = None
     reasoning: str | None = None
 
+    @property
+    def is_reference(self) -> bool:
+        """Whether this only names a root or extension handler to run.
+
+        With no action, description, or values of its own, a hook or handler
+        entry such as ``- update-readme: ~`` stands for the handler it names.
+        """
+        return not (
+            self.action is not None
+            or self.operation is not None
+            or self.description
+            or self.provide
+            or self.save_metadata
+        )
+
 
 @dataclass(frozen=True)
 class HookDefinition:
@@ -293,6 +308,8 @@ class StepDefinition(HandlerDefinition):
     # subtree.  Empty outcomes use the compact positive/negative continuation.
     assessment_question: str | None = None
     assessment_outcomes: tuple[StepDefinition, ...] = ()
+    # An assessment outcome that ends the workflow instead of running steps.
+    stop_workflow: bool = False
 
 
 @dataclass(frozen=True)
@@ -336,6 +353,11 @@ class WorkflowDefinition:
     # A new start while this workflow's previous run is unfinished abandons
     # that run instead of being refused.
     restartable: bool = False
+    # The workflow this one copies, recorded for display; the definition is
+    # already complete, so nothing downstream resolves it again.
+    inherits: str | None = None
+    # A workflow to offer the operator once this one completes.
+    recommended_next_workflow: str | None = None
 
 
 def binds_task_identity(workflow: WorkflowDefinition) -> bool:

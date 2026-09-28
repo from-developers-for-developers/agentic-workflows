@@ -105,6 +105,8 @@ def test_discover_json_carries_the_same_choices(
             "description": "Implement a change.",
             "default_modes": ["economy"],
             "runtime": None,
+            "inherits": None,
+            "recommended_next_workflow": None,
             "delegation_requests": [],
         },
         {
@@ -112,6 +114,8 @@ def test_discover_json_carries_the_same_choices(
             "description": "",
             "default_modes": [],
             "runtime": None,
+            "inherits": None,
+            "recommended_next_workflow": None,
             "delegation_requests": [],
         },
     ]

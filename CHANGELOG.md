@@ -11,13 +11,33 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- An assessment outcome can be `stop_workflow: true`, ending the run when
+  chosen; before, only the compact form's `negative` could.
+- An assessment with declared outcomes now accepts `positive`, `negative`, and
+  `mixed` even when it does not declare them; an undeclared one runs nothing
+  and continues, so a gate needs no placeholder branch.
+- Assessment pages now list the outcomes and what each does, and the page
+  after an assessment offers one `next --outcome` command per outcome instead
+  of a plain `next` that ww refused. A repeated `next` after choosing no
+  longer asks for the outcome again.
+- A workflow can `inherit` another: it copies its steps, hooks, and settings,
+  including global hooks filtered to it, and differs only by name, and so by
+  its `ww/git` branch and base entries.
+- `recommended_next_workflow` offers a workflow when a run completes; the
+  agent asks the operator through its choice menu and starts it on the same
+  task only on confirmation.
+- `ww/git`: `base_branch` is replaced by a `default` entry in `base_branches`,
+  as in `branch_name_formats`. A config still using `base_branch` is refused
+  with a pointer to the new form.
+- A hook that names a handler defining a `loop`, `steps`, or `items` is now
+  rejected; it used to run as a one-word prompt without its loop.
 - Every project now has a `catchall` workflow, provided by ww rather than
   `workflows.yaml`. It records a change to files that no workflow covers: one
   `work` step, performed by the session that received the prompt exactly as
   it would work without ww. `discover` lists it apart, with when to use it:
   only when files are about to change, never for questions or read-only
-  work, and always through `lookup` below. The agent instructions and the `ww` skill say the
-  same, and the skill now triggers before any change. Switch it off with
+  work, and always through `lookup` below. The agent instructions and the
+  `ww` skill say the same, and the skill now triggers before any change. Switch it off with
   `"workflows": {"catchall": {"enabled": false}}` in `agentic-workflows.json`,
   or replace it by defining a workflow of that name. A project whose
   `workflows.yaml` defines no workflow is no longer rejected.

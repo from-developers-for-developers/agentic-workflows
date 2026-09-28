@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,9 +17,11 @@ from ww.task_ids import EXPLICIT_TASK_FORMAT
 from ww.workflow_config import (
     DocumentDefinition,
     HandlerDefinition,
+    HookDefinition,
     MetadataScope,
     ModeDefinition,
     ProfileDefinition,
+    StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
 )
@@ -77,15 +79,16 @@ def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguratio
     workflows_raw = _required_list(raw, "workflows", "configuration")
     global_hooks = _parse_hooks(raw.get("hooks", {}), "global", "hooks")
     handlers_by_name = {handler.name: handler for handler in handlers}
-    workflows = tuple(
+    parsed = tuple(
         _parse_workflow(item, f"workflows[{index}]", handlers_by_name)
         for index, item in enumerate(workflows_raw)
     )
+    workflows = _resolve_inheritance(parsed)
     return WorkflowConfiguration(
         modes,
         profiles,
         handlers,
-        global_hooks,
+        _extend_to_heirs(global_hooks, workflows),
         workflows,
         task_format=_parse_task_format(raw.get("task_format")),
         documents=_parse_documents(raw.get("documents", [])),
@@ -193,9 +196,33 @@ def _parse_profiles(data: Any) -> tuple[ProfileDefinition, ...]:
     return tuple(result)
 
 
+# The workflow keys an inheriting workflow may set, and the definition fields
+# each one overrides; everything else comes from the workflow it inherits.
+_OVERRIDES = {
+    "description": ("description",),
+    "modes": ("modes",),
+    "agent": ("agent",),
+    "model": ("model",),
+    "reasoning": ("reasoning",),
+    "profile": ("profile", "profile_description"),
+    "handoff": ("handoff",),
+    "runtime": ("runtime",),
+    "restartable": ("restartable",),
+    "recommended_next_workflow": ("recommended_next_workflow",),
+}
+
+
+@dataclass(frozen=True)
+class _ParsedWorkflow:
+    """One workflow entry, and which of its fields the entry set itself."""
+
+    definition: WorkflowDefinition
+    overrides: frozenset[str]
+
+
 def _parse_workflow(
     data: Any, path: str, handlers_by_name: dict[str, HandlerDefinition]
-) -> WorkflowDefinition:
+) -> _ParsedWorkflow:
     workflow_keys = {
         "name",
         "description",
@@ -209,6 +236,8 @@ def _parse_workflow(
         "profile",
         "runtime",
         "restartable",
+        "inherit",
+        "recommended_next_workflow",
     }
     mapping = _named_entry(
         _mapping(data, path),
@@ -233,12 +262,33 @@ def _parse_workflow(
     restartable = mapping.get("restartable", False)
     if not isinstance(restartable, bool):
         raise ConfigurationError(f"{path}.restartable must be true or false")
-    steps_data = _required_list(mapping, "steps", f"workflow {name!r}")
-    steps = tuple(
-        _parse_step(item, f"{path}.steps[{index}]", handlers_by_name)
-        for index, item in enumerate(steps_data)
-    )
-    return WorkflowDefinition(
+    inherits = mapping.get("inherit")
+    if inherits is not None and (not isinstance(inherits, str) or not inherits):
+        raise ConfigurationError(f"{path}.inherit must name a workflow")
+    if inherits is not None:
+        # A workflow that needs other steps or hooks is a workflow of its
+        # own, not a copy of another one.
+        declared = sorted({"steps", "hooks"}.intersection(mapping))
+        if declared:
+            raise ConfigurationError(
+                f"workflow {name!r} inherits {inherits!r} and cannot declare "
+                + " or ".join(declared)
+            )
+        steps: tuple[StepDefinition, ...] = ()
+    else:
+        steps_data = _required_list(mapping, "steps", f"workflow {name!r}")
+        steps = tuple(
+            _parse_step(item, f"{path}.steps[{index}]", handlers_by_name)
+            for index, item in enumerate(steps_data)
+        )
+    recommended = mapping.get("recommended_next_workflow")
+    if recommended is not None and (
+        not isinstance(recommended, str) or not recommended.strip()
+    ):
+        raise ConfigurationError(
+            f"{path}.recommended_next_workflow must name a workflow"
+        )
+    definition = WorkflowDefinition(
         name=name,
         description=_description(mapping.get("description"), f"workflow {name!r}"),
         steps=steps,
@@ -253,6 +303,99 @@ def _parse_workflow(
         handoff=handoff,
         runtime=runtime,
         restartable=restartable,
+        inherits=inherits,
+        recommended_next_workflow=recommended,
+    )
+    return _ParsedWorkflow(
+        definition,
+        frozenset(
+            field
+            for key, fields in _OVERRIDES.items()
+            if key in mapping
+            for field in fields
+        ),
+    )
+
+
+def _resolve_inheritance(
+    parsed: tuple[_ParsedWorkflow, ...],
+) -> tuple[WorkflowDefinition, ...]:
+    """Complete every inheriting workflow from the one it names, in order.
+
+    The copy takes everything, steps and workflow hooks included, and the
+    entry's own settings replace the copied ones. Chains resolve from the
+    root; a cycle or an unknown name is an error.
+    """
+    entries = {entry.definition.name: entry for entry in parsed}
+    if len(entries) != len(parsed):
+        # Duplicate names are reported by validation, with its usual message.
+        return tuple(entry.definition for entry in parsed)
+    resolved: dict[str, WorkflowDefinition] = {}
+
+    def resolve(name: str, chain: tuple[str, ...]) -> WorkflowDefinition:
+        if name in resolved:
+            return resolved[name]
+        entry = entries[name]
+        parent = entry.definition.inherits
+        if parent is None:
+            resolved[name] = entry.definition
+            return entry.definition
+        if parent not in entries:
+            raise ConfigurationError(
+                f"workflow {name!r} inherits unknown workflow {parent!r}"
+            )
+        if parent in chain:
+            cycle = " -> ".join((*chain, name, parent))
+            raise ConfigurationError(f"workflow inheritance cycle: {cycle}")
+        base = resolve(parent, (*chain, name))
+        resolved[name] = replace(
+            base,
+            name=name,
+            inherits=parent,
+            **{
+                field: getattr(entry.definition, field)
+                for field in sorted(entry.overrides)
+            },
+        )
+        return resolved[name]
+
+    return tuple(resolve(entry.definition.name, ()) for entry in parsed)
+
+
+def _extend_to_heirs(
+    hooks: tuple[HookDefinition, ...], workflows: tuple[WorkflowDefinition, ...]
+) -> tuple[HookDefinition, ...]:
+    """Let a global hook filtered to a workflow also run for its heirs.
+
+    Inheriting a workflow means behaving like it, so a hook written for
+    ``hotfix`` also runs for a ``bugfix`` that inherits it.
+    """
+    parents = {workflow.name: workflow.inherits for workflow in workflows}
+
+    def lineage(name: str) -> set[str]:
+        names: set[str] = set()
+        current: str | None = name
+        while current is not None and current not in names:
+            names.add(current)
+            current = parents.get(current)
+        return names
+
+    return tuple(
+        replace(
+            hook,
+            workflow_names=(
+                *hook.workflow_names,
+                *(
+                    workflow.name
+                    for workflow in workflows
+                    if workflow.name not in hook.workflow_names
+                    and lineage(workflow.name).intersection(hook.workflow_names)
+                ),
+            ),
+        )
+        if hook.workflow_names
+        else hook
+        for hook in hooks
     )
 
 

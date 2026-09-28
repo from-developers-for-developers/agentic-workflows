@@ -10,7 +10,8 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from ww.agents import WAIT_VARIABLE, wait_mechanism
+from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
+from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
@@ -21,6 +22,7 @@ from ww.instructions.commands import (
     remove_item_command,
     reword_item_command,
     set_item_fields_command,
+    start_command,
 )
 from ww.instructions.policy import Audience, audience
 from ww.output_adapters.base import OutputAdapter
@@ -310,6 +312,37 @@ def _completed(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", f"Handoff: `{instruction.handoff}`"])
     if instruction.control == "handoff_manager":
         lines.extend(["", "Control is with the manager for final reporting."])
+    _recommendation(lines, instruction)
+
+
+def _recommendation(lines: Lines, instruction: Instruction) -> None:
+    """Offer the recommended next workflow; only the operator may accept it."""
+    workflow = instruction.recommended_workflow
+    if workflow is None:
+        return
+    start = f"Start {workflow}"
+    lines.extend(
+        [
+            "",
+            "### Recommended next workflow",
+            "",
+            f"This workflow recommends `{workflow}` next, on the same task. Do "
+            "not start it on your own: after your final report, ask the operator.",
+            "",
+            choice_mechanism(instruction.agent).instruction,
+            "",
+            f"1. **{start}** — Start the `{workflow}` workflow on "
+            f"`{instruction.task_id}`.",
+            "2. **Stop here** — End with this workflow and start nothing else.",
+            "",
+            f"If the operator picks **{start}**, run the command below and follow "
+            "each ww response from there; otherwise stop.",
+            "",
+            "```console",
+            start_command(instruction.task_id, workflow, instruction.agent),
+            "```",
+        ]
+    )
 
 
 def _heading(lines: Lines, instruction: Instruction) -> None:
@@ -582,6 +615,36 @@ def _work(lines: Lines, instruction: Instruction) -> None:
     else:
         lines.append(instruction.action_text)
     _loop_round(lines, instruction)
+    _assessment_answers(lines, instruction)
+
+
+def _outcome_effect(outcome: AssessmentOutcome) -> str:
+    if outcome.stops:
+        return "ends the workflow here, skipping everything after it"
+    if not outcome.declared:
+        return (
+            f"runs nothing extra and continues with `{outcome.first_step}`"
+            if outcome.first_step is not None
+            else "runs nothing extra and continues the workflow"
+        )
+    if outcome.first_step is not None:
+        return f"continues with `{outcome.first_step}`"
+    return "continues the workflow"
+
+
+def _assessment_answers(lines: Lines, instruction: Instruction) -> None:
+    if not instruction.assessment_outcomes or instruction.choosing_outcome_of:
+        return
+    _append_section(lines, "Possible outcomes")
+    lines.append(
+        "Your answer decides what runs next. Say plainly in the artifact which "
+        "of these outcomes your assessment supports:"
+    )
+    lines.append("")
+    lines.extend(
+        f"- `{outcome.label}` — {_outcome_effect(outcome)}."
+        for outcome in instruction.assessment_outcomes
+    )
 
 
 def _loop_round(lines: Lines, instruction: Instruction) -> None:
@@ -1116,6 +1179,9 @@ def _interrupted(lines: Lines, instruction: Instruction) -> None:
 def _continuation(lines: Lines, instruction: Instruction) -> None:
     if not instruction.continuation_command or instruction.status == "failed":
         return
+    if instruction.choosing_outcome_of is not None:
+        _outcome_commands(lines, instruction)
+        return
     command = instruction.continuation_command
     if instruction.status == "interrupted":
         title = "Recover"
@@ -1297,9 +1363,33 @@ def _role(instruction: Instruction) -> str:
             return "Worker"
 
 
+def _outcome_commands(lines: Lines, instruction: Instruction) -> None:
+    _append_section(lines, "Choose the outcome")
+    lines.extend(
+        [
+            f"`{instruction.choosing_outcome_of}` is complete. Read its result, "
+            "choose the outcome it supports, and run that outcome's command:",
+            "",
+        ]
+    )
+    for outcome in instruction.assessment_outcomes:
+        lines.extend(
+            [
+                f"- `{outcome.label}` — {_outcome_effect(outcome)}:",
+                "",
+                "  ```console",
+                "  "
+                + next_command(instruction.task_id, outcome=outcome.label),
+                "  ```",
+            ]
+        )
+
+
 def _action_heading(instruction: Instruction) -> str:
     name = instruction.item_name or "workflow"
     reader = audience(instruction)
+    if instruction.choosing_outcome_of is not None:
+        return f"choose the outcome of `{instruction.choosing_outcome_of}`"
     if instruction.loop_limit_reached:
         return f"escalate the `{name}` loop limit"
     if instruction.is_loop_control:
@@ -1414,6 +1504,8 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 "",
                 *_assignment_coverage(instruction),
             ]
+        case Audience.MANAGER if instruction.choosing_outcome_of is not None:
+            return [_RUN_MANAGER_COMMAND, ""]
         case Audience.MANAGER:
             preview = instruction.assignment_preview
             if preview and "selection_item_name" not in preview:

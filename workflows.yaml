@@ -7,76 +7,148 @@ modes:
       - Use concise descriptions and lighter reasoning where appropriate.
 
 handlers:
-  - update-architecture-documentation: Update documentation/architecture.md file with changes over architecture.
+  - check-code-quality:
+    model: cheapest
+    reasoning: lowest
+    loop:
+      - run: >-
+          Run ruff and mypy in their least verbose mode that still shows every
+          finding, and fix what they report.
+        break: Neither tool reports a finding.
 
-  - update-readme: "Update README.md file with high-level ww-related information: the purpose of the tool, some main examples, instructions how to setup, etc. This document is not about architecture and all the features, it's an introductory document."
+  - run-tests:
+    loop:
+      - test: >-
+          Run the whole pytest suite in its least verbose mode that still shows
+          failures, and fix every failing test.
+        break: All tests pass.
 
-  - update-feature-documentation: "Update documentation/features.md file with new/updated/deleted feature. This document should be split-by-feature with examples."
+  - update-documentation: >-
+      Bring the documentation in line with this task's changes, editing only
+      what they affect and leaving the rest as it is:
+      documentation/architecture.md for architecture changes;
+      documentation/features.md, one section per feature with examples, for
+      new, changed, or removed features; documentation/specification.md for
+      changes to the workflows.yaml syntax; and README.md only for the tool's
+      purpose, main examples, and setup, as an introduction rather than a
+      reference.
 
-  - update-yaml-specification: Update documentation/specification.md file with updated specification/syntax of workflows.yaml file.
+  - update-agent-instructions: >-
+      When the change alters how agents should invoke ww, update
+      src/ww/assets/agent_instructions.md and the ww skill in
+      src/ww/assets/ww_skill.md, and copy the instructions to
+      WW_AGENT_INSTRUCTIONS.md. The instructions must stay under 50 lines.
 
-  - update-ww-agent-instructions-file: "Update AGENTS.md file with changed instructions for agents on how to invoke ww."
+  - update-changelog: >-
+      When this task changed something (if something is changed) a user of main would notice, add one
+      bullet to CHANGELOG.md under today's date heading, newest first, creating
+      the heading if it is missing. Keep it to one or two lines: what changed
+      for the user, not how it was built, with no examples or rationale. End
+      it with the short hash of the task's commit in backticks, read with
+      `git log -1 --format=%h` in the task's workspace. Add nothing for
+      internal work such as refactoring or tests.
 
 hooks:
   before_start_workflow:
-    - workflows: [ 'task', 'bugfix' ]
+    - workflows: [task, hotfix, auto-refactor]
       handlers:
         - ext/ww/git/handlers:is-git-clean: ~
         - ext/ww/git/handlers:start-task-branch: ~
         - ext/ww/git/handlers:create-worktree: ~
 
   before_complete_workflow:
-    - workflows: [ 'task', 'bugfix' ]
+    - workflows: [task, hotfix, auto-refactor]
       handlers:
-        - update-architecture-documentation: ~
-        - update-readme: ~
-        - update-feature-documentation: ~
-        - update-yaml-specification: ~
+        - update-documentation: ~
+        - update-agent-instructions: ~
+        - ext/ww/git/handlers:git-commit: ~
+        - update-changelog: ~
         - ext/ww/git/handlers:git-commit: ~
 
 workflows:
-  - task: ~
+  - task: Implement a feature or a planned change, from research to a tested commit.
     steps:
-      - develop: Perform a research, make analysis, and develop the requested task. Do not run tests or any lints - this will be one of the next steps.
+      - develop: >-
+          Research the codebase, analyse the request, and implement it. Do not
+          run tests or linters: the workflow runs them next.
         subagents: false
 
-      - run-tests:
-        model: cheapest
-        reasoning: lowest
-        loop:
-          - test: Run all existing tests via pytest in the least verbose mode and immediately fix the failed ones.
-            break: When all the tests pass.
+      - check-code-quality: ~
+      - run-tests: ~
 
-      - check-code-quality:
-        model: cheapest
-        reasoning: lowest
-        loop:
-          - run: Run mypy and ruff to check for code style, and other code-mess-related issues, in the least verbose mode, and immediately fix the found issues.
-            break: When there are no issues found from these tools anymore.
-
-  - bugfix: ~
+  - hotfix: The workflow for bugs that have to be released ASAP (critical/urgent/security issues).
+    recommended_next_workflow: merge-to-dev
     steps:
-      - investigate: Perform an investigation to understand why and under which circumstances the bug appears.
-      - fix: Perform the fix based on the findings of investigation.
-      - run-tests:
-        loop:
-          - test: Run all existing tests via pytest in the least verbose mode (but so you would see issues in case there are),
-            break: When all the tests pass.
-          - fix: Fix all found failed tests.
-            depends_on: test
-          - check-code-quality:
-            loop:
-              - run: Run mypy and ruff to check for code style, and other code-mess-related issues, in the least verbose mode (but so you would see issues in case there are).
-                break: When there are no issues found from these tools anymore.
-              - fix: Fix all findings of code checks.
-                depends_on: run
+      - investigate: >-
+          Find out why the bug happens and under which circumstances. Reproduce
+          it with a failing test where you can.
 
-  - auto-refactor: This workflow is intended to perform automatic refactoring after the recent development. An advice is to run this periodically to review and reshape the architecture.
+      - fix: Fix the bug at the cause the investigation found.
+        depends_on: investigate
+
+      - check-code-quality: ~
+      - run-tests: ~
+
+  - bugfix: Copy of the hotfix workflow, but for bugfixes to be released via standard release process (dev --> main).
+    inherit: hotfix
+
+  # Works in the primary checkout with plain git: ww/git has no merge handler,
+  # and its handlers would select the task's own worktree instead.
+  - merge-to-dev: Merge a requested branch into dev and leave dev passing.
     steps:
-      - reason: Check if the recent development is meaningful enough to consider making the refactoring. Analyze the recent code changes and try to detect code-smells and architectural issues - these are the decisive factors for proceeding with this workflow. To detect the recent development you may use the timestamp of the latest auto-refactoring saved in metadata - {{project_metadata.last_auto_refactored_at}} (if empty, no auto refactoring has been ran yet).
-      - plan: Make a detailed plan of the refactoring points.
-      - refactor: ~
+      - merge: >-
+          Merge the branch the task requirements name into dev, in the
+          repository's primary checkout; if they name no branch, ask the
+          operator which one. First make sure the checkout has no uncommitted
+          changes, and note the branch it is on. Switch to dev, fast-forward it
+          from its remote with `git pull --ff-only` when it has one, and run
+          `git merge --no-ff <branch>`. Resolve every conflict so that the
+          intent of both sides survives, then conclude the merge commit. In the
+          artifact, list each conflicted file and how you resolved it. Do not
+          push.
+        subagents: false
+
+      # Only a non-trivial conflict resolution is new code worth reviewing.
+      - assess:
+          question: >-
+            Did the merge resolve conflicts in non-trivial code, beyond
+            imports, formatting, or changelog entries?
+          outcomes:
+            positive:
+              steps:
+                - review-resolutions: >-
+                    Review each conflict resolution the merge artifact lists
+                    against both branches: neither side's intent may be lost,
+                    and no logic may be duplicated or dropped. Fix what is
+                    wrong.
+
+      - check-code-quality: ~
+      - run-tests: ~
+
+      - finish: >-
+          If the quality and test rounds changed anything, commit it on dev as
+          "{{__task_id}}: Fix the build after merging <branch>", naming the
+          merged branch. Then switch the primary checkout back to the branch it
+          was on before the merge. Do not push.
+        depends_on: merge
+
+  - auto-refactor: >-
+      Review the development since the last refactoring and reshape the
+      architecture where it has drifted. Run it periodically.
+    steps:
+      - assess:
+          question: >-
+            Does the development since the last refactoring
+            ({{project_metadata.last_auto_refactored_at}}; empty means never)
+            show code smells or architectural drift worth refactoring?
+
+      - plan: Make a detailed plan of the refactoring, point by point.
+      - refactor: Carry out the plan without changing behaviour.
+        depends_on: plan
         update_metadata:
-          - last_auto_refactored_at: "Save the current timestamp in format YYYY-MM-DD HH:mm"
+          - last_auto_refactored_at: The current time as YYYY-MM-DD HH:mm.
             key: last_auto_refactored_at
             scope: project
+
+      - check-code-quality: ~
+      - run-tests: ~
