@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- Steps and handlers accept `workdir: task | project | root` to run their work in the task workspace
+  (default), the `--project` checkout rather than its worktree, or the ww root. `3073b8d`
 - `depends_on` in a loop body, group substep or per-item stage can now name an earlier
   artifact-producing step of an enclosing level, not only an earlier sibling. `d685543`
 - When a task needs the user, ww now reports `control: awaiting_operator`, `next_role: operator` and an
