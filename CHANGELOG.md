@@ -11,6 +11,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- `task_format` moves from `ww-agentic-workflows.yaml` to `ww-agentic-workflows.json` (any level); a
+  YAML `task_format` is now an error naming the file, `init` writes it into the JSON, and a configured
+  project's own JSON may set the format for IDs generated with `--project`. `ecbbe17`
 - A configured project's own `ww-agentic-workflows.json` and `.local.json` now supply its `extensions`
   settings over the root's for work done there; `ww/git` `project_base_branches` is gone, and `plan`,
   `extension`, `lint`, and `discover` show what a project gets. `191ef5b`
