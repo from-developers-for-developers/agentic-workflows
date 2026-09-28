@@ -12,16 +12,13 @@ import re
 import shlex
 
 from ww.contracts import CallerRole
+from ww.executable import ww_command
 from ww.workflow_config import ProvidedVariable, SavedMetadata
 
 from .models import InteractCommands, RecoveryCommand
 
 TASK_PLACEHOLDER = "<task-id>"
 SUMMARY_FLAG = "--summary-for-next-step"
-START_COMMAND_HINT = (
-    "./ww start <TASK-ID> --workflow <WORKFLOW> --agent <AGENT> "
-    '--init-artifact "<normalized requirements>" --role manager'
-)
 
 
 # A bare placeholder such as ``<run-id>``, or one shown already quoted such as
@@ -37,7 +34,7 @@ def _arg(value: str) -> str:
 
 
 def _command(*parts: str) -> str:
-    return " ".join(("./ww", *parts))
+    return " ".join((ww_command(), *parts))
 
 
 def next_command(

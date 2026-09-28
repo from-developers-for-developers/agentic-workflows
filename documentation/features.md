@@ -2151,6 +2151,35 @@ requested, when delegation is unavailable or not permitted, or when the
 operator asked the session to do the work itself — and a workflow that always
 wants delegation should declare `runtime: auto` rather than rely on the reader.
 
+## Choosing the ww binary
+
+A project names the ww it runs in `../agentic-workflows.json`:
+
+```json
+{"executable": "ww-agentic-workflows-dev"}
+```
+
+The value is a command on `PATH` or a path. Every command ww prints for that
+project starts with it — `ww-agentic-workflows-dev next TASK-1 --role
+manager` — and the `./ww` launcher runs it, reading the key each time, so a
+project switches installs by editing that one line. Without the key, printed
+commands use `./ww` and the launcher runs `ww-agentic-workflows`. `init` writes
+`"executable": "ww-agentic-workflows"` when the key is missing, and brings a
+launcher an earlier ww wrote up to date; a launcher you edited is left alone.
+
+This is what lets two installs live side by side, for example one checkout for
+developing ww itself, switched between branches often, and another kept on
+`dev` for use in other projects. pipx gives the second a different global name:
+
+```console
+pipx install --editable ~/tools/agentic-workflows
+pipx install --editable --suffix=-dev ~/tools/agentic-workflows-dev
+```
+
+A project that should use the second then sets
+`"executable": "ww-agentic-workflows-dev"`. The update notice, `--version`,
+and the audit log keep naming the package, `ww-agentic-workflows`.
+
 ## Staying current with the ww checkout
 
 ww is installed from a Git clone in editable mode, so whether a newer ww

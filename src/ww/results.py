@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ww.executable import DEFAULT_EXECUTABLE
 from ww.items import WorkItem
 
 
@@ -26,6 +27,8 @@ class InitializationResult:
     actions: tuple[str, ...] = ()
     # The operator has not been shown the agent-permission notice yet.
     permission_notice: bool = True
+    # The ww binary the project is configured to run.
+    executable: str = DEFAULT_EXECUTABLE
 
 
 @dataclass(frozen=True)

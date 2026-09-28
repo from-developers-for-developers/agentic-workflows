@@ -7,6 +7,7 @@ import json
 
 from ww.config import load_configuration, load_modes
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
+from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 from ww.storage import Storage
@@ -48,7 +49,8 @@ def _catalog_extensions(extensions: ExtensionRegistry) -> str:
                             "name": command.name,
                             "description": command.description,
                             "usage": (
-                                f"./ww extension {extension.identifier} "
+                                f"{ww_command()} extension "
+                                f"{extension.identifier} "
                                 f"{command.usage or command.name}"
                             ),
                         }

@@ -16,6 +16,7 @@ import yaml
 from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import StateError
+from ww.executable import DEFAULT_EXECUTABLE
 from ww.output_adapters.terminal import initialization_progress
 from ww.results import InitializationResult
 from ww.storage import Storage
@@ -126,7 +127,11 @@ def _initialization_options(
         "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
     )
 
-    project: dict[str, object] = {"enabled": True, "extensions": {}}
+    project: dict[str, object] = {
+        "enabled": True,
+        "executable": DEFAULT_EXECUTABLE,
+        "extensions": {},
+    }
     has_git = (storage.root / ".git").exists()
     if has_git:
         existing_git = _existing_git_settings(storage)
@@ -182,7 +187,11 @@ def _initialization_options(
                     "worktree_name_format": "{{task_id}}",
                 }
             )
-        project = {"enabled": True, "extensions": {"ww/git": git}}
+        project = {
+            "enabled": True,
+            "executable": DEFAULT_EXECUTABLE,
+            "extensions": {"ww/git": git},
+        }
 
     ignore_runtime = args.update_gitignore
     choices = _init_choices(storage)
@@ -554,8 +563,14 @@ def _finish_initialization(
     try:
         raw = json.loads(storage.project_config_path.read_text(encoding="utf-8"))
         git = raw.get("extensions", {}).get("ww/git", {})
+        configured = raw.get("executable")
     except (AttributeError, OSError, json.JSONDecodeError):
-        git = {}
+        git, configured = {}, None
+    executable = (
+        configured.strip()
+        if isinstance(configured, str) and configured.strip()
+        else DEFAULT_EXECUTABLE
+    )
     if isinstance(git, dict) and git.get("worktrees") is True:
         configured = git.get("worktree_dir")
         if isinstance(configured, str) and configured:
@@ -598,4 +613,5 @@ def _finish_initialization(
         created=tuple(created),
         actions=tuple(actions),
         permission_notice=notice,
+        executable=executable,
     )

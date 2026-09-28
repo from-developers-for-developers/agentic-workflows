@@ -13,6 +13,7 @@ from ww.config import load_configuration, load_modes
 from ww.contracts import CALLER_ROLES
 from ww.core_workflows import CATCHALL
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
+from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
 from ww.project_config import FILE_NAME
@@ -21,12 +22,10 @@ from ww.storage import Storage
 from ww.task_ids import EXPLICIT_TASK_FORMAT
 from ww.workflow_config import delegation_requests
 
-START_COMMAND = (
-    "./ww start <TASK-ID> --workflow <workflow> --agent <agent> "
+START_ARGUMENTS = (
+    "start <TASK-ID> --workflow <workflow> --agent <agent> "
     '--init-artifact "<the user\'s requirements, normalized>" --role manager'
 )
-STATUS_COMMAND = f"./ww status {TASK_PLACEHOLDER}"
-PLAN_COMMAND = "./ww plan --workflow <workflow> --agent <agent>"
 DISABLED_MESSAGE = (
     "Do not use ww for this work: do not start, continue, or complete ww "
     "tasks. Carry out the request without ww, and tell the user that ww is "
@@ -66,7 +65,6 @@ DELEGATION_NOTE = (
     "Steps requesting a specific worker are honoured only under `--runtime "
     "auto`; `single` records them and performs the step in this session."
 )
-CATCHALL_COMMAND = "./ww lookup [<task>] --agent <agent>"
 CATCHALL_GUIDANCE = (
     "Use it only when no workflow above fits and you are about to change "
     "files. Questions, explanations, reviews, and other read-only work need "
@@ -117,7 +115,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 "name": catchall.name,
                 "description": catchall.description,
                 "guidance": CATCHALL_GUIDANCE,
-                "start": CATCHALL_COMMAND,
+                "start": f"{ww_command()} lookup [<task>] --agent <agent>",
             }
             if catchall is not None
             else None
@@ -145,10 +143,10 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
         "task_id": (EXPLICIT_ID_GUIDANCE if explicit_ids else TASK_ID_GUIDANCE),
         "modes_guidance": MODES_GUIDANCE,
         "commands": {
-            "start": START_COMMAND,
+            "start": f"{ww_command()} {START_ARGUMENTS}",
             "instruction": instruction_command(TASK_PLACEHOLDER, role="manager"),
-            "status": STATUS_COMMAND,
-            "plan": PLAN_COMMAND,
+            "status": f"{ww_command()} status {TASK_PLACEHOLDER}",
+            "plan": f"{ww_command()} plan --workflow <workflow> --agent <agent>",
         },
     }
 

@@ -10,6 +10,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "enabled": true,
   "runtime": "single",
   "update_check": true,
+  "executable": "ww-agentic-workflows-dev",
   "loop_max_times": 3,
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
@@ -91,6 +92,10 @@ class ProjectConfig:
     update_check: bool = True
     # Core workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
+    # The ww binary this project runs: a command on PATH or a path. ``None``
+    # means the project launcher, ``./ww``, which falls back to the standard
+    # name.
+    executable: str | None = None
 
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
@@ -169,6 +174,7 @@ def load_project_config(path: Path) -> ProjectConfig:
         "projects",
         "update_check",
         "workflows",
+        "executable",
     }
     if unknown:
         raise ConfigurationError(
@@ -230,7 +236,18 @@ def load_project_config(path: Path) -> ProjectConfig:
         runtime,
         update_check,
         _parse_workflows(raw.get("workflows"), path),
+        _parse_executable(raw.get("executable"), path),
     )
+
+
+def _parse_executable(data: Any, path: Path) -> str | None:
+    if data is None:
+        return None
+    if not isinstance(data, str) or not data.strip():
+        raise ConfigurationError(
+            f"{path}.executable must be a command name or a path to the ww binary"
+        )
+    return data.strip()
 
 
 def _parse_workflows(data: Any, path: Path) -> frozenset[str]:

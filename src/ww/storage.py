@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
+from ww.defaults import GENERATED_LAUNCHERS
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
 from ww.results import NO_WORKFLOWS_ACTION, InitializationResult
@@ -114,12 +115,22 @@ class Storage:
             self.locks.atomic_write(self.project_config_path, project_config)
             created.append("agentic-workflows.json")
 
+        updated_launcher = (
+            launcher_path.is_file()
+            and launcher_path.read_text(encoding="utf-8") in GENERATED_LAUNCHERS
+        )
+        if updated_launcher:
+            # Written by an earlier ww and never edited: bring it up to date.
+            self.locks.atomic_write(launcher_path, launcher)
+            created.append("ww (updated launcher)")
         for path, content in (
             (instructions_path, agent_instructions),
             (launcher_path, launcher),
             *((self.root / relative, content) for relative, content in skills),
         ):
             relative = str(path.relative_to(self.root))
+            if path == launcher_path and updated_launcher:
+                continue
             if path.exists():
                 preserved.append(relative)
                 continue

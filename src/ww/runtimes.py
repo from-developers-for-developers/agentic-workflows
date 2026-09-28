@@ -3,6 +3,7 @@
 
 from ww.contracts import CallerRole
 from ww.errors import ConfigurationError
+from ww.executable import ww_command
 
 RUNTIME_INSTRUCTIONS = {
     "single": (
@@ -59,11 +60,14 @@ def requested_setting(value: object) -> str | None:
     return value if isinstance(value, str) and value != "auto" else None
 
 
-CLI_OWNERSHIP_WARNING = (
-    "Strict: only ./ww start, next, and complete operate this flow. Do not mimic "
-    "or bypass it with direct commands, or read workflows.yaml; follow only the "
-    "ww execution plan."
-)
+def cli_ownership_warning() -> str:
+    """The strict reminder every runtime instruction ends with."""
+    ww = ww_command()
+    return (
+        f"Strict: only {ww} start, next, and complete operate this flow. Do not "
+        "mimic or bypass it with direct commands, or read workflows.yaml; follow "
+        "only the ww execution plan."
+    )
 
 
 def runtime_instruction(
@@ -87,7 +91,7 @@ def runtime_instruction(
             )
         else:
             role_instruction = ()
-        return (*instructions, *role_instruction, CLI_OWNERSHIP_WARNING)
+        return (*instructions, *role_instruction, cli_ownership_warning())
     except KeyError as error:
         supported = ", ".join(sorted(RUNTIME_INSTRUCTIONS))
         raise ConfigurationError(

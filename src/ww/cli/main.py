@@ -18,6 +18,7 @@ from typing import cast
 
 from ww.config import load_configuration
 from ww.errors import StateError, WwError
+from ww.executable import printed_executable
 from ww.extensions import ExtensionContext, ExtensionRegistry
 from ww.instructions import Instruction
 from ww.items import WorkItem
@@ -556,7 +557,11 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         if logged:
             log("started", None)
-        result = _HANDLERS[args.command](_Context(args, storage, extensions, service))
+        # Every command this invocation prints starts with the project's ww.
+        with printed_executable(extensions.config.executable):
+            result = _HANDLERS[args.command](
+                _Context(args, storage, extensions, service)
+            )
     except WwError as error:
         if logged:
             with contextlib.suppress(OSError, WwError):

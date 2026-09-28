@@ -119,6 +119,12 @@ Editable installation keeps the command connected to that checkout; after a
 reinstall. This is deliberate for now — see
 [Releases and branches](#releases-and-branches).
 
+To keep a second install beside it, such as a checkout of `dev`, give it its
+own global name with `pipx install --editable --suffix=-dev <checkout>`, and
+set `"executable": "ww-agentic-workflows-dev"` in the `agentic-workflows.json`
+of each project that should use it. ww then prints that binary in every
+command, and the project's `./ww` runs it.
+
 ### 2. Initialize your project
 
 Run `init` from the root of the project you want to run workflows in:

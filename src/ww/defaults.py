@@ -3,6 +3,8 @@
 
 from importlib.resources import files
 
+from ww.executable import DEFAULT_EXECUTABLE
+
 DEFAULT_WORKFLOWS_YAML = """task_format: TASK-{uuid}
 
 modes: []
@@ -11,19 +13,46 @@ hooks: {}
 workflows: []
 """
 
-DEFAULT_PROJECT_CONFIG_JSON = """{
+DEFAULT_PROJECT_CONFIG_JSON = f"""{{
   "enabled": true,
+  "executable": "{DEFAULT_EXECUTABLE}",
   "loop_max_times": 3,
-  "extensions": {}
-}
+  "extensions": {{}}
+}}
 """
 
-PROJECT_LAUNCHER = """#!/bin/sh
+# ``./ww`` runs the binary agentic-workflows.json names in ``executable``, read
+# on every run so a project switches installs by editing one line. Without
+# python3 or the key it runs the standard name.
+PROJECT_LAUNCHER = f"""#!/bin/sh
+set -eu
+project_root=$(CDPATH= cd "$(dirname "$0")" && pwd)
+cd "$project_root"
+executable={DEFAULT_EXECUTABLE}
+if [ -f agentic-workflows.json ] && command -v python3 >/dev/null 2>&1; then
+  configured=$(python3 -c '
+import json
+try:
+    value = json.load(open("agentic-workflows.json")).get("executable")
+except (OSError, ValueError, AttributeError):
+    value = None
+print(value.strip() if isinstance(value, str) else "")
+' 2>/dev/null || true)
+  if [ -n "$configured" ]; then
+    executable=$configured
+  fi
+fi
+exec "$executable" "$@"
+"""
+# Launchers earlier ww versions wrote; init replaces one left as written.
+GENERATED_LAUNCHERS = (
+    """#!/bin/sh
 set -eu
 project_root=$(CDPATH= cd "$(dirname "$0")" && pwd)
 cd "$project_root"
 exec ww-agentic-workflows "$@"
-"""
+""",
+)
 
 AGENT_INSTRUCTIONS = (
     files("ww.assets").joinpath("agent_instructions.md").read_text(encoding="utf-8")

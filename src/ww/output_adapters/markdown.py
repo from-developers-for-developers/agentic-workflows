@@ -13,6 +13,7 @@ from pathlib import Path
 from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
+from ww.executable import DEFAULT_EXECUTABLE, ww_command
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
     add_item_command,
@@ -124,7 +125,7 @@ class MarkdownOutputAdapter(OutputAdapter):
             )
         lines.append("")
         if result.permission_notice:
-            lines.extend(_permission_notice())
+            lines.extend(_permission_notice(result.executable))
         # Getting started matters only until the first workflow exists.
         if NO_WORKFLOWS_ACTION in result.actions:
             lines.extend(
@@ -142,9 +143,9 @@ class MarkdownOutputAdapter(OutputAdapter):
                     "  " + terminal_accent("Run commands manually"),
                     "     Use the project launcher for any ww command:",
                     "",
-                    "     ./ww workflows",
+                    f"     {shlex.quote(result.executable)} workflows",
                     "",
-                    *_initialization_shortcut(),
+                    *_initialization_shortcut(result.executable),
                 ]
             )
         lines.extend(
@@ -178,7 +179,7 @@ def _git_extension_active(root: str) -> bool:
         return False
 
 
-def _permission_notice() -> Lines:
+def _permission_notice(executable: str = DEFAULT_EXECUTABLE) -> Lines:
     """The one setup step that fails loudly later if it is skipped.
 
     Left as a trailing "tip" it was routinely missed, and the symptoms arrive
@@ -214,7 +215,7 @@ def _permission_notice() -> Lines:
         "",
         *body,
         "",
-        "     ww-agentic-workflows",
+        f"     {executable}",
         "     ww   (when the shortcut exists)",
         "     ./ww",
         "",
@@ -228,9 +229,9 @@ def _permission_notice() -> Lines:
     return lines
 
 
-def _initialization_shortcut() -> Lines:
+def _initialization_shortcut(name: str) -> Lines:
     lines = ["  " + terminal_accent("Optional global shortcut")]
-    executable = shutil.which("ww-agentic-workflows")
+    executable = shutil.which(name)
     if executable:
         source = Path(executable).absolute()
         target = source.with_name("ww")
@@ -249,9 +250,9 @@ def _initialization_shortcut() -> Lines:
     else:
         lines.extend(
             [
-                "     After installing ww-agentic-workflows, create a ww shortcut:",
+                f"     After installing {name}, create a ww shortcut:",
                 "",
-                "     ww_bin=$(command -v ww-agentic-workflows)",
+                f"     ww_bin=$(command -v {shlex.quote(name)})",
                 '     ln -s "$ww_bin" "$(dirname "$ww_bin")/ww"',
             ]
         )
@@ -724,7 +725,7 @@ def _item_fields(lines: Lines, instruction: Instruction) -> None:
 
 
 def _command_by(task_id: str) -> str:
-    return f"./ww item {task_id} --by <name>=<value>"
+    return f"{ww_command()} item {task_id} --by <name>=<value>"
 
 
 def _stored_items(lines: Lines, instruction: Instruction) -> None:
