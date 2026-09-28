@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- `workflows.yaml` can import other YAML files listed under `imports`; later files
+  override earlier ones, and `lint` notes each override. `6287457`
 - A project can name its ww binary with `"executable"` in
   `agentic-workflows.json`; printed commands and `./ww` use it. `3c5f1a0`
 - `--version` and the `init` welcome now say that ww is in beta, linking what
