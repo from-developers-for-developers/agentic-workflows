@@ -144,7 +144,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("-a", "--agent", required=True)
     plan.add_argument("--task-id", default=None)
     subparsers.add_parser(
-        "lint", help="Validate workflows.yaml without compiling a workflow plan."
+        "lint",
+        help="Validate ww-agentic-workflows.yaml without compiling a "
+        "workflow plan.",
     )
 
     start = subparsers.add_parser(

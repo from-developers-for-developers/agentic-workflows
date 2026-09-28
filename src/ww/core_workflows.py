@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Workflows ww provides to every project, next to those in ``workflows.yaml``.
+"""Core workflows ww provides to every project in ``ww-agentic-workflows.yaml``.
 
 ``catchall`` records a change no configured workflow covers. It exists so that
 every change goes through ww, including the small ones an agent would
 otherwise just make, without adding any process to them: the agent works
 exactly as it would on a plain prompt and ww keeps the record.
 
-A project turns a core workflow off in ``agentic-workflows.json``
+A project turns a core workflow off in ``ww-agentic-workflows.json``
 (``"workflows": {"catchall": {"enabled": false}}``) or replaces it by defining
-a workflow of the same name in ``workflows.yaml``.
+a workflow of the same name in ``ww-agentic-workflows.yaml``.
 """
 
 from __future__ import annotations

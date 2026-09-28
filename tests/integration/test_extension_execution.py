@@ -199,7 +199,7 @@ def _extension(root: Path) -> None:
 
 def _project(root: Path, handler: str = "record") -> None:
     _extension(root)
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         f"""workflows:
   - name: task
     modes:
@@ -223,7 +223,7 @@ def _checking_service(root: Path) -> WorkflowService:
     directory = root / "ext" / "acme" / "checking"
     directory.mkdir(parents=True)
     (directory / "extension.py").write_text(CHECKING_EXTENSION, encoding="utf-8")
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -242,7 +242,7 @@ def _validating_service(root: Path) -> WorkflowService:
     directory = root / "ext" / "acme" / "checked"
     directory.mkdir(parents=True)
     (directory / "extension.py").write_text(VALIDATING_EXTENSION, encoding="utf-8")
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -350,7 +350,7 @@ def test_an_extension_handler_runs_and_keeps_its_own_state(tmp_path: Path) -> No
 
 def test_a_run_uses_the_extension_settings_frozen_in_its_plan(tmp_path: Path) -> None:
     _project(tmp_path)
-    config = tmp_path / "agentic-workflows.json"
+    config = tmp_path / "ww-agentic-workflows.json"
     config.write_text(
         json.dumps({"extensions": {"acme/notes": {"marker": "original"}}}),
         encoding="utf-8",
@@ -454,7 +454,7 @@ def test_alternate_extension_action_applies_frozen_variable_bindings(
         (directory / "extension.py").write_text(
             ALTERNATE_BINDING_EXTENSION, encoding="utf-8"
         )
-        (tmp_path / "workflows.yaml").write_text(
+        (tmp_path / "ww-agentic-workflows.yaml").write_text(
             """handlers:
   - name: record-binding
     action:
@@ -488,7 +488,7 @@ workflows:
 def test_cli_state_commands_ignore_an_unused_broken_extension(
     tmp_path: Path, capsys
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -569,7 +569,7 @@ def test_declared_extension_outputs_become_durable_workflow_values(
 
 def test_a_later_step_can_use_a_declared_extension_output(tmp_path: Path) -> None:
     _extension(tmp_path)
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -656,7 +656,7 @@ def test_an_extension_mode_can_be_selected_without_loading_other_extensions(
     broken = tmp_path / "ext/other/broken/extension.py"
     broken.parent.mkdir(parents=True)
     broken.write_text("raise RuntimeError('unused')\n", encoding="utf-8")
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -690,7 +690,7 @@ def test_compiling_with_no_registry_at_all_reports_the_reference(
     tmp_path: Path,
 ) -> None:
     _extension(tmp_path)
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -705,7 +705,7 @@ def test_compiling_with_no_registry_at_all_reports_the_reference(
 
     with pytest.raises(ConfigurationError) as error:
         compile_workflow_plan(
-            load_configuration(tmp_path / "workflows.yaml"),
+            load_configuration(tmp_path / "ww-agentic-workflows.yaml"),
             tmp_path,
             "task",
             "codex",
@@ -781,7 +781,7 @@ def test_the_git_extension_commits_and_records_what_it_committed(
     tmp_path: Path, capsys
 ) -> None:
     (tmp_path / ".gitignore").write_text(".ww/\ntasks/\n", encoding="utf-8")
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     hooks:
@@ -847,7 +847,7 @@ def test_git_start_branch_hook_keeps_first_declared_step_filter(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".gitignore").write_text(".ww/\ntasks/\n", encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps(
             {
                 "extensions": {
@@ -861,7 +861,7 @@ def test_git_start_branch_hook_keeps_first_declared_step_filter(
         ),
         encoding="utf-8",
     )
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """hooks:
   before_start_workflow:
     - ext/ww/git/handlers:start-task-branch: ~
@@ -912,7 +912,7 @@ def test_start_branch_strategy_is_persisted_for_extension_hooks(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".gitignore").write_text(".ww/\ntasks/\n", encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps(
             {
                 "extensions": {
@@ -929,7 +929,7 @@ def test_start_branch_strategy_is_persisted_for_extension_hooks(
         ),
         encoding="utf-8",
     )
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """hooks:
   before_start_workflow:
     - ext/ww/git/handlers:start-task-branch: ~
@@ -972,7 +972,7 @@ def test_develop_preparation_hooks_select_worktree_after_earlier_steps(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".gitignore").write_text(".ww/\ntasks/\ntrees/\n", encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps(
             {
                 "extensions": {
@@ -988,7 +988,7 @@ def test_develop_preparation_hooks_select_worktree_after_earlier_steps(
         ),
         encoding="utf-8",
     )
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """hooks:
   before_in_progress:
     - steps: [develop]
@@ -1084,7 +1084,7 @@ workflows:
 
 
 def test_the_git_extension_refuses_a_dirty_tree(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     hooks:

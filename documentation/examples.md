@@ -1,6 +1,6 @@
 # Examples
 
-Each example is a complete `workflows.yaml`, unless it says otherwise, and every
+Each example is a complete `ww-agentic-workflows.yaml`, unless it says otherwise, and every
 one is loaded and compiled by the test suite. They are ordered from the simplest
 to the most involved and each one introduces a different control or behaviour.
 Agent-facing text is deliberately short; in a real project the descriptions
@@ -359,7 +359,7 @@ workflows:
 ## 14. Git branches, commits, and worktrees
 
 Git integration is the bundled `ww/git` extension. Its handlers are referenced
-like any other, and its settings live in `agentic-workflows.json`.
+like any other, and its settings live in `ww-agentic-workflows.json`.
 
 ```yaml
 hooks:
@@ -404,7 +404,7 @@ workflows:
 
 ## 15. One ww instance over several repositories
 
-With `projects` in `agentic-workflows.json`, the ww root is a workspace above
+With `projects` in `ww-agentic-workflows.json`, the ww root is a workspace above
 the repositories. `start --project` and `add-child --project` choose where a
 task works, and the git extension follows.
 

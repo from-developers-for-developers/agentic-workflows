@@ -49,14 +49,15 @@ def test_example_loads_and_compiles(
     for name in SLASH_COMMANDS:
         (commands / f"{name}.md").write_text(f"# /{name}\n", encoding="utf-8")
     for text in json_blocks:
-        (tmp_path / "agentic-workflows.json").write_text(text, encoding="utf-8")
-        settings = load_project_config(tmp_path / "agentic-workflows.json")
+        (tmp_path / "ww-agentic-workflows.json").write_text(text, encoding="utf-8")
+        settings = load_project_config(tmp_path / "ww-agentic-workflows.json")
         for project in settings.projects:
             (tmp_path / project.path).mkdir(parents=True, exist_ok=True)
     extensions = ExtensionRegistry.discover(tmp_path)
     for text in yaml_blocks:
-        (tmp_path / "workflows.yaml").write_text(text, encoding="utf-8")
-        configuration = load_configuration(tmp_path / "workflows.yaml", extensions)
+        config_file = tmp_path / "ww-agentic-workflows.yaml"
+        config_file.write_text(text, encoding="utf-8")
+        configuration = load_configuration(config_file, extensions)
         for workflow in configuration.workflows:
             plan = compile_workflow_plan(
                 configuration, tmp_path, workflow.name, "codex", "TASK-1", extensions

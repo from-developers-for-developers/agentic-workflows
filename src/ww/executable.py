@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """How the commands ww prints invoke ww.
 
-A project names its ww binary in ``agentic-workflows.json`` (``executable``),
+A project names its ww binary in ``ww-agentic-workflows.json`` (``executable``),
 so two installs, such as one for developing ww and one pinned to ``dev``, can
 live side by side under different global names. Every command ww prints
 starts with that binary, or with the project launcher, ``./ww``, when the

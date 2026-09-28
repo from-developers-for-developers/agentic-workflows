@@ -19,7 +19,7 @@ description: Carry out the user's request through ww, this project's workflow to
    placeholders replaced, and keep going until ww reports that the workflow
    is complete or reports an error.
 5. Never run a ww-owned handler yourself, edit ww state, or read
-   `workflows.yaml` or ww's source to work out what to do next. On a handler
+   `ww-agentic-workflows.yaml` or ww's source to work out what to do next. On a handler
    failure, stop and report the task and the exact error to the user; when
    they decide, run the recovery command ww showed, `./ww next <task-id>
    --retry` to run the handler again or `--force --force-reason` to skip it.

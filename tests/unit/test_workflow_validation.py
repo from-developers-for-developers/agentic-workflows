@@ -220,7 +220,7 @@ workflows:
 def test_a_hook_may_not_run_a_handler_that_is_a_step_tree(
     tmp_path: Path, hooked: str
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(LOOPING_HANDLER + hooked, encoding="utf-8")
 
     # As a hook the loop would be dropped; as a step it runs.

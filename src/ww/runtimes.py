@@ -65,8 +65,8 @@ def cli_ownership_warning() -> str:
     ww = ww_command()
     return (
         f"Strict: only {ww} start, next, and complete operate this flow. Do not "
-        "mimic or bypass it with direct commands, or read workflows.yaml; follow "
-        "only the ww execution plan."
+        "mimic or bypass it with direct commands, or read "
+        "ww-agentic-workflows.yaml; follow only the ww execution plan."
     )
 
 

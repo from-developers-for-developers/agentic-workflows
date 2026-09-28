@@ -37,7 +37,7 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
   reports that the workflow is complete or reports an error. One completion
   rarely finishes the task.
 - Perform only agent-owned work. Never run or work around a ww-owned handler,
-  edit ww state, or read `workflows.yaml` or ww's source to reconstruct what
+  edit ww state, or read `ww-agentic-workflows.yaml` or ww's source to reconstruct what
   happens next.
 - On a nonzero exit, read the whole response. If agent work cannot finish,
   record it with `./ww fail <task-id> --role worker --error "<reason>"`. If an

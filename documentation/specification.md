@@ -1,7 +1,9 @@
-# `../workflows.yaml` specification
+# `../ww-agentic-workflows.yaml` specification
 
-`../workflows.yaml` defines what `ww` workflows do. The file is strict: unknown
+`../ww-agentic-workflows.yaml` defines what `ww` workflows do. The file is strict: unknown
 keys, invalid types, and invalid references are errors.
+The former name `workflows.yaml` is not read; ww stops when it finds that file
+and `init` renames it.
 
 ## Common types
 
@@ -34,7 +36,7 @@ The legacy root key `tasks` is rejected.
 
 ## Imports
 
-`../workflows.yaml` is the root file and is always required. It may split its
+`../ww-agentic-workflows.yaml` is the root file and is always required. It may split its
 definitions across other YAML files by listing them under `imports`, which must
 be its first key:
 
@@ -51,12 +53,12 @@ workflows:
 ```
 
 - Each entry is a non-empty path, relative to the directory of
-  `workflows.yaml`, to an existing file that contains a mapping.
+  `ww-agentic-workflows.yaml`, to an existing file that contains a mapping.
 - An imported file may define every root key above except `imports`: imports do
   not nest, so every imported file is listed in the root file. A file may not be
   listed twice, and the root file may not import itself.
-- Definitions fold in list order, and `workflows.yaml` last. A later file
-  overrides an earlier one, so `workflows.yaml` overrides every import:
+- Definitions fold in list order, and `ww-agentic-workflows.yaml` last. A later file
+  overrides an earlier one, so `ww-agentic-workflows.yaml` overrides every import:
   - an entry of `workflows`, `modes`, `documents`, or `handlers`, and a
     `profiles` entry, replaces the entry of the same name from an earlier file,
     in that entry's original position;
@@ -67,11 +69,11 @@ workflows:
   overridden definition. A name repeated within a single file is still reported
   as a duplicate.
 - The files are composed in memory, on every command, into one document that is
-  then read exactly as a single `workflows.yaml`; nothing is cached on disk.
+  then read exactly as a single `ww-agentic-workflows.yaml`; nothing is cached on disk.
   Every rule in this specification applies to that composed document.
 
 Projects, the directories a task may work in, are configured in
-`agentic-workflows.json` rather than here because their locations differ per
+`ww-agentic-workflows.json` rather than here because their locations differ per
 machine; see the features guide.
 
 ## Modes and profiles
@@ -113,7 +115,7 @@ Each item in `workflows` accepts:
 | `reasoning` | non-empty string | no | Default reasoning guidance. |
 | `profile` | profile value | no | Default agent profile. |
 | `handoff` | boolean | no | If `true`, the workflow must end with its single workflow transition; a task hands off at most once, and a transition never returns. |
-| `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `agentic-workflows.json`, and the flag outranks it. |
+| `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww-agentic-workflows.json`, and the flag outranks it. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid together with `handoff`. |
@@ -126,13 +128,13 @@ omits reasoning, reasoning resets to `auto`. Repeating the same model preserves
 the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 `start` and may not be `auto`.
 
-`../agentic-workflows.json` sets ww-wide project behavior separately from workflow
+`../ww-agentic-workflows.json` sets ww-wide project behavior separately from workflow
 syntax. `loop_max_times` is a positive integer and defaults to `3`. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off the workflows ww provides to every project, currently only `catchall`; each
 entry is an object whose only key, `enabled`, defaults to `true`. A workflow of
-the same name in `workflows.yaml` replaces the provided one instead.
+the same name in `ww-agentic-workflows.yaml` replaces the provided one instead.
 `executable` names the ww binary the project runs, a command on `PATH` or a
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
@@ -275,7 +277,7 @@ hooks, then resets the body and dispatches its first step. If no worker breaks
 or continues the loop, reaching the end resets the body and the manager
 dispatches the first step again until the effective maximum is reached. The
 effective value comes from the wrapper's `loop_max_times`, or from
-`../agentic-workflows.json` when the wrapper omits it, and is frozen in the saved
+`../ww-agentic-workflows.json` when the wrapper omits it, and is frozen in the saved
 workflow plan. At the limit, ww does not expose a continuation command: it
 blocks manager control with a warning that must be escalated to the user for
 manual resolution, and shows the operator's exit, `next --force --force-reason`,

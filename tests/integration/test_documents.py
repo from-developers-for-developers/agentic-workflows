@@ -35,7 +35,7 @@ workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -128,7 +128,7 @@ def test_the_documents_command_prints_the_listing(
 def test_a_declared_path_resolves_in_the_project_or_the_task_workspace(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """documents:
   - notes: Notes kept with the repository.
     path: documentation/issues/{task_id}/notes.md

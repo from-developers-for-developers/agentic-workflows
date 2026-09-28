@@ -14,7 +14,7 @@ from ww.storage_adapters.memory import MemoryTaskStorageAdapter
 def test_worker_assignment_state_round_trips_through_memory_adapter(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: document
     description: Document it.
@@ -69,7 +69,7 @@ def test_reset_remains_available_without_loading_workflow_configuration(
 
 
 def test_generated_task_id_start_works_without_shared_storage(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps: []
@@ -86,7 +86,7 @@ def test_generated_task_id_start_works_without_shared_storage(tmp_path: Path) ->
 
 
 def test_configured_task_format_drives_generated_ids(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """task_format: WORK-{digit}
 workflows:
   - name: task
@@ -105,7 +105,7 @@ workflows:
 
 
 def test_configured_uuid_task_format_drives_generated_ids(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """task_format: TASK-{uuid}
 workflows:
   - name: task
@@ -122,7 +122,7 @@ workflows:
 
 
 def test_generated_task_id_skips_existing_task_directories(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """task_format: TASK-{digit}
 workflows:
   - name: task
@@ -141,7 +141,7 @@ workflows:
 
 
 def test_generated_task_id_skips_existing_configured_worktree(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """task_format: TASK-{digit}
 workflows:
   - name: task
@@ -149,7 +149,7 @@ workflows:
 """,
         encoding="utf-8",
     )
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         """{
   "extensions": {
     "ww/git": {
@@ -171,7 +171,7 @@ workflows:
 
 
 def test_task_metadata_is_read_through_the_adapter(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -194,7 +194,7 @@ def test_task_metadata_is_read_through_the_adapter(tmp_path: Path) -> None:
 
 
 def test_agent_saves_task_metadata_for_later_steps(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -245,7 +245,7 @@ def test_agent_saves_task_metadata_for_later_steps(tmp_path: Path) -> None:
 def test_metadata_is_not_published_when_completion_commit_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -301,7 +301,7 @@ def test_metadata_is_not_published_when_completion_commit_fails(
 def test_project_metadata_retry_detects_an_intervening_update(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -346,7 +346,7 @@ def test_project_metadata_retry_detects_an_intervening_update(
 def test_project_metadata_publication_is_idempotent_after_clear_commit_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -387,7 +387,7 @@ def test_project_metadata_publication_is_idempotent_after_clear_commit_failure(
 
 
 def test_saved_task_metadata_is_available_to_automatic_commands(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -423,7 +423,7 @@ def test_saved_task_metadata_is_available_to_automatic_commands(tmp_path: Path) 
 def test_saved_project_metadata_is_available_to_automatic_commands(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:

@@ -37,7 +37,7 @@ WORKFLOWS = """workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -198,7 +198,7 @@ def test_the_pool_reaches_the_shared_store_and_the_cli_takes_fields(
 
 def test_field_declarations_are_validated(tmp_path: Path) -> None:
     def load(items: str) -> None:
-        (tmp_path / "workflows.yaml").write_text(
+        (tmp_path / "ww-agentic-workflows.yaml").write_text(
             "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
             f"        items:\n{items}",
             encoding="utf-8",

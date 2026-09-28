@@ -7,9 +7,9 @@ and persistence invariants, see [architecture.md](architecture.md).
 
 ## Feature overview
 
-- Read-only validation of `workflows.yaml`, plus agent-specific workflow
+- Read-only validation of `ww-agentic-workflows.yaml`, plus agent-specific workflow
   planning in Markdown or JSON.
-- A `workflows.yaml` split across imported files, composed in memory.
+- A `ww-agentic-workflows.yaml` split across imported files, composed in memory.
 - An implicit, reserved `init` step that preserves task requirements.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
@@ -44,7 +44,7 @@ whether worktrees should be used. Enabled worktrees default to
 The wizard offers to append exactly `../.ww` to `../.gitignore`; without consent it
 only reports that action. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
 references in `../AGENTS.md` and an existing `../CLAUDE.md`, and reminds the user to
-define workflows when the initialized `../workflows.yaml` is empty. Equivalent
+define workflows when the initialized `../ww-agentic-workflows.yaml` is empty. Equivalent
 non-interactive choices are available through `--task-id-format`, `--worktrees`,
 `--worktree-dir`, repeated `--branch-format WORKFLOW=FORMAT`,
 `--update-gitignore`, and `--skills`.
@@ -59,6 +59,26 @@ asking and `--no-skills` skips them; an existing skill file is never
 overwritten, and a skill a later ww version bundles is offered once on its
 own, as described in [Installing the ww skills during
 init](#installing-the-ww-skills-during-init).
+
+### Configuration file names
+
+ww reads its configuration from two files at the project root, both named
+after the tool: `ww-agentic-workflows.yaml` for the workflows and
+`ww-agentic-workflows.json` for the project settings. Earlier versions called
+them `workflows.yaml` and `agentic-workflows.json`. ww does not read the former
+names: every command other than `init` stops when it finds one, naming the file
+to rename it to.
+
+```console
+$ ww-agentic-workflows lint
+ww error: found workflows.yaml; rename it to ww-agentic-workflows.yaml, or run init to rename it
+```
+
+`init` performs that rename for an existing project, keeping the file's
+content, and reports it among the created parts as
+`ww-agentic-workflows.yaml (renamed from workflows.yaml)`. When a file exists
+under both names, nothing is renamed and ww stops, asking you to remove the
+former one, since only the new one is read.
 
 ## Discover how to start a task
 
@@ -79,7 +99,7 @@ it ends with the exact commands to start a task, show a task's instructions,
 check its status, and inspect a workflow's plan. `discover` is read-only and
 leaves no audit record.
 
-Set `"runtime": "auto"` in `../agentic-workflows.json` to make `auto` the runtime
+Set `"runtime": "auto"` in `../ww-agentic-workflows.json` to make `auto` the runtime
 `start` uses when `--runtime` is omitted; `discover` then marks it as the
 default. The setting lives in the JSON file because whether delegation is
 available depends on the environment ww runs in, not on the workflows. A
@@ -88,7 +108,7 @@ whose every step is a conversation with the operator, may declare
 `runtime: single` itself; that outranks the project default, and the flag on
 the command line still wins over both.
 
-Set `"enabled": false` in `../agentic-workflows.json` to switch ww off for a
+Set `"enabled": false` in `../ww-agentic-workflows.json` to switch ww off for a
 project. `discover` then says only that ww is disabled and that the agent must
 not use it, and `start` refuses to create a task.
 
@@ -152,8 +172,8 @@ interactive: a follow-up that changes more starts another `catchall` run on the
 same task. Every run ends with the usual workflow summary.
 
 A project replaces the catch-all by defining its own workflow named
-`catchall` in `workflows.yaml`, or switches it off in
-`../agentic-workflows.json`:
+`catchall` in `ww-agentic-workflows.yaml`, or switches it off in
+`../ww-agentic-workflows.json`:
 
 ```json
 {"workflows": {"catchall": {"enabled": false}}}
@@ -161,7 +181,7 @@ A project replaces the catch-all by defining its own workflow named
 
 ## Validate configuration and plan a workflow
 
-`ww-agentic-workflows` turns `../workflows.yaml` into an explicit, inspectable
+`ww-agentic-workflows` turns `../ww-agentic-workflows.yaml` into an explicit, inspectable
 execution plan. Skills and slash commands are discovered only from the project's
 shared `.agents/` directory and the selected agent's directory.
 
@@ -174,7 +194,7 @@ ww-agentic-workflows plan --workflow task --agent codex --task-id TASK-123 --jso
 The workflow and agent options have `-w` and `-a` short forms. On `start`,
 runtime also accepts `-r`.
 
-`lint` validates the complete `workflows.yaml` configuration without needing a
+`lint` validates the complete `ww-agentic-workflows.yaml` configuration without needing a
 workflow or agent. It and `plan` are read-only: neither creates task state,
 artifacts, commands, or execution log records. Markdown is for people; `--json`
 returns a stable representation for tools. `--agent` is required because
@@ -182,14 +202,14 @@ automatic resolution depends on the agent’s project-local skills and slash
 commands. `--task-id` is optional; when
 omitted, `{{__task_id}}` remains visible as an unresolved plan dependency.
 
-## Split workflows.yaml into several files
+## Split ww-agentic-workflows.yaml into several files
 
-A large configuration can be split across files. `workflows.yaml` stays the
+A large configuration can be split across files. `ww-agentic-workflows.yaml` stays the
 required root file and lists the others under `imports`, its first key. Paths
-are relative to the directory of `workflows.yaml`:
+are relative to the directory of `ww-agentic-workflows.yaml`:
 
 ```yaml
-# workflows.yaml
+# ww-agentic-workflows.yaml
 imports:
   - workflows/shared.yaml
   - workflows/local.yaml
@@ -222,10 +242,10 @@ workflows:
 task_format: "LOCAL-{digit}"
 ```
 
-An imported file can define anything `workflows.yaml` can, except further
+An imported file can define anything `ww-agentic-workflows.yaml` can, except further
 imports, so every file is listed in one place. Files apply in order, the root
 file last, and a later definition overrides an earlier one of the same name:
-here `workflows.yaml`'s `test` handler replaces the shared one, and
+here `ww-agentic-workflows.yaml`'s `test` handler replaces the shared one, and
 `local.yaml`'s `task_format` replaces `shared.yaml`'s. Named entries of
 `workflows`, `modes`, `documents`, `handlers`, and `profiles` are replaced one
 by one, other entries from every file are kept, and `hooks` from every file are
@@ -235,15 +255,15 @@ Overriding is never an error. `lint` reports each override as a notice:
 
 ```console
 $ ww-agentic-workflows lint
-workflows.yaml is valid.
+ww-agentic-workflows.yaml is valid.
 Notice: task_format from workflows/shared.yaml is overridden by workflows/local.yaml.
-Notice: handler 'test' from workflows/shared.yaml is overridden by workflows.yaml.
+Notice: handler 'test' from workflows/shared.yaml is overridden by ww-agentic-workflows.yaml.
 ```
 
 ww composes the files in memory on every command into one document and reads
-it exactly as a single `workflows.yaml`, so every other rule applies unchanged
+it exactly as a single `ww-agentic-workflows.yaml`, so every other rule applies unchanged
 and there is no cache to refresh. `init` sees keys and workflows defined in
-imported files too, and does not add them to `workflows.yaml` again. The
+imported files too, and does not add them to `ww-agentic-workflows.yaml` again. The
 [specification](specification.md#imports) has the exact rules.
 
 ## Configuration
@@ -679,10 +699,10 @@ record.
 ## Projects: one ww instance over several repositories
 
 Projects are optional. Without them a task works in the project root, where
-`workflows.yaml` and `.ww` live. With a `projects` list in
-`../agentic-workflows.json`, that root can be a workspace directory above
+`ww-agentic-workflows.yaml` and `.ww` live. With a `projects` list in
+`../ww-agentic-workflows.json`, that root can be a workspace directory above
 several repositories, and each task or child chooses the repository it works
-in. Projects live in the JSON settings rather than in `workflows.yaml` because
+in. Projects live in the JSON settings rather than in `ww-agentic-workflows.yaml` because
 their locations are machine-specific, while the workflows are shared:
 
 ```json
@@ -951,13 +971,13 @@ is plain runtime state and should not be used for secrets.
 Every workflow also receives ww's built-in `update-workflow-summary` handler as
 its final `before_complete_workflow` action. It asks the agent for a concise
 goal/result summary, and ww writes that value to the task run ledger when the
-run completes. No `../workflows.yaml` configuration is needed. Its instruction
+run completes. No `../ww-agentic-workflows.yaml` configuration is needed. Its instruction
 lists every ordinary step's handover of this run in order, each with its
 artifact, and tells the agent to build the summary from those alone, so the
 summary cannot borrow counts or statuses from other runs or stale material. It
 requests the run's ordinary worker selection (`auto`), unlike `init`, which
 requests `cheapest` / `low`; `builtins.workflow_summary` in
-`../agentic-workflows.json` overrides that.
+`../ww-agentic-workflows.json` overrides that.
 
 ## Interactive steps
 
@@ -1515,8 +1535,8 @@ earlier iteration directories. The setting has no effect in the `single`
 runtime.
 
 ww limits loops to three iterations by default. Set a different project-wide
-positive integer in `../agentic-workflows.json`, or override one wrapper in
-`../workflows.yaml`:
+positive integer in `../ww-agentic-workflows.json`, or override one wrapper in
+`../ww-agentic-workflows.yaml`:
 
 ```json
 {"loop_max_times": 4, "extensions": {}}
@@ -1632,7 +1652,7 @@ Handoffs are deliberately limited, and the limits are accepted for now:
   tree to share a phase between workflows.
 
 General nested workflow definitions remain deferred and are rejected when
-`../workflows.yaml` is loaded.
+`../ww-agentic-workflows.yaml` is loaded.
 
 ## Extensions
 
@@ -1700,8 +1720,8 @@ it holds one lock across the complete read–modify–write sequence.
 
 ### Configuring one
 
-Extension settings live in `../agentic-workflows.json`, ww's project config file —
-separate from `../workflows.yaml`, which describes what a workflow *does*:
+Extension settings live in `../ww-agentic-workflows.json`, ww's project config file —
+separate from `../ww-agentic-workflows.yaml`, which describes what a workflow *does*:
 
 ```json
 {
@@ -1960,7 +1980,7 @@ Successful commands return exit code `0`. Handled `ww` errors and rendered
 failed or interrupted workflow states return `1`. Invalid command-line syntax
 is still reported by `argparse` with exit code `2`.
 
-The task ID may be omitted from `start`. Root `task_format` in `../workflows.yaml`
+The task ID may be omitted from `start`. Root `task_format` in `../ww-agentic-workflows.yaml`
 then controls generation with `{timestamp}`, `{digit}`, and/or `{uuid}`; without it, ww
 uses `TASK-{timestamp}`.
 
@@ -2185,7 +2205,7 @@ skill already present in a chosen directory as accepted.
 
 The rest of the summary adapts to repeat runs too. The box asking you to allow
 ww in your agent's permissions is shown the first time only, and the next
-steps for getting started only while `workflows.yaml` defines no workflow. The
+steps for getting started only while `ww-agentic-workflows.yaml` defines no workflow. The
 documentation links are always shown.
 
 ## Choosing a runtime
@@ -2218,7 +2238,7 @@ wants delegation should declare `runtime: auto` rather than rely on the reader.
 
 ## Choosing the ww binary
 
-A project names the ww it runs in `../agentic-workflows.json`:
+A project names the ww it runs in `../ww-agentic-workflows.json`:
 
 ```json
 {"executable": "ww-agentic-workflows-dev"}
@@ -2295,5 +2315,5 @@ For a command whose output is consumed by a program — the JSON catalogs,
 error instead, so standard output stays parseable.
 
 To switch the check off for a project, set `"update_check": false` in
-`agentic-workflows.json`. `WW_UPDATE_CHECK=0` switches it off everywhere,
+`ww-agentic-workflows.json`. `WW_UPDATE_CHECK=0` switches it off everywhere,
 and `WW_UPDATE_CHECK_INTERVAL` sets the seconds between checks.

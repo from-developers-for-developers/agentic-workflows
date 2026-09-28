@@ -31,7 +31,7 @@ workflows:
 
 
 def _load(tmp_path: Path, text: str):
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(text, encoding="utf-8")
     return load_configuration(path)
 

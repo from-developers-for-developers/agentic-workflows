@@ -53,7 +53,7 @@ class _TestSequencePlanner:
 
 
 def test_every_workflow_starts_with_the_implicit_init_step(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_complete:
@@ -81,7 +81,7 @@ workflows:
 
 
 def test_extension_handler_can_be_used_as_a_step(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - task: ~
@@ -107,7 +107,7 @@ def test_extension_handler_can_be_used_as_a_step(tmp_path: Path) -> None:
 
 
 def test_step_handler_compiles_as_its_own_single_step(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: shared-check
@@ -134,7 +134,7 @@ workflows:
 
 
 def test_step_handler_compiles_a_named_loop_step(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - code-review:
@@ -166,7 +166,7 @@ workflows:
 
 
 def _configuration(tmp_path: Path):
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: clean
@@ -247,7 +247,7 @@ def test_compiles_every_effective_handler_in_lifecycle_order(tmp_path: Path) -> 
 def test_compiles_grouped_hook_handlers_in_order_with_shared_values(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: collect-note
@@ -294,7 +294,7 @@ workflows:
 
 
 def test_authoritative_task_id_updates_the_derived_input_flag(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -319,7 +319,7 @@ def test_authoritative_task_id_updates_the_derived_input_flag(tmp_path: Path) ->
 def test_auto_resolution_prioritizes_skill_then_slash_then_prompt(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -351,7 +351,7 @@ def test_auto_resolution_prioritizes_skill_then_slash_then_prompt(
 
 
 def test_mcp_handler_renders_as_agent_instruction(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_complete:
@@ -386,7 +386,7 @@ workflows:
 def test_resolves_profiles_from_agent_files_then_configuration(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """profiles:
   reviewer: Review the implementation.
@@ -418,7 +418,7 @@ workflows:
 
 
 def test_profile_name_without_definition_is_an_instruction(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -436,7 +436,7 @@ def test_profile_name_without_definition_is_an_instruction(tmp_path: Path) -> No
 def test_validates_interpolation_data_flow_and_supports_nested_steps(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -466,7 +466,7 @@ def test_validates_interpolation_data_flow_and_supports_nested_steps(
 
 
 def test_hook_provided_values_flow_to_later_hooks_and_steps(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -494,7 +494,7 @@ def test_hook_provided_values_flow_to_later_hooks_and_steps(tmp_path: Path) -> N
 def test_compilation_options_own_bootstrap_plan_interpretation(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_start_workflow:
@@ -539,7 +539,7 @@ workflows:
 def test_recursively_flattens_substeps_and_preserves_parent_lifecycle(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_complete:
@@ -577,7 +577,7 @@ workflows:
 def test_registered_construct_planner_uses_shared_lifecycle_wrapper(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_in_progress:
@@ -628,7 +628,7 @@ workflows:
 def test_items_step_hooks_wrap_the_flow_without_collect_annotations(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -669,7 +669,7 @@ def test_items_step_hooks_wrap_the_flow_without_collect_annotations(
 
 
 def test_hook_step_path_targets_only_the_named_substep(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_in_progress:
@@ -703,7 +703,7 @@ workflows:
 def test_exact_wrapper_path_wins_over_nested_leaf_with_the_same_name(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_complete:
@@ -731,7 +731,7 @@ workflows:
 
 
 def test_hook_step_path_ignores_dynamic_item_segment(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
   before_in_progress:
@@ -762,7 +762,7 @@ workflows:
 
 
 def test_handoff_requires_and_marks_a_terminal_transition(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: finalize
@@ -807,7 +807,7 @@ workflows:
 
 
 def test_workflow_boundary_hooks_run_once_in_scope_order(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: global-start
@@ -861,7 +861,7 @@ workflows:
 def test_plan_json_and_markdown_preserve_unresolved_and_bound_variables(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -894,7 +894,7 @@ def test_plan_json_and_markdown_preserve_unresolved_and_bound_variables(
 
 
 def test_markdown_does_not_repeat_a_prompt_handler_description(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -914,7 +914,7 @@ def test_markdown_does_not_repeat_a_prompt_handler_description(tmp_path: Path) -
 
 
 def test_automatic_cli_handler_can_wait_for_agent_input(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: commit
@@ -949,7 +949,7 @@ workflows:
 def test_multi_command_inline_handler_and_explicit_missing_action_are_checked(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -993,7 +993,7 @@ def test_multi_command_inline_handler_and_explicit_missing_action_are_checked(
 
 
 def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - task: ~
@@ -1034,7 +1034,7 @@ def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> No
 
 
 def test_loop_stop_gate_requires_an_agent_owned_body_step(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - task: ~
@@ -1055,7 +1055,7 @@ def test_loop_stop_gate_requires_an_agent_owned_body_step(tmp_path: Path) -> Non
 
 
 def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """workflows:
   - name: choose
@@ -1114,7 +1114,7 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
 def test_handoff_hook_is_not_replaced_by_a_handler_named_start_workflow(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: start-workflow

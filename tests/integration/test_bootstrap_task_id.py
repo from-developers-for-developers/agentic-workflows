@@ -10,7 +10,7 @@ from ww.variables import BRANCH_NAMING_STRATEGY
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: jira-task
     steps:
@@ -122,7 +122,7 @@ def test_explicit_task_id_is_authoritative_for_bootstrap_step(tmp_path: Path) ->
 
 def test_task_id_provider_must_be_the_first_step(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: jira-task
     steps:
@@ -142,8 +142,8 @@ def test_task_id_provider_must_be_the_first_step(tmp_path: Path) -> None:
 
 def test_start_hooks_run_only_after_external_id_is_bound(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    (tmp_path / "workflows.yaml").write_text(
-        (tmp_path / "workflows.yaml").read_text(encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
         + """handlers:
   - name: record-start
     command:

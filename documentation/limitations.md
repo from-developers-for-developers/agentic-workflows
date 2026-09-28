@@ -23,7 +23,7 @@ practice.
 releases to define one against: nothing is contractually promised to survive a
 pull of `main`, and there is no deprecation period before a change lands.
 
-In practice the surfaces have settled. `workflows.yaml` and the command line
+In practice the surfaces have settled. `ww-agentic-workflows.yaml` and the command line
 have been stable for a while, and most work now is internal refactoring, new
 capabilities, and fixes. Incompatible changes are possible but uncommon; when
 one lands it is deliberate and called out in the changelog. Persisted task
@@ -98,7 +98,7 @@ fails loudly rather than hanging.
   delegated worker is a subagent and cannot talk to the operator, so an
   interactive step's `profile`, `agent`, `model`, and `reasoning` are ignored.
 - Each started run executes from its saved plan snapshot, so edits to
-  `workflows.yaml` cannot alter work already in progress. To pick up a
+  `ww-agentic-workflows.yaml` cannot alter work already in progress. To pick up a
   configuration change, start a new task.
 - A loop has an iteration limit. Reaching it escalates rather than failing
   silently, and leaving the loop requires an explicit

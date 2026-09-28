@@ -104,7 +104,7 @@ def test_checklist_rejects_invalid_fields(checks: object) -> None:
 def test_checklist_registration_works_through_saved_workflow(tmp_path: Path) -> None:
     actions.register(ChecklistAction())
     try:
-        (tmp_path / "workflows.yaml").write_text(
+        (tmp_path / "ww-agentic-workflows.yaml").write_text(
             """workflows:
   - name: task
     steps:

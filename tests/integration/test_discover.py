@@ -35,8 +35,8 @@ workflows:
 
 
 def _project(tmp_path: Path, config: dict[str, object] | None = None) -> Path:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps(config or {}), encoding="utf-8"
     )
     return tmp_path
@@ -139,7 +139,7 @@ def test_a_disabled_project_tells_agents_not_to_use_ww(
 ) -> None:
     root = _project(tmp_path, {"enabled": False})
     # The workflow file is not even read once ww is disabled.
-    (root / "workflows.yaml").write_text("not: [valid", encoding="utf-8")
+    (root / "ww-agentic-workflows.yaml").write_text("not: [valid", encoding="utf-8")
 
     output = _discover(root, capsys)
     report = json.loads(_discover(root, capsys, "--json"))
@@ -247,7 +247,7 @@ def test_init_without_skills_suggests_installing_them(
         "Optionally install the ww and noww skills with `init --skills` for: "
         ".claude." in output
     )
-    config = json.loads((tmp_path / "agentic-workflows.json").read_text())
+    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     assert config["enabled"] is True
 
 
@@ -405,7 +405,7 @@ def test_the_permission_notice_is_shown_once_and_next_steps_until_a_workflow(
     assert "ACTION NEEDED" in first
     assert "Next steps" in first
 
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
@@ -434,7 +434,7 @@ def test_explicit_task_format_requires_an_id(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         "task_format: explicit\n"
         + WORKFLOWS
         + """  - name: tracked
@@ -516,7 +516,7 @@ def test_the_configured_runtime_must_exist(tmp_path: Path) -> None:
 
 
 def _runtime_advice_project(tmp_path: Path) -> Path:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """
 workflows:
   - name: plain

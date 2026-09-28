@@ -31,7 +31,7 @@ def _complete_init(root: Path, task_id: str, capsys) -> None:  # type: ignore[no
 
 
 def _project(root: Path) -> None:
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: check
     command:
@@ -157,14 +157,15 @@ def test_lint_cli_validates_configuration_without_creating_runtime_state(
     _project(tmp_path)
 
     assert main(["--root", str(tmp_path), "lint"]) == 0
-    assert capsys.readouterr().out == "workflows.yaml is valid.\n"
+    assert capsys.readouterr().out == "ww-agentic-workflows.yaml is valid.\n"
     assert not (tmp_path / ".ww").exists()
 
 
 def test_lint_cli_reports_configuration_errors_without_creating_runtime_state(
     tmp_path: Path, capsys
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text("workflows: invalid\n", encoding="utf-8")
+    config_file = tmp_path / "ww-agentic-workflows.yaml"
+    config_file.write_text("workflows: invalid\n", encoding="utf-8")
 
     assert main(["--root", str(tmp_path), "lint"]) == 1
     assert "workflows must be a list" in capsys.readouterr().err
@@ -249,7 +250,7 @@ def test_catalog_commands_read_the_normalized_configuration(
     tmp_path: Path, capsys
 ) -> None:
     _project(tmp_path)
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """modes:
   - name: economy
     description: Use fewer tokens.
@@ -354,7 +355,7 @@ def test_lifecycle_commands_start_from_the_compiled_plan(
 def test_metadata_command_prints_nested_task_metadata_json(
     tmp_path: Path, capsys
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -420,7 +421,7 @@ def test_metadata_command_prints_nested_task_metadata_json(
 def test_project_metadata_is_saved_and_shared_across_tasks(
     tmp_path: Path, capsys
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: capture
     steps:
@@ -565,12 +566,12 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
     assert main(["--root", str(tmp_path), "init"]) == 0
     output = capsys.readouterr().out
     assert not (tmp_path / ".ww" / "templates").exists()
-    assert (tmp_path / "workflows.yaml").read_text(encoding="utf-8") == (
+    assert (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8") == (
         "task_format: TASK-{uuid}\n\n"
         "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
     )
     assert "Create your first workflow" in output
-    assert "Define the steps in workflows.yaml." in output
+    assert "Define the steps in ww-agentic-workflows.yaml." in output
     # init configures the standard binary, so the summary names it.
     assert "ww-agentic-workflows workflows" in output
     assert "Optionally add exactly .ww/ to .gitignore." not in output
@@ -583,7 +584,8 @@ def test_init_targets_new_directory_and_creates_approved_agent_files(
         def isatty(self) -> bool:
             return True
 
-    (tmp_path / "workflows.yaml").write_text("workflows: []\n", encoding="utf-8")
+    config_file = tmp_path / "ww-agentic-workflows.yaml"
+    config_file.write_text("workflows: []\n", encoding="utf-8")
     project = tmp_path / "new-project"
     project.mkdir()
     monkeypatch.chdir(project)
@@ -592,8 +594,8 @@ def test_init_targets_new_directory_and_creates_approved_agent_files(
     )
     assert main(["init"]) == 0
     output = capsys.readouterr().out
-    assert (project / "workflows.yaml").is_file()
-    assert (project / "agentic-workflows.json").is_file()
+    assert (project / "ww-agentic-workflows.yaml").is_file()
+    assert (project / "ww-agentic-workflows.json").is_file()
     assert (project / "ww").is_file()
     assert (project / ".codex/skills/ww/SKILL.md").is_file()
     assert not (project / ".claude").exists()
@@ -664,19 +666,20 @@ def test_init_does_not_reask_completed_git_and_instruction_setup(
 
 
 def test_init_is_additive_and_restores_missing_files(tmp_path: Path, capsys) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: custom\n    steps: []\n", encoding="utf-8"
     )
     assert main(["--root", str(tmp_path), "init", "--no-input"]) == 0
     capsys.readouterr()
-    original = (tmp_path / "workflows.yaml").read_text(encoding="utf-8")
+    original = (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
     (tmp_path / "ww").unlink()
 
     assert main(["--root", str(tmp_path), "init", "--no-input"]) == 0
     output = capsys.readouterr().out
 
     assert (tmp_path / "ww").is_file()
-    assert (tmp_path / "workflows.yaml").read_text(encoding="utf-8") == original
+    config_text = (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
+    assert config_text == original
     assert "Already present and preserved:" in output
     assert "ww" in output
 
@@ -699,7 +702,7 @@ def test_init_enables_git_with_safe_defaults(tmp_path: Path, capsys) -> None:
 
     assert main(["--root", str(tmp_path), "init", "--no-input", "--json"]) == 0
     capsys.readouterr()
-    config = json.loads((tmp_path / "agentic-workflows.json").read_text())
+    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     settings = config["extensions"]["ww/git"]
 
     assert settings == {
@@ -732,7 +735,7 @@ def test_init_worktree_and_gitignore_choices_are_explicit(
         == 0
     )
     capsys.readouterr()
-    settings = json.loads((tmp_path / "agentic-workflows.json").read_text())[
+    settings = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())[
         "extensions"
     ]["ww/git"]
 
@@ -751,7 +754,7 @@ def test_init_interactive_wizard_collects_project_choices(
             return True
 
     _git("init", "-q", "-b", "main", ".", cwd=tmp_path)
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: bugfix\n    steps: []\n", encoding="utf-8"
     )
     monkeypatch.setattr(
@@ -763,8 +766,8 @@ def test_init_interactive_wizard_collects_project_choices(
 
     assert main(["--root", str(tmp_path), "init"]) == 0
     capsys.readouterr()
-    workflows = (tmp_path / "workflows.yaml").read_text(encoding="utf-8")
-    settings = json.loads((tmp_path / "agentic-workflows.json").read_text())[
+    workflows = (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
+    settings = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())[
         "extensions"
     ]["ww/git"]
 
@@ -779,14 +782,14 @@ def test_init_completes_an_existing_enabled_worktree_config(
     tmp_path: Path, capsys
 ) -> None:
     _git("init", "-q", "-b", "main", ".", cwd=tmp_path)
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"extensions": {"ww/git": {"worktrees": True}}}),
         encoding="utf-8",
     )
 
     assert main(["--root", str(tmp_path), "init", "--no-input"]) == 0
     capsys.readouterr()
-    settings = json.loads((tmp_path / "agentic-workflows.json").read_text())[
+    settings = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())[
         "extensions"
     ]["ww/git"]
 
@@ -796,7 +799,7 @@ def test_init_completes_an_existing_enabled_worktree_config(
 
 
 def test_fail_cli_records_agent_functional_error(tmp_path: Path, capsys) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -862,7 +865,7 @@ def test_fail_cli_records_agent_functional_error(tmp_path: Path, capsys) -> None
 
 
 def test_failed_instruction_returns_exit_code_one(tmp_path: Path, capsys) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: reject
     command:
@@ -901,7 +904,7 @@ workflows:
 def test_complete_on_a_failed_task_returns_the_saved_failure_instruction(
     tmp_path: Path, capsys
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -946,7 +949,7 @@ def test_complete_on_a_failed_task_returns_the_saved_failure_instruction(
 def test_force_next_requires_explicit_operator_confirmation(
     tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -1067,7 +1070,7 @@ def test_cli_discovers_the_primary_project_from_a_linked_worktree(
     _git("init", "-q", "-b", "main", ".", cwd=project)
     _git("config", "user.email", "t@e.st", cwd=project)
     _git("config", "user.name", "Test", cwd=project)
-    _git("add", "workflows.yaml", cwd=project)
+    _git("add", "ww-agentic-workflows.yaml", cwd=project)
     _git("commit", "-qm", "seed", cwd=project)
     linked = tmp_path / "linked-worktree"
     _git("worktree", "add", "-q", "-b", "linked", str(linked), cwd=project)

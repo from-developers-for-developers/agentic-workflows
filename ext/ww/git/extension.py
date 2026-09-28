@@ -8,7 +8,7 @@ takes.
 
 What it adds over the equivalent shell handlers is memory and configuration. It
 records every commit it makes and every branch it opens, and it reads its
-settings from the ``ww/git`` section of ``agentic-workflows.json``:
+settings from the ``ww/git`` section of ``ww-agentic-workflows.json``:
 
 ```json
 "extensions": {
@@ -96,7 +96,7 @@ _SETTING_KEYS = {
 
 @dataclass(frozen=True)
 class Settings:
-    """The ``ww/git`` section of ``agentic-workflows.json``, validated."""
+    """The ``ww/git`` section of ``ww-agentic-workflows.json``, validated."""
 
     commit_format: str = DEFAULT_COMMIT_FORMAT
     # Per workflow name, with ``default`` for every other workflow.

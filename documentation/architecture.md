@@ -23,7 +23,7 @@ notation frontend + project-local agent actions
                   transition functions        automatic action executor     instruction builder
 ```
 
-The built-in frontend in `../src/ww/config/` parses `../workflows.yaml` into the
+The built-in frontend in `../src/ww/config/` parses `../ww-agentic-workflows.yaml` into the
 immutable definitions in `../src/ww/workflow_config.py`; another notation can
 produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
@@ -31,7 +31,7 @@ parsers do not acquire different workflow semantics. Validation is also where
 the workflows ww provides to every project, `catchall` in
 `../src/ww/core_workflows.py`, join the configured ones, unless the project
 defines a workflow of the same name or switches it off in
-`../agentic-workflows.json`; every loader passes through it, so no frontend can
+`../ww-agentic-workflows.json`; every loader passes through it, so no frontend can
 miss them. `lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
 point: `../src/ww/task_references.py` maps what the operator called a task onto
 the task format and the IDs the storage port lists, and the command answers
@@ -49,7 +49,7 @@ implicit action names, filters hooks, evaluates interpolation availability, and 
 deterministic execution order.
 
 Before the YAML frontend parses anything, `../src/ww/config/composition.py`
-composes `../workflows.yaml` and the files its leading `imports` list names
+composes `../ww-agentic-workflows.yaml` and the files its leading `imports` list names
 into one mapping and dumps it back to YAML text. The parser receives that text
 exactly as it would a single file, so composition adds no parsing rules of its
 own: it only folds files in import order with the root last, replacing
@@ -77,7 +77,7 @@ integer without a fixed ceiling; timestamp collisions use a bounded suffix retry
 When `ww/git` worktrees are enabled, generated IDs also reserve the configured
 rendered worktree path. This prevents a task whose persisted state is gone from
 adopting an unrelated or stale checkout with the same task-derived name.
-Project configuration has a narrower purpose: `../agentic-workflows.json` contains
+Project configuration has a narrower purpose: `../ww-agentic-workflows.json` contains
 ww-wide operational limits, per-extension settings, and optional execution
 settings for the implicit init and workflow-summary built-ins. The default loop
 limit is materialized during initialization because it is a user-facing safety
@@ -94,6 +94,16 @@ documents, lives below `../.ww` so projects can exclude one directory as a unit;
 `init` migrates the former top-level `../tasks` directory when there is no
 conflicting destination. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
+
+Both configuration files share the `ww-agentic-workflows` stem, and their names
+are defined once in `../src/ww/config_files.py`, so the planned local and
+machine levels can derive theirs from the same stem. There is no compatibility
+layer for the former names `workflows.yaml` and `agentic-workflows.json`: the
+CLI checks the resolved root before dispatching any command and stops with a
+configuration error naming the new file, rather than silently running on
+defaults. `init` renames a former file first when its new name is free, which
+is the only migration path; project-root detection still recognizes the former
+names so the error is raised at the right root.
 
 That file is deliberately short. It states when to use ww and the rules for
 following its responses, and it sends agents to `discover`
@@ -848,9 +858,9 @@ fingerprints cover distribution name, version, and entry-point metadata. The
 current plan schema requires identity metadata; older plan snapshots are
 rejected.
 
-Extension settings live in `../agentic-workflows.json`. Initialization merges
+Extension settings live in `../ww-agentic-workflows.json`. Initialization merges
 missing defaults without replacing existing extension choices. The split is
-deliberate: `../workflows.yaml` says what a
+deliberate: `../ww-agentic-workflows.yaml` says what a
 workflow does, and the project config says how the tools around it behave. ww
 validates the file's shape and hands each extension its own section untouched —
 it cannot know a third party's schema, so an extension validates its own
@@ -1108,7 +1118,7 @@ resolved against it when used or printed (`ww.workspace`). A checkout mounted
 at another path, such as inside a container, therefore reads the same state
 and prints paths valid there. Until now the two
 coincided unless a Git worktree moved a task. The optional `projects` list in
-`agentic-workflows.json` makes the distinction explicit; it belongs to the
+`ww-agentic-workflows.json` makes the distinction explicit; it belongs to the
 machine-specific settings file because checkouts are laid out differently on
 each machine while the workflows are shared: `start --project` or
 `add-child --project` resolves a configured directory and persists it as the

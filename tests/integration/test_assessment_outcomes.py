@@ -41,7 +41,7 @@ def _assessed(
     tmp_path: Path, workflows: str
 ) -> tuple[WorkflowService, Instruction, Instruction]:
     """Run up to the assessment's completion; return its page and the next."""
-    (tmp_path / "workflows.yaml").write_text(workflows, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     service.start("merge", "TASK-1", agent="codex", init_artifact="Merge.")
     page = service.next("TASK-1")
@@ -158,7 +158,7 @@ def test_the_compact_form_gets_the_same_pages(tmp_path: Path) -> None:
 def test_a_delegating_manager_chooses_without_a_worker_preview(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(DECLARED, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(DECLARED, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     service.start(
         "merge",
@@ -210,7 +210,7 @@ def test_a_delegating_manager_chooses_without_a_worker_preview(
 def test_invalid_stops_are_rejected(
     tmp_path: Path, outcomes: str, message: str
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         "workflows:\n  - name: m\n    steps:\n      - assess:\n"
         "          question: Q?\n          outcomes:\n            " + outcomes + "\n",

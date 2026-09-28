@@ -18,7 +18,7 @@ WORKFLOWS = """workflows:
 
 
 def test_a_step_the_manager_performs_selects_no_worker(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     md = MarkdownOutputAdapter()
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
+from ww.config_files import SETTINGS_FILE
 from ww.executable import DEFAULT_EXECUTABLE, ww_command
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
@@ -118,7 +119,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                 [
                     "",
                     terminal_accent("Git support is enabled"),
-                    "  The ww/git extension is configured in agentic-workflows.json",
+                    "  The ww/git extension is configured in ww-agentic-workflows.json",
                     "  with its default settings. See:",
                     "  https://github.com/from-developers-for-developers/agentic-workflows/blob/main/documentation/features.md#configuring-one",
                 ]
@@ -133,7 +134,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                     terminal_accent("Next steps"),
                     "",
                     "  " + terminal_accent("1. Create your first workflow"),
-                    "     Define the steps in workflows.yaml.",
+                    "     Define the steps in ww-agentic-workflows.yaml.",
                     "",
                     "  " + terminal_accent("2. Start developing with your agent"),
                     "     For example, type:",
@@ -170,7 +171,7 @@ class MarkdownOutputAdapter(OutputAdapter):
 
 def _git_extension_active(root: str) -> bool:
     try:
-        config = json.loads((Path(root) / "agentic-workflows.json").read_text())
+        config = json.loads((Path(root) / SETTINGS_FILE).read_text())
         extensions = config.get("extensions", {})
         return isinstance(extensions, dict) and isinstance(
             extensions.get("ww/git"), dict
@@ -192,14 +193,15 @@ def _permission_notice(executable: str = DEFAULT_EXECUTABLE) -> Lines:
     heading = "ACTION NEEDED — allow ww in your agent's permissions"
     rule = "─" * (width - 2)
     paragraphs = (
-        "ww runs the commands your workflows.yaml configures — your tests, "
+        "ww runs the commands your ww-agentic-workflows.yaml configures — your tests, "
         "linters, and commits — so an agent treats it as a command needing "
         "confirmation and asks every single time. Allow it once:",
         "Without this you get a prompt per step, and an interactive step's "
         "operator page cannot open its local port from inside an agent "
         "sandbox — it fails with a permission error rather than a busy port.",
-        "What you are trusting is your own workflows.yaml: review changes to "
-        "it like a CI config, since whoever edits it can run commands here.",
+        "What you are trusting is your own ww-agentic-workflows.yaml: review "
+        "changes to it like a CI config, since whoever edits it can run "
+        "commands here.",
     )
     body = textwrap.wrap(paragraphs[0], width - 2, initial_indent="  ",
                          subsequent_indent="  ")
@@ -1307,7 +1309,7 @@ def _manager_intro() -> Lines:
         "`ww` follows a saved workflow plan, persists progress, runs automatic "
         "handlers, and tells the manager or worker exactly what to do next. "
         "Follow the role and command in each response; there is no need to "
-        "inspect `workflows.yaml`, the `ww` source, or its documentation.",
+        "inspect `ww-agentic-workflows.yaml`, the `ww` source, or its documentation.",
         "",
     ]
 

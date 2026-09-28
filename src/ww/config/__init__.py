@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Strict loading for the normalized ``workflows.yaml`` schema."""
+"""Strict loading for the normalized ``ww-agentic-workflows.yaml`` schema."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ from .values import (
 
 @dataclass(frozen=True)
 class YamlConfigurationLoader:
-    """The built-in ``workflows.yaml`` notation frontend."""
+    """The built-in ``ww-agentic-workflows.yaml`` notation frontend."""
 
     path: Path
 
@@ -71,7 +71,7 @@ def parse_yaml_configuration(path: Path) -> WorkflowConfiguration:
 
 
 def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguration:
-    """Parse ``workflows.yaml`` notation held in memory, named ``source``."""
+    """Parse ``ww-agentic-workflows.yaml`` notation held in memory, named ``source``."""
     raw = _raw_from_text(text, source)
     if "tasks" in raw:
         raise ConfigurationError("configuration uses legacy 'tasks'; use 'handlers'")

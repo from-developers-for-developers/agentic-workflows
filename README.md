@@ -1,7 +1,7 @@
 # ww - agentic workflows
 
 `ww-agentic-workflows` is a local-first CLI for defining and running repeatable
-workflows with coding agents. It compiles `workflows.yaml` into an explicit plan,
+workflows with coding agents. It compiles `ww-agentic-workflows.yaml` into an explicit plan,
 separates work performed by the agent from automation performed by `ww`, and
 saves task state so work can be inspected and resumed.
 
@@ -11,7 +11,7 @@ actions, saved artifacts, and a durable record of what ran.
 
 Website: <https://agenticworkflows.dev>
 
-> **ww is in beta.** `workflows.yaml` syntax, task state, and commands may
+> **ww is in beta.** `ww-agentic-workflows.yaml` syntax, task state, and commands may
 > still change; [documentation/limitations.md](documentation/limitations.md)
 > says what is not promised yet. `ww-agentic-workflows --version` and `init`
 > say so too.
@@ -79,7 +79,7 @@ Please report them at
 [GitHub Issues](https://github.com/from-developers-for-developers/agentic-workflows/issues).
 A report is most useful with all four of these:
 
-1. **The workflow.** The relevant part of your `workflows.yaml`, reduced to
+1. **The workflow.** The relevant part of your `ww-agentic-workflows.yaml`, reduced to
    what still reproduces the problem.
 2. **The command you ran**, its exit code, and the exact message ww printed.
 3. **What you expected instead.**
@@ -121,7 +121,7 @@ reinstall. This is deliberate for now — see
 
 To keep a second install beside it, such as a checkout of `dev`, give it its
 own global name with `pipx install --editable --suffix=-dev <checkout>`, and
-set `"executable": "ww-agentic-workflows-dev"` in the `agentic-workflows.json`
+set `"executable": "ww-agentic-workflows-dev"` in the `ww-agentic-workflows.json`
 of each project that should use it. ww then prints that binary in every
 command, and the project's `./ww` runs it.
 
@@ -136,11 +136,11 @@ ww-agentic-workflows init
 
 The wizard asks a few questions and then sets the project up:
 
-- **`workflows.yaml`** — an empty, structured file for you to fill in.
+- **`ww-agentic-workflows.yaml`** — an empty, structured file for you to fill in.
 - **`./ww`** — a small launcher, so every later command is `./ww <command>`
   from the project root regardless of where you are installed.
 - **`WW_AGENT_INSTRUCTIONS.md`** — the instructions your agents read.
-- **`agentic-workflows.json`** — project configuration: task ID format,
+- **`ww-agentic-workflows.json`** — project configuration: task ID format,
   enabled extensions, base branches, optional multi-repository `projects`.
 - **Git setup**, in a Git repository: it enables the bundled `ww/git`
   extension and asks about worktrees and branch formats, and offers to add
@@ -162,7 +162,7 @@ directories and leaves your own content alone.
 
 ### 3. Define a workflow
 
-Open `workflows.yaml` and describe the process as a list of steps. The
+Open `ww-agentic-workflows.yaml` and describe the process as a list of steps. The
 smallest useful workflow is all agent work:
 
 ```yaml
@@ -178,7 +178,7 @@ workflows:
 Every workflow also gets an implicit first `init` step, which records the
 requirements for the whole task.
 
-As the configuration grows, `workflows.yaml` can split its definitions across
+As the configuration grows, `ww-agentic-workflows.yaml` can split its definitions across
 other YAML files it lists under `imports`; see
 [the features guide](documentation/features.md#split-workflowsyaml-into-several-files).
 
@@ -194,7 +194,7 @@ exact, ordered plan that would run — every step, hook, and handler — without
 creating any task state.
 
 [documentation/examples.md](documentation/examples.md) has fifteen complete,
-tested `workflows.yaml` files, from this one up to loops, per-item work,
+tested `ww-agentic-workflows.yaml` files, from this one up to loops, per-item work,
 child tasks, and Git integration.
 
 ### 4. Ask your agent to do the work
@@ -309,7 +309,7 @@ commands are identical either way; only the division of labour differs.
 
 Choose one with `--runtime` / `-r` on `start`. Omitted, ww takes the workflow's
 own `runtime` if it declares one, then `"runtime"` in
-`agentic-workflows.json`, and falls back to `single`. The flag always wins.
+`ww-agentic-workflows.json`, and falls back to `single`. The flag always wins.
 
 This is what makes the next part meaningful. Workflows, steps, and handlers may
 request an `agent`, `model`, and `reasoning` — always advisory, never binding.
@@ -318,9 +318,9 @@ it actually chose. In `single` there is nobody to delegate to, so ww keeps the
 requests on the saved plan for inspection and otherwise ignores them: your own
 session's settings are the ones in force.
 
-An optional `projects` list in `agentic-workflows.json` lets one ww instance
+An optional `projects` list in `ww-agentic-workflows.json` lets one ww instance
 coordinate tasks and child tasks across several repositories, each working in
-its own directory. Set `"enabled": false` in `agentic-workflows.json` to tell
+its own directory. Set `"enabled": false` in `ww-agentic-workflows.json` to tell
 agents not to use ww in a project at all.
 
 ## Releases and branches
@@ -367,12 +367,12 @@ and each notice appears once:
 ./ww updates --check    # look now
 ```
 
-Set `"update_check": false` in `agentic-workflows.json` to switch it off for a
+Set `"update_check": false` in `ww-agentic-workflows.json` to switch it off for a
 project, or `WW_UPDATE_CHECK=0` to switch it off everywhere.
 
 ## Stability and compatibility
 
-The shape of ww has largely settled. `workflows.yaml` and the command surface
+The shape of ww has largely settled. `ww-agentic-workflows.yaml` and the command surface
 have been stable in practice for a while, and most work on `main` now is
 internal refactoring, new capabilities, and fixes rather than changes to what
 you have already written. Frequent updates do not mean frequent breakage.
@@ -386,7 +386,7 @@ occasionally rather than routinely.
 
 | Surface | Where it stands |
 | --- | --- |
-| `workflows.yaml` | Settled. Keys are added far more often than they change, and `lint` tells you immediately if something no longer parses. |
+| `ww-agentic-workflows.yaml` | Settled. Keys are added far more often than they change, and `lint` tells you immediately if something no longer parses. |
 | The CLI | Settled for interactive use. Commands, flags, and printed text are still not a machine interface — use `--json` if a script depends on output. |
 | Task state under `.ww/` | The volatile one. The on-disk format is versioned and the reader rejects any other version, so an unfinished task may not load after an upgrade. |
 | The extension API | Documented and the most deliberate of these; changes are announced. |
@@ -442,7 +442,7 @@ issue.
 ## Git branches and worktrees
 
 The bundled Git extension accepts a project-wide base branch and
-workflow-specific overrides in `agentic-workflows.json`. A base can be a
+workflow-specific overrides in `ww-agentic-workflows.json`. A base can be a
 literal branch name or an `argv` command whose single non-empty stdout line
 names the branch:
 
@@ -535,14 +535,14 @@ ww-agentic-workflows complete TASK-123 --role worker \
 
 ## Documentation
 
-- [specification.md](documentation/specification.md) is the concise `workflows.yaml`
+- [specification.md](documentation/specification.md) is the concise `ww-agentic-workflows.yaml`
   specification, including allowed keys, value types, and constraints.
 - [features.md](documentation/features.md) is the complete user/developer feature reference,
   with configuration and command examples.
 - [architecture.md](documentation/architecture.md) describes internals, boundaries, state, and
   design decisions.
 - [examples.md](documentation/examples.md) is a set of complete, tested
-  `workflows.yaml` examples, one per control or behaviour.
+  `ww-agentic-workflows.yaml` examples, one per control or behaviour.
 - [limitations.md](documentation/limitations.md) lists what ww does not do yet, and
   the compatibility and platform boundaries to expect before 1.0.
 

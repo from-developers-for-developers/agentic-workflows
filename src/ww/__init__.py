@@ -6,8 +6,8 @@ __version__ = "0.1.0"
 # change between pulls, as documentation/limitations.md describes.
 STAGE = "beta"
 BETA_NOTICE = (
-    "ww is in beta: workflows.yaml syntax, task state, and commands may still "
-    "change. What is not promised yet: "
+    "ww is in beta: ww-agentic-workflows.yaml syntax, task state, and "
+    "commands may still change. What is not promised yet: "
     "https://github.com/from-developers-for-developers/agentic-workflows/blob/"
     "main/documentation/limitations.md"
 )

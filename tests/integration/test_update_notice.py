@@ -35,7 +35,7 @@ def _commit(repository: Path, message: str) -> None:
 
 
 def _project(root: Path) -> None:
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Do it.\n",
         encoding="utf-8",
     )
@@ -72,7 +72,7 @@ def test_a_command_announces_the_update_above_its_own_output(
 
     output = capsys.readouterr().out
     assert output.index("A newer ww is available") < output.index(
-        "workflows.yaml is valid."
+        "ww-agentic-workflows.yaml is valid."
     )
     assert "- `interact --pause` pauses." in output
     assert "Tell the person you are working for" in output
@@ -91,7 +91,7 @@ def test_the_same_update_is_not_announced_a_second_time(
 
     second = capsys.readouterr().out
     assert "A newer ww is available" not in second
-    assert second.strip() == "workflows.yaml is valid."
+    assert second.strip() == "ww-agentic-workflows.yaml is valid."
 
 
 def test_json_output_stays_machine_readable(
@@ -140,7 +140,7 @@ def test_the_project_can_turn_the_check_off(
     project = tmp_path / "project"
     project.mkdir()
     _project(project)
-    (project / "agentic-workflows.json").write_text(
+    (project / "ww-agentic-workflows.json").write_text(
         json.dumps({"update_check": False}), encoding="utf-8"
     )
     monkeypatch.delenv("WW_UPDATE_CHECK", raising=False)
@@ -149,7 +149,7 @@ def test_the_project_can_turn_the_check_off(
 
     output = capsys.readouterr().out
     assert "A newer ww is available" not in output
-    assert output.strip() == "workflows.yaml is valid."
+    assert output.strip() == "ww-agentic-workflows.yaml is valid."
 
 
 def test_a_broken_update_check_never_disturbs_the_command(
@@ -165,4 +165,4 @@ def test_a_broken_update_check_never_disturbs_the_command(
     monkeypatch.setattr(cli_updates, "installation_checkout", explode)
 
     assert main(["--root", str(project), "lint"]) == 0
-    assert capsys.readouterr().out.strip() == "workflows.yaml is valid."
+    assert capsys.readouterr().out.strip() == "ww-agentic-workflows.yaml is valid."

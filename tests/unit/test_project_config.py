@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""agentic-workflows.json: loading, validation, and per-extension isolation."""
+"""ww-agentic-workflows.json: loading, validation, and per-extension isolation."""
 
 from __future__ import annotations
 
@@ -13,13 +13,13 @@ from ww.project_config import ProjectConfig, load_project_config
 
 
 def write(root: Path, payload: object) -> Path:
-    path = root / "agentic-workflows.json"
+    path = root / "ww-agentic-workflows.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
 def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
-    config = load_project_config(tmp_path / "agentic-workflows.json")
+    config = load_project_config(tmp_path / "ww-agentic-workflows.json")
 
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
@@ -128,13 +128,13 @@ def test_a_malformed_file_is_rejected(
 
 
 def test_invalid_json_names_the_file(tmp_path: Path) -> None:
-    path = tmp_path / "agentic-workflows.json"
+    path = tmp_path / "ww-agentic-workflows.json"
     path.write_text("{", encoding="utf-8")
 
     with pytest.raises(ConfigurationError) as error:
         load_project_config(path)
 
-    assert "agentic-workflows.json" in str(error.value)
+    assert "ww-agentic-workflows.json" in str(error.value)
 
 
 @pytest.mark.parametrize("enabled", [True, False])

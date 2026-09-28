@@ -21,7 +21,7 @@ from ww.storage_adapters import MemoryTaskStorageAdapter, ProjectMetadata
 
 
 def _service(root: Path, configuration: str) -> WorkflowService:
-    (root / "workflows.yaml").write_text(configuration, encoding="utf-8")
+    (root / "ww-agentic-workflows.yaml").write_text(configuration, encoding="utf-8")
     return WorkflowService(Storage(root))
 
 
@@ -201,7 +201,7 @@ def test_continue_and_retry_preserve_command_output_history(
                   command:
                     shell: 'printf %s "$WW_OPERATION_ATTEMPT"; exit 1'
 """
-    (tmp_path / "workflows.yaml").write_text(config, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(
         Storage(
             tmp_path,
@@ -250,7 +250,7 @@ def test_continue_preserves_command_output_history(
                   command:
                     argv: [printf, evidence]
 """
-    (tmp_path / "workflows.yaml").write_text(config, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(
         Storage(
             tmp_path,

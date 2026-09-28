@@ -11,7 +11,7 @@ from ww.plan import compile_workflow_plan
 def test_parent_preparation_is_separate_and_parent_tail_follows_leaf(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
   - name: parent-preparation
@@ -66,7 +66,7 @@ workflows:
 
 
 def _loop_plan(tmp_path: Path, yaml: str):
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(yaml, encoding="utf-8")
     return compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 

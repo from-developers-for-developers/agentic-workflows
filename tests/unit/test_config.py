@@ -24,7 +24,7 @@ def test_yaml_frontend_only_translates_before_shared_validation(
     tmp_path: Path,
 ) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """workflows:
   - name: task
     modes: [missing]
@@ -43,7 +43,7 @@ def test_yaml_frontend_only_translates_before_shared_validation(
 def test_workflow_supports_named_entry_shorthand(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - quick: A short workflow.
     steps:
@@ -63,7 +63,7 @@ def test_workflow_supports_named_entry_shorthand(tmp_path: Path) -> None:
 def test_task_format_is_normalized_and_validated(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """task_format: WORK-{timestamp}-{digit}
 workflows:
   - name: task
@@ -77,7 +77,7 @@ workflows:
 
 
 def test_task_format_accepts_uuid(tmp_path: Path) -> None:
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         "task_format: TASK-{uuid}\nworkflows:\n  - name: task\n    steps: []\n",
         encoding="utf-8",
@@ -88,7 +88,7 @@ def test_task_format_accepts_uuid(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="unknown placeholder"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """task_format: WORK-{random}
 workflows:
   - name: task
@@ -100,7 +100,7 @@ workflows:
 
 def test_rejects_nested_workflows_at_yaml_boundary(tmp_path: Path) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """workflows:
   - name: parent
     workflows:
@@ -116,7 +116,7 @@ def test_rejects_nested_workflows_at_yaml_boundary(tmp_path: Path) -> None:
 
 def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """workflows:
   - name: task
     steps:
@@ -132,7 +132,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
 
 def test_parses_normalized_records_and_command_forms(tmp_path: Path) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """modes:
   - name: economy
     description: Use fewer tokens.
@@ -184,7 +184,7 @@ workflows:
 def test_modes_accept_named_entry_shorthand(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """modes:
   - economy: Use fewer tokens.
   - careful: ~
@@ -205,7 +205,7 @@ workflows:
 def test_parses_saved_task_metadata_declarations(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
     steps:
@@ -230,7 +230,7 @@ def test_parses_saved_task_metadata_declarations(tmp_path: Path) -> None:
 def test_parses_project_metadata_scope(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
     steps:
@@ -251,7 +251,7 @@ def test_expands_named_entry_shorthand_for_provide_and_save_metadata(
 ) -> None:
     configuration = parse_yaml_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
     steps:
@@ -290,7 +290,7 @@ def test_explicit_name_preserves_provide_and_save_metadata_long_form(
 ) -> None:
     configuration = parse_yaml_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
     steps:
@@ -316,7 +316,7 @@ def test_explicit_name_preserves_provide_and_save_metadata_long_form(
 def test_allows_the_same_metadata_path_in_different_scopes(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
     steps:
@@ -337,7 +337,7 @@ def test_allows_the_same_metadata_path_in_different_scopes(tmp_path: Path) -> No
 @pytest.mark.parametrize("key", ("metadata/foo", "foo:bar", ".foo", "foo."))
 def test_rejects_non_dotted_task_metadata_keys(tmp_path: Path, key: str) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         f"""workflows:
   - name: task
     steps:
@@ -355,7 +355,7 @@ def test_rejects_non_dotted_task_metadata_keys(tmp_path: Path, key: str) -> None
 def test_parses_structured_argv_and_explicit_shell_actions(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: run
     command:
@@ -382,7 +382,7 @@ workflows:
 def test_parses_explicit_inline_handler_command(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """hooks:
   before_start_workflow:
     - command:
@@ -404,7 +404,7 @@ workflows:
 def test_normalizes_root_step_and_hook_handler_syntax(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: check
     argv: [printf, ready]
@@ -438,7 +438,7 @@ def test_rejects_string_prompt_value(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="prompt must be true"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """workflows:
   - task: ~
     steps:
@@ -454,7 +454,7 @@ def test_step_handler_copies_a_catalog_handler_with_step_identity(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - handler_name: Run the shared check.
     argv: [printf, ready]
@@ -481,7 +481,7 @@ workflows:
 def test_step_handler_allows_explicit_step_overrides(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: shared
     argv: [printf, shared]
@@ -507,7 +507,7 @@ def test_step_handler_overrides_prompt_text_and_retains_command_permissions(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: ask
     prompt: true
@@ -540,7 +540,7 @@ def test_step_handler_explicit_prompt_retains_inherited_prompt_text(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: ask
     prompt: true
@@ -565,7 +565,7 @@ def test_step_handler_empty_prompt_description_uses_the_step_name(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: ask
     prompt: true
@@ -588,7 +588,7 @@ workflows:
 def test_step_handler_inherits_a_named_loop_step(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - code-review:
       loop:
@@ -620,7 +620,7 @@ def test_step_handler_requires_a_known_handler_name(
     tmp_path: Path, handler: object
 ) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """handlers:
   - name: shared
     prompt: true
@@ -641,7 +641,7 @@ def test_expands_named_entry_shorthand_for_handlers_steps_and_hooks(
 ) -> None:
     configuration = parse_yaml_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - update-docs: Update the YAML specification.
   - no-description: ~
@@ -688,7 +688,7 @@ workflows:
 @pytest.mark.parametrize("value", ("[]", "{}", "true"))
 def test_rejects_non_string_shorthand_descriptions(tmp_path: Path, value: str) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         f"""workflows:
   - name: task
     steps:
@@ -703,7 +703,7 @@ def test_rejects_non_string_shorthand_descriptions(tmp_path: Path, value: str) -
 def test_explicit_name_keeps_the_existing_handler_syntax(tmp_path: Path) -> None:
     configuration = parse_yaml_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - description: Existing description.
     name: existing
@@ -755,7 +755,7 @@ def test_expands_grouped_hook_handlers_using_the_shared_handler_shape(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: update-architecture
     prompt: true
@@ -796,7 +796,7 @@ workflows:
 def test_parses_hierarchical_step_hook_filter(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """hooks:
   before_in_progress:
     - steps: [plan-and-fix/fix]
@@ -819,7 +819,7 @@ def test_shell_source_cannot_interpolate_workflow_values(tmp_path: Path) -> None
     with pytest.raises(ConfigurationError, match="shell source cannot interpolate"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """handlers:
   - name: unsafe
     command:
@@ -934,14 +934,14 @@ def test_rejects_legacy_and_ambiguous_schema(
     tmp_path: Path, content: str, message: str
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
-        load_configuration(_write(tmp_path / "workflows.yaml", content))
+        load_configuration(_write(tmp_path / "ww-agentic-workflows.yaml", content))
 
 
 def test_hook_filters_are_scoped_and_transition_accepts_interpolation(
     tmp_path: Path,
 ) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """hooks:
   after_complete:
     - workflows: [chooser]
@@ -989,12 +989,12 @@ workflows:
 """
 
     with pytest.raises(ConfigurationError, match="unknown key.*steps"):
-        load_configuration(_write(tmp_path / "workflows.yaml", content))
+        load_configuration(_write(tmp_path / "ww-agentic-workflows.yaml", content))
 
 
 def test_parses_mcp_handlers_and_direct_hook_declarations(tmp_path: Path) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """handlers:
   - name: create-pr
     mcp: github
@@ -1027,7 +1027,7 @@ workflows:
 def test_parses_profiles_for_workflows_and_steps(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """profiles:
   reviewer: Review implementation changes.
 workflows:
@@ -1052,7 +1052,7 @@ workflows:
 def test_parses_step_subagents_flag(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
     steps:
@@ -1081,7 +1081,7 @@ def test_parses_step_subagents_flag(tmp_path: Path) -> None:
 def test_parses_loop_wrapper_with_ordinary_nested_steps(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - task: ~
     steps:
@@ -1115,7 +1115,7 @@ def test_loop_assignment_is_parsed_and_inherited_from_a_handler(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - handle_tests:
     loop_assignment: per_step
@@ -1168,7 +1168,7 @@ def test_rejects_incomplete_loop_syntax(
     tmp_path: Path, body: str, message: str
 ) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         (
             "workflows:\n  - task: ~\n    steps:\n      - wrapper: ~\n        "
             + body
@@ -1187,7 +1187,7 @@ def test_core_controls_are_not_selectable_as_action_types(
     tmp_path: Path, identifier: str
 ) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         f"""workflows:
   - name: task
     steps:
@@ -1203,7 +1203,7 @@ def test_core_controls_are_not_selectable_as_action_types(
 
 def test_transition_step_carries_only_its_target(tmp_path: Path) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         """workflows:
   - name: choose
     handoff: true
@@ -1249,7 +1249,7 @@ def test_misplaced_transitions_are_rejected_when_loading(
     tmp_path: Path, workflow: str, message: str
 ) -> None:
     path = _write(
-        tmp_path / "workflows.yaml",
+        tmp_path / "ww-agentic-workflows.yaml",
         "workflows:\n"
         + workflow
         + "  - name: target\n    steps:\n      - work: Work.\n",
@@ -1262,7 +1262,7 @@ def test_yaml_text_parses_like_a_file(tmp_path: Path) -> None:
     text = "workflows:\n  - name: task\n    steps:\n      - work: Work.\n"
 
     assert parse_yaml_text(text) == parse_yaml_configuration(
-        _write(tmp_path / "workflows.yaml", text)
+        _write(tmp_path / "ww-agentic-workflows.yaml", text)
     )
     with pytest.raises(ConfigurationError, match="invalid YAML in scenario: "):
         parse_yaml_text("workflows: [", "scenario")
@@ -1273,7 +1273,7 @@ def test_yaml_text_parses_like_a_file(tmp_path: Path) -> None:
 def test_save_metadata_append_is_parsed(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - task: ~
     steps:
@@ -1299,7 +1299,7 @@ def test_save_metadata_append_must_be_boolean(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="append must be true or false"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """workflows:
   - task: ~
     steps:
@@ -1318,7 +1318,7 @@ def test_documents_are_declared_at_the_root_and_updated_by_steps(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """documents:
   - test_cases: The test cases derived from the issue, kept current across runs.
   - conventions: Team conventions every task follows.
@@ -1365,7 +1365,7 @@ def test_document_declarations_are_validated(
     with pytest.raises(ConfigurationError, match=message):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 body + "workflows:\n  - task: ~\n    steps:\n      - work: Work.\n",
             )
         )
@@ -1378,7 +1378,7 @@ def test_update_document_must_name_a_declared_document(tmp_path: Path) -> None:
     ):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """workflows:
   - task: ~
     steps:
@@ -1394,7 +1394,7 @@ def test_the_old_save_metadata_key_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="save_metadata"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """workflows:
   - task: ~
     steps:
@@ -1410,7 +1410,7 @@ def test_the_old_save_metadata_key_is_rejected(tmp_path: Path) -> None:
 def test_a_bare_step_named_like_a_root_handler_copies_it(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - fetch_requirements: Fetch the issue and its comments.
     mcp: atlassian
@@ -1452,7 +1452,7 @@ def test_document_paths_are_parsed_and_kept_inside_the_project(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """documents:
   - notes: Notes on the branch.
     path: documentation/issues/{task_id}/notes.md
@@ -1489,7 +1489,7 @@ def test_invalid_document_paths_are_rejected(
     with pytest.raises(ConfigurationError, match=message):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "documents:\n  - notes: Notes.\n"
                 + declaration
                 + "workflows:\n  - task: ~\n    steps:\n      - work: Work.\n",
@@ -1500,7 +1500,7 @@ def test_invalid_document_paths_are_rejected(
 def test_interactive_is_parsed_inherited_and_folded_into_items(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - discuss: Discuss the architecture with the operator.
     interactive: true
@@ -1524,7 +1524,7 @@ workflows:
     with pytest.raises(ConfigurationError, match="interactive must be true or false"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - a: A.\n"
                 "        interactive: maybe\n",
             )
@@ -1534,7 +1534,7 @@ workflows:
 def test_a_workflow_may_declare_its_runtime(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - manual: Manual testing.
     runtime: single
@@ -1551,7 +1551,7 @@ def test_a_workflow_may_declare_its_runtime(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="runtime must be one of: single"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    runtime: parallel\n    steps:\n"
                 "      - work: Work.\n",
             )
@@ -1563,7 +1563,7 @@ def test_choices_are_labels_with_descriptions_and_need_an_interactive_step(
 ) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - task: ~
     steps:
@@ -1583,7 +1583,7 @@ def test_choices_are_labels_with_descriptions_and_need_an_interactive_step(
     with pytest.raises(ConfigurationError, match="require interactive: true"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - verify: Verify.\n"
                 "        choices:\n          - pass: Passed.\n",
             )
@@ -1593,7 +1593,7 @@ def test_choices_are_labels_with_descriptions_and_need_an_interactive_step(
 def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: manual
     steps:
@@ -1624,7 +1624,7 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
     with pytest.raises(ConfigurationError, match="ui.*requires interactive: true"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
                 "        items:\n          ui: true\n",
             )
@@ -1632,7 +1632,7 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
     with pytest.raises(ConfigurationError, match="per-item stages only"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - discuss: Talk.\n"
                 "        interactive: true\n        ui: true\n",
             )
@@ -1640,7 +1640,7 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
     with pytest.raises(ConfigurationError, match="ui must be true or false"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
                 "        items:\n          interactive: true\n"
                 "          ui: yes please\n",
@@ -1652,7 +1652,7 @@ def test_one_stage_per_item_flow_is_answered_on_the_page(tmp_path: Path) -> None
     with pytest.raises(ConfigurationError, match="found ui: true on verify, report"):
         load_configuration(
             _write(
-                tmp_path / "workflows.yaml",
+                tmp_path / "ww-agentic-workflows.yaml",
                 """workflows:
   - name: review
     steps:
@@ -1676,7 +1676,7 @@ def test_one_stage_per_item_flow_is_answered_on_the_page(tmp_path: Path) -> None
 def test_idempotent_is_declared_where_the_command_is(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
-            tmp_path / "workflows.yaml",
+            tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: tests
     argv: [pytest, -q]
@@ -1721,6 +1721,7 @@ def test_idempotent_needs_a_command_and_a_boolean(
 ) -> None:
     workflows = "workflows:\n  - name: task\n    steps:\n      - work: Work.\n"
     with pytest.raises(ConfigurationError, match=message):
+        config_path = tmp_path / "ww-agentic-workflows.yaml"
         load_configuration(
-            _write(tmp_path / "workflows.yaml", f"handlers:\n{handler}{workflows}")
+            _write(config_path, f"handlers:\n{handler}{workflows}")
         )

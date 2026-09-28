@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The project configuration file, ``agentic-workflows.json``.
+"""The project configuration file, ``ww-agentic-workflows.json``.
 
-This is ww's settings file, separate from ``workflows.yaml``: the YAML describes
-what a workflow *does*, while this describes how the tools around it behave. It
+ww's settings file, separate from ``ww-agentic-workflows.yaml``. The YAML
+describes what a workflow *does*, while this describes how the tools around
+it behave. It
 contains ww-wide settings, built-in execution hints, and extension settings.
 
 ```json
@@ -27,7 +28,7 @@ as ``catchall``; each is on unless its entry says ``"enabled": false``.
 
 ``projects`` are the directories, usually repositories, a task may work in.
 They are optional and machine-specific, which is why they live here rather than
-in ``workflows.yaml``: the same workflows can run in checkouts laid out
+in ``ww-agentic-workflows.yaml``: the same workflows can run in checkouts laid out
 differently on each machine.
 
 An extension's settings are handed to it untouched. ww validates the shape of
@@ -44,12 +45,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ww.config_files import SETTINGS_FILE
 from ww.core_workflows import CORE_WORKFLOW_NAMES
 from ww.errors import ConfigurationError
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
 from ww.validation import expect_normalized_name, is_positive_int
 
-FILE_NAME = "agentic-workflows.json"
+FILE_NAME = SETTINGS_FILE
 BUILTIN_NAMES = frozenset({"init", "workflow_summary"})
 # ``init`` only restates requirements; the workflow summary is what people
 # read, so it follows the run's ordinary worker selection.
@@ -156,7 +158,7 @@ class ProjectConfig:
 
 
 def load_project_config(path: Path) -> ProjectConfig:
-    """Load ``agentic-workflows.json``, or return defaults when it is absent."""
+    """Load ``ww-agentic-workflows.json``, or return defaults when it is absent."""
     if not path.is_file():
         return ProjectConfig()
     try:

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compose ``workflows.yaml`` and the files it imports into one document.
+"""Compose ``ww-agentic-workflows.yaml`` and the files it imports into one document.
 
 The root file may list other YAML files under ``imports``, its first key. Each
 import may define anything the root can, except further imports. Definitions
@@ -13,8 +13,9 @@ earlier one and the root overrides every import:
   entries carry no name to override;
 - any other key, such as ``task_format``, takes the later value.
 
-The composed document is ordinary ``workflows.yaml`` notation: the parser reads
-it exactly as it would a single file, and nothing is written to disk.
+The composed document is ordinary ``ww-agentic-workflows.yaml`` notation:
+the parser reads it exactly as it would a single file, and nothing is
+written to disk.
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ class Override:
 
 @dataclass(frozen=True)
 class ComposedConfiguration:
-    """The composed ``workflows.yaml`` text, its mapping, and its overrides."""
+    """Composed ``ww-agentic-workflows.yaml`` text, its mapping, and overrides."""
 
     text: str
     raw: dict[str, Any]

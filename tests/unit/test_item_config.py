@@ -14,7 +14,7 @@ from ww.plan import compile_workflow_plan
 
 
 def _load(tmp_path: Path, steps: str, handlers: str = ""):  # type: ignore[no-untyped-def]
-    path = tmp_path / "workflows.yaml"
+    path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         f"{handlers}workflows:\n  - name: task\n    steps:\n{steps}", encoding="utf-8"
     )

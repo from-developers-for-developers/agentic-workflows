@@ -44,8 +44,8 @@ WORKFLOWS = """workflows:
 
 def _service(tmp_path: Path) -> WorkflowService:
     (tmp_path / "backend").mkdir(parents=True)
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"projects": [{"name": "backend", "path": "./backend"}]}),
         encoding="utf-8",
     )

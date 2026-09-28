@@ -19,7 +19,7 @@ TASK = "TASK-1"
 
 
 def _service(tmp_path: Path, assignment: str, stage_hook: str = "") -> WorkflowService:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         f"""workflows:
   - name: review
     steps:
@@ -267,7 +267,7 @@ def test_collection_stage_carries_the_splitting_guidance(tmp_path: Path) -> None
 
 
 def test_bare_items_run_one_built_in_stage_per_item(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: review
     steps:
@@ -306,7 +306,7 @@ def test_bare_items_run_one_built_in_stage_per_item(tmp_path: Path) -> None:
 
 
 def test_collect_only_items_expand_nothing(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: review
     steps:
@@ -377,7 +377,7 @@ def _spans(service: WorkflowService) -> list[list[str]]:
 def test_a_stage_with_other_worker_settings_starts_a_new_assignment(
     tmp_path: Path, assignment: str, expected: list[list[str]]
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         f"""workflows:
   - name: review
     steps:
@@ -402,7 +402,7 @@ def test_a_stage_with_other_worker_settings_starts_a_new_assignment(
 
 
 def test_bare_items_default_to_one_worker_for_all_items(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: review
     steps:

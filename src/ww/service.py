@@ -248,7 +248,7 @@ class WorkflowService:
         self._require_manager("start", caller_role)
         if not self.extensions.config.enabled:
             raise StateError(
-                "ww is disabled for this project (agentic-workflows.json has "
+                "ww is disabled for this project (ww-agentic-workflows.json has "
                 '"enabled": false); do not use ww for this work'
             )
         if not agent:
@@ -363,7 +363,7 @@ class WorkflowService:
                 + (
                     f"configured projects: {configured}"
                     if configured
-                    else "no projects are configured in agentic-workflows.json"
+                    else "no projects are configured in ww-agentic-workflows.json"
                 )
             )
         directory = Path(path)

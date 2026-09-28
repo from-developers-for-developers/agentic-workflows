@@ -29,7 +29,7 @@ handlers:
       documentation/architecture.md for architecture changes;
       documentation/features.md, one section per feature with examples, for
       new, changed, or removed features; documentation/specification.md for
-      changes to the workflows.yaml syntax; and README.md only for the tool's
+      changes to the ww-agentic-workflows.yaml syntax; and README.md only for the tool's
       purpose, main examples, and setup, as an introduction rather than a
       reference.
 

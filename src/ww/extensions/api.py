@@ -3,7 +3,7 @@
 
 An extension adds handlers, modes, commands, and core-variable overrides to
 ww. It is identified by a ``vendor/name`` pair and is addressed from
-``workflows.yaml`` by its fully qualified reference, never by a bare name:
+``ww-agentic-workflows.yaml`` by its fully qualified reference, never by a bare name:
 
 ```yaml
 hooks:
@@ -203,7 +203,7 @@ class ExtensionContext:
     outside a task. ``values`` holds the workflow values collected so far, so a
     handler reads its declared inputs from it by name.
 
-    ``config`` is this extension's own section of ``agentic-workflows.json``,
+    ``config`` is this extension's own section of ``ww-agentic-workflows.json``,
     and nothing else from that file. ww passes it through unvalidated: it cannot
     know a third party's schema, so an extension validates its own settings and
     reports its own errors.
@@ -292,8 +292,9 @@ class ExtensionCommand:
     """An operator command over the extension's own state.
 
     Commands are reachable only as ``./ww extension <vendor>/<name> <command>``.
-    They are deliberately not addressable from ``workflows.yaml``: they inspect
-    and maintain what the extension has recorded, and are not workflow steps.
+    They are deliberately not addressable from ``ww-agentic-workflows.yaml``:
+    they inspect and maintain what the extension has recorded, and are
+    not workflow steps.
     """
 
     name: str

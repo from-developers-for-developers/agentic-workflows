@@ -31,7 +31,7 @@ WORKFLOWS = """workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -189,7 +189,7 @@ def test_a_plain_flow_keeps_items_to_its_run(tmp_path: Path) -> None:
 
 
 def test_shared_is_a_boolean_on_the_items_mapping(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
         "        items:\n          shared: yes please\n",
         encoding="utf-8",

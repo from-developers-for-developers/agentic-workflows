@@ -13,7 +13,7 @@ from ww.storage import Storage
 
 
 def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -76,7 +76,7 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
 
 
 def test_child_failure_marks_the_parent_coordinator_failed(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -107,7 +107,7 @@ def test_child_failure_marks_the_parent_coordinator_failed(tmp_path: Path) -> No
 
 
 def test_resumed_child_completion_recovers_its_failed_parent(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -152,7 +152,7 @@ def test_resumed_child_completion_recovers_its_failed_parent(tmp_path: Path) -> 
 def test_recovered_child_leaves_parent_waiting_for_other_children(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -201,7 +201,7 @@ def test_recovered_child_leaves_parent_waiting_for_other_children(
 def test_child_start_retries_after_parent_binding_was_persisted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -242,7 +242,7 @@ def test_child_start_retries_after_parent_binding_was_persisted(
 def test_child_start_does_not_overwrite_terminal_child_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -297,7 +297,7 @@ def test_child_start_does_not_overwrite_terminal_child_binding(
 def test_child_start_reconciles_published_child_after_parent_relink_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -346,7 +346,7 @@ def test_child_start_reconciles_published_child_after_parent_relink_failure(
 
 
 def test_child_workflows_are_limited_to_one_level(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -373,7 +373,7 @@ def test_child_workflows_are_limited_to_one_level(tmp_path: Path) -> None:
 
 
 def test_children_step_requires_at_least_one_child(tmp_path: Path) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -399,7 +399,7 @@ def test_children_step_requires_at_least_one_child(tmp_path: Path) -> None:
 def test_child_ids_default_to_the_standard_generation_strategy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:

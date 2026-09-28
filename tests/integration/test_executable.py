@@ -23,8 +23,8 @@ WORKFLOWS = """workflows:
 
 
 def _project(tmp_path: Path, config: dict[str, object]) -> Path:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps(config), encoding="utf-8"
     )
     return tmp_path
@@ -47,7 +47,7 @@ def _run(root: Path, capsys: pytest.CaptureFixture[str], *args: str) -> str:
 def test_the_executable_is_a_name_or_a_path(
     tmp_path: Path, value: object, valid: bool
 ) -> None:
-    path = tmp_path / "agentic-workflows.json"
+    path = tmp_path / "ww-agentic-workflows.json"
     path.write_text(json.dumps({"executable": value}), encoding="utf-8")
 
     if valid:
@@ -134,7 +134,7 @@ def test_the_launcher_runs_the_configured_binary(
     project = tmp_path / "project"
     project.mkdir()
     config = {"executable": str(dev)} if configured else {}
-    (project / "agentic-workflows.json").write_text(json.dumps(config))
+    (project / "ww-agentic-workflows.json").write_text(json.dumps(config))
     launcher = project / "ww"
     launcher.write_text(PROJECT_LAUNCHER, encoding="utf-8")
     launcher.chmod(0o755)
@@ -159,7 +159,7 @@ def test_init_records_the_standard_executable_and_updates_a_stock_launcher(
 
     output = _run(tmp_path, capsys, "init", "--no-input")
 
-    config = json.loads((tmp_path / "agentic-workflows.json").read_text())
+    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     assert config["executable"] == "ww-agentic-workflows"
     assert (tmp_path / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
     assert "ww (updated launcher)" in output
@@ -170,13 +170,13 @@ def test_init_keeps_an_edited_launcher_and_a_configured_executable(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "ww").write_text('#!/bin/sh\nexec my-ww "$@"\n', encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"executable": "ww-agentic-workflows-dev"}), encoding="utf-8"
     )
 
     output = _run(tmp_path, capsys, "init", "--no-input")
 
-    config = json.loads((tmp_path / "agentic-workflows.json").read_text())
+    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     assert config["executable"] == "ww-agentic-workflows-dev"
     assert "my-ww" in (tmp_path / "ww").read_text(encoding="utf-8")
     # The summary names the binary the project runs.

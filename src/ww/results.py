@@ -15,8 +15,8 @@ class ResetResult:
     removed: bool
 
 
-# The setup note initialization adds while workflows.yaml defines no workflow.
-NO_WORKFLOWS_ACTION = "Define at least one workflow in workflows.yaml."
+# Note added by init when ww-agentic-workflows.yaml defines no workflow.
+NO_WORKFLOWS_ACTION = "Define at least one workflow in ww-agentic-workflows.yaml."
 
 
 @dataclass(frozen=True)

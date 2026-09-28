@@ -24,7 +24,7 @@ def _started_by_an_other_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> WorkflowService:
     """Start a task while plan items serialize a field this ww does not read."""
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
     original = PlanItem.to_dict
 
     def with_retired_field(item: PlanItem) -> dict[str, object]:

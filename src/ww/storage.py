@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ww.config.composition import compose_configuration
+from ww.config_files import SETTINGS_FILE, WORKFLOWS_FILE
 from ww.defaults import GENERATED_LAUNCHERS
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
@@ -47,7 +48,7 @@ class Storage:
 
     @property
     def config_path(self) -> Path:
-        return self.root / "workflows.yaml"
+        return self.root / WORKFLOWS_FILE
 
     @property
     def runtime_path(self) -> Path:
@@ -55,7 +56,7 @@ class Storage:
 
     @property
     def project_config_path(self) -> Path:
-        return self.root / "agentic-workflows.json"
+        return self.root / SETTINGS_FILE
 
     def initialize_project(
         self,
@@ -100,21 +101,21 @@ class Storage:
 
         if self.config_path.exists():
             if self._add_missing_workflow_defaults(workflows):
-                created.append("workflows.yaml (added missing defaults)")
+                created.append(f"{WORKFLOWS_FILE} (added missing defaults)")
             else:
-                preserved.append("workflows.yaml")
+                preserved.append(WORKFLOWS_FILE)
         else:
             self.locks.atomic_write(self.config_path, workflows)
-            created.append("workflows.yaml")
+            created.append(WORKFLOWS_FILE)
 
         if self.project_config_path.exists():
             if self._add_missing_project_settings(project_config):
-                created.append("agentic-workflows.json (added missing settings)")
+                created.append(f"{SETTINGS_FILE} (added missing settings)")
             else:
-                preserved.append("agentic-workflows.json")
+                preserved.append(SETTINGS_FILE)
         else:
             self.locks.atomic_write(self.project_config_path, project_config)
-            created.append("agentic-workflows.json")
+            created.append(SETTINGS_FILE)
 
         updated_launcher = (
             launcher_path.is_file()

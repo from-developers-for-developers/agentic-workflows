@@ -60,8 +60,8 @@ def _workspace(tmp_path: Path, git: bool = False) -> Path:
             (repo / "README.md").write_text("seed\n", encoding="utf-8")
             _git(repo, "add", "-A")
             _git(repo, "commit", "-qm", "seed")
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"enabled": True, "projects": PROJECTS, "extensions": {}}),
         encoding="utf-8",
     )
@@ -105,7 +105,7 @@ def test_projects_are_parsed_and_listed_by_discover(
 def test_discover_without_projects_shows_no_project_option(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
@@ -135,11 +135,11 @@ def test_discover_without_projects_shows_no_project_option(
 def test_invalid_projects_are_rejected(
     tmp_path: Path, projects: object, message: str
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
-    (tmp_path / "agentic-workflows.json").write_text(
+    (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"projects": projects}), encoding="utf-8"
     )
 
@@ -185,7 +185,7 @@ def test_unknown_or_missing_project_directories_are_rejected(tmp_path: Path) -> 
         service.start("feature", "T1", agent="codex", project="frontend")
     assert not service.tasks.task_exists("T1")
 
-    (root / "agentic-workflows.json").write_text("{}", encoding="utf-8")
+    (root / "ww-agentic-workflows.json").write_text("{}", encoding="utf-8")
     with pytest.raises(StateError, match="no projects are configured"):
         WorkflowService(Storage(root)).start(
             "feature", "T2", agent="codex", project="x"
@@ -280,10 +280,10 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
         "      handlers:\n        - ext/ww/git/handlers:git-commit: ~\n"
         "        - ext/ww/git/handlers:return-to-base-branch: ~\n"
     )
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         WORKFLOWS.replace(feature, git_hooks + feature), encoding="utf-8"
     )
-    (root / "agentic-workflows.json").write_text(
+    (root / "ww-agentic-workflows.json").write_text(
         json.dumps(
             {
                 "projects": PROJECTS,
@@ -361,7 +361,7 @@ def test_projects_catalog_and_variables(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _workspace(tmp_path)
-    (root / "workflows.yaml").write_text(
+    (root / "ww-agentic-workflows.yaml").write_text(
         WORKFLOWS.replace(
             "      - develop: Implement it.\n",
             "      - develop: Implement {{__project}} in {{__project_dir}} "

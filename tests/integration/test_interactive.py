@@ -42,7 +42,7 @@ workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -176,7 +176,7 @@ CHOICES = """workflows:
 def test_choices_resolve_to_the_agent_mechanism_and_gate_the_end(
     tmp_path: Path, agent: str, mechanism: str
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(CHOICES, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(CHOICES, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     service.start("manual", "TASK-3", agent=agent, init_artifact="Test it.")
     md = MarkdownOutputAdapter()
@@ -315,7 +315,7 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     port = _free_port()
     monkeypatch.setenv("WW_OPERATOR_PORT", str(port))
     monkeypatch.setattr(server, "_OPEN_BROWSER_AFTER", 0.3)
-    (tmp_path / "workflows.yaml").write_text(MANUAL_TESTS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(MANUAL_TESTS, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     md = MarkdownOutputAdapter()
     _collect(service, "TASK-4", 3)
@@ -457,7 +457,7 @@ def test_a_cut_wait_loses_nothing_and_a_closed_tab_ends_the_wait(
     monkeypatch.setenv("WW_OPERATOR_PORT", str(port))
     monkeypatch.setattr(server, "_OPEN_BROWSER_AFTER", 0.1)
     monkeypatch.setattr(server, "_CLOSING_GRACE", 0.2)
-    (tmp_path / "workflows.yaml").write_text(MANUAL_TESTS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(MANUAL_TESTS, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     _collect(service, "TASK-8", 3)
     stage = service.next("TASK-8")
@@ -515,7 +515,7 @@ def test_the_operator_page_serves_stages_declared_with_ui_only(
         run_operator_page(service, "TASK-5", timeout=1, open_browser=None)
 
     # An interactive item stage without ui is a conversation in the session.
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         MANUAL_TESTS.replace("          ui: true\n", ""), encoding="utf-8"
     )
     service = WorkflowService(Storage(tmp_path))
@@ -563,7 +563,7 @@ def test_the_cli_pauses_and_refuses_a_mixed_await(
 def test_the_wait_is_run_the_way_the_agent_can(
     tmp_path: Path, agent: str, prefix: str, wording: str
 ) -> None:
-    (tmp_path / "workflows.yaml").write_text(MANUAL_TESTS, encoding="utf-8")
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(MANUAL_TESTS, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     _collect(service, "TASK-9", 1, agent=agent)
     rendered = MarkdownOutputAdapter().render_instruction(service.next("TASK-9"))
@@ -598,7 +598,7 @@ def test_a_worker_role_wait_applies_every_answer_and_names_the_documents(
     port = _free_port()
     monkeypatch.setenv("WW_OPERATOR_PORT", str(port))
     monkeypatch.setattr(server, "_OPEN_BROWSER_AFTER", 0.1)
-    (tmp_path / "workflows.yaml").write_text(
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
         MANUAL_TESTS_WITH_DOCUMENT, encoding="utf-8"
     )
     service = WorkflowService(Storage(tmp_path))
