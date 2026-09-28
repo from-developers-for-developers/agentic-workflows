@@ -11,6 +11,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- The stop hook now reminds a session only about its own agent's tasks or the task whose worktree it works in, never a manager about a step delegated to a worker; hook messages name a hook step by itself and its step. `7a004a2`
 - `ww hook install --agent <agent>` (Claude Code, Codex, Cursor, Antigravity; `--local` for Claude Code) adds hooks that list unfinished tasks at session start, remind once about an open step, and mark interrupted sessions; see `ww interrupted`. `784f805`
 - `task_format` moves from `ww-agentic-workflows.yaml` to `ww-agentic-workflows.json` (any level); a
   YAML `task_format` is now an error naming the file, `init` writes it into the JSON, and a configured
