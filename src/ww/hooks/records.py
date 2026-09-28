@@ -36,6 +36,8 @@ class Interruption:
     run_id: str | None
     step: str | None
     item_id: str
+    # ``step`` is how messages name the work, a hook as "<name> (a hook of
+    # <step>)"; ``item_name`` is the plan item's own name.
     item_name: str | None
     attempt: int
     agent: str

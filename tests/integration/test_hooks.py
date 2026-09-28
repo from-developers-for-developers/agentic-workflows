@@ -8,6 +8,7 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -52,7 +53,7 @@ def _hook(
     return capsys.readouterr().out
 
 
-def _context(output: str) -> str:
+def _context(output: str) -> Any:
     return json.loads(output)["hookSpecificOutput"]["additionalContext"]
 
 
@@ -100,7 +101,7 @@ def test_session_start_lists_unfinished_tasks_with_resume_commands(
 
     assert lines[1] == "Unfinished ww tasks, newest first:"
     assert lines[2] == (
-        "- T1 (task) develop: in progress · in the root · resume: "
+        "- T1 (task, claudecode) develop: in progress · in the root · resume: "
         "`./ww instruction T1 --role manager` · worker: "
         "`./ww instruction T1 --run 01-task --role worker`"
     )
@@ -143,7 +144,10 @@ def test_a_task_awaiting_the_operator_stays_visible_and_marked(
 
     context = _context(_hook(root, monkeypatch, capsys, "session-start"))
 
-    assert "- T1 (task) develop: awaiting the operator: the work failed" in context
+    assert (
+        "- T1 (task, claudecode) develop: awaiting the operator: the work failed"
+        in context
+    )
     assert "worker:" not in context
 
 
@@ -247,7 +251,7 @@ def test_cursor_is_reminded_through_a_follow_up_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _root(tmp_path)
-    _in_progress(root)
+    _agent_task(root, "T1", "cursor")
 
     reply = json.loads(
         _hook(
@@ -319,7 +323,7 @@ def test_an_aborted_cursor_stop_is_an_interruption_not_a_reminder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _root(tmp_path)
-    _in_progress(root)
+    _agent_task(root, "T1", "cursor")
 
     reply = _hook(root, monkeypatch, capsys, "stop", "cursor", {"status": "aborted"})
 
@@ -344,9 +348,14 @@ def test_a_session_in_a_task_workspace_marks_only_that_task(
     assert (root / ".ww/tasks/IN-BACKEND/interrupted.json").exists()
     assert not (root / ".ww/tasks/IN-ROOT/interrupted.json").exists()
 
-    # A session nowhere in particular may be working on any of them.
+    # A session nowhere in particular concerns its own agent's tasks.
     _hook(root, monkeypatch, capsys, "interrupt", payload={"cwd": "/elsewhere"})
     assert (root / ".ww/tasks/IN-ROOT/interrupted.json").exists()
+    _hook(
+        root, monkeypatch, capsys, "interrupt", "codex", {"cwd": "/elsewhere"}
+    )
+    marker = json.loads((root / ".ww/tasks/IN-ROOT/interrupted.json").read_text())
+    assert marker["agent"] == "claudecode"
 
 
 def test_a_later_interrupt_overwrites_the_marker(
@@ -612,3 +621,132 @@ def test_parallel_stop_calls_remind_exactly_once(tmp_path: Path) -> None:
         )
 
     assert sum(answer.text != "" for answer in answers) == 1
+
+
+# Which tasks a session's stop and interrupt concern
+
+
+def _agent_task(root: Path, task_id: str, agent: str, **options: object) -> None:
+    service = WorkflowService(Storage(root))
+    start_after_init(service, "task", task_id, agent=agent, **options)
+    service.next(task_id)
+
+
+def test_a_root_session_ignores_another_agents_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]})
+    (root / "backend").mkdir()
+    _agent_task(root, "CODEX-ROOT", "codex")
+    _agent_task(root, "CODEX-BACKEND", "codex", project="backend")
+
+    for payload in ({"cwd": str(root)}, {}, {"cwd": "/elsewhere"}):
+        assert _hook(root, monkeypatch, capsys, "stop", payload=payload) == ""
+        _hook(root, monkeypatch, capsys, "interrupt", payload=payload)
+
+    assert not list((root / ".ww/tasks").rglob("interrupted.json"))
+
+
+def test_a_root_session_is_reminded_about_its_own_agents_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]})
+    (root / "backend").mkdir()
+    _agent_task(root, "MINE", "claudecode")
+    _agent_task(root, "MINE-BACKEND", "claudecode", project="backend")
+    _agent_task(root, "THEIRS", "codex")
+
+    reply = json.loads(
+        _hook(root, monkeypatch, capsys, "stop", payload={"cwd": str(root)})
+    )
+
+    assert "MINE step" in reply["reason"]
+    assert "MINE-BACKEND step" in reply["reason"]
+    assert "THEIRS" not in reply["reason"]
+
+
+def test_a_session_inside_another_agents_workspace_is_reminded_and_marks_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]})
+    (root / "backend").mkdir()
+    _agent_task(root, "CODEX-BACKEND", "codex", project="backend")
+    _agent_task(root, "MINE", "claudecode")
+    inside = {"cwd": str(root / "backend")}
+
+    reply = json.loads(_hook(root, monkeypatch, capsys, "stop", payload=inside))
+    _hook(root, monkeypatch, capsys, "interrupt", payload=inside)
+
+    assert "CODEX-BACKEND step" in reply["reason"]
+    assert "MINE" not in reply["reason"].replace("CODEX-BACKEND", "")
+    assert (root / ".ww/tasks/CODEX-BACKEND/interrupted.json").exists()
+    assert not (root / ".ww/tasks/MINE/interrupted.json").exists()
+
+
+def test_session_start_names_each_tasks_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _agent_task(root, "THEIRS", "codex")
+
+    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
+
+    assert "- THEIRS (task, codex) develop: in progress" in context
+
+
+# Delegated steps: the manager waits, the worker holds them
+
+
+def _delegated(root: Path, own_step: bool = False) -> WorkflowService:
+    (root / "ww-agentic-workflows.yaml").write_text(
+        "workflows:\n  - name: task\n    steps:\n      - develop: Implement it.\n"
+        + ("        subagents: false\n" if own_step else ""),
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(root))
+    start_after_init(
+        service, "task", "T1", agent="claudecode", workflow_runtime="auto"
+    )
+    service.next("T1")
+    return service
+
+
+def test_the_managers_stop_skips_a_step_delegated_to_a_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _delegated(root)
+
+    assert _hook(root, monkeypatch, capsys, "stop") == ""
+    worker = json.loads(
+        _hook(
+            root,
+            monkeypatch,
+            capsys,
+            "stop",
+            payload={"hook_event_name": "SubagentStop"},
+        )
+    )
+
+    assert "T1 step `develop` is still in progress" in worker["reason"]
+
+
+def test_the_managers_stop_reminds_about_a_step_it_performs_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _delegated(root, own_step=True)
+
+    assert _hook(root, monkeypatch, capsys, "stop") != ""
+
+
+@pytest.mark.parametrize(
+    ("agent", "worker_event"),
+    [("codex", "SubagentStop"), ("cursor", "subagentStop")],
+)
+def test_other_agents_tell_a_workers_stop_apart(agent: str, worker_event: str) -> None:
+    parsed = hook_agent(agent).parse("stop", {"hook_event_name": worker_event})
+    main_stop = hook_agent(agent).parse("stop", {"hook_event_name": "Stop"})
+
+    assert parsed.from_worker is True
+    assert main_stop.from_worker is False

@@ -61,14 +61,14 @@ def session_context(
 
 
 def _task_line(task: OpenTask, root: Path, ww: str) -> str:
-    step = task.step or task.item_name or "no active step"
+    step = task.label
     if task.operator_reason is not None:
         state = "awaiting the operator: " + _OPERATOR_REASONS.get(
             task.operator_reason, task.operator_reason
         )
     else:
         state = (task.item_status or task.run_status).replace("_", " ")
-    parts = [f"- {task.task_id} ({task.workflow}) {step}: {state}"]
+    parts = [f"- {task.task_id} ({task.workflow}, {task.agent}) {step}: {state}"]
     parts.append(f"in {_display(task.workspace, root)}")
     parts.append(f"resume: `{ww} instruction {task.task_id} --role manager`")
     if task.agent_step_in_progress and task.run_id:
@@ -84,7 +84,7 @@ def stop_reminder(tasks: tuple[OpenTask, ...]) -> str:
     ww = ww_command()
     listed = tasks[:STOP_TASK_LIMIT]
     names = "; ".join(
-        f"{task.task_id} step `{task.step or task.item_name}`" for task in listed
+        f"{task.task_id} step `{task.label}`" for task in listed
     )
     example = listed[0].task_id
     return (

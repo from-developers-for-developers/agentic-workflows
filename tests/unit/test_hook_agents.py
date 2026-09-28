@@ -18,6 +18,8 @@ from ww.hooks import (
     registered_elsewhere,
     uninstall_hooks,
 )
+from ww.hooks.notices import stop_reminder
+from ww.open_work import OpenTask
 from ww.storage import Storage
 
 # Payload parsing
@@ -288,3 +290,41 @@ def test_a_second_copy_in_the_other_file_is_reported(tmp_path: Path) -> None:
     assert registered_elsewhere(storage, agent, local=True) == ".claude/settings.json"
     assert registered_elsewhere(storage, agent) is None
     assert registered_elsewhere(storage, hook_agent("codex")) is None
+
+
+# How messages name the open work
+
+
+def _open(phase: str, step: str, name: str) -> OpenTask:
+    return OpenTask(
+        task_id="T1",
+        run_id="01-task",
+        workflow="task",
+        agent="claudecode",
+        item_id="item",
+        item_name=name,
+        step=step,
+        phase=phase,
+        owner="agent",
+        item_status="in_progress",
+        attempt=1,
+        run_status="in_progress",
+        operator_reason=None,
+        workspace=Path("/w"),
+        updated_at="2026-09-28T00:00:00Z",
+    )
+
+
+def test_a_step_is_named_by_its_path() -> None:
+    assert _open("step", "check-code-quality/run", "run").label == (
+        "check-code-quality/run"
+    )
+
+
+def test_a_hook_is_named_by_itself_and_its_step() -> None:
+    task = _open("before_complete_workflow", "run-tests", "update-documentation")
+
+    assert task.label == "update-documentation (a hook of run-tests)"
+    assert "T1 step `update-documentation (a hook of run-tests)` is still" in (
+        stop_reminder((task,))
+    )

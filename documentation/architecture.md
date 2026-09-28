@@ -1370,7 +1370,19 @@ The stop hook is a one-time reminder rather than a block. A reminder is
 recorded per task, run, item, and attempt in `stop-reminders.json` beside the
 interaction log, and the check and the record happen under a lock of their own:
 agents run matching hooks in parallel, and the task lock would stall behind a
-long-running command. An agent's own loop guard is honoured as well. The
+long-running command. An agent's own loop guard is honoured as well.
+
+Stop and interrupt pick the tasks a session concerns in one function,
+`ww.open_work.tasks_for_session`. A workspace selects a task only when it is not
+the root: the root holds every task's state, and a worktree-less task works
+there, so matching it would tie every root session to every such task.
+Otherwise the run's recorded agent must be the hook's agent, because a session
+has no business closing another integration's step. The stop hook further
+separates a manager from its workers: `OpenTask.delegated` marks a step an
+`auto` run hands to a worker, and only a stop the adapter reports as a
+worker's (`HookPayload.from_worker`) reminds about it. Messages name work
+through `OpenTask.label`, which names a hook item by itself and its step,
+since a hook records the step it is attached to. The
 interruption record, `interrupted.json`, is cleared lazily in the one place
 that reads it, once that attempt completed, failed, or was superseded, never
 because a notice showed it, so compaction between reading and acting cannot

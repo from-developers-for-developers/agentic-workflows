@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ww.config_files import WORKFLOWS_FILE
-from ww.open_work import OpenTask, open_work, tasks_for_directory
+from ww.open_work import OpenTask, open_work, tasks_for_session
 from ww.storage import Storage
 
 from .agents import HookAgent, HookEvent, HookPayload
@@ -87,9 +87,18 @@ def _stop(
 ) -> HookAnswer:
     if payload.continued:
         return replace(ALLOW, decision="allowed: the agent already continued once")
-    working = tasks_for_directory(
-        tuple(task for task in tasks if task.agent_step_in_progress),
+    # A manager waiting on a worker is not the one to close the step: its own
+    # stop skips delegated steps, and the worker's stop reminds instead.
+    working = tasks_for_session(
+        tuple(
+            task
+            for task in tasks
+            if task.agent_step_in_progress
+            and (payload.from_worker or not task.delegated)
+        ),
+        records.storage.root,
         payload.directory,
+        agent.name,
     )
     pending = tuple(
         task
@@ -110,9 +119,11 @@ def _interrupt(
     records: HookRecords,
     tasks: tuple[OpenTask, ...],
 ) -> HookAnswer:
-    working = tasks_for_directory(
+    working = tasks_for_session(
         tuple(task for task in tasks if task.agent_step_in_progress),
+        records.storage.root,
         payload.directory,
+        agent.name,
     )
     if not working:
         return HookAnswer("", "no step in progress to mark")
@@ -129,7 +140,7 @@ def _interrupt(
             Interruption(
                 at=at,
                 run_id=task.run_id,
-                step=task.step,
+                step=task.label,
                 item_id=task.item_id,
                 item_name=task.item_name,
                 attempt=task.attempt,

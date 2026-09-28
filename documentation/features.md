@@ -2539,12 +2539,16 @@ session, so it is short:
 ```text
 This project coordinates work through ww: `./ww discover` lists its workflows.
 Unfinished ww tasks, newest first:
-- TASK-16 (task) develop: in progress · in ww-worktrees/TASK-16 · resume: `./ww instruction TASK-16 --role manager` · worker: `./ww instruction TASK-16 --run 01-task --role worker`
+- TASK-16 (task, claudecode) develop: in progress · in ww-worktrees/TASK-16 · resume: `./ww instruction TASK-16 --role manager` · worker: `./ww instruction TASK-16 --run 01-task --role worker`
 ```
 
 After a compaction it starts with "Context was compacted; ww's task state is
-authoritative." A task waiting for the operator stays listed and says so, for
-example `awaiting the operator: the work failed`. Only the main session gets
+authoritative." Every unfinished task is listed, whichever agent started it,
+with that agent after the workflow, since other sessions' open work is useful
+context. A task waiting for the operator stays listed and says so, for
+example `awaiting the operator: the work failed`. Work attached to a step as a
+hook is named by itself and its step, for example
+`update-documentation (a hook of run-tests)`, never by the step alone. Only the main session gets
 this context: no hook is registered for a subagent's start, since a worker
 receives its bootstrap command from the manager.
 
@@ -2554,9 +2558,23 @@ that step attempt. Its message names the step and says to run `complete` when
 the work is done or `fail` when it cannot finish, and that a manager waiting on
 a worker, or a deliberate pause, may simply stop again. Agents that report their
 own loop guard (Claude Code's and Codex's `stop_hook_active`, Cursor's
-`loop_count`) are always allowed once they have continued. A session working
-inside a task's workspace is reminded about that task only; a session anywhere
-else may be reminded about any task with a step in progress.
+`loop_count`) are always allowed once they have continued.
+
+Which tasks concern a session:
+
+- A session inside a task's worktree or project directory concerns that task,
+  whichever agent started it; the most specific workspace wins.
+- The root is not a task's workspace, even for a task without a worktree. A
+  session in the root, anywhere else, or that names no directory concerns only
+  the tasks its own agent started, so a Claude Code session is never reminded
+  about a Codex session's step.
+- A manager waiting on a worker is not reminded. On a run started with
+  `--runtime auto`, a step that may go to a worker (`subagents` not false, not
+  interactive) is delegated: the main session's stop skips it, and the worker's
+  own stop (`SubagentStop` in Claude Code and Codex, `subagentStop` in Cursor)
+  reminds instead. A step the manager performs itself, such as a
+  `subagents: false` step, is still reminded. Antigravity reports no worker
+  stop, so its manager is simply not reminded about delegated steps.
 
 ### Agents and their files
 
@@ -2644,8 +2662,9 @@ Decisions read like `context with 2 unfinished task(s)`, `allowed`,
 When a session ends or is interrupted while an agent-owned step is in progress,
 ww writes `.ww/tasks/<task-id>/interrupted.json` with the time, run, step,
 attempt, agent, and the reason the agent gave. The next interruption
-overwrites it. ww marks the task whose workspace the session was working in,
-or every task with a step in progress when the session worked elsewhere. ww
+overwrites it. ww marks the tasks that concern the session, chosen as for the
+stop reminder: the task whose worktree or project directory the session worked
+in, otherwise the tasks with a step in progress that the same agent started. ww
 never commits on an interruption: the tree is often half applied at that
 moment, and commits belong to the workflow.
 

@@ -26,10 +26,15 @@ class OpenTask:
     task_id: str
     run_id: str | None
     workflow: str
+    # The agent integration the run was started with, such as ``codex``.
+    agent: str
     # The plan item at the cursor, when the run has not run past its end.
     item_id: str | None
     item_name: str | None
     step: str | None
+    # ``step`` for the step itself; a hook phase such as
+    # ``before_complete_workflow`` for work attached to that step.
+    phase: str | None
     owner: str | None
     item_status: str | None
     attempt: int
@@ -39,6 +44,22 @@ class OpenTask:
     # The directory the task works in: its worktree, project, or the root.
     workspace: Path
     updated_at: str
+    # The step is one the manager hands to a worker (``--runtime auto``), so
+    # the session that started the run waits on it rather than holds it.
+    delegated: bool = False
+
+    @property
+    def label(self) -> str:
+        """How messages name the work: a hook by its own name and its step.
+
+        A hook item records the step it is attached to, so naming only the
+        step would point at a step whose own work may be long finished.
+        """
+        if self.phase in (None, "step") or not self.item_name:
+            return self.step or self.item_name or "no active step"
+        if not self.step:
+            return self.item_name
+        return f"{self.item_name} (a hook of {self.step})"
 
     @property
     def agent_step_in_progress(self) -> bool:
@@ -83,9 +104,11 @@ def _open_task(tasks: TaskStorageAdapter, root: Path, task_id: str) -> OpenTask 
         task_id=task_id,
         run_id=state.run_id,
         workflow=state.workflow,
+        agent=state.agent,
         item_id=item.id if item is not None else None,
         item_name=item.name if item is not None else None,
         step=item.step if item is not None else None,
+        phase=item.phase if item is not None else None,
         owner=item.owner if item is not None else None,
         item_status=(record.status if record is not None and active else None),
         attempt=record.attempts if record is not None else 0,
@@ -93,24 +116,42 @@ def _open_task(tasks: TaskStorageAdapter, root: Path, task_id: str) -> OpenTask 
         operator_reason=operator_reason(state, plan),
         workspace=resolve_workspace(root, state.working_directory) or root.resolve(),
         updated_at=state.updated_at,
+        delegated=(
+            state.workflow_runtime == "auto"
+            and item is not None
+            and item.subagents
+            and not item.interactive
+        ),
     )
 
 
-def tasks_for_directory(
-    open_tasks: tuple[OpenTask, ...], directory: Path | None
+def tasks_for_session(
+    open_tasks: tuple[OpenTask, ...],
+    root: Path,
+    directory: Path | None,
+    agent: str,
 ) -> tuple[OpenTask, ...]:
-    """The tasks a session in ``directory`` is working on.
+    """The tasks a session of ``agent`` working in ``directory`` concerns.
 
-    A session inside a task's workspace works on that task; the most specific
-    workspace wins, since task worktrees usually sit inside the root. A
-    session that matches no task, or that runs in no known directory, may be
-    working on any of them.
+    A session inside a task's own workspace, a worktree or a project
+    checkout, works on that task whichever agent started it; the most
+    specific workspace wins, since worktrees usually sit inside the root.
+    The root itself is shared by every session and every task without a
+    worktree, so it selects nothing: a session there, anywhere else, or in no
+    known directory concerns only the tasks its own agent started. Another
+    agent's open step is that agent's to close.
     """
-    if directory is None:
-        return open_tasks
-    resolved = directory.resolve()
-    matching = [task for task in open_tasks if resolved.is_relative_to(task.workspace)]
-    if not matching:
-        return open_tasks
-    deepest = max(len(task.workspace.parts) for task in matching)
-    return tuple(task for task in matching if len(task.workspace.parts) == deepest)
+    shared = root.resolve()
+    if directory is not None:
+        resolved = directory.resolve()
+        inside = [
+            task
+            for task in open_tasks
+            if task.workspace != shared and resolved.is_relative_to(task.workspace)
+        ]
+        if inside:
+            deepest = max(len(task.workspace.parts) for task in inside)
+            return tuple(
+                task for task in inside if len(task.workspace.parts) == deepest
+            )
+    return tuple(task for task in open_tasks if task.agent == agent)

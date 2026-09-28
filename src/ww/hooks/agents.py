@@ -42,6 +42,9 @@ class HookPayload:
     continued: bool = False
     # The stop is really an interruption: the user aborted the turn.
     interrupted: bool = False
+    # The stop is a worker's, which the session delegated a step to, rather
+    # than the session's own; only agents that tell the two apart set it.
+    from_worker: bool = False
     # The agent's own word for why a session ended or was interrupted.
     reason: str | None = None
 
@@ -178,6 +181,7 @@ class ClaudeCode(HookAgent):
             source=_text(payload.get("source")),
             continued=payload.get("stop_hook_active") is True,
             reason=_text(payload.get("reason")),
+            from_worker=payload.get("hook_event_name") == "SubagentStop",
         )
 
 
@@ -203,6 +207,7 @@ class Codex(HookAgent):
             reason=(
                 "interrupted" if native == "Interrupt" else _text(payload.get("reason"))
             ),
+            from_worker=native == "SubagentStop",
         )
 
 
@@ -231,6 +236,7 @@ class Cursor(HookAgent):
             continued=isinstance(loop_count, int) and loop_count > 0,
             interrupted=status == "aborted",
             reason=_text(payload.get("reason")) or status,
+            from_worker=payload.get("hook_event_name") == "subagentStop",
         )
 
     def context_reply(self, text: str) -> str:
