@@ -10,3 +10,5 @@ __pycache__/
 /.codex/config.toml
 /ww-worktrees
 .env
+*ww-agentic-workflows.local.yaml
+*ww-agentic-workflows.local.json

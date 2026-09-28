@@ -6,18 +6,15 @@
     "ww/git": {
       "commit_format": "{{task_id}}: {{commit_message}}",
       "use_separate_branch": true,
-
       "base_branches": {
         "default": "dev",
         "hotfix": "main",
         "bugfix": "dev"
       },
-
       "branch_name_formats": {
         "default": "feature/{{task_id}}",
         "hotfix": "hotfix/{{task_id}}"
       },
-
       "worktrees": true,
       "worktree_dir": "./ww-worktrees",
       "worktree_name_format": "{{task_id}}"
