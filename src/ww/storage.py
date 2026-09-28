@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from ww.config.composition import compose_configuration
-from ww.config_files import LOCAL_IGNORE_PATTERNS, SETTINGS_FILE, WORKFLOWS_FILE
+from ww.config_files import (
+    LOCAL_IGNORE_PATTERNS,
+    SETTINGS_FILE,
+    WORKFLOWS_FILE,
+    workflow_levels,
+)
 from ww.defaults import GENERATED_LAUNCHERS
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
@@ -105,7 +110,7 @@ class Storage:
             else:
                 preserved.append(WORKFLOWS_FILE)
         else:
-            self.locks.atomic_write(self.config_path, workflows)
+            self._write_starter_workflows(workflows)
             created.append(WORKFLOWS_FILE)
 
         if self.project_config_path.exists():
@@ -176,6 +181,33 @@ class Storage:
         return InitializationResult(
             str(self.root), tuple(created), tuple(preserved), tuple(actions)
         )
+
+    def _write_starter_workflows(self, defaults: str) -> None:
+        """Write the starter YAML without the keys another level provides."""
+        if not any(
+            level.path.is_file()
+            for level in workflow_levels(self.config_path)
+            if level.name != "repo"
+        ):
+            self.locks.atomic_write(self.config_path, defaults)
+            return
+        import yaml
+
+        # Compose the other levels around an empty repo file first.
+        self.locks.atomic_write(self.config_path, "{}\n")
+        try:
+            defined = compose_configuration(self.config_path).raw
+        except BaseException:
+            self.config_path.unlink(missing_ok=True)
+            raise
+        desired = yaml.safe_load(defaults)
+        missing = {key: value for key, value in desired.items() if key not in defined}
+        if missing == desired:
+            self.locks.atomic_write(self.config_path, defaults)
+        elif missing:
+            self.locks.atomic_write(
+                self.config_path, yaml.safe_dump(missing, sort_keys=False)
+            )
 
     def _add_missing_workflow_defaults(self, defaults: str) -> bool:
         """Append absent root keys while leaving existing YAML formatting intact."""
