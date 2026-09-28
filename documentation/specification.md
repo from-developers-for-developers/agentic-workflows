@@ -88,13 +88,17 @@ the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 `../agentic-workflows.json` sets ww-wide project behavior separately from workflow
 syntax. `loop_max_times` is a positive integer and defaults to `3`. The file may
 also override the internal requests of the implicit init action, `cheapest` /
-`low`, and of the workflow-summary action, `auto` / `auto`. Missing fields
-retain their individual defaults:
+`low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
+off the workflows ww provides to every project, currently only `catchall`; each
+entry is an object whose only key, `enabled`, defaults to `true`. A workflow of
+the same name in `workflows.yaml` replaces the provided one instead. Missing
+fields retain their individual defaults:
 
 ```json
 {
   "loop_max_times": 3,
   "builtins": {"init": {"model": "fast"}},
+  "workflows": {"catchall": {"enabled": false}},
   "extensions": {}
 }
 ```
@@ -176,7 +180,7 @@ A step accepts every [handler key](#handlers), plus:
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
 | `subagents` | boolean | When `false`, an `auto` run performs this step without delegation and ignores its profile, agent, model, and reasoning settings. Defaults to `true`. |
 | `interactive` | boolean | The step is a conversation with the operator, held by the session that can talk to them; it implies `subagents: false`. Its completion is refused until the conversation was recorded with `interact` and ended. Defaults to `false`. |
-| `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own mechanism, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, a numbered list elsewhere, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
+| `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `ui` | boolean | The operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends. Valid on one per-item stage per `items` step and requires `interactive: true`. Defaults to `false`. |
 | `update_item` | list of item fields | Custom fields this step sets on its item, `- <name>: <what to put there>`; on the collection step, on every collected item. Completion is refused while any is empty. Set them with `update-item --field NAME=VALUE`, several per call. |
 | `steps` | list of steps | Nested ordered steps. |

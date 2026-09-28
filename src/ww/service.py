@@ -39,7 +39,8 @@ from ww.defaults import (
     DEFAULT_PROJECT_CONFIG_JSON,
     DEFAULT_WORKFLOWS_YAML,
     PROJECT_LAUNCHER,
-    WW_SKILL,
+    SKILLS,
+    skill_location,
 )
 from ww.documents import DocumentStore
 from ww.errors import ConfigurationError, StateError
@@ -55,7 +56,7 @@ from ww.execution_models import (
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
 from ww.instructions import Instruction, InstructionBuilder
-from ww.instructions.commands import SUMMARY_FLAG
+from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.interactions import InteractionLog
 from ww.interpolation import dependencies, interpolate
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
@@ -533,8 +534,10 @@ class WorkflowService:
         if not workflow.restartable or active.workflow != workflow.name:
             raise StateError(
                 f"task {task_id!r} already has an unfinished run {active.run_id!r} "
-                f"of workflow {active.workflow!r}; finish it, reset the task, or "
-                "declare the workflow restartable to abandon its earlier run"
+                f"of workflow {active.workflow!r}; continue it with "
+                f"{instruction_command(task_id, role='manager')}. Only the "
+                "operator decides to reset the task instead, or to declare the "
+                "workflow restartable so a new start abandons its earlier run"
             )
         self.commit(
             replace(
@@ -2050,16 +2053,20 @@ class WorkflowService:
         workflows: str = DEFAULT_WORKFLOWS_YAML,
         project_config: str = DEFAULT_PROJECT_CONFIG_JSON,
         ignore_runtime: bool = False,
-        skill_paths: tuple[str, ...] = (),
+        skill_directories: tuple[str, ...] = (),
     ) -> InitializationResult:
+        """Create the project files, with every bundled skill in each directory."""
         return self.storage.initialize_project(
             workflows,
             project_config,
             PROJECT_LAUNCHER,
             AGENT_INSTRUCTIONS,
             ignore_runtime=ignore_runtime,
-            skill=WW_SKILL,
-            skill_paths=skill_paths,
+            skills=tuple(
+                (skill_location(directory, name), content)
+                for directory in skill_directories
+                for name, content in SKILLS.items()
+            ),
         )
 
     def drain(

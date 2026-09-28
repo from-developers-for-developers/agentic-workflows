@@ -1,6 +1,6 @@
 ---
 name: ww
-description: Carry out the user's request through ww, this project's workflow tool. Use when the user asks to work via ww, to start or continue a ww task, or to run a ww workflow.
+description: Carry out the user's request through ww, this project's workflow tool. Use when the user asks to work via ww, to start or continue a ww task, or to run a ww workflow, and before changing files for any request, since every change goes through ww. Not for questions or other read-only work.
 ---
 
 # Work through ww
@@ -15,6 +15,11 @@ description: Carry out the user's request through ww, this project's workflow to
    normalized, as `--init-artifact`. When the request names an external
    ticket, such as a Jira key, use that key as the task ID; omit the ID only
    when there is none or the workflow obtains its own.
+   When no workflow fits and you are about to change files, do not start
+   `catchall` directly: run `./ww lookup [<task>] --agent <agent>` with the
+   task the conversation works on or the request names, as written, and
+   follow its answer, then do the work as you would without ww. Questions and
+   other read-only work need no task.
 4. Follow every ww response exactly: run each displayed command with all
    placeholders replaced, and keep going until ww reports that the workflow
    is complete or reports an error.

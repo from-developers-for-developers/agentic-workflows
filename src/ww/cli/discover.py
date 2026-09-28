@@ -11,6 +11,7 @@ import json
 
 from ww.config import load_configuration, load_modes
 from ww.contracts import CALLER_ROLES
+from ww.core_workflows import CATCHALL
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.extensions import ExtensionRegistry
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
@@ -65,6 +66,19 @@ DELEGATION_NOTE = (
     "Steps requesting a specific worker are honoured only under `--runtime "
     "auto`; `single` records them and performs the step in this session."
 )
+CATCHALL_COMMAND = "./ww lookup [<task>] --agent <agent>"
+CATCHALL_GUIDANCE = (
+    "Use it only when no workflow above fits and you are about to change "
+    "files. Questions, explanations, reviews, and other read-only work need "
+    "no task: answer them directly, and turn to it only once the conversation "
+    "reaches a change. Do not start it directly. Run `lookup` with the task "
+    "this conversation works on, or with what the operator called the task, "
+    "as they wrote it, such as `12345`; run it without one when there is "
+    "none. It maps the reference onto this project's task IDs and answers "
+    "with the next step: continue an unfinished run, start the catch-all on "
+    "the task it found, or ask the operator, through your choice menu, before "
+    "a task ww has never seen is created."
+)
 MODES_GUIDANCE = (
     "Optional and repeatable. Explicit modes replace the workflow's default "
     "modes, so repeat any default you want to keep. Select a mode only when "
@@ -81,6 +95,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     default_runtime = extensions.config.runtime
     modes = load_modes(storage.config_path, extensions)
     modes.update({mode.name: mode for mode in extensions.qualified_modes()})
+    catchall = configuration.workflows_by_name.get(CATCHALL)
     return {
         "enabled": True,
         "projects": [project.to_dict() for project in extensions.config.projects],
@@ -93,7 +108,18 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 "delegation_requests": list(delegation_requests(workflow)),
             }
             for workflow in configuration.workflows
+            if workflow is not catchall
         ],
+        "catchall": (
+            {
+                "name": catchall.name,
+                "description": catchall.description,
+                "guidance": CATCHALL_GUIDANCE,
+                "start": CATCHALL_COMMAND,
+            }
+            if catchall is not None
+            else None
+        ),
         "modes": [
             {"name": mode.name, "description": " ".join(mode.description)}
             for mode in modes.values()
@@ -181,8 +207,24 @@ def _markdown(report: dict[str, object]) -> list[str]:
                 + " — start it with `--runtime auto` so those requests apply."
             )
         lines.append(text)
-    if not workflows:
+    catchall = report["catchall"]
+    if not workflows and not catchall:
         lines.append("No workflows are configured; ww cannot start a task.")
+    if isinstance(catchall, dict):
+        lines.extend(
+            [
+                "",
+                "## Changes no workflow covers",
+                "",
+                f"- `{catchall['name']}` — {catchall['description']}",
+                "",
+                str(catchall["guidance"]),
+                "",
+                "```console",
+                str(catchall["start"]),
+                "```",
+            ]
+        )
     projects = _entries(report["projects"])
     if projects:
         lines.extend(["", "## Projects", ""])

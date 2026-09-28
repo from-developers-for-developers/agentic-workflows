@@ -92,9 +92,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--skills",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Install the ww skill into every agent directory found in the project.",
+        help=(
+            "Install the ww and noww skills into every agent directory found "
+            "in the project."
+        ),
     )
 
+    lookup = subparsers.add_parser(
+        "lookup",
+        parents=[json_output],
+        help=(
+            "Find the task a change outside every workflow belongs to, and "
+            "what to do next."
+        ),
+    )
+    lookup.add_argument(
+        "reference",
+        nargs="?",
+        help="What the operator called the task, such as 12345 or FORMS-12345.",
+    )
+    lookup.add_argument("-a", "--agent", required=True)
     subparsers.add_parser(
         "discover",
         parents=[json_output],

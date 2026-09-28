@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 
 from ww.actions import DefinedAction, Prompt
+from ww.core_workflows import CATCHALL_WORKFLOW, with_core_workflows
 from ww.errors import ConfigurationError
 from ww.plan import compile_workflow_plan
+from ww.project_config import ProjectConfig
 from ww.workflow_config import (
     HandlerDefinition,
     HookDefinition,
@@ -110,7 +112,8 @@ def test_global_workflow_boundary_hook_may_filter_by_workflow() -> None:
         ),
     )
 
-    assert validate_configuration(configuration) == configuration
+    validated = validate_configuration(configuration)
+    assert validated.workflows[:2] == configuration.workflows
 
 
 def test_rejects_step_local_before_start_hook() -> None:
@@ -140,3 +143,30 @@ def test_rejects_step_local_before_start_hook() -> None:
 
     with pytest.raises(ConfigurationError, match="workflow boundary hooks belong"):
         validate_configuration(configuration)
+
+
+def test_the_core_catchall_follows_the_configured_workflows() -> None:
+    validated = validate_configuration(_configuration())
+
+    assert [workflow.name for workflow in validated.workflows] == ["task", "catchall"]
+    assert validated.workflows[-1] == CATCHALL_WORKFLOW
+    # With the catch-all, a project that configures no workflow can still
+    # record its changes.
+    assert validate_configuration(_configuration(workflows=())).workflows == (
+        CATCHALL_WORKFLOW,
+    )
+
+
+def test_a_configured_catchall_replaces_the_core_one() -> None:
+    own = WorkflowDefinition("catchall", steps=(StepDefinition("record"),))
+
+    validated = validate_configuration(_configuration(workflows=(own,)))
+
+    assert validated.workflows == (own,)
+
+
+def test_a_switched_off_core_workflow_is_not_added() -> None:
+    configuration = _configuration()
+    config = ProjectConfig(disabled_workflows=frozenset({"catchall"}))
+
+    assert with_core_workflows(configuration, config) == configuration

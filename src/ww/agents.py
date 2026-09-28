@@ -29,22 +29,58 @@ PLAIN_TEXT = ChoiceMechanism(
     "order, and ask the operator to answer with the number or the label.",
 )
 
+# Some agents offer their question tool only in some modes (Codex in Plan mode,
+# most agents not in a non-interactive print mode), so each instruction ends in
+# the fallback every agent can honour.
+_FALLBACK = (
+    " If the tool is not available in this session, present the choices as a "
+    "numbered list instead and ask the operator to answer with the number or "
+    "the label."
+)
+
+
+def _tool(tool: str, picks: str) -> ChoiceMechanism:
+    return ChoiceMechanism(
+        tool,
+        f"Present the matter in your reply first, then ask with the `{tool}` "
+        "tool: one short question of a line or two, never the matter itself, "
+        "these options in this order with their descriptions, single select. "
+        f"{picks}"
+        + _FALLBACK,
+    )
+
+
+# Tool names for Cursor, Antigravity, and Grok CLI, and the mode caveats, are
+# taken from the askmux question-tool matrix (https://github.com/iShaldam/askmux,
+# MIT, Copyright (c) 2026 iShaldam); Gemini CLI's from its documentation
+# (https://geminicli.com/docs/tools/ask-user/). Kimi and DeepSeek document no
+# such tool and use the plain-text list.
 CHOICE_MECHANISMS: dict[str, ChoiceMechanism] = {
-    "claudecode": ChoiceMechanism(
+    "claudecode": _tool(
         "AskUserQuestion",
-        "Present the matter in your reply first, then ask with the "
-        "`AskUserQuestion` tool: one short question of a line or two, never the "
-        "matter itself, these options in this order with their descriptions, "
-        "single select. The operator picks with the keyboard; a free-form "
-        'answer through "Other" is a comment, not a choice.',
+        "The operator picks with the keyboard; a free-form answer through "
+        '"Other" is a comment, not a choice.',
     ),
-    "codex": ChoiceMechanism(
+    "codex": _tool(
         "request_user_input",
-        "Present the matter in your reply first, then ask with "
-        "`request_user_input`: one short question of a line or two, never the "
-        "matter itself, these options in this order with their descriptions. "
-        "The operator picks a number; a free-form answer is a comment, not a "
-        "choice.",
+        "The operator picks a number; a free-form answer is a comment, not a choice.",
+    ),
+    "gemini": _tool(
+        "ask_user",
+        "Use a question of type `choice`. A free-form answer is a comment, not "
+        "a choice.",
+    ),
+    "cursor": _tool(
+        "AskQuestion",
+        "A free-form answer is a comment, not a choice.",
+    ),
+    "antigravity": _tool(
+        "ask_question",
+        "A free-form answer is a comment, not a choice.",
+    ),
+    "grok": _tool(
+        "ask_user_question",
+        "A free-form answer is a comment, not a choice.",
     ),
 }
 

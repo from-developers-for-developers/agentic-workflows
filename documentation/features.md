@@ -49,11 +49,14 @@ non-interactive choices are available through `--task-id-format`, `--worktrees`,
 `--update-gitignore`, and `--skills`.
 
 For every agent directory it finds, such as `.claude/` or `.codex/`, the wizard
-offers to install the shipped `ww` skill at `<directory>/skills/ww/SKILL.md`.
-The skill lets a user ask explicitly to work through ww: it tells the agent to
-run `discover` and follow ww from there. `--skills` installs it everywhere
-without asking and `--no-skills` skips it; an existing skill file is never
-overwritten.
+offers to install the shipped skills at `<directory>/skills/<name>/SKILL.md`.
+The `ww` skill lets a user ask explicitly to work through ww: it tells the
+agent to run `discover` and follow ww from there. The `noww` skill is the way
+out: invoked as `/noww`, it tells the agent not to use ww for the rest of the
+conversation, `catchall` included. `--skills` installs both everywhere without
+asking and `--no-skills` skips them; an existing skill file is never
+overwritten, and a directory that already has the `ww` skill gains any skill
+it is missing.
 
 ## Discover how to start a task
 
@@ -89,6 +92,69 @@ not use it, and `start` refuses to create a task.
 
 ```json
 {"enabled": false, "extensions": {}}
+```
+
+## The catch-all workflow
+
+Every change to files goes through ww, including the small ones that fit no
+workflow: renaming a helper, fixing a typo, adjusting a setting. For those, ww
+provides `catchall` to every project. It has one step, `work`, whose page tells
+the agent that the workflow only records the request: it carries the work out
+exactly as it would on a plain prompt, with the same judgement, tools,
+subagents, skills, and project conventions, and completes the step with what it
+changed.
+
+`discover` lists it apart from the configured workflows, under "Changes no
+workflow covers", together with the rules for using it, which the agent
+instructions repeat. It is only for a change to files: questions,
+explanations, reviews, and other read-only work never start a task, and a
+conversation that begins as a question turns to `catchall` only once it
+reaches a change. It never replaces a matching workflow.
+
+The agent does not start it directly. It first runs `lookup` with the task the
+conversation works on, or with what the operator called the task, as they
+wrote it, and without one when there is none:
+
+```console
+./ww lookup 12345 --agent claudecode
+```
+
+`lookup` is read-only. It maps the reference onto the project's task IDs:
+the exact ID in any letter case, the ID `task_format` builds from it, so
+`12345` and `forms-12345` both mean `FORMS-12345` under `FORMS-{digit}`, and,
+failing both, the existing tasks whose ID ends in it after a separator, so
+with tracker keys `12345` finds `FORMS-12345`. Then it answers with one next
+step:
+
+| Found | Next step |
+|---|---|
+| One task, with an unfinished run of another workflow | Continue that run: `./ww instruction FORMS-12345 --role manager`. The change belongs to it. |
+| One task, otherwise | Start `catchall` on it; the printed `start` command is ready to run. |
+| Several tasks | Ask the operator which one, then continue or start on it. |
+| No task | Ask the operator to confirm creating the ID the reference names, `FORMS-99` for `99`. |
+| No reference | Ask the operator whether to create a new task; under `task_format: explicit` they give its ID. |
+
+Asking goes through the agent's own choice menu, the same mechanism as an
+interactive step's [choices](#interactive-steps), and every menu also offers
+"Work without ww". Each choice comes with the command to run once it is
+picked, and the page says to run nothing before then, so a task ww has never
+seen is only created when the operator says so. A `catchall` start on a task
+with an unfinished run of another workflow is refused, and the error names
+the `instruction` command that continues it.
+
+The workflow declares `runtime: auto` and its step `subagents: false`: the
+session that received the prompt does the work, and whether it uses subagents
+along the way is its own choice, as without ww. It is `restartable`, so a new
+request on the same task replaces one that was never finished, and it is not
+interactive: a follow-up that changes more starts another `catchall` run on the
+same task. Every run ends with the usual workflow summary.
+
+A project replaces the catch-all by defining its own workflow named
+`catchall` in `workflows.yaml`, or switches it off in
+`../agentic-workflows.json`:
+
+```json
+{"workflows": {"catchall": {"enabled": false}}}
 ```
 
 ## Validate configuration and plan a workflow
@@ -396,7 +462,10 @@ inspect the available choices.
 Use `subagents: false` on a step when an `auto` run must perform that
 step in the current session rather than dispatching a worker. The step's
 profile, agent, model, and reasoning settings are deliberately ignored, whether
-they are set on the step or inherited from its workflow.
+they are set on the step or inherited from its workflow. The manager's pages
+say so: the dispatch page states that no worker is selected and shows a plain
+`next`, and the page after it tells the manager to perform the step itself,
+with no worker bootstrap.
 
 ```yaml
 workflows:
@@ -789,9 +858,16 @@ items:
 ```
 
 The page lists the choices in order and tells the agent how to offer them for
-its integration: with `AskUserQuestion` in Claude Code and `request_user_input`
-in Codex, where the operator picks with the keyboard, and as a numbered list in
-plain text for any other agent. The pick is recorded with
+its integration, with the question tool each agent offers: `AskUserQuestion`
+in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI,
+`AskQuestion` in Cursor, `ask_question` in Antigravity, and
+`ask_user_question` in Grok CLI, where the operator picks with the keyboard.
+Several agents offer the tool only in some modes, Codex in Plan mode for
+example, so the page also says to fall back to a numbered list when the tool
+is not available; Kimi, DeepSeek, and custom agents get the numbered list
+straight away. The tool names come from the
+[askmux](https://github.com/iShaldam/askmux) question-tool matrix (MIT,
+Copyright (c) 2026 iShaldam) and the Gemini CLI documentation. The pick is recorded with
 `interact --choice "<label or number>"`, a comment the operator adds goes in as
 `--operator` text, and ending the interaction is refused until a choice was
 recorded. The chosen label is kept on the step record and in the interactions
@@ -1916,14 +1992,14 @@ Two routes lead out, and the agent runs whichever the operator picks:
 check is visible afterwards rather than forgotten. A loop that hits its
 iteration limit escalates the same way, and the force there leaves the loop.
 
-## Installing the ww skill during init
+## Installing the ww skills during init
 
-`init` offers the ww skill to every agent integration it knows about. In a
-terminal it can redraw, that is one checklist rather than one question per
-agent:
+`init` offers the `ww` and `noww` skills to every agent integration it knows
+about. In a terminal it can redraw, that is one checklist rather than one
+question per agent:
 
 ```text
-Install the ww skill into which agent directories?
+Install the ww and noww skills into which agent directories?
   ↑↓ move · space toggles · a all · enter confirms
 
  > [ ] .agents

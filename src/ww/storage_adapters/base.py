@@ -469,6 +469,14 @@ class TaskStorageAdapter(
         )
 
     @abstractmethod
+    def task_ids(self) -> tuple[str, ...]:
+        """Return every top-level task ID that holds task-owned data, sorted.
+
+        Child tasks are left out: a person names a task by its own ID, and a
+        child is reached through its parent.
+        """
+
+    @abstractmethod
     def remove_task(self, task_id: str) -> bool:
         """Remove all data for exactly one task and report whether it existed."""
 

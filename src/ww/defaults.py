@@ -28,6 +28,15 @@ exec ww-agentic-workflows "$@"
 AGENT_INSTRUCTIONS = (
     files("ww.assets").joinpath("agent_instructions.md").read_text(encoding="utf-8")
 )
-# The ``ww`` skill ``init`` offers to install into each agent directory.
-WW_SKILL = files("ww.assets").joinpath("ww_skill.md").read_text(encoding="utf-8")
+# The skills ``init`` offers to install into each agent directory, by name:
+# ``ww`` to work through ww, ``noww`` for the operator to opt out of it.
 WW_SKILL_NAME = "ww"
+SKILLS = {
+    name: files("ww.assets").joinpath(f"{name}_skill.md").read_text(encoding="utf-8")
+    for name in (WW_SKILL_NAME, "noww")
+}
+
+
+def skill_location(directory: str, name: str) -> str:
+    """Where a skill lives inside an agent directory."""
+    return f"{directory}/skills/{name}/SKILL.md"

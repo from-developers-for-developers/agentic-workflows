@@ -63,13 +63,12 @@ class Storage:
         agent_instructions: str,
         *,
         ignore_runtime: bool = False,
-        skill: str = "",
-        skill_paths: tuple[str, ...] = (),
+        skills: tuple[tuple[str, str], ...] = (),
     ) -> InitializationResult:
         """Add any missing project files without replacing existing ones.
 
-        ``skill_paths`` are project-relative ``SKILL.md`` locations that
-        receive ``skill`` unless a file already exists there.
+        ``skills`` pairs a project-relative ``SKILL.md`` location with the
+        content it receives unless a file already exists there.
         """
         with self.lock_project():
             return self._initialize_project(
@@ -78,8 +77,7 @@ class Storage:
                 launcher,
                 agent_instructions,
                 ignore_runtime=ignore_runtime,
-                skill=skill,
-                skill_paths=skill_paths,
+                skills=skills,
             )
 
     def _initialize_project(
@@ -90,8 +88,7 @@ class Storage:
         agent_instructions: str,
         *,
         ignore_runtime: bool,
-        skill: str,
-        skill_paths: tuple[str, ...],
+        skills: tuple[tuple[str, str], ...],
     ) -> InitializationResult:
         launcher_path = self.root / "ww"
         instructions_path = self.root / "WW_AGENT_INSTRUCTIONS.md"
@@ -120,7 +117,7 @@ class Storage:
         for path, content in (
             (instructions_path, agent_instructions),
             (launcher_path, launcher),
-            *((self.root / relative, skill) for relative in skill_paths),
+            *((self.root / relative, content) for relative, content in skills),
         ):
             relative = str(path.relative_to(self.root))
             if path.exists():

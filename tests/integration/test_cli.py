@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ww.cli import build_parser, main
+from ww.core_workflows import CATCHALL_WORKFLOW
 from ww.storage import Storage
 from ww.variables import BRANCH_NAMING_STRATEGY
 
@@ -264,7 +265,13 @@ workflows:
     assert json.loads(capsys.readouterr().out)["modes"][0]["name"] == "economy"
     assert main(["--root", str(tmp_path), "workflows"]) == 0
     assert json.loads(capsys.readouterr().out)["workflows"] == [
-        {"name": "task", "description": "", "modes": ["economy"], "runtime": None}
+        {"name": "task", "description": "", "modes": ["economy"], "runtime": None},
+        {
+            "name": "catchall",
+            "description": CATCHALL_WORKFLOW.description,
+            "modes": [],
+            "runtime": "auto",
+        },
     ]
 
 

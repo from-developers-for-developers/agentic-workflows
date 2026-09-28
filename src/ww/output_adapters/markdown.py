@@ -1305,7 +1305,8 @@ def _action_heading(instruction: Instruction) -> str:
     if instruction.is_loop_control:
         return f"advance the `{name}` loop"
     if reader is Audience.MANAGER_DELEGATING:
-        return f"delegate the `{instruction.assignment_step or name}` assignment"
+        verb = "delegate" if instruction.subagents else "perform"
+        return f"{verb} the `{instruction.assignment_step or name}` assignment"
     if instruction.item_status == "pending":
         if reader is Audience.WORKER_RETURNING:
             return "return control to the manager"
@@ -1331,8 +1332,9 @@ def _assignment_coverage(instruction: Instruction) -> Lines:
     if not rest:
         return []
     names = ", ".join(f"`{name}`" for name in (first, *rest))
+    performer = "One worker performs" if instruction.subagents else "You perform"
     return [
-        f"This assignment covers, in order: {names}. One worker performs them "
+        f"This assignment covers, in order: {names}. {performer} them "
         "all; `ww` hands each one over after the previous completion.",
         "",
     ]
@@ -1379,6 +1381,14 @@ def _role_instruction(instruction: Instruction) -> Lines:
             ]
         case Audience.WORKER_RETURNING:
             return [_ASSIGNMENT_COMPLETE, ""]
+        case Audience.MANAGER_DELEGATING if not instruction.subagents:
+            return [
+                "You are the manager. This step sets `subagents: false`: perform "
+                "it yourself in this session, not through a worker, and run the "
+                "displayed worker completion command.",
+                "",
+                *_assignment_coverage(instruction),
+            ]
         case Audience.MANAGER_DELEGATING:
             return [
                 "You are the manager. Select the worker and give it the bootstrap "
@@ -1405,6 +1415,11 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 *_assignment_coverage(instruction),
             ]
         case Audience.MANAGER:
+            preview = instruction.assignment_preview
+            if preview and "selection_item_name" not in preview:
+                # No worker is selected for what comes next; the preview says
+                # who performs it.
+                return [_RUN_MANAGER_COMMAND, ""]
             return [
                 f"{_RUN_MANAGER_COMMAND} Pass "
                 "the complete response from `ww next` to the selected worker.",

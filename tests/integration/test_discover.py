@@ -9,13 +9,14 @@ from pathlib import Path
 import pytest
 
 from ww.cli import main
-from ww.defaults import AGENT_INSTRUCTIONS, WW_SKILL
+from ww.defaults import AGENT_INSTRUCTIONS, SKILLS
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import Extension, ExtensionRegistry
 from ww.project_config import ProjectConfig
 from ww.service import WorkflowService
 from ww.storage import Storage
 
+WW_SKILL = SKILLS["ww"]
 WORKFLOWS = """modes:
   - name: economy
     description:
@@ -220,8 +221,13 @@ def test_init_installs_the_skill_into_existing_agent_directories(
     )
     assert kept.read_text(encoding="utf-8") == "custom"
     assert not (tmp_path / ".gemini").exists()
+    assert (tmp_path / ".claude/skills/noww/SKILL.md").read_text(
+        encoding="utf-8"
+    ) == SKILLS["noww"]
+    # A directory set up before noww existed gains it; its ww skill is kept.
+    assert (tmp_path / ".codex/skills/noww/SKILL.md").is_file()
     assert ".claude/skills/ww/SKILL.md" in output
-    assert "install the ww skill" not in output
+    assert "install the ww and noww skills" not in output
 
 
 def test_init_without_skills_suggests_installing_them(
@@ -234,7 +240,8 @@ def test_init_without_skills_suggests_installing_them(
 
     assert not (tmp_path / ".claude/skills").exists()
     assert (
-        "Optionally install the ww skill with `init --skills` for: .claude." in output
+        "Optionally install the ww and noww skills with `init --skills` for: "
+        ".claude." in output
     )
     config = json.loads((tmp_path / "agentic-workflows.json").read_text())
     assert config["enabled"] is True
@@ -243,7 +250,7 @@ def test_init_without_skills_suggests_installing_them(
 def test_init_asks_before_installing_each_skill(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ww.cli.initialization import _skill_paths
+    from ww.cli.initialization import _skill_directories
 
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".cursor").mkdir()
@@ -253,7 +260,7 @@ def test_init_asks_before_installing_each_skill(
         # Answer by what is being asked, not by position: the order and the
         # number of agent directories both change as integrations are added.
         prompts.append(prompt)
-        if ".claude/skills" in prompt:
+        if ".claude/skills?" in prompt:
             return ""  # accept the default, which is yes for a directory here
         if "Create which?" in prompt:
             return "none"
@@ -261,22 +268,22 @@ def test_init_asks_before_installing_each_skill(
 
     monkeypatch.setattr("builtins.input", answer)
 
-    paths = _skill_paths(Storage(tmp_path), None, interactive=True)
+    paths = _skill_directories(Storage(tmp_path), None, interactive=True)
 
-    assert paths == (".claude/skills/ww/SKILL.md",)
+    assert paths == (".claude",)
     # A directory that exists is asked about on its own...
-    assert "Install the ww skill into .claude/skills/ww/SKILL.md? [Y/n]: " in prompts
-    assert "Install the ww skill into .cursor/skills/ww/SKILL.md? [Y/n]: " in prompts
+    assert "Install the ww and noww skills into .claude/skills? [Y/n]: " in prompts
+    assert "Install the ww and noww skills into .cursor/skills? [Y/n]: " in prompts
     # ...and every agent without one shares a single question.
     assert "Create which? (comma-separated, or none): " in prompts
     assert len(prompts) == 3
-    assert _skill_paths(Storage(tmp_path), False, interactive=True) == ()
+    assert _skill_directories(Storage(tmp_path), False, interactive=True) == ()
 
 
 def test_init_offers_the_absent_agent_directories_in_one_question(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ww.cli.initialization import _known_agent_directories, _skill_paths
+    from ww.cli.initialization import _known_agent_directories, _skill_directories
 
     prompts: list[str] = []
 
@@ -286,18 +293,18 @@ def test_init_offers_the_absent_agent_directories_in_one_question(
 
     monkeypatch.setattr("builtins.input", answer)
 
-    paths = _skill_paths(Storage(tmp_path), None, interactive=True)
+    paths = _skill_directories(Storage(tmp_path), None, interactive=True)
 
     # One question, not one per agent ww knows about.
     assert len(prompts) == 1
     assert len(_known_agent_directories()) > 1
-    assert paths == (".codex/skills/ww/SKILL.md", ".claude/skills/ww/SKILL.md")
+    assert paths == (".codex", ".claude")
 
 
 def test_declining_every_agent_directory_takes_one_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ww.cli.initialization import _skill_paths
+    from ww.cli.initialization import _skill_directories
 
     prompts: list[str] = []
 
@@ -307,7 +314,7 @@ def test_declining_every_agent_directory_takes_one_answer(
 
     monkeypatch.setattr("builtins.input", answer)
 
-    assert _skill_paths(Storage(tmp_path), None, interactive=True) == ()
+    assert _skill_directories(Storage(tmp_path), None, interactive=True) == ()
     assert len(prompts) == 1
 
 
@@ -463,3 +470,40 @@ def test_discover_reports_worker_requests_as_data(
         for workflow in report["workflows"]
     }
     assert requests == {"plain": [], "reviewed": ["triage", "review"]}
+
+
+def test_discover_sets_the_catchall_apart_with_when_to_use_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = _discover(_project(tmp_path), capsys)
+
+    workflows, rest = output.split("## Changes no workflow covers", 1)
+    assert "`catchall`" not in workflows
+    assert rest.lstrip().startswith("- `catchall` — ")
+    for rule in (
+        "about to change files",
+        "read-only work need no task",
+        "Do not start it directly",
+        "before a task ww has never seen is created",
+        "./ww lookup [<task>] --agent <agent>",
+    ):
+        assert rule in rest
+    report = json.loads(_discover(tmp_path, capsys, "--json"))
+    assert report["catchall"]["name"] == "catchall"
+    assert "catchall" not in [workflow["name"] for workflow in report["workflows"]]
+
+
+def test_discover_omits_a_switched_off_catchall(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, {"workflows": {"catchall": {"enabled": False}}})
+
+    assert "catchall" not in _discover(root, capsys)
+
+
+def test_the_noww_skill_only_turns_ww_off() -> None:
+    noww = SKILLS["noww"]
+
+    assert noww.startswith("---\nname: noww\ndescription: ")
+    assert "Do not use ww" in noww
+    assert "catchall" in noww

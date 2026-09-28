@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
+from ww.contracts import BOOTSTRAP_REQUEST_PREFIX
 from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
 from ww.items import WorkItem
@@ -177,6 +178,19 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             return path.read_text(encoding="utf-8")
         except OSError as error:
             raise StateError(f"cannot read {kind} {reference!r}: {error}") from error
+
+    def task_ids(self) -> tuple[str, ...]:
+        if not self.tasks_path.is_dir():
+            return ()
+        return tuple(
+            sorted(
+                path.name
+                for path in self.tasks_path.iterdir()
+                if path.is_dir()
+                and not path.is_symlink()
+                and not path.name.startswith(BOOTSTRAP_REQUEST_PREFIX)
+            )
+        )
 
     def task_exists(self, task_id: str) -> bool:
         # Any task directory claims the ID, even one holding only artifacts or

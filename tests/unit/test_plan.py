@@ -879,7 +879,7 @@ def test_plan_json_and_markdown_preserve_unresolved_and_bound_variables(
 
     assert plan.items[1].payload_as(Commands).commands[0].argv == (
         "printf",
-        "TASK-1 task {{value}}",
+        "TASK-1 task,catchall {{value}}",
     )
     assert plan.items[1].dependencies == ("__task_id", "__workflows", "value")
     assert '"task_id": "TASK-1"' in render_plan(plan, True)

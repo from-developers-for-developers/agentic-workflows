@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from ww.defaults import WW_SKILL_NAME
+from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import StateError
 from ww.output_adapters.terminal import initialization_progress
@@ -234,12 +234,16 @@ def _initialization_options(
         workflows,
         json.dumps(project, indent=2) + "\n",
         bool(ignore_runtime),
-        _skill_paths(storage, args.skills, interactive, progress=True),
+        _skill_directories(storage, args.skills, interactive, progress=True),
     )
 
 
 def _skill_location(directory: str) -> str:
-    return f"{directory}/skills/{WW_SKILL_NAME}/SKILL.md"
+    """The ``ww`` skill, whose presence marks a directory as already set up."""
+    return skill_location(directory, WW_SKILL_NAME)
+
+
+_SKILL_NAMES = " and ".join(SKILLS)
 
 
 def _agent_directories(storage: Storage) -> tuple[str, ...]:
@@ -256,21 +260,22 @@ def _known_agent_directories() -> tuple[str, ...]:
     return (".agents", *dict.fromkeys(AGENT_DIRECTORIES.values()))
 
 
-def _skill_paths(
+def _skill_directories(
     storage: Storage,
     requested: bool | None,
     interactive: bool,
     *,
     progress: bool = False,
 ) -> tuple[str, ...]:
-    """Choose where to install the ww skill, one agent directory at a time.
+    """Choose the agent directories that receive the bundled skills.
 
-    Existing skill files are included so initialization reports them as
-    preserved; storage never overwrites them.
+    Directories already holding the ``ww`` skill are included so
+    initialization reports their files as preserved and adds any skill that
+    is missing; storage never overwrites them.
     """
     saved = _init_choices(storage).get("agents", {})
     choices = dict(saved) if isinstance(saved, dict) else {}
-    paths: list[str] = []
+    chosen_directories: list[str] = []
     directories = _known_agent_directories()
     undecided: list[tuple[str, bool]] = []
     for directory in directories:
@@ -291,15 +296,15 @@ def _skill_paths(
             choices[directory] = selected
             _save_init_choice(storage, "agents", choices)
         if selected is True:
-            paths.append(location)
+            chosen_directories.append(directory)
     if undecided:
         chosen = _choose_agent_directories(undecided, progress)
         for directory, _ in undecided:
             choices[directory] = directory in chosen
             if directory in chosen:
-                paths.append(_skill_location(directory))
+                chosen_directories.append(directory)
         _save_init_choice(storage, "agents", choices)
-    return tuple(paths)
+    return tuple(chosen_directories)
 
 
 def _choose_agent_directories(
@@ -314,7 +319,7 @@ def _choose_agent_directories(
     if _interactive_terminal():
         return set(
             _ask_checklist(
-                "\nInstall the ww skill into which agent directories?",
+                f"\nInstall the {_SKILL_NAMES} skills into which agent directories?",
                 tuple(
                     (directory, "already present" if exists else "", exists)
                     for directory, exists in undecided
@@ -329,7 +334,7 @@ def _choose_agent_directories(
             _progress(
                 progress,
                 55,
-                f"Install the ww skill into {_skill_location(directory)}? [Y/n]: ",
+                f"Install the {_SKILL_NAMES} skills into {directory}/skills? [Y/n]: ",
             ),
             True,
         )
@@ -499,8 +504,7 @@ def _finish_initialization(
     ]
     if missing:
         actions.append(
-            "Optionally install the ww skill with `init --skills` for: "
-            + ", ".join(missing)
-            + "."
+            f"Optionally install the {_SKILL_NAMES} skills with `init --skills` "
+            "for: " + ", ".join(missing) + "."
         )
     return replace(result, created=tuple(created), actions=tuple(actions))

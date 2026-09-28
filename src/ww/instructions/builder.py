@@ -772,6 +772,17 @@ def _assignment_preview(
         driver = selection_item(plan, assignment)
         if driver is None:
             return None
+        if not driver.subagents:
+            return {
+                "first_item_id": assignment.first_item_id,
+                "start": assignment.start,
+                "stop": assignment.stop,
+                "message": (
+                    f"`{driver.name}` sets `subagents: false`, so no worker is "
+                    "selected: after the manager command, perform it yourself "
+                    "in this session."
+                ),
+            }
         span = _span(plan, assignment)
         return {
             "first_item_id": assignment.first_item_id,
@@ -850,9 +861,9 @@ def _guidance(
     elif not item.subagents:
         guidance = (
             *guidance,
-            "This step sets `subagents: false`: perform it yourself and do "
-            "not delegate it. Its profile, agent, model, and reasoning "
-            "settings are ignored.",
+            "This step sets `subagents: false`: perform it yourself rather "
+            "than handing it to a worker. Its profile, agent, model, and "
+            "reasoning settings are ignored.",
         )
     return guidance
 

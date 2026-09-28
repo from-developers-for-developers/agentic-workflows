@@ -76,6 +76,26 @@ def instruction_command(
     return _command(*parts)
 
 
+def start_command(task_id: str | None, workflow: str, agent: str) -> str:
+    """Start ``workflow``; without ``task_id`` ww assigns one."""
+    return _command(
+        "start",
+        *((_arg(task_id),) if task_id is not None else ()),
+        "--workflow",
+        _arg(workflow),
+        "--agent",
+        _arg(agent),
+        "--init-artifact",
+        '"<the request, normalized>"',
+        "--role",
+        "manager",
+    )
+
+
+def lookup_command(reference: str = "<task>", agent: str = "<agent>") -> str:
+    return _command("lookup", _arg(reference), "--agent", _arg(agent))
+
+
 def artifacts_command(task_id: str, run_id: str | None = None) -> str:
     parts = ["artifacts", _arg(task_id)]
     if run_id is not None:

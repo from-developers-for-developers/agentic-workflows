@@ -11,6 +11,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "runtime": "single",
   "update_check": true,
   "loop_max_times": 3,
+  "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
   ],
@@ -19,6 +20,9 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   }
 }
 ```
+
+``workflows`` switches off the workflows ww provides to every project, such
+as ``catchall``; each is on unless its entry says ``"enabled": false``.
 
 ``projects`` are the directories, usually repositories, a task may work in.
 They are optional and machine-specific, which is why they live here rather than
@@ -39,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ww.core_workflows import CORE_WORKFLOW_NAMES
 from ww.errors import ConfigurationError
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
 from ww.validation import expect_normalized_name, is_positive_int
@@ -84,10 +89,16 @@ class ProjectConfig:
     runtime: str = DEFAULT_RUNTIME
     # ``false`` silences the notice that the ww checkout is behind its remote.
     update_check: bool = True
+    # Core workflows switched off for this project.
+    disabled_workflows: frozenset[str] = frozenset()
 
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
         return {project.name: project for project in self.projects}
+
+    def workflow_enabled(self, name: str) -> bool:
+        """Whether a core workflow is offered in this project."""
+        return name not in self.disabled_workflows
 
     def builtin_settings(self, name: str) -> dict[str, str]:
         """Return a built-in's complete model/reasoning request."""
@@ -157,6 +168,7 @@ def load_project_config(path: Path) -> ProjectConfig:
         "loop_max_times",
         "projects",
         "update_check",
+        "workflows",
     }
     if unknown:
         raise ConfigurationError(
@@ -217,7 +229,38 @@ def load_project_config(path: Path) -> ProjectConfig:
         _parse_projects(raw.get("projects"), path),
         runtime,
         update_check,
+        _parse_workflows(raw.get("workflows"), path),
     )
+
+
+def _parse_workflows(data: Any, path: Path) -> frozenset[str]:
+    """The core workflows switched off, from ``{"<name>": {"enabled": false}}``."""
+    if data is None:
+        return frozenset()
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{path}.workflows must be an object")
+    unknown = set(data) - CORE_WORKFLOW_NAMES
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.workflows has unknown name(s): {', '.join(sorted(unknown))}; "
+            "core workflows: " + ", ".join(sorted(CORE_WORKFLOW_NAMES))
+        )
+    disabled: set[str] = set()
+    for name, value in data.items():
+        context = f"{path}.workflows.{name}"
+        if not isinstance(value, dict):
+            raise ConfigurationError(f"{context} must be an object")
+        unknown_keys = set(value) - {"enabled"}
+        if unknown_keys:
+            raise ConfigurationError(
+                f"{context} has unknown key(s): {', '.join(sorted(unknown_keys))}"
+            )
+        enabled = value.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ConfigurationError(f"{context}.enabled must be true or false")
+        if not enabled:
+            disabled.add(name)
+    return frozenset(disabled)
 
 
 def _parse_projects(data: Any, path: Path) -> tuple[ProjectDefinition, ...]:

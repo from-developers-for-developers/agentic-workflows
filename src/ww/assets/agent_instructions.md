@@ -3,7 +3,10 @@
 This project coordinates work through ww: it saves progress, runs automatic
 handlers, and tells you which role acts next. Use it for requests to implement,
 fix, investigate, review, or otherwise carry out project work, unless the user
-asks you not to. Ordinary questions need no task.
+asks you not to. Questions and other read-only work need no task. Every change
+to files goes through ww: when no workflow fits, run `./ww lookup [<task>]
+--agent <agent>` with the task in context, as the request names it, and follow
+it; it never creates a task without the operator's confirmation.
 
 ## Start here
 

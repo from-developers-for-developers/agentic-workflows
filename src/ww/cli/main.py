@@ -51,6 +51,7 @@ from .initialization import (
     _initialization_options,
     _link_agent_instructions,
 )
+from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
 from .prompts import _confirm_force_next, confirm_interrupted_retry
 from .updates import announce, render_updates
@@ -59,7 +60,7 @@ _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
 # Discovery, linting, and planning are side-effect free: no task state, artifacts,
 # commands, or execution-log records are created.
 _READ_ONLY_COMMANDS = frozenset(
-    {"discover", "lint", "plan", "documents", "interactions", "updates"}
+    {"discover", "lookup", "lint", "plan", "documents", "interactions", "updates"}
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
 # not ``--json`` was passed. An update notice goes to stderr for these, so it
@@ -135,14 +136,14 @@ def _init(context: _Context) -> _Outcome:
         sys.stdout.write(welcome)
         sys.stdout.flush()
         print(f"Setting up ww in: {context.storage.root}\n", flush=True)
-    workflows, project_config, ignore_runtime, skill_paths = _initialization_options(
-        context.storage, context.args
+    workflows, project_config, ignore_runtime, skill_directories = (
+        _initialization_options(context.storage, context.args)
     )
     result = context.service.initialize(
         workflows=workflows,
         project_config=project_config,
         ignore_runtime=ignore_runtime,
-        skill_paths=skill_paths,
+        skill_directories=skill_directories,
     )
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
@@ -459,6 +460,17 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "init": _init,
     "discover": lambda c: _Outcome(
         render_discover(c.storage, c.extensions, c.args.json_output) + "\n"
+    ),
+    "lookup": lambda c: _Outcome(
+        render_lookup(
+            c.storage,
+            c.extensions,
+            c.service.tasks,
+            c.args.reference,
+            c.args.agent,
+            c.args.json_output,
+        )
+        + "\n"
     ),
     "modes": lambda c: _Outcome(_catalog_modes(c.storage, c.extensions) + "\n"),
     "workflows": lambda c: _Outcome(_catalog_workflows(c.storage, c.extensions) + "\n"),

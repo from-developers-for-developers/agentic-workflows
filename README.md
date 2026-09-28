@@ -136,7 +136,8 @@ The wizard asks a few questions and then sets the project up:
   exactly `.ww/` to `.gitignore`.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
   and so on), it offers to install a `ww` skill, so you can ask the agent to
-  work through ww by name.
+  work through ww by name, and a `noww` skill, so you can tell it to leave ww
+  out.
 
 It finishes by printing any manual additions you still need in `AGENTS.md` or
 `CLAUDE.md`, and a reminder to define a workflow.
@@ -212,6 +213,15 @@ one:
 - `--init-artifact` is your request, normalized into the task's requirements.
 - `--role manager` is the role driving the task; a worker performing a single
   assignment uses `--role worker`.
+
+A request no workflow fits still goes through ww once it changes files. The
+agent records it with `catchall`, a one-step workflow ww provides to every
+project, and otherwise works exactly as it would without ww. Questions and
+other read-only work never start a task. The agent first runs `./ww lookup`
+with the task you named, however you wrote it (`12345` finds `FORMS-12345`),
+and a task ww has never seen is only created after you confirm it in the
+agent's choice menu. Say `/noww` when you want the
+agent to leave ww out.
 
 If you would rather open the task yourself — to pin an external ticket key, or
 to hand a prepared task to an agent — the same command works typed in.

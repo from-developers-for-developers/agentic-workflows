@@ -27,7 +27,16 @@ The built-in frontend in `../src/ww/config/` parses `../workflows.yaml` into the
 immutable definitions in `../src/ww/workflow_config.py`; another notation can
 produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
-parsers do not acquire different workflow semantics. The service receives its
+parsers do not acquire different workflow semantics. Validation is also where
+the workflows ww provides to every project, `catchall` in
+`../src/ww/core_workflows.py`, join the configured ones, unless the project
+defines a workflow of the same name or switches it off in
+`../agentic-workflows.json`; every loader passes through it, so no frontend can
+miss them. `lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
+point: `../src/ww/task_references.py` maps what the operator called a task onto
+the task format and the IDs the storage port lists, and the command answers
+with one next step, asking the operator through the agent's choice menu
+(`../src/ww/agents.py`) before a new task is created. The service receives its
 configuration loader at its composition boundary and does not know which
 notation produced the model. The `WorkflowPlanCompiler` in `../src/ww/plan/`
 validates that model again at its public boundary, then exclusively resolves
@@ -74,8 +83,8 @@ command rather than in copied prose means the guidance cannot drift from the
 configuration. Branch strategies are the one option core cannot know itself:
 an extension that names branches declares `branch_strategies`, and the registry
 asks only configured extensions, as it does for reserved paths. The shipped
-`ww` skill is a thin trigger for the same flow, installed by `init` into each
-agent directory the discovery module knows about.
+`ww` skill is a thin trigger for the same flow, and `noww` its opt-out; `init`
+installs both into each agent directory the discovery module knows about.
 Potentially project-opinionated edits such as `../.gitignore` remain explicit user
 choices.
 

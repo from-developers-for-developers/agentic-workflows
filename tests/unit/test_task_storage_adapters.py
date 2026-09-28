@@ -52,7 +52,19 @@ def test_public_storage_adapter_requires_every_executor_write_capability() -> No
         "write_shared_items",
         "write_task_metadata",
         "remove_task",
+        "task_ids",
     }
+
+
+def test_task_ids_lists_top_level_tasks_without_requests(
+    adapter: TaskStorageAdapter,
+) -> None:
+    assert adapter.task_ids() == ()
+    adapter.write_task_metadata(TaskMetadata("PROJ-2"))
+    adapter.write_task_metadata(TaskMetadata("PROJ-1"))
+    adapter.write_task_metadata(TaskMetadata("PROJ-1/child"))
+
+    assert adapter.task_ids() == ("PROJ-1", "PROJ-2")
 
 
 def test_metadata_round_trips_and_missing_record_is_none(

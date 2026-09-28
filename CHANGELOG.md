@@ -9,6 +9,50 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-09-28
+
+- Every project now has a `catchall` workflow, provided by ww rather than
+  `workflows.yaml`. It records a change to files that no workflow covers: one
+  `work` step, performed by the session that received the prompt exactly as
+  it would work without ww. `discover` lists it apart, with when to use it:
+  only when files are about to change, never for questions or read-only
+  work, and always through `lookup` below. The agent instructions and the `ww` skill say the
+  same, and the skill now triggers before any change. Switch it off with
+  `"workflows": {"catchall": {"enabled": false}}` in `agentic-workflows.json`,
+  or replace it by defining a workflow of that name. A project whose
+  `workflows.yaml` defines no workflow is no longer rejected.
+- New `lookup [<task>] --agent <agent>`, the catch-all's entry point. It maps
+  what the operator called the task onto the project's IDs (`12345` or
+  `forms-12345` is `FORMS-12345` under `task_format: FORMS-{digit}`; with
+  tracker keys, the one task ending in `-12345`) and answers with one next
+  step: continue the task's unfinished run, start `catchall` on it, or ask
+  the operator through the agent's choice menu, which a never-seen task, a
+  reference matching several tasks, and a request naming none all require.
+  It is read-only; the commands it prints run only after the operator picks.
+- Operator choice menus now name the question tool of Gemini CLI
+  (`ask_user`), Cursor (`AskQuestion`), Antigravity (`ask_question`), and
+  Grok CLI (`ask_user_question`) besides Claude Code and Codex, and say to
+  fall back to a numbered list where the tool is unavailable, such as Codex
+  outside Plan mode. Tool names from the askmux matrix
+  (https://github.com/iShaldam/askmux, MIT, Copyright (c) 2026 iShaldam).
+- Starting a workflow on a task whose run of another workflow is unfinished
+  is still refused, and the error now names the `instruction` command that
+  continues the run; resetting is left to the operator.
+- The task storage port gains an abstract `task_ids()`, listing top-level
+  task IDs. A custom `TaskStorageAdapter` must implement it.
+- `init --skills` installs a second skill, `noww`, next to `ww`. `/noww`
+  tells the agent not to use ww for the rest of the conversation. Running
+  `init` again adds it to directories that already have the `ww` skill.
+- A step with `subagents: false` under the `auto` runtime no longer shows the
+  manager delegation text. The dispatch page says no worker is selected and
+  shows a plain `next` instead of one with `--selected-agent None`, and the
+  step page tells the manager to perform the step itself.
+- Model and reasoning settings a workflow does not request are no longer
+  shown to agents: no `Model: auto` lines in plans and pages, and no
+  `--model auto --reasoning auto` in the suggested `next`. The `auto` runtime
+  guidance now tells the manager to keep a worker's default settings instead
+  of weighing a cost/quality trade-off of its own.
+
 ## 2026-09-27
 
 - A value supplied with `--variable` is now checked by the handler that will

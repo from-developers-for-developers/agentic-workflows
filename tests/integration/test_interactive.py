@@ -166,7 +166,11 @@ CHOICES = """workflows:
     [
         ("claudecode", "`AskUserQuestion` tool"),
         ("codex", "`request_user_input`"),
-        ("cursor", "numbered list in your reply"),
+        ("gemini", "`ask_user` tool"),
+        ("cursor", "`AskQuestion` tool"),
+        ("antigravity", "`ask_question` tool"),
+        ("grok", "`ask_user_question` tool"),
+        ("kimi", "numbered list in your reply"),
     ],
 )
 def test_choices_resolve_to_the_agent_mechanism_and_gate_the_end(

@@ -1549,7 +1549,7 @@ def test_a_workflow_may_declare_its_runtime(tmp_path: Path) -> None:
 """,
         )
     )
-    manual, task = configuration.workflows
+    manual, task, _catchall = configuration.workflows
     assert (manual.runtime, task.runtime) == ("single", None)
     with pytest.raises(ConfigurationError, match="runtime must be one of: single"):
         load_configuration(
@@ -1620,7 +1620,7 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
 """,
         )
     )
-    (collect,), (review,) = (flow.steps for flow in configuration.workflows)
+    (collect,), (review,) = (flow.steps for flow in configuration.workflows[:2])
     assert collect.items is not None and collect.items.steps[0].ui is True
     assert review.items is not None
     assert [stage.ui for stage in review.items.steps] == [True, False]

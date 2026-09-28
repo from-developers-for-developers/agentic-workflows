@@ -96,6 +96,10 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self.metadata.setdefault(task_id, TaskMetadata(task_id))
         return revision + 1
 
+    def task_ids(self) -> tuple[str, ...]:
+        owners = {*self.aggregates, *self.metadata, *self._artifact_owners.values()}
+        return tuple(sorted({owner.split("/")[0] for owner in owners}))
+
     def task_exists(self, task_id: str) -> bool:
         # Stored artifacts also claim the ID; see the port docstring.
         return super().task_exists(task_id) or task_id in self._artifact_owners.values()
