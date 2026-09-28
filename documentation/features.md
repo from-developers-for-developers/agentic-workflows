@@ -55,8 +55,9 @@ agent to run `discover` and follow ww from there. The `noww` skill is the way
 out: invoked as `/noww`, it tells the agent not to use ww for the rest of the
 conversation, `catchall` included. `--skills` installs both everywhere without
 asking and `--no-skills` skips them; an existing skill file is never
-overwritten, and a directory that already has the `ww` skill gains any skill
-it is missing.
+overwritten, and a skill a later ww version bundles is offered once on its
+own, as described in [Installing the ww skills during
+init](#installing-the-ww-skills-during-init).
 
 ## Discover how to start a task
 

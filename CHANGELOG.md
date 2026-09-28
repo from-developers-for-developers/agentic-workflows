@@ -41,7 +41,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
   it would work without ww. `discover` lists it apart, with when to use it:
   only when files are about to change, never for questions or read-only
   work, and always through `lookup` below. The agent instructions and the
-  `ww` skill say the same, and the skill now triggers before any change. Switch it off with
+  `ww` skill say the same, and the skill now triggers before any change.
+  Switch it off with
   `"workflows": {"catchall": {"enabled": false}}` in `agentic-workflows.json`,
   or replace it by defining a workflow of that name. A project whose
   `workflows.yaml` defines no workflow is no longer rejected.
@@ -66,7 +67,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   task IDs. A custom `TaskStorageAdapter` must implement it.
 - `init --skills` installs a second skill, `noww`, next to `ww`. `/noww`
   tells the agent not to use ww for the rest of the conversation. Running
-  `init` again adds it to directories that already have the `ww` skill.
+  `init` again asks once whether to add it to the directories you chose.
 - A step with `subagents: false` under the `auto` runtime no longer shows the
   manager delegation text. The dispatch page says no worker is selected and
   shows a plain `next` instead of one with `--selected-agent None`, and the
