@@ -11,6 +11,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- A configured project's own `ww-agentic-workflows.json` and `.local.json` now supply its `extensions`
+  settings over the root's for work done there; `ww/git` `project_base_branches` is gone, and `plan`,
+  `extension`, `lint`, and `discover` show what a project gets. `191ef5b`
 - Steps and handlers accept `workdir: task | project | root` to run their work in the task workspace
   (default), the `--project` checkout rather than its worktree, or the ww root. `3073b8d`
 - `depends_on` in a loop body, group substep or per-item stage can now name an earlier
