@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- A ww install now also runs inside another checkout of ww's own source, such as a development install used in the `dev`
+  checkout, instead of failing with "extension 'ww/git' is provided more than once". `4cb51aa`
 - The stop hook now reminds a session only about its own agent's tasks or the task whose worktree it works in, never a manager about a step delegated to a worker; hook messages name a hook step by itself and its step. `7a004a2`
 - `ww hook install --agent <agent>` (Claude Code, Codex, Cursor, Antigravity; `--local` for Claude Code) adds hooks that list unfinished tasks at session start, remind once about an open step, and mark interrupted sessions; see `ww interrupted`. `784f805`
 - `task_format` moves from `ww-agentic-workflows.yaml` to `ww-agentic-workflows.json` (any level); a
