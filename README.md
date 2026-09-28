@@ -144,7 +144,9 @@ The wizard asks a few questions and then sets the project up:
   enabled extensions, base branches, optional multi-repository `projects`.
 - **Git setup**, in a Git repository: it enables the bundled `ww/git`
   extension and asks about worktrees and branch formats, and offers to add
-  exactly `.ww/` to `.gitignore`.
+  exactly `.ww/` to `.gitignore`. It also keeps local configuration files
+  (`*ww-agentic-workflows.local.yaml`, `*ww-agentic-workflows.local.json`) out
+  of Git.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
   and so on), it offers to install a `ww` skill, so you can ask the agent to
   work through ww by name, and a `noww` skill, so you can tell it to leave ww
@@ -180,7 +182,12 @@ requirements for the whole task.
 
 As the configuration grows, `ww-agentic-workflows.yaml` can split its definitions across
 other YAML files it lists under `imports`; see
-[the features guide](documentation/features.md#split-workflowsyaml-into-several-files).
+[the features guide](documentation/features.md#split-ww-agentic-workflowsyaml-into-several-files).
+Both files can also be extended per machine, in
+`~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml` and `.json`,
+and per checkout, in `ww-agentic-workflows.local.yaml` and `.json` next to the
+repo files; see [machine, repo, and local
+configuration](documentation/features.md#machine-repo-and-local-configuration).
 
 Check it before you run anything:
 

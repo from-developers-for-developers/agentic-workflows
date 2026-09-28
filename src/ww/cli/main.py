@@ -22,6 +22,7 @@ from ww.config_files import (
     LEGACY_FILES,
     WORKFLOWS_FILE,
     check_legacy_files,
+    display_path,
     rename_legacy_files,
 )
 from ww.errors import StateError, WwError
@@ -41,6 +42,7 @@ from ww.output import (
     render_status,
 )
 from ww.plan import compile_workflow_plan
+from ww.project_config import compose_settings
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -182,16 +184,33 @@ def _plan(context: _Context) -> _Outcome:
         context.extensions,
         project_config=context.extensions.config,
     )
-    return _Outcome(render_plan(plan, args.json_output))
+    rendered = render_plan(plan, args.json_output)
+    if not args.json_output:
+        rendered += f"\n{_configuration_files(context.storage)}"
+    return _Outcome(rendered)
 
 
 def _lint(context: _Context) -> _Outcome:
     load_configuration(context.storage.config_path, context.extensions)
     notices = "".join(
-        f"Notice: {override.notice}\n"
-        for override in compose_configuration(context.storage.config_path).overrides
+        f"Notice: {notice}\n"
+        for notice in compose_configuration(context.storage.config_path).notices
     )
-    return _Outcome(f"{WORKFLOWS_FILE} is valid.\n{notices}")
+    return _Outcome(
+        f"{WORKFLOWS_FILE} is valid.\n{_configuration_files(context.storage)}"
+        f"{notices}"
+    )
+
+
+def _configuration_files(storage: Storage) -> str:
+    """The configuration files this project reads, from machine to local."""
+    workflows = compose_configuration(storage.config_path).sources
+    _, settings = compose_settings(storage.project_config_path)
+    files = (
+        *workflows,
+        *(display_path(path, storage.root) for path in settings),
+    )
+    return "Configuration files: " + ", ".join(files) + "\n"
 
 
 def _start(context: _Context) -> _Outcome:

@@ -49,15 +49,27 @@ implicit action names, filters hooks, evaluates interpolation availability, and 
 deterministic execution order.
 
 Before the YAML frontend parses anything, `../src/ww/config/composition.py`
-composes `../ww-agentic-workflows.yaml` and the files its leading `imports` list names
-into one mapping and dumps it back to YAML text. The parser receives that text
-exactly as it would a single file, so composition adds no parsing rules of its
-own: it only folds files in import order with the root last, replacing
-same-named catalog and profile entries in place, appending hooks per phase,
-and letting later scalar keys win. It keeps a record of each override, which
-`lint` prints as notices, and leaves a name repeated within one file untouched
-so validation still reports it. A root file without `imports` passes through
-unchanged. Composition runs on every read and writes nothing to disk. The other
+composes the configuration levels — the machine's
+`ww-agentic-workflows.machine.yaml`, the required repo
+`../ww-agentic-workflows.yaml`, and the checkout's
+`ww-agentic-workflows.local.yaml` — each with the files its leading `imports`
+list names, into one mapping and dumps it back to YAML text. The parser
+receives that text exactly as it would a single file, so composition adds no
+parsing rules of its own: it only folds files in order, machine to local and
+each level's imports before its root, replacing same-named catalog and profile
+entries in place, appending hooks per phase, and letting later scalar keys
+win. Levels and imports share one fold on purpose, so there is a single set of
+override rules to learn and to test. An `extends: false` in any file of a
+level restarts the fold at that level; composition consumes the key, so the
+parser never sees it. Imports resolve next to the file that lists them, while
+every other relative path is left as authored and so keeps resolving against
+the repo root; files are labelled from the repo root, or from `~` for the
+machine level. Composition keeps a record of each override and each file an
+`extends: false` left out, which `lint` prints as notices, and the list of files
+it folded, which `lint` and `plan` print; it leaves a name repeated within one
+file untouched so validation still reports it. A lone repo file without
+`imports` or `extends` passes through unchanged. Composition runs on every read
+and writes nothing to disk. The other
 readers of the raw file, `init`'s checks in `../src/ww/cli/initialization.py`
 and the storage's missing-key and setup checks in `../src/ww/storage.py`, read
 the composed mapping too, so a definition in an imported file counts as
@@ -86,6 +98,12 @@ authored configuration merely to reproduce default behavior. Its `enabled`
 switch is the one setting agents act on directly: when it is false, `discover`
 tells agents not to use ww and `start` refuses, while commands for existing
 tasks keep working so in-flight work can still be inspected or finished.
+`../src/ww/project_config.py` reads it through the same three levels, but
+always deep-merges them — objects key by key, every other value replaced — and
+has no `extends`: settings are machine-specific values to adjust, not
+definitions to replace. The `./ww` launcher written by `init` repeats that
+lookup for its one key, `executable`, in a few lines of Python, because it must
+choose the binary before any ww code runs.
 
 Initialization is a convergent project-repair operation rather than a one-time
 state transition. It fills absent root configuration keys and recreates missing
@@ -96,8 +114,15 @@ conflicting destination. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
 
 Both configuration files share the `ww-agentic-workflows` stem, and their names
-are defined once in `../src/ww/config_files.py`, so the planned local and
-machine levels can derive theirs from the same stem. There is no compatibility
+are defined once in `../src/ww/config_files.py`, together with the local and
+machine names derived from the same stem and the level order. The machine
+directory follows `WW_MACHINE_CONFIG_DIR`, then `XDG_CONFIG_HOME`, then
+`~/.config`; the override exists so tests, which set it in a session-wide
+fixture in `../tests/conftest.py`, never read a developer's real machine files.
+Only the repo YAML file marks a project root, so a machine file cannot turn an
+arbitrary directory into a ww project. `init` writes only repo-level files,
+but runs its checks on the composed result, and adds the local-file patterns to
+`.gitignore` unconditionally, creating the file only in a Git checkout. There is no compatibility
 layer for the former names `workflows.yaml` and `agentic-workflows.json`: the
 CLI checks the resolved root before dispatching any command and stops with a
 configuration error naming the new file, rather than silently running on

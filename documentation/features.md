@@ -10,6 +10,7 @@ and persistence invariants, see [architecture.md](architecture.md).
 - Read-only validation of `ww-agentic-workflows.yaml`, plus agent-specific workflow
   planning in Markdown or JSON.
 - A `ww-agentic-workflows.yaml` split across imported files, composed in memory.
+- Machine, repo, and local configuration levels, resolved automatically.
 - An implicit, reserved `init` step that preserves task requirements.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
@@ -42,7 +43,11 @@ whether worktrees should be used. Enabled worktrees default to
 `./git-worktrees/{{task_id}}`, and the directory is created immediately.
 
 The wizard offers to append exactly `../.ww` to `../.gitignore`; without consent it
-only reports that action. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
+only reports that action. The patterns `*ww-agentic-workflows.local.yaml` and
+`*ww-agentic-workflows.local.json` are added without asking, since [local
+configuration](#machine-repo-and-local-configuration) belongs to one checkout:
+they are appended to an existing `.gitignore` once, never duplicated, and a
+missing `.gitignore` is created for them only inside a Git repository. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
 references in `../AGENTS.md` and an existing `../CLAUDE.md`, and reminds the user to
 define workflows when the initialized `../ww-agentic-workflows.yaml` is empty. Equivalent
 non-interactive choices are available through `--task-id-format`, `--worktrees`,
@@ -205,8 +210,10 @@ omitted, `{{__task_id}}` remains visible as an unresolved plan dependency.
 ## Split ww-agentic-workflows.yaml into several files
 
 A large configuration can be split across files. `ww-agentic-workflows.yaml` stays the
-required root file and lists the others under `imports`, its first key. Paths
-are relative to the directory of `ww-agentic-workflows.yaml`:
+required root file and lists the others under `imports`, its first key (only
+`extends` may come before it). Paths are relative to the directory of the file
+that lists them; every other relative path in the configuration still resolves
+against the project root:
 
 ```yaml
 # ww-agentic-workflows.yaml
@@ -256,6 +263,7 @@ Overriding is never an error. `lint` reports each override as a notice:
 ```console
 $ ww-agentic-workflows lint
 ww-agentic-workflows.yaml is valid.
+Configuration files: workflows/shared.yaml, workflows/local.yaml, ww-agentic-workflows.yaml
 Notice: task_format from workflows/shared.yaml is overridden by workflows/local.yaml.
 Notice: handler 'test' from workflows/shared.yaml is overridden by ww-agentic-workflows.yaml.
 ```
@@ -265,6 +273,96 @@ it exactly as a single `ww-agentic-workflows.yaml`, so every other rule applies 
 and there is no cache to refresh. `init` sees keys and workflows defined in
 imported files too, and does not add them to `ww-agentic-workflows.yaml` again. The
 [specification](specification.md#imports) has the exact rules.
+
+## Machine, repo, and local configuration
+
+Both configuration files come in three levels, which ww finds and applies on
+every command, top to bottom:
+
+1. machine: `ww-agentic-workflows.machine.yaml` and
+   `ww-agentic-workflows.machine.json` in `~/.config/ww-agentic-workflows/`
+   (under `$XDG_CONFIG_HOME` when that is set), shared by every project on the
+   machine;
+2. repo: `ww-agentic-workflows.yaml` and `ww-agentic-workflows.json` in the
+   project root, checked in;
+3. local: `ww-agentic-workflows.local.yaml` and
+   `ww-agentic-workflows.local.json` in the project root, for one checkout and
+   kept out of version control.
+
+The repo `ww-agentic-workflows.yaml` stays required: a machine file alone never
+makes a directory a ww project. `WW_MACHINE_CONFIG_DIR` names another machine
+directory; the test suite points it at an empty one so a developer's own
+machine configuration never leaks into tests.
+
+A lower level extends the levels above it with the same rules as
+[imports](#split-ww-agentic-workflowsyaml-into-several-files), and wins: named
+workflows, modes, documents, handlers, and profiles are replaced one by one,
+hooks are added per phase, and other keys take the lower value. Each level can
+use `imports` of its own, resolved next to the file that lists them.
+
+```yaml
+# ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml
+handlers:
+  - name: test
+    argv: [pytest]
+workflows:
+  - review: Review a change.
+    steps:
+      - review: Review it.
+```
+
+```yaml
+# ww-agentic-workflows.local.yaml
+task_format: "DEV-{digit}"
+```
+
+With the repo file defining its own `test` handler and `task_format`, the
+project gets the machine's `review` workflow, the repo's `test` handler, and
+the local task format. `lint` lists the files it read, machine to local, the
+YAML files first and the JSON ones after, and names the file behind each
+override; `plan` ends with the same list:
+
+```console
+$ ww-agentic-workflows lint
+ww-agentic-workflows.yaml is valid.
+Configuration files: ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml, ww-agentic-workflows.yaml, ww-agentic-workflows.local.yaml, ww-agentic-workflows.json
+Notice: handler 'test' from ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml is overridden by ww-agentic-workflows.yaml.
+Notice: task_format from ww-agentic-workflows.yaml is overridden by ww-agentic-workflows.local.yaml.
+```
+
+A level that should not build on the ones above sets `extends: false` in its
+root file or any of its imports; that level then starts afresh, and `lint`
+reports each file it leaves out. `extends: true` is allowed and changes
+nothing.
+
+```yaml
+# ww-agentic-workflows.local.yaml
+extends: false
+workflows:
+  - task: My own way of working.
+    steps:
+      - develop: Do it.
+```
+
+```console
+$ ww-agentic-workflows lint
+ww-agentic-workflows.yaml is valid.
+Configuration files: ww-agentic-workflows.local.yaml, ww-agentic-workflows.json
+Notice: ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml is not applied: a lower level sets extends: false.
+Notice: ww-agentic-workflows.yaml is not applied: a lower level sets extends: false.
+```
+
+The JSON settings are always deep-merged and take no `extends` key: nested
+objects merge key by key, while strings, numbers, booleans, lists, and `null`
+from a lower level replace the value above. A machine file can, for example,
+set `{"runtime": "auto"}` for every project while one checkout's
+`ww-agentic-workflows.local.json` sets
+`{"extensions": {"ww/git": {"worktrees": false}}}` without repeating the rest of
+the repo's `ww/git` settings.
+
+`init` writes only the repo-level files, and decides what to add from the
+composed result: it adds no default workflow and no `task_format` when another
+level already provides them.
 
 ## Configuration
 
@@ -719,6 +817,10 @@ their locations are machine-specific, while the workflows are shared:
 | `name` | yes | Unique normalized name; the value of `--project`. |
 | `path` | yes | The directory, resolved against the root when relative. It must exist when a task starts there. |
 | `description` | no | Shown by `discover` and in the children collection step. |
+
+A checkout laid out differently can list its own projects in
+`ww-agentic-workflows.local.json`; the list replaces the repo's whole, and its
+relative paths still resolve against the root.
 
 ```console
 ww-agentic-workflows start PROJ-123 --workflow feature --project backend ...
@@ -2247,7 +2349,10 @@ A project names the ww it runs in `../ww-agentic-workflows.json`:
 The value is a command on `PATH` or a path. Every command ww prints for that
 project starts with it — `ww-agentic-workflows-dev next TASK-1 --role
 manager` — and the `./ww` launcher runs it, reading the key each time, so a
-project switches installs by editing that one line. Without the key, printed
+project switches installs by editing that one line. Like every setting, the key
+may also come from the machine or local settings file, the local one winning,
+so one checkout can use a development install without changing the shared
+file. Without the key, printed
 commands use `./ww` and the launcher runs `ww-agentic-workflows`. `init` writes
 `"executable": "ww-agentic-workflows"` when the key is missing, and brings a
 launcher an earlier ww wrote up to date; a launcher you edited is left alone.

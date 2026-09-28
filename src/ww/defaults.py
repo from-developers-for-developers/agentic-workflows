@@ -3,7 +3,13 @@
 
 from importlib.resources import files
 
-from ww.config_files import SETTINGS_FILE
+from ww.config_files import (
+    FILE_STEM,
+    LOCAL_SETTINGS_FILE,
+    MACHINE_DIR_VARIABLE,
+    MACHINE_SETTINGS_FILE,
+    SETTINGS_FILE,
+)
 from ww.executable import DEFAULT_EXECUTABLE
 
 DEFAULT_WORKFLOWS_YAML = """task_format: TASK-{uuid}
@@ -23,10 +29,46 @@ DEFAULT_PROJECT_CONFIG_JSON = f"""{{
 """
 
 
-# ``./ww`` runs the binary the settings file names in ``executable``, read
-# on every run so a project switches installs by editing one line. Without
-# python3 or the key it runs the standard name.
-def _launcher(settings_file: str) -> str:
+# ``./ww`` runs the binary the settings levels name in ``executable``, read on
+# every run so a project switches installs by editing one line; the local file
+# wins over the repo one, which wins over the machine's. Without python3 or the
+# key it runs the standard name.
+PROJECT_LAUNCHER = f"""#!/bin/sh
+set -eu
+project_root=$(CDPATH= cd "$(dirname "$0")" && pwd)
+cd "$project_root"
+executable={DEFAULT_EXECUTABLE}
+if command -v python3 >/dev/null 2>&1; then
+  configured=$(python3 -c '
+import json, os
+machine = os.environ.get("{MACHINE_DIR_VARIABLE}") or os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+    "{FILE_STEM}",
+)
+value = None
+for path in (
+    os.path.join(machine, "{MACHINE_SETTINGS_FILE}"),
+    "{SETTINGS_FILE}",
+    "{LOCAL_SETTINGS_FILE}",
+):
+    try:
+        found = json.load(open(path)).get("executable")
+    except (OSError, ValueError, AttributeError):
+        continue
+    if isinstance(found, str) and found.strip():
+        value = found.strip()
+print(value or "")
+' 2>/dev/null || true)
+  if [ -n "$configured" ]; then
+    executable=$configured
+  fi
+fi
+exec "$executable" "$@"
+"""
+
+
+def _single_file_launcher(settings_file: str) -> str:
+    """A launcher that read ``executable`` from one settings file only."""
     return f"""#!/bin/sh
 set -eu
 project_root=$(CDPATH= cd "$(dirname "$0")" && pwd)
@@ -49,10 +91,10 @@ exec "$executable" "$@"
 """
 
 
-PROJECT_LAUNCHER = _launcher(SETTINGS_FILE)
 # Launchers earlier ww versions wrote; init replaces one left as written.
 GENERATED_LAUNCHERS = (
-    _launcher("agentic-workflows.json"),
+    _single_file_launcher(SETTINGS_FILE),
+    _single_file_launcher("agentic-workflows.json"),
     """#!/bin/sh
 set -eu
 project_root=$(CDPATH= cd "$(dirname "$0")" && pwd)

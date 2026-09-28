@@ -41,3 +41,15 @@ def isolated_update_check(
     }
     with patch.dict(os.environ, environment):
         yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_machine_configuration(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """Keep the operator's machine-level configuration out of every test."""
+    environment = {
+        "WW_MACHINE_CONFIG_DIR": str(tmp_path_factory.mktemp("ww-machine")),
+    }
+    with patch.dict(os.environ, environment):
+        yield

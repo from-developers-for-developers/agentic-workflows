@@ -34,6 +34,13 @@ def _commit(repository: Path, message: str) -> None:
     )
 
 
+def _lint_output(*config_files: str) -> str:
+    return (
+        "ww-agentic-workflows.yaml is valid.\n"
+        f"Configuration files: {', '.join(config_files)}"
+    )
+
+
 def _project(root: Path) -> None:
     (root / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Do it.\n",
@@ -91,7 +98,7 @@ def test_the_same_update_is_not_announced_a_second_time(
 
     second = capsys.readouterr().out
     assert "A newer ww is available" not in second
-    assert second.strip() == "ww-agentic-workflows.yaml is valid."
+    assert second.strip() == _lint_output("ww-agentic-workflows.yaml")
 
 
 def test_json_output_stays_machine_readable(
@@ -149,7 +156,9 @@ def test_the_project_can_turn_the_check_off(
 
     output = capsys.readouterr().out
     assert "A newer ww is available" not in output
-    assert output.strip() == "ww-agentic-workflows.yaml is valid."
+    assert output.strip() == _lint_output(
+        "ww-agentic-workflows.yaml", "ww-agentic-workflows.json"
+    )
 
 
 def test_a_broken_update_check_never_disturbs_the_command(
@@ -165,4 +174,6 @@ def test_a_broken_update_check_never_disturbs_the_command(
     monkeypatch.setattr(cli_updates, "installation_checkout", explode)
 
     assert main(["--root", str(project), "lint"]) == 0
-    assert capsys.readouterr().out.strip() == "ww-agentic-workflows.yaml is valid."
+    assert capsys.readouterr().out.strip() == _lint_output(
+        "ww-agentic-workflows.yaml"
+    )

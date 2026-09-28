@@ -23,8 +23,9 @@ Names must be unique within their catalog or sibling step list.
 
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `imports` | list of file paths | no | Other YAML files composed into this one; see [Imports](#imports). Must be the first key. |
-| `workflows` | list of workflows | yes | At least one workflow is required, in this file or an imported one. |
+| `extends` | boolean | no | `false` makes this file's level ignore the levels above it; see [Configuration levels](#configuration-levels). Defaults to `true`. |
+| `imports` | list of file paths | no | Other YAML files composed into this one; see [Imports](#imports). Must come before every key but `extends`. |
+| `workflows` | list of workflows | yes | At least one workflow is required in the composed configuration: in this file, an imported one, or another level. |
 | `task_format` | string | no | Generated task ID format. Supports `{timestamp}`, `{digit}`, and `{uuid}`. The value `explicit` forbids generated IDs: every task needs an explicit ID unless its workflow binds one. |
 | `modes` | list of modes | no | Reusable agent guidance. |
 | `profiles` | mapping | no | Named agent profiles. |
@@ -36,9 +37,10 @@ The legacy root key `tasks` is rejected.
 
 ## Imports
 
-`../ww-agentic-workflows.yaml` is the root file and is always required. It may split its
-definitions across other YAML files by listing them under `imports`, which must
-be its first key:
+A root file — `../ww-agentic-workflows.yaml` or the root file of another
+[configuration level](#configuration-levels) — may split its definitions across
+other YAML files by listing them under `imports`, which must come before every
+other key except `extends`:
 
 ```yaml
 imports:
@@ -52,13 +54,17 @@ workflows:
       - code-review: ~
 ```
 
-- Each entry is a non-empty path, relative to the directory of
-  `ww-agentic-workflows.yaml`, to an existing file that contains a mapping.
+- Each entry is a non-empty path, relative to the directory of the file that
+  lists it, to an existing file that contains a mapping. Only `imports` resolve
+  this way: every other relative path in any file, such as a document `path`,
+  a handler's `argv`, or the settings' `projects` and `worktree_dir`, still
+  resolves against the project root.
 - An imported file may define every root key above except `imports`: imports do
-  not nest, so every imported file is listed in the root file. A file may not be
-  listed twice, and the root file may not import itself.
-- Definitions fold in list order, and `ww-agentic-workflows.yaml` last. A later file
-  overrides an earlier one, so `ww-agentic-workflows.yaml` overrides every import:
+  not nest, so every imported file is listed in its level's root file. A file
+  may not be listed twice, may not be one of the level root files, and a root
+  file may not import itself.
+- Definitions fold in list order, and the root file last. A later file
+  overrides an earlier one, so a root file overrides every import it lists:
   - an entry of `workflows`, `modes`, `documents`, or `handlers`, and a
     `profiles` entry, replaces the entry of the same name from an earlier file,
     in that entry's original position;
@@ -66,11 +72,54 @@ workflows:
     run after those from earlier files;
   - any other key, such as `task_format`, takes the later file's value.
 - Overriding across files is not an error. `lint` prints one notice per
-  overridden definition. A name repeated within a single file is still reported
-  as a duplicate.
+  overridden definition, naming the file that defined it and the file that
+  overrode it. A name repeated within a single file is still reported as a
+  duplicate.
 - The files are composed in memory, on every command, into one document that is
   then read exactly as a single `ww-agentic-workflows.yaml`; nothing is cached on disk.
   Every rule in this specification applies to that composed document.
+
+## Configuration levels
+
+Workflows come from up to three levels, applied top to bottom:
+
+| Level | Root file | Required |
+| --- | --- | --- |
+| machine | `ww-agentic-workflows.machine.yaml` in `$WW_MACHINE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ww-agentic-workflows/`, else `~/.config/ww-agentic-workflows/` | no |
+| repo | `../ww-agentic-workflows.yaml` | yes |
+| local | `../ww-agentic-workflows.local.yaml`, next to the repo file | no |
+
+The repo file is what makes a directory a ww project; a machine file alone
+never does. A level is its root file plus the files that root imports, and
+each level may use `imports` as described above.
+
+- Levels fold in order, machine first, each level's imports before its root
+  file, with the same rules as imports: a lower level overrides the levels
+  above it, named entries are replaced one by one, `hooks` entries of each phase
+  are added after those from above, and any other key takes the lower level's
+  value.
+- `extends` is a boolean, `true` by default. When any file of a level — its
+  root or one of its imports — sets `extends: false`, that level ignores every
+  level above it and folding starts again there. `extends: true` changes
+  nothing. `lint` reports each file left out as a notice.
+- `lint` lists the configuration files it read, and `plan` ends with the same
+  list; `lint` notices name the file of the level that overrode a definition.
+
+```yaml
+# ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml
+handlers:
+  - name: test
+    argv: [pytest]
+```
+
+```yaml
+# ww-agentic-workflows.local.yaml
+task_format: "DEV-{digit}"
+```
+
+`ww-agentic-workflows.json` has matching `.machine.json` and `.local.json`
+levels, which are always deep-merged and take no `extends` key; see the
+features guide.
 
 Projects, the directories a task may work in, are configured in
 `ww-agentic-workflows.json` rather than here because their locations differ per

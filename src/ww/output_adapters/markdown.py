@@ -199,9 +199,11 @@ def _permission_notice(executable: str = DEFAULT_EXECUTABLE) -> Lines:
         "Without this you get a prompt per step, and an interactive step's "
         "operator page cannot open its local port from inside an agent "
         "sandbox — it fails with a permission error rather than a busy port.",
-        "What you are trusting is your own ww-agentic-workflows.yaml: review "
-        "changes to it like a CI config, since whoever edits it can run "
-        "commands here.",
+        "What you are trusting is your own ww-agentic-workflows.yaml, with "
+        "its local and machine-wide levels (ww-agentic-workflows.local.yaml "
+        "here, ww-agentic-workflows.machine.yaml in your configuration "
+        "directory): review changes to them like a CI config, since whoever "
+        "edits them can run commands here.",
     )
     body = textwrap.wrap(paragraphs[0], width - 2, initial_indent="  ",
                          subsequent_indent="  ")

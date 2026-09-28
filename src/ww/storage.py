@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ww.config.composition import compose_configuration
-from ww.config_files import SETTINGS_FILE, WORKFLOWS_FILE
+from ww.config_files import LOCAL_IGNORE_PATTERNS, SETTINGS_FILE, WORKFLOWS_FILE
 from ww.defaults import GENERATED_LAUNCHERS
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
@@ -154,6 +154,15 @@ class Storage:
                 created.append(".gitignore entry: .ww/")
             else:
                 preserved.append(".gitignore entry: .ww/")
+        # Local configuration belongs to one checkout, so it is always kept
+        # out of version control.
+        added = self._ignore_local_configuration()
+        if added:
+            created.append(".gitignore entries: " + ", ".join(added))
+        elif (self.root / ".gitignore").exists():
+            preserved.append(
+                ".gitignore entries: " + ", ".join(LOCAL_IGNORE_PATTERNS)
+            )
 
         actions = self._initialization_actions()
         if (
@@ -239,6 +248,26 @@ class Storage:
         separator = "" if not existing or existing.endswith("\n") else "\n"
         self.locks.atomic_write(path, f"{existing}{separator}.ww/\n")
         return True
+
+    def _ignore_local_configuration(self) -> tuple[str, ...]:
+        """Add the local-file patterns missing from .gitignore.
+
+        An existing .gitignore gains them; one is created only in a Git
+        checkout, where it has an effect.
+        """
+        path = self.root / ".gitignore"
+        if not path.exists() and not (self.root / ".git").exists():
+            return ()
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        entries = {line.strip() for line in existing.splitlines()}
+        missing = tuple(
+            pattern for pattern in LOCAL_IGNORE_PATTERNS if pattern not in entries
+        )
+        if missing:
+            separator = "" if not existing or existing.endswith("\n") else "\n"
+            addition = "".join(f"{pattern}\n" for pattern in missing)
+            self.locks.atomic_write(path, f"{existing}{separator}{addition}")
+        return missing
 
     def _initialization_actions(self) -> list[str]:
         actions: list[str] = []

@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ww.config_files import SETTINGS_FILE
+from ww.config_files import SETTINGS_FILE, settings_levels
 from ww.core_workflows import CORE_WORKFLOW_NAMES
 from ww.errors import ConfigurationError
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
@@ -158,15 +158,49 @@ class ProjectConfig:
 
 
 def load_project_config(path: Path) -> ProjectConfig:
-    """Load ``ww-agentic-workflows.json``, or return defaults when it is absent."""
-    if not path.is_file():
+    """Load the settings levels around the repo file ``path``, deep-merged.
+
+    The machine, repo, and local files apply in that order, each optional;
+    without any of them the defaults apply.
+    """
+    raw, sources = compose_settings(path)
+    if not sources:
         return ProjectConfig()
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ConfigurationError(f"invalid {path}: {error}") from error
-    if not isinstance(raw, dict):
-        raise ConfigurationError(f"{path} must contain a JSON object")
+    return _parse_settings(raw, " + ".join(str(source) for source in sources))
+
+
+def compose_settings(path: Path) -> tuple[dict[str, Any], tuple[Path, ...]]:
+    """Deep-merge the settings levels around ``path`` and name the files read.
+
+    Nested objects merge key by key; any other value, lists included, replaces
+    the one above it.
+    """
+    merged: dict[str, Any] = {}
+    sources: list[Path] = []
+    for level in settings_levels(path):
+        if not level.path.is_file():
+            continue
+        try:
+            raw = json.loads(level.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ConfigurationError(f"invalid {level.path}: {error}") from error
+        if not isinstance(raw, dict):
+            raise ConfigurationError(f"{level.path} must contain a JSON object")
+        _deep_merge(merged, raw)
+        sources.append(level.path)
+    return merged, tuple(sources)
+
+
+def _deep_merge(target: dict[str, Any], overlay: dict[str, Any]) -> None:
+    for key, value in overlay.items():
+        current = target.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            _deep_merge(current, value)
+        else:
+            target[key] = deepcopy(value)
+
+
+def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     unknown = set(raw) - {
         "enabled",
         "runtime",
@@ -242,7 +276,7 @@ def load_project_config(path: Path) -> ProjectConfig:
     )
 
 
-def _parse_executable(data: Any, path: Path) -> str | None:
+def _parse_executable(data: Any, path: str) -> str | None:
     if data is None:
         return None
     if not isinstance(data, str) or not data.strip():
@@ -252,7 +286,7 @@ def _parse_executable(data: Any, path: Path) -> str | None:
     return data.strip()
 
 
-def _parse_workflows(data: Any, path: Path) -> frozenset[str]:
+def _parse_workflows(data: Any, path: str) -> frozenset[str]:
     """The core workflows switched off, from ``{"<name>": {"enabled": false}}``."""
     if data is None:
         return frozenset()
@@ -282,7 +316,7 @@ def _parse_workflows(data: Any, path: Path) -> frozenset[str]:
     return frozenset(disabled)
 
 
-def _parse_projects(data: Any, path: Path) -> tuple[ProjectDefinition, ...]:
+def _parse_projects(data: Any, path: str) -> tuple[ProjectDefinition, ...]:
     if data is None:
         return ()
     if not isinstance(data, list):

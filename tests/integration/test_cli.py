@@ -26,6 +26,11 @@ def _agent_answers(*approve: str) -> str:
     return (",".join(approve) if approve else "none") + "\n"
 
 
+_GITIGNORE_WITH_WW = (
+    ".ww/\n*ww-agentic-workflows.local.yaml\n*ww-agentic-workflows.local.json\n"
+)
+
+
 def _complete_init(root: Path, task_id: str, capsys) -> None:  # type: ignore[no-untyped-def]
     del root, task_id, capsys
 
@@ -157,7 +162,10 @@ def test_lint_cli_validates_configuration_without_creating_runtime_state(
     _project(tmp_path)
 
     assert main(["--root", str(tmp_path), "lint"]) == 0
-    assert capsys.readouterr().out == "ww-agentic-workflows.yaml is valid.\n"
+    assert capsys.readouterr().out == (
+        "ww-agentic-workflows.yaml is valid.\n"
+        "Configuration files: ww-agentic-workflows.yaml\n"
+    )
     assert not (tmp_path / ".ww").exists()
 
 
@@ -600,7 +608,7 @@ def test_init_targets_new_directory_and_creates_approved_agent_files(
     assert (project / ".codex/skills/ww/SKILL.md").is_file()
     assert not (project / ".claude").exists()
     assert (project / "AGENTS.md").read_text() == "@WW_AGENT_INSTRUCTIONS.md\n"
-    assert (project / ".gitignore").read_text() == ".ww/\n"
+    assert (project / ".gitignore").read_text() == _GITIGNORE_WITH_WW
     assert "Use Git worktrees?" not in output
     assert "Add exactly .ww/" not in output
     assert "Start a task with:" not in output
@@ -743,7 +751,7 @@ def test_init_worktree_and_gitignore_choices_are_explicit(
     assert settings["worktree_dir"] == "./git-worktrees"
     assert settings["worktree_name_format"] == "{{task_id}}"
     assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{task_id}}"
-    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == ".ww/\n"
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == _GITIGNORE_WITH_WW
 
 
 def test_init_interactive_wizard_collects_project_choices(
@@ -775,7 +783,7 @@ def test_init_interactive_wizard_collects_project_choices(
     assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{task_id}}"
     assert settings["worktrees"] is True
     assert (tmp_path / "git-worktrees").is_dir()
-    assert (tmp_path / ".gitignore").read_text() == ".ww/\n"
+    assert (tmp_path / ".gitignore").read_text() == _GITIGNORE_WITH_WW
 
 
 def test_init_completes_an_existing_enabled_worktree_config(

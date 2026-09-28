@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compose ``ww-agentic-workflows.yaml`` and the files it imports into one document.
+"""Compose the workflow configuration levels and their imports into one document.
 
-The root file may list other YAML files under ``imports``, its first key. Each
-import may define anything the root can, except further imports. Definitions
-fold in import order and the root file last, so a later file overrides an
-earlier one and the root overrides every import:
+Workflows come from up to three levels, applied top to bottom: the machine's
+``ww-agentic-workflows.machine.yaml``, the repo's ``ww-agentic-workflows.yaml``
+(required), and the checkout's ``ww-agentic-workflows.local.yaml``. A level is
+its root file plus the files that root lists under ``imports``, which come
+before any other key but ``extends``. An import may define anything a root can,
+except further imports, and resolves next to the file that lists it.
+
+Files fold in order, each level's imports before its root, so a later file
+overrides an earlier one and a lower level overrides the ones above it:
 
 - named catalogs (``modes``, ``documents``, ``handlers``, ``workflows``) and
   ``profiles`` replace an entry of the same name where it first appeared, so
@@ -12,6 +17,9 @@ earlier one and the root overrides every import:
 - ``hooks`` add each phase's entries after those already folded, since hook
   entries carry no name to override;
 - any other key, such as ``task_format``, takes the later value.
+
+A level extends the ones above unless one of its files says ``extends: false``;
+then folding starts again at that level.
 
 The composed document is ordinary ``ww-agentic-workflows.yaml`` notation:
 the parser reads it exactly as it would a single file, and nothing is
@@ -26,9 +34,11 @@ from typing import Any
 
 import yaml
 
+from ww.config_files import ConfigurationLevel, display_path, workflow_levels
 from ww.errors import ConfigurationError
 
 IMPORTS_KEY = "imports"
+EXTENDS_KEY = "extends"
 
 _NAMED_CATALOGS = {
     "modes": "mode",
@@ -58,66 +68,108 @@ class Override:
 
 @dataclass(frozen=True)
 class ComposedConfiguration:
-    """Composed ``ww-agentic-workflows.yaml`` text, its mapping, and overrides."""
+    """Composed ``ww-agentic-workflows.yaml`` text, its mapping, and overrides.
+
+    ``sources`` lists the files folded in, in order; ``ignored`` the files a
+    lower level's ``extends: false`` left out.
+    """
 
     text: str
     raw: dict[str, Any]
     overrides: tuple[Override, ...] = ()
+    sources: tuple[str, ...] = ()
+    ignored: tuple[str, ...] = ()
+
+    @property
+    def notices(self) -> tuple[str, ...]:
+        return (
+            *(f"{label} is not applied: a lower level sets extends: false."
+              for label in self.ignored),
+            *(override.notice for override in self.overrides),
+        )
+
+
+@dataclass(frozen=True)
+class _Level:
+    """One level's files, imports first, and whether it extends the ones above."""
+
+    files: tuple[tuple[str, dict[str, Any]], ...]
+    extends: bool
 
 
 def compose_configuration(path: Path) -> ComposedConfiguration:
-    """Read ``path`` and fold the files it imports into one document.
+    """Read the repo file ``path`` with its levels and imports as one document.
 
-    A root file without ``imports`` passes through untouched, so the parser
-    reports its errors exactly as before.
+    A repo file standing alone, without ``imports`` or ``extends``, passes
+    through untouched, so the parser reports its errors exactly as before.
     """
+    base = path.parent
+    label = display_path(path, base)
     text = path.read_text(encoding="utf-8")
-    try:
-        root = yaml.safe_load(text)
-    except yaml.YAMLError:
-        return ComposedConfiguration(text, {})
-    if not isinstance(root, dict) or IMPORTS_KEY not in root:
-        return ComposedConfiguration(text, root if isinstance(root, dict) else {})
-    if next(iter(root)) != IMPORTS_KEY:
-        raise ConfigurationError(f"{IMPORTS_KEY} must be the first key in {path.name}")
-    imports = root.pop(IMPORTS_KEY)
+    present = tuple(
+        level
+        for level in workflow_levels(path)
+        if level.name == "repo" or level.path.is_file()
+    )
+    if len(present) == 1:
+        try:
+            root = yaml.safe_load(text)
+        except yaml.YAMLError:
+            return ComposedConfiguration(text, {}, sources=(label,))
+        if not isinstance(root, dict) or not {IMPORTS_KEY, EXTENDS_KEY} & set(root):
+            raw = root if isinstance(root, dict) else {}
+            return ComposedConfiguration(text, raw, sources=(label,))
+    seen = {level.path.resolve() for level in present}
+    levels = [_read_level(level, base, seen) for level in present]
+    start = max(
+        (index for index, level in enumerate(levels) if not level.extends),
+        default=0,
+    )
     composer = _Composer()
-    for label, file in _import_files(imports, path):
-        composer.apply(_read_import(file, label), label)
-    composer.apply(root, path.name)
+    for level in levels[start:]:
+        for file_label, raw in level.files:
+            composer.apply(raw, file_label)
     return ComposedConfiguration(
         yaml.safe_dump(composer.raw, sort_keys=False, allow_unicode=True),
         composer.raw,
         tuple(composer.overrides),
+        tuple(file_label for level in levels[start:] for file_label, _ in level.files),
+        tuple(file_label for level in levels[:start] for file_label, _ in level.files),
     )
 
 
-def _import_files(imports: Any, root: Path) -> list[tuple[str, Path]]:
-    if not isinstance(imports, list):
-        raise ConfigurationError(f"{IMPORTS_KEY} must be a list of file paths")
-    result: list[tuple[str, Path]] = []
-    seen = {root.resolve()}
-    for index, entry in enumerate(imports):
-        if not isinstance(entry, str) or not entry.strip():
-            raise ConfigurationError(
-                f"{IMPORTS_KEY}[{index}] must be a non-empty file path"
-            )
-        file = root.parent / entry
-        if not file.is_file():
-            raise ConfigurationError(f"imported file not found: {entry}")
-        resolved = file.resolve()
-        if resolved in seen:
-            raise ConfigurationError(
-                f"{IMPORTS_KEY}[{index}] repeats {entry}"
-                if resolved != root.resolve()
-                else f"{IMPORTS_KEY}[{index}] imports {root.name} itself"
-            )
-        seen.add(resolved)
-        result.append((entry, file))
-    return result
+def _read_level(
+    level: ConfigurationLevel, base: Path, seen: set[Path]
+) -> _Level:
+    root_label = display_path(level.path, base)
+    root = _read_file(level.path, root_label)
+    keys = [key for key in root if key != EXTENDS_KEY]
+    if IMPORTS_KEY in keys and keys[0] != IMPORTS_KEY:
+        raise ConfigurationError(
+            f"{IMPORTS_KEY} must come before every key but {EXTENDS_KEY} "
+            f"in {root_label}"
+        )
+    imports = root.pop(IMPORTS_KEY, [])
+    files = [
+        (file_label, _read_import(file, file_label))
+        for file_label, file in _import_files(imports, level.path, base, seen)
+    ]
+    files.append((root_label, root))
+    extends = [_extends(raw, file_label) for file_label, raw in files]
+    return _Level(tuple(files), False not in extends)
 
 
-def _read_import(file: Path, label: str) -> dict[str, Any]:
+def _extends(raw: dict[str, Any], label: str) -> bool | None:
+    """Take a file's ``extends`` out of its definitions and validate it."""
+    if EXTENDS_KEY not in raw:
+        return None
+    value = raw.pop(EXTENDS_KEY)
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{label}: {EXTENDS_KEY} must be true or false")
+    return value
+
+
+def _read_file(file: Path, label: str) -> dict[str, Any]:
     try:
         raw = yaml.safe_load(file.read_text(encoding="utf-8"))
     except OSError as error:
@@ -126,6 +178,41 @@ def _read_import(file: Path, label: str) -> dict[str, Any]:
         raise ConfigurationError(f"invalid YAML in {label}: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{label} must contain a mapping")
+    return raw
+
+
+def _import_files(
+    imports: Any, root: Path, base: Path, seen: set[Path]
+) -> list[tuple[str, Path]]:
+    root_label = display_path(root, base)
+    if not isinstance(imports, list):
+        raise ConfigurationError(
+            f"{IMPORTS_KEY} in {root_label} must be a list of file paths"
+        )
+    result: list[tuple[str, Path]] = []
+    for index, entry in enumerate(imports):
+        if not isinstance(entry, str) or not entry.strip():
+            raise ConfigurationError(
+                f"{root_label} {IMPORTS_KEY}[{index}] must be a non-empty file path"
+            )
+        file = root.parent / entry
+        if not file.is_file():
+            raise ConfigurationError(
+                f"imported file not found: {entry} (listed in {root_label})"
+            )
+        resolved = file.resolve()
+        if resolved in seen:
+            raise ConfigurationError(
+                f"{root_label} {IMPORTS_KEY}[{index}] imports {entry}, which "
+                "is already a configuration file or an import"
+            )
+        seen.add(resolved)
+        result.append((display_path(file, base), file))
+    return result
+
+
+def _read_import(file: Path, label: str) -> dict[str, Any]:
+    raw = _read_file(file, label)
     if IMPORTS_KEY in raw:
         raise ConfigurationError(
             f"{label} cannot import other files; list every import in the root file"
