@@ -1,5 +1,6 @@
 {
   "enabled": true,
+  "executable": "ww-agentic-workflows",
   "task_format": "TASK-{digit}",
 
   "extensions": {
