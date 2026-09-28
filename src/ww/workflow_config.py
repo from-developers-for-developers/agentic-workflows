@@ -23,6 +23,7 @@ from ww.contracts import (
     ItemOperation,
     LoopAssignment,
 )
+from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
 
@@ -229,6 +230,9 @@ class HandlerDefinition:
     agent: str | None = None
     model: str | None = None
     reasoning: str | None = None
+    # The directory this handler or step works in; ``None`` leaves the
+    # choice to the enclosing step (for a step) or the task workspace.
+    workdir: Workdir | None = None
 
     @property
     def is_reference(self) -> bool:

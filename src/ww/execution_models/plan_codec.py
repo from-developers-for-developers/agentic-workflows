@@ -39,6 +39,7 @@ from ww.workflow_config import (
     ProvidedVariable,
     SavedMetadata,
 )
+from ww.workspace import Workdir
 
 
 def _plan_from_dict(data: Any) -> WorkflowPlan:
@@ -152,6 +153,7 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             raw.get("profile_instruction"), "profile instruction"
         ),
         profile_path=expect_optional_string(raw.get("profile_path"), "profile path"),
+        workdir=_workdir(raw.get("workdir", "task")),
         summary=expect_bool(raw.get("summary", False), f"{item_path}.summary"),
         item_operation=_item_operation(raw.get("item_operation")),
         item_template=expect_bool(
@@ -344,6 +346,10 @@ def _item_assignment(value: Any) -> ItemAssignment:
     return cast(
         ItemAssignment, expect_literal(value, ItemAssignment, "item assignment")
     )
+
+
+def _workdir(value: Any) -> Workdir:
+    return cast(Workdir, expect_literal(value, Workdir, "workdir"))
 
 
 def _item_operation(value: Any) -> ItemOperation | None:

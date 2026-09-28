@@ -21,6 +21,7 @@ from ww.workflow_config import (
     ProvidedVariable,
     SavedMetadata,
 )
+from ww.workspace import WORKDIRS, Workdir
 
 from .values import (
     _description,
@@ -150,6 +151,7 @@ def _parse_handler(
             agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
             model=_optional_string(mapping, "model", f"handler {name!r}"),
             reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
+            workdir=_optional_workdir(mapping, f"handler {name!r}"),
         )
     explicit: list[RequestedActionKind] = [
         key for key in ("skill", "slash_command") if key in mapping
@@ -208,7 +210,19 @@ def _parse_handler(
         agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
         model=_optional_string(mapping, "model", f"handler {name!r}"),
         reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
+        workdir=_optional_workdir(mapping, f"handler {name!r}"),
     )
+
+
+def _optional_workdir(mapping: dict[str, Any], path: str) -> Workdir | None:
+    if "workdir" not in mapping:
+        return None
+    value = mapping["workdir"]
+    if value not in WORKDIRS:
+        raise ConfigurationError(
+            f"{path}.workdir must be one of: {', '.join(WORKDIRS)}"
+        )
+    return cast(Workdir, value)
 
 
 def _handler_keys() -> set[str]:
@@ -235,6 +249,7 @@ def _handler_keys() -> set[str]:
         "model",
         "reasoning",
         "action",
+        "workdir",
     }
 
 

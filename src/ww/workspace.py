@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal, get_args
 
 
 def relative_workspace(root: Path, path: Path | str) -> str:
@@ -25,3 +26,27 @@ def resolve_workspace(root: Path, value: str | None) -> Path | None:
     if not value:
         return None
     return (root / value).resolve()
+
+
+Workdir = Literal["task", "project", "root"]
+WORKDIRS: tuple[Workdir, ...] = get_args(Workdir)
+
+
+def item_workspace(
+    root: Path,
+    workdir: Workdir,
+    working_directory: str | None,
+    project_dir: str | None,
+) -> Path | None:
+    """The directory a plan item works in, chosen by its ``workdir``.
+
+    ``task`` is the task workspace (``None`` while that is still the root);
+    ``project`` is the configured project directory itself, never a worktree
+    made from it, and the root for a task without a project; ``root`` is the
+    project root that holds configuration and ``.ww``.
+    """
+    if workdir == "root":
+        return root.resolve()
+    if workdir == "project":
+        return Path(project_dir).resolve() if project_dir else root.resolve()
+    return resolve_workspace(root, working_directory)

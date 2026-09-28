@@ -517,6 +517,50 @@ Each root handler, and each step through the same shared shape, accepts:
 | `agent` | non-empty string other than `auto` | no | Preferred executor guidance. |
 | `model` | non-empty string | no | Model guidance; `auto` stops inheritance. |
 | `reasoning` | non-empty string | no | Reasoning guidance for this action. |
+| `workdir` | `task`, `project`, or `root` | no | The directory this action works in; see [Working directory](#working-directory). Defaults to `task`. |
+
+### Working directory
+
+`workdir` chooses the directory an action works in:
+
+- `task` (the default): the task workspace, which is the selected Git worktree
+  when an extension chose one, otherwise the `--project` directory, otherwise
+  the project root.
+- `project`: the `--project` directory's own checkout, never a worktree made
+  from it; the project root for a task started without `--project`.
+- `root`: the project root, which holds the configuration and `.ww`.
+
+On a step, the value applies to the step's instruction, whose working-directory
+`cd` names that directory, to its `argv` or `shell` action, and to
+`{{__task_workspace_dir}}`, which resolves to that directory for the step.
+Nested steps, loop bodies, per-item stages, and an assessment inherit it from
+the enclosing step unless they set their own. A step that copies a root
+handler with `handler` takes the handler's `workdir` unless it sets its own.
+
+A hook does not inherit its step's `workdir`. A hook entry's own `workdir`
+applies, otherwise that of the root handler it names, otherwise `task`:
+
+```yaml
+handlers:
+  - name: refresh-shared-config
+    argv: [make, shared-config]
+    workdir: root
+
+workflows:
+  - name: task
+    steps:
+      - update-shared-notes: Update the git-ignored notes in {{__task_workspace_dir}}.
+        workdir: root
+        hooks:
+          after_complete:
+            - refresh-shared-config: ~
+            - name: lint
+              argv: [make, lint]
+              workdir: project
+```
+
+ww gives a directory outside the task workspace no special Git treatment:
+changes made there are not committed by the task and remain for the operator.
 
 ### Named-entry shorthand
 

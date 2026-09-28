@@ -286,6 +286,7 @@ def _parse_step(
             name="assess",
             description=assessment_question,
             action=DefinedAction("prompt", Prompt(assessment_question)),
+            workdir=base.workdir,
         )
     referenced_step: StepDefinition | None = None
     if "handler" in mapping:
@@ -487,6 +488,7 @@ def _parse_step(
         agent=base.agent,
         model=base.model,
         reasoning=base.reasoning,
+        workdir=base.workdir,
         subagents=subagents,
         interactive=interactive,
         choices=choices,
@@ -872,4 +874,5 @@ def _step_handler_reference(
         agent=local.agent if "agent" in mapping else referenced.agent,
         model=local.model if "model" in mapping else referenced.model,
         reasoning=(local.reasoning if "reasoning" in mapping else referenced.reasoning),
+        workdir=local.workdir if "workdir" in mapping else referenced.workdir,
     )

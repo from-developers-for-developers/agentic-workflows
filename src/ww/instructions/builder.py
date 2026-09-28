@@ -39,6 +39,7 @@ from ww.plan import PlanItem, WorkflowPlan
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import enclosing_loop_entry_index, loop_limit_reached
+from ww.variables import item_workspace_values
 from ww.workflow_config import INIT_STEP_NAME, ProvidedVariable
 from ww.workspace import resolve_workspace
 
@@ -531,15 +532,17 @@ class InstructionBuilder:
             loop_break_command = completion(
                 item.artifact or loop_entry.artifact, "break"
             )
+        workspace, values = item_workspace_values(
+            self.root,
+            item.workdir,
+            state.working_directory,
+            {**dict(state.workflow_values), **self.task_values(state, plan)},
+        )
         return replace(
             _base(state, item, item_status=record.status),
             action_text=action_text(
                 item,
-                {
-                    **dict(state.workflow_values),
-                    **self.task_values(state, plan),
-                    **self._item_values(state, item),
-                },
+                {**values, **self._item_values(state, item)},
                 state.task_id,
             ),
             required_values=required,
@@ -608,11 +611,9 @@ class InstructionBuilder:
             ),
             profile_instruction=profile_instruction(item, self.root),
             subagents=item.subagents,
-            working_directory=(
-                str(resolve_workspace(self.root, state.working_directory))
-                if state.working_directory
-                else None
-            ),
+            # A task still in the root needs no ``cd``; an item that chose
+            # its own directory always names it.
+            working_directory=str(workspace) if workspace is not None else None,
             assignment_scope=(
                 span.to_dict() if span and item.id == span_ids[0] else None
             ),

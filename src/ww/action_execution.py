@@ -44,7 +44,8 @@ from ww.extensions import (
 )
 from ww.plan import PlanItem, WorkflowPlan
 from ww.storage_adapters import CommandOutputAddress
-from ww.workspace import relative_workspace, resolve_workspace
+from ww.variables import item_workspace_values
+from ww.workspace import relative_workspace
 
 _OUTPUT_LIMIT = 16_000
 STATE_OUTPUT_PREVIEW_LIMIT = 1_000
@@ -126,9 +127,9 @@ class _CommandService:
             process = _PROCESS.Popen(
                 request.argv,
                 cwd=(
-                    resolve_workspace(
-                        executor.root, self._dispatch.state.working_directory
-                    )
+                    executor.item_scope(
+                        self._dispatch.state, self._dispatch.snapshot.plan, item
+                    )[0]
                     or executor.root
                 ),
                 stdout=_PROCESS.PIPE,
@@ -244,6 +245,9 @@ class _ExtensionService:
         )
         reference = parse_reference(planned.reference)
         record = state.item_executions[state.cursor]
+        workspace, values = executor.item_scope(
+            state, self._dispatch.snapshot.plan, item
+        )
         return ExtensionContext(
             root=executor.root,
             store=executor.extensions.store(reference.identifier),
@@ -255,11 +259,8 @@ class _ExtensionService:
             task_id=state.task_id,
             run_id=state.run_id,
             workflow=state.workflow,
-            values={
-                **dict(state.workflow_values),
-                **executor.task_values(state, self._dispatch.snapshot.plan),
-            },
-            workspace=resolve_workspace(executor.root, state.working_directory),
+            values=values,
+            workspace=workspace,
             item_id=item.id,
             work_item_id=item.item_id,
             attempt=record.attempts,
@@ -285,15 +286,11 @@ class _ExecutionContext:
     def create(cls, dispatch: _Dispatch) -> _ExecutionContext:
         executor, state, item = dispatch.executor, dispatch.state, dispatch.item
         record = state.item_executions[state.cursor]
+        workspace, values = executor.item_scope(state, dispatch.snapshot.plan, item)
         return cls(
             root=executor.root,
-            workspace=resolve_workspace(executor.root, state.working_directory),
-            runtime_values=MappingProxyType(
-                {
-                    **dict(state.workflow_values),
-                    **executor.task_values(state, dispatch.snapshot.plan),
-                }
-            ),
+            workspace=workspace,
+            runtime_values=MappingProxyType(values),
             task_id=state.task_id,
             run_id=state.run_id,
             operation_id=record.operation_id or operation_id_for(state, item),
@@ -347,17 +344,17 @@ class _PreflightContext:
 
     @classmethod
     def create(
-        cls, executor: ActionExecutor, state: ExecutionState, plan: WorkflowPlan
+        cls,
+        executor: ActionExecutor,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
     ) -> _PreflightContext:
+        workspace, values = executor.item_scope(state, plan, item)
         return cls(
             root=executor.root,
-            workspace=resolve_workspace(executor.root, state.working_directory),
-            runtime_values=MappingProxyType(
-                {
-                    **dict(state.workflow_values),
-                    **executor.task_values(state, plan),
-                }
-            ),
+            workspace=workspace,
+            runtime_values=MappingProxyType(values),
             task_id=state.task_id,
             run_id=state.run_id,
             extensions=_PreflightExtensions(executor),
@@ -388,6 +385,9 @@ class _RecoveryExtensionService:
         if handler.check is None:
             raise ValueError("extension has no checker")
         record = self._state.item_executions[self._state.cursor]
+        workspace, values = self._executor.item_scope(
+            self._state, self._plan, self._item
+        )
         context = ExtensionContext(
             root=self._executor.root,
             store=self._executor.extensions.store(reference.identifier),
@@ -399,13 +399,8 @@ class _RecoveryExtensionService:
             task_id=self._state.task_id,
             run_id=self._state.run_id,
             workflow=self._state.workflow,
-            values={
-                **dict(self._state.workflow_values),
-                **self._executor.task_values(self._state, self._plan),
-            },
-            workspace=resolve_workspace(
-                self._executor.root, self._state.working_directory
-            ),
+            values=values,
+            workspace=workspace,
             item_id=self._item.id,
             work_item_id=self._item.item_id,
             attempt=record.attempts,
@@ -440,15 +435,11 @@ class _RecoveryContext:
         plan: WorkflowPlan,
     ) -> _RecoveryContext:
         record = state.item_executions[state.cursor]
+        workspace, values = executor.item_scope(state, plan, item)
         return cls(
             root=executor.root,
-            workspace=resolve_workspace(executor.root, state.working_directory),
-            runtime_values=MappingProxyType(
-                {
-                    **dict(state.workflow_values),
-                    **executor.task_values(state, plan),
-                }
-            ),
+            workspace=workspace,
+            runtime_values=MappingProxyType(values),
             task_id=state.task_id,
             run_id=state.run_id,
             operation_id=record.operation_id or operation_id_for(state, item),
@@ -482,6 +473,17 @@ class ActionExecutor:
         self.read_command_output = read_command_output
         self.task_values = task_values
 
+    def item_scope(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> tuple[Path | None, dict[str, str]]:
+        """The directory ``item`` runs in and the values it interpolates."""
+        return item_workspace_values(
+            self.root,
+            item.workdir,
+            state.working_directory,
+            {**dict(state.workflow_values), **self.task_values(state, plan)},
+        )
+
     def run(
         self, state: ExecutionState, snapshot: PlanSnapshot, item: PlanItem
     ) -> ExecutionState:
@@ -495,7 +497,7 @@ class ActionExecutor:
         # proves no external operation was initiated and must not create an
         # unknown-outcome recovery boundary.
         implementation.preflight(
-            planned, _PreflightContext.create(self, state, snapshot.plan)
+            planned, _PreflightContext.create(self, state, snapshot.plan, item)
         )
         state = self._start_item(state, snapshot, item)
         dispatch = _Dispatch(self, state, snapshot, item)

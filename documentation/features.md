@@ -21,6 +21,8 @@ and persistence invariants, see [architecture.md](architecture.md).
 - Nested steps, dynamic per-item work, and parent/child task workflows.
 - Sequential workflow runs and terminal handoffs between workflows.
 - Configurable runtimes, models, reasoning levels, and modes.
+- Per-step and per-handler working directories: the task workspace, the
+  project checkout, or the project root.
 - Explicit manager/worker assignment handoff with durable continuation state.
 - Qualified extensions, including bundled Git branch, worktree, and commit
   automation.
@@ -886,6 +888,51 @@ resolves to that repository's primary checkout. `project_base_branches` gives a
 project its own base branch, taking precedence over every `base_branches`
 entry. Branch formats and commit subjects are not split by project.
 
+### Choosing where a step works
+
+By default every step and hook works in the task workspace: the Git worktree
+when one was selected, otherwise the `--project` directory, otherwise the
+project root. Some work belongs elsewhere, such as updating shared or
+git-ignored files in the root checkout rather than in a task worktree. Set
+`workdir` on a step or on a handler to choose its directory:
+
+| Value | Directory |
+| --- | --- |
+| `task` | The task workspace; the default, unchanged when `workdir` is omitted. |
+| `project` | The `--project` directory's own checkout, never the worktree made from it; the project root for a task without `--project`. |
+| `root` | The project root, where the configuration and `.ww` live. |
+
+```yaml
+handlers:
+  - name: refresh-shared-config
+    argv: [make, shared-config]
+    workdir: root
+
+workflows:
+  - name: feature
+    steps:
+      - develop: Implement the change.
+      - update-local-notes: Record the decisions in {{__task_workspace_dir}}/notes/.
+        workdir: root
+        hooks:
+          after_complete:
+            - refresh-shared-config: ~
+            - name: lint
+              argv: [make, lint]
+              workdir: project
+```
+
+For `update-local-notes`, the instruction's working-directory `cd` names the
+root and `{{__task_workspace_dir}}` resolves to it; an `argv` or `shell` step
+runs its command there. Nested steps, loop bodies, and per-item stages inherit
+the value from their enclosing step and may set their own. A hook does not
+inherit its step's directory: it uses its own `workdir`, then that of the root
+handler it names, and otherwise the task workspace, so above
+`refresh-shared-config` runs in the root and `lint` in the `--project` checkout.
+
+ww does nothing special with Git for such a step: its changes are not part of
+the task's commits and are left for the operator.
+
 ## External task IDs
 
 An MCP-backed first declared step can establish the task identity without a new
@@ -1014,7 +1061,9 @@ Interpolations use `{{name}}`. Reserved built-ins are `{{__task_id}}` and
 The core `{{__task_workspace_dir}}` variable is always the canonical directory for
 the task: the project root by default, the configured project directory when a
 task was started with `--project`, or the selected task checkout when an
-extension such as `ww/git` supplies one. `{{__project}}` is that project's name
+extension such as `ww/git` supplies one. A step or handler with a
+[`workdir`](#choosing-where-a-step-works) other than `task` reads the directory
+it chose instead. `{{__project}}` is that project's name
 and `{{__project_dir}}` its directory, both empty for a task in the root;
 `{{__project_dir}}` keeps pointing at the project even after a worktree moves
 the task workspace. `{{__projects}}` lists every configured project name, joined

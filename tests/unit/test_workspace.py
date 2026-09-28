@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from ww.workspace import relative_workspace, resolve_workspace
+from ww.workspace import item_workspace, relative_workspace, resolve_workspace
 
 
 def test_working_directory_round_trips_through_a_moved_root(tmp_path: Path) -> None:
@@ -33,3 +33,16 @@ def test_directories_outside_the_root_and_legacy_absolute_values_resolve(
     assert resolve_workspace(root, str(sibling)) == sibling.resolve()
     assert relative_workspace(root, root) == "."
     assert resolve_workspace(root, ".") == root.resolve()
+
+
+def test_item_workspace_chooses_the_task_project_or_root_directory(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path.resolve()
+    project = root / "backend"
+
+    assert item_workspace(root, "task", None, str(project)) is None
+    assert item_workspace(root, "task", "trees/T1", str(project)) == root / "trees/T1"
+    assert item_workspace(root, "project", "trees/T1", str(project)) == project
+    assert item_workspace(root, "project", "trees/T1", None) == root
+    assert item_workspace(root, "root", "trees/T1", str(project)) == root

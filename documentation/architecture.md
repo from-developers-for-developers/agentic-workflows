@@ -1180,6 +1180,21 @@ back to its primary checkout through the shared git directory, so one
 extension serves single-repository projects and multi-repository workspaces
 without configuration.
 
+A plan item may work somewhere other than the task's working directory. The
+compiler freezes each item's `workdir` (`task`, `project`, or `root`) in the
+plan: a step inherits it along the step chain, as it inherits a profile, while
+a hook takes it only from its own entry or the handler it names. The plan
+omits the default `task`, so plans without the setting are unchanged.
+`ww.workspace.item_workspace` resolves the value against the root, the
+persisted working directory, and the run's `__project_dir`, and
+`ww.variables.item_workspace_values` pairs that directory with the item's
+interpolation values, overriding `__task_workspace_dir` for a non-`task` item.
+The instruction builder and every executor context (commands, extensions,
+preflight, and recovery) derive the item's directory and values from that one
+function, so the `cd`, the process directory, and the interpolated path cannot
+disagree. The chosen directory is never persisted as the run's working
+directory, and core adds no Git handling for it.
+
 ## Documents
 
 A document is the durable complement of metadata: a free-format file declared

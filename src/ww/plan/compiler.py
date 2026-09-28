@@ -38,7 +38,7 @@ from ww.workflow_config import (
     binds_task_identity,
 )
 from ww.workflow_validation import implicit_init_step, validate_configuration
-from ww.workspace import relative_workspace
+from ww.workspace import Workdir, relative_workspace
 
 from .actions import ActionResolver
 from .constructs import (
@@ -62,7 +62,8 @@ class ExecutionHints:
 
     Every field is inherited along the same chain, workflow, then each
     enclosing step, then the step itself, so a loop wrapper or a parent step
-    can set the profile for its whole body.
+    can set the profile for its whole body.  ``workdir`` follows the same
+    chain, but only steps declare it: a hook chooses its own directory.
     """
 
     agent: str
@@ -70,6 +71,12 @@ class ExecutionHints:
     reasoning: str = "auto"
     profile: str | None = None
     profile_description: str | None = None
+    workdir: Workdir = "task"
+
+    @classmethod
+    def builtin(cls, agent: str, settings: dict[str, str]) -> ExecutionHints:
+        """The worker shape of a built-in step from its model/reasoning request."""
+        return cls(agent, settings["model"], settings["reasoning"])
 
     def overlay(self, value: HandlerDefinition | WorkflowDefinition) -> ExecutionHints:
         agent = value.agent if value.agent is not None else self.agent
@@ -82,13 +89,18 @@ class ExecutionHints:
         if value.reasoning is not None:
             reasoning = value.reasoning
         profile, profile_description = self.profile, self.profile_description
+        workdir = self.workdir
         # Hooks, handlers, and modes cannot declare profiles.
         if isinstance(value, StepDefinition | WorkflowDefinition):
             if value.profile is not None:
                 profile = value.profile
             if value.profile_description is not None:
                 profile_description = value.profile_description
-        return ExecutionHints(agent, model, reasoning, profile, profile_description)
+        if isinstance(value, StepDefinition) and value.workdir is not None:
+            workdir = value.workdir
+        return ExecutionHints(
+            agent, model, reasoning, profile, profile_description, workdir
+        )
 
 
 @dataclass(frozen=True)
@@ -270,9 +282,8 @@ class WorkflowPlanCompiler:
                 ),
                 (),
                 summary=True,
-                boundary_hints=ExecutionHints(
-                    self.agent,
-                    **self.project_config.builtin_settings("workflow_summary"),
+                boundary_hints=ExecutionHints.builtin(
+                    self.agent, self.project_config.builtin_settings("workflow_summary")
                 ),
                 annotations=step_annotations(terminal_step),
             )
@@ -382,7 +393,7 @@ class WorkflowPlanCompiler:
             action_hints = step_hints
             if step.name == INIT_STEP_NAME:
                 settings = self.project_config.builtin_settings("init")
-                action_hints = ExecutionHints(self.agent, **settings)
+                action_hints = ExecutionHints.builtin(self.agent, settings)
             path = f"{parent}/{step.name}" if parent else step.name
             ancestors = (*parent_ancestors, parent) if parent else ()
             scope = PlanningScope(
@@ -681,6 +692,15 @@ class WorkflowPlanCompiler:
             if source == "step" and step.name != INIT_STEP_NAME
             else (None, None, None)
         )
+        # A step inherits its directory along the step chain; a hook works in
+        # the one it or the handler it names declares, else the task's.
+        workdir: Workdir = (
+            hints.workdir
+            if phase == "step"
+            else reference.workdir
+            or (definition.workdir if definition is not None else None)
+            or "task"
+        )
         local = phase == "step" and (not step.subagents or step.interactive)
         if local:
             # An explicitly local step, or a conversation with the operator
@@ -818,6 +838,7 @@ class WorkflowPlanCompiler:
                 profile=profile,
                 profile_instruction=profile_instruction,
                 profile_path=profile_path,
+                workdir=workdir,
                 summary=summary,
                 item_operation=annotations.item_operation,
                 item_template=item_template,

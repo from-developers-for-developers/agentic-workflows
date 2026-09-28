@@ -27,6 +27,7 @@ from ww.workflow_config import (
     ProvidedVariable,
     SavedMetadata,
 )
+from ww.workspace import WORKDIRS, Workdir
 
 PayloadT = TypeVar("PayloadT")
 
@@ -73,6 +74,9 @@ class PlanItem:
     # A project-local profile file, relative to the project root; the
     # instruction prints it absolute for the current filesystem.
     profile_path: str | None = None
+    # The directory this item works in: the task workspace, the project's
+    # own directory, or the project root.
+    workdir: Workdir = "task"
     summary: bool = False
     item_operation: ItemOperation | None = None
     item_template: bool = False
@@ -165,6 +169,8 @@ class PlanItem:
             raise ValueError(f"invalid loop assignment: {self.loop_assignment!r}")
         if (self.loop_id is None) != (self.loop_assignment is None):
             raise ValueError("loop ID and loop assignment must be set together")
+        if self.workdir not in WORKDIRS:
+            raise ValueError(f"invalid workdir: {self.workdir!r}")
         if self.child_operation not in {None, "collect"}:
             raise ValueError(f"invalid child operation: {self.child_operation!r}")
         if self.step_ordinals and (
@@ -243,6 +249,8 @@ class PlanItem:
             del data["loop_id"], data["loop_assignment"]
         if self.profile_path is None:
             del data["profile_path"]
+        if self.workdir == "task":
+            del data["workdir"]
         if not self.update_document:
             del data["update_document"]
         if not self.interactive:
@@ -292,6 +300,7 @@ class PlanItem:
             "profile": self.profile,
             "profile_instruction": self.profile_instruction,
             "profile_path": self.profile_path,
+            "workdir": self.workdir,
             "summary": self.summary,
             "item_operation": self.item_operation,
             "item_template": self.item_template,

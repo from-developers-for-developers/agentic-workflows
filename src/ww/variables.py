@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+
+from ww.workspace import Workdir, item_workspace, resolve_workspace
 
 TASK_ID = "__task_id"
 WORKFLOWS = "__workflows"
@@ -54,3 +57,23 @@ def runtime_variable_values(
         PROJECT_DIR: project_dir or "",
         PROJECTS: ",".join(projects),
     }
+
+
+def item_workspace_values(
+    root: Path,
+    workdir: Workdir,
+    working_directory: str | None,
+    values: Mapping[str, str],
+) -> tuple[Path | None, dict[str, str]]:
+    """The directory a plan item works in, and ``values`` as that item sees them.
+
+    An item with its own ``workdir`` reads that directory as
+    ``__task_workspace_dir``; a ``task`` item keeps the task's values, which
+    an extension may already have pointed at its checkout.
+    """
+    if workdir == "task":
+        return resolve_workspace(root, working_directory), dict(values)
+    directory = item_workspace(
+        root, workdir, working_directory, values.get(PROJECT_DIR) or None
+    )
+    return directory, {**values, TASK_WORKSPACE_DIR: str(directory)}
