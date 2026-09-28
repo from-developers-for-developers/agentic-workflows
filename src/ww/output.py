@@ -231,8 +231,6 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
             content = InstructionContent(item.description or item.name, markdown)
         if item.description and content.show_context:
             lines.extend(["**Context**", "", item.description, ""])
-        if item.gate_prompt:
-            lines.extend([f"> **Decision gate:** {item.gate_prompt}", ""])
         lines.extend(content.markdown or ("**Prompt**", "", "", ""))
         if item.provide:
             heading = (

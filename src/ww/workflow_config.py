@@ -221,7 +221,6 @@ class HandlerDefinition:
     # Core structural operation.  Unlike ``action``, it never enters the
     # ordinary action registry.
     operation: WorkflowHandoff | ChildWorkflowRun | None = None
-    gate_prompt: str | None = None
     provide: tuple[ProvidedVariable, ...] = ()
     save_metadata: tuple[SavedMetadata, ...] = ()
     update_document: tuple[DocumentUpdate, ...] = ()

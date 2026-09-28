@@ -115,7 +115,6 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         registered_handler=expect_optional_string(
             raw.get("registered_handler"), "registered handler"
         ),
-        gate_prompt=expect_optional_string(raw.get("gate_prompt"), "gate prompt"),
         provide=provide,
         save_metadata=save_metadata,
         update_document=update_document,

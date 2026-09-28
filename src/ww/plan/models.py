@@ -47,7 +47,6 @@ class PlanItem:
     phase: PlanItemPhase
     source: str
     registered_handler: str | None
-    gate_prompt: str | None = None
     provide: tuple[ProvidedVariable, ...] = ()
     save_metadata: tuple[SavedMetadata, ...] = ()
     # Documents this agent-owned item creates or edits in place.
@@ -276,7 +275,6 @@ class PlanItem:
             "phase": self.phase,
             "source": self.source,
             "registered_handler": self.registered_handler,
-            "gate_prompt": self.gate_prompt,
             "provide": [item.to_dict() for item in self.provide],
             "save_metadata": [item.to_dict() for item in self.save_metadata],
             "update_document": [item.to_dict() for item in self.update_document],

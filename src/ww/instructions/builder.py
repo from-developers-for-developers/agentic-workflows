@@ -289,7 +289,6 @@ class InstructionBuilder:
         )
         return replace(
             _base(state, item, item_status="awaiting_input"),
-            gate_prompt=item.gate_prompt,
             required_values=request.values,
             previous_values=previous_values,
             automatic_context=(item.name,),
@@ -427,7 +426,6 @@ class InstructionBuilder:
             _base(
                 state, current, item_status="interrupted" if interrupted else "failed"
             ),
-            gate_prompt=current.gate_prompt if current else None,
             error=state.last_error,
             child_tasks=(
                 self.tasks.read_children(state.task_id, state.run_id)
@@ -535,7 +533,6 @@ class InstructionBuilder:
                 },
                 state.task_id,
             ),
-            gate_prompt=item.gate_prompt,
             required_values=required,
             required_metadata=item.save_metadata,
             automatic_context=context,

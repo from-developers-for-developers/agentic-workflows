@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- Plan and instruction JSON no longer carry the always-null `gate_prompt`
+  field; the handler decision gate it held could not be configured. `690a69b`
 - An assessment outcome can be `stop_workflow: true`, ending the run when
   chosen; before, only the compact form's `negative` could.
 - An assessment with declared outcomes now accepts `positive`, `negative`, and

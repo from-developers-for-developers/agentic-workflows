@@ -598,22 +598,7 @@ def _work(lines: Lines, instruction: Instruction) -> None:
                 "",
             ]
         )
-    if instruction.gate_prompt:
-        lines.extend(
-            [
-                "Before doing the work, evaluate this decision gate:",
-                "",
-                f"> **Decision gate:** {instruction.gate_prompt}",
-                "> Reason about this first. Perform the work only if you "
-                "conclude that it is necessary.",
-                "",
-                "If the gate passes, perform this work:",
-                "",
-                *_blockquote(instruction.action_text),
-            ]
-        )
-    else:
-        lines.append(instruction.action_text)
+    lines.append(instruction.action_text)
     _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
 

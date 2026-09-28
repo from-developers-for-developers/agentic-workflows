@@ -6,7 +6,7 @@ from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.workflow_config import ProvidedVariable
 
 
-def test_working_directory_precedes_gated_work_without_extra_spacing() -> None:
+def test_working_directory_precedes_the_work_without_extra_spacing() -> None:
     instruction = Instruction(
         task_id="TASK-1",
         workflow="task",
@@ -19,7 +19,6 @@ def test_working_directory_precedes_gated_work_without_extra_spacing() -> None:
         item_status="in_progress",
         action_kind="skill",
         action_text="Use the `update-architecture-documentation` skill.",
-        gate_prompt="Were architectural changes made?",
         working_directory="/tmp/task-worktree",
         workflow_runtime="single",
         caller_role="worker",
@@ -32,10 +31,7 @@ def test_working_directory_precedes_gated_work_without_extra_spacing() -> None:
     work = rendered.index("### Work instruction")
     assert working < work
     assert "\n\n\n### Work instruction" not in rendered
-    assert "Before doing the work, evaluate this decision gate:" in rendered
-    assert "> **Decision gate:** Were architectural changes made?" in rendered
-    assert "If the gate passes, perform this work:" in rendered
-    assert "> Use the `update-architecture-documentation` skill." in rendered
+    assert "Use the `update-architecture-documentation` skill." in rendered
 
 
 def test_error_heading_has_normalized_section_spacing() -> None:

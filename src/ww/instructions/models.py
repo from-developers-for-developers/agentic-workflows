@@ -117,7 +117,6 @@ class Instruction:
     item_status: ItemStatus | None
     action_kind: PlanItemKind | None
     action_text: str | None
-    gate_prompt: str | None = None
     loop_break_prompt: str | None = None
     loop_break_command: str | None = None
     loop_continue_prompt: str | None = None
@@ -246,7 +245,6 @@ class Instruction:
             "item_status": self.item_status,
             "action_kind": self.action_kind,
             "action_text": self.action_text,
-            "gate_prompt": self.gate_prompt,
             "loop_break_prompt": self.loop_break_prompt,
             "loop_break_command": self.loop_break_command,
             "loop_continue_prompt": self.loop_continue_prompt,

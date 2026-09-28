@@ -751,11 +751,6 @@ class WorkflowPlanCompiler:
             if handler.description
             else ""
         )
-        gate = (
-            self.actions._interpolate(handler.gate_prompt, allowed)
-            if handler.gate_prompt
-            else None
-        )
         dependency_names = tuple(
             dict.fromkeys(
                 name
@@ -771,7 +766,6 @@ class WorkflowPlanCompiler:
                         else ()
                     ),
                     handler.description,
-                    handler.gate_prompt,
                 )
                 if value is not None
                 for name in dependencies(value)
@@ -805,7 +799,6 @@ class WorkflowPlanCompiler:
                 phase=phase,
                 source=source,
                 registered_handler=registered_name,
-                gate_prompt=gate,
                 provide=handler.provide,
                 save_metadata=handler.save_metadata,
                 update_document=handler.update_document,

@@ -237,7 +237,7 @@ def test_compiles_every_effective_handler_in_lifecycle_order(tmp_path: Path) -> 
     assert init.reasoning == "low" and init.profile is None
     assert slash.kind == "slash_command" and slash.owner == "agent"
     assert slash.execution == "agent_instruction"
-    assert skill.kind == "skill" and skill.gate_prompt is None
+    assert skill.kind == "skill"
     assert isinstance(transition.operation, WorkflowHandoff)
     assert transition.operation.target == "{{workflow}}"
     assert transition.dependencies == ("workflow",)

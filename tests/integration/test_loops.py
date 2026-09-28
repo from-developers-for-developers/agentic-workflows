@@ -52,7 +52,6 @@ def _complete_iteration(service: WorkflowService, task_id: str) -> None:
         summary_for_next="Done.",
     )
     assert repeat.action_kind == "loop"
-    assert repeat.gate_prompt is None
 
 
 def test_loop_repeats_automatically_until_worker_stops(tmp_path: Path) -> None:

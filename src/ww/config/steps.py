@@ -274,7 +274,6 @@ def _parse_step(
             (
                 base.action is not None,
                 base.operation is not None,
-                base.gate_prompt is not None,
                 "handler" in mapping,
                 "steps" in mapping,
                 "loop" in mapping,
@@ -366,7 +365,6 @@ def _parse_step(
         (
             base.action is not None,
             base.operation is not None,
-            base.gate_prompt is not None,
             bool(base.provide),
             bool(base.save_metadata),
             bool(base.update_document),
@@ -481,7 +479,6 @@ def _parse_step(
         description=base.description,
         action=base.action,
         operation=base.operation,
-        gate_prompt=base.gate_prompt,
         provide=base.provide,
         save_metadata=base.save_metadata,
         update_document=base.update_document,
@@ -857,11 +854,6 @@ def _step_handler_reference(
         ),
         action=action,
         operation=local.operation if replaces_action else referenced.operation,
-        gate_prompt=(
-            local.gate_prompt
-            if isinstance(mapping.get("prompt"), str)
-            else referenced.gate_prompt
-        ),
         provide=local.provide if "provide" in mapping else referenced.provide,
         save_metadata=(
             local.save_metadata

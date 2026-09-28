@@ -432,7 +432,6 @@ workflows:
     assert step.action.payload.commands[0].shell == "printf done"
     assert reference.handler == HandlerDefinition("check")
     assert inline.handler.action.payload.commands[0].argv == ("printf", "done")
-    assert inline.handler.gate_prompt is None
 
 
 def test_rejects_string_prompt_value(tmp_path: Path) -> None:
@@ -664,7 +663,6 @@ workflows:
     documented, undocumented = configuration.handlers
     assert documented.name == "update-docs"
     assert documented.description == "Update the YAML specification."
-    assert documented.gate_prompt is None
     assert undocumented == HandlerDefinition("no-description")
 
     develop, verify = configuration.workflows[0].steps
@@ -784,7 +782,6 @@ workflows:
     assert len(hooks) == 3
     assert all(hook.workflow_names == ("task",) for hook in hooks)
     assert all(hook.step_names == ("develop",) for hook in hooks)
-    assert all(hook.handler.gate_prompt is None for hook in hooks)
     assert hooks[0].handler.name == "update-architecture"
     readme = hooks[1].handler
     publish = hooks[2].handler
