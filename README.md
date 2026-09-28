@@ -178,6 +178,10 @@ workflows:
 Every workflow also gets an implicit first `init` step, which records the
 requirements for the whole task.
 
+As the configuration grows, `workflows.yaml` can split its definitions across
+other YAML files it lists under `imports`; see
+[the features guide](documentation/features.md#split-workflowsyaml-into-several-files).
+
 Check it before you run anything:
 
 ```console

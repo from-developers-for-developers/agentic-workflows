@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
+from ww.config.composition import compose_configuration
 from ww.defaults import GENERATED_LAUNCHERS
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
@@ -177,7 +178,9 @@ class Storage:
             raise ConfigurationError(f"invalid {self.config_path}: {error}") from error
         if not isinstance(existing, dict) or not isinstance(desired, dict):
             raise ConfigurationError(f"{self.config_path} must contain a mapping")
-        missing = {key: value for key, value in desired.items() if key not in existing}
+        # A key an imported file defines is present too.
+        defined = compose_configuration(self.config_path).raw
+        missing = {key: value for key, value in desired.items() if key not in defined}
         if not missing:
             return False
         current = self.config_path.read_text(encoding="utf-8")
@@ -247,12 +250,10 @@ class Storage:
             elif reference not in path.read_text(encoding="utf-8"):
                 actions.append(f"Add {reference} to {name}.")
         try:
-            import yaml
-
-            raw = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
-        except (OSError, yaml.YAMLError):
+            raw = compose_configuration(self.config_path).raw
+        except (OSError, ConfigurationError):
             raw = {}
-        if not isinstance(raw, dict) or not raw.get("workflows"):
+        if not raw.get("workflows"):
             actions.append(NO_WORKFLOWS_ACTION)
         return actions
 

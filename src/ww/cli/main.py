@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import cast
 
 from ww.config import load_configuration
+from ww.config.composition import compose_configuration
 from ww.errors import StateError, WwError
 from ww.executable import printed_executable
 from ww.extensions import ExtensionContext, ExtensionRegistry
@@ -170,7 +171,11 @@ def _plan(context: _Context) -> _Outcome:
 
 def _lint(context: _Context) -> _Outcome:
     load_configuration(context.storage.config_path, context.extensions)
-    return _Outcome("workflows.yaml is valid.\n")
+    notices = "".join(
+        f"Notice: {override.notice}\n"
+        for override in compose_configuration(context.storage.config_path).overrides
+    )
+    return _Outcome(f"workflows.yaml is valid.\n{notices}")
 
 
 def _start(context: _Context) -> _Outcome:

@@ -9,6 +9,7 @@ and persistence invariants, see [architecture.md](architecture.md).
 
 - Read-only validation of `workflows.yaml`, plus agent-specific workflow
   planning in Markdown or JSON.
+- A `workflows.yaml` split across imported files, composed in memory.
 - An implicit, reserved `init` step that preserves task requirements.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
@@ -180,6 +181,70 @@ returns a stable representation for tools. `--agent` is required because
 automatic resolution depends on the agent’s project-local skills and slash
 commands. `--task-id` is optional; when
 omitted, `{{__task_id}}` remains visible as an unresolved plan dependency.
+
+## Split workflows.yaml into several files
+
+A large configuration can be split across files. `workflows.yaml` stays the
+required root file and lists the others under `imports`, its first key. Paths
+are relative to the directory of `workflows.yaml`:
+
+```yaml
+# workflows.yaml
+imports:
+  - workflows/shared.yaml
+  - workflows/local.yaml
+
+handlers:
+  - name: test
+    argv: [python, -m, pytest, -q]
+
+workflows:
+  - task: The standard development workflow.
+    steps:
+      - develop: Implement the change.
+      - test: ~
+```
+
+```yaml
+# workflows/shared.yaml
+task_format: "TASK-{digit}"
+handlers:
+  - name: test
+    argv: [pytest]
+workflows:
+  - hotfix: Fix a production bug.
+    steps:
+      - fix: Fix it.
+```
+
+```yaml
+# workflows/local.yaml
+task_format: "LOCAL-{digit}"
+```
+
+An imported file can define anything `workflows.yaml` can, except further
+imports, so every file is listed in one place. Files apply in order, the root
+file last, and a later definition overrides an earlier one of the same name:
+here `workflows.yaml`'s `test` handler replaces the shared one, and
+`local.yaml`'s `task_format` replaces `shared.yaml`'s. Named entries of
+`workflows`, `modes`, `documents`, `handlers`, and `profiles` are replaced one
+by one, other entries from every file are kept, and `hooks` from every file are
+combined, later files' entries running after earlier ones.
+
+Overriding is never an error. `lint` reports each override as a notice:
+
+```console
+$ ww-agentic-workflows lint
+workflows.yaml is valid.
+Notice: task_format from workflows/shared.yaml is overridden by workflows/local.yaml.
+Notice: handler 'test' from workflows/shared.yaml is overridden by workflows.yaml.
+```
+
+ww composes the files in memory on every command into one document and reads
+it exactly as a single `workflows.yaml`, so every other rule applies unchanged
+and there is no cache to refresh. `init` sees keys and workflows defined in
+imported files too, and does not add them to `workflows.yaml` again. The
+[specification](specification.md#imports) has the exact rules.
 
 ## Configuration
 

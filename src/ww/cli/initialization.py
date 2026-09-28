@@ -11,11 +11,10 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-import yaml
-
+from ww.config.composition import compose_configuration
 from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
-from ww.errors import StateError
+from ww.errors import ConfigurationError, StateError
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.output_adapters.terminal import initialization_progress
 from ww.results import InitializationResult
@@ -486,10 +485,10 @@ def _configured_task_format(storage: Storage) -> bool:
     if not storage.config_path.is_file():
         return False
     try:
-        raw = yaml.safe_load(storage.config_path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+        raw = compose_configuration(storage.config_path).raw
+    except (OSError, ConfigurationError):
         return False
-    return isinstance(raw, dict) and bool(raw.get("task_format"))
+    return bool(raw.get("task_format"))
 
 
 def _existing_git_settings(storage: Storage) -> dict[str, object]:
@@ -508,10 +507,10 @@ def _workflow_names(storage: Storage) -> tuple[str, ...]:
     if not storage.config_path.is_file():
         return ()
     try:
-        raw = yaml.safe_load(storage.config_path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+        raw = compose_configuration(storage.config_path).raw
+    except (OSError, ConfigurationError):
         return ()
-    if not isinstance(raw, dict) or not isinstance(raw.get("workflows"), list):
+    if not isinstance(raw.get("workflows"), list):
         return ()
     names: list[str] = []
     for item in raw["workflows"]:

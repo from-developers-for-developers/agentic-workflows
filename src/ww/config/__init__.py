@@ -28,6 +28,7 @@ from ww.workflow_config import (
 from ww.workflow_validation import validate_configuration
 
 from .actions import _parse_hooks
+from .composition import compose_configuration
 from .steps import _parse_handlers, _parse_step
 from .values import (
     _NAME,
@@ -61,11 +62,12 @@ def parse_yaml_configuration(path: Path) -> WorkflowConfiguration:
 
     Parsing checks the YAML notation's shape. Cross-definition semantics are
     deliberately checked by :func:`validate_configuration` after any frontend
-    has produced this same normalized model.
+    has produced this same normalized model. The files ``path`` imports are
+    composed into it first, so the parser reads one document.
     """
     if not path.is_file():
         raise ConfigurationError(f"workflow configuration not found: {path}")
-    return parse_yaml_text(path.read_text(encoding="utf-8"), str(path))
+    return parse_yaml_text(compose_configuration(path).text, str(path))
 
 
 def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguration:

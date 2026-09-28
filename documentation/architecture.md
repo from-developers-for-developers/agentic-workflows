@@ -48,6 +48,21 @@ validates that model again at its public boundary, then exclusively resolves
 implicit action names, filters hooks, evaluates interpolation availability, and assigns
 deterministic execution order.
 
+Before the YAML frontend parses anything, `../src/ww/config/composition.py`
+composes `../workflows.yaml` and the files its leading `imports` list names
+into one mapping and dumps it back to YAML text. The parser receives that text
+exactly as it would a single file, so composition adds no parsing rules of its
+own: it only folds files in import order with the root last, replacing
+same-named catalog and profile entries in place, appending hooks per phase,
+and letting later scalar keys win. It keeps a record of each override, which
+`lint` prints as notices, and leaves a name repeated within one file untouched
+so validation still reports it. A root file without `imports` passes through
+unchanged. Composition runs on every read and writes nothing to disk. The other
+readers of the raw file, `init`'s checks in `../src/ww/cli/initialization.py`
+and the storage's missing-key and setup checks in `../src/ww/storage.py`, read
+the composed mapping too, so a definition in an imported file counts as
+present everywhere.
+
 Explicit `argv` and `shell` action fields are the canonical YAML command
 notation. `CommandAction` rejects string commands and emits typed
 `CommandDefinition` values. The normalized model and compiler do not carry or

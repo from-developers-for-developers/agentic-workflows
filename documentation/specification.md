@@ -21,7 +21,8 @@ Names must be unique within their catalog or sibling step list.
 
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `workflows` | list of workflows | yes | At least one workflow is required. |
+| `imports` | list of file paths | no | Other YAML files composed into this one; see [Imports](#imports). Must be the first key. |
+| `workflows` | list of workflows | yes | At least one workflow is required, in this file or an imported one. |
 | `task_format` | string | no | Generated task ID format. Supports `{timestamp}`, `{digit}`, and `{uuid}`. The value `explicit` forbids generated IDs: every task needs an explicit ID unless its workflow binds one. |
 | `modes` | list of modes | no | Reusable agent guidance. |
 | `profiles` | mapping | no | Named agent profiles. |
@@ -30,6 +31,44 @@ Names must be unique within their catalog or sibling step list.
 | `hooks` | hooks mapping | no | Hooks applying across workflows. |
 
 The legacy root key `tasks` is rejected.
+
+## Imports
+
+`../workflows.yaml` is the root file and is always required. It may split its
+definitions across other YAML files by listing them under `imports`, which must
+be its first key:
+
+```yaml
+imports:
+  - workflows/handlers.yaml
+  - workflows/review.yaml
+
+workflows:
+  - task: The standard development workflow.
+    steps:
+      - develop: Implement the change.
+      - code-review: ~
+```
+
+- Each entry is a non-empty path, relative to the directory of
+  `workflows.yaml`, to an existing file that contains a mapping.
+- An imported file may define every root key above except `imports`: imports do
+  not nest, so every imported file is listed in the root file. A file may not be
+  listed twice, and the root file may not import itself.
+- Definitions fold in list order, and `workflows.yaml` last. A later file
+  overrides an earlier one, so `workflows.yaml` overrides every import:
+  - an entry of `workflows`, `modes`, `documents`, or `handlers`, and a
+    `profiles` entry, replaces the entry of the same name from an earlier file,
+    in that entry's original position;
+  - `hooks` entries carry no name, so each phase's entries from a later file
+    run after those from earlier files;
+  - any other key, such as `task_format`, takes the later file's value.
+- Overriding across files is not an error. `lint` prints one notice per
+  overridden definition. A name repeated within a single file is still reported
+  as a duplicate.
+- The files are composed in memory, on every command, into one document that is
+  then read exactly as a single `workflows.yaml`; nothing is cached on disk.
+  Every rule in this specification applies to that composed document.
 
 Projects, the directories a task may work in, are configured in
 `agentic-workflows.json` rather than here because their locations differ per
