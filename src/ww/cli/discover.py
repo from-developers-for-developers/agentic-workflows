@@ -15,6 +15,11 @@ from ww.core_workflows import CATCHALL
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
+from ww.hooks.notices import (
+    RECENT_INTERRUPTION_DAYS,
+    recent_interruptions_pointer,
+)
+from ww.hooks.records import HookRecords
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
 from ww.project_config import FILE_NAME
 from ww.runtimes import RUNTIME_DESCRIPTIONS
@@ -163,6 +168,8 @@ def render_discover(
     storage: Storage, extensions: ExtensionRegistry, json_output: bool
 ) -> str:
     report = discover(storage, extensions)
+    if report["enabled"]:
+        report["interrupted_recently"] = _recent_interruptions(storage)
     if json_output:
         return json.dumps(report, indent=2)
     if not report["enabled"]:
@@ -195,6 +202,7 @@ def _markdown(report: dict[str, object]) -> list[str]:
         "request, and modes only when they apply, then start the task with the "
         "command below.",
         "",
+        *_pointer_lines(report),
         "## Workflows",
         "",
     ]
@@ -358,3 +366,15 @@ def _entries(value: object) -> list[dict[str, object]]:
 
 def _strings(value: object) -> list[str]:
     return [str(entry) for entry in value] if isinstance(value, list) else []
+
+
+def _recent_interruptions(storage: Storage) -> int:
+    return len(
+        HookRecords(storage, storage.task_persistence).recent(RECENT_INTERRUPTION_DAYS)
+    )
+
+
+def _pointer_lines(report: dict[str, object]) -> list[str]:
+    count = report.get("interrupted_recently")
+    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0)
+    return [pointer, ""] if pointer else []

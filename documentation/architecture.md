@@ -1345,3 +1345,40 @@ so an open tab survives between waits, and the wait is bounded so an agent's
 shell timeout never kills it mid-way. A pause is kept on the execution
 state, not on a stage, because it outlives the stage that was current when
 the operator left, and only the operator's own words lift it.
+
+## Agent hooks
+
+Agent hooks exist to carry state the static instructions cannot: which task
+is unfinished when a session starts or compacts, and whether it is ending with
+an agent-owned step still open. Every decision lives in ww. `ww.open_work`
+answers from the persisted runs alone which tasks are open and whether an
+agent step is dispatched and in progress, reusing the control policy's
+`operator_reason` so a task waiting for input or the operator never counts; it
+renders nothing, compiles nothing, and loads no extension, which keeps a hook
+fast. `ww.hooks.runtime` turns that into the three answers, and the adapters in
+`ww.hooks.agents` only translate: each reads its agent's payload into one
+neutral record and renders ww's answer in the agent's reply shape. A new agent
+is one more adapter.
+
+The runtime form is intercepted before normal command parsing. It always
+exits 0 without stderr, because exit code 2 means "continue" to some agents'
+stop hooks and stray text would enter the agent's context, and it skips the
+update notice. It still writes one audit record per call with ww's decision,
+never the payload, so a session can be followed without the agent's text.
+
+The stop hook is a one-time reminder rather than a block. A reminder is
+recorded per task, run, item, and attempt in `stop-reminders.json` beside the
+interaction log, and the check and the record happen under a lock of their own:
+agents run matching hooks in parallel, and the task lock would stall behind a
+long-running command. An agent's own loop guard is honoured as well. The
+interruption record, `interrupted.json`, is cleared lazily in the one place
+that reads it, once that attempt completed, failed, or was superseded, never
+because a notice showed it, so compaction between reading and acting cannot
+lose it. Listing interruptions scans the markers instead of keeping an index
+that could drift. Both records belong to the task, and `reset` removes them
+before the storage adapter removes the task directory.
+
+Installation writes only the agent's project file, or with `--local` the one it
+keeps out of version control, merging ww's entries and recognising them by
+their command. `init` offers it per agent and treats a failure as a manual
+action, never as an init failure.

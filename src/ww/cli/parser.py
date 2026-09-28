@@ -9,7 +9,11 @@ from pathlib import Path
 from ww import STAGE, __version__
 from ww.contracts import CALLER_ROLES
 from ww.errors import StateError
+from ww.hooks import HOOK_AGENTS, HOOK_EVENTS
+from ww.hooks.notices import RECENT_INTERRUPTION_DAYS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
+
+HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
 
 
 def _shared(*add: str) -> argparse.ArgumentParser:
@@ -97,6 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Install the ww and noww skills into every agent directory found "
             "in the project."
+        ),
+    )
+
+    init.add_argument(
+        "--hooks",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Install ww's hooks for every hook-capable agent set up in the "
+            "project (Claude Code, Codex, Cursor, Antigravity)."
         ),
     )
 
@@ -476,6 +490,41 @@ def build_parser() -> argparse.ArgumentParser:
         "--check",
         action="store_true",
         help="Look again now instead of waiting for the next scheduled check.",
+    )
+    hook = subparsers.add_parser(
+        "hook",
+        help=(
+            "Answer an agent hook, or install, remove, or show ww's hooks for "
+            "one agent."
+        ),
+    )
+    hook.add_argument("hook_action", choices=(*HOOK_EVENTS, *HOOK_SETUP_ACTIONS))
+    hook.add_argument("--agent", required=True, choices=tuple(HOOK_AGENTS))
+    hook.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Use the agent's project file kept out of version control "
+            "(Claude Code: .claude/settings.local.json)."
+        ),
+    )
+    interrupted = subparsers.add_parser(
+        "interrupted",
+        parents=[json_output],
+        help="List tasks whose last agent session stopped mid-step.",
+    )
+    interrupted.add_argument(
+        "--since",
+        type=int,
+        default=RECENT_INTERRUPTION_DAYS,
+        metavar="DAYS",
+        help=(
+            f"Only interruptions of the last DAYS days "
+            f"(default {RECENT_INTERRUPTION_DAYS})."
+        ),
+    )
+    interrupted.add_argument(
+        "--all", action="store_true", help="Every interruption, however old."
     )
     return parser
 

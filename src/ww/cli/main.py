@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import os
 import subprocess
@@ -20,14 +21,28 @@ from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
     LEGACY_FILES,
+    SETTINGS_FILE,
     WORKFLOWS_FILE,
     check_legacy_files,
     display_path,
     rename_legacy_files,
 )
 from ww.errors import StateError, WwError
-from ww.executable import printed_executable
+from ww.executable import printed_executable, ww_command
 from ww.extensions import ExtensionContext, ExtensionRegistry
+from ww.hooks import (
+    HOOK_EVENTS,
+    HookAgent,
+    answer_hook,
+    hook_agent,
+    hook_snippet,
+    hooks_file,
+    install_hooks,
+    is_project_root,
+    registered_elsewhere,
+    uninstall_hooks,
+)
+from ww.hooks.notices import interruption_notice
 from ww.instructions import Instruction
 from ww.items import WorkItem
 from ww.operator_ui import run_operator_page
@@ -42,7 +57,7 @@ from ww.output import (
     render_status,
 )
 from ww.plan import PlanCompilationOptions, compile_workflow_plan
-from ww.project_config import compose_settings
+from ww.project_config import compose_settings, load_project_config
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -60,6 +75,7 @@ from .initialization import (
     _finish_initialization,
     _initialization_options,
     _link_agent_instructions,
+    install_agent_hooks,
 )
 from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
@@ -70,7 +86,16 @@ _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
 # Discovery, linting, and planning are side-effect free: no task state, artifacts,
 # commands, or execution-log records are created.
 _READ_ONLY_COMMANDS = frozenset(
-    {"discover", "lookup", "lint", "plan", "documents", "interactions", "updates"}
+    {
+        "discover",
+        "lookup",
+        "lint",
+        "plan",
+        "documents",
+        "interactions",
+        "updates",
+        "interrupted",
+    }
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
 # not ``--json`` was passed. An update notice goes to stderr for these, so it
@@ -167,6 +192,7 @@ def _init(context: _Context) -> _Outcome:
         )
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
+    result = install_agent_hooks(context.storage, context.args, result)
     result = _finish_initialization(
         context.storage, result, shown=not context.args.json_output
     )
@@ -253,19 +279,22 @@ def _start(context: _Context) -> _Outcome:
 
 def _next(context: _Context) -> _Outcome:
     args = context.args
-    return _instruction_outcome(
-        context.service.next(
-            context.task_id,
-            args.model,
-            args.reasoning,
-            args.force,
-            retry=args.retry,
-            force_reason=args.force_reason,
-            outcome=args.outcome,
-            selected_agent=args.selected_agent,
-            caller_role=args.role,
+    return _with_interruption(
+        context,
+        _instruction_outcome(
+            context.service.next(
+                context.task_id,
+                args.model,
+                args.reasoning,
+                args.force,
+                retry=args.retry,
+                force_reason=args.force_reason,
+                outcome=args.outcome,
+                selected_agent=args.selected_agent,
+                caller_role=args.role,
+            ),
+            args.json_output,
         ),
-        args.json_output,
     )
 
 
@@ -363,19 +392,113 @@ def _status(context: _Context) -> _Outcome:
     status = context.service.task_status(
         context.task_id, args.run_id, caller_role=args.role
     )
-    return _Outcome(
-        render_status(status, args.json_output) + "\n", status.workflow, status.task_id
+    return _with_interruption(
+        context,
+        _Outcome(
+            render_status(status, args.json_output) + "\n",
+            status.workflow,
+            status.task_id,
+        ),
     )
 
 
 def _instruction(context: _Context) -> _Outcome:
     args = context.args
-    return _instruction_outcome(
-        context.service.instruction(
-            context.task_id, args.run_id, caller_role=args.role
+    return _with_interruption(
+        context,
+        _instruction_outcome(
+            context.service.instruction(
+                context.task_id, args.run_id, caller_role=args.role
+            ),
+            args.json_output,
         ),
-        args.json_output,
     )
+
+
+def _with_interruption(context: _Context, outcome: _Outcome) -> _Outcome:
+    """Lead with a notice while the task's last session stopped mid-step.
+
+    The notice shows until the interrupted attempt completes or fails, so a
+    compaction or a new session between reading it and acting keeps it.
+    """
+    if context.args.json_output:
+        return outcome
+    interruption = context.service.interruption(context.task_id)
+    if interruption is None:
+        return outcome
+    notice = interruption_notice(interruption, context.task_id)
+    return replace(outcome, text=f"> {notice}\n\n{outcome.text}")
+
+
+def _hook(context: _Context) -> _Outcome:
+    """Install, remove, or show ww's hooks for one agent."""
+    args = context.args
+    agent = hook_agent(args.agent)
+    local = bool(args.local)
+    target = hooks_file(agent, local)
+    if args.hook_action == "show":
+        return _Outcome(
+            f"ww's hooks for {agent.name} belong in {target}:\n\n"
+            + hook_snippet(agent)
+            + _duplicate_notice(context, agent, local)
+        )
+    if args.hook_action == "install":
+        installation = install_hooks(context.storage, agent, local=local)
+        verb = {
+            "installed": "Installed ww's hooks for",
+            "unchanged": "ww's hooks are already installed for",
+        }[installation.action]
+        notice = _duplicate_notice(context, agent, local)
+    else:
+        installation = uninstall_hooks(context.storage, agent, local=local)
+        verb = {
+            "removed": "Removed ww's hooks for",
+            "absent": "No ww hooks were installed for",
+        }[installation.action]
+        notice = ""
+    return _Outcome(f"{verb} {agent.name} in {installation.path}.\n{notice}")
+
+
+def _duplicate_notice(context: _Context, agent: HookAgent, local: bool) -> str:
+    """Warn that ww's hooks also sit in the agent's other project file."""
+    other = registered_elsewhere(context.storage, agent, local=local)
+    if other is None:
+        return ""
+    flag = "" if local else " --local"
+    return (
+        f"Notice: {other} also registers ww's hooks, so every hook runs twice. "
+        f"Remove one copy with `{ww_command()} hook uninstall --agent "
+        f"{agent.name}{flag}`.\n"
+    )
+
+
+def _interrupted(context: _Context) -> _Outcome:
+    """List the tasks whose last agent session stopped mid-step."""
+    args = context.args
+    entries = (
+        context.service.interruptions()
+        if args.all
+        else context.service.hook_records.recent(args.since)
+    )
+    if args.json_output:
+        return _Outcome(
+            _json(
+                [
+                    {"task_id": task_id, **record.to_dict()}
+                    for task_id, record in entries
+                ]
+            )
+        )
+    if not entries:
+        window = "" if args.all else f" in the last {args.since} day(s)"
+        return _Outcome(f"No task was interrupted{window}.\n")
+    lines = [
+        f"- {task_id} · {record.step or record.item_name} (attempt "
+        f"{record.attempt}) · {record.at} · {record.agent}"
+        + (f" · {record.reason}" if record.reason else "")
+        for task_id, record in entries
+    ]
+    return _Outcome("\n".join(lines) + "\n")
 
 
 def _metadata(context: _Context) -> _Outcome:
@@ -563,11 +686,16 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "reset": _reset,
     "cleanup": _cleanup,
     "updates": lambda c: _Outcome(render_updates(c.storage, c.args)),
+    "hook": _hook,
+    "interrupted": _interrupted,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else argv
+    if _runtime_hook_call(arguments):
+        return _answer_hook(arguments)
+    args = build_parser().parse_args(arguments)
     args.invocation_id = str(uuid.uuid4())
     if (
         getattr(args, "role", None) == "worker"
@@ -640,6 +768,69 @@ def main(argv: list[str] | None = None) -> int:
         )
     sys.stdout.write(result.text)
     return result.exit_code
+
+
+def _runtime_hook_call(arguments: list[str]) -> bool:
+    """Whether an agent is calling one of ww's hooks, not setting them up."""
+    return any(
+        value == "hook"
+        and index + 1 < len(arguments)
+        and arguments[index + 1] in HOOK_EVENTS
+        for index, value in enumerate(arguments)
+    )
+
+
+def _answer_hook(arguments: list[str]) -> int:
+    """Answer an agent's hook call; this never breaks the agent.
+
+    Any failure, a bad argument included, exits 0 with no output: exit code
+    2 means "continue" to some agents' stop hooks, and an unexpected message
+    would become part of the agent's context. Every call is still written to
+    the audit log, with ww's decision, so a session can be followed there.
+    """
+    storage: Storage | None = None
+    args: argparse.Namespace | None = None
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            args = build_parser().parse_args(arguments)
+        args.invocation_id = str(uuid.uuid4())
+        root = _resolve_project_root(args.root)
+        if not is_project_root(root):
+            return 0
+        storage = Storage(root)
+        payload = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+        config = load_project_config(root / SETTINGS_FILE)
+        with printed_executable(config.executable):
+            answer = answer_hook(
+                storage, hook_agent(args.agent), args.hook_action, payload
+            )
+    except BaseException as error:  # noqa: BLE001 - a hook must never break the agent
+        if isinstance(error, KeyboardInterrupt):
+            return 0
+        _log_hook(storage, args, "error", type(error).__name__)
+        return 0
+    _log_hook(storage, args, "ok", answer.decision)
+    sys.stdout.write(answer.text)
+    return 0
+
+
+def _log_hook(
+    storage: Storage | None,
+    args: argparse.Namespace | None,
+    outcome: str,
+    decision: str,
+) -> None:
+    """Record one hook call and what ww decided, never the agent's payload."""
+    if storage is None or args is None:
+        return
+    record: dict[str, object] = {
+        **_log_record("hook", None, None, outcome, None, args),
+        "hook_event": args.hook_action,
+        "hook_agent": args.agent,
+        "hook_decision": decision,
+    }
+    with contextlib.suppress(Exception):
+        storage.append_log(record)
 
 
 def _machine_readable(args: argparse.Namespace) -> bool:

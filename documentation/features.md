@@ -67,6 +67,15 @@ overwritten, and a skill a later ww version bundles is offered once on its
 own, as described in [Installing the ww skills during
 init](#installing-the-ww-skills-during-init).
 
+For every hook-capable agent whose directory exists (Claude Code, Codex,
+Cursor, Antigravity), init also offers ww's [agent hooks](#agent-hooks), once
+per agent, and remembers the answer in `.ww/init-choices.json`. `--hooks`
+installs them for all of those agents without asking and `--no-hooks` skips
+them; without either flag or a saved answer, a non-interactive init leaves
+hooks alone. A hook installation that fails, for example because the agent's
+hooks file is not valid JSON, never fails init: the summary names the file and
+prints the snippet to add by hand.
+
 ### Configuration file names
 
 ww reads its configuration from two files at the project root, both named
@@ -2349,6 +2358,7 @@ ww-agentic-workflows agents
 ww-agentic-workflows projects
 ww-agentic-workflows extensions
 ww-agentic-workflows artifacts TASK-123
+ww-agentic-workflows interrupted
 ```
 
 `artifacts` returns JSON references for completed step and hook artifacts. Hook
@@ -2509,6 +2519,164 @@ The rest of the summary adapts to repeat runs too. The box asking you to allow
 ww in your agent's permissions is shown the first time only, and the next
 steps for getting started only while `ww-agentic-workflows.yaml` defines no workflow. The
 documentation links are always shown.
+
+## Agent hooks
+
+ww's instructions to agents are static, so they cannot say which task is
+half done. Agent hooks carry that state into a session. They are gentle by
+design: they add a few lines of context or remind once, and nothing is ever
+blocked.
+
+| Hook | When it runs | What it does |
+| --- | --- | --- |
+| `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here and up to five unfinished tasks, newest first, with their step, workspace, and resume commands. |
+| `stop` | The agent ends its turn | Once per step attempt, asks the agent to record an agent-owned step it left in progress. The next stop is always allowed. |
+| `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work. |
+
+What `session-start` prints stays in the agent's context for the whole
+session, so it is short:
+
+```text
+This project coordinates work through ww: `./ww discover` lists its workflows.
+Unfinished ww tasks, newest first:
+- TASK-16 (task) develop: in progress · in ww-worktrees/TASK-16 · resume: `./ww instruction TASK-16 --role manager` · worker: `./ww instruction TASK-16 --run 01-task --role worker`
+```
+
+After a compaction it starts with "Context was compacted; ww's task state is
+authoritative." A task waiting for the operator stays listed and says so, for
+example `awaiting the operator: the work failed`. Only the main session gets
+this context: no hook is registered for a subagent's start, since a worker
+receives its bootstrap command from the manager.
+
+`stop` answers "continue" only while an agent-owned step is dispatched and in
+progress, not waiting for input or the operator, and only the first time for
+that step attempt. Its message names the step and says to run `complete` when
+the work is done or `fail` when it cannot finish, and that a manager waiting on
+a worker, or a deliberate pause, may simply stop again. Agents that report their
+own loop guard (Claude Code's and Codex's `stop_hook_active`, Cursor's
+`loop_count`) are always allowed once they have continued. A session working
+inside a task's workspace is reminded about that task only; a session anywhere
+else may be reminded about any task with a step in progress.
+
+### Agents and their files
+
+| Agent | Project file | Native events | Local file |
+| --- | --- | --- | --- |
+| Claude Code | `.claude/settings.json` | `SessionStart`, `Stop`, `SubagentStop`, `SessionEnd` | `.claude/settings.local.json` |
+| Codex | `.codex/hooks.json` | `SessionStart`, `Stop`, `SubagentStop`, `Interrupt`, `SessionEnd` | none; user file `~/.codex/hooks.json` |
+| Cursor | `.cursor/hooks.json` | `sessionStart`, `stop`, `subagentStop`, `sessionEnd` | none; user file `~/.cursor/hooks.json` |
+| Antigravity | `.agents/hooks.json`, group `ww-agentic-workflows` | `PreInvocation`, `Stop` | none; user file `~/.gemini/config/hooks.json` |
+
+Claude Code's `SessionStart` has no matcher, so it fires for every source,
+compaction included. Pressing Esc fires no hook in Claude Code; the end of the
+session does. Cursor reports an aborted turn as a `stop` with status
+`aborted`, which ww treats as an interruption rather than a reminder.
+Antigravity has no session-start event, so ww answers only its first
+pre-invocation of a conversation, as an ephemeral message that never
+accumulates; it names an interruption through the Stop hook's
+`terminationReason`, which ww reads on a best-effort basis. Codex loads project
+hooks only once the project's `.codex/` layer is trusted: review them with
+`/hooks` in Codex.
+
+### Install, remove, and show
+
+```console
+ww-agentic-workflows hook install --agent claudecode
+ww-agentic-workflows hook uninstall --agent codex
+ww-agentic-workflows hook show --agent cursor
+ww-agentic-workflows hook install --agent claudecode --local
+```
+
+`install` merges ww's entries into whatever the file already holds and leaves
+every other entry alone. ww recognises its own entries by their command, so a
+second `install` changes nothing and `uninstall` removes exactly what ww added.
+`show` prints the file and the exact snippet, for a machine or an agent where
+`install` cannot run. A file that is not valid JSON, or cannot be written,
+makes `install` fail with the path and the full snippet to add by hand.
+
+`--local` writes the agent's project file kept out of version control, so the
+hooks stay one person's choice. Only Claude Code has one,
+`.claude/settings.local.json`; for the other agents `--local` fails and names
+their user-level file, which applies to every project on the machine. Without
+`--local` the hooks go into the shared project file, which is usually committed,
+so everyone who clones the project gets them. When ww's hooks sit in both of
+Claude Code's files every hook would run twice, so `install` and `show` print a
+notice with the command that removes one copy.
+
+The registered commands call the project's tracked `./ww` launcher: through
+`"$CLAUDE_PROJECT_DIR"` for Claude Code, from the project root for Cursor, and
+from the repository's top level (`git rev-parse --show-toplevel`) for Codex and
+Antigravity. The launcher resolves the durable root through the shared Git
+directory, so a session in a task worktree reaches the same state; the launcher
+must therefore be tracked for worktree sessions.
+
+The runtime form, `ww hook session-start|stop|interrupt --agent <agent>`, is
+what the agents call; it reads the agent's JSON payload on stdin.
+
+### When a hook fails or runs too often
+
+A hook never breaks the agent. On any error, a bad argument, or outside a ww
+root, it exits 0 with no output: some agents read exit code 2 as "continue", and
+an unexpected message would enter the agent's context. The worst outcome is a
+lost hint. When the command cannot start at all, for example a missing
+launcher or an untrusted Codex hook, the agent shows its own non-blocking hook
+error. A hook that times out is killed by the agent, which carries on.
+
+Running more often than needed is harmless. The stop reminder is claimed under
+a lock of its own, so parallel calls, such as Claude Code running matching
+hooks at once, remind exactly once. A repeated interrupt overwrites the marker.
+Antigravity calls its pre-invocation hook before every model call; only the
+first one returns context.
+
+Every hook call is written to the audit log, `.ww/executions.jsonl`, with the
+event, the agent, and ww's decision, so a session can be followed there:
+
+```json
+{"command": "hook", "hook_event": "stop", "hook_agent": "claudecode", "hook_decision": "reminded: TASK-16", "outcome": "ok"}
+```
+
+Decisions read like `context with 2 unfinished task(s)`, `allowed`,
+`reminded: TASK-16`, or `marked interrupted: TASK-16`; a failure is logged with
+`outcome: error` and the exception type. The agent's payload is never logged.
+
+### Interrupted tasks
+
+When a session ends or is interrupted while an agent-owned step is in progress,
+ww writes `.ww/tasks/<task-id>/interrupted.json` with the time, run, step,
+attempt, agent, and the reason the agent gave. The next interruption
+overwrites it. ww marks the task whose workspace the session was working in,
+or every task with a step in progress when the session worked elsewhere. ww
+never commits on an interruption: the tree is often half applied at that
+moment, and commits belong to the workflow.
+
+While the marker applies, `status`, `instruction`, and `next` lead with a
+notice, and `session-start` adds it under the task's line:
+
+```markdown
+> Interrupted: the previous session (claudecode, prompt_input_exit) stopped at 2026-09-28T18:40:00Z during `develop` (attempt 1). Before continuing, check `git status` in the task workspace, review the diff and ww's recorded commits (`./ww extension ww/git commits TASK-16`), and compare them with the step's requirements; then complete, continue, or fail the step.
+```
+
+The marker clears once that step attempt completes or fails, or is replaced by
+a later attempt, and when the task is reset. It is never cleared merely by being
+shown, so a compaction or a new session between reading it and acting keeps
+it. A run that is abandoned keeps its marker.
+
+`ww interrupted` lists the marked tasks, newest first, from the markers
+themselves; there is no second index to drift:
+
+```console
+ww-agentic-workflows interrupted
+ww-agentic-workflows interrupted --since 7
+ww-agentic-workflows interrupted --all --json
+```
+
+`--since` defaults to three days. `discover` and `lookup`, the commands an agent
+without hooks runs first, add one line only when the last three days hold an
+interruption, and `interrupted_recently` in their JSON:
+
+```text
+1 task was interrupted in the last 3 days; run `./ww interrupted` before starting new work.
+```
 
 ## Choosing a runtime
 

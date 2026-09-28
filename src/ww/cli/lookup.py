@@ -22,6 +22,11 @@ from ww.core_workflows import CATCHALL
 from ww.discovery import normalize_agent
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
+from ww.hooks.notices import (
+    RECENT_INTERRUPTION_DAYS,
+    recent_interruptions_pointer,
+)
+from ww.hooks.records import HookRecords
 from ww.instructions.commands import (
     TASK_PLACEHOLDER,
     instruction_command,
@@ -221,6 +226,9 @@ def render_lookup(
     json_output: bool,
 ) -> str:
     report = lookup(storage, extensions, tasks, reference, agent)
+    report["interrupted_recently"] = len(
+        HookRecords(storage, tasks).recent(RECENT_INTERRUPTION_DAYS)
+    )
     if json_output:
         return json.dumps(report, indent=2)
     return "\n".join(_markdown(report))
@@ -228,6 +236,10 @@ def render_lookup(
 
 def _markdown(report: dict[str, object]) -> list[str]:
     lines = ["# ww lookup", "", str(report["message"])]
+    count = report.get("interrupted_recently")
+    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0)
+    if pointer:
+        lines.extend(["", pointer])
     command = report.get("command")
     if isinstance(command, str):
         return [*lines, "", "```console", command, "```"]

@@ -16,6 +16,12 @@ from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
 from ww.executable import DEFAULT_EXECUTABLE
+from ww.hooks import (
+    HOOK_AGENTS,
+    HookInstallError,
+    hooks_installed,
+    install_hooks,
+)
 from ww.output_adapters.terminal import initialization_progress
 from ww.project_config import compose_settings
 from ww.results import InitializationResult
@@ -49,6 +55,73 @@ def _save_init_choice(storage: Storage, key: str, value: object) -> None:
     storage.locks.atomic_write(
         storage.runtime_path / "init-choices.json",
         json.dumps(choices, indent=2) + "\n",
+    )
+
+
+def install_agent_hooks(
+    storage: Storage, args: argparse.Namespace, result: InitializationResult
+) -> InitializationResult:
+    """Offer ww's hooks to each hook-capable agent this project is set up for.
+
+    An agent counts as set up when its directory exists, which is also where
+    init just installed its skills. The answer is remembered per agent, and
+    ``--hooks``/``--no-hooks`` decide for every agent without asking. A hook
+    installation that fails never fails init: the summary says how to add
+    the hooks by hand instead.
+    """
+    interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
+    saved = _init_choices(storage).get("hooks", {})
+    choices = dict(saved) if isinstance(saved, dict) else {}
+    created, preserved, actions = (
+        list(result.created),
+        list(result.preserved),
+        list(result.actions),
+    )
+    explained = False
+    for name, agent in HOOK_AGENTS.items():
+        if not (storage.root / AGENT_DIRECTORIES[name]).is_dir():
+            continue
+        if hooks_installed(storage, agent) and args.hooks is not False:
+            choices[name] = True
+            preserved.append(f"{agent.settings_file} (ww hooks)")
+            continue
+        wanted = args.hooks if args.hooks is not None else choices.get(name)
+        if wanted is None and interactive:
+            if not explained:
+                print(
+                    "\nww's hooks tell an agent session which ww tasks are "
+                    "unfinished when it starts\nor compacts, remind it once to "
+                    "record a step it leaves open, and note an\ninterrupted "
+                    "session. They only add a few lines of context; nothing is "
+                    "blocked.\n"
+                )
+                explained = True
+            try:
+                wanted = _ask_yes_no(
+                    _init_prompt(60, f"Install ww hooks for {name}? [Y/n]: "), True
+                )
+            except EOFError:
+                # Input ended before the question: leave it open for next time.
+                break
+        if not isinstance(wanted, bool):
+            continue
+        choices[name] = wanted
+        if not wanted:
+            continue
+        try:
+            installation = install_hooks(storage, agent)
+        except (HookInstallError, OSError) as error:
+            actions.append(f"Add ww's hooks for {name} by hand: {error}")
+            continue
+        if installation.changed:
+            created.append(f"{agent.settings_file} (added ww hooks)")
+    if choices:
+        _save_init_choice(storage, "hooks", choices)
+    return replace(
+        result,
+        created=tuple(created),
+        preserved=tuple(preserved),
+        actions=tuple(actions),
     )
 
 
