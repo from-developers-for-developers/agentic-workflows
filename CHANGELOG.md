@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-28
 
+- ww also reads `ww-agentic-workflows.machine.{yaml,json}` from `~/.config/ww-agentic-workflows/` and
+  `ww-agentic-workflows.local.{yaml,json}` in the project; lower levels extend or override (`extends: false` opts out). `c39d4d0`
 - `workflows.yaml` and `agentic-workflows.json` are now `ww-agentic-workflows.yaml` and
   `ww-agentic-workflows.json`; ww stops on the old names, and `init` renames them. `c65a0ef`
 - `workflows.yaml` can import other YAML files listed under `imports`; later files
