@@ -16,7 +16,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   on the files it changed (`WW_STEP_CHANGED_FILES`, measured with git), and a failure sends the step back to its
   worker up to `max_fixes` times (`ww-agentic-workflows.json`, default 3) before `operator_reason: fix_limit`.
   `assert` gains `operator: empty`. Incompatible: plan schema 12 and execution state 7, so finish or reset open
-  tasks before updating.
+  tasks before updating. `e39e2e4`
 
 ## 2026-09-28
 
