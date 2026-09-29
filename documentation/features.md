@@ -819,6 +819,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `interrupted_command` | An automatic handler was interrupted and its outcome is unknown. |
 | `loop_limit` | A loop reached its `loop_max_times` iteration limit. |
 | `fix_limit` | A step's check failed as many times as its `max_fixes` allows; see [Rules and checks](#rules-and-checks). |
+| `check_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
 replays it without asking anyone, so the task stays `blocked` for the manager.
@@ -1164,7 +1165,13 @@ worker to say in its artifact, under a **Rules** heading, which rules it
 applied and any deviation. `init`, hooks, and the workflow summary get no
 rules. In the `auto` runtime the worker's page carries the section. JSON
 output lists them as `rules`, each with `id`, `summary`, `paths`,
-`has_command`, and `hook`.
+`has_command`, `hook`, `check`, `interpretation`, and `pending_operator`.
+
+A rule without a check is judged after completion by a verifier, never by the
+worker; the page says so. A rule whose wording already has an approved
+derived check is listed with the checked ones, and a judged rule shows the
+store's interpretation under it, plus a note while a proposal for it waits
+for the operator.
 
 ### The fix loop
 
@@ -1200,7 +1207,8 @@ tree of everything in the working directory, tracked or not, using a temporary
 index, so the real index, the stash, and the files are untouched; at
 completion it takes a second tree and compares. Work that was uncommitted
 before the step cancels out, a commit made during it still counts, and
-deleted files and ww's own `.ww` state are left out. Without git there is no
+deleted files, ww's own `.ww` state, and `ww-rule-automation.json` are left
+out. Without git there is no
 change set: the globs select every file in the directory, `.git` and `.ww`
 excepted.
 
@@ -1213,10 +1221,66 @@ with a `check` field naming the check.
 ### In the artifact
 
 The step's artifact gains a `## Rules` section after `## Result`: one line per
-rule with its status, `passed`, `not applicable`, `self-declared` for a rule
-without a check, or `failed`, which only a waiver lets through; hook checks
-carry `(hook)`. It ends with the waiver's reason, if any, and how many
-completions ww rejected before this one.
+rule with its status, `passed`, `not applicable`, `failed`, which only a
+waiver lets through, `verified pass (by <verification item>)` for a rule a
+verifier judged, or `passed (check <name>)` for one a derived check covers;
+hook checks carry `(hook)`. A rule is `self-declared` only when the operator
+waived the checks, which skips its verification too. The section ends with
+the waiver's reason, if any, and how many completions ww rejected before this
+one.
+
+### How a rule becomes a check
+
+A rule without a command is judged by another agent, and the first time its
+wording is seen, that agent may propose a command for it; with the operator's
+approval ww runs the command from then on, for every step and task that has
+the rule. Nothing is reasoned about twice.
+
+When a step's worker completes and its checks pass, ww holds the completion:
+nothing is recorded, the artifact is kept as a draft, and **verification
+items** are inserted before the step, one per distinct worker the rules ask
+for through `agent`, `model`, and `reasoning` (else the step's). Each is its
+own assignment: under `auto` the manager hands it to a new worker; under
+`single` the same session performs it, and its page says to read the change
+as a reviewer would. The verification page lists each rule and what is
+asked about it, the step's changed files and the `git diff` that shows them,
+the path of the held artifact, and the checks the project already has.
+
+What ww knows lives in `ww-rule-automation.json` at the project root, a file
+to commit, keyed by each rule's text hash; `checks` there are named, and one
+check may cover many rules, the usual case for an ecosystem tool such as
+deptrac, PHPStan, import-linter, ruff, or eslint, whose one configuration
+expresses several rules. Scriptizing takes two stages, each ending at an
+operator stop, `operator_reason: check_proposed`:
+
+1. **Approach.** For an unknown rule the verifier writes an interpretation
+   and a one-line approach: the tool or command, and the check it would
+   create or extend. It builds nothing. It may also report the rule
+   `not-convertible`, with a verdict, or `ambiguous`, with readings.
+2. **Prepare.** For an approved approach the verifier builds the check:
+   installs the tool as a development dependency, writes its configuration in
+   the repository, proves the command fails on a deliberate violation and
+   passes on the change, and reports the command. ww records it as
+   `proposed`; the operator's approval converts it and its rules. An extended
+   check keeps running as approved until its revision is approved.
+
+For a rule that is not convertible, or was rejected, the verifier gives a
+verdict, `pass` or `fail` with `file:line — what` evidence. A failing verdict
+is a rejected completion: the step goes back to its worker with the fix page,
+and it counts toward the rule's `max_fixes` like a failed check.
+
+At the stop the operator decides each proposal with `next`: `--approve
+<hash or check>`, `--approach <hash> "<text>"` to replace the verifier's
+approach, `--pick <hash>=<number>` for an ambiguous rule, or `--force
+--force-reason` to reject everything undecided, after which those rules are
+judged. The CLI prints an approved command in full and asks before
+recording it: there is no allowlist of executables, the operator's reading is
+the safety. Once nothing is undecided, ww runs the step's checks again,
+including a newly approved one, which may send the step back, then records
+the held completion as submitted. The cost is two operator stops per rule
+wording, once ever, batched per step. `ww lint` lists store entries whose
+wording no rule has any more and entries awaiting a decision; ww removes
+nothing itself.
 
 ### Rules from extensions
 

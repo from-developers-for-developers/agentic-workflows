@@ -56,19 +56,24 @@ def assignment_at(
     ``per_iteration`` keeps the following body steps of the same round while
     they resolve to the same worker settings.  The ``single`` runtime keeps
     per-step boundaries because one session already performs every assignment.
+
+    A verification item is an assignment of its own, so the worker who did a
+    step never verifies it.
     """
     if cursor >= len(plan.items):
         return None
     first = plan.items[cursor]
     if _coordinator(first):
         return None
+    if first.verifies is not None:
+        return Assignment(first.id, cursor, cursor + 1)
     spans_steps = runtime != "single"
     lineage = {first.step, *first.ancestors}
     worker = first if first.owner == "agent" else None
     stop = cursor + 1
     while stop < len(plan.items):
         item = plan.items[stop]
-        if _coordinator(item):
+        if _coordinator(item) or item.verifies is not None:
             break
         if item.summary:
             stop += 1

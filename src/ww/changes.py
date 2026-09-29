@@ -23,8 +23,11 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-# Directories never part of the files a rule may check.
-_EXCLUDED = frozenset({".git", ".ww"})
+from ww.config_files import RULE_AUTOMATION_FILE
+
+# Directories never part of the files a rule may check, and ww's own
+# rule-automation store at the root, which verification itself writes.
+_EXCLUDED = frozenset({".git", ".ww", RULE_AUTOMATION_FILE})
 
 
 def take_mark(workdir: Path) -> str | None:
@@ -42,7 +45,19 @@ def take_mark(workdir: Path) -> str | None:
         if real_index.is_file():
             shutil.copyfile(real_index, temporary)
         environment = {"GIT_INDEX_FILE": str(temporary)}
-        if _git(workdir, "add", "-A", environment=environment) is None:
+        # ww's own rule-automation store is written while a step's
+        # verification runs; leaving it out keeps the mark of an unchanged
+        # tree stable, so a held completion's checks need not run twice.
+        added = _git(
+            workdir,
+            "add",
+            "-A",
+            "--",
+            ":/",
+            f":(exclude){RULE_AUTOMATION_FILE}",
+            environment=environment,
+        )
+        if added is None:
             return None
         tree = _git(workdir, "write-tree", environment=environment)
     return tree.strip() if tree else None
@@ -82,14 +97,18 @@ def changed_files(workdir: Path, mark_a: str, mark_b: str) -> tuple[str, ...]:
 def all_files(workdir: Path) -> tuple[str, ...]:
     """Every file under ``workdir``, relative and sorted, for a run without git.
 
-    ``.git`` and ``.ww`` are skipped. Git worktrees need git, so a directory
-    without git has none to skip.
+    ``.git``, ``.ww`` and the rule-automation store are skipped. Git
+    worktrees need git, so a directory without git has none to skip.
     """
     found: list[str] = []
     for directory, names, files in os.walk(workdir):
         relative = Path(directory).relative_to(workdir).as_posix()
         names[:] = sorted(name for name in names if name not in _EXCLUDED)
-        found.extend(_join(relative, name) for name in files)
+        found.extend(
+            _join(relative, name)
+            for name in files
+            if relative not in {"", "."} or name not in _EXCLUDED
+        )
     return tuple(sorted(found))
 
 

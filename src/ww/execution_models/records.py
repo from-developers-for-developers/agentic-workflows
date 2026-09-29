@@ -18,8 +18,12 @@ from ww.contracts import (
     ExecutionStatus,
     FailureKind,
     ItemStatus,
+    RuleResolutionStatus,
     StepStatus,
+    Verdict,
+    VerificationState,
 )
+from ww.plan import PlannedCheck
 from ww.validation import (
     expect_bool,
     expect_literal,
@@ -33,8 +37,10 @@ from ww.validation import (
 from ww.workflow_config import ProvidedVariable
 
 from .decoding import _positive_int_mapping, _variables
+from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 7
+EXECUTION_SCHEMA_VERSION = 8
+PAIR_SIZE = 2
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,283 @@ class CheckReport:
 
 
 @dataclass(frozen=True)
+class RuleResolution:
+    """How one rule without a command of its own is enforced in this step.
+
+    Decided from the rule-automation store when the step begins, so a run
+    never re-reads the store to decide it again: ``converted`` rules are
+    checked by the derived check ``check``; ``judged`` ones get a verifier's
+    verdict (``pending_operator`` while an undecided proposal exists); an
+    ``unresolved`` one gets a verifier's proposal. ``interpretation`` is the
+    store's one-sentence reading, shown under the rule on the page.
+    """
+
+    id: str
+    status: RuleResolutionStatus
+    check: str | None = None
+    interpretation: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "status": self.status,
+            "check": self.check,
+            "interpretation": self.interpretation,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> RuleResolution:
+        if not isinstance(data, dict):
+            raise ValueError("rule resolution must be a mapping")
+        require_keys(
+            data, {"id", "status", "check", "interpretation"}, "rule resolution"
+        )
+        return cls(
+            id=expect_string(data["id"], "rule resolution.id"),
+            status=expect_literal(
+                data["status"], RuleResolutionStatus, "rule resolution.status"
+            ),
+            check=expect_optional_string(data["check"], "rule resolution.check"),
+            interpretation=expect_optional_string(
+                data["interpretation"], "rule resolution.interpretation"
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class RuleVerdict:
+    """A verifier's verdict on one rule of the held completion.
+
+    ``by`` is the verification item that gave it; ``failures`` are its
+    evidence, one ``file:line — what`` each.
+    """
+
+    id: str
+    verdict: Verdict
+    by: str
+    failures: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "verdict": self.verdict,
+            "by": self.by,
+            "failures": list(self.failures),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> RuleVerdict:
+        if not isinstance(data, dict):
+            raise ValueError("rule verdict must be a mapping")
+        require_keys(data, {"id", "verdict", "by", "failures"}, "rule verdict")
+        return cls(
+            id=expect_string(data["id"], "rule verdict.id"),
+            verdict=expect_literal(data["verdict"], Verdict, "rule verdict.verdict"),
+            by=expect_string(data["by"], "rule verdict.by"),
+            failures=_strings(data["failures"], "rule verdict.failures"),
+        )
+
+
+@dataclass(frozen=True)
+class HeldCompletion:
+    """A completion whose checks passed, held while verifiers judge its rules.
+
+    Everything the worker supplied except the artifact, which stays in
+    ``draft_artifact`` beside it, so ww can record the completion exactly as
+    submitted once nothing is pending. ``mark``, ``files`` and ``all_files``
+    are the change set the verifiers look at; ``draft_ref`` is where the
+    draft artifact was written for them. ``verdicts`` collect across the
+    verification rounds of this hold; ``report`` is the passing check report,
+    reused while the working tree has not changed.
+    """
+
+    variables: tuple[tuple[str, str], ...] = ()
+    metadata_values: tuple[tuple[str, str], ...] = ()
+    selected_agent: str | None = None
+    selected_model: str | None = None
+    selected_reasoning: str | None = None
+    summary_for_next: str | None = None
+    loop_control: str | None = None
+    mark: str | None = None
+    files: tuple[str, ...] = ()
+    all_files: bool = False
+    draft_ref: str | None = None
+    verdicts: tuple[RuleVerdict, ...] = ()
+    report: CheckReport | None = None
+
+    def __post_init__(self) -> None:
+        if self.loop_control not in {None, "break", "continue"}:
+            raise ValueError(f"invalid held loop control: {self.loop_control!r}")
+
+    def verdict(self, rule_id: str) -> RuleVerdict | None:
+        return next((entry for entry in self.verdicts if entry.id == rule_id), None)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "variables": [list(pair) for pair in self.variables],
+            "metadata_values": [list(pair) for pair in self.metadata_values],
+            "selected_agent": self.selected_agent,
+            "selected_model": self.selected_model,
+            "selected_reasoning": self.selected_reasoning,
+            "summary_for_next": self.summary_for_next,
+            "loop_control": self.loop_control,
+            "mark": self.mark,
+            "files": list(self.files),
+            "all_files": self.all_files,
+            "draft_ref": self.draft_ref,
+            "verdicts": [verdict.to_dict() for verdict in self.verdicts],
+            "report": self.report.to_dict() if self.report else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> HeldCompletion:
+        if not isinstance(data, dict):
+            raise ValueError("held completion must be a mapping")
+        require_keys(
+            data,
+            {
+                "variables",
+                "metadata_values",
+                "selected_agent",
+                "selected_model",
+                "selected_reasoning",
+                "summary_for_next",
+                "loop_control",
+                "mark",
+                "files",
+                "all_files",
+                "draft_ref",
+                "verdicts",
+                "report",
+            },
+            "held completion",
+        )
+        verdicts = data["verdicts"]
+        if not isinstance(verdicts, list):
+            raise ValueError("held completion verdicts must be a list")
+        return cls(
+            variables=_pairs(data["variables"], "held completion.variables"),
+            metadata_values=_pairs(
+                data["metadata_values"], "held completion.metadata_values"
+            ),
+            selected_agent=expect_optional_string(
+                data["selected_agent"], "held completion.selected_agent"
+            ),
+            selected_model=expect_optional_string(
+                data["selected_model"], "held completion.selected_model"
+            ),
+            selected_reasoning=expect_optional_string(
+                data["selected_reasoning"], "held completion.selected_reasoning"
+            ),
+            summary_for_next=expect_optional_string(
+                data["summary_for_next"], "held completion.summary_for_next"
+            ),
+            loop_control=expect_optional_string(
+                data["loop_control"], "held completion.loop_control"
+            ),
+            mark=expect_optional_string(data["mark"], "held completion.mark"),
+            files=_strings(data["files"], "held completion.files"),
+            all_files=expect_bool(data["all_files"], "held completion.all_files"),
+            draft_ref=expect_optional_string(
+                data["draft_ref"], "held completion.draft_ref"
+            ),
+            verdicts=tuple(RuleVerdict.from_dict(item) for item in verdicts),
+            report=(
+                CheckReport.from_dict(data["report"])
+                if data["report"] is not None
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class VerificationRule:
+    """One rule a verification item is asked about, as the store had it.
+
+    ``state`` says what is asked: an approach (``unresolved``; a fixed
+    ``interpretation`` when the operator picked one), a prepared check for
+    the ``approach`` the operator approved (``approach-approved``, with the
+    proposed ``check`` name), or a verdict (``judged``;
+    ``pending_operator`` when the store holds an undecided proposal).
+    """
+
+    id: str
+    text: str
+    text_hash: str
+    state: VerificationState
+    interpretation: str | None = None
+    approach: str | None = None
+    check: str | None = None
+    pending_operator: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "text": self.text,
+            "text_hash": self.text_hash,
+            "state": self.state,
+            "interpretation": self.interpretation,
+            "approach": self.approach,
+            "check": self.check,
+            "pending_operator": self.pending_operator,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> VerificationRule:
+        if not isinstance(data, dict):
+            raise ValueError("verification rule must be a mapping")
+        require_keys(
+            data,
+            {
+                "id",
+                "text",
+                "text_hash",
+                "state",
+                "interpretation",
+                "approach",
+                "check",
+                "pending_operator",
+            },
+            "verification rule",
+        )
+        return cls(
+            id=expect_string(data["id"], "verification rule.id"),
+            text=expect_string(data["text"], "verification rule.text"),
+            text_hash=expect_string(data["text_hash"], "verification rule.text_hash"),
+            state=expect_literal(
+                data["state"], VerificationState, "verification rule.state"
+            ),
+            interpretation=expect_optional_string(
+                data["interpretation"], "verification rule.interpretation"
+            ),
+            approach=expect_optional_string(
+                data["approach"], "verification rule.approach"
+            ),
+            check=expect_optional_string(data["check"], "verification rule.check"),
+            pending_operator=expect_bool(
+                data["pending_operator"], "verification rule.pending_operator"
+            ),
+        )
+
+
+def _strings(value: Any, context: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{context} must be a list of strings")
+    return tuple(value)
+
+
+def _pairs(value: Any, context: str) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list) or not all(
+        isinstance(pair, list)
+        and len(pair) == PAIR_SIZE
+        and all(isinstance(part, str) for part in pair)
+        for pair in value
+    ):
+        raise ValueError(f"{context} must be a list of name and value pairs")
+    return tuple((pair[0], pair[1]) for pair in value)
+
+
+@dataclass(frozen=True)
 class CommandExecution:
     index: int
     status: CommandStatus = "pending"
@@ -233,7 +516,7 @@ class PlanItemExecution:
     selected_model: str | None = None
     selected_reasoning: str | None = None
     # The worktree's tree when the step began, the base of its change set;
-    # ``None`` without git, or for a step without checks.
+    # ``None`` without git, or for a step without rules or checks.
     change_mark: str | None = None
     # Every completion attempt ww checked, rejected ones first; the number of
     # failed reports is the number of fixes the worker was sent back for.
@@ -242,6 +525,19 @@ class PlanItemExecution:
     draft_artifact: str | None = None
     # The operator's reason for completing without the checks.
     checks_waived: str | None = None
+    # How each rule without a command is enforced, and the approved derived
+    # checks that enforce the converted ones; both settled when the step
+    # first begins.
+    rule_resolutions: tuple[RuleResolution, ...] = ()
+    resolved_checks: tuple[PlannedCheck, ...] = ()
+    # A completion accepted by the checks and held while verifiers judge the
+    # step's rules; its artifact is ``draft_artifact``.
+    held_completion: HeldCompletion | None = None
+    # Rule hashes and check names this step's verifiers proposed that the
+    # operator has not decided yet; kept across fix rounds until decided.
+    open_proposals: tuple[str, ...] = ()
+    # On a verification item's record: the rules it is asked about.
+    verification: tuple[VerificationRule, ...] = ()
 
     @property
     def fix_attempts(self) -> int:
@@ -286,6 +582,13 @@ class PlanItemExecution:
             "check_reports": [report.to_dict() for report in self.check_reports],
             "draft_artifact": self.draft_artifact,
             "checks_waived": self.checks_waived,
+            "rule_resolutions": [entry.to_dict() for entry in self.rule_resolutions],
+            "resolved_checks": [check.to_dict() for check in self.resolved_checks],
+            "held_completion": (
+                self.held_completion.to_dict() if self.held_completion else None
+            ),
+            "open_proposals": list(self.open_proposals),
+            "verification": [rule.to_dict() for rule in self.verification],
         }
 
     @classmethod
@@ -362,7 +665,32 @@ class PlanItemExecution:
             checks_waived=expect_optional_string(
                 data.get("checks_waived"), "checks waived"
             ),
+            rule_resolutions=tuple(
+                RuleResolution.from_dict(entry)
+                for entry in _list(data.get("rule_resolutions", []), "rule resolutions")
+            ),
+            resolved_checks=_planned_checks_from_list(
+                data.get("resolved_checks", []), "plan item execution"
+            ),
+            held_completion=(
+                HeldCompletion.from_dict(data["held_completion"])
+                if data.get("held_completion") is not None
+                else None
+            ),
+            open_proposals=_strings(
+                data.get("open_proposals", []), "open proposals"
+            ),
+            verification=tuple(
+                VerificationRule.from_dict(entry)
+                for entry in _list(data.get("verification", []), "verification")
+            ),
         )
+
+
+def _list(value: Any, context: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(f"{context} must be a list")
+    return value
 
 
 def _check_reports(value: Any) -> tuple[CheckReport, ...]:

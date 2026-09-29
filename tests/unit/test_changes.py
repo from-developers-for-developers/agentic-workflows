@@ -93,6 +93,20 @@ def test_ww_state_is_never_part_of_the_change_set(repository: Path) -> None:
     assert changed_files(repository, mark_a, mark_b) == ("work.txt",)
 
 
+def test_the_rule_automation_store_is_left_out_of_marks_and_file_lists(
+    repository: Path,
+) -> None:
+    mark_a = take_mark(repository)
+    _write(repository, "ww-rule-automation.json", "{}\n")
+
+    assert take_mark(repository) == mark_a
+    _write(repository, "code.py")
+    mark_b = take_mark(repository)
+    assert mark_a is not None and mark_b is not None
+    assert changed_files(repository, mark_a, mark_b) == ("code.py",)
+    assert "ww-rule-automation.json" not in all_files(repository)
+
+
 def test_a_subdirectory_reports_paths_relative_to_itself(repository: Path) -> None:
     project = repository / "backend"
     _write(repository, "backend/seed.txt")

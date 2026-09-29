@@ -58,6 +58,7 @@ from ww.output import (
 )
 from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import compose_settings, load_project_config
+from ww.rule_store import UNDECIDED_RULE_STATUSES, RuleStore
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.workflow_config import RuleDefinition, WorkflowConfiguration, every_step
@@ -80,7 +81,11 @@ from .initialization import (
 )
 from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
-from .prompts import _confirm_force_next, confirm_interrupted_retry
+from .prompts import (
+    _confirm_force_next,
+    confirm_approval,
+    confirm_interrupted_retry,
+)
 from .updates import announce, render_updates
 
 _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
@@ -249,7 +254,46 @@ def _lint(context: _Context) -> _Outcome:
         f"{_configuration_files(context.storage, context.extensions)}"
         f"{notices}"
         f"{_rules_summary(configuration)}"
+        f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
     )
+
+
+def _rule_store_summary(store: RuleStore, configuration: WorkflowConfiguration) -> str:
+    """What ``ww-rule-automation.json`` holds that needs the operator's eye.
+
+    An entry is an orphan when no rule of the composed configuration has its
+    wording any more; a pending one waits for the operator's decision. ww
+    removes nothing itself.
+    """
+    if not store.exists():
+        return ""
+    automation = store.load()
+    hashes = {
+        rule.text_hash for group in configuration.rule_groups for rule in group.rules
+    } | {
+        entry.text_hash
+        for step in every_step(configuration)
+        for entry in step.rules
+        if isinstance(entry, RuleDefinition)
+    }
+    lines = [
+        f"Rule store: {len(automation.rules)} rule"
+        f"{'s' if len(automation.rules) != 1 else ''}, {len(automation.checks)} "
+        f"check{'s' if len(automation.checks) != 1 else ''}\n"
+    ]
+    for text_hash, entry in automation.rules.items():
+        if text_hash not in hashes:
+            lines.append(f"Orphan rule {text_hash[:12]}: {entry.text}\n")
+    for text_hash, entry in automation.rules.items():
+        if entry.status in UNDECIDED_RULE_STATUSES:
+            lines.append(
+                f"Pending rule {text_hash[:12]} ({entry.status}): {entry.text}\n"
+            )
+    for name, check in automation.checks.items():
+        if check.undecided:
+            state = "revision proposed" if check.pending is not None else check.status
+            lines.append(f"Pending check {name} ({state})\n")
+    return "".join(lines)
 
 
 def _rules_summary(configuration: WorkflowConfiguration) -> str:
@@ -336,10 +380,24 @@ def _next(context: _Context) -> _Outcome:
                 outcome=args.outcome,
                 selected_agent=args.selected_agent,
                 caller_role=args.role,
+                approve=tuple(args.approve),
+                approaches=tuple((key, text) for key, text in args.approach),
+                picks=_picks(args.pick),
             ),
             args.json_output,
         ),
     )
+
+
+def _picks(values: list[str]) -> tuple[tuple[str, int], ...]:
+    """``--pick HASH=NUMBER`` values, the number being a reading's position."""
+    picks = []
+    for value in values:
+        key, separator, number = value.partition("=")
+        if not separator or not key or not number.isdigit():
+            raise StateError(f"--pick takes HASH=NUMBER, not {value!r}")
+        picks.append((key, int(number)))
+    return tuple(picks)
 
 
 def _loop(context: _Context) -> _Outcome:
@@ -374,6 +432,8 @@ def _complete(context: _Context) -> _Outcome:
             selected_reasoning=args.selected_reasoning,
             summary_for_next=args.summary_for_next_step,
             caller_role=args.role,
+            rule_results=tuple(args.rule_result),
+            check_results=tuple(args.check_result),
         ),
         args.json_output,
     )
@@ -789,6 +849,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "next" and args.force:
             effect = service.force_target(args.task_id)
             if not _confirm_force_next(effect):
+                return 1
+        # An approval is shown in full first: reading the command is the
+        # operator's safety, as ww keeps no allowlist of executables.
+        if args.command == "next" and args.approve:
+            preview = service.approval_preview(args.task_id, tuple(args.approve))
+            if not confirm_approval(preview):
                 return 1
         if logged:
             log("started", None)

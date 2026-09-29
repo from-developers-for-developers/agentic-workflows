@@ -73,6 +73,11 @@ class PlannedCheck:
     ``command`` is already planned like any cli handler's: build-time values
     are substituted and runtime ones are left for execution. ``summary`` is
     the rule's first sentence, or the hook's handler name.
+
+    A ``derived`` check is one the operator approved into the rule-automation
+    store; it is never compiled into a plan but resolved when the step
+    begins, and ``covers`` names the rules of the step it checks, so a check
+    shared by several rules runs once.
     """
 
     id: str
@@ -81,15 +86,18 @@ class PlannedCheck:
     command: Commands
     paths: tuple[str, ...] = ()
     max_fixes: int = 1
+    covers: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.source not in {"rule", "hook"}:
+        if self.source not in {"rule", "hook", "derived"}:
             raise ValueError(f"invalid check source: {self.source!r}")
         if not is_positive_int(self.max_fixes):
             raise ValueError("check max_fixes must be a positive integer")
+        if bool(self.covers) != (self.source == "derived"):
+            raise ValueError("exactly a derived check names the rules it covers")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "id": self.id,
             "source": self.source,
             "summary": self.summary,
@@ -97,6 +105,34 @@ class PlannedCheck:
             "paths": list(self.paths),
             "max_fixes": self.max_fixes,
         }
+        if self.covers:
+            data["covers"] = list(self.covers)
+        return data
+
+
+@dataclass(frozen=True)
+class VerificationTarget:
+    """What a ww-generated verification item verifies.
+
+    The item judges, or proposes a check for, the rules without a command of
+    the agent item ``item_id``. Each distinct set of worker hints among those
+    rules gets its own verification item; ``ordinal`` numbers them in the
+    order ww created them and ``hints`` is the set this one runs with.
+    """
+
+    item_id: str
+    ordinal: int
+    hints: RuleHints = RuleHints()
+
+    def __post_init__(self) -> None:
+        if not is_positive_int(self.ordinal):
+            raise ValueError("verification ordinal must be a positive integer")
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {"item_id": self.item_id, "ordinal": self.ordinal}
+        if self.hints.to_dict():
+            data["hints"] = self.hints.to_dict()
+        return data
 
 
 @dataclass(frozen=True)
@@ -183,6 +219,9 @@ class PlanItem:
     # it completes.
     rules: tuple[PlannedRule, ...] = ()
     checks: tuple[PlannedCheck, ...] = ()
+    # Set on a verification item ww inserts before an agent step whose rules
+    # without a command need a verifier; never compiled from configuration.
+    verifies: VerificationTarget | None = None
 
     @property
     def kind(self) -> PlanItemKind:
@@ -193,13 +232,15 @@ class PlanItem:
         """Whether completing this item must leave a summary for the next step.
 
         Only an ordinary agent step does: hooks, ``init`` (its artifact is the
-        requirements), and the built-in workflow summary are exempt.
+        requirements), the built-in workflow summary, and verification items
+        are exempt.
         """
         return (
             self.phase == "step"
             and self.owner == "agent"
             and not self.summary
             and self.step != "init"
+            and self.verifies is None
         )
 
     def payload_as(self, payload_type: type[PayloadT]) -> PayloadT:
@@ -294,6 +335,13 @@ class PlanItem:
             )
         if (self.rules or self.checks) and self.owner != "agent":
             raise ValueError("only agent-owned plan items carry rules and checks")
+        if self.verifies is not None and (
+            self.owner != "agent" or self.rules or self.checks or self.provide
+        ):
+            raise ValueError(
+                "a verification item is agent-owned and carries no rules, checks, "
+                "or provided values"
+            )
         if self.save_metadata and self.owner != "agent":
             raise ValueError("only agent-owned plan items can save metadata")
         if self.update_document and self.owner != "agent":
@@ -342,6 +390,8 @@ class PlanItem:
             del data["rules"]
         if not self.checks:
             del data["checks"]
+        if self.verifies is None:
+            del data["verifies"]
         return data
 
     def _to_dict(self) -> dict[str, object]:
@@ -410,6 +460,7 @@ class PlanItem:
             ),
             "rules": [rule.to_dict() for rule in self.rules],
             "checks": [check.to_dict() for check in self.checks],
+            "verifies": self.verifies.to_dict() if self.verifies else None,
         }
 
 

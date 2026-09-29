@@ -20,14 +20,22 @@ from ww.execution_models import (
     CommandExecution,
     ExecutionState,
     InputRequest,
+    PlanItemExecution,
     PlanSnapshot,
     StepProgress,
     build_step_projection,
     new_item_execution,
     operation_scope_for,
 )
+from ww.execution_models.records import RuleResolution
 from ww.items import WorkItem
-from ww.plan import LoopBoundary, PlanItem, WorkflowPlan, number_step_paths
+from ww.plan import (
+    LoopBoundary,
+    PlanItem,
+    PlannedCheck,
+    WorkflowPlan,
+    number_step_paths,
+)
 from ww.workflow_config import ProvidedVariable
 
 Clock = Callable[[], str]
@@ -114,6 +122,19 @@ def waive_checks(
     )
 
 
+def fix_limits(item: PlanItem, record: PlanItemExecution) -> dict[str, int]:
+    """How often each check of an agent item may fail before the operator decides.
+
+    A verifier's verdict on a rule counts under the rule's ID, a derived check
+    under its name.
+    """
+    limits = {rule.id: rule.max_fixes for rule in item.rules}
+    limits.update(
+        {check.id: check.max_fixes for check in (*item.checks, *record.resolved_checks)}
+    )
+    return limits
+
+
 def reject_completion(
     state: ExecutionState,
     plan: WorkflowPlan,
@@ -121,28 +142,53 @@ def reject_completion(
     report: CheckReport,
     artifact: str | None,
     now: Clock,
+    *,
+    keep_active: bool = True,
 ) -> ExecutionState:
     """Record a completion ww refused because checks failed.
 
     The step stays in progress for its worker to fix, with the supplied
     artifact kept as the draft to revise. A check that has now failed as many
     times as its ``max_fixes`` allows stops the run for the operator instead.
+    ``keep_active`` is false when someone other than the step's worker
+    learned of the failure, a verifier or the operator's approval: the step
+    then waits to be handed back to a worker.
     """
     records = list(state.item_executions)
     record = replace(
         records[state.cursor],
         check_reports=(*records[state.cursor].check_reports, report),
         draft_artifact=artifact,
+        held_completion=None,
     )
-    limits = {check.id: check.max_fixes for check in item.checks}
+    limits = fix_limits(item, record)
     exhausted = [
         result.id
         for result in report.failed
         if record.check_failures(result.id) >= limits.get(result.id, 1)
     ]
-    if not exhausted:
+    if not exhausted and keep_active:
         records[state.cursor] = record
         return replace(state, item_executions=tuple(records), updated_at=now())
+    if not exhausted:
+        records[state.cursor] = replace(record, status="pending")
+        return project_steps(
+            replace(
+                state,
+                status="pending",
+                active_item_id=None,
+                item_executions=tuple(records),
+                assignment_item_id=None,
+                assignment_model=None,
+                assignment_reasoning=None,
+                assignment_selected_agent=None,
+                assignment_selected_model=None,
+                assignment_selected_reasoning=None,
+                updated_at=now(),
+            ),
+            plan,
+            now,
+        )
     message = "check limit reached: " + ", ".join(exhausted)
     records[state.cursor] = replace(record, status="failed", error=message)
     return project_steps(
@@ -198,27 +244,46 @@ def begin_agent_item(
     selected_model: str | None = None,
     selected_reasoning: str | None = None,
     change_mark: str | None = None,
+    resolution: tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]
+    | None = None,
     now: Clock,
 ) -> ExecutionState:
     """Mark one agent-owned item and its run as in progress.
 
-    ``change_mark`` is the tree the step's change set starts from; a step
-    that began before keeps the mark it began with.
+    ``change_mark`` is the tree the step's change set starts from, and
+    ``resolution`` how its rules without a command are enforced; a step that
+    began before keeps what it began with.
     """
     records = list(state.item_executions)
     record = records[state.cursor]
-    records[state.cursor] = replace(
-        record,
-        status="in_progress",
-        started_at=record.started_at or now(),
-        attempts=record.attempts + 1,
-        model=model,
-        reasoning=reasoning,
-        selected_agent=selected_agent,
-        selected_model=selected_model,
-        selected_reasoning=selected_reasoning,
-        change_mark=record.change_mark or change_mark,
-    )
+    if resolution is not None and not record.rule_resolutions:
+        records[state.cursor] = replace(
+            record,
+            status="in_progress",
+            started_at=record.started_at or now(),
+            attempts=record.attempts + 1,
+            model=model,
+            reasoning=reasoning,
+            selected_agent=selected_agent,
+            selected_model=selected_model,
+            selected_reasoning=selected_reasoning,
+            change_mark=record.change_mark or change_mark,
+            rule_resolutions=resolution[0],
+            resolved_checks=resolution[1],
+        )
+    else:
+        records[state.cursor] = replace(
+            record,
+            status="in_progress",
+            started_at=record.started_at or now(),
+            attempts=record.attempts + 1,
+            model=model,
+            reasoning=reasoning,
+            selected_agent=selected_agent,
+            selected_model=selected_model,
+            selected_reasoning=selected_reasoning,
+            change_mark=record.change_mark or change_mark,
+        )
     return project_steps(
         replace(
             state,
@@ -522,6 +587,7 @@ def complete_agent_item(
             else records[state.cursor].check_reports
         ),
         draft_artifact=None,
+        held_completion=None,
         status="completed",
         completed_at=now(),
         supplied_values=tuple(supplied.items()),
