@@ -60,6 +60,7 @@ from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import compose_settings, load_project_config
 from ww.service import WorkflowService
 from ww.storage import Storage
+from ww.workflow_config import RuleDefinition, WorkflowConfiguration, every_step
 
 from .audit import _log_record
 from .catalogs import (
@@ -152,13 +153,29 @@ def _json(value: object) -> str:
 
 def _instruction_outcome(instruction: Instruction, json_output: bool) -> _Outcome:
     failed = instruction.status in {"failed", "interrupted"}
+    # A rejected completion exits non-zero too, so the worker reads the page.
+    rejected = instruction.fix_required is not None and not failed
     return _Outcome(
         render(instruction, json_output) + "\n",
         instruction.workflow,
         instruction.task_id,
-        error=instruction.error if failed else None,
-        exit_code=1 if failed else 0,
+        error=(
+            instruction.error
+            if failed
+            else _rejection(instruction)
+            if rejected
+            else None
+        ),
+        exit_code=1 if failed or rejected else 0,
     )
+
+
+def _rejection(instruction: Instruction) -> str:
+    fix = instruction.fix_required
+    assert fix is not None
+    return "completion rejected: " + ", ".join(
+        failure.id for failure in fix.failures
+    ) + " failed"
 
 
 def _init(context: _Context) -> _Outcome:
@@ -218,7 +235,9 @@ def _plan(context: _Context) -> _Outcome:
 
 
 def _lint(context: _Context) -> _Outcome:
-    load_configuration(context.storage.config_path, context.extensions)
+    configuration = load_configuration(
+        context.storage.config_path, context.extensions
+    )
     for project in context.extensions.config.projects:
         context.extensions.validate_configuration(project.name)
     notices = "".join(
@@ -229,6 +248,31 @@ def _lint(context: _Context) -> _Outcome:
         f"{WORKFLOWS_FILE} is valid.\n"
         f"{_configuration_files(context.storage, context.extensions)}"
         f"{notices}"
+        f"{_rules_summary(configuration)}"
+    )
+
+
+def _rules_summary(configuration: WorkflowConfiguration) -> str:
+    """``Rules: N groups, M rules``, when the configuration declares any.
+
+    A rule counts once however many groups or steps reach it.
+    """
+    groups = len(configuration.rule_groups)
+    rules = {
+        rule.id
+        for group in configuration.rule_groups
+        for rule in group.rules
+    } | {
+        entry.id
+        for step in every_step(configuration)
+        for entry in step.rules
+        if isinstance(entry, RuleDefinition)
+    }
+    if not groups and not rules:
+        return ""
+    return (
+        f"Rules: {groups} group{'s' if groups != 1 else ''}, "
+        f"{len(rules)} rule{'s' if len(rules) != 1 else ''}\n"
     )
 
 

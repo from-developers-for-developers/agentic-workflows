@@ -6,8 +6,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TypeVar, get_args
 
-from ww.actions import PlannedAction, actions
+from ww.actions import Commands, PlannedAction, actions
 from ww.contracts import (
+    CheckSource,
     ChildOperation,
     ExecutionKind,
     ItemAssignment,
@@ -25,11 +26,77 @@ from ww.workflow_config import (
     DocumentUpdate,
     ItemFieldUpdate,
     ProvidedVariable,
+    RuleHints,
     SavedMetadata,
 )
 from ww.workspace import WORKDIRS, Workdir
 
 PayloadT = TypeVar("PayloadT")
+
+
+@dataclass(frozen=True)
+class PlannedRule:
+    """A rule frozen into the plan for one agent step.
+
+    The text and its hash are frozen so a run keeps delivering the wording it
+    started with; ``has_command`` says whether ww checks it mechanically.
+    """
+
+    id: str
+    summary: str
+    text: str
+    text_hash: str
+    paths: tuple[str, ...] = ()
+    has_command: bool = False
+    max_fixes: int = 1
+    hints: RuleHints = RuleHints()
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "id": self.id,
+            "summary": self.summary,
+            "text": self.text,
+            "text_hash": self.text_hash,
+            "paths": list(self.paths),
+            "has_command": self.has_command,
+            "max_fixes": self.max_fixes,
+        }
+        if self.hints.to_dict():
+            data["hints"] = self.hints.to_dict()
+        return data
+
+
+@dataclass(frozen=True)
+class PlannedCheck:
+    """A command ww runs when the step completes; a failure sends it back.
+
+    ``command`` is already planned like any cli handler's: build-time values
+    are substituted and runtime ones are left for execution. ``summary`` is
+    the rule's first sentence, or the hook's handler name.
+    """
+
+    id: str
+    source: CheckSource
+    summary: str
+    command: Commands
+    paths: tuple[str, ...] = ()
+    max_fixes: int = 1
+
+    def __post_init__(self) -> None:
+        if self.source not in {"rule", "hook"}:
+            raise ValueError(f"invalid check source: {self.source!r}")
+        if not is_positive_int(self.max_fixes):
+            raise ValueError("check max_fixes must be a positive integer")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "source": self.source,
+            "summary": self.summary,
+            "command": actions.get("cli").encode(self.command),
+            "paths": list(self.paths),
+            "max_fixes": self.max_fixes,
+        }
 
 
 @dataclass(frozen=True)
@@ -112,6 +179,10 @@ class PlanItem:
     assessment_stops: tuple[str, ...] = ()
     assessment_parent: str | None = None
     assessment_outcome: str | None = None
+    # Rules delivered on this agent step's page, and the checks ww runs when
+    # it completes.
+    rules: tuple[PlannedRule, ...] = ()
+    checks: tuple[PlannedCheck, ...] = ()
 
     @property
     def kind(self) -> PlanItemKind:
@@ -221,6 +292,8 @@ class PlanItem:
                 "requires_agent_input must match an automatic action with provided "
                 "values"
             )
+        if (self.rules or self.checks) and self.owner != "agent":
+            raise ValueError("only agent-owned plan items carry rules and checks")
         if self.save_metadata and self.owner != "agent":
             raise ValueError("only agent-owned plan items can save metadata")
         if self.update_document and self.owner != "agent":
@@ -265,6 +338,10 @@ class PlanItem:
             del data["update_item"]
         if self.item_identity is None and not self.item_unique:
             del data["item_identity"], data["item_unique"]
+        if not self.rules:
+            del data["rules"]
+        if not self.checks:
+            del data["checks"]
         return data
 
     def _to_dict(self) -> dict[str, object]:
@@ -331,6 +408,8 @@ class PlanItem:
                 if self.assessment_stops
                 else {}
             ),
+            "rules": [rule.to_dict() for rule in self.rules],
+            "checks": [check.to_dict() for check in self.checks],
         }
 
 

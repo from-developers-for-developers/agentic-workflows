@@ -16,6 +16,7 @@ from ww.contracts import StepStatus
 from ww.control import loop_control
 from ww.errors import StateError
 from ww.execution_models import (
+    CheckReport,
     CommandExecution,
     ExecutionState,
     InputRequest,
@@ -57,7 +58,15 @@ def retry_failed_item(
         # discoverable through the public artifact listing.
         history = (*state.execution_history, record)
         records[state.cursor] = replace(
-            record, status="pending", error=None, supplied_values=supplied
+            record,
+            status="pending",
+            error=None,
+            supplied_values=supplied,
+            # A retry after the fix limit gives the worker a fresh count; the
+            # rejected attempts stay in the history record.
+            check_reports=(
+                () if state.failure_kind == "fix_limit" else record.check_reports
+            ),
         )
     else:
         history = state.execution_history
@@ -70,6 +79,80 @@ def retry_failed_item(
             execution_history=history,
             workflow_values=tuple(values.items()),
             last_error=None,
+            failure_kind=None,
+            updated_at=now(),
+        ),
+        plan,
+        now,
+    )
+
+
+def waive_checks(
+    state: ExecutionState, plan: WorkflowPlan, reason: str, now: Clock
+) -> ExecutionState:
+    """Return a step stopped at its fix limit to its worker without its checks.
+
+    The next completion skips the checks and its artifact records the waiver;
+    nothing else about the step changes.
+    """
+    records = list(state.item_executions)
+    records[state.cursor] = replace(
+        records[state.cursor], status="pending", error=None, checks_waived=reason
+    )
+    return project_steps(
+        replace(
+            state,
+            status="pending",
+            active_item_id=None,
+            item_executions=tuple(records),
+            last_error=None,
+            failure_kind=None,
+            updated_at=now(),
+        ),
+        plan,
+        now,
+    )
+
+
+def reject_completion(
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    item: PlanItem,
+    report: CheckReport,
+    artifact: str | None,
+    now: Clock,
+) -> ExecutionState:
+    """Record a completion ww refused because checks failed.
+
+    The step stays in progress for its worker to fix, with the supplied
+    artifact kept as the draft to revise. A check that has now failed as many
+    times as its ``max_fixes`` allows stops the run for the operator instead.
+    """
+    records = list(state.item_executions)
+    record = replace(
+        records[state.cursor],
+        check_reports=(*records[state.cursor].check_reports, report),
+        draft_artifact=artifact,
+    )
+    limits = {check.id: check.max_fixes for check in item.checks}
+    exhausted = [
+        result.id
+        for result in report.failed
+        if record.check_failures(result.id) >= limits.get(result.id, 1)
+    ]
+    if not exhausted:
+        records[state.cursor] = record
+        return replace(state, item_executions=tuple(records), updated_at=now())
+    message = "check limit reached: " + ", ".join(exhausted)
+    records[state.cursor] = replace(record, status="failed", error=message)
+    return project_steps(
+        replace(
+            state,
+            status="failed",
+            active_item_id=item.id,
+            item_executions=tuple(records),
+            last_error=message,
+            failure_kind="fix_limit",
             updated_at=now(),
         ),
         plan,
@@ -96,6 +179,7 @@ def skip_failed_item(
             cursor=state.cursor + 1,
             item_executions=tuple(records),
             last_error=None,
+            failure_kind=None,
             updated_at=now(),
         ),
         plan,
@@ -113,9 +197,14 @@ def begin_agent_item(
     selected_agent: str | None = None,
     selected_model: str | None = None,
     selected_reasoning: str | None = None,
+    change_mark: str | None = None,
     now: Clock,
 ) -> ExecutionState:
-    """Mark one agent-owned item and its run as in progress."""
+    """Mark one agent-owned item and its run as in progress.
+
+    ``change_mark`` is the tree the step's change set starts from; a step
+    that began before keeps the mark it began with.
+    """
     records = list(state.item_executions)
     record = records[state.cursor]
     records[state.cursor] = replace(
@@ -128,6 +217,7 @@ def begin_agent_item(
         selected_agent=selected_agent,
         selected_model=selected_model,
         selected_reasoning=selected_reasoning,
+        change_mark=record.change_mark or change_mark,
     )
     return project_steps(
         replace(
@@ -417,11 +507,21 @@ def complete_agent_item(
     clear_selected_model: bool = False,
     clear_selected_reasoning: bool = False,
     summary_for_next: str | None = None,
+    check_report: CheckReport | None = None,
 ) -> ExecutionState:
-    """Complete the active agent item and merge its provided values."""
+    """Complete the active agent item and merge its provided values.
+
+    ``check_report`` is the passing report of the checks ww ran, if any.
+    """
     records = list(state.item_executions)
     records[state.cursor] = replace(
         records[state.cursor],
+        check_reports=(
+            (*records[state.cursor].check_reports, check_report)
+            if check_report is not None
+            else records[state.cursor].check_reports
+        ),
+        draft_artifact=None,
         status="completed",
         completed_at=now(),
         supplied_values=tuple(supplied.items()),

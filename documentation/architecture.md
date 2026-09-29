@@ -1401,3 +1401,38 @@ Installation writes only the agent's project file, or with `--local` the one it
 keeps out of version control, merging ww's entries and recognising them by
 their command. `init` offers it per agent and treats a failure as a manual
 action, never as an init failure.
+
+## Rules and checks
+
+A rule is knowledge given to a step; a check is evidence collected after it.
+The two are kept apart so that the agent that did the work never grades it: a
+rule's sentence reaches the step's page and its artifact, while its `check`, a
+plain command handler, is run by ww at completion on the files the step
+changed, and the result decides whether the completion is recorded at all.
+
+The boundaries follow the rest of the system. `config/rules.py` is a frontend:
+it reads rule files and the root `rules` mapping, resolves group references
+and paths against the declaring file, and hands normalized definitions to the
+step parser; extensions contribute groups as Python objects, so the YAML
+composer merges them under the same names. The compiler freezes each step's
+applicable rules and checks into the plan item, and a `before_complete` hook
+with `on_failure: fix` becomes a check there rather than a hook item, so
+execution has one rejection mechanism and never reinterprets hooks or rules.
+`changes.py` measures a step's change set with git alone: a tree mark taken
+when the step begins and another at completion, both written from a temporary
+index so the real index, the stash and the worktree are untouched, and their
+difference is what the checks see in `WW_STEP_CHANGED_FILES`. Without git
+the globs select every file and the report says so; no other VCS and no
+snapshot fallback exist on purpose.
+
+`rule_checks.RuleChecker` runs inside `complete`, after every existing
+validation and before anything is written. Checks are read-only and
+repeatable, so they keep no command ledger; their outputs are stored like
+other command output and their reports live on the item record, one per
+attempt, which is the single authority for how often a step was rejected. A
+rejection leaves the step with its worker and the supplied artifact as a
+draft; the limit turns into an operator decision (`fix_limit`) whose two
+exits, a fresh count or a recorded waiver, are transitions like any other.
+Judged rules, those without a command, are delivered and reported but not yet
+verified; the verifier and its store are the next slice of the plan in
+`documentation/plans/rules-and-checks.md`.

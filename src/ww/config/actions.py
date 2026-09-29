@@ -7,7 +7,7 @@ import re
 from typing import Any, cast
 
 from ww.actions import DefinedAction, actions
-from ww.contracts import HookPhase, HookScope, RequestedActionKind
+from ww.contracts import HookFailure, HookPhase, HookScope, RequestedActionKind
 from ww.errors import ConfigurationError
 from ww.extensions import is_extension_reference
 from ww.operations import WorkflowHandoff
@@ -268,11 +268,14 @@ def _parse_hooks(data: Any, scope: HookScope, path: str) -> tuple[HookDefinition
     return tuple(result)
 
 
+HOOK_FAILURES: tuple[HookFailure, ...] = ("fix", "operator")
+
+
 def _parse_hook(
     data: Any, phase: HookPhase, scope: HookScope, path: str
 ) -> tuple[HookDefinition, ...]:
     mapping = _mapping(data, path)
-    allowed = _handler_keys() | {"handlers", "workflow"}
+    allowed = _handler_keys() | {"handlers", "workflow", "on_failure"}
     if scope in {"global", "workflow"} and phase not in {
         "before_start_workflow",
         "before_complete_workflow",
@@ -281,9 +284,10 @@ def _parse_hook(
     if scope == "global":
         allowed.add("workflows")
     mapping = _named_entry(
-        mapping, path, allowed=allowed, ignored={"workflows", "steps"}
+        mapping, path, allowed=allowed, ignored={"workflows", "steps", "on_failure"}
     )
     _only(mapping, allowed, path)
+    on_failure = _on_failure(mapping, path, "operator")
     if "handlers" in mapping:
         action_keys = set(mapping) & (_handler_keys() | {"workflow"})
         if action_keys:
@@ -295,18 +299,18 @@ def _parse_hook(
         if not isinstance(raw_handlers, list) or not raw_handlers:
             raise ConfigurationError(f"{path}.handlers must be a non-empty list")
         references = tuple(
-            _parse_hook_handler(item, f"{path}.handlers[{index}]")
+            _parse_hook_member(item, f"{path}.handlers[{index}]", on_failure)
             for index, item in enumerate(raw_handlers)
         )
     else:
         action = {
             key: value
             for key, value in mapping.items()
-            if key not in {"workflows", "steps"}
+            if key not in {"workflows", "steps", "on_failure"}
         }
         if not action:
             raise ConfigurationError(f"{path} requires a handler action")
-        references = (_parse_hook_handler(action, path),)
+        references = ((_parse_hook_handler(action, path), on_failure),)
 
     workflow_names = _string_list(mapping.get("workflows", []), f"{path}.workflows")
     step_names = _step_filter_list(mapping.get("steps", []), f"{path}.steps")
@@ -318,9 +322,36 @@ def _parse_hook(
             step_names=step_names,
             scope=scope,
             path=path,
+            on_failure=failure,
         )
-        for reference in references
+        for reference, failure in references
     )
+
+
+def _on_failure(
+    mapping: dict[str, Any], path: str, default: HookFailure
+) -> HookFailure:
+    value = mapping.get("on_failure", default)
+    if value not in HOOK_FAILURES:
+        raise ConfigurationError(
+            f"{path}.on_failure must be one of: " + ", ".join(HOOK_FAILURES)
+        )
+    return cast(HookFailure, value)
+
+
+def _parse_hook_member(
+    data: Any, path: str, group_failure: HookFailure
+) -> tuple[HandlerDefinition, HookFailure]:
+    """One member of a hook's ``handlers`` list and its own ``on_failure``."""
+    mapping = _named_entry(
+        _mapping(data, path),
+        path,
+        allowed=_handler_keys() | {"workflow", "on_failure"},
+        ignored={"on_failure"},
+    )
+    failure = _on_failure(mapping, path, group_failure)
+    handler = {key: value for key, value in mapping.items() if key != "on_failure"}
+    return _parse_hook_handler(handler, path), failure
 
 
 def _parse_hook_handler(data: Any, path: str) -> HandlerDefinition:

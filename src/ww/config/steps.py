@@ -30,6 +30,7 @@ from .actions import (
     _parse_handler,
     _parse_hooks,
 )
+from .rules import parse_step_rules
 from .values import (
     _NAME,
     _description,
@@ -68,6 +69,7 @@ STEP_ONLY_KEYS: set[str] = {
     "handler",
     "question",
     "outcomes",
+    "rules",
 }
 
 ITEM_FLOW_KEYS = {
@@ -184,6 +186,7 @@ _STEP_CONTENT_KEYS = frozenset(
         "process_item",
         "resolve_item",
         "report_item",
+        "rules",
     }
 )
 
@@ -430,6 +433,13 @@ def _parse_step(
         if "hooks" in mapping or referenced_step is None
         else referenced_step.hooks
     )
+    rules = (
+        parse_step_rules(mapping["rules"], base.name, path)
+        if "rules" in mapping
+        else referenced_step.rules
+        if referenced_step is not None
+        else ()
+    )
     profile = (
         _profile(mapping, path)
         if "profile" in mapping or referenced_step is None
@@ -503,6 +513,7 @@ def _parse_step(
         profile=profile["profile"],
         profile_description=profile["profile_description"],
         hooks=hooks,
+        rules=rules,
         child_steps=children,
         loop_steps=loop_steps,
         loop_max_times=loop_max_times,

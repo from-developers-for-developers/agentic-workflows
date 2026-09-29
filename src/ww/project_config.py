@@ -13,6 +13,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "update_check": true,
   "executable": "ww-agentic-workflows-dev",
   "loop_max_times": 3,
+  "max_fixes": 3,
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
@@ -22,6 +23,9 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   }
 }
 ```
+
+``max_fixes`` is how many times a step's completion may be rejected for a
+failed check before ww stops for the operator; a rule may set its own.
 
 ``workflows`` switches off the workflows ww provides to every project, such
 as ``catchall``; each is on unless its entry says ``"enabled": false``.
@@ -79,6 +83,7 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
 DEFAULT_LOOP_MAX_TIMES = 3
+DEFAULT_MAX_FIXES = 3
 # A ``task_format`` that forbids generated IDs: every task is started with an
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
@@ -133,6 +138,11 @@ class ExtensionSections:
         if bare:
             return deepcopy(self.sections[bare[0]])
         return {}
+
+    def lists(self, identifier: str) -> bool:
+        """Whether a section names the extension, even an empty one."""
+        _, _, name = identifier.partition("/")
+        return identifier in self.sections or name in self.sections
 
     def validate_against(self, identifiers: tuple[str, ...]) -> None:
         """Reject sections that name no installed extension, or name two.
@@ -196,6 +206,8 @@ class ProjectConfig:
     extensions: dict[str, dict[str, Any]] = field(default_factory=dict)
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
     loop_max_times: int = DEFAULT_LOOP_MAX_TIMES
+    # Rejected completions a check allows before the operator decides.
+    max_fixes: int = DEFAULT_MAX_FIXES
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
     enabled: bool = True
     projects: tuple[ProjectDefinition, ...] = ()
@@ -375,6 +387,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "extensions",
         "builtins",
         "loop_max_times",
+        "max_fixes",
         "projects",
         "update_check",
         "workflows",
@@ -400,6 +413,9 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     loop_max_times = raw.get("loop_max_times", DEFAULT_LOOP_MAX_TIMES)
     if not is_positive_int(loop_max_times):
         raise ConfigurationError(f"{path}.loop_max_times must be a positive integer")
+    max_fixes = raw.get("max_fixes", DEFAULT_MAX_FIXES)
+    if not is_positive_int(max_fixes):
+        raise ConfigurationError(f"{path}.max_fixes must be a positive integer")
     builtins = raw.get("builtins", {})
     if not isinstance(builtins, dict):
         raise ConfigurationError(f"{path}.builtins must be an object")
@@ -426,15 +442,16 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
                 )
         normalized[name] = dict(value)
     return ProjectConfig(
-        extensions,
-        normalized,
-        loop_max_times,
-        enabled,
-        _parse_projects(raw.get("projects"), path),
-        runtime,
-        update_check,
-        _parse_workflows(raw.get("workflows"), path),
-        _parse_executable(raw.get("executable"), path),
+        extensions=extensions,
+        builtins=normalized,
+        loop_max_times=loop_max_times,
+        max_fixes=max_fixes,
+        enabled=enabled,
+        projects=_parse_projects(raw.get("projects"), path),
+        runtime=runtime,
+        update_check=update_check,
+        disabled_workflows=_parse_workflows(raw.get("workflows"), path),
+        executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
     )
 

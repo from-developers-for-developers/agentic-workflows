@@ -16,6 +16,8 @@ and persistence invariants, see [architecture.md](architecture.md).
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
 - ww-owned CLI handlers, output assertions, and lifecycle transitions.
 - Global, workflow, and step hooks with filters and conditional prompts.
+- Rules delivered on each step's page, and checks ww runs on the files a step
+  changed, which send the step back to its worker until they pass.
 - Variables, durable task and project metadata, artifacts, and artifact
   dependencies.
 - Nested steps, dynamic per-item work, and parent/child task workflows.
@@ -816,6 +818,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `child_failed` | A child task failed. |
 | `interrupted_command` | An automatic handler was interrupted and its outcome is unknown. |
 | `loop_limit` | A loop reached its `loop_max_times` iteration limit. |
+| `fix_limit` | A step's check failed as many times as its `max_fixes` allows; see [Rules and checks](#rules-and-checks). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
 replays it without asking anyone, so the task stays `blocked` for the manager.
@@ -1122,6 +1125,109 @@ agree. Nothing starts without that answer. An inheriting workflow keeps the
 recommendation unless it sets its own, or `recommended_next_workflow: ~` to
 clear it. A `handoff` workflow already starts its successor and cannot
 recommend one.
+
+## Rules and checks
+
+A **rule** is a sentence a step's agent must follow, such as "Keep the public
+CLI unchanged." A **check** is evidence ww collects itself: a command it runs
+when the step completes. A rule may carry its own check, and a
+`before_complete` hook with `on_failure: fix` is one too. The agent that did
+the work never grades it: a claim that can be a command is run by ww.
+
+Rules live in Markdown files grouped under the root `rules`, or inline in a
+step's `rules` list; the [specification](specification.md#rules) has the
+format. A group applies where its `workflows` and `steps` filters allow, and a
+step may name a group to get it regardless.
+
+```yaml
+rules:
+  python: [rules/python/]
+workflows:
+  - name: task
+    steps:
+      - name: develop
+        description: Implement it.
+        rules:
+          - Keep the public CLI unchanged.
+        hooks:
+          before_complete:
+            - argv: [pytest, -q]
+              on_failure: fix
+```
+
+### On the step page
+
+Every agent step lists its rules after the work instruction, each with its ID,
+its globs, and its first sentence; the IDs of rules with a check are collected
+on one line, "Checked automatically when you complete". The page asks the
+worker to say in its artifact, under a **Rules** heading, which rules it
+applied and any deviation. `init`, hooks, and the workflow summary get no
+rules. In the `auto` runtime the worker's page carries the section. JSON
+output lists them as `rules`, each with `id`, `summary`, `paths`,
+`has_command`, and `hook`.
+
+### The fix loop
+
+`complete` runs the step's checks before recording anything. When one fails,
+the completion is rejected: nothing is saved, the artifact is kept only as a
+draft, the step stays in progress with its worker, and `complete` exits
+non-zero. The response is the fix page, `## Fix required: 2 of 5 checks failed
+(attempt 1 of 3)`, with each failed check's rule text, command, and the last 40
+lines it printed, then the same completion command; `fix_required` in JSON.
+The worker fixes the causes and completes again with a revised artifact.
+
+A failed check always goes back to the worker, never to the operator, until
+it has failed `max_fixes` times: the rule's own value, else `max_fixes` in
+`ww-agentic-workflows.json`, default 3. Then the task stops with
+`operator_reason: fix_limit` and the last failures on the page. The operator
+chooses:
+
+- `next --retry` gives the worker another round: the count starts again, and
+  the next `next` hands the step back.
+- `next --force --force-reason "<why>"` waives the checks: the worker completes
+  the step once more without them, and its artifact records the waiver.
+
+A hook without `on_failure: fix` fails as before, stopping the task with
+`operator_reason: handler_failed`.
+
+### The change set
+
+A check sees the files the step changed in `WW_STEP_CHANGED_FILES`,
+newline-separated and relative to the step's directory, narrowed to its
+`paths`; a check whose globs match none of them is not applicable and does not
+run. ww measures the change set with git: when the step begins it records the
+tree of everything in the working directory, tracked or not, using a temporary
+index, so the real index, the stash, and the files are untouched; at
+completion it takes a second tree and compares. Work that was uncommitted
+before the step cancels out, a commit made during it still counts, and
+deleted files and ww's own `.ww` state are left out. Without git there is no
+change set: the globs select every file in the directory, `.git` and `.ww`
+excepted.
+
+In a shell check a bare `$WW_STEP_CHANGED_FILES` splits on whitespace, which
+suits `grep -L foo $WW_STEP_CHANGED_FILES` and `xargs`; paths with spaces need
+`printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs -d '\n' …`. A check's full
+output is a command-output artifact: `ww artifacts` lists it under the step
+with a `check` field naming the check.
+
+### In the artifact
+
+The step's artifact gains a `## Rules` section after `## Result`: one line per
+rule with its status, `passed`, `not applicable`, `self-declared` for a rule
+without a check, or `failed`, which only a waiver lets through; hook checks
+carry `(hook)`. It ends with the waiver's reason, if any, and how many
+completions ww rejected before this one.
+
+### Rules from extensions
+
+An extension may ship rule groups through its `rules`, each a
+`RuleGroupContribution` naming the group, its absolute paths or other group
+names, and optional filters. A project gets them by listing the extension in
+the root `ww-agentic-workflows.json` `extensions`, even with an empty section;
+a group name also declared in the YAML is an error.
+
+`ww lint` ends with `Rules: N groups, M rules` when the configuration declares
+any, after a notice for each absolute rule path.
 
 ## Hooks, variables, and transitions
 

@@ -13,6 +13,8 @@ from .construction import (
 )
 from .records import (
     EXECUTION_SCHEMA_VERSION,
+    CheckReport,
+    CheckResult,
     CommandExecution,
     ExecutionState,
     InputRequest,
@@ -30,6 +32,8 @@ from .runs import (
 )
 
 __all__ = [
+    "CheckReport",
+    "CheckResult",
     "EXECUTION_SCHEMA_VERSION",
     "PLAN_COMPILER_VERSION",
     "PLAN_SCHEMA_VERSION",

@@ -10,6 +10,7 @@ from ww.extensions.api import (
     ExtensionHandler,
     ExtensionResult,
     ExtensionVariable,
+    RuleGroupContribution,
 )
 from ww.extensions.registry import (
     ExtensionReference,
@@ -31,6 +32,7 @@ __all__ = [
     "ExtensionResult",
     "ExtensionVariable",
     "ExtensionStore",
+    "RuleGroupContribution",
     "is_extension_reference",
     "parse_reference",
 ]

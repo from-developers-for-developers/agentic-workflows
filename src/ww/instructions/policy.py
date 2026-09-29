@@ -114,6 +114,8 @@ def operator_reason(state: ExecutionState, plan: WorkflowPlan) -> OperatorReason
             return None
         return "interrupted_command"
     if state.status == "failed":
+        if state.failure_kind == "fix_limit":
+            return "fix_limit"
         if item is not None and child_workflow(item) is not None:
             return "child_failed"
         if item is not None and item.owner == "agent":

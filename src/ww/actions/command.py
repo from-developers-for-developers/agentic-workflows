@@ -107,10 +107,15 @@ class CommandAction(AutomaticAction[Commands, Commands]):
                 )
             outputs.append(outcome.stdout)
         output = "\n".join(part for part in outputs if part).strip()
-        if planned.assertion and output != planned.assertion.expected:
+        if planned.assertion and not planned.assertion.holds(output):
+            expected = (
+                "no output"
+                if planned.assertion.expected is None
+                else repr(planned.assertion.expected)
+            )
             return ActionResult.failed(
-                "automatic handler assertion failed: expected "
-                f"{planned.assertion.expected!r}, got {output!r}",
+                f"automatic handler assertion failed: expected {expected}, "
+                f"got {output!r}",
                 output=output,
             )
         return ActionResult.succeeded(output)
@@ -217,7 +222,7 @@ class CommandAction(AutomaticAction[Commands, Commands]):
                 (
                     "**Check**",
                     "",
-                    f"Command output must equal `{planned.assertion.expected}`.",
+                    planned.assertion.describe(),
                     "",
                 )
                 if planned.assertion
@@ -285,6 +290,10 @@ def _assertion_from_dict(value: Any, item_path: str) -> AssertionDefinition | No
         raise ValueError(f"{item_path}.assert must be an object or null")
     if value is None:
         return None
+    if value.get("operator") == "empty":
+        if set(value) != {"operator"}:
+            raise ValueError(f"{item_path}.assert has invalid fields")
+        return AssertionDefinition(operator="empty")
     if not {"operator", "expected"} <= set(value):
         raise ValueError(f"{item_path}.assert has invalid fields")
     if value["operator"] != "eq":
@@ -316,11 +325,17 @@ def _parse_assertion(raw: object, path: str) -> AssertionDefinition:
     operator = expect_normalized_name(
         assertion.get("operator"), f"{context}.operator", error=ConfigurationError
     )
+    if operator == "empty":
+        if "expected" in assertion:
+            raise ConfigurationError(
+                f"{context}.expected is not allowed with operator empty"
+            )
+        return AssertionDefinition("empty")
+    if operator != "eq":
+        raise ConfigurationError(f"{context}.operator must be eq or empty")
     expected = expect_nonempty_string(
         assertion.get("expected"), f"{context}.expected", error=ConfigurationError
     )
-    if operator != "eq":
-        raise ConfigurationError(f"{context}.operator must be eq")
     return AssertionDefinition("eq", expected)
 
 

@@ -9,6 +9,15 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-09-29
+
+- Rules: a root `rules` mapping of Markdown rule files and a step `rules` list deliver sentences to each agent
+  step's page; a rule's `check`, and a `before_complete` hook with `on_failure: fix`, run when the step completes
+  on the files it changed (`WW_STEP_CHANGED_FILES`, measured with git), and a failure sends the step back to its
+  worker up to `max_fixes` times (`ww-agentic-workflows.json`, default 3) before `operator_reason: fix_limit`.
+  `assert` gains `operator: empty`. Incompatible: plan schema 12 and execution state 7, so finish or reset open
+  tasks before updating. `e39e2e4`
+
 ## 2026-09-28
 
 - A ww install now also runs inside another checkout of ww's own source, such as a development install used in the `dev`

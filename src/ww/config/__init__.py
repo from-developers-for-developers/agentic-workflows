@@ -20,6 +20,7 @@ from ww.workflow_config import (
     MetadataScope,
     ModeDefinition,
     ProfileDefinition,
+    RuleGroup,
     StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
@@ -28,6 +29,7 @@ from ww.workflow_validation import validate_configuration
 
 from .actions import _parse_hooks
 from .composition import compose_configuration
+from .rules import RuleGroupContribution, parse_rules_root, resolve_step_rules
 from .steps import _parse_handlers, _parse_step
 from .values import (
     _NAME,
@@ -48,34 +50,61 @@ from .values import (
 
 @dataclass(frozen=True)
 class YamlConfigurationLoader:
-    """The built-in ``ww-agentic-workflows.yaml`` notation frontend."""
+    """The built-in ``ww-agentic-workflows.yaml`` notation frontend.
+
+    ``extensions`` supply the rule groups the project's configured extensions
+    ship, merged under the root ``rules`` before any step names them.
+    """
 
     path: Path
+    extensions: ExtensionRegistry | None = None
 
     def __call__(self) -> WorkflowConfiguration:
-        return parse_yaml_configuration(self.path)
+        return parse_yaml_configuration(self.path, self.extensions)
 
 
-def parse_yaml_configuration(path: Path) -> WorkflowConfiguration:
+def parse_yaml_configuration(
+    path: Path, extensions: ExtensionRegistry | None = None
+) -> WorkflowConfiguration:
     """Load a normalized configuration without deriving execution behavior.
 
     Parsing checks the YAML notation's shape. Cross-definition semantics are
     deliberately checked by :func:`validate_configuration` after any frontend
     has produced this same normalized model. The files ``path`` imports are
-    composed into it first, so the parser reads one document.
+    composed into it first, so the parser reads one document; rule paths
+    resolve against ``path``'s directory, where composition rebases them.
     """
     if not path.is_file():
         raise ConfigurationError(f"workflow configuration not found: {path}")
-    return parse_yaml_text(compose_configuration(path).text, str(path))
+    return parse_yaml_text(
+        compose_configuration(path).text,
+        str(path),
+        base=path.parent,
+        extension_rule_groups=(
+            extensions.rule_groups() if extensions is not None else ()
+        ),
+    )
 
 
-def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguration:
-    """Parse ``ww-agentic-workflows.yaml`` notation held in memory, named ``source``."""
+def parse_yaml_text(
+    text: str,
+    source: str = "<string>",
+    *,
+    base: Path | None = None,
+    extension_rule_groups: tuple[tuple[str, RuleGroupContribution], ...] = (),
+) -> WorkflowConfiguration:
+    """Parse ``ww-agentic-workflows.yaml`` notation held in memory, named ``source``.
+
+    ``base`` is the directory rule paths resolve against; it defaults to the
+    current directory.
+    """
     raw = _raw_from_text(text, source)
     if "tasks" in raw:
         raise ConfigurationError("configuration uses legacy 'tasks'; use 'handlers'")
+    base = base if base is not None else Path.cwd()
     modes = _parse_modes(raw.get("modes", []))
     profiles = _parse_profiles(raw.get("profiles", {}))
+    rule_groups = parse_rules_root(raw.get("rules"), base, extension_rule_groups)
     handlers = _parse_handlers(raw.get("handlers", []))
     workflows_raw = _required_list(raw, "workflows", "configuration")
     global_hooks = _parse_hooks(raw.get("hooks", {}), "global", "hooks")
@@ -84,7 +113,9 @@ def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguratio
         _parse_workflow(item, f"workflows[{index}]", handlers_by_name)
         for index, item in enumerate(workflows_raw)
     )
-    workflows = _resolve_inheritance(parsed)
+    workflows, handlers = resolve_step_rules(
+        _resolve_inheritance(parsed), handlers, rule_groups, base
+    )
     return WorkflowConfiguration(
         modes,
         profiles,
@@ -92,6 +123,7 @@ def parse_yaml_text(text: str, source: str = "<string>") -> WorkflowConfiguratio
         _extend_to_heirs(global_hooks, workflows),
         workflows,
         documents=_parse_documents(raw.get("documents", [])),
+        rule_groups=_extend_groups_to_heirs(rule_groups, workflows),
     )
 
 
@@ -99,7 +131,9 @@ def load_configuration(
     path: Path, extensions: ExtensionRegistry | None = None
 ) -> WorkflowConfiguration:
     """Load and semantically validate the built-in YAML notation."""
-    return validate_configuration(YamlConfigurationLoader(path)(), extensions)
+    return validate_configuration(
+        YamlConfigurationLoader(path, extensions)(), extensions
+    )
 
 
 def load_modes(
@@ -123,6 +157,7 @@ def _raw_from_text(text: str, source: str) -> dict[str, Any]:
         "hooks",
         "workflows",
         "tasks",
+        "rules",
     }
     if "task_format" in raw:
         raise ConfigurationError(task_format_moved(source))
@@ -371,30 +406,45 @@ def _extend_to_heirs(
     Inheriting a workflow means behaving like it, so a hook written for
     ``hotfix`` also runs for a ``bugfix`` that inherits it.
     """
-    parents = {workflow.name: workflow.inherits for workflow in workflows}
-
-    def lineage(name: str) -> set[str]:
-        names: set[str] = set()
-        current: str | None = name
-        while current is not None and current not in names:
-            names.add(current)
-            current = parents.get(current)
-        return names
-
     return tuple(
-        replace(
-            hook,
-            workflow_names=(
-                *hook.workflow_names,
-                *(
-                    workflow.name
-                    for workflow in workflows
-                    if workflow.name not in hook.workflow_names
-                    and lineage(workflow.name).intersection(hook.workflow_names)
-                ),
-            ),
-        )
+        replace(hook, workflow_names=_with_heirs(hook.workflow_names, workflows))
         if hook.workflow_names
         else hook
         for hook in hooks
+    )
+
+
+def _extend_groups_to_heirs(
+    groups: tuple[RuleGroup, ...], workflows: tuple[WorkflowDefinition, ...]
+) -> tuple[RuleGroup, ...]:
+    """Let a rule group filtered to a workflow also apply to its heirs."""
+    return tuple(
+        replace(group, workflows=_with_heirs(group.workflows, workflows))
+        if group.workflows
+        else group
+        for group in groups
+    )
+
+
+def _with_heirs(
+    names: tuple[str, ...], workflows: tuple[WorkflowDefinition, ...]
+) -> tuple[str, ...]:
+    """``names`` followed by every workflow that inherits one of them."""
+    parents = {workflow.name: workflow.inherits for workflow in workflows}
+
+    def lineage(name: str) -> set[str]:
+        found: set[str] = set()
+        current: str | None = name
+        while current is not None and current not in found:
+            found.add(current)
+            current = parents.get(current)
+        return found
+
+    return (
+        *names,
+        *(
+            workflow.name
+            for workflow in workflows
+            if workflow.name not in names and lineage(workflow.name).intersection(names)
+        ),
     )

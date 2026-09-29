@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-AssertionOperator = Literal["eq"]
+AssertionOperator = Literal["eq", "empty"]
 RequestedActionKind = Literal["mcp", "prompt", "skill", "slash_command"]
 HookPhase = Literal[
     "before_start_workflow",
@@ -23,6 +23,15 @@ PlanItemPhase = Literal[
     "before_complete_workflow",
 ]
 HookScope = Literal["global", "workflow", "step"]
+# What a failed ``before_complete`` hook does: stop for the operator, as any
+# failed handler does, or send the step back to its worker to fix.
+HookFailure = Literal["fix", "operator"]
+# The outcome of one check ww ran when a step completed.
+CheckStatus = Literal["passed", "failed", "not_applicable"]
+# Where a check came from: a rule's own command or a ``fix`` hook.
+CheckSource = Literal["rule", "hook"]
+# Why a failed run failed, when the reason is not the item's own error.
+FailureKind = Literal["fix_limit"]
 ItemOperation = Literal[
     "collect", "process_item", "resolve_item", "report_item", "handle_item"
 ]
@@ -102,6 +111,7 @@ OperatorReason = Literal[
     "child_failed",
     "interrupted_command",
     "loop_limit",
+    "fix_limit",
 ]
 CALLER_ROLES: tuple[CallerRole, ...] = ("manager", "worker")
 CONTROL_VALUES: tuple[Control, ...] = (

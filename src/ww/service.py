@@ -23,9 +23,10 @@ from ww.assignments import (
     completion_window_items,
 )
 from ww.bootstrap import BootstrapCoordinator
+from ww.changes import take_mark
 from ww.child_coordination import ChildCoordinator
 from ww.children import ChildTask
-from ww.completion_artifacts import write_completion_artifacts
+from ww.completion_artifacts import rule_outcomes, write_completion_artifacts
 from ww.completion_inputs import (
     group_metadata_values,
     validate_requested_values,
@@ -77,6 +78,7 @@ from ww.results import (
     ResetResult,
     TaskStatus,
 )
+from ww.rule_checks import CheckScope, RuleChecker
 from ww.run_coordination import RunCoordinator
 from ww.runtimes import runtime_instruction
 from ww.storage import Storage
@@ -108,6 +110,7 @@ from ww.transitions import (
     materialize_item_plan,
     pause_for_agent,
     project_steps,
+    reject_completion,
     repeat_loop,
     request_loop_continue,
     request_loop_exit,
@@ -116,6 +119,7 @@ from ww.transitions import (
     settle_stale_automatic_item,
     skip_failed_item,
     supply_requested_input,
+    waive_checks,
 )
 from ww.variables import (
     BRANCH_NAMING_STRATEGY,
@@ -192,7 +196,7 @@ class WorkflowService:
         self.project_metadata_store = project_metadata or storage.project_metadata
         self.extensions = extensions or ExtensionRegistry.discover(storage.root)
         self.configuration_loader = configuration_loader or YamlConfigurationLoader(
-            storage.config_path
+            storage.config_path, self.extensions
         )
         self.documents = DocumentStore(self.storage)
         self.interactions = InteractionLog(self.storage)
@@ -228,6 +232,7 @@ class WorkflowService:
             task_values=self._runtime_values,
         )
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)
+        self.rule_checker = RuleChecker(self.tasks.write_command_output, _now)
         self.children = ChildCoordinator(
             self.tasks, self, self._start, _now, self._start_child_identity
         )
@@ -748,7 +753,13 @@ class WorkflowService:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
         if state.status == "failed":
-            if force:
+            if force and state.failure_kind == "fix_limit":
+                # Forcing past a step at its fix limit completes it without
+                # its checks, never without its work.
+                assert force_reason is not None
+                state = waive_checks(state, snapshot.plan, force_reason, _now)
+                self.commit(state, snapshot)
+            elif force:
                 if state.cursor >= len(snapshot.plan.items):
                     raise StateError("failed task has no current item to force past")
                 state = skip_failed_item(state, snapshot.plan, _now, force_reason)
@@ -852,6 +863,7 @@ class WorkflowService:
             ),
             selected_model=model if model != "auto" else None,
             selected_reasoning=reasoning if reasoning != "auto" else None,
+            change_mark=self._change_mark(state, snapshot.plan, item),
             now=_now,
         )
         self.commit(state, snapshot)
@@ -866,6 +878,12 @@ class WorkflowService:
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         items = snapshot.plan.items
+        if state.status == "failed" and state.failure_kind == "fix_limit":
+            return (
+                f"waive the failed checks of `{items[state.cursor].name}`: its "
+                "worker completes it again without them, and the artifact "
+                "records the waiver"
+            )
         if state.status in {"failed", "interrupted"}:
             if state.cursor >= len(items):
                 raise StateError(
@@ -1317,12 +1335,32 @@ class WorkflowService:
             raise StateError(
                 "children step completed without recorded children; use add-child"
             )
+        check_report = None
+        if item.checks and active_record.checks_waived is None:
+            check_report = self.rule_checker.run(
+                state, item, self._check_scope(state, snapshot.plan, item)
+            )
+            if check_report.failed:
+                # Rejected: nothing of the completion is recorded, and the
+                # step goes back to its worker, or to the operator at the limit.
+                state = reject_completion(
+                    state, snapshot.plan, item, check_report, artifact, _now
+                )
+                self.commit(state, snapshot)
+                return self.render(state, snapshot)
         updated_metadata, project_publication = self.metadata_publisher.prepare(
             task_id, state, item, task_metadata, project_metadata
         )
         promised_documents = self._promised_documents(snapshot.plan, item, state)
         artifact_reference, wrapper_artifact_reference = write_completion_artifacts(
-            self.tasks, task_id, state, snapshot, item, loop_entry, artifact
+            self.tasks,
+            task_id,
+            state,
+            snapshot,
+            item,
+            loop_entry,
+            artifact,
+            rules=rule_outcomes(state, item, check_report),
         )
         selection = _normalize_completion_selection(
             selected_agent,
@@ -1343,6 +1381,7 @@ class WorkflowService:
             clear_selected_model=selection.clear_selected_model,
             clear_selected_reasoning=selection.clear_selected_reasoning,
             summary_for_next=summary_for_next,
+            check_report=check_report,
         )
         if initialization:
             state = replace(state, pending_init_artifact=None)
@@ -1837,6 +1876,7 @@ class WorkflowService:
                 artifact["hook_phase"] = item.phase
             artifacts.append(artifact)
         item_by_id = {item.id: item for item in snapshot.plan.items}
+        listed_checks: set[str] = set()
         for record in (*state.item_executions, *state.execution_history):
             recorded = item_by_id.get(record.plan_item_id)
             if (
@@ -1860,6 +1900,26 @@ class WorkflowService:
                             "attempt": str(command.attempts),
                         }
                     )
+            for report in record.check_reports:
+                for result in report.results:
+                    for stream, reference in (
+                        ("stdout", result.stdout_ref),
+                        ("stderr", result.stderr_ref),
+                    ):
+                        # A retried record's copy in the history repeats them.
+                        if reference is None or reference in listed_checks:
+                            continue
+                        listed_checks.add(reference)
+                        artifacts.append(
+                            {
+                                "step": recorded.step,
+                                "command_output": reference,
+                                "path": str(self.storage.root / reference),
+                                "stream": stream,
+                                "check": result.id,
+                                "attempt": str(report.attempt),
+                            }
+                        )
         return tuple(artifacts)
 
     def add_item(self, task_id: str, item: WorkItem) -> WorkItem:
@@ -2413,10 +2473,30 @@ class WorkflowService:
             selected_agent=state.assignment_selected_agent,
             selected_model=state.assignment_selected_model,
             selected_reasoning=state.assignment_selected_reasoning,
+            change_mark=self._change_mark(state, snapshot.plan, item),
             now=_now,
         )
         self.commit(state, snapshot)
         return state, snapshot
+
+    def _check_scope(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> CheckScope:
+        """The directory an item's checks run in and the values they render."""
+        workspace, values = self.actions.item_scope(state, plan, item)
+        return CheckScope(workspace or self.storage.root, values)
+
+    def _change_mark(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> str | None:
+        """The tree a checked step's change set starts from, taken as it begins.
+
+        A step that already has one keeps it; a step without checks, or a
+        directory without git, has none.
+        """
+        if not item.checks or state.item_executions[state.cursor].change_mark:
+            return None
+        return take_mark(self._check_scope(state, plan, item).directory)
 
     def render(self, state: ExecutionState, snapshot: PlanSnapshot) -> Instruction:
         return self.instructions.build(state, snapshot)

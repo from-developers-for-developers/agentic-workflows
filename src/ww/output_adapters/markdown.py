@@ -27,6 +27,7 @@ from ww.instructions.commands import (
     set_item_fields_command,
     start_command,
 )
+from ww.instructions.models import FixFailure
 from ww.instructions.policy import Audience, audience
 from ww.output_adapters.base import OutputAdapter
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
@@ -55,6 +56,10 @@ class MarkdownOutputAdapter(OutputAdapter):
                 ]
             )
             return _document(lines)
+        if instruction.fix_required is not None and instruction.status != "failed":
+            _fix_required(lines, instruction)
+            _continuation(lines, instruction)
+            return _document(lines)
         if _continues_assignment(instruction):
             return _document(_next_stage(lines, instruction))
         _heading(lines, instruction)
@@ -70,6 +75,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _task_requirements(lines, instruction)
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
+        _rules(lines, instruction)
         _item_fields(lines, instruction)
         _stored_items(lines, instruction)
         _interaction(lines, instruction)
@@ -303,6 +309,7 @@ def _header(instruction: Instruction) -> Lines:
     if (
         instruction.completion_registered
         and instruction.error is None
+        and instruction.fix_required is None
         and instruction.status not in {"failed", "interrupted"}
     ):
         lines.extend(["> Completion recorded successfully by `ww`.", ""])
@@ -381,6 +388,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "child_failed": "a child task failed",
     "interrupted_command": "an automatic handler was interrupted",
     "loop_limit": "the loop reached its iteration limit",
+    "fix_limit": "the step's checks reached their fix limit",
 }
 
 
@@ -548,6 +556,7 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
         ]
     )
     _work(lines, instruction)
+    _rules(lines, instruction)
     _documents(lines, instruction)
     _loop_outcome(lines, instruction)
     _continuation(lines, instruction)
@@ -638,6 +647,86 @@ def _work(lines: Lines, instruction: Instruction) -> None:
     lines.append(instruction.action_text)
     _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
+
+
+def _rules(lines: Lines, instruction: Instruction) -> None:
+    """The rules the step's worker follows, and those ww checks at completion."""
+    if not instruction.rules or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Rules")
+    lines.append("Follow these while working. ww checks them when you complete.")
+    judged = [rule for rule in instruction.rules if not rule.has_command]
+    checked = [rule for rule in instruction.rules if rule.has_command]
+    if judged:
+        lines.append("")
+        for rule in judged:
+            scope = f" — {', '.join(rule.paths)}" if rule.paths else ""
+            lines.append(f"- `{rule.id}`{scope} — {rule.summary}")
+            if rule.interpretation:
+                lines.append(f"  {rule.interpretation}")
+    if checked:
+        lines.extend(
+            [
+                "",
+                "Checked automatically when you complete: "
+                + ", ".join(f"`{rule.id}`" for rule in checked)
+                + ".",
+            ]
+        )
+    if instruction.checks_waived is not None:
+        lines.extend(
+            [
+                "",
+                "The operator waived this step's checks: "
+                f"{instruction.checks_waived}. ww does not run them when you "
+                "complete, and the artifact records the waiver.",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "State in your artifact, under a **Rules** heading, which rules you "
+            "applied and any deviation with its reason.",
+        ]
+    )
+
+
+def _fix_required(lines: Lines, instruction: Instruction) -> None:
+    """The page after ww rejected a completion: what failed, and how to go on."""
+    fix = instruction.fix_required
+    assert fix is not None
+    failed = len(fix.failures)
+    lines.extend(
+        [
+            f"## Fix required: {failed} of {fix.checks} checks failed "
+            f"(attempt {fix.attempt} of {fix.max_fixes})",
+            "",
+            "ww did not record your completion: the checks below failed on the "
+            "files this step changed. The step is still yours.",
+        ]
+    )
+    _fix_failures(lines, fix.failures)
+    lines.extend(
+        [
+            "",
+            "Fix the causes, then complete again with a revised artifact. Your "
+            "previous artifact is kept as a draft.",
+        ]
+    )
+
+
+def _fix_failures(lines: Lines, failures: tuple[FixFailure, ...]) -> None:
+    for failure in failures:
+        _append_section(
+            lines, f"`{failure.id}`" + (" (hook)" if failure.hook else "")
+        )
+        if failure.text:
+            lines.extend([failure.text, ""])
+        if failure.command:
+            lines.append(f"Command: {failure.command}")
+        output = failure.output.strip()
+        lines.append("Output:" if output else "Output: nothing")
+        lines.extend(f"    {line}" for line in output.splitlines())
 
 
 def _outcome_effect(outcome: AssessmentOutcome) -> str:
@@ -1094,6 +1183,9 @@ def _error(lines: Lines, instruction: Instruction) -> None:
 def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.status != "failed":
         return
+    if instruction.fix_required is not None:
+        _fix_limit(lines, instruction)
+        return
     child = _failed_child(instruction)
     if child is None:
         lines.extend(["", *_failed_handler_guidance(instruction)])
@@ -1156,6 +1248,51 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
             "When the child completes, `ww` resumes the parent workflow automatically.",
         ]
     )
+
+
+def _fix_limit(lines: Lines, instruction: Instruction) -> None:
+    """A step whose checks failed as often as they allow: the operator decides."""
+    fix = instruction.fix_required
+    assert fix is not None
+    worker = (
+        instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
+    )
+    lines.extend(
+        [
+            "",
+            f"ww rejected this step's completion {fix.attempt} times; the last "
+            "attempt failed these checks:",
+        ]
+    )
+    _fix_failures(lines, fix.failures)
+    if worker:
+        lines.extend(
+            [
+                "",
+                "Stop here. Return this `ww` response to the manager: the "
+                "operator decides how the step continues.",
+            ]
+        )
+        return
+    _append_section(lines, "Operator recovery")
+    lines.extend(
+        [
+            "The step is paused and nothing else runs until the user, who is "
+            "the `ww` operator, decides. Show them the failures above, quoted, "
+            "and ask for one of these choices; do not pick for them.",
+        ]
+    )
+    for command in instruction.recovery_commands:
+        purpose = (
+            "to give the worker another round of fixes, after the cause is "
+            "understood"
+            if command.action == "retry"
+            else "to complete the step without these checks, only with the "
+            "operator's explicit approval; the artifact records the reason"
+        )
+        lines.extend(
+            ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]
+        )
 
 
 def _interrupted(lines: Lines, instruction: Instruction) -> None:
