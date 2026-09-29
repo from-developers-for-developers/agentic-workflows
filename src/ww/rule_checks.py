@@ -48,9 +48,15 @@ class CheckScope:
 
 
 class RuleChecker:
-    """Run the checks of one agent item and report every outcome."""
+    """Run the checks of one agent item and report every outcome.
 
-    def __init__(self, write_output: WriteOutput, now: Callable[[], str]) -> None:
+    Without ``write_output`` the full streams are not kept: ``ww check``
+    previews a completion and leaves nothing behind.
+    """
+
+    def __init__(
+        self, write_output: WriteOutput | None, now: Callable[[], str]
+    ) -> None:
         self.write_output = write_output
         self.now = now
 
@@ -66,9 +72,11 @@ class RuleChecker:
 
         ``reuse`` is an earlier passing report of the same completion: while
         the working tree is still at the tree that report was measured to,
-        the checks it passed are not run again.
+        the checks it passed are not run again. A check the operator waived
+        for this step does not run and is not in the report.
         """
         record = state.item_executions[state.cursor]
+        waived = dict(record.checks_waived)
         attempt = max((report.attempt for report in item_reports(state)), default=0) + 1
         mark_b = take_mark(scope.directory) if record.change_mark else None
         files, unmarked = change_set(scope.directory, record.change_mark, mark_b)
@@ -87,6 +95,7 @@ class RuleChecker:
             for index, check in enumerate(
                 (*item.checks, *record.resolved_checks), 1
             )
+            if check.id not in waived
         )
         return CheckReport(
             attempt=attempt,
@@ -155,9 +164,9 @@ class RuleChecker:
                 segment,
                 "stdout",
             )
-            if completed.stdout:
+            if completed.stdout and self.write_output is not None:
                 stdout_ref = self.write_output(address, completed.stdout)
-            if completed.stderr:
+            if completed.stderr and self.write_output is not None:
                 stderr_ref = self.write_output(
                     replace(address, stream="stderr"), completed.stderr
                 )

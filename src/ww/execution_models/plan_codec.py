@@ -252,6 +252,7 @@ def _planned_rules_from_list(value: Any, item_path: str) -> tuple[PlannedRule, .
                 has_command=expect_bool(raw["has_command"], f"{path}.has_command"),
                 max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
                 hints=_rule_hints(raw.get("hints", {}), f"{path}.hints"),
+                source=expect_optional_string(raw.get("source"), f"{path}.source"),
             )
         )
     return tuple(result)

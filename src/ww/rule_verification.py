@@ -89,6 +89,12 @@ def judged_rules(item: PlanItem) -> tuple[PlannedRule, ...]:
     return tuple(rule for rule in item.rules if not rule.has_command)
 
 
+def to_verify(item: PlanItem, record: PlanItemExecution) -> tuple[PlannedRule, ...]:
+    """The step's rules without a command that the operator did not waive."""
+    waived = {key for key, _ in record.checks_waived}
+    return tuple(rule for rule in judged_rules(item) if rule.id not in waived)
+
+
 def resolve_rules(
     item: PlanItem, automation: RuleAutomation
 ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]:
@@ -159,10 +165,11 @@ def verification_needs(
     """The rules of a completing step that a verifier must still look at.
 
     Rules checked by a resolved derived check, rules with a verdict in the
-    current hold, and rules whose proposal from this step awaits the operator
-    are done for now.
+    current hold, rules whose proposal from this step awaits the operator,
+    and rules the operator waived for this step are done for now.
     """
     covered = {rule_id for check in record.resolved_checks for rule_id in check.covers}
+    covered.update(key for key, _ in record.checks_waived)
     held = record.held_completion
     waiting = set(record.open_proposals)
     needs: list[VerificationRule] = []

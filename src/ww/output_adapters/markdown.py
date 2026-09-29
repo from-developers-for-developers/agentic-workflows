@@ -20,10 +20,13 @@ from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
     add_item_command,
     artifacts_command,
+    check_command,
+    dispute_command,
     instruction_command,
     next_command,
     remove_item_command,
     reword_item_command,
+    rule_command,
     set_item_fields_command,
     start_command,
 )
@@ -55,6 +58,9 @@ class MarkdownOutputAdapter(OutputAdapter):
                     "in it; work on the task's current run.",
                 ]
             )
+            return _document(lines)
+        if instruction.manager_only:
+            _manager_only(lines, instruction)
             return _document(lines)
         if instruction.fix_required is not None and instruction.status != "failed":
             _fix_required(lines, instruction)
@@ -399,6 +405,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "loop_limit": "the loop reached its iteration limit",
     "fix_limit": "the step's checks reached their fix limit",
     "check_proposed": "verifiers proposed checks for the step's rules",
+    "check_disputed": "the step's worker disputed a check",
 }
 
 
@@ -664,7 +671,14 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
     if not instruction.rules or instruction.item_status != "in_progress":
         return
     _append_section(lines, "Rules")
-    lines.append("Follow these while working. ww checks them when you complete.")
+    lines.extend(
+        [
+            "Follow these while working. ww checks them when you complete; run "
+            f"`{check_command(instruction.task_id)}` at any time to see the "
+            "result without completing. Read a full rule with "
+            f"`{rule_command(instruction.task_id)}`.",
+        ]
+    )
     judged = [rule for rule in instruction.rules if not rule.has_command]
     checked = [rule for rule in instruction.rules if rule.has_command]
     if judged:
@@ -695,13 +709,14 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
                 + ".",
             ]
         )
-    if instruction.checks_waived is not None:
+    for reason, waived in _waivers(instruction.checks_waived):
+        names = ", ".join(f"`{check_id}`" for check_id in waived)
         lines.extend(
             [
                 "",
-                "The operator waived this step's checks: "
-                f"{instruction.checks_waived}. ww does not run them when you "
-                "complete, and the artifact records the waiver.",
+                f"The operator waived these checks for this step ({names}): "
+                f"{reason}. ww does not run or verify them when you complete, "
+                "and the artifact records the waiver.",
             ]
         )
     lines.extend(
@@ -732,7 +747,46 @@ def _fix_required(lines: Lines, instruction: Instruction) -> None:
         [
             "",
             "Fix the causes, then complete again with a revised artifact. Your "
-            "previous artifact is kept as a draft.",
+            "previous artifact is kept as a draft. Run "
+            f"`{check_command(instruction.task_id)}` to see the checks' result "
+            "before you complete.",
+            "",
+            "If a check is wrong for this change, fixing your work around it "
+            "is not the answer: dispute it, with the evidence, and the "
+            "operator decides whether it stands:",
+            "",
+            "```console",
+            dispute_command(instruction.task_id),
+            "```",
+        ]
+    )
+
+
+def _waivers(
+    waived: tuple[tuple[str, str], ...],
+) -> list[tuple[str, list[str]]]:
+    """Waived check IDs grouped by the operator's reason, in waiver order."""
+    reasons: dict[str, list[str]] = {}
+    for check_id, reason in waived:
+        reasons.setdefault(reason, []).append(check_id)
+    return list(reasons.items())
+
+
+def _manager_only(lines: Lines, instruction: Instruction) -> None:
+    """A worker asked for an item the manager performs: no command for it."""
+    why = (
+        "is interactive: only the manager's session can talk to the operator"
+        if instruction.interactive
+        else "sets `subagents: false`"
+    )
+    lines.extend(
+        [
+            f"## `{instruction.item_name}` is the manager's",
+            "",
+            f"`{instruction.item_name}` {why}, so the manager performs it in "
+            "its own session; a worker never does. Your assignment has ended: "
+            "do not perform this item and run no further `ww` command. Return "
+            "to the manager with your last `ww` response.",
         ]
     )
 
@@ -1491,6 +1545,9 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.operator_reason == "check_proposed":
         _check_proposed(lines, instruction)
         return
+    if instruction.dispute is not None:
+        _check_disputed(lines, instruction)
+        return
     child = _failed_child(instruction)
     if child is None:
         lines.extend(["", *_failed_handler_guidance(instruction)])
@@ -1593,6 +1650,54 @@ def _fix_limit(lines: Lines, instruction: Instruction) -> None:
             "understood"
             if command.action == "retry"
             else "to complete the step without these checks, only with the "
+            "operator's explicit approval; the artifact records the reason"
+        )
+        lines.extend(
+            ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]
+        )
+
+
+def _check_disputed(lines: Lines, instruction: Instruction) -> None:
+    """The worker disputes a check: its argument, the check, the choices."""
+    dispute = instruction.dispute
+    assert dispute is not None
+    worker = (
+        instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
+    )
+    lines.extend(
+        [
+            "",
+            f"The step's worker disputes `{dispute.failure.id}`, which rejected "
+            f"completion attempt {dispute.attempt}. Its argument:",
+            "",
+            *(f"> {line}" for line in dispute.reason.splitlines()),
+        ]
+    )
+    _fix_failures(lines, (dispute.failure,))
+    if worker:
+        lines.extend(
+            [
+                "",
+                "Stop here. Return this `ww` response to the manager: the "
+                "operator decides whether the check stands.",
+            ]
+        )
+        return
+    _append_section(lines, "Operator recovery")
+    lines.extend(
+        [
+            "The step is paused and nothing else runs until the user, who is "
+            "the `ww` operator, decides. Show them the check, its output and "
+            "the worker's argument above, quoted, and ask for one of these "
+            "choices; do not pick for them.",
+        ]
+    )
+    for command in instruction.recovery_commands:
+        purpose = (
+            "to let the check stand: the worker fixes its work, and the "
+            "rejection still counts toward the fix limit"
+            if command.action == "retry"
+            else f"to waive `{dispute.failure.id}` for this step, only with the "
             "operator's explicit approval; the artifact records the reason"
         )
         lines.extend(

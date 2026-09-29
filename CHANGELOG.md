@@ -11,6 +11,17 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Rule commands: `ww check <task>` runs the active step's checks without completing or recording anything;
+  `ww dispute <task> --rule <id> --reason "<why>"` asks the operator to overrule a check that rejected the
+  completion (`operator_reason: check_disputed`; `next --retry` lets it stand, `next --force` waives it for that
+  step); `ww rule <task> <id>` shows a rule in full; `ww rules` lists the groups and their rules, and `ww rules
+  prune` deletes orphan store entries after asking. `next --yes` confirms `--retry`, `--force` or `--approve`
+  without the prompt. After a verifier's completion records the held step under `auto`, the verifier's assignment
+  ends and the manager dispatches what follows; `instruction --role worker` no longer offers a worker the
+  manager's own `subagents: false` or interactive step. `ww lint` lists disputed checks, and the step page and the
+  fix page name `check`, `rule` and `dispute`. `complete` alone exits non-zero on a fix page. Incompatible: plan
+  schema 14 (rules keep their file) and execution state 9 (waivers per check, disputes), so finish or reset open
+  tasks before updating.
 - Rules without a command are now judged after completion by a separate verification item, never by the step's
   worker: ww holds the completion, a verifier gives a verdict (a failing one is a fix round counted in `max_fixes`)
   or proposes how to check the rule, and after the operator approves the approach and then the prepared command

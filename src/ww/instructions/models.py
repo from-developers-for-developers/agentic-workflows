@@ -163,6 +163,60 @@ class FixFailure:
 
 
 @dataclass(frozen=True)
+class DisputeView:
+    """A worker's dispute of a check, as the operator decides it.
+
+    ``failure`` is the disputed check as it last failed, ``reason`` the
+    worker's argument, ``attempt`` the rejected completion it answers.
+    """
+
+    failure: FixFailure
+    reason: str
+    attempt: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "check": self.failure.to_dict(),
+            "reason": self.reason,
+            "attempt": self.attempt,
+        }
+
+
+@dataclass(frozen=True)
+class CheckPreview:
+    """What ``ww check`` found: the step's checks run now, nothing recorded.
+
+    ``failures`` are shown like a fix page; ``passed`` and ``not_applicable``
+    name the other checks; ``judged`` are the rules a verifier judges only
+    when the step completes; ``waived`` the checks the operator waived.
+    """
+
+    task_id: str
+    step: str
+    checks: int
+    failures: tuple[FixFailure, ...] = ()
+    passed: tuple[str, ...] = ()
+    not_applicable: tuple[str, ...] = ()
+    judged: tuple[str, ...] = ()
+    waived: tuple[tuple[str, str], ...] = ()
+    all_files: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            "step": self.step,
+            "checks": self.checks,
+            "passed": not self.failures,
+            "failures": [failure.to_dict() for failure in self.failures],
+            "passed_checks": list(self.passed),
+            "not_applicable": list(self.not_applicable),
+            "judged_at_completion": list(self.judged),
+            "waived": dict(self.waived),
+            "all_files": self.all_files,
+        }
+
+
+@dataclass(frozen=True)
 class VerificationRuleLine:
     """One rule on a verification page, with what the verifier must report."""
 
@@ -438,10 +492,17 @@ class Instruction:
     operator_reason: OperatorReason | None = None
     result_saved: bool | None = None
     # The rules the active step is given, and, after a rejected completion,
-    # what failed; ``checks_waived`` is the operator's reason to skip them.
+    # what failed; ``checks_waived`` are the checks the operator waived for
+    # the step, each with the reason; ``dispute`` is the worker's objection
+    # to one at a ``check_disputed`` stop.
     rules: tuple[RuleLine, ...] = ()
     fix_required: FixRequired | None = None
-    checks_waived: str | None = None
+    checks_waived: tuple[tuple[str, str], ...] = ()
+    dispute: DisputeView | None = None
+    # A worker asked for an item the manager performs itself (``subagents:
+    # false`` or ``interactive`` in the ``auto`` runtime): the page names it
+    # and offers no completion command.
+    manager_only: bool = False
     # A verification item's rules and evidence, and, at a ``check_proposed``
     # stop, the proposals the operator decides.
     verification: VerificationPage | None = None
@@ -559,7 +620,9 @@ class Instruction:
             "fix_required": (
                 self.fix_required.to_dict() if self.fix_required else None
             ),
-            "checks_waived": self.checks_waived,
+            "checks_waived": dict(self.checks_waived),
+            "dispute": self.dispute.to_dict() if self.dispute else None,
+            "manager_only": self.manager_only,
             "verification": (
                 self.verification.to_dict() if self.verification else None
             ),

@@ -12,11 +12,12 @@ import pytest
 from ww.cli import main
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
-from ww.execution_models import TaskRunAggregate
+from ww.execution_models import PlanSnapshot, TaskRunAggregate
 from ww.instructions import Instruction
 from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.rule_store import STORE_FILE, RuleStore
+from ww.rule_verification import SKIPPED_ROUND
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -638,3 +639,172 @@ def test_the_cli_refuses_a_malformed_rule_result(
 
     assert code == 1
     assert "--rule-result is not valid JSON" in capsys.readouterr().err
+
+
+PASS = {
+    "id": "develop/1",
+    "status": "not-convertible",
+    "reason": "A matter of review.",
+    "verdict": "pass",
+}
+
+
+def _index(snapshot: PlanSnapshot, name: str) -> int:
+    return next(
+        index
+        for index, item in enumerate(snapshot.plan.items)
+        if item.name == name and item.phase == "step"
+    )
+
+
+def test_an_interruption_before_the_held_completion_is_recorded_recovers_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path)
+    service, _ = _developed(root)
+
+    def interrupted(*arguments: object, **options: object) -> Instruction:
+        raise RuntimeError("the process died")
+
+    # The last verifier's results are committed; the process dies before the
+    # held completion is recorded.
+    monkeypatch.setattr(service, "_replay_held", interrupted)
+    with pytest.raises(RuntimeError, match="the process died"):
+        _report(service, PASS)
+    monkeypatch.undo()
+    state, snapshot = service.load("TASK-1")
+    develop = state.item_executions[_index(snapshot, "develop")]
+    assert develop.held_completion is not None
+    assert develop.status != "completed"
+    assert not (root / ".ww/tasks/TASK-1/runs/01-task/steps/02-develop.md").exists()
+
+    resumed = service.next("TASK-1")
+
+    assert resumed.item_name == "check"
+    assert "- `develop/1`: verified pass (by `task:develop:verify:1`)" in (
+        _artifact(root)
+    )
+    state, snapshot = service.load("TASK-1")
+    develop = state.item_executions[_index(snapshot, "develop")]
+    assert develop.status == "completed"
+    assert develop.held_completion is None
+    assert snapshot.plan_revision == 2
+    assert [item.id for item in snapshot.plan.items if item.verifies] == [
+        "task:develop:verify:1"
+    ]
+    again = service.next("TASK-1")
+    assert again.item_name == "check"
+
+
+LOOPED = f"""workflows:
+  - name: task
+    steps:
+      - rounds: ~
+        loop:
+          - name: develop
+            description: Develop it.
+            rules:
+              - {CLI}
+          - review: Review it.
+            break: Nothing is left to do.
+"""
+
+
+def test_a_loop_round_skips_the_verifier_its_reset_left_idle(tmp_path: Path) -> None:
+    root = _project(tmp_path, LOOPED)
+    service, held = _developed(root)
+    assert held.item_name == "develop-verify-1"
+    review = _report(service, PASS)
+    assert review.item_name == "review"
+    service.complete("TASK-1", artifact="Another round.", summary_for_next="More.")
+
+    again = service.next("TASK-1")
+
+    assert again.item_name == "develop"
+    assert again.item_status == "in_progress"
+    state, snapshot = service.load("TASK-1")
+    index = next(
+        index
+        for index, item in enumerate(snapshot.plan.items)
+        if item.verifies is not None
+    )
+    record = state.item_executions[index]
+    assert record.verification == ()
+    assert (record.status, record.result) == ("completed", SKIPPED_ROUND)
+
+
+AFTER_HOOK = f"""workflows:
+  - name: task
+    steps:
+      - name: develop
+        description: Develop it.
+        rules:
+          - {CLI}
+        hooks:
+          after_complete:
+            - record-notes: Record what you learned.
+      - check: Check it.
+"""
+
+
+def test_a_replayed_completion_ends_the_verifiers_assignment(tmp_path: Path) -> None:
+    root = _project(tmp_path, AFTER_HOOK)
+    service = _started(root, runtime="auto")
+    service.next("TASK-1", caller_role="manager")
+    (root / "app.py").write_text("print(1)\n", encoding="utf-8")
+    service.complete(
+        "TASK-1", artifact="Built.", summary_for_next="Built.", caller_role="worker"
+    )
+    verifier = service.next("TASK-1", caller_role="manager")
+    assert verifier.item_name == "develop-verify-1"
+
+    done = service.complete(
+        "TASK-1",
+        artifact="Findings.",
+        rule_results=(json.dumps(PASS),),
+        caller_role="worker",
+    )
+
+    assert done.control == "handoff_manager"
+    assert done.next_role == "manager"
+    assert "This assignment is complete. Stop here" in _markdown(done)
+    state, snapshot = service.load("TASK-1")
+    assert state.assignment_item_id is None
+    assert state.active_item_id is None
+    assert snapshot.plan.items[state.cursor].name == "record-notes"
+    assert "- `develop/1`: verified pass" in _artifact(root)
+    hook = service.next("TASK-1", caller_role="manager")
+    assert hook.item_name == "record-notes"
+    assert hook.item_status == "in_progress"
+    assert hook.assignment_items == ("record-notes",)
+
+
+def test_yes_approves_without_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    service, _ = _developed(root, "print(1)  # foo\n")
+    _report(service, _approach())
+
+    def no_prompt(prompt: str) -> str:
+        raise AssertionError("--yes must not ask")
+
+    monkeypatch.setattr("builtins.input", no_prompt)
+
+    code = main(
+        [
+            "--root",
+            str(root),
+            "next",
+            "TASK-1",
+            "--approve",
+            rule_text_hash(CLI)[:12],
+            "--yes",
+        ]
+    )
+
+    assert code == 0
+    error = capsys.readouterr().err
+    assert "approach for rule" in error
+    assert "Approved with --yes." in error
+    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "approach-approved"

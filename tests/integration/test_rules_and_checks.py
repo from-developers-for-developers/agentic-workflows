@@ -327,17 +327,27 @@ def test_force_after_the_fix_limit_waives_the_checks(tmp_path: Path) -> None:
 
     assert waived.item_name == "develop"
     assert waived.item_status == "in_progress"
-    assert waived.checks_waived == "Checked by hand."
+    assert waived.checks_waived == (
+        ("docs/header", "Checked by hand."),
+        ("develop/1", "Checked by hand."),
+        ("develop/sh", "Checked by hand."),
+    )
     assert waived.fix_required is None
     rendered = MarkdownOutputAdapter().render_instruction(waived)
-    assert "The operator waived this step's checks: Checked by hand." in rendered
+    assert (
+        "The operator waived these checks for this step (`docs/header`, "
+        "`develop/1`, `develop/sh`): Checked by hand." in rendered
+    )
     accepted = _complete(service, "Done anyway.")
     assert accepted.item_name == "check"
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
     assert "- `docs/header`: failed" in artifact
     # The waiver covers the verification too: the judged rule is self-declared.
     assert "- `develop/1`: self-declared" in artifact
-    assert "Checks waived by the operator: Checked by hand." in artifact
+    assert (
+        "Checks waived by the operator (`docs/header`, `develop/1`, "
+        "`develop/sh`): Checked by hand." in artifact
+    )
     assert "Completions rejected before this one: 3." in artifact
 
 

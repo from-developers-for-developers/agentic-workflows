@@ -820,6 +820,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `loop_limit` | A loop reached its `loop_max_times` iteration limit. |
 | `fix_limit` | A step's check failed as many times as its `max_fixes` allows; see [Rules and checks](#rules-and-checks). |
 | `check_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
+| `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
 replays it without asking anyone, so the task stays `blocked` for the manager.
@@ -1160,7 +1161,9 @@ workflows:
 
 Every agent step lists its rules after the work instruction, each with its ID,
 its globs, and its first sentence; the IDs of rules with a check are collected
-on one line, "Checked automatically when you complete". The page asks the
+on one line, "Checked automatically when you complete". The section names
+`ww check <task>`, to see the checks' result at any time without completing,
+and `ww rule <task> <id>`, to read a rule in full. The page asks the
 worker to say in its artifact, under a **Rules** heading, which rules it
 applied and any deviation. `init`, hooks, and the workflow summary get no
 rules. In the `auto` runtime the worker's page carries the section. JSON
@@ -1194,6 +1197,9 @@ chooses:
 - `next --force --force-reason "<why>"` waives the checks: the worker completes
   the step once more without them, and its artifact records the waiver.
 
+Both ask for confirmation; `next --yes` confirms for an agent that carries out
+what the operator said.
+
 A hook without `on_failure: fix` fails as before, stopping the task with
 `operator_reason: handler_failed`.
 
@@ -1225,9 +1231,9 @@ rule with its status, `passed`, `not applicable`, `failed`, which only a
 waiver lets through, `verified pass (by <verification item>)` for a rule a
 verifier judged, or `passed (check <name>)` for one a derived check covers;
 hook checks carry `(hook)`. A rule is `self-declared` only when the operator
-waived the checks, which skips its verification too. The section ends with
-the waiver's reason, if any, and how many completions ww rejected before this
-one.
+waived it, which skips its verification too. The section ends with the
+waived IDs and the operator's reason for each, if any, and how many
+completions ww rejected before this one.
 
 ### How a rule becomes a check
 
@@ -1279,8 +1285,54 @@ the safety. Once nothing is undecided, ww runs the step's checks again,
 including a newly approved one, which may send the step back, then records
 the held completion as submitted. The cost is two operator stops per rule
 wording, once ever, batched per step. `ww lint` lists store entries whose
-wording no rule has any more and entries awaiting a decision; ww removes
-nothing itself.
+wording no rule has any more and entries awaiting a decision; only
+`ww rules prune`, after listing them and asking the operator, deletes the
+orphans.
+
+When the last verifier's completion records the held completion under
+`auto`, that verifier's assignment ends there: the step's automatic follow-ups
+run, and its next agent item, such as an agent-owned `after_complete` hook,
+waits for the manager to dispatch as a new assignment.
+
+### Checking early and disputing a check
+
+A worker need not complete to learn what the checks say: `ww check <task>`
+runs the step's checks against what it changed so far and prints the
+failures as the fix page would, or `All checks pass`, plus the rules a
+verifier will judge once it completes. Nothing is recorded: no attempt
+counts, and the output is not kept. It exits 1 when a check fails.
+
+A check can be wrong for a change. After a rejection, instead of bending its
+work around the check, the worker may dispute it with
+`ww dispute <task> --rule <id> --reason "<why>"`, naming the ID the fix page
+shows. The task stops with `operator_reason: check_disputed`; the page shows
+the check, its last output, and the worker's argument. The operator decides:
+
+- `next --retry`: the check stands. The rejection still counts toward
+  `max_fixes`, and the step goes back to its worker with the fix page.
+- `next --force --force-reason "<why>"`: the check is waived for this step
+  only; the worker completes again without it, and the artifact records the
+  waiver.
+
+A dispute changes nothing in the rule-automation store. Every dispute is also
+kept in `.ww/rule-disputes.json`, and `ww lint` lists each disputed ID with
+how often and where it was last disputed, since a check disputed again and
+again deserves a look at its wording or command.
+
+### Reading the rules
+
+`ww rule <task> <id>` prints one rule or check of a task as the task's plan
+froze it: its full text, globs, rule file, command, and the steps that carry
+it, and for a rule without a command what the store knows about its wording.
+`ww rules` lists the project's declared groups, with their filters and each
+rule's ID and first sentence, and each step's own rules; `--json` gives the
+same for a program. `ww rules prune` deletes store entries no declared rule
+needs any more, after listing them and asking; `--yes` skips the question.
+
+In the `auto` runtime a worker that keeps asking for its page after its
+assignment ended is not given the manager's own work: for a step with
+`subagents: false` or `interactive: true`, `instruction --role worker` names
+the step as the manager's and offers no completion command.
 
 ### Rules from extensions
 

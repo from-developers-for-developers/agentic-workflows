@@ -40,6 +40,8 @@ class PlannedRule:
 
     The text and its hash are frozen so a run keeps delivering the wording it
     started with; ``has_command`` says whether ww checks it mechanically.
+    ``source`` is the rule file, relative to the project root when it lies
+    inside it, or ``None`` for a rule written in the step's YAML.
     """
 
     id: str
@@ -50,6 +52,7 @@ class PlannedRule:
     has_command: bool = False
     max_fixes: int = 1
     hints: RuleHints = RuleHints()
+    source: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -63,6 +66,8 @@ class PlannedRule:
         }
         if self.hints.to_dict():
             data["hints"] = self.hints.to_dict()
+        if self.source is not None:
+            data["source"] = self.source
         return data
 
 

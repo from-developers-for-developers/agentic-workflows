@@ -1448,3 +1448,14 @@ ww owns and commits, never configuration, so YAML and rule files are never
 rewritten. A failing verdict is a rejection like a failed check and counts
 toward the same limit; when nothing is left to verify or decide, ww records
 the held completion by replaying it with the saved arguments.
+
+The agent facing a check has two commands of its own. `check` runs the
+active step's checks now, through a checker without an output writer, so it
+records nothing and can be run as often as wanted; `dispute` records the
+agent's argument against a check that rejected it and stops the task for the
+operator, whose `--retry` lets the check stand and whose `--force` waives that
+one check for the step. Waivers are kept per check on the item record, and
+disputes in a log beside the store, so a check that is disputed often shows
+up in `lint`. `rule` and `rules` are read-only views over the frozen plan and
+the store; only `rules prune`, which deletes orphan store entries after
+asking, writes.

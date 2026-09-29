@@ -27,16 +27,17 @@ def rule_outcomes(
     verifier judged reports the verdict and the verification item; any other
     rule without a check is self-declared: the worker states in its result
     how it followed it. A check reports its result in ``report``, or, when
-    the operator waived the checks, in the last report that ran. Rejections
-    an operator retry moved into the history still count.
+    the operator waived it, in the last report that ran it. Rejections an
+    operator retry moved into the history still count.
     """
     record = state.item_executions[state.cursor]
     if not item.rules and not item.checks:
         return None
-    ran = report
-    if ran is None and record.check_reports:
-        ran = record.check_reports[-1]
-    results = {result.id: result for result in ran.results} if ran else {}
+    results = {
+        result.id: result
+        for ran in (*record.check_reports, *((report,) if report else ()))
+        for result in ran.results
+    }
     checked = {check.id for check in item.checks}
     derived = {
         rule_id: check.id

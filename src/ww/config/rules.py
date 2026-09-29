@@ -81,6 +81,17 @@ def rule_summary(text: str) -> str:
     return normalize_rule_text(first)
 
 
+def rule_source(source: str | None, root: Path) -> str | None:
+    """A rule file as ww shows it: relative to ``root`` when it lies inside."""
+    if source is None:
+        return None
+    path = Path(source)
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def looks_like_reference(value: str) -> bool:
     """Whether a bare step entry names a group or file rather than a sentence."""
     return bool(_REFERENCE.fullmatch(value)) and not value.endswith(

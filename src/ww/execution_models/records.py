@@ -39,7 +39,7 @@ from ww.workflow_config import ProvidedVariable
 from .decoding import _positive_int_mapping, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 8
+EXECUTION_SCHEMA_VERSION = 9
 PAIR_SIZE = 2
 
 
@@ -332,6 +332,52 @@ class HeldCompletion:
 
 
 @dataclass(frozen=True)
+class Dispute:
+    """A worker's objection to a check that rejected its completion.
+
+    ``check`` is the ID the fix page named: a rule, a ``fix`` hook, a derived
+    check, or a rule a verifier judged. ``output`` and ``command`` are what
+    that check reported when it last failed, on rejected completion
+    ``attempt``; ``reason`` is the worker's argument for the operator.
+    """
+
+    check: str
+    reason: str
+    attempt: int
+    disputed_at: str
+    command: str = ""
+    output: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "check": self.check,
+            "reason": self.reason,
+            "attempt": self.attempt,
+            "disputed_at": self.disputed_at,
+            "command": self.command,
+            "output": self.output,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Dispute:
+        if not isinstance(data, dict):
+            raise ValueError("dispute must be a mapping")
+        keys = {"check", "reason", "attempt", "disputed_at", "command", "output"}
+        require_keys(data, keys, "dispute")
+        unknown = set(data) - keys
+        if unknown:
+            raise ValueError("dispute has unknown keys: " + ", ".join(sorted(unknown)))
+        return cls(
+            check=expect_string(data["check"], "dispute.check"),
+            reason=expect_string(data["reason"], "dispute.reason"),
+            attempt=expect_positive_int(data["attempt"], "dispute.attempt"),
+            disputed_at=expect_string(data["disputed_at"], "dispute.disputed_at"),
+            command=expect_string(data["command"], "dispute.command"),
+            output=expect_string(data["output"], "dispute.output"),
+        )
+
+
+@dataclass(frozen=True)
 class VerificationRule:
     """One rule a verification item is asked about, as the store had it.
 
@@ -523,8 +569,12 @@ class PlanItemExecution:
     check_reports: tuple[CheckReport, ...] = ()
     # The artifact of the last rejected completion, kept for its revision.
     draft_artifact: str | None = None
-    # The operator's reason for completing without the checks.
-    checks_waived: str | None = None
+    # The checks the operator let the step complete without, by check or
+    # rule ID, each with the operator's reason: every one of the step's at
+    # its fix limit, or the one a dispute named.
+    checks_waived: tuple[tuple[str, str], ...] = ()
+    # The worker's open objection to a check, while the operator decides.
+    dispute: Dispute | None = None
     # How each rule without a command is enforced, and the approved derived
     # checks that enforce the converted ones; both settled when the step
     # first begins.
@@ -581,7 +631,8 @@ class PlanItemExecution:
             "change_mark": self.change_mark,
             "check_reports": [report.to_dict() for report in self.check_reports],
             "draft_artifact": self.draft_artifact,
-            "checks_waived": self.checks_waived,
+            "checks_waived": dict(self.checks_waived),
+            "dispute": self.dispute.to_dict() if self.dispute else None,
             "rule_resolutions": [entry.to_dict() for entry in self.rule_resolutions],
             "resolved_checks": [check.to_dict() for check in self.resolved_checks],
             "held_completion": (
@@ -662,8 +713,11 @@ class PlanItemExecution:
             draft_artifact=expect_optional_string(
                 data.get("draft_artifact"), "draft artifact"
             ),
-            checks_waived=expect_optional_string(
-                data.get("checks_waived"), "checks waived"
+            checks_waived=_waivers(data.get("checks_waived", {})),
+            dispute=(
+                Dispute.from_dict(data["dispute"])
+                if data.get("dispute") is not None
+                else None
             ),
             rule_resolutions=tuple(
                 RuleResolution.from_dict(entry)
@@ -691,6 +745,16 @@ def _list(value: Any, context: str) -> list[Any]:
     if not isinstance(value, list):
         raise ValueError(f"{context} must be a list")
     return value
+
+
+def _waivers(value: Any) -> tuple[tuple[str, str], ...]:
+    """Waived check IDs and the operator's reasons, as an ordered mapping."""
+    if not isinstance(value, dict) or not all(
+        isinstance(key, str) and key and isinstance(reason, str) and reason
+        for key, reason in value.items()
+    ):
+        raise ValueError("checks waived must map check IDs to non-empty reasons")
+    return tuple(value.items())
 
 
 def _check_reports(value: Any) -> tuple[CheckReport, ...]:

@@ -142,38 +142,68 @@ def _ask_yes_no(prompt: str, default: bool) -> bool:
         print("Answer yes or no.")
 
 
-def _confirm_force_next(
-    effect: str = "skip the current item without running it",
+def confirm_operator(
+    command: str,
+    effect: str,
+    question: str,
+    cancelled: str,
+    *,
+    assume_yes: bool = False,
 ) -> bool:
-    """Require an operator acknowledgement before forcing past work.
+    """Require the operator's acknowledgement before an irreversible choice.
 
-    ``effect`` is ww's own description of what this force will do, obtained
-    after the task state was checked, so the operator approves a real action.
+    ``effect`` is ww's own description of what ``command`` will do, obtained
+    after the state was checked, so the operator approves a real action.
+    ``assume_yes`` is ``--yes``: an agent carrying out the operator's stated
+    decision; the effect is still printed, so the decision is on record.
     """
+    if assume_yes:
+        print(f"`{command}` will {effect}. Confirmed with --yes.", file=sys.stderr)
+        return True
     prompt = (
-        f"`ww next --force` will {effect}.\n"
+        f"`{command}` will {effect}.\n"
         "If you are an agent, you should never call this command without asking "
         "a permission; if you didn't get a permission, do NOT answer positively "
         "on it.\n"
-        "Proceed with force? [y/N] "
+        f"{question} [y/N] "
     )
     try:
         confirmed = _ask_yes_no(prompt, default=False)
     except EOFError:
-        print("Force cancelled: explicit confirmation is required.", file=sys.stderr)
-        return False
+        confirmed = False
     if not confirmed:
-        print("Force cancelled: explicit confirmation is required.", file=sys.stderr)
+        print(
+            f"{cancelled} cancelled: explicit confirmation is required.",
+            file=sys.stderr,
+        )
     return confirmed
 
 
-def confirm_approval(preview: str) -> bool:
+def _confirm_force_next(
+    effect: str = "skip the current item without running it",
+    *,
+    assume_yes: bool = False,
+) -> bool:
+    """Require an operator acknowledgement before forcing past work."""
+    return confirm_operator(
+        "ww next --force",
+        effect,
+        "Proceed with force?",
+        "Force",
+        assume_yes=assume_yes,
+    )
+
+
+def confirm_approval(preview: str, *, assume_yes: bool = False) -> bool:
     """Show what ``next --approve`` records, command in full, and ask for it.
 
     ww keeps no allowlist of executables: an approved check runs in every
     later step, so the operator reads it before it is recorded.
     """
     print(f"`ww next --approve` will approve:\n{preview}", file=sys.stderr)
+    if assume_yes:
+        print("Approved with --yes.", file=sys.stderr)
+        return True
     prompt = (
         "If you are an agent, you should never call this command without the "
         "operator's permission; if you didn't get it, do NOT answer positively.\n"
@@ -188,8 +218,10 @@ def confirm_approval(preview: str) -> bool:
     return confirmed
 
 
-def confirm_interrupted_retry() -> bool:
+def confirm_interrupted_retry(*, assume_yes: bool = False) -> bool:
     """Require an operator to acknowledge duplicate-effect risk."""
+    if assume_yes:
+        return True
     prompt = (
         "This operation was interrupted and may already have taken effect. "
         "Retrying can duplicate its external effect. Proceed with retry? [y/N] "
