@@ -17,7 +17,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   (`operator_reason: check_proposed`; `next --approve`, `--approach`, `--pick`, or `--force`), the command is kept
   in `ww-rule-automation.json` at the project root and runs for that rule wording from then on. `complete` gains
   `--rule-result` and `--check-result` for verifiers; `ww lint` lists orphan and pending store entries.
-  Incompatible: plan schema 13 and execution state 8, so finish or reset open tasks before updating.
+  Incompatible: plan schema 13 and execution state 8, so finish or reset open tasks before updating. `7c40e11`
 
 ## 2026-09-29
 
