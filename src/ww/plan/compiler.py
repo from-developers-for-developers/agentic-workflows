@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ww.actions import (
+    Commands,
     DefinedAction,
     PlannedAction,
     Prompt,
@@ -31,7 +32,10 @@ from ww.variables import CORE_VARIABLE_NAMES, compile_variable_values
 from ww.workflow_config import (
     INIT_STEP_NAME,
     HandlerDefinition,
+    HookDefinition,
     ProvidedVariable,
+    RuleDefinition,
+    RuleGroupRef,
     StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
@@ -53,7 +57,13 @@ from .constructs import (
     normalize_construct,
     step_annotations,
 )
-from .models import PlanItem, WorkflowPlan, number_step_paths
+from .models import (
+    PlanItem,
+    PlannedCheck,
+    PlannedRule,
+    WorkflowPlan,
+    number_step_paths,
+)
 
 
 @dataclass(frozen=True)
@@ -209,6 +219,9 @@ class WorkflowPlanCompiler:
         )
         self.construct_planners = construct_planners or builtin_construct_planners()
         self.construct_normalizer = construct_normalizer
+        # Step paths whose agent item took the step's ``fix`` hooks as checks;
+        # those hooks are then not compiled as hook items as well.
+        self._checked_steps: set[tuple[str, str]] = set()
 
     def compile(self, workflow_name: str) -> WorkflowPlan:
         try:
@@ -561,6 +574,11 @@ class WorkflowPlanCompiler:
                     annotations=annotations,
                 ),
             )
+            if step.rules and (workflow.name, path) not in self._checked_steps:
+                raise ConfigurationError(
+                    f"step {step.name!r} in workflow {workflow.name!r} declares "
+                    "rules, but has no agent work of its own to deliver them to"
+                )
             values = available_after
         return values
 
@@ -640,6 +658,13 @@ class WorkflowPlanCompiler:
                 step_path,
                 _logical_step_paths(workflow.steps),
             )
+            if (
+                applies
+                and hook.on_failure == "fix"
+                and (workflow.name, step_path) in self._checked_steps
+            ):
+                # Compiled into the step's checks instead.
+                continue
             if applies:
                 output_names = self._append_handler(
                     items,
@@ -795,6 +820,18 @@ class WorkflowPlanCompiler:
                 for name in dependencies(value)
             )
         )
+        rules: tuple[PlannedRule, ...] = ()
+        checks: tuple[PlannedCheck, ...] = ()
+        if (
+            phase == "step"
+            and owner == "agent"
+            and not summary
+            and step.name != INIT_STEP_NAME
+        ):
+            rules, checks = self._step_rules(
+                workflow, step, step_path, allowed, workdir
+            )
+            self._checked_steps.add((workflow.name, step_path))
         ordinal = (
             sum(
                 1
@@ -870,12 +907,132 @@ class WorkflowPlanCompiler:
                 assessment_stops=annotations.assessment_stops,
                 assessment_parent=annotations.assessment_parent,
                 assessment_outcome=annotations.assessment_outcome,
+                rules=rules,
+                checks=checks,
             )
         )
         return (
             *(item.name for item in handler.provide),
             *handler.outputs,
         )
+
+    def _step_rules(
+        self,
+        workflow: WorkflowDefinition,
+        step: StepDefinition,
+        step_path: str,
+        allowed: set[str],
+        workdir: Workdir,
+    ) -> tuple[tuple[PlannedRule, ...], tuple[PlannedCheck, ...]]:
+        """The rules delivered to one agent step and the checks ww runs for it.
+
+        Root groups whose filters admit the step come first, in declaration
+        order, then the step's own entries; a group the step names applies
+        regardless of its filters. The first occurrence of a rule ID wins.
+        Rule checks come in rule order, followed by the step's ``fix`` hooks.
+        """
+        precise = _logical_step_paths(workflow.steps)
+        groups = self.configuration.rule_groups_by_name
+        collected: list[RuleDefinition] = [
+            rule
+            for group in self.configuration.rule_groups
+            if group.applies_to(workflow.name, step.name, step_path, precise)
+            for rule in group.rules
+        ]
+        for entry in step.rules:
+            if isinstance(entry, RuleGroupRef):
+                collected.extend(groups[entry.name].rules)
+            elif isinstance(entry, RuleDefinition):
+                collected.append(entry)
+            else:  # pragma: no cover - the parser resolves every entry
+                raise AssertionError(f"unresolved step rule {entry.value!r}")
+        unique: dict[str, RuleDefinition] = {}
+        for rule in collected:
+            unique.setdefault(rule.id, rule)
+        default_fixes = self.project_config.max_fixes
+        rules = tuple(
+            PlannedRule(
+                id=rule.id,
+                summary=rule.summary,
+                text=rule.text,
+                text_hash=rule.text_hash,
+                paths=rule.paths,
+                has_command=rule.check is not None,
+                max_fixes=rule.max_fixes or default_fixes,
+                hints=rule.hints,
+            )
+            for rule in unique.values()
+        )
+        checks = [
+            PlannedCheck(
+                id=rule.id,
+                source="rule",
+                summary=rule.summary,
+                command=self._plan_check(rule.check, allowed, workdir, rule.id),
+                paths=rule.paths,
+                max_fixes=rule.max_fixes or default_fixes,
+            )
+            for rule in unique.values()
+            if rule.check is not None
+        ]
+        taken = {check.id for check in checks}
+        for hook in self._fix_hooks(workflow, step, step_path, precise):
+            handler, _, _ = self.actions._handler(hook.handler, resolve_reference=True)
+            action = handler.action
+            if action is None or action.identifier != "cli" or handler.provide:
+                raise ConfigurationError(
+                    f"{hook.path or 'hook'}: on_failure: fix requires a command "
+                    "handler that asks the agent for no values"
+                )
+            check_id = _unique_check_id(
+                f"{step.name}/{_hook_label(handler)}", taken
+            )
+            taken.add(check_id)
+            assert isinstance(action.payload, Commands)
+            checks.append(
+                PlannedCheck(
+                    id=check_id,
+                    source="hook",
+                    summary=handler.description or handler.name,
+                    command=self._plan_check(
+                        action.payload, allowed, workdir, check_id
+                    ),
+                    max_fixes=default_fixes,
+                )
+            )
+        return rules, tuple(checks)
+
+    def _fix_hooks(
+        self,
+        workflow: WorkflowDefinition,
+        step: StepDefinition,
+        step_path: str,
+        precise: frozenset[str],
+    ) -> tuple[HookDefinition, ...]:
+        """The ``before_complete`` hooks with ``on_failure: fix`` for one step."""
+        return tuple(
+            hook
+            for hook in (
+                *self.configuration.global_hooks,
+                *workflow.hooks,
+                *step.hooks,
+            )
+            if hook.phase == "before_complete"
+            and hook.on_failure == "fix"
+            and hook.applies_to(workflow.name, step.name, step_path, precise)
+        )
+
+    def _plan_check(
+        self, command: Commands, allowed: set[str], workdir: Workdir, check_id: str
+    ) -> Commands:
+        try:
+            planned = self.actions.plan_action(
+                DefinedAction("cli", command), allowed, workdir
+            )
+        except ConfigurationError as error:
+            raise ConfigurationError(f"check {check_id!r}: {error}") from error
+        assert isinstance(planned, Commands)
+        return planned
 
     def _resolve_profile(
         self, name: str | None, description: str | None
@@ -1014,3 +1171,23 @@ def _logical_step_paths(
         for nested in (step.child_steps, step.loop_steps, item_steps):
             paths.update(_logical_step_paths(nested, path))
     return frozenset(paths)
+
+
+def _hook_label(handler: HandlerDefinition) -> str:
+    """A readable check name for a hook: its name, or the program it runs."""
+    if not handler.name.startswith("inline-"):
+        return handler.name
+    assert handler.action is not None and isinstance(handler.action.payload, Commands)
+    command = handler.action.payload.commands[0]
+    if command.shell is not None:
+        return "shell"
+    return Path(command.argv[0]).name or "command"
+
+
+def _unique_check_id(candidate: str, taken: set[str]) -> str:
+    if candidate not in taken:
+        return candidate
+    ordinal = 2
+    while f"{candidate}-{ordinal}" in taken:
+        ordinal += 1
+    return f"{candidate}-{ordinal}"

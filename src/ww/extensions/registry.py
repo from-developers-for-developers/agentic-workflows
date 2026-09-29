@@ -28,6 +28,7 @@ from ww.extensions.api import (
     ExtensionCommand,
     ExtensionContext,
     ExtensionHandler,
+    RuleGroupContribution,
 )
 from ww.extensions.store import ExtensionStore
 from ww.project_config import (
@@ -372,6 +373,20 @@ class ExtensionRegistry:
                 if value is not None:
                     result[variable.name] = value
         return result
+
+    def rule_groups(self) -> tuple[tuple[str, RuleGroupContribution], ...]:
+        """The rule groups of the extensions the root lists, with their IDs.
+
+        Only an extension with a section in the root settings, even an empty
+        one, contributes rules, so installing one never changes what a
+        project's steps are told; loading those is the cost of asking.
+        """
+        return tuple(
+            (identifier, group)
+            for identifier in self.identifiers
+            if self.config.sections.lists(identifier)
+            for group in self.get(identifier).rules
+        )
 
     def configured(self, project: str | None = None) -> tuple[str, ...]:
         """The extensions with a settings section at the root or in ``project``.

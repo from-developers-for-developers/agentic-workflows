@@ -9,7 +9,13 @@ from .compiler import (
     WorkflowPlanCompiler,
     compile_workflow_plan,
 )
-from .models import PlanItem, WorkflowPlan, number_step_paths
+from .models import (
+    PlanItem,
+    PlannedCheck,
+    PlannedRule,
+    WorkflowPlan,
+    number_step_paths,
+)
 
 __all__ = [
     "ExecutionHints",
@@ -18,6 +24,8 @@ __all__ = [
     "PlanOperation",
     "PlanCompilationOptions",
     "PlanItem",
+    "PlannedCheck",
+    "PlannedRule",
     "WorkflowPlan",
     "WorkflowHandoff",
     "WorkflowPlanCompiler",

@@ -11,7 +11,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ww.contracts import CommandStatus, ExecutionStatus, ItemStatus, StepStatus
+from ww.contracts import (
+    CheckSource,
+    CheckStatus,
+    CommandStatus,
+    ExecutionStatus,
+    FailureKind,
+    ItemStatus,
+    StepStatus,
+)
 from ww.validation import (
     expect_bool,
     expect_literal,
@@ -26,7 +34,105 @@ from ww.workflow_config import ProvidedVariable
 
 from .decoding import _positive_int_mapping, _variables
 
-EXECUTION_SCHEMA_VERSION = 6
+EXECUTION_SCHEMA_VERSION = 7
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    """The outcome of one check ww ran when a step's worker completed it.
+
+    ``output`` is the tail of what the command printed; the full streams are
+    command-output artifacts at ``stdout_ref`` and ``stderr_ref``.
+    """
+
+    id: str
+    source: CheckSource
+    status: CheckStatus
+    command: str = ""
+    output: str = ""
+    exit_code: int | None = None
+    stdout_ref: str | None = None
+    stderr_ref: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "source": self.source,
+            "status": self.status,
+            "command": self.command,
+            "output": self.output,
+            "exit_code": self.exit_code,
+            "stdout_ref": self.stdout_ref,
+            "stderr_ref": self.stderr_ref,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> CheckResult:
+        if not isinstance(data, dict):
+            raise ValueError("check result must be a mapping")
+        require_keys(data, {"id", "source", "status"}, "check result")
+        return cls(
+            id=expect_string(data["id"], "check result.id"),
+            source=expect_literal(data["source"], CheckSource, "check result.source"),
+            status=expect_literal(data["status"], CheckStatus, "check result.status"),
+            command=expect_string(data.get("command", ""), "check result.command"),
+            output=expect_string(data.get("output", ""), "check result.output"),
+            exit_code=expect_optional_int(
+                data.get("exit_code"), "check result.exit_code"
+            ),
+            stdout_ref=expect_optional_string(
+                data.get("stdout_ref"), "check result.stdout_ref"
+            ),
+            stderr_ref=expect_optional_string(
+                data.get("stderr_ref"), "check result.stderr_ref"
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class CheckReport:
+    """Every check of one completion attempt, in plan order.
+
+    ``mark`` is the tree the change set was measured to; ``all_files`` says
+    there was no change set (no git) and globs selected every project file.
+    """
+
+    attempt: int
+    checked_at: str
+    results: tuple[CheckResult, ...] = ()
+    mark: str | None = None
+    all_files: bool = False
+
+    @property
+    def failed(self) -> tuple[CheckResult, ...]:
+        return tuple(result for result in self.results if result.status == "failed")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "attempt": self.attempt,
+            "checked_at": self.checked_at,
+            "results": [result.to_dict() for result in self.results],
+            "mark": self.mark,
+            "all_files": self.all_files,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> CheckReport:
+        if not isinstance(data, dict):
+            raise ValueError("check report must be a mapping")
+        require_keys(data, {"attempt", "checked_at", "results"}, "check report")
+        results = data["results"]
+        if not isinstance(results, list):
+            raise ValueError("check report results must be a list")
+        return cls(
+            attempt=expect_positive_int(data["attempt"], "check report.attempt"),
+            checked_at=expect_string(data["checked_at"], "check report.checked_at"),
+            results=tuple(CheckResult.from_dict(item) for item in results),
+            mark=expect_optional_string(data.get("mark"), "check report.mark"),
+            all_files=expect_bool(
+                data.get("all_files", False), "check report.all_files"
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -126,6 +232,30 @@ class PlanItemExecution:
     selected_agent: str | None = None
     selected_model: str | None = None
     selected_reasoning: str | None = None
+    # The worktree's tree when the step began, the base of its change set;
+    # ``None`` without git, or for a step without checks.
+    change_mark: str | None = None
+    # Every completion attempt ww checked, rejected ones first; the number of
+    # failed reports is the number of fixes the worker was sent back for.
+    check_reports: tuple[CheckReport, ...] = ()
+    # The artifact of the last rejected completion, kept for its revision.
+    draft_artifact: str | None = None
+    # The operator's reason for completing without the checks.
+    checks_waived: str | None = None
+
+    @property
+    def fix_attempts(self) -> int:
+        """How many completions of this step ww rejected for failed checks."""
+        return sum(1 for report in self.check_reports if report.failed)
+
+    def check_failures(self, check_id: str) -> int:
+        """How many rejected completions this check failed."""
+        return sum(
+            1
+            for report in self.check_reports
+            for result in report.failed
+            if result.id == check_id
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -152,6 +282,10 @@ class PlanItemExecution:
             "selected_agent": self.selected_agent,
             "selected_model": self.selected_model,
             "selected_reasoning": self.selected_reasoning,
+            "change_mark": self.change_mark,
+            "check_reports": [report.to_dict() for report in self.check_reports],
+            "draft_artifact": self.draft_artifact,
+            "checks_waived": self.checks_waived,
         }
 
     @classmethod
@@ -220,7 +354,21 @@ class PlanItemExecution:
             selected_reasoning=expect_optional_string(
                 data.get("selected_reasoning"), "selected reasoning"
             ),
+            change_mark=expect_optional_string(data.get("change_mark"), "change mark"),
+            check_reports=_check_reports(data.get("check_reports", [])),
+            draft_artifact=expect_optional_string(
+                data.get("draft_artifact"), "draft artifact"
+            ),
+            checks_waived=expect_optional_string(
+                data.get("checks_waived"), "checks waived"
+            ),
         )
+
+
+def _check_reports(value: Any) -> tuple[CheckReport, ...]:
+    if not isinstance(value, list):
+        raise ValueError("check reports must be a list")
+    return tuple(CheckReport.from_dict(item) for item in value)
 
 
 @dataclass(frozen=True)
@@ -438,6 +586,8 @@ class ExecutionState:
     # The operator said they are done for now.  The agent stops until they
     # return; any further word or answer of theirs lifts it.
     operator_paused: bool = False
+    # Why a ``failed`` run failed when that is not the item's own error.
+    failure_kind: FailureKind | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -487,6 +637,7 @@ class ExecutionState:
             if self.pending_project_metadata
             else None,
             "operator_paused": self.operator_paused,
+            "failure_kind": self.failure_kind,
         }
 
     @classmethod
@@ -621,5 +772,12 @@ class ExecutionState:
             else None,
             operator_paused=expect_bool(
                 data.get("operator_paused", False), "operator paused"
+            ),
+            failure_kind=(
+                None
+                if data.get("failure_kind") is None
+                else expect_literal(
+                    data["failure_kind"], FailureKind, "execution state.failure_kind"
+                )
             ),
         )

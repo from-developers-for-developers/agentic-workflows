@@ -14,7 +14,12 @@ from ww.plan import compile_workflow_plan
 from ww.project_config import load_project_config
 
 EXAMPLES = Path(__file__).parents[2] / "documentation/examples.md"
-_BLOCK = re.compile(r"^## (\d+)\. .*?$|^```(yaml|json)\n(.*?)^```$", re.S | re.M)
+_BLOCK = re.compile(
+    r"^## (\d+)\. .*?$|^```(yaml|json|markdown)\n(.*?)^```$", re.S | re.M
+)
+# A Markdown block whose first line names a file is a file the example uses,
+# such as a rule file; it is written into the project before loading.
+_FILE_HEADER = re.compile(r"<!-- (\S+) -->\n")
 # Skills and slash commands the examples refer to; a project would discover
 # them in its agent directory.
 SKILLS = ("review-code",)
@@ -39,6 +44,12 @@ def test_example_loads_and_compiles(
 ) -> None:
     yaml_blocks = [text for kind, text in blocks if kind == "yaml"]
     json_blocks = [text for kind, text in blocks if kind == "json"]
+    for kind, text in blocks:
+        header = _FILE_HEADER.match(text) if kind == "markdown" else None
+        if header is not None:
+            target = tmp_path / header.group(1)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text[header.end() :], encoding="utf-8")
     assert yaml_blocks or json_blocks, f"example {number} has no configuration"
     skills = tmp_path / ".codex/skills"
     for name in SKILLS:

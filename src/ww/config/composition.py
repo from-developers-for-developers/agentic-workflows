@@ -16,7 +16,15 @@ overrides an earlier one and a lower level overrides the ones above it:
   handlers that reuse an overridden one still find it earlier in the list;
 - ``hooks`` add each phase's entries after those already folded, since hook
   entries carry no name to override;
+- ``rules`` groups replace a group of the same name as a whole;
 - any other key takes the later value.
+
+Rule paths, in the root ``rules`` mapping and in a step's ``rules`` list,
+resolve next to the file that declares them. A file outside the repo file's
+directory has its relative rule paths rewritten against that directory, so
+the parser resolves every one against a single base. An absolute rule path is
+accepted and reported as a notice, because it ties the configuration to one
+machine.
 
 A level extends the ones above unless one of its files says ``extends: false``;
 then folding starts again at that level.
@@ -28,6 +36,7 @@ written to disk.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -84,6 +93,8 @@ class ComposedConfiguration:
     overrides: tuple[Override, ...] = ()
     sources: tuple[str, ...] = ()
     ignored: tuple[str, ...] = ()
+    # One notice per absolute rule path, in the files folded in.
+    rule_notices: tuple[str, ...] = ()
 
     @property
     def notices(self) -> tuple[str, ...]:
@@ -91,6 +102,7 @@ class ComposedConfiguration:
             *(f"{label} is not applied: a lower level sets extends: false."
               for label in self.ignored),
             *(override.notice for override in self.overrides),
+            *self.rule_notices,
         )
 
 
@@ -98,7 +110,7 @@ class ComposedConfiguration:
 class _Level:
     """One level's files, imports first, and whether it extends the ones above."""
 
-    files: tuple[tuple[str, dict[str, Any]], ...]
+    files: tuple[tuple[str, dict[str, Any], Path], ...]
     extends: bool
 
 
@@ -125,23 +137,41 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
             raw = root if isinstance(root, dict) else {}
             if "task_format" in raw:
                 raise ConfigurationError(task_format_moved(label))
-            return ComposedConfiguration(text, raw, sources=(label,))
+            return ComposedConfiguration(
+                text,
+                raw,
+                sources=(label,),
+                rule_notices=_absolute_rule_notices(raw, label),
+            )
     seen = {level.path.resolve() for level in present}
     levels = [_read_level(level, base, seen) for level in present]
     start = max(
         (index for index, level in enumerate(levels) if not level.extends),
         default=0,
     )
+    applied = [file for level in levels[start:] for file in level.files]
+    group_names = {
+        name
+        for _, raw, _ in applied
+        if isinstance(raw.get("rules"), dict)
+        for name in raw["rules"]
+    }
     composer = _Composer()
-    for level in levels[start:]:
-        for file_label, raw in level.files:
-            composer.apply(raw, file_label)
+    notices: list[str] = []
+    for file_label, raw, file in applied:
+        notices.extend(_absolute_rule_notices(raw, file_label))
+        composer.apply(
+            _rebase_rule_paths(raw, file.parent, base, group_names), file_label
+        )
     return ComposedConfiguration(
         yaml.safe_dump(composer.raw, sort_keys=False, allow_unicode=True),
         composer.raw,
         tuple(composer.overrides),
-        tuple(file_label for level in levels[start:] for file_label, _ in level.files),
-        tuple(file_label for level in levels[:start] for file_label, _ in level.files),
+        tuple(file_label for file_label, _, _ in applied),
+        tuple(
+            file_label for level in levels[:start] for file_label, _, _ in level.files
+        ),
+        tuple(notices),
     )
 
 
@@ -158,11 +188,11 @@ def _read_level(
         )
     imports = root.pop(IMPORTS_KEY, [])
     files = [
-        (file_label, _read_import(file, file_label))
+        (file_label, _read_import(file, file_label), file)
         for file_label, file in _import_files(imports, level.path, base, seen)
     ]
-    files.append((root_label, root))
-    extends = [_extends(raw, file_label) for file_label, raw in files]
+    files.append((root_label, root, level.path))
+    extends = [_extends(raw, file_label) for file_label, raw, _ in files]
     return _Level(tuple(files), False not in extends)
 
 
@@ -251,6 +281,8 @@ class _Composer:
                     self._merge_profiles(current, value, label)
                 case "hooks", dict(), dict():
                     _merge_hooks(current, value)
+                case "rules", dict(), dict():
+                    self._merge_rule_groups(current, value, label)
                 case _:
                     self._record(key, None, key, label)
                     self.raw[key] = value
@@ -261,7 +293,7 @@ class _Composer:
         if key in _NAMED_CATALOGS and isinstance(value, list):
             for entry in value:
                 self._origins[(key, _entry_name(entry))] = label
-        elif key == "profiles" and isinstance(value, dict):
+        elif key in {"profiles", "rules"} and isinstance(value, dict):
             for name in value:
                 self._origins[(key, name)] = label
 
@@ -296,6 +328,16 @@ class _Composer:
             merged[name] = description
             self._origins[("profiles", name)] = label
 
+    def _merge_rule_groups(
+        self, merged: dict[str, Any], groups: dict[str, Any], label: str
+    ) -> None:
+        """A later file's group replaces the earlier group of that name whole."""
+        for name, group in groups.items():
+            if name in merged:
+                self._record("rules", name, "rule group", label)
+            merged[name] = group
+            self._origins[("rules", name)] = label
+
     def _record(self, key: str, name: str | None, kind: str, label: str) -> None:
         self.overrides.append(
             Override(
@@ -326,3 +368,61 @@ def _merge_hooks(merged: dict[str, Any], hooks: dict[str, Any]) -> None:
             merged[phase] = [*existing, *entries]
         else:
             merged[phase] = entries
+
+
+def _rule_path_lists(raw: dict[str, Any]) -> list[list[Any]]:
+    """Every list of rule items in one file: root groups and step ``rules``."""
+    found: list[list[Any]] = []
+    groups = raw.get("rules")
+    if isinstance(groups, dict):
+        for group in groups.values():
+            if isinstance(group, list):
+                found.append(group)
+            elif isinstance(group, dict) and isinstance(group.get("rules"), list):
+                found.append(group["rules"])
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if key == "rules" and isinstance(nested, list):
+                    found.append(nested)
+                else:
+                    walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    walk(raw.get("workflows"))
+    walk(raw.get("handlers"))
+    return found
+
+
+def _absolute_rule_notices(raw: dict[str, Any], label: str) -> tuple[str, ...]:
+    return tuple(
+        f"rule path {item} in {label} is absolute; it applies only on this machine."
+        for items in _rule_path_lists(raw)
+        for item in items
+        if isinstance(item, str) and Path(item).is_absolute() and Path(item).exists()
+    )
+
+
+def _rebase_rule_paths(
+    raw: dict[str, Any], directory: Path, base: Path, group_names: set[str]
+) -> dict[str, Any]:
+    """Rewrite ``raw``'s relative rule paths from ``directory`` to ``base``.
+
+    Only strings that exist as paths next to the declaring file and are not
+    group names change; a sentence stays the rule text it is.
+    """
+    if directory.resolve() == base.resolve():
+        return raw
+    for items in _rule_path_lists(raw):
+        for index, item in enumerate(items):
+            if (
+                isinstance(item, str)
+                and item not in group_names
+                and not Path(item).is_absolute()
+                and (directory / item).exists()
+            ):
+                items[index] = os.path.relpath(directory / item, base)
+    return raw

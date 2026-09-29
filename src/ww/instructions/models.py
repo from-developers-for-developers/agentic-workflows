@@ -105,6 +105,76 @@ class ConversationEntry:
 
 
 @dataclass(frozen=True)
+class RuleLine:
+    """One rule the active step is given, as its page lists it.
+
+    ``has_command`` rules are checked by ww when the step completes; the
+    others the worker follows and reports on in its artifact.
+    """
+
+    id: str
+    summary: str
+    paths: tuple[str, ...] = ()
+    has_command: bool = False
+    hook: bool = False
+    interpretation: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "summary": self.summary,
+            "paths": list(self.paths),
+            "has_command": self.has_command,
+            "hook": self.hook,
+            "interpretation": self.interpretation,
+        }
+
+
+@dataclass(frozen=True)
+class FixFailure:
+    """One check that failed when the worker last completed the step."""
+
+    id: str
+    hook: bool
+    text: str | None
+    command: str
+    output: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "hook": self.hook,
+            "text": self.text,
+            "command": self.command,
+            "output": self.output,
+        }
+
+
+@dataclass(frozen=True)
+class FixRequired:
+    """ww refused the step's completion: the failed checks and the count.
+
+    ``attempt`` is the number of rejected completions so far and
+    ``max_fixes`` the most any of the step's checks allows.
+    """
+
+    attempt: int
+    max_fixes: int
+    checks: int
+    failures: tuple[FixFailure, ...]
+    draft_artifact: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "attempt": self.attempt,
+            "max_fixes": self.max_fixes,
+            "checks": self.checks,
+            "failures": [failure.to_dict() for failure in self.failures],
+            "draft_artifact": self.draft_artifact,
+        }
+
+
+@dataclass(frozen=True)
 class Instruction:
     """A presentation-ready view derived only from persisted execution state."""
 
@@ -231,6 +301,11 @@ class Instruction:
     # Set exactly when ``control`` is ``awaiting_operator``.
     operator_reason: OperatorReason | None = None
     result_saved: bool | None = None
+    # The rules the active step is given, and, after a rejected completion,
+    # what failed; ``checks_waived`` is the operator's reason to skip them.
+    rules: tuple[RuleLine, ...] = ()
+    fix_required: FixRequired | None = None
+    checks_waived: str | None = None
     # Internal capability markers let presentation and service refresh paths
     # avoid rediscovering a saved plan or matching built-in action names.
     is_child_workflow_control: bool = False
@@ -339,4 +414,9 @@ class Instruction:
             "control": self.control,
             "operator_reason": self.operator_reason,
             "result_saved": self.result_saved,
+            "rules": [rule.to_dict() for rule in self.rules],
+            "fix_required": (
+                self.fix_required.to_dict() if self.fix_required else None
+            ),
+            "checks_waived": self.checks_waived,
         }

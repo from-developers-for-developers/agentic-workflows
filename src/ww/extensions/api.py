@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The contract a ww extension is written against.
 
-An extension adds handlers, modes, commands, and core-variable overrides to
-ww. It is identified by a ``vendor/name`` pair and is addressed from
+An extension adds handlers, modes, commands, core-variable overrides, and
+rule groups to ww. It is identified by a ``vendor/name`` pair and is addressed from
 ``ww-agentic-workflows.yaml`` by its fully qualified reference, never by a bare name:
 
 ```yaml
@@ -66,6 +66,17 @@ as a Git worktree, may declare ``reserved_paths``. ww asks configured
 extensions for those paths before handing out a generated task ID, so an ID
 whose worktree still exists on disk is never reused for an unrelated task.
 
+Rule groups
+-----------
+
+An extension may ship rule groups in ``rules``: each a
+:class:`RuleGroupContribution` naming the group, its rule files or
+directories as absolute paths (``Path(__file__).parent / "rules"``) or other
+group names, and optional ``workflows``/``steps`` filters. A project gets them
+by listing the extension in its root settings ``extensions``, even with an
+empty section; they come before the project's own groups, and a name the
+project also declares is an error.
+
 Branch strategies
 -----------------
 
@@ -97,9 +108,10 @@ from types import MappingProxyType
 from typing import Literal
 
 from ww.extensions.store import ExtensionStore
+from ww.validation import NAME_PATTERN as _GROUP_NAME
 from ww.validation import is_strict_int
 from ww.variables import CORE_VARIABLE_NAMES
-from ww.workflow_config import ModeDefinition, ProvidedVariable
+from ww.workflow_config import ModeDefinition, ProvidedVariable, RuleHints
 
 __all__ = [
     "EXTENSION_API_VERSION",
@@ -112,6 +124,8 @@ __all__ = [
     "ExtensionVariable",
     "ModeDefinition",
     "ProvidedVariable",
+    "RuleGroupContribution",
+    "RuleHints",
 ]
 
 EXTENSION_API_VERSION = 1
@@ -331,6 +345,44 @@ class ExtensionVariable:
 
 
 @dataclass(frozen=True)
+class RuleGroupContribution:
+    """A rule group an extension ships, before it is resolved.
+
+    ``items`` are absolute paths to rule files or directories, or the names
+    of other groups; an extension builds its paths from its own module file,
+    for example ``Path(__file__).parent / "rules"``.
+    """
+
+    name: str
+    items: tuple[Path | str, ...]
+    workflows: tuple[str, ...] | None = None
+    steps: tuple[str, ...] | None = None
+    hints: RuleHints = RuleHints()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not _GROUP_NAME.fullmatch(self.name):
+            raise ValueError("rule group name must be a normalized name")
+        if not isinstance(self.items, tuple) or not self.items:
+            raise ValueError("rule group items must be a non-empty tuple")
+        for item in self.items:
+            if isinstance(item, Path):
+                if not item.is_absolute():
+                    raise ValueError("rule group paths must be absolute")
+            elif not isinstance(item, str) or not _GROUP_NAME.fullmatch(item):
+                raise ValueError(
+                    "rule group items must be absolute paths or group names"
+                )
+        for label, names in (("workflows", self.workflows), ("steps", self.steps)):
+            if names is not None and (
+                not isinstance(names, tuple)
+                or not all(isinstance(name, str) and name for name in names)
+            ):
+                raise ValueError(f"rule group {label} must be a tuple of names")
+        if not isinstance(self.hints, RuleHints):
+            raise TypeError("rule group hints must be RuleHints")
+
+
+@dataclass(frozen=True)
 class Extension:
     """A vendor's contribution of handlers, modes, commands, and overrides."""
 
@@ -349,6 +401,9 @@ class Extension:
     # Names accepted by ``start --branch-strategy``, given the extension's
     # settings.  ``None`` when the extension does not name branches.
     branch_strategies: Callable[[Mapping[str, object]], tuple[str, ...]] | None = None
+    # Rule groups the extension ships; a project that configures the
+    # extension gets them under the root ``rules`` by these names.
+    rules: tuple[RuleGroupContribution, ...] = ()
 
     def __post_init__(self) -> None:
         if self.reserved_paths is not None and not callable(self.reserved_paths):
@@ -372,6 +427,7 @@ class Extension:
             ("modes", self.modes, ModeDefinition),
             ("commands", self.commands, ExtensionCommand),
             ("variables", self.variables, ExtensionVariable),
+            ("rules", self.rules, RuleGroupContribution),
         ):
             if not isinstance(values, tuple):
                 raise TypeError(f"extension {label} must be a tuple")

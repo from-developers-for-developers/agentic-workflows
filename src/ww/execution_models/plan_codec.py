@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from ww.actions import Commands, actions
 from ww.contracts import (
+    CheckSource,
     ChildOperation,
     ExecutionKind,
     ItemAssignment,
@@ -20,7 +22,7 @@ from ww.contracts import (
     PlanItemPhase,
 )
 from ww.operations import decode_operation
-from ww.plan import PlanItem, WorkflowPlan
+from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
 from ww.validation import (
     expect_bool,
     expect_literal,
@@ -37,6 +39,7 @@ from ww.workflow_config import (
     ItemFieldUpdate,
     MetadataScope,
     ProvidedVariable,
+    RuleHints,
     SavedMetadata,
 )
 from ww.workspace import Workdir
@@ -196,7 +199,84 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         assessment_outcome=expect_optional_string(
             raw.get("assessment_outcome"), "assessment outcome"
         ),
+        rules=_planned_rules_from_list(raw.get("rules", []), item_path),
+        checks=_planned_checks_from_list(raw.get("checks", []), item_path),
     )
+
+
+def _planned_rules_from_list(value: Any, item_path: str) -> tuple[PlannedRule, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{item_path}.rules must be a list")
+    result = []
+    for index, raw in enumerate(value):
+        path = f"{item_path}.rules[{index}]"
+        if not isinstance(raw, dict):
+            raise ValueError(f"{path} must be an object")
+        require_keys(
+            raw,
+            {"id", "summary", "text", "text_hash", "paths", "has_command", "max_fixes"},
+            path,
+        )
+        result.append(
+            PlannedRule(
+                id=expect_string(raw["id"], f"{path}.id"),
+                summary=expect_string(raw["summary"], f"{path}.summary"),
+                text=expect_string(raw["text"], f"{path}.text"),
+                text_hash=expect_string(raw["text_hash"], f"{path}.text_hash"),
+                paths=_string_list(raw["paths"], f"{path}.paths"),
+                has_command=expect_bool(raw["has_command"], f"{path}.has_command"),
+                max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
+                hints=_rule_hints(raw.get("hints", {}), f"{path}.hints"),
+            )
+        )
+    return tuple(result)
+
+
+def _rule_hints(value: Any, path: str) -> RuleHints:
+    if not isinstance(value, dict) or not set(value) <= {
+        "agent",
+        "model",
+        "reasoning",
+    }:
+        raise ValueError(f"{path} must be an object of agent, model, reasoning")
+    return RuleHints(
+        expect_optional_string(value.get("agent"), f"{path}.agent"),
+        expect_optional_string(value.get("model"), f"{path}.model"),
+        expect_optional_string(value.get("reasoning"), f"{path}.reasoning"),
+    )
+
+
+def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{item_path}.checks must be a list")
+    result = []
+    for index, raw in enumerate(value):
+        path = f"{item_path}.checks[{index}]"
+        if not isinstance(raw, dict):
+            raise ValueError(f"{path} must be an object")
+        require_keys(
+            raw, {"id", "source", "summary", "command", "paths", "max_fixes"}, path
+        )
+        command = raw["command"]
+        if not isinstance(command, dict):
+            raise ValueError(f"{path}.command must be an object")
+        decoded = actions.get("cli").decode(command)
+        if not isinstance(decoded, Commands):  # pragma: no cover - cli contract
+            raise ValueError(f"{path}.command is not a command")
+        result.append(
+            PlannedCheck(
+                id=expect_string(raw["id"], f"{path}.id"),
+                source=cast(
+                    CheckSource,
+                    expect_literal(raw["source"], CheckSource, f"{path}.source"),
+                ),
+                summary=expect_string(raw["summary"], f"{path}.summary"),
+                command=decoded,
+                paths=_string_list(raw["paths"], f"{path}.paths"),
+                max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
+            )
+        )
+    return tuple(result)
 
 
 def _provided_variables_from_list(

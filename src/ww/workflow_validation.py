@@ -19,6 +19,7 @@ from ww.workflow_config import (
     INIT_STEP_PROMPT,
     HandlerDefinition,
     HookDefinition,
+    RuleHints,
     StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
@@ -126,6 +127,7 @@ def validate_configuration(
         known_workflows,
         expected_scope="global",
     )
+    _validate_rule_groups(normalized, all_steps, known_workflows)
     _validate_workflow_boundary_hooks(normalized)
     _validate_hook_references(normalized)
     _validate_recommendations(normalized)
@@ -342,19 +344,71 @@ def _validate_hooks(
             raise ConfigurationError(
                 f"{hook.path or 'hook'} cannot filter a workflow boundary by step"
             )
-        if known_workflows is not None:
-            unknown_workflows = set(hook.workflow_names) - known_workflows
-            if unknown_workflows:
+        if hook.on_failure == "fix":
+            if hook.phase != "before_complete":
                 raise ConfigurationError(
-                    f"{hook.path or 'hook'} references unknown workflow(s): "
-                    + ", ".join(sorted(unknown_workflows))
+                    f"{hook.path or 'hook'}: on_failure: fix is only valid on "
+                    "before_complete hooks"
                 )
-        unknown_steps = set(hook.step_names) - known_steps
-        if unknown_steps:
+            if isinstance(hook.handler.operation, WorkflowHandoff):
+                raise ConfigurationError(
+                    f"{hook.path or 'hook'}: on_failure: fix is not valid on a "
+                    "workflow transition"
+                )
+        _validate_filters(
+            hook.path or "hook",
+            hook.workflow_names,
+            hook.step_names,
+            known_steps,
+            known_workflows,
+        )
+
+
+def _validate_filters(
+    label: str,
+    workflow_names: tuple[str, ...],
+    step_names: tuple[str, ...],
+    known_steps: set[str],
+    known_workflows: set[str] | None,
+) -> None:
+    """Reject ``workflows``/``steps`` filters naming nothing that exists."""
+    if known_workflows is not None:
+        unknown_workflows = set(workflow_names) - known_workflows
+        if unknown_workflows:
             raise ConfigurationError(
-                f"{hook.path or 'hook'} references unknown step(s): "
-                + ", ".join(sorted(unknown_steps))
+                f"{label} references unknown workflow(s): "
+                + ", ".join(sorted(unknown_workflows))
             )
+    unknown_steps = set(step_names) - known_steps
+    if unknown_steps:
+        raise ConfigurationError(
+            f"{label} references unknown step(s): " + ", ".join(sorted(unknown_steps))
+        )
+
+
+def _validate_rule_groups(
+    configuration: WorkflowConfiguration,
+    known_steps: set[str],
+    known_workflows: set[str],
+) -> None:
+    """A rule group's filters name workflows and steps that exist, as a hook's do."""
+    _unique((group.name for group in configuration.rule_groups), "rule group")
+    for group in configuration.rule_groups:
+        _validate_filters(
+            f"rule group {group.name!r}",
+            group.workflows or (),
+            group.steps or (),
+            known_steps,
+            known_workflows,
+        )
+        _validate_rule_hints(group.hints, f"rule group {group.name!r}")
+        for rule in group.rules:
+            _validate_rule_hints(rule.hints, f"rule {rule.id!r}")
+
+
+def _validate_rule_hints(hints: RuleHints, path: str) -> None:
+    if hints.agent == "auto":
+        raise ConfigurationError(f"{path}.agent must not be 'auto'")
 
 
 def _validate_hook_references(configuration: WorkflowConfiguration) -> None:

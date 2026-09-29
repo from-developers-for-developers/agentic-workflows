@@ -13,10 +13,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
-    from ww.actions import DefinedAction
+    from ww.actions import Commands, DefinedAction
     from ww.operations import ChildWorkflowRun, WorkflowHandoff
 
 from ww.contracts import (
+    HookFailure,
     HookPhase,
     HookScope,
     ItemAssignment,
@@ -250,6 +251,32 @@ class HandlerDefinition:
         )
 
 
+def step_filter_matches(
+    workflow_names: tuple[str, ...] | None,
+    step_names: tuple[str, ...] | None,
+    workflow_name: str,
+    step_name: str,
+    step_path: str,
+    precise_step_paths: frozenset[str] = frozenset(),
+) -> bool:
+    """Whether ``workflows``/``steps`` filters admit one step of one workflow.
+
+    ``None`` admits everything; a selector that is a precise logical path
+    matches that path, any other matches the step's own name. Hooks and rule
+    groups share this matching so a filter means the same in both.
+    """
+    logical_path = step_path.replace("/{item}", "")
+    step_matches = step_names is None or any(
+        logical_path == selector
+        if selector in precise_step_paths
+        else step_name == selector
+        for selector in step_names
+    )
+    return (workflow_names is None or workflow_name in workflow_names) and (
+        step_matches
+    )
+
+
 @dataclass(frozen=True)
 class HookDefinition:
     phase: HookPhase
@@ -258,6 +285,9 @@ class HookDefinition:
     step_names: tuple[str, ...] = ()
     scope: HookScope = "global"
     path: str = ""
+    # ``fix`` turns a failed ``before_complete`` hook into a rejected
+    # completion the step's worker fixes, instead of an operator stop.
+    on_failure: HookFailure = "operator"
 
     def applies_to(
         self,
@@ -266,15 +296,123 @@ class HookDefinition:
         step_path: str,
         precise_step_paths: frozenset[str] = frozenset(),
     ) -> bool:
-        logical_path = step_path.replace("/{item}", "")
-        step_matches = not self.step_names or any(
-            logical_path == selector
-            if selector in precise_step_paths
-            else step_name == selector
-            for selector in self.step_names
+        return step_filter_matches(
+            self.workflow_names or None,
+            self.step_names or None,
+            workflow_name,
+            step_name,
+            step_path,
+            precise_step_paths,
         )
-        return (not self.workflow_names or workflow_name in self.workflow_names) and (
-            step_matches
+
+
+@dataclass(frozen=True)
+class RuleHints:
+    """The worker a rule asks to be judged by: agent, model, and reasoning.
+
+    Each field is ``None`` when the rule leaves it to its group or the step.
+    """
+
+    agent: str | None = None
+    model: str | None = None
+    reasoning: str | None = None
+
+    def overlay(self, other: RuleHints) -> RuleHints:
+        """These hints with every field ``other`` sets replacing this one's."""
+        return RuleHints(
+            other.agent if other.agent is not None else self.agent,
+            other.model if other.model is not None else self.model,
+            other.reasoning if other.reasoning is not None else self.reasoning,
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            name: value
+            for name, value in (
+                ("agent", self.agent),
+                ("model", self.model),
+                ("reasoning", self.reasoning),
+            )
+            if value is not None
+        }
+
+
+@dataclass(frozen=True)
+class RuleDefinition:
+    """One rule: text the step's agent follows, and optionally its check.
+
+    ``id`` is ``<group>/<file stem>`` for a rule reached through a group and
+    ``<step>/<ordinal>`` or ``<step>/<file stem>`` for a step's own entry.
+    ``text_hash`` identifies the wording regardless of whitespace, so derived
+    knowledge about a rule follows its text rather than its file.
+    """
+
+    id: str
+    text: str
+    summary: str
+    text_hash: str
+    paths: tuple[str, ...] = ()
+    check: Commands | None = None
+    max_fixes: int | None = None
+    hints: RuleHints = RuleHints()
+    # The rule file, or ``None`` for a rule written inline in YAML.
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class RuleGroupRef:
+    """A step's reference to a root rule group by name."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class UnresolvedStepRule:
+    """A bare string in a step's ``rules`` list, before the parser resolves it.
+
+    It becomes a group reference, the rules of a file or directory, or the
+    literal text of a rule; no normalized configuration keeps one.
+    """
+
+    value: str
+    step: str
+    ordinal: int
+
+
+StepRule = RuleDefinition | RuleGroupRef | UnresolvedStepRule
+
+
+@dataclass(frozen=True)
+class RuleGroup:
+    """A named set of rules and where they apply on their own.
+
+    ``workflows`` and ``steps`` filter like a global hook's, except that
+    ``None`` admits every workflow or step while an empty tuple admits none:
+    such a group applies only where a step names it.
+    """
+
+    name: str
+    rules: tuple[RuleDefinition, ...] = ()
+    workflows: tuple[str, ...] | None = None
+    steps: tuple[str, ...] | None = None
+    hints: RuleHints = RuleHints()
+    # Where the group was declared: the YAML, or the extension that ships it.
+    origin: str = "configuration"
+
+    def applies_to(
+        self,
+        workflow_name: str,
+        step_name: str,
+        step_path: str,
+        precise_step_paths: frozenset[str] = frozenset(),
+    ) -> bool:
+        return step_filter_matches(
+            self.workflows,
+            self.steps,
+            workflow_name,
+            step_name,
+            step_path,
+            precise_step_paths,
         )
 
 
@@ -292,6 +430,8 @@ class StepDefinition(HandlerDefinition):
     profile: str | None = None
     profile_description: str | None = None
     hooks: tuple[HookDefinition, ...] = ()
+    # The step's own rules, and the root groups it names, in declaration order.
+    rules: tuple[StepRule, ...] = ()
     # The compiler flattens nested steps while preserving their parent identity.
     child_steps: tuple[StepDefinition, ...] = ()
     loop_steps: tuple[StepDefinition, ...] = ()
@@ -420,6 +560,12 @@ class WorkflowConfiguration:
     global_hooks: tuple[HookDefinition, ...]
     workflows: tuple[WorkflowDefinition, ...]
     documents: tuple[DocumentDefinition, ...] = ()
+    # Root rule groups, extension groups first, then YAML order.
+    rule_groups: tuple[RuleGroup, ...] = ()
+
+    @property
+    def rule_groups_by_name(self) -> dict[str, RuleGroup]:
+        return {group.name: group for group in self.rule_groups}
 
     @property
     def documents_by_name(self) -> dict[str, DocumentDefinition]:
@@ -436,3 +582,12 @@ class WorkflowConfiguration:
     @property
     def workflows_by_name(self) -> dict[str, WorkflowDefinition]:
         return {workflow.name: workflow for workflow in self.workflows}
+
+
+def every_step(configuration: WorkflowConfiguration) -> Iterator[StepDefinition]:
+    """Every step of every workflow and of every step-shaped root handler."""
+    for workflow in configuration.workflows:
+        yield from _every_step(workflow.steps)
+    for handler in configuration.handlers:
+        if isinstance(handler, StepDefinition):
+            yield from _every_step((handler,))

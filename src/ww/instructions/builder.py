@@ -55,8 +55,11 @@ from .commands import (
 from .models import (
     ConversationEntry,
     DocumentTask,
+    FixFailure,
+    FixRequired,
     Instruction,
     RecoveryCommand,
+    RuleLine,
     StepHandover,
 )
 from .policy import (
@@ -213,7 +216,10 @@ class InstructionBuilder:
             control=control,
             operator_reason=operator_reason(state, plan),
             result_saved=(
-                _result_saved(state, plan)
+                # A rejected completion keeps only a draft of the result.
+                False
+                if state.failure_kind == "fix_limit"
+                else _result_saved(state, plan)
                 if state.status in {"failed", "interrupted"} or automatic_running
                 else None
             ),
@@ -444,6 +450,14 @@ class InstructionBuilder:
             ),
             operation_id=record.operation_id if record else None,
             recovery_commands=(recovery_commands(state.task_id) if current else ()),
+            # At the fix limit the operator decides on what the checks said.
+            fix_required=(
+                fix_required(current, record)
+                if state.failure_kind == "fix_limit"
+                and current is not None
+                and record is not None
+                else None
+            ),
         )
 
     def _child_control(
@@ -618,7 +632,54 @@ class InstructionBuilder:
                 span.to_dict() if span and item.id == span_ids[0] else None
             ),
             continues_assignment=item.id in span_ids[1:],
+            rules=rule_lines(item),
+            fix_required=fix_required(item, record),
+            checks_waived=record.checks_waived,
         )
+
+
+def rule_lines(item: PlanItem) -> tuple[RuleLine, ...]:
+    """The rules a step's page lists: its rules, then its ``fix`` hooks."""
+    return (
+        *(
+            RuleLine(rule.id, rule.summary, rule.paths, rule.has_command)
+            for rule in item.rules
+        ),
+        *(
+            RuleLine(check.id, check.summary, has_command=True, hook=True)
+            for check in item.checks
+            if check.source == "hook"
+        ),
+    )
+
+
+def fix_required(item: PlanItem, record: PlanItemExecution) -> FixRequired | None:
+    """What the step's worker must fix after ww rejected its last completion.
+
+    A waiver lifts it: the operator decided the step completes without them.
+    """
+    if not record.check_reports or record.checks_waived is not None:
+        return None
+    report = record.check_reports[-1]
+    if not report.failed:
+        return None
+    texts = {rule.id: rule.text for rule in item.rules}
+    return FixRequired(
+        attempt=record.fix_attempts,
+        max_fixes=max((check.max_fixes for check in item.checks), default=1),
+        checks=len(report.results),
+        failures=tuple(
+            FixFailure(
+                result.id,
+                result.source == "hook",
+                texts.get(result.id),
+                result.command,
+                result.output,
+            )
+            for result in report.failed
+        ),
+        draft_artifact=record.draft_artifact,
+    )
 
 
 def _base(

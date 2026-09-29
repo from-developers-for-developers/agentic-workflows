@@ -30,6 +30,13 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
     assert config.loop_max_times == 3
+    assert config.max_fixes == 3
+
+
+def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
+    path = write(tmp_path, {"max_fixes": 5})
+
+    assert load_project_config(path).max_fixes == 5
 
 
 def test_global_loop_limit_loads_from_project_config(tmp_path: Path) -> None:
@@ -120,6 +127,8 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"loop_max_times": 0}, "loop_max_times must be a positive integer"),
         ({"loop_max_times": True}, "loop_max_times must be a positive integer"),
         ({"loop_max_times": "3"}, "loop_max_times must be a positive integer"),
+        ({"max_fixes": 0}, "max_fixes must be a positive integer"),
+        ({"max_fixes": False}, "max_fixes must be a positive integer"),
     ],
 )
 def test_a_malformed_file_is_rejected(

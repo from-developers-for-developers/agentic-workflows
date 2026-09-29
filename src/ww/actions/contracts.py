@@ -49,14 +49,37 @@ class Mcp:
 
 @dataclass(frozen=True)
 class AssertionDefinition:
+    """What a command's output must be: equal to ``expected``, or empty.
+
+    ``expected`` is ``None`` exactly when the operator is ``empty``.
+    """
+
     operator: AssertionOperator
-    expected: str
+    expected: str | None = None
 
     def __post_init__(self) -> None:
-        if self.operator != "eq":
+        if self.operator not in {"eq", "empty"}:
             raise ValueError(f"invalid assertion operator: {self.operator!r}")
+        if (self.operator == "eq") != isinstance(self.expected, str):
+            raise ValueError(
+                "an eq assertion requires an expected value; empty takes none"
+            )
+
+    def holds(self, output: str) -> bool:
+        """Whether the command's stripped output satisfies the assertion."""
+        if self.operator == "empty":
+            return output.strip() == ""
+        return output == self.expected
+
+    def describe(self) -> str:
+        """The requirement in words, for instructions and failure messages."""
+        if self.operator == "empty":
+            return "Command output must be empty."
+        return f"Command output must equal `{self.expected}`."
 
     def to_dict(self) -> dict[str, str]:
+        if self.expected is None:
+            return {"operator": self.operator}
         return {"operator": self.operator, "expected": self.expected}
 
 

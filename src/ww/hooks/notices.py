@@ -26,6 +26,7 @@ _OPERATOR_REASONS = {
     "child_failed": "a child task failed",
     "interrupted_command": "a command was interrupted",
     "loop_limit": "a loop reached its limit",
+    "fix_limit": "a step's checks kept failing",
 }
 
 

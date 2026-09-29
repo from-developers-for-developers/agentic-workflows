@@ -534,3 +534,63 @@ workflows:
 
 The `start-task-branch` hook is written for `hotfix` and also runs for
 `bugfix`, which clears the recommendation it would otherwise inherit.
+
+## 17. Rules, checks, and the fix loop
+
+Rules are sentences a step's agent follows. `develop` receives the
+`engineering` group, its own two rules, and a `pytest` hook that sends the step
+back to the worker when it fails, instead of stopping for the operator. Each
+rule file is Markdown; its first sentence is shown on the step page.
+
+```markdown
+<!-- rules/python/no-print.md -->
+---
+paths: ["src/**/*.py"]
+check:
+  shell: grep -l 'print(' $WW_STEP_CHANGED_FILES || true
+  assert: { operator: empty }
+---
+Log through the `logging` module; never call `print` in library code.
+
+Scripts under `bin/` may print; they are not library code.
+```
+
+```markdown
+<!-- rules/python/contracts.md -->
+State the observable behaviour being changed and the invariants that must hold.
+```
+
+```yaml
+rules:
+  engineering:
+    rules: [rules/python/]
+    workflows: [task]
+    steps: [develop, refactor]
+
+workflows:
+  - name: task
+    steps:
+      - name: develop
+        description: Implement the change with tests.
+        rules:
+          - Keep the public CLI unchanged.
+          - text: Leave no TODO in the files you change.
+            shell: grep -l TODO $WW_STEP_CHANGED_FILES || true
+            assert: { operator: empty }
+        hooks:
+          before_complete:
+            - argv: [pytest, -q]
+              on_failure: fix
+      - name: refactor
+        description: Simplify what develop wrote.
+      - review: Review the change.
+```
+
+```json
+{ "max_fixes": 3 }
+```
+
+When a check fails, `complete` exits non-zero and shows which checks failed
+and what they printed; the step stays with its worker. After three rejected
+completions ww stops with `operator_reason: fix_limit`: `next --retry` gives
+the worker another round, `next --force --force-reason` waives the checks.

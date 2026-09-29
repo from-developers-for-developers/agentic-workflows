@@ -4,10 +4,59 @@
 from __future__ import annotations
 
 from ww.actions import PlannedAction, actions
-from ww.artifacts import render_step_artifact
-from ww.execution_models import ExecutionState, PlanSnapshot
+from ww.artifacts import RuleOutcome, RulesSummary, RuleStatus, render_step_artifact
+from ww.contracts import CheckStatus
+from ww.execution_models import CheckReport, ExecutionState, PlanSnapshot
 from ww.plan import PlanItem
+from ww.rule_checks import item_reports
 from ww.storage_adapters.base import ArtifactAddress, TaskArtifactStorage
+
+_REPORTED: dict[CheckStatus, RuleStatus] = {
+    "passed": "passed",
+    "failed": "failed",
+    "not_applicable": "not applicable",
+}
+
+
+def rule_outcomes(
+    state: ExecutionState, item: PlanItem, report: CheckReport | None
+) -> RulesSummary | None:
+    """What the completing step's artifact says about its rules and checks.
+
+    A judged rule is self-declared: the worker states in its result how it
+    followed it. A check reports its result in ``report``, or, when the
+    operator waived the checks, in the last report that ran. Rejections an
+    operator retry moved into the history still count.
+    """
+    record = state.item_executions[state.cursor]
+    if not item.rules and not item.checks:
+        return None
+    ran = report
+    if ran is None and record.check_reports:
+        ran = record.check_reports[-1]
+    results = {result.id: result for result in ran.results} if ran else {}
+    checked = {check.id for check in item.checks}
+    outcomes = [
+        RuleOutcome(rule.id, "self-declared")
+        for rule in item.rules
+        if rule.id not in checked
+    ]
+    for check in item.checks:
+        result = results.get(check.id)
+        outcomes.append(
+            RuleOutcome(
+                check.id,
+                _REPORTED[result.status] if result is not None else "not applicable",
+                hook=check.source == "hook",
+            )
+        )
+    order = {rule.id: index for index, rule in enumerate(item.rules)}
+    outcomes.sort(key=lambda outcome: order.get(outcome.id, len(order)))
+    return RulesSummary(
+        tuple(outcomes),
+        fix_attempts=sum(1 for earlier in item_reports(state) if earlier.failed),
+        waived=record.checks_waived,
+    )
 
 
 def write_completion_artifacts(
@@ -18,8 +67,14 @@ def write_completion_artifacts(
     item: PlanItem,
     loop_entry: PlanItem | None,
     artifact: str | None,
+    *,
+    rules: RulesSummary | None = None,
 ) -> tuple[str | None, str | None]:
-    """Write the completed item and optional enclosing-loop artifacts."""
+    """Write the completed item and optional enclosing-loop artifacts.
+
+    ``rules`` is the completed item's own rule report; a loop wrapper's
+    artifact carries none.
+    """
     if artifact is None:
         return None, None
 
@@ -46,6 +101,7 @@ def write_completion_artifacts(
             step_total=len(step_paths),
             skill=attribution(plan_item),
             result=artifact,
+            rules=rules if plan_item is item else None,
         )
 
     def write(plan_item: PlanItem, content: str) -> str:

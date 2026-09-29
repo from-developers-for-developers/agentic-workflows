@@ -31,6 +31,7 @@ Names must be unique within their catalog or sibling step list.
 | `documents` | list of documents | no | Durable, free-format files that workflows read and update across runs. |
 | `handlers` | list of handlers | no | Reusable actions referenced by hooks. |
 | `hooks` | hooks mapping | no | Hooks applying across workflows. |
+| `rules` | mapping of rule groups | no | Named groups of rule files, active where their filters allow; see [Rules](#rules). |
 
 The generated task ID format, `task_format`, is not a key of this file: it
 lives in `ww-agentic-workflows.json` (see the features guide), and a
@@ -279,6 +280,7 @@ A step accepts every [handler key](#handlers), plus:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `hooks` | hooks mapping | Hooks local to this step. |
+| `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
 | `subagents` | boolean | When `false`, an `auto` run performs this step without delegation and ignores its profile, agent, model, and reasoning settings. Defaults to `true`. |
 | `interactive` | boolean | The step is a conversation with the operator, held by the session that can talk to them; it implies `subagents: false`. Its completion is refused until the conversation was recorded with `interact` and ended. Defaults to `false`. |
@@ -707,7 +709,14 @@ assert:
   expected: clean
 ```
 
-`assert` accepts only `operator: eq` and a non-empty string `expected`.
+`assert` accepts `operator: eq` with a non-empty string `expected`, which
+the whole output must equal, or `operator: empty`, which takes no `expected`
+and requires the output to be empty or whitespace:
+
+```yaml
+shell: grep -l TODO $WW_STEP_CHANGED_FILES || true
+assert: { operator: empty }
+```
 
 ## Hooks
 
@@ -727,6 +736,7 @@ Each hook entry accepts one handler form and optional filters:
 | `handlers` | non-empty list of handler mappings | All scopes; used only for multiple actions. |
 | `steps` | list of step names or paths | Global and workflow step-lifecycle hooks only; unavailable to workflow-boundary hooks. |
 | `workflows` | list of names/references | Global hooks only. |
+| `on_failure` | `fix` or `operator` | `before_complete` hooks only, and not on a workflow transition. `fix` makes the hook a check of the step: a failure rejects the step's completion and returns the step to its worker; see [Rules](#rules). Default `operator`: a failure stops the task for the operator. Also accepted on each member of `handlers`, which inherits the group's value. |
 
 Filters must refer to configured workflows or effective steps; the reserved
 `init` step is always an effective step. A bare step name such as `fix` matches
@@ -784,6 +794,127 @@ hooks:
   after_complete:
     - workflow: "{{next_workflow}}"
 ```
+
+## Rules
+
+A rule is a sentence a step's agent follows while working. It may carry a
+command ww runs when the step completes, a **check**; a failed check rejects
+the completion and sends the step back to its worker, up to `max_fixes` times.
+Rules are delivered on the page of every agent step they apply to: not `init`,
+hooks, or the built-in workflow summary.
+
+### Rule files
+
+A rule file is Markdown: optional YAML frontmatter between a first line
+`---` and the next `---`, then the rule's text, which must not be empty. The
+text's first sentence is its summary on the step page.
+
+```markdown
+---
+paths: ["src/**/*.php"]
+check:
+  shell: find $WW_STEP_CHANGED_FILES -name '*Service.php' -not -path 'src/Service/*'
+  assert: { operator: empty }
+max_fixes: 5
+model: claude-opus-5-5
+---
+Put every `*Service.php` under `src/Service/<Domain>/`, one class per file.
+
+Controllers must not instantiate services; inject them.
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run. |
+| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
+| `max_fixes` | positive integer | Rejections this check allows; defaults to `max_fixes` in `ww-agentic-workflows.json` (3). |
+| `agent`, `model`, `reasoning` | string | The worker that should judge the rule; recorded with the plan. |
+
+A rule's identity by wording is the SHA-256 of its text with surrounding
+whitespace removed and runs of whitespace collapsed to one space.
+
+### Rule groups
+
+The root `rules` maps group names to their items, as a list or as a mapping:
+
+```yaml
+rules:
+  php-architecture: [rules/php/]
+  docs-style:
+    rules: [rules/docs/]
+    workflows: [task, bugfix]
+    steps: [develop, refactor]
+    reasoning: high
+  engineering: [php-architecture, docs-style]
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `rules` | non-empty list of strings | Each is a group name, else a path relative to the file that declares it: a directory contributes every `*.md` directly inside it, sorted by name; a file, that rule. |
+| `workflows` | list of workflow names | The workflows the group applies to; omitted, every workflow, and a workflow's heirs follow it. |
+| `steps` | list of step names or paths | The steps it applies to, matched like a hook's `steps`; omitted, every step. `steps: []` applies nowhere on its own: only a step naming the group gets it. |
+| `agent`, `model`, `reasoning` | string | Defaults for the group's rules; a rule file's own value wins. |
+
+A rule's ID is `<group>/<file stem>`. Two files with the same stem in one group
+are an error; a file listed in two groups has an ID in each. A group naming
+another includes its rules under that group's IDs; a cycle is an error, as is
+an item that names no group and no existing path. An absolute path is accepted
+and `lint` reports it as a notice. A later configuration level or import
+replaces a group of the same name as a whole.
+
+A configured extension may ship rule groups; they come before the YAML groups,
+and a name declared in both is an error.
+
+### Step rules
+
+A step's `rules` is a list. A string names a group, which then applies to the
+step whatever its filters say; else a rule file or directory that exists
+relative to the declaring file; else it is the literal text of a rule. A string
+shaped like a reference, letters, digits, `_`, `.`, `-` with at most one `/`
+and no trailing punctuation, that names neither a group nor a file is an error.
+A mapping defines a rule of the step's own:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `text` | string | The rule. |
+| `argv`, `shell`, `args`, `env`, `assert` | command | Its check; a command without `text` is a pure check, summarised by the command. |
+| `max_fixes`, `agent`, `model`, `reasoning` | | As in a rule file. |
+
+One of `text` or a command is required. The step's own rules have IDs
+`<step>/<position>`, counted from 1, and `<step>/<file stem>` for a file or
+directory entry; a group's rules keep their group IDs.
+
+```yaml
+steps:
+  - name: develop
+    description: Implement it.
+    rules:
+      - Keep the public CLI unchanged.
+      - text: Include "foo" in every file you change.
+        shell: grep -L foo $WW_STEP_CHANGED_FILES || true
+        assert: { operator: empty }
+      - argv: [vendor/bin/phpstan, analyse]
+      - rules/one-off/no-migrations.md
+      - php-architecture
+```
+
+A step receives, in order, the root groups whose filters admit it, then its
+own entries; a rule ID reached twice counts once. Its checks are its rules'
+commands in that order, then its `before_complete` hooks with
+`on_failure: fix`, named `<step>/<handler name>`, or `<step>/<program>` for an
+inline command. Such a hook must run a command that asks the agent for no
+values; it runs in the step's directory and is not also run as a hook. On a
+step with no agent work of its own, it runs as an ordinary hook.
+
+### Running checks
+
+When the step's worker runs `complete`, ww runs the step's checks before
+recording anything. Each sees `WW_STEP_CHANGED_FILES`: the files the step
+changed, newline-separated and relative to the step's directory, narrowed to
+the check's `paths`. A check fails on a non-zero exit or a failed assertion.
+In a shell check, a bare `$WW_STEP_CHANGED_FILES` splits on whitespace, so a
+path containing a space needs `printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs -d '\n'`;
+an `argv` check receives the variable in its environment only.
 
 ## Minimal example
 
