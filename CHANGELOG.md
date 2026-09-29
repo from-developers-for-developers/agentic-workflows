@@ -21,7 +21,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   manager's own `subagents: false` or interactive step. `ww lint` lists disputed checks, and the step page and the
   fix page name `check`, `rule` and `dispute`. `complete` alone exits non-zero on a fix page. Incompatible: plan
   schema 14 (rules keep their file) and execution state 9 (waivers per check, disputes), so finish or reset open
-  tasks before updating.
+  tasks before updating. `f0ed6bc`
 - Rules without a command are now judged after completion by a separate verification item, never by the step's
   worker: ww holds the completion, a verifier gives a verdict (a failing one is a fix round counted in `max_fixes`)
   or proposes how to check the rule, and after the operator approves the approach and then the prepared command
