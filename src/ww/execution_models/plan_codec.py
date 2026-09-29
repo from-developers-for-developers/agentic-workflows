@@ -22,7 +22,13 @@ from ww.contracts import (
     PlanItemPhase,
 )
 from ww.operations import decode_operation
-from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
+from ww.plan import (
+    PlanItem,
+    PlannedCheck,
+    PlannedRule,
+    VerificationTarget,
+    WorkflowPlan,
+)
 from ww.validation import (
     expect_bool,
     expect_literal,
@@ -201,6 +207,25 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         ),
         rules=_planned_rules_from_list(raw.get("rules", []), item_path),
         checks=_planned_checks_from_list(raw.get("checks", []), item_path),
+        verifies=_verification_target(raw.get("verifies"), item_path),
+    )
+
+
+def _verification_target(value: Any, item_path: str) -> VerificationTarget | None:
+    if value is None:
+        return None
+    path = f"{item_path}.verifies"
+    if not isinstance(value, dict) or not set(value) <= {
+        "item_id",
+        "ordinal",
+        "hints",
+    }:
+        raise ValueError(f"{path} must be an object of item_id, ordinal, hints")
+    require_keys(value, {"item_id", "ordinal"}, path)
+    return VerificationTarget(
+        item_id=expect_string(value["item_id"], f"{path}.item_id"),
+        ordinal=expect_positive_int(value["ordinal"], f"{path}.ordinal"),
+        hints=_rule_hints(value.get("hints", {}), f"{path}.hints"),
     )
 
 
@@ -247,6 +272,7 @@ def _rule_hints(value: Any, path: str) -> RuleHints:
 
 
 def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck, ...]:
+    """Decode planned checks; resolved derived checks on records use it too."""
     if not isinstance(value, list):
         raise ValueError(f"{item_path}.checks must be a list")
     result = []
@@ -274,6 +300,7 @@ def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck,
                 command=decoded,
                 paths=_string_list(raw["paths"], f"{path}.paths"),
                 max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
+                covers=_string_list(raw.get("covers", []), f"{path}.covers"),
             )
         )
     return tuple(result)

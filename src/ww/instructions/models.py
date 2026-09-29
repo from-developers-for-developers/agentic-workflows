@@ -118,6 +118,10 @@ class RuleLine:
     has_command: bool = False
     hook: bool = False
     interpretation: str | None = None
+    # The approved derived check that checks a rule without a command.
+    check: str | None = None
+    # A verifier judges the rule while an undecided proposal for it waits.
+    pending_operator: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -127,6 +131,8 @@ class RuleLine:
             "has_command": self.has_command,
             "hook": self.hook,
             "interpretation": self.interpretation,
+            "check": self.check,
+            "pending_operator": self.pending_operator,
         }
 
 
@@ -139,6 +145,10 @@ class FixFailure:
     text: str | None
     command: str
     output: str
+    # A verifier's verdict rather than a command: ``output`` is its evidence.
+    judged: bool = False
+    # For a derived check: the rules it covers, whose texts are ``text``.
+    covers: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -147,6 +157,130 @@ class FixFailure:
             "text": self.text,
             "command": self.command,
             "output": self.output,
+            "judged": self.judged,
+            "covers": list(self.covers),
+        }
+
+
+@dataclass(frozen=True)
+class VerificationRuleLine:
+    """One rule on a verification page, with what the verifier must report."""
+
+    id: str
+    text: str
+    state: str
+    interpretation: str | None = None
+    approach: str | None = None
+    check: str | None = None
+    pending_operator: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "text": self.text,
+            "state": self.state,
+            "interpretation": self.interpretation,
+            "approach": self.approach,
+            "check": self.check,
+            "pending_operator": self.pending_operator,
+        }
+
+
+@dataclass(frozen=True)
+class KnownCheck:
+    """A check already in the rule-automation store, which a rule may join."""
+
+    name: str
+    status: str
+    command: str
+    config: tuple[str, ...] = ()
+    covers: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "command": self.command,
+            "config": list(self.config),
+            "covers": list(self.covers),
+        }
+
+
+@dataclass(frozen=True)
+class VerificationPage:
+    """What a verification item's worker needs: the rules and the evidence.
+
+    ``files`` is the verified step's change set, or every file when
+    ``all_files`` (no git); ``diff_command`` shows the change itself;
+    ``draft_artifact`` is the path of the step worker's held artifact.
+    """
+
+    step: str
+    rules: tuple[VerificationRuleLine, ...]
+    files: tuple[str, ...] = ()
+    all_files: bool = False
+    diff_command: str | None = None
+    draft_artifact: str | None = None
+    checks: tuple[KnownCheck, ...] = ()
+
+    @property
+    def prepares(self) -> bool:
+        """Whether any rule asks for a prepared check, so ``--check-result``."""
+        return any(rule.state == "approach-approved" for rule in self.rules)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "step": self.step,
+            "rules": [rule.to_dict() for rule in self.rules],
+            "files": list(self.files),
+            "all_files": self.all_files,
+            "diff_command": self.diff_command,
+            "draft_artifact": self.draft_artifact,
+            "checks": [check.to_dict() for check in self.checks],
+        }
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """One verifier proposal the operator decides at a ``check_proposed`` stop.
+
+    ``kind`` is ``approach`` (stage A: how a rule would be checked),
+    ``check`` (stage B: a prepared command, or a ``revision`` of an approved
+    one), or ``ambiguous`` (readings to pick from). ``key`` is what the
+    decision commands name: a check name or a rule hash.
+    """
+
+    kind: str
+    key: str
+    rules: tuple[tuple[str, str], ...]
+    commands: tuple[RecoveryCommand, ...]
+    interpretation: str | None = None
+    approach: str | None = None
+    check: str | None = None
+    extends: bool = False
+    command: str | None = None
+    assertion: str | None = None
+    config: tuple[str, ...] = ()
+    proven: bool | None = None
+    revision: bool = False
+    candidates: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "key": self.key,
+            "rules": [{"id": rule_id, "text": text} for rule_id, text in self.rules],
+            "commands": [command.to_dict() for command in self.commands],
+            "interpretation": self.interpretation,
+            "approach": self.approach,
+            "check": self.check,
+            "extends": self.extends,
+            "command": self.command,
+            "assert": self.assertion,
+            "config": list(self.config),
+            "proven": self.proven,
+            "revision": self.revision,
+            "candidates": list(self.candidates),
         }
 
 
@@ -295,6 +429,8 @@ class Instruction:
     assignment_continues: bool = False
     manager_intro: bool = False
     completion_registered: bool = False
+    # The completion was accepted but held: verifiers judge its rules first.
+    completion_held: bool = False
     caller_role: CallerRole | None = None
     next_role: NextRole | None = None
     control: Control | None = None
@@ -306,6 +442,10 @@ class Instruction:
     rules: tuple[RuleLine, ...] = ()
     fix_required: FixRequired | None = None
     checks_waived: str | None = None
+    # A verification item's rules and evidence, and, at a ``check_proposed``
+    # stop, the proposals the operator decides.
+    verification: VerificationPage | None = None
+    proposals: tuple[Proposal, ...] = ()
     # Internal capability markers let presentation and service refresh paths
     # avoid rediscovering a saved plan or matching built-in action names.
     is_child_workflow_control: bool = False
@@ -409,6 +549,7 @@ class Instruction:
             "assignment_continues": self.assignment_continues,
             "manager_intro": self.manager_intro,
             "completion_registered": self.completion_registered,
+            "completion_held": self.completion_held,
             "caller_role": self.caller_role,
             "next_role": self.next_role,
             "control": self.control,
@@ -419,4 +560,8 @@ class Instruction:
                 self.fix_required.to_dict() if self.fix_required else None
             ),
             "checks_waived": self.checks_waived,
+            "verification": (
+                self.verification.to_dict() if self.verification else None
+            ),
+            "proposals": [proposal.to_dict() for proposal in self.proposals],
         }

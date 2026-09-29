@@ -1433,6 +1433,18 @@ attempt, which is the single authority for how often a step was rejected. A
 rejection leaves the step with its worker and the supplied artifact as a
 draft; the limit turns into an operator decision (`fix_limit`) whose two
 exits, a fresh count or a recorded waiver, are transitions like any other.
-Judged rules, those without a command, are delivered and reported but not yet
-verified; the verifier and its store are the next slice of the plan in
-`documentation/plans/rules-and-checks.md`.
+Judged rules, those without a command, are verified by an agent that is never
+the step's worker. Completing such a step holds the completion: the
+arguments, the change set and the draft artifact stay on the item record,
+and ww inserts one verification item per distinct worker setting before the
+step as a new plan revision, each an assignment of its own. A verifier gives
+verdicts with evidence, or, once per rule wording, interprets the rule and
+proposes how to check it; the operator approves the approach and then the
+prepared command at a `check_proposed` stop, and only then does the command
+run, on the held completion first. What ww learns this way lives in
+`ww-rule-automation.json` at the project root, keyed by the hash of the rule
+text, with checks that may cover several rules; it is derived knowledge that
+ww owns and commits, never configuration, so YAML and rule files are never
+rewritten. A failing verdict is a rejection like a failed check and counts
+toward the same limit; when nothing is left to verify or decide, ww records
+the held completion by replaying it with the saved arguments.

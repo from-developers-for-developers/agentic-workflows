@@ -137,7 +137,7 @@ def parse_rule_file(
             else ()
         ),
         check=(
-            _parse_check(
+            parse_check_command(
                 _mapping(frontmatter["check"], f"{context}.check"), f"{context}.check"
             )
             if "check" in frontmatter
@@ -197,7 +197,7 @@ def _hints(mapping: dict[str, Any], context: str) -> RuleHints:
     )
 
 
-def _parse_check(mapping: dict[str, Any], context: str) -> Commands:
+def parse_check_command(mapping: dict[str, Any], context: str) -> Commands:
     """A check: the cli handler's ``argv`` or ``shell`` shape and ``assert``."""
     for key in ("idempotent", "command"):
         if key in mapping:
@@ -401,7 +401,7 @@ def _step_rule_mapping(
     if text is not None and (not isinstance(text, str) or not text.strip()):
         raise ConfigurationError(f"{path}.text must be a non-empty string")
     command_keys = {key: mapping[key] for key in _CHECK_KEYS if key in mapping}
-    check = _parse_check(command_keys, path) if command_keys else None
+    check = parse_check_command(command_keys, path) if command_keys else None
     if text is None and check is None:
         raise ConfigurationError(f"{path} requires text or a command")
     wording = text.strip() if text is not None else _command_text(check)

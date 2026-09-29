@@ -90,6 +90,24 @@ def _complete(service: WorkflowService, artifact: str = "Done.") -> Instruction:
     return service.complete("TASK-1", artifact=artifact, summary_for_next="Done.")
 
 
+def _verify(service: WorkflowService) -> Instruction:
+    """Complete the verification of ``develop/1`` with a passing verdict."""
+    return service.complete(
+        "TASK-1",
+        artifact="Verified.",
+        rule_results=(
+            json.dumps(
+                {
+                    "id": "develop/1",
+                    "status": "not-convertible",
+                    "reason": "A matter of review.",
+                    "verdict": "pass",
+                }
+            ),
+        ),
+    )
+
+
 def _violate(root: Path) -> None:
     (root / "notes.md").write_text("no marker here\n", encoding="utf-8")
     (root / "broken").write_text("", encoding="utf-8")
@@ -139,6 +157,8 @@ def test_the_step_page_lists_judged_rules_and_names_the_checked_ones(
         "has_command": False,
         "hook": False,
         "interpretation": None,
+        "check": None,
+        "pending_operator": False,
     }
 
 
@@ -190,7 +210,9 @@ def test_fixing_the_causes_completes_the_step_with_a_rules_section(
     (root / "notes.md").write_text("foo now\n", encoding="utf-8")
     (root / "broken").unlink()
 
-    accepted = _complete(service, "Fixed.")
+    held = _complete(service, "Fixed.")
+    assert held.item_name == "develop-verify-1"
+    accepted = _verify(service)
 
     assert accepted.fix_required is None
     assert accepted.item_name == "check"
@@ -198,7 +220,7 @@ def test_fixing_the_causes_completes_the_step_with_a_rules_section(
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
     assert artifact.index("## Result") < artifact.index("## Rules")
     assert "- `docs/header`: passed" in artifact
-    assert "- `develop/1`: self-declared" in artifact
+    assert "- `develop/1`: verified pass (by `task:develop:verify:1`)" in artifact
     assert "- `develop/sh` (hook): passed" in artifact
     assert "Completions rejected before this one: 1." in artifact
     _, record = _record(service)
@@ -214,7 +236,8 @@ def test_a_rule_whose_glob_matches_nothing_is_not_applicable(tmp_path: Path) -> 
     service = _develop(root)
     (root / "app.py").write_text("code\n", encoding="utf-8")
 
-    accepted = _complete(service)
+    _complete(service)
+    accepted = _verify(service)
 
     assert accepted.item_name == "check"
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
@@ -229,7 +252,8 @@ def test_work_that_was_uncommitted_before_the_step_is_not_its_change(
     (root / "old.md").write_text("no marker, but not this step's\n", encoding="utf-8")
     service = _develop(root)
 
-    accepted = _complete(service)
+    _complete(service)
+    accepted = _verify(service)
 
     assert accepted.item_name == "check"
 
@@ -288,6 +312,7 @@ def test_retry_after_the_fix_limit_gives_the_worker_a_fresh_count(
     (root / "notes.md").write_text("foo\n", encoding="utf-8")
     (root / "broken").unlink()
     _complete(service)
+    _verify(service)
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
     assert "Completions rejected before this one: 4." in artifact
 
@@ -310,6 +335,8 @@ def test_force_after_the_fix_limit_waives_the_checks(tmp_path: Path) -> None:
     assert accepted.item_name == "check"
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
     assert "- `docs/header`: failed" in artifact
+    # The waiver covers the verification too: the judged rule is self-declared.
+    assert "- `develop/1`: self-declared" in artifact
     assert "Checks waived by the operator: Checked by hand." in artifact
     assert "Completions rejected before this one: 3." in artifact
 

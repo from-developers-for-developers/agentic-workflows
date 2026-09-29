@@ -594,3 +594,11 @@ When a check fails, `complete` exits non-zero and shows which checks failed
 and what they printed; the step stays with its worker. After three rejected
 completions ww stops with `operator_reason: fix_limit`: `next --retry` gives
 the worker another round, `next --force --force-reason` waives the checks.
+
+The rules without a command, "Keep the public CLI unchanged." and the
+engineering rules, go to a verifier once develop's checks pass. The first time
+it sees a wording it proposes how to check it; the operator approves with
+`next --approve`, the verifier prepares the command, and after a second
+approval ww runs it for that wording in every later step. Until then, and for
+a rule no command can check, the verifier gives a verdict, and a failing one
+sends develop back like a failed check.

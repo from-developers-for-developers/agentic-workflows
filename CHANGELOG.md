@@ -9,6 +9,16 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-09-30
+
+- Rules without a command are now judged after completion by a separate verification item, never by the step's
+  worker: ww holds the completion, a verifier gives a verdict (a failing one is a fix round counted in `max_fixes`)
+  or proposes how to check the rule, and after the operator approves the approach and then the prepared command
+  (`operator_reason: check_proposed`; `next --approve`, `--approach`, `--pick`, or `--force`), the command is kept
+  in `ww-rule-automation.json` at the project root and runs for that rule wording from then on. `complete` gains
+  `--rule-result` and `--check-result` for verifiers; `ww lint` lists orphan and pending store entries.
+  Incompatible: plan schema 13 and execution state 8, so finish or reset open tasks before updating. `7c40e11`
+
 ## 2026-09-29
 
 - Rules: a root `rules` mapping of Markdown rule files and a step `rules` list deliver sentences to each agent

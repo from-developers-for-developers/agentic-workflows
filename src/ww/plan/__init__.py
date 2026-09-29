@@ -13,6 +13,7 @@ from .models import (
     PlanItem,
     PlannedCheck,
     PlannedRule,
+    VerificationTarget,
     WorkflowPlan,
     number_step_paths,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "PlanItem",
     "PlannedCheck",
     "PlannedRule",
+    "VerificationTarget",
     "WorkflowPlan",
     "WorkflowHandoff",
     "WorkflowPlanCompiler",

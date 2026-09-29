@@ -28,10 +28,36 @@ HookScope = Literal["global", "workflow", "step"]
 HookFailure = Literal["fix", "operator"]
 # The outcome of one check ww ran when a step completed.
 CheckStatus = Literal["passed", "failed", "not_applicable"]
-# Where a check came from: a rule's own command or a ``fix`` hook.
-CheckSource = Literal["rule", "hook"]
+# Where a check came from: a rule's own command, a ``fix`` hook, a command
+# the operator approved into the rule-automation store, or a verifier's
+# verdict on a rule without a command.
+CheckSource = Literal["rule", "hook", "derived", "judged"]
 # Why a failed run failed, when the reason is not the item's own error.
-FailureKind = Literal["fix_limit"]
+FailureKind = Literal["fix_limit", "check_proposed"]
+# A rule's standing in the rule-automation store, keyed by its text hash.
+RuleAutomationStatus = Literal[
+    "approach-proposed",
+    "approach-approved",
+    "interpreted",
+    "proposed",
+    "converted",
+    "rejected",
+    "not-convertible",
+    "ambiguous",
+]
+# A derived check's standing in the rule-automation store.
+CheckAutomationStatus = Literal["proposed", "converted", "rejected"]
+# How a step's rule without a command of its own is enforced, decided when
+# the step begins: by an approved derived check, by a verifier's verdict
+# (``pending_operator`` while the store holds an undecided proposal for it),
+# or not yet known (``unresolved``: a verifier proposes how to check it).
+RuleResolutionStatus = Literal["converted", "judged", "pending_operator", "unresolved"]
+# What a verifier is asked about one rule: an approach, a prepared check for
+# an approved approach, or a verdict.
+VerificationState = Literal["unresolved", "approach-approved", "judged"]
+# What a verifier reports about one rule.
+RuleResultStatus = Literal["approach", "not-convertible", "ambiguous", "judged"]
+Verdict = Literal["pass", "fail"]
 ItemOperation = Literal[
     "collect", "process_item", "resolve_item", "report_item", "handle_item"
 ]
@@ -99,7 +125,7 @@ InstructionStatus = Literal[
     "abandoned",
     "task_summary",
 ]
-RecoveryAction = Literal["retry", "force"]
+RecoveryAction = Literal["retry", "force", "approve", "approach", "pick"]
 CallerRole = Literal["manager", "worker"]
 # Who acts next. The operator is the human ww waits for; never a caller role.
 NextRole = Literal["manager", "worker", "operator"]
@@ -112,6 +138,7 @@ OperatorReason = Literal[
     "interrupted_command",
     "loop_limit",
     "fix_limit",
+    "check_proposed",
 ]
 CALLER_ROLES: tuple[CallerRole, ...] = ("manager", "worker")
 CONTROL_VALUES: tuple[Control, ...] = (

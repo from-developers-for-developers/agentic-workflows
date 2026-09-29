@@ -27,6 +27,7 @@ _OPERATOR_REASONS = {
     "interrupted_command": "a command was interrupted",
     "loop_limit": "a loop reached its limit",
     "fix_limit": "a step's checks kept failing",
+    "check_proposed": "verifiers proposed checks to approve",
 }
 
 

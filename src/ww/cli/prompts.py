@@ -167,6 +167,27 @@ def _confirm_force_next(
     return confirmed
 
 
+def confirm_approval(preview: str) -> bool:
+    """Show what ``next --approve`` records, command in full, and ask for it.
+
+    ww keeps no allowlist of executables: an approved check runs in every
+    later step, so the operator reads it before it is recorded.
+    """
+    print(f"`ww next --approve` will approve:\n{preview}", file=sys.stderr)
+    prompt = (
+        "If you are an agent, you should never call this command without the "
+        "operator's permission; if you didn't get it, do NOT answer positively.\n"
+        "Approve? [y/N] "
+    )
+    try:
+        confirmed = _ask_yes_no(prompt, default=False)
+    except EOFError:
+        confirmed = False
+    if not confirmed:
+        print("Approval cancelled: explicit confirmation is required.", file=sys.stderr)
+    return confirmed
+
+
 def confirm_interrupted_retry() -> bool:
     """Require an operator to acknowledge duplicate-effect risk."""
     prompt = (

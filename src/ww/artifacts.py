@@ -6,16 +6,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-RuleStatus = Literal["passed", "failed", "not applicable", "self-declared"]
+RuleStatus = Literal[
+    "passed", "failed", "not applicable", "self-declared", "verified pass"
+]
 
 
 @dataclass(frozen=True)
 class RuleOutcome:
-    """One rule or check of a completed step, as its artifact reports it."""
+    """One rule or check of a completed step, as its artifact reports it.
+
+    ``detail`` names what decided a rule without a command of its own: the
+    derived check that ran, or the verification item that gave the verdict.
+    """
 
     id: str
     status: RuleStatus
     hook: bool = False
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,7 @@ def _rules_section(rules: RulesSummary) -> str:
     lines = ["", "## Rules", ""]
     lines.extend(
         f"- `{outcome.id}`{' (hook)' if outcome.hook else ''}: {outcome.status}"
+        + (f" ({outcome.detail})" if outcome.detail else "")
         for outcome in rules.outcomes
     )
     lines.append("")

@@ -828,7 +828,7 @@ Controllers must not instantiate services; inject them.
 | `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run. |
 | `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
 | `max_fixes` | positive integer | Rejections this check allows; defaults to `max_fixes` in `ww-agentic-workflows.json` (3). |
-| `agent`, `model`, `reasoning` | string | The worker that should judge the rule; recorded with the plan. |
+| `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
 
 A rule's identity by wording is the SHA-256 of its text with surrounding
 whitespace removed and runs of whitespace collapsed to one space.
@@ -915,6 +915,107 @@ the check's `paths`. A check fails on a non-zero exit or a failed assertion.
 In a shell check, a bare `$WW_STEP_CHANGED_FILES` splits on whitespace, so a
 path containing a space needs `printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs -d '\n'`;
 an `argv` check receives the variable in its environment only.
+
+### Verifying rules without a command
+
+A rule without a check of its own is never judged by the worker who did the
+step. When that worker completes and the step's checks pass, ww holds the
+completion, records nothing yet, and inserts **verification items** right
+before the step: agent items ww generates, IDs
+`<workflow>:<step path>:verify:<n>`, one per distinct worker among the rules
+(the rule's or group's `agent`, `model`, `reasoning`, else the step's). Each is
+an assignment of its own, and asks about each of its rules according to the
+rule-automation store:
+
+| The store has the rule | The verifier is asked |
+| --- | --- |
+| nothing, or `interpreted` | `unresolved`: an interpretation and an approach, or `not-convertible`, or `ambiguous` |
+| `approach-approved` | to prepare and prove its check, or report `not-convertible` |
+| `rejected`, `not-convertible`, or an undecided proposal from elsewhere | `judged`: a verdict |
+
+A rule whose wording has a `converted` check is checked by it and asks no
+verifier. What the store says is read when the step begins and kept with it.
+
+A verification item completes with its findings as `--artifact` and one
+`--rule-result` per rule, plus one `--check-result` per check it prepared;
+both are repeatable JSON objects, and `complete` refuses a missing, unknown,
+duplicate, or malformed one, and either option on any other step.
+
+| `--rule-result` key | Meaning |
+| --- | --- |
+| `id` | The rule ID; required. |
+| `status` | `approach`, `not-convertible`, `ambiguous` (not for a judged rule), or `judged` (only for one). |
+| `interpretation` | The rule in one sentence. |
+| `check`, `approach` | For `approach`: the kebab-case check name, at most 40 characters, to create or extend, and for an unresolved rule the approach in one line. |
+| `reason` | For `not-convertible`: why. |
+| `candidates` | For `ambiguous`: two or more readings. |
+| `verdict`, `failures` | For `judged` and `not-convertible`: `pass`, or `fail` with `failures`, each `{file, line?, what}`. |
+
+| `--check-result` key | Meaning |
+| --- | --- |
+| `name` | The check a prepared rule names; required. |
+| `argv`, or `shell` with `args` and `env`, and `assert` | Its command, as in [Commands](#commands). |
+| `config` | The project files holding the check's logic. |
+| `covers` | The IDs of the step's rules it checks, including every rule naming it. |
+| `proven` | Whether it failed on a deliberate violation and passed on the change. |
+
+A failing verdict rejects the held completion as a failed check would, under
+the rule's `max_fixes`. Proposals stop the task with `operator_reason:
+check_proposed`; the operator answers with `next`:
+
+| Option | Effect |
+| --- | --- |
+| `--approve <hash or check>` | Approves a rule's approach, so a verifier prepares its check; or approves a check, converting it and the rules it covers, or its pending revision. Repeatable; the CLI prints the command and asks first. |
+| `--approach <hash> "<text>"` | Approves the operator's own approach instead. Repeatable. |
+| `--pick <hash>=<number>` | Fixes an ambiguous rule's reading; a verifier proposes an approach for it again. Repeatable. |
+| `--force --force-reason "<why>"` | Rejects every undecided proposal; those rules are judged. |
+
+A rule hash may be given by a unique prefix of at least 8 characters. Once
+nothing is undecided, ww runs the step's checks again, newly approved ones
+included, then verifies what remains or records the held completion.
+
+### The rule-automation store
+
+`ww-rule-automation.json` at the project root keeps what verification
+learned. It is meant to be committed; ww writes it under its own lock, never
+edits YAML or rule files, and leaves it out of every change set.
+
+```json
+{
+  "schema_version": 1,
+  "rules": {
+    "9f2a…": {
+      "text": "Controllers must not instantiate services; inject them.",
+      "status": "converted",
+      "interpretation": "No `new *Service(` in src/Controller.",
+      "approach": "deptrac layer rule",
+      "check": "deptrac",
+      "proposed_in": "task:develop:verify:1"
+    }
+  },
+  "checks": {
+    "deptrac": {
+      "argv": ["vendor/bin/deptrac", "analyse", "--no-progress"],
+      "assert": null,
+      "config": ["deptrac.yaml"],
+      "covers": ["9f2a…"],
+      "proven": true,
+      "status": "converted",
+      "proposed_at": "2026-09-29T10:00:00Z",
+      "approved_at": "2026-09-29T11:00:00Z"
+    }
+  }
+}
+```
+
+`rules` is keyed by the rule's text hash; its `status` is one of
+`approach-proposed`, `approach-approved`, `interpreted`, `proposed`,
+`converted`, `rejected`, `not-convertible`, `ambiguous`, with `reason` for a
+rejected or unconvertible rule and `candidates` for an ambiguous one. `checks`
+is keyed by check name; `status` is `proposed`, `converted`, or `rejected`,
+`covers` lists rule hashes, and `pending` holds a proposed revision of a
+converted check. Only a `converted` check runs. An unknown key, status, or
+`schema_version` is an error.
 
 ## Minimal example
 

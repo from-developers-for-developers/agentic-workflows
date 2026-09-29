@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run a step's checks against the files it changed.
 
-A check is a planned command: a rule's own ``check`` or a ``before_complete``
-hook with ``on_failure: fix``. ww runs every check of the completing step in
-plan order, each seeing the step's change set in ``WW_STEP_CHANGED_FILES``
-(newline-separated, relative to the step's directory) narrowed to the check's
-globs. A check whose globs select no changed file is not applicable and does
-not run. A check fails on a non-zero exit or a failed assertion.
+A check is a planned command: a rule's own ``check``, a ``before_complete``
+hook with ``on_failure: fix``, or a derived check the operator approved into
+the rule-automation store, resolved when the step began. ww runs every check
+of the completing step in plan order, derived checks last, each seeing the
+step's change set in ``WW_STEP_CHANGED_FILES`` (newline-separated, relative
+to the step's directory) narrowed to the check's globs. A check whose globs
+select no changed file is not applicable and does not run. A check fails on
+a non-zero exit or a failed assertion.
 
 Checks read the working tree and report; they change no workflow state, so
 running them again after an interruption is harmless and they keep no
@@ -53,22 +55,38 @@ class RuleChecker:
         self.now = now
 
     def run(
-        self, state: ExecutionState, item: PlanItem, scope: CheckScope
+        self,
+        state: ExecutionState,
+        item: PlanItem,
+        scope: CheckScope,
+        *,
+        reuse: CheckReport | None = None,
     ) -> CheckReport:
+        """Run the item's planned checks, then the derived ones it resolved.
+
+        ``reuse`` is an earlier passing report of the same completion: while
+        the working tree is still at the tree that report was measured to,
+        the checks it passed are not run again.
+        """
         record = state.item_executions[state.cursor]
         attempt = max((report.attempt for report in item_reports(state)), default=0) + 1
         mark_b = take_mark(scope.directory) if record.change_mark else None
-        if record.change_mark and mark_b:
-            files = changed_files(scope.directory, record.change_mark, mark_b)
-            unmarked = False
-        else:
-            # No git, or state written before the step's mark: every file
-            # is a candidate.
-            files = all_files(scope.directory)
-            unmarked = True
+        files, unmarked = change_set(scope.directory, record.change_mark, mark_b)
+        kept = (
+            {
+                result.id: result
+                for result in reuse.results
+                if result.status != "failed"
+            }
+            if reuse is not None and mark_b is not None and reuse.mark == mark_b
+            else {}
+        )
         results = tuple(
-            self._run_check(state, item, check, index, attempt, files, scope)
-            for index, check in enumerate(item.checks, 1)
+            kept.get(check.id)
+            or self._run_check(state, item, check, index, attempt, files, scope)
+            for index, check in enumerate(
+                (*item.checks, *record.resolved_checks), 1
+            )
         )
         return CheckReport(
             attempt=attempt,
@@ -169,6 +187,19 @@ class RuleChecker:
             stdout_ref=stdout_ref,
             stderr_ref=stderr_ref,
         )
+
+
+def change_set(
+    directory: Path, mark_a: str | None, mark_b: str | None
+) -> tuple[tuple[str, ...], bool]:
+    """The files changed between two marks, or every file when unmarked.
+
+    The flag is true without a change set: no git, or state written before
+    the step took its mark.
+    """
+    if mark_a and mark_b:
+        return changed_files(directory, mark_a, mark_b), False
+    return all_files(directory), True
 
 
 def item_reports(state: ExecutionState) -> tuple[CheckReport, ...]:

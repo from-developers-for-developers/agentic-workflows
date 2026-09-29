@@ -23,10 +23,12 @@ def rule_outcomes(
 ) -> RulesSummary | None:
     """What the completing step's artifact says about its rules and checks.
 
-    A judged rule is self-declared: the worker states in its result how it
-    followed it. A check reports its result in ``report``, or, when the
-    operator waived the checks, in the last report that ran. Rejections an
-    operator retry moved into the history still count.
+    A rule checked by a derived check reports that check's result; one a
+    verifier judged reports the verdict and the verification item; any other
+    rule without a check is self-declared: the worker states in its result
+    how it followed it. A check reports its result in ``report``, or, when
+    the operator waived the checks, in the last report that ran. Rejections
+    an operator retry moved into the history still count.
     """
     record = state.item_executions[state.cursor]
     if not item.rules and not item.checks:
@@ -36,11 +38,29 @@ def rule_outcomes(
         ran = record.check_reports[-1]
     results = {result.id: result for result in ran.results} if ran else {}
     checked = {check.id for check in item.checks}
-    outcomes = [
-        RuleOutcome(rule.id, "self-declared")
-        for rule in item.rules
-        if rule.id not in checked
-    ]
+    derived = {
+        rule_id: check.id
+        for check in record.resolved_checks
+        for rule_id in check.covers
+    }
+    held = record.held_completion
+    outcomes = []
+    for rule in item.rules:
+        if rule.id in checked:
+            continue
+        verdict = held.verdict(rule.id) if held is not None else None
+        if rule.id in derived:
+            result = results.get(derived[rule.id])
+            status = _REPORTED[result.status] if result else "not applicable"
+            outcomes.append(
+                RuleOutcome(rule.id, status, detail=f"check `{derived[rule.id]}`")
+            )
+        elif verdict is not None and verdict.verdict == "pass":
+            outcomes.append(
+                RuleOutcome(rule.id, "verified pass", detail=f"by `{verdict.by}`")
+            )
+        else:
+            outcomes.append(RuleOutcome(rule.id, "self-declared"))
     for check in item.checks:
         result = results.get(check.id)
         outcomes.append(

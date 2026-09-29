@@ -43,7 +43,7 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
   check failed: fix the causes and complete again. If agent work cannot
   finish, record it with `./ww fail <task-id> --role worker --error "<reason>"`.
   On `awaiting_operator` (failed handler or work, interrupted command, loop
-  or fix limit), stop and report the task, its `operator_reason` and the
-  exact error to the user; recovery is their decision, and you run only the
-  command they choose: `./ww next <task-id> --retry` runs the handler again,
-  `--force --force-reason "<reason>"` skips it. Never reset a task unasked.
+  or fix limit, proposed checks), stop and report the task, `operator_reason`
+  and the exact error to the user; recovery is their decision. Run only the
+  `./ww next` option they pick (`--retry`, `--force`, `--approve`, `--approach`,
+  `--pick`); never reset a task unasked.
