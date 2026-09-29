@@ -49,6 +49,7 @@ from ww.execution_models import (
     PLAN_COMPILER_VERSION,
     PLAN_SCHEMA_VERSION,
     CheckReport,
+    Dispute,
     ExecutionState,
     HeldCompletion,
     PlanItemExecution,
@@ -62,6 +63,7 @@ from ww.extensions import ExtensionRegistry, is_extension_reference, parse_refer
 from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
+from ww.instructions.models import CheckPreview
 from ww.interactions import InteractionLog
 from ww.interpolation import dependencies, interpolate
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
@@ -83,6 +85,7 @@ from ww.results import (
     TaskStatus,
 )
 from ww.rule_checks import CheckScope, RuleChecker, change_set, item_reports
+from ww.rule_disputes import DisputeEntry, DisputeLog
 from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.rule_verification import (
     Decisions,
@@ -106,10 +109,12 @@ from ww.rule_verification import (
     round_open,
     skip_idle_verification,
     stop_for_proposals,
+    to_verify,
     undecided_proposals,
     verdicts_of,
     verification_needs,
 )
+from ww.rule_views import RuleView, check_preview, rule_view
 from ww.run_coordination import RunCoordinator
 from ww.runtimes import runtime_instruction
 from ww.storage import Storage
@@ -134,6 +139,7 @@ from ww.transitions import (
     block_item_phase,
     complete_agent_item,
     complete_run,
+    dispute_check,
     enclosing_loop_entry_index,
     enter_loop,
     exit_exhausted_loop,
@@ -141,6 +147,7 @@ from ww.transitions import (
     finish_loop_continue,
     finish_loop_exit,
     finish_selection,
+    fix_limits,
     loop_limit_reached,
     materialize_item_plan,
     pause_for_agent,
@@ -237,6 +244,7 @@ class WorkflowService:
         self.interactions = InteractionLog(self.storage)
         self.hook_records = HookRecords(self.storage, self.tasks)
         self.rule_store = RuleStore(self.storage.root)
+        self.rule_disputes = DisputeLog(self.storage.root)
         self.instructions = InstructionBuilder(
             self.tasks,
             self._runtime_values,
@@ -843,11 +851,18 @@ class WorkflowService:
                 f"task {task_id!r} is not stopped for one"
             )
         if state.status == "failed":
-            if force and state.failure_kind == "fix_limit":
+            if force and state.failure_kind in {"fix_limit", "check_disputed"}:
                 # Forcing past a step at its fix limit completes it without
-                # its checks, never without its work.
+                # its checks, and past a dispute without the disputed one;
+                # never without its work.
                 assert force_reason is not None
-                state = waive_checks(state, snapshot.plan, force_reason, _now)
+                state = waive_checks(
+                    state,
+                    snapshot.plan,
+                    self._waivable(state, snapshot.plan),
+                    force_reason,
+                    _now,
+                )
                 self.commit(state, snapshot)
             elif force:
                 if state.cursor >= len(snapshot.plan.items):
@@ -991,6 +1006,15 @@ class WorkflowService:
         self.commit(state, snapshot)
         return remaining
 
+    @staticmethod
+    def _waivable(state: ExecutionState, plan: WorkflowPlan) -> tuple[str, ...]:
+        """What ``next --force`` waives: the disputed check, or all of them."""
+        record = state.item_executions[state.cursor]
+        if state.failure_kind == "check_disputed":
+            assert record.dispute is not None
+            return (record.dispute.check,)
+        return tuple(fix_limits(plan.items[state.cursor], record))
+
     def approval_preview(self, task_id: str, keys: tuple[str, ...]) -> str:
         """What ``next --approve`` would approve, commands in full.
 
@@ -1043,6 +1067,13 @@ class WorkflowService:
                 f"waive the failed checks of `{items[state.cursor].name}`: its "
                 "worker completes it again without them, and the artifact "
                 "records the waiver"
+            )
+        if state.status == "failed" and state.failure_kind == "check_disputed":
+            (disputed,) = self._waivable(state, snapshot.plan)
+            return (
+                f"waive the disputed check `{disputed}` of "
+                f"`{items[state.cursor].name}`: its worker completes it again "
+                "without that check, and the artifact records the waiver"
             )
         if state.status in {"failed", "interrupted"}:
             if state.cursor >= len(items):
@@ -1426,7 +1457,15 @@ class WorkflowService:
         drain_stop: int | None = None,
         rule_results: tuple[str, ...] = (),
         check_results: tuple[str, ...] = (),
+        replayed: bool = False,
     ) -> Instruction:
+        """Complete the active agent item; see :meth:`complete`.
+
+        ``replayed`` records a held completion for a caller who is not the
+        step's worker, a verifier or the operator: the step's automatic
+        follow-ups still run, but its next agent item is not opened for that
+        caller, whose assignment ends here.
+        """
         state, snapshot = self.load(task_id)
         state, snapshot = self.metadata_publisher.reconcile(state, snapshot)
         if state.status == "failed":
@@ -1527,9 +1566,12 @@ class WorkflowService:
                 f"{item.name!r} is not one"
             )
         held = active_record.held_completion
-        waived = active_record.checks_waived is not None
+        waived = {key for key, _ in active_record.checks_waived}
         check_report = None
-        if (item.checks or active_record.resolved_checks) and not waived:
+        if any(
+            check.id not in waived
+            for check in (*item.checks, *active_record.resolved_checks)
+        ):
             check_report = self.rule_checker.run(
                 state,
                 item,
@@ -1552,7 +1594,7 @@ class WorkflowService:
                 )
                 self.commit(state, snapshot)
                 return self.render(state, snapshot)
-        if judged_rules(item) and not waived:
+        if to_verify(item, active_record):
             held_page = self._hold_for_verification(
                 state,
                 snapshot,
@@ -1658,7 +1700,9 @@ class WorkflowService:
                     ),
                     cursor=max(0, state.cursor - 1),
                 )
-            state, snapshot = self._activate_or_handoff(state, snapshot)
+            state, snapshot = self._activate_or_handoff(
+                state, snapshot, activate=not replayed
+            )
         else:
             state, snapshot = self.drain(
                 state,
@@ -1779,7 +1823,128 @@ class WorkflowService:
             refreshed = self.children.refresh_parent(task_id)
             if refreshed is not None:
                 instruction = refreshed
+        if caller_role == "worker" and _manager_performs(instruction):
+            # A worker that outlived its assignment must not perform the
+            # manager's item: its page names the item and offers no command.
+            instruction = replace(
+                instruction,
+                manager_only=True,
+                continuation_command=None,
+                loop_break_command=None,
+                loop_continue_command=None,
+                interact_commands=None,
+            )
         return replace(self._tag_caller(instruction, caller_role), manager_intro=True)
+
+    def check(self, task_id: str) -> CheckPreview:
+        """Run the active step's checks now, as its completion would.
+
+        Nothing is recorded: no attempt counts, the record is untouched, and
+        no command output is kept. Rules a verifier judges are only named,
+        since a verifier judges them when the step completes.
+        """
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        item, record = self._active_step(state, snapshot, "nothing to check")
+        report = RuleChecker(None, _now).run(
+            state, item, self._check_scope(state, snapshot.plan, item)
+        )
+        return check_preview(state, item, report)
+
+    def dispute(
+        self,
+        task_id: str,
+        check_id: str,
+        reason: str,
+        *,
+        caller_role: CallerRole | None = None,
+    ) -> Instruction:
+        """Stop for the operator: the step's worker disputes a check.
+
+        Only a check that rejected a completion of the step in progress can
+        be disputed. The dispute goes into the project's dispute log, then
+        onto the step's record; the operator lets the check stand or waives
+        it for this step. Nothing is written to the rule-automation store.
+        """
+        self._validate_caller_role(caller_role)
+        validate_task_id(task_id)
+        reason = reason.strip()
+        if not reason:
+            raise StateError("dispute --reason must be non-empty")
+        with self.tasks.lock_task(task_id):
+            state, snapshot = self.load(task_id)
+            item, _ = self._active_step(state, snapshot, "nothing to dispute")
+            failed = [
+                (report, result)
+                for report in item_reports(state)
+                for result in report.failed
+                if result.id == check_id
+            ]
+            if not failed:
+                raise StateError(
+                    f"nothing to dispute: no rejected completion of {item.name!r} "
+                    f"failed {check_id!r}; run check first to see what fails, "
+                    "and dispute a check the fix page names"
+                )
+            report, result = failed[-1]
+            dispute = Dispute(
+                check=check_id,
+                reason=reason,
+                attempt=report.attempt,
+                disputed_at=_now(),
+                command=result.command,
+                output=result.output,
+            )
+            rule = next((rule for rule in item.rules if rule.id == check_id), None)
+            self.rule_disputes.append(
+                DisputeEntry(
+                    check=check_id,
+                    text_hash=rule.text_hash if rule else None,
+                    task_id=task_id,
+                    run_id=state.run_id,
+                    step=item.name,
+                    reason=reason,
+                    attempt=report.attempt,
+                    disputed_at=dispute.disputed_at,
+                )
+            )
+            state = dispute_check(state, snapshot.plan, dispute, _now)
+            self.commit(state, snapshot)
+            instruction = self.render(state, snapshot)
+        self.children.reconcile_after_child(task_id)
+        return self._tag_caller(instruction, caller_role)
+
+    def rule(self, task_id: str, rule_id: str) -> RuleView:
+        """One rule or check of the task in full, as its plan froze it."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        return rule_view(state, snapshot.plan, self.rule_store.load(), rule_id)
+
+    def _active_step(
+        self, state: ExecutionState, snapshot: PlanSnapshot, refusal: str
+    ) -> tuple[PlanItem, PlanItemExecution]:
+        """The agent step in progress, or a refusal naming what is missing."""
+        plan = snapshot.plan
+        if (
+            state.status != "in_progress"
+            or state.active_item_id is None
+            or state.cursor >= len(plan.items)
+        ):
+            raise StateError(
+                f"{refusal}: no step of task {state.task_id!r} is in progress"
+            )
+        item = plan.items[state.cursor]
+        record = state.item_executions[state.cursor]
+        if item.owner != "agent" or record.status != "in_progress":
+            raise StateError(
+                f"{refusal}: no step of task {state.task_id!r} is in progress"
+            )
+        if item.verifies is not None:
+            raise StateError(
+                f"{refusal}: {item.name!r} verifies another step's rules and has "
+                "no checks of its own"
+            )
+        return item, record
 
     def task_status(
         self,
@@ -2673,9 +2838,17 @@ class WorkflowService:
         return state
 
     def _activate_or_handoff(
-        self, state: ExecutionState, snapshot: PlanSnapshot
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        *,
+        activate: bool = True,
     ) -> tuple[ExecutionState, PlanSnapshot]:
-        """Drain one assignment, activate its next agent item, or hand it back."""
+        """Drain one assignment, activate its next agent item, or hand it back.
+
+        Without ``activate`` the assignment ends at its next agent item, which
+        waits for the manager to dispatch it as a new assignment.
+        """
         assignment_id = state.assignment_item_id
         if assignment_id is None:
             return state, snapshot
@@ -2686,7 +2859,8 @@ class WorkflowService:
             snapshot.plan, assignment_id, runtime=state.workflow_runtime
         )
         if (
-            state.status == "completed"
+            not activate
+            or state.status == "completed"
             or assignment is None
             or state.cursor >= assignment.stop
         ):
@@ -2901,8 +3075,10 @@ class WorkflowService:
         The checks run again, reusing results while the tree is unchanged, so
         a newly approved check runs on the held completion; what is still to
         verify opens another round. A caller with a role gets the step's own
-        assignment, so the completion window and what drains after it are
-        the step worker's.
+        assignment, so the completion window and the automatic items that
+        drain after it are the step worker's; the caller is a verifier or the
+        operator, never that worker, so the assignment ends before its next
+        agent item, which the manager dispatches anew.
         """
         state, snapshot = self.load(task_id)
         record = state.item_executions[index]
@@ -2931,6 +3107,7 @@ class WorkflowService:
             caller_role=caller_role,
             stopping_loop=held.loop_control == "break",
             continuing_loop=held.loop_control == "continue",
+            replayed=True,
         )
 
     def _resolution(
@@ -3092,6 +3269,16 @@ def resolve_choice(item: PlanItem, choice: str) -> str:
     raise StateError(
         f"{choice!r} is not one of the choices of {item.name!r}: "
         + ", ".join(f"{n}. {label}" for n, label in enumerate(labels, 1))
+    )
+
+
+def _manager_performs(instruction: Instruction) -> bool:
+    """Whether the open item is the manager's own in the ``auto`` runtime."""
+    return (
+        instruction.workflow_runtime == "auto"
+        and instruction.item_status == "in_progress"
+        and instruction.status == "in_progress"
+        and (not instruction.subagents or instruction.interactive)
     )
 
 

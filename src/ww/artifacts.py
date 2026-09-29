@@ -29,13 +29,14 @@ class RuleOutcome:
 class RulesSummary:
     """The ``## Rules`` section of a step artifact.
 
-    ``waived`` is the operator's reason when the step completed without its
-    checks; ``fix_attempts`` counts the completions ww rejected before.
+    ``waived`` names the checks the step completed without, each with the
+    operator's reason; ``fix_attempts`` counts the completions ww rejected
+    before.
     """
 
     outcomes: tuple[RuleOutcome, ...]
     fix_attempts: int = 0
-    waived: str | None = None
+    waived: tuple[tuple[str, str], ...] = ()
 
 
 def render_step_artifact(
@@ -70,8 +71,12 @@ def _rules_section(rules: RulesSummary) -> str:
         for outcome in rules.outcomes
     )
     lines.append("")
-    if rules.waived is not None:
-        lines.append(f"Checks waived by the operator: {rules.waived}")
+    reasons: dict[str, list[str]] = {}
+    for check_id, reason in rules.waived:
+        reasons.setdefault(reason, []).append(check_id)
+    for reason, waived in reasons.items():
+        names = ", ".join(f"`{check_id}`" for check_id in waived)
+        lines.append(f"Checks waived by the operator ({names}): {reason}")
     attempts = rules.fix_attempts
     lines.append(
         f"Completions rejected before this one: {attempts}."

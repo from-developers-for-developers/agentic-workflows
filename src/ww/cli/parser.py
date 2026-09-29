@@ -263,6 +263,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Required explanation for --force; retained with the skipped item.",
     )
     next_step.add_argument(
+        "--yes",
+        action="store_true",
+        help=(
+            "Confirm --retry, --force or --approve without the y/N prompt. Only "
+            "for carrying out a decision the operator stated."
+        ),
+    )
+    next_step.add_argument(
         "--outcome", help="Selected outcome for the pending assess step."
     )
     next_step.add_argument(
@@ -401,6 +409,55 @@ def build_parser() -> argparse.ArgumentParser:
         "--error",
         required=True,
         help="Functional error that prevented the agent-owned work from completing.",
+    )
+
+    check = subparsers.add_parser(
+        "check",
+        parents=[json_output],
+        help=(
+            "Run the active step's checks now, without completing it; nothing "
+            "is recorded."
+        ),
+    )
+    check.add_argument("task_id")
+    dispute = subparsers.add_parser(
+        "dispute",
+        parents=[json_and_role],
+        help="Ask the operator to overrule a check that rejected the completion.",
+    )
+    dispute.add_argument("task_id")
+    dispute.add_argument(
+        "--rule",
+        required=True,
+        dest="check_id",
+        metavar="ID",
+        help="The rule or check ID the fix page names.",
+    )
+    dispute.add_argument(
+        "--reason",
+        required=True,
+        help="Why the check is wrong for this change, with the evidence.",
+    )
+    rule = subparsers.add_parser(
+        "rule",
+        parents=[json_output],
+        help="Show one rule or check of a task in full.",
+    )
+    rule.add_argument("task_id")
+    rule.add_argument("rule_id", metavar="ID")
+    rules = subparsers.add_parser(
+        "rules",
+        parents=[json_output],
+        help=(
+            "List the rule groups with their filters and rules; `rules prune` "
+            "deletes orphan rule-automation store entries."
+        ),
+    )
+    rules.add_argument("rules_action", nargs="?", choices=("prune",), default=None)
+    rules.add_argument(
+        "--yes",
+        action="store_true",
+        help="With prune: delete without the y/N prompt, on the operator's word.",
     )
 
     with_run = _shared("json", "role", "run")

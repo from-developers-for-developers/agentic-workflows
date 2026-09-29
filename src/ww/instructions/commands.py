@@ -102,6 +102,28 @@ def artifacts_command(task_id: str, run_id: str | None = None) -> str:
     return _command(*parts)
 
 
+def check_command(task_id: str) -> str:
+    """Run the active step's checks now, without completing it."""
+    return _command("check", _arg(task_id))
+
+
+def rule_command(task_id: str, rule_id: str = "<id>") -> str:
+    """Show one rule of the task in full."""
+    return _command("rule", _arg(task_id), _arg(rule_id))
+
+
+def dispute_command(task_id: str, check_id: str = "<id>") -> str:
+    """Ask the operator to overrule a check that rejected the completion."""
+    return _command(
+        "dispute",
+        _arg(task_id),
+        "--rule",
+        _arg(check_id),
+        "--reason",
+        '"<why the check is wrong here>"',
+    )
+
+
 def child_start_command(task_id: str, child_id: str) -> str:
     return _command("child", "start", _arg(task_id), _arg(child_id))
 

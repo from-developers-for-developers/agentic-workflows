@@ -14,6 +14,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
+from ww.config.rules import rule_source
 from ww.contracts import (
     ExecutionKind,
     HookPhase,
@@ -960,6 +961,7 @@ class WorkflowPlanCompiler:
                 has_command=rule.check is not None,
                 max_fixes=rule.max_fixes or default_fixes,
                 hints=rule.hints,
+                source=rule_source(rule.source, self.root),
             )
             for rule in unique.values()
         )

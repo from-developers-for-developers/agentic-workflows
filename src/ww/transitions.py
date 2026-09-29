@@ -18,6 +18,7 @@ from ww.errors import StateError
 from ww.execution_models import (
     CheckReport,
     CommandExecution,
+    Dispute,
     ExecutionState,
     InputRequest,
     PlanItemExecution,
@@ -71,10 +72,12 @@ def retry_failed_item(
             error=None,
             supplied_values=supplied,
             # A retry after the fix limit gives the worker a fresh count; the
-            # rejected attempts stay in the history record.
+            # rejected attempts stay in the history record. A retry after a
+            # dispute keeps the count: the check stands.
             check_reports=(
                 () if state.failure_kind == "fix_limit" else record.check_reports
             ),
+            dispute=None,
         )
     else:
         history = state.execution_history
@@ -96,16 +99,29 @@ def retry_failed_item(
 
 
 def waive_checks(
-    state: ExecutionState, plan: WorkflowPlan, reason: str, now: Clock
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    waived: tuple[str, ...],
+    reason: str,
+    now: Clock,
 ) -> ExecutionState:
-    """Return a step stopped at its fix limit to its worker without its checks.
+    """Return a stopped step to its worker without the ``waived`` checks.
 
-    The next completion skips the checks and its artifact records the waiver;
+    At the fix limit every check and rule of the step is waived, after a
+    dispute the one it named. The next completion skips them, their rules
+    are not verified, and its artifact records the waiver with its reason;
     nothing else about the step changes.
     """
     records = list(state.item_executions)
+    record = records[state.cursor]
+    waivers = dict(record.checks_waived)
+    waivers.update(dict.fromkeys(waived, reason))
     records[state.cursor] = replace(
-        records[state.cursor], status="pending", error=None, checks_waived=reason
+        record,
+        status="pending",
+        error=None,
+        checks_waived=tuple(waivers.items()),
+        dispute=None,
     )
     return project_steps(
         replace(
@@ -199,6 +215,33 @@ def reject_completion(
             item_executions=tuple(records),
             last_error=message,
             failure_kind="fix_limit",
+            updated_at=now(),
+        ),
+        plan,
+        now,
+    )
+
+
+def dispute_check(
+    state: ExecutionState, plan: WorkflowPlan, dispute: Dispute, now: Clock
+) -> ExecutionState:
+    """Stop the run for the operator: the step's worker disputes a check.
+
+    Nothing about the rejections changes; the operator either lets the check
+    stand (``next --retry``) or waives it for this step (``next --force``).
+    """
+    message = f"check disputed: {dispute.check}"
+    records = list(state.item_executions)
+    records[state.cursor] = replace(
+        records[state.cursor], status="failed", error=message, dispute=dispute
+    )
+    return project_steps(
+        replace(
+            state,
+            status="failed",
+            item_executions=tuple(records),
+            last_error=message,
+            failure_kind="check_disputed",
             updated_at=now(),
         ),
         plan,

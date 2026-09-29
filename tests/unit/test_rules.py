@@ -930,10 +930,13 @@ workflows:
     item = _item(restored, "develop")
     assert item.rules[0].hints == RuleHints(agent="claudecode")
     assert item.rules[0].paths == ("*.py",)
+    # The plan freezes where each rule comes from: its file, relative to the
+    # root, or nothing for a rule written in the step's YAML.
+    assert [rule.source for rule in item.rules] == ["rules/one.md", None]
     assert item.checks[0].command.assertion == AssertionDefinition("empty")
     snapshot = PlanSnapshot(PLAN_SCHEMA_VERSION, "test", "digest", "now", plan)
     assert PlanSnapshot.from_dict(snapshot.to_dict()).plan.to_dict() == plan.to_dict()
-    assert PLAN_SCHEMA_VERSION == 13
+    assert PLAN_SCHEMA_VERSION == 14
 
 
 def test_a_plan_without_rules_serializes_as_before(tmp_path: Path) -> None:

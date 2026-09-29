@@ -32,7 +32,12 @@ from ww.contracts import (
 from ww.control import child_workflow, is_coordinator, loop_control
 from ww.documents import DocumentStore
 from ww.errors import StateError
-from ww.execution_models import ExecutionState, PlanItemExecution, PlanSnapshot
+from ww.execution_models import (
+    CheckResult,
+    ExecutionState,
+    PlanItemExecution,
+    PlanSnapshot,
+)
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedRule, WorkflowPlan
@@ -60,6 +65,7 @@ from .commands import (
 )
 from .models import (
     ConversationEntry,
+    DisputeView,
     DocumentTask,
     FixFailure,
     FixRequired,
@@ -478,6 +484,13 @@ class InstructionBuilder:
                 and record is not None
                 else None
             ),
+            dispute=(
+                dispute_view(current, record)
+                if state.failure_kind == "check_disputed"
+                and current is not None
+                and record is not None
+                else None
+            ),
             proposals=(
                 self._proposals(state.task_id, current, record)
                 if state.failure_kind == "check_proposed"
@@ -829,42 +842,86 @@ def rule_lines(item: PlanItem, record: PlanItemExecution) -> tuple[RuleLine, ...
 def fix_required(item: PlanItem, record: PlanItemExecution) -> FixRequired | None:
     """What the step's worker must fix after ww rejected its last completion.
 
-    A waiver lifts it: the operator decided the step completes without them.
-    A derived check shows the texts of the rules it covers; a verifier's
-    failing verdict shows its evidence.
+    A waiver lifts it for the checks it names: the operator decided the step
+    completes without them. A derived check shows the texts of the rules it
+    covers; a verifier's failing verdict shows its evidence.
     """
-    if not record.check_reports or record.checks_waived is not None:
+    if not record.check_reports:
         return None
     report = record.check_reports[-1]
-    if not report.failed:
+    waived = {key for key, _ in record.checks_waived}
+    failed = tuple(result for result in report.failed if result.id not in waived)
+    if not failed:
         return None
-    texts = {rule.id: rule.text for rule in item.rules}
-    covers = {check.id: check.covers for check in record.resolved_checks}
     limits = fix_limits(item, record)
     return FixRequired(
         attempt=record.fix_attempts,
         max_fixes=max(limits.values(), default=1),
         checks=len(report.results),
-        failures=tuple(
-            FixFailure(
-                result.id,
-                result.source == "hook",
-                (
-                    "\n".join(
-                        f"- `{rule_id}`: {texts.get(rule_id, '')}"
-                        for rule_id in covers[result.id]
-                    )
-                    if result.id in covers
-                    else texts.get(result.id)
-                ),
-                result.command,
-                result.output,
-                judged=result.source == "judged",
-                covers=covers.get(result.id, ()),
-            )
-            for result in report.failed
-        ),
+        failures=fix_failures(item, record, failed),
         draft_artifact=record.draft_artifact,
+    )
+
+
+def fix_failures(
+    item: PlanItem, record: PlanItemExecution, results: tuple[CheckResult, ...]
+) -> tuple[FixFailure, ...]:
+    """Failed check results as the fix page shows them, with their rules' texts."""
+    texts = {rule.id: rule.text for rule in item.rules}
+    covers = {check.id: check.covers for check in record.resolved_checks}
+    return tuple(
+        FixFailure(
+            result.id,
+            result.source == "hook",
+            (
+                "\n".join(
+                    f"- `{rule_id}`: {texts.get(rule_id, '')}"
+                    for rule_id in covers[result.id]
+                )
+                if result.id in covers
+                else texts.get(result.id)
+            ),
+            result.command,
+            result.output,
+            judged=result.source == "judged",
+            covers=covers.get(result.id, ()),
+        )
+        for result in results
+    )
+
+
+def dispute_view(item: PlanItem, record: PlanItemExecution) -> DisputeView | None:
+    """The worker's open dispute, with the disputed check as it last failed."""
+    dispute = record.dispute
+    if dispute is None:
+        return None
+    result = next(
+        (
+            result
+            for report in reversed(record.check_reports)
+            for result in report.failed
+            if result.id == dispute.check
+        ),
+        None,
+    )
+    (failure,) = fix_failures(
+        item,
+        record,
+        (
+            result
+            or CheckResult(
+                dispute.check,
+                "rule",
+                "failed",
+                command=dispute.command,
+                output=dispute.output,
+            ),
+        ),
+    )
+    return DisputeView(
+        failure=replace(failure, command=dispute.command, output=dispute.output),
+        reason=dispute.reason,
+        attempt=dispute.attempt,
     )
 
 

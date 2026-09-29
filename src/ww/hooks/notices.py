@@ -28,6 +28,7 @@ _OPERATOR_REASONS = {
     "loop_limit": "a loop reached its limit",
     "fix_limit": "a step's checks kept failing",
     "check_proposed": "verifiers proposed checks to approve",
+    "check_disputed": "a worker disputed a check",
 }
 
 

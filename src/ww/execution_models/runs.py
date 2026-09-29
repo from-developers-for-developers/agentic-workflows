@@ -25,7 +25,7 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 13
+PLAN_SCHEMA_VERSION = 14
 # Recorded on every snapshot; informational until a reader needs to branch on it.
 PLAN_COMPILER_VERSION = "plan-v8"
 

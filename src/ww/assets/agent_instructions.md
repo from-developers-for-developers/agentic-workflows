@@ -39,11 +39,11 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
 - Perform only agent-owned work. Never run or work around a ww-owned handler,
   edit ww state, or read `ww-agentic-workflows.yaml` or ww's source to reconstruct what
   happens next.
-- On a nonzero exit, read the whole response. A "Fix required" page means a
-  check failed: fix the causes and complete again. If agent work cannot
-  finish, record it with `./ww fail <task-id> --role worker --error "<reason>"`.
-  On `awaiting_operator` (failed handler or work, interrupted command, loop
-  or fix limit, proposed checks), stop and report the task, `operator_reason`
-  and the exact error to the user; recovery is their decision. Run only the
-  `./ww next` option they pick (`--retry`, `--force`, `--approve`, `--approach`,
-  `--pick`); never reset a task unasked.
+- On a nonzero exit, read the whole response. On "Fix required", fix the causes
+  and complete again (`./ww check <task-id>` previews checks) or `./ww dispute`
+  a wrong check. `./ww fail <task-id> --role worker --error "<reason>"` records
+  agent work that cannot finish. On `awaiting_operator` (failed handler or
+  work, interruption, loop or fix limit, proposed or disputed checks), stop,
+  report the task, `operator_reason` and the exact error to the user, and run
+  only the `./ww next` option they pick (`--retry`, `--force`, `--approve`,
+  `--approach`, `--pick`, `--yes` once they said so); never reset unasked.

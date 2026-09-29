@@ -56,9 +56,17 @@ from ww.output import (
     render_reset,
     render_status,
 )
+from ww.output_adapters.rule_pages import (
+    render_check_preview,
+    render_orphans,
+    render_rule_view,
+    render_rules_listing,
+)
 from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import compose_settings, load_project_config
+from ww.rule_disputes import DisputeLog
 from ww.rule_store import UNDECIDED_RULE_STATUSES, RuleStore
+from ww.rule_views import declared_hashes, orphans, prune, rules_listing
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.workflow_config import RuleDefinition, WorkflowConfiguration, every_step
@@ -85,6 +93,7 @@ from .prompts import (
     _confirm_force_next,
     confirm_approval,
     confirm_interrupted_retry,
+    confirm_operator,
 )
 from .updates import announce, render_updates
 
@@ -101,6 +110,8 @@ _READ_ONLY_COMMANDS = frozenset(
         "interactions",
         "updates",
         "interrupted",
+        "check",
+        "rule",
     }
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
@@ -156,10 +167,13 @@ def _json(value: object) -> str:
     return json.dumps(value, indent=2) + "\n"
 
 
-def _instruction_outcome(instruction: Instruction, json_output: bool) -> _Outcome:
+def _instruction_outcome(
+    instruction: Instruction, json_output: bool, *, completing: bool = False
+) -> _Outcome:
     failed = instruction.status in {"failed", "interrupted"}
-    # A rejected completion exits non-zero too, so the worker reads the page.
-    rejected = instruction.fix_required is not None and not failed
+    # A rejected completion exits non-zero too, so the worker reads the page;
+    # showing the fix page again later is no failure of that command.
+    rejected = completing and instruction.fix_required is not None and not failed
     return _Outcome(
         render(instruction, json_output) + "\n",
         instruction.workflow,
@@ -255,6 +269,26 @@ def _lint(context: _Context) -> _Outcome:
         f"{notices}"
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
+        f"{_disputes_summary(DisputeLog(context.storage.root))}"
+    )
+
+
+def _disputes_summary(log: DisputeLog) -> str:
+    """Rules and checks workers have disputed, most disputed first.
+
+    A check disputed again and again is worth the operator's look: its
+    wording or its command may be wrong.
+    """
+    entries = log.load()
+    counts: dict[str, int] = {}
+    last: dict[str, str] = {}
+    for entry in entries:
+        counts[entry.check] = counts.get(entry.check, 0) + 1
+        last[entry.check] = f"{entry.task_id} {entry.step}"
+    return "".join(
+        f"Disputed {check}: {count} time{'s' if count != 1 else ''}, last in "
+        f"{last[check]}\n"
+        for check, count in sorted(counts.items(), key=lambda pair: -pair[1])
     )
 
 
@@ -262,20 +296,13 @@ def _rule_store_summary(store: RuleStore, configuration: WorkflowConfiguration) 
     """What ``ww-rule-automation.json`` holds that needs the operator's eye.
 
     An entry is an orphan when no rule of the composed configuration has its
-    wording any more; a pending one waits for the operator's decision. ww
-    removes nothing itself.
+    wording any more (``ww rules prune`` deletes those); a pending one waits
+    for the operator's decision. Lint removes nothing.
     """
     if not store.exists():
         return ""
     automation = store.load()
-    hashes = {
-        rule.text_hash for group in configuration.rule_groups for rule in group.rules
-    } | {
-        entry.text_hash
-        for step in every_step(configuration)
-        for entry in step.rules
-        if isinstance(entry, RuleDefinition)
-    }
+    hashes = declared_hashes(configuration)
     lines = [
         f"Rule store: {len(automation.rules)} rule"
         f"{'s' if len(automation.rules) != 1 else ''}, {len(automation.checks)} "
@@ -416,6 +443,108 @@ def _loop(context: _Context) -> _Outcome:
             caller_role=args.role,
         ),
         args.json_output,
+        completing=True,
+    )
+
+
+def _check(context: _Context) -> _Outcome:
+    """Run the active step's checks now; exits 1 when any would fail."""
+    preview = context.service.check(context.task_id)
+    text = (
+        _json(preview.to_dict())
+        if context.args.json_output
+        else render_check_preview(preview)
+    )
+    failed = bool(preview.failures)
+    return _Outcome(
+        text,
+        None,
+        context.task_id,
+        error=(
+            "checks would fail: " + ", ".join(f.id for f in preview.failures)
+            if failed
+            else None
+        ),
+        exit_code=1 if failed else 0,
+    )
+
+
+def _dispute(context: _Context) -> _Outcome:
+    args = context.args
+    return _instruction_outcome(
+        context.service.dispute(
+            context.task_id, args.check_id, args.reason, caller_role=args.role
+        ),
+        args.json_output,
+    )
+
+
+def _rule(context: _Context) -> _Outcome:
+    view = context.service.rule(context.task_id, context.args.rule_id)
+    return _Outcome(
+        _json(view.to_dict())
+        if context.args.json_output
+        else render_rule_view(view),
+        None,
+        context.task_id,
+    )
+
+
+def _rules(context: _Context) -> _Outcome:
+    """List the declared rules, or prune the store's orphan entries."""
+    args = context.args
+    configuration = load_configuration(
+        context.storage.config_path, context.extensions
+    )
+    if args.rules_action == "prune":
+        return _prune(context, configuration)
+    if args.yes:
+        raise StateError("--yes confirms `rules prune`; `rules` asks nothing")
+    listing = rules_listing(
+        configuration, context.storage.root, DisputeLog(context.storage.root).load()
+    )
+    return _Outcome(
+        _json(listing.to_dict())
+        if args.json_output
+        else render_rules_listing(listing)
+    )
+
+
+def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
+    """Delete orphan store entries after listing them and asking the operator."""
+    store = RuleStore(context.storage.root)
+    automation = store.load()
+    declared = declared_hashes(configuration)
+    listed = orphans(automation, declared)
+    if not listed:
+        return _Outcome(
+            _json({"pruned": {"rules": [], "checks": []}})
+            if context.args.json_output
+            else render_orphans(listed, automation)
+        )
+    sys.stderr.write(render_orphans(listed, automation))
+    effect = (
+        f"delete these {len(listed.rules)} rule and {len(listed.checks)} check "
+        "entries from the rule-automation store"
+    )
+    if not confirm_operator(
+        "ww rules prune",
+        effect,
+        "Delete them?",
+        "Prune",
+        assume_yes=context.args.yes,
+    ):
+        return _Outcome("", error="prune cancelled", exit_code=1)
+    store.modify(lambda current: prune(current, listed, declared))
+    if context.args.json_output:
+        return _Outcome(
+            _json(
+                {"pruned": {"rules": list(listed.rules), "checks": list(listed.checks)}}
+            )
+        )
+    return _Outcome(
+        f"Pruned {len(listed.rules)} rule and {len(listed.checks)} check entries "
+        "from the rule-automation store.\n"
     )
 
 
@@ -436,6 +565,7 @@ def _complete(context: _Context) -> _Outcome:
             check_results=tuple(args.check_result),
         ),
         args.json_output,
+        completing=True,
     )
 
 
@@ -772,6 +902,10 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "next": _next,
     "loop": _loop,
     "complete": _complete,
+    "check": _check,
+    "dispute": _dispute,
+    "rule": _rule,
+    "rules": _rules,
     "interact": _interact,
     "interactions": _interactions,
     "fail": _fail,
@@ -811,7 +945,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.force and not args.force_reason:
             print("ww error: next --force requires --force-reason", file=sys.stderr)
             return 1
-        if args.retry and not confirm_interrupted_retry():
+        if args.retry and not confirm_interrupted_retry(assume_yes=args.yes):
+            return 1
+        if args.yes and not (args.retry or args.force or args.approve):
+            print(
+                "ww error: --yes confirms next --retry, --force or --approve",
+                file=sys.stderr,
+            )
             return 1
     storage = Storage(
         (args.root or Path.cwd()).resolve()
@@ -825,7 +965,9 @@ def main(argv: list[str] | None = None) -> int:
         announce(storage, to_stderr=_machine_readable(args))
     workflow = cast(str | None, getattr(args, "workflow", None))
     task_id = cast(str | None, getattr(args, "task_id", None))
-    logged = args.command not in _READ_ONLY_COMMANDS
+    logged = args.command not in _READ_ONLY_COMMANDS and not (
+        args.command == "rules" and args.rules_action is None
+    )
 
     def log(outcome: str, error: str | None, *scope: str | None) -> None:
         record_workflow, record_task = scope if scope else (workflow, task_id)
@@ -848,13 +990,13 @@ def main(argv: list[str] | None = None) -> int:
         # it, so a refused force is reported instead of confirmed and refused.
         if args.command == "next" and args.force:
             effect = service.force_target(args.task_id)
-            if not _confirm_force_next(effect):
+            if not _confirm_force_next(effect, assume_yes=args.yes):
                 return 1
         # An approval is shown in full first: reading the command is the
         # operator's safety, as ww keeps no allowlist of executables.
         if args.command == "next" and args.approve:
             preview = service.approval_preview(args.task_id, tuple(args.approve))
-            if not confirm_approval(preview):
+            if not confirm_approval(preview, assume_yes=args.yes):
                 return 1
         if logged:
             log("started", None)

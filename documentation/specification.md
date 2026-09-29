@@ -1017,6 +1017,55 @@ is keyed by check name; `status` is `proposed`, `converted`, or `rejected`,
 converted check. Only a `converted` check runs. An unknown key, status, or
 `schema_version` is an error.
 
+### Rule commands
+
+| Command | Effect |
+| --- | --- |
+| `check <task> [--json]` | Runs the checks of the step in progress against its change set so far, exactly as `complete` would, and prints the failures in the fix page's shape, or `All checks pass`, plus the rules a verifier judges at completion. Records nothing: no attempt counts and no output is kept. Exits 1 when a check fails. Not written to the audit log. |
+| `dispute <task> --rule <id> --reason "<why>"` | Only while the step is in progress, and only for an ID a rejected completion of it failed: a rule, a `fix` hook, a derived check, or a judged rule. Stops the task with `operator_reason: check_disputed`; the page shows the check's text, command, and last output, and the worker's reason. |
+| `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
+| `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
+| `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
+
+At a `check_disputed` stop the operator answers with `next`:
+
+| Option | Effect |
+| --- | --- |
+| `--retry` | The check stands: the dispute is cleared, the rejection keeps counting toward `max_fixes`, and the next `next` hands the step back to its worker. |
+| `--force --force-reason "<why>"` | Waives the disputed ID for this step: its check does not run, or its rule is not verified, when the worker completes again, and the artifact records the waiver. |
+
+At the `fix_limit` stop `--force` waives every check and rule of the step. The
+step record keeps its waivers as `checks_waived`, a mapping of ID to reason.
+`next --yes` confirms `--retry`, `--force`, or `--approve` without the y/N
+prompt, for an agent carrying out the operator's stated decision; the effect
+or the approved command is still printed. `--yes` without one of them is an
+error.
+
+Every dispute is also appended to `.ww/rule-disputes.json`, beside the task
+states, so `lint` can list disputed IDs without reading every task:
+
+```json
+{
+  "schema_version": 1,
+  "disputes": [
+    {
+      "check": "docs/header",
+      "text_hash": "348d…",
+      "task_id": "TASK-19",
+      "run_id": "01-task",
+      "step": "develop",
+      "reason": "notes.md is a scratch file.",
+      "attempt": 1,
+      "disputed_at": "2026-09-30T10:00:00Z"
+    }
+  ]
+}
+```
+
+`text_hash` is the disputed rule's wording hash, `null` for a hook or derived
+check. An unknown key or `schema_version` is an error. The log is history: the
+rule-automation store is not touched by a dispute.
+
 ## Minimal example
 
 ```yaml
