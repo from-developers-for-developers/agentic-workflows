@@ -11,10 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
-- The `handoff` workflow flag is removed: a workflow transition (`workflow:` on the last step, or as the last
-  `after_complete` hook of that step) makes a handoff workflow by itself. Delete `handoff: true` from your YAML, which
-  now names the transition as its replacement; a transition hook elsewhere, including at global or workflow scope, now
-  fails when the configuration loads.
+- The `handoff` workflow flag is removed: a `workflow:` transition on the last step declares a handoff workflow, and
+  a transition anywhere else, including a global or workflow hook, is rejected at load. `271fb7b`
 - Fewer rule stops: `"rules": {"approval": "operator" | "check" | "auto"}` lets ww approve verifier proposals; each
   run lists its "Rules converted in this run", and `ww rules revoke <check>` undoes one. `9695d46`
 - `"enabled": "on_request"`: ww stays available, but agents use it only when the user explicitly asks; `init` now
