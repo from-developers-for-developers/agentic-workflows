@@ -838,7 +838,11 @@ workflows:
     )
     rendered = md.render_instruction(worker)
     assert "## Worker: provide required input" in rendered
-    assert '--role worker --variable commit_message="<commit_message>"' in rendered
+    token = assignment_token(service, "TASK-1")
+    assert (
+        f"--role worker --assignment {token} "
+        '--variable commit_message="<commit_message>"' in rendered
+    )
 
     notify = service.complete(
         "TASK-1",

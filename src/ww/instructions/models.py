@@ -447,6 +447,64 @@ class RuleConversions:
 
 
 @dataclass(frozen=True)
+class HandoffStep:
+    """One item a worker performed in an assignment, as the handoff reports it.
+
+    ``outcome`` is ``completed``, ``loop break``, ``loop continue``,
+    ``held for verification``, ``failed``, or ``not completed``; ``checks``
+    pairs each check of the last attempt with its status, and ``fix_rounds``
+    counts the completions ww rejected.
+    """
+
+    name: str
+    outcome: str
+    artifact: str | None = None
+    checks: tuple[tuple[str, str], ...] = ()
+    checks_waived: tuple[str, ...] = ()
+    fix_rounds: int = 0
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "outcome": self.outcome,
+            "artifact": self.artifact,
+            "checks": dict(self.checks),
+            "checks_waived": list(self.checks_waived),
+            "fix_rounds": self.fix_rounds,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class HandoffBlock:
+    """What ww tells the manager when a worker's assignment ends.
+
+    Built from the saved state, so the manager never depends on free text
+    from the worker; the worker's own words are only its short ``summary``.
+    ``files`` is ``None`` when no change set was taken: no step of the
+    assignment has rules or checks, or the directory has no git.
+    """
+
+    task_id: str
+    token: str
+    steps: tuple[HandoffStep, ...] = ()
+    files: tuple[str, ...] | None = None
+    summary: str | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            "assignment": self.token,
+            "steps": [step.to_dict() for step in self.steps],
+            "files": None if self.files is None else list(self.files),
+            "summary": self.summary,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
 class Instruction:
     """A presentation-ready view derived only from persisted execution state."""
 
@@ -597,6 +655,9 @@ class Instruction:
     # The open assignment's token in the ``auto`` runtime, carried by every
     # worker command the page prints.
     assignment_token: str | None = None
+    # The worker's assignment ended with this command: ww's report of it,
+    # which the worker returns to the manager verbatim.
+    handoff_block: HandoffBlock | None = None
     # A verification item's rules and evidence, and, at a ``check_proposed``
     # stop, the proposals the operator decides.
     verification: VerificationPage | None = None
@@ -721,6 +782,9 @@ class Instruction:
             "dispute": self.dispute.to_dict() if self.dispute else None,
             "manager_only": self.manager_only,
             "assignment_token": self.assignment_token,
+            "handoff_block": (
+                self.handoff_block.to_dict() if self.handoff_block else None
+            ),
             "verification": (
                 self.verification.to_dict() if self.verification else None
             ),

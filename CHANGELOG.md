@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Worker handoffs are written by ww: in the `auto` runtime the page that ends a worker's assignment closes with a
+  "Handoff to manager" block (steps and outcomes, artifacts, checks, fix rounds, files changed, the worker's summary)
+  that the worker returns verbatim; `--summary-for-next-step` is capped at 500 characters. A worker's `complete` or
+  `loop` on a `role: manager` step is now refused, and that step's page gives `complete --role manager`. After `next
+  --retry` of a failed handler, the values request carries the open assignment's token again.
 - The `handoff` workflow flag is removed: a `workflow:` transition on the last step declares a handoff workflow, and
   a transition anywhere else, including a global or workflow hook, is rejected at load. `271fb7b`
 - Fewer rule stops: `"rules": {"approval": "operator" | "check" | "auto"}` lets ww approve verifier proposals; each

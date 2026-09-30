@@ -25,8 +25,9 @@ RUNTIME_INSTRUCTIONS = {
         "If the exact request is unavailable, select the closest worker and "
         "report the difference. Agent hints are advisory and currently unenforced.",
         "The worker submits its own results and associated hook results with "
-        "--role worker until ww explicitly hands control back. At handoff it "
-        "returns a concise outcome and artifact references to the manager.",
+        "--role worker until ww explicitly hands control back. It then "
+        "returns ww's \"Handoff to manager\" block verbatim as its final "
+        "message; the manager reads the outcome there.",
         "A worker may delegate one bounded hook when its runtime permits, but "
         "that worker remains responsible for submitting the result. Nested "
         "workers must not complete the same item or run manager commands.",

@@ -359,6 +359,9 @@ class InstructionBuilder:
                 # Values are the whole result of an input-only assignment.
                 artifact=not manager_input,
                 role="manager" if manager_input else "worker",
+                # A retried handler's values belong to the still open
+                # assignment, whose worker command carries its token.
+                assignment=None if manager_input else worker_token(state),
             ),
             manager_input=manager_input,
             input_context=input_context,
@@ -694,6 +697,13 @@ class InstructionBuilder:
         span_ids = tuple(stage.id for stage in span.stages) if span else ()
         loop_round = _loop_round(state, plan, item)
         role: CallerRole = "manager" if state.workflow_runtime == "auto" else "worker"
+        # Under ``auto`` the manager performs its own step and completes it
+        # as the manager; a worker's completion of it is refused.
+        completer: CallerRole = (
+            "manager"
+            if state.workflow_runtime == "auto" and item.role == "manager"
+            else "worker"
+        )
         previous = (
             self._previous_step_result(state, plan)
             if item.step != INIT_STEP_NAME
@@ -712,6 +722,7 @@ class InstructionBuilder:
                 selected_model=selection.model,
                 selected_reasoning=selection.reasoning,
                 loop_control=loop_control,
+                role=completer,
                 summary=item.hands_over,
                 rule_results=(
                     tuple(rule.id for rule in verification.rules)

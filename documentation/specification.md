@@ -307,7 +307,7 @@ A step accepts every [handler key](#handlers), plus:
 | `hooks` | hooks mapping | Hooks local to this step. |
 | `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
-| `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
+| `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. In `auto` the manager completes a `manager` step with `complete --role manager` (or `loop --role manager`), and `complete` or `loop` with `--role worker` on it is refused. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
 | `interactive` | boolean | The step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. Defaults to `false`. |
 | `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
@@ -347,7 +347,8 @@ belongs to, so a later round concentrates on the previous rounds' work rather
 than on the whole task. One or more agent-owned steps may declare `break` or
 `continue`. After doing such a step, its
 worker evaluates that step's break gate. If it passes, the worker runs the
-displayed `ww loop <TASK-ID> --break --role worker` command instead of `complete`;
+displayed `ww loop <TASK-ID> --break --role worker` command (`--role manager`
+on the manager's own step under `auto`) instead of `complete`;
 that command records the step result and deterministically exits the enclosing
 loop after the step's completion hooks. The break result is also saved as the
 loop wrapper's main artifact, outside its iteration directories. A wrapper may

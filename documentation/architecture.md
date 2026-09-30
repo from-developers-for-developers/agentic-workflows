@@ -817,7 +817,14 @@ with the session's model and reasoning and does not delegate hooks.
 
 `auto` keeps manager commands and recovery in the main session and gives
 each assignment to a worker. The worker submits its own item and hook results
-until explicit handoff, then returns a concise outcome and artifact references.
+until explicit handoff, then returns the "Handoff to manager" block that ww
+builds from the saved state (`instructions/handoff.py`): the items performed
+with their outcomes, artifacts, checks, fix rounds and change set, plus the
+worker's capped `--summary-for-next-step`. The service takes the open
+assignment's items before a worker command runs, so the block can still name
+them after the command closed the assignment. A worker's `complete` or `loop`
+on a `role: manager` item is refused; the manager completes it with `--role
+manager`.
 A step's `role` says who performs it, and it is resolved along the same chain
 as the profile: workflow, enclosing steps, the step. For a `role: manager`
 action the compiler clears profile and execution-selection hints, so

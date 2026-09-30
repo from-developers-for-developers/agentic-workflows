@@ -850,7 +850,7 @@ from the completion command, never the worker under `.ww`. It then shows, under
 "Previous step result", the handover of the step completed most recently
 before this one. Completing an ordinary step requires
 `--summary-for-next-step`, one or two sentences on what was done and what the
-next step must know; ww stores it on the step record and shows it to the next
+next step must know, at most 500 characters (a longer one is refused); ww stores it on the step record and shows it to the next
 step together with the artifact's path, so the full result stays in the
 artifact and is read only when the summary is not enough. Hooks, `init`,
 and the built-in summary do not take one. Only ordinary steps count: hook results,
@@ -912,12 +912,61 @@ compaction, `instruction <task> --role manager` shows the open assignment and
 its bootstrap command with the same token, so a worker still holding it
 carries on. `next <task> --role manager --reassign` issues a new token for the
 open assignment and closes the old one, for a worker that was lost or must be
-replaced. A step the manager performs itself, `role: manager`, is an assignment
-of its own with its own token, which no worker page ever shows.
+replaced. A step the manager performs itself, `role: manager` or interactive,
+is an assignment of its own with its own token, which no worker page ever
+shows. Its page gives a manager completion command, `complete <task> --role
+manager`, and ww refuses `complete` or `loop` with `--role worker` on it ("this
+step is the manager's"), even with the step's token. The manager keeps every
+override: it may still complete or recover any other step.
 
 Tokens guard against a confused agent, not a hostile one: a worker that runs
 the manager's commands is still not stopped. The `single` runtime, where one
 session does every step, uses no tokens.
+
+A handler that failed inside an assignment keeps the assignment open. When
+`next --retry` asks again for the values the handler takes, the completion
+command on that page carries the open token, so the worker supplies them with
+the assignment it holds.
+
+### Handoff to manager
+
+In the `auto` runtime the manager does not take a worker's word for what
+happened. When a worker's command ends its assignment (its last `complete` or
+`loop`, a `fail`, or a `dispute`), the page ends with a "Handoff to manager"
+block that ww writes from the saved state:
+
+```text
+Handoff to manager · assignment 3f9a1c07
+
+Steps:
+- review: completed
+  artifact: /repo/.ww/tasks/TASK-7/runs/01-task/steps/03-review.md
+- fix: completed
+  artifact: /repo/.ww/tasks/TASK-7/runs/01-task/steps/04-fix.md
+  checks: develop/sh passed
+  fix rounds: 1
+
+Files changed:
+- src/app.py
+
+Worker summary: Both findings fixed; the parser test covers the second.
+
+Manager: continue with `./ww next TASK-7 --role manager`
+```
+
+It lists every agent item the worker performed in the assignment with its
+outcome (`completed`, `loop break`, `loop continue`, `held for verification`,
+`failed` with the error, or `not completed`), each artifact's path, the checks
+of the last attempt with their status, the checks the operator waived, and the
+number of fix rounds. "Files changed" is the change set since the first step of
+the assignment with rules or checks began; without such a step, or without git,
+it reads "not tracked". A failed handler's error is shown too. The worker's
+own judgment reaches the manager only through its `--summary-for-next-step`.
+The worker page tells the worker to return the block verbatim as its final
+message and nothing else, and prints no further command for it. The manager's
+bootstrap page names the block by the assignment's token, so the manager knows
+which block answers which assignment. The JSON instruction carries the same
+facts in `handoff_block`. The `single` runtime has no block.
 
 ### Confirmations
 

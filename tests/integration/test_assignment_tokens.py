@@ -138,7 +138,37 @@ def test_the_managers_step_has_a_token_no_worker_holds(tmp_path: Path) -> None:
     for stale in worker_tokens:
         with pytest.raises(StateError, match="is not open"):
             _complete(service, stale)
-    assert _complete(service, review.assignment_token).completion_registered
+    # Even the step's own token does not let a worker complete it.
+    with pytest.raises(StateError, match="this step is the manager's"):
+        _complete(service, review.assignment_token)
+    with pytest.raises(StateError, match="this step is the manager's"):
+        service.loop(
+            TASK,
+            artifact="Done.",
+            caller_role="worker",
+            assignment=review.assignment_token,
+        )
+    rendered = MarkdownOutputAdapter().render_instruction(review)
+    assert "### Manager completion command" in rendered
+    assert f"./ww complete {TASK} --role manager " in rendered
+    assert "--assignment" not in (review.continuation_command or "")
+    done = service.complete(
+        TASK, artifact="Reviewed.", summary_for_next="Done.", caller_role="manager"
+    )
+    assert done.completion_registered
+
+
+def test_the_manager_may_still_complete_a_workers_step(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    _dispatch(service)
+
+    done = service.complete(
+        TASK, artifact="Done.", summary_for_next="Done.", caller_role="manager"
+    )
+
+    assert done.completion_registered
+    assert done.handoff_block is None
+    assert service.next(TASK, caller_role="manager").item_name == "test"
 
 
 def test_the_manager_gets_the_same_token_back_after_losing_it(tmp_path: Path) -> None:

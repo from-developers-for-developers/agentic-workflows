@@ -466,7 +466,8 @@ def test_the_worker_in_auto_returns_the_dispute(tmp_path: Path) -> None:
     )
 
     rendered = _markdown(stop)
-    assert "Stop here. Return this `ww` response to the manager" in rendered
+    assert 'Stop here. Return the "Handoff to manager" block below' in rendered
+    assert "error: check disputed: docs/header" in rendered
     assert "### Operator recovery" not in rendered
 
 

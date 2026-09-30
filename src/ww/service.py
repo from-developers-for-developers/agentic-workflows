@@ -69,6 +69,7 @@ from ww.instructions.conversions import (
     rule_conversions,
     run_reference,
 )
+from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview
 from ww.interactions import InteractionLog
 from ww.interpolation import dependencies, interpolate
@@ -221,6 +222,24 @@ def _normalize_completion_selection(
         or (agent_changed and selected_reasoning is None)
         or (model_changed and selected_reasoning is None),
     )
+
+
+# The longest ``--summary-for-next-step``: one or two short sentences, since
+# the detail belongs in the artifact and the summary reaches the manager.
+SUMMARY_LIMIT = 500
+
+
+@dataclass(frozen=True)
+class OpenAssignment:
+    """A worker's open assignment as a worker command found it.
+
+    ``items`` are the ids of its agent items, taken before the command runs,
+    so the handoff can still name them after the assignment has ended.
+    """
+
+    token: str
+    items: tuple[str, ...]
+    active: str | None = None
 
 
 FORCE_NOT_APPLICABLE = (
@@ -1177,7 +1196,10 @@ class WorkflowService:
             raise StateError("--error must be non-empty")
         with self.tasks.lock_task(task_id):
             self._authorize_worker(task_id, caller_role, assignment)
-            instruction = self._fail(task_id, error.strip())
+            opened = self._open_assignment(task_id, caller_role)
+            instruction = self._with_handoff(
+                task_id, self._fail(task_id, error.strip()), opened
+            )
         self.children.reconcile_after_child(task_id)
         return self._tag_caller(instruction, caller_role)
 
@@ -1318,8 +1340,6 @@ class WorkflowService:
     ) -> Instruction:
         """Complete a loop-control worker step."""
         self._validate_caller_role(caller_role)
-        if caller_role == "manager":
-            raise StateError("loop --break/--continue is a worker-role command")
         self._validate_selected_agent(selected_agent)
         for name, value in (
             ("selected model", selected_model),
@@ -1330,6 +1350,8 @@ class WorkflowService:
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
             self._authorize_worker(task_id, caller_role, assignment)
+            self._check_performer(task_id, caller_role, loop=True)
+            opened = self._open_assignment(task_id, caller_role)
             instruction = self._complete(
                 task_id,
                 variables,
@@ -1343,7 +1365,12 @@ class WorkflowService:
                 stopping_loop=not continue_loop,
                 continuing_loop=continue_loop,
             )
-            instruction = self._open_next_in_single(task_id, instruction)
+            instruction = self._with_handoff(
+                task_id,
+                self._open_next_in_single(task_id, instruction),
+                opened,
+                loop="continue" if continue_loop else "break",
+            )
         return replace(
             self._tag_caller(instruction, caller_role),
             completion_registered=True,
@@ -1417,6 +1444,8 @@ class WorkflowService:
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
             self._authorize_worker(task_id, caller_role, assignment)
+            self._check_performer(task_id, caller_role)
+            opened = self._open_assignment(task_id, caller_role)
             instruction = self._complete(
                 task_id,
                 variables,
@@ -1431,8 +1460,13 @@ class WorkflowService:
                 check_results=check_results,
             )
             held = instruction.completion_held
-            instruction = replace(
-                self._open_next_in_single(task_id, instruction), completion_held=held
+            instruction = self._with_handoff(
+                task_id,
+                replace(
+                    self._open_next_in_single(task_id, instruction),
+                    completion_held=held,
+                ),
+                opened,
             )
         self.children.reconcile_after_child(task_id)
         return replace(
@@ -1569,6 +1603,12 @@ class WorkflowService:
                 "says so, then complete"
             )
         summary_for_next = (summary_for_next or "").strip() or None
+        if summary_for_next is not None and len(summary_for_next) > SUMMARY_LIMIT:
+            raise StateError(
+                f"{SUMMARY_FLAG} has {len(summary_for_next)} characters; keep it "
+                f"to {SUMMARY_LIMIT}: one or two short sentences, with the "
+                "detail in the artifact"
+            )
         if item.hands_over and summary_for_next is None:
             raise StateError(
                 f"{item.name!r} needs {SUMMARY_FLAG}: one or two short sentences "
@@ -1908,6 +1948,7 @@ class WorkflowService:
             raise StateError("dispute --reason must be non-empty")
         with self.tasks.lock_task(task_id):
             self._authorize_worker(task_id, caller_role, assignment)
+            opened = self._open_assignment(task_id, caller_role)
             state, snapshot = self.load(task_id)
             item, _ = self._active_step(state, snapshot, "nothing to dispute")
             failed = [
@@ -1946,7 +1987,9 @@ class WorkflowService:
             )
             state = dispute_check(state, snapshot.plan, dispute, _now)
             self.commit(state, snapshot)
-            instruction = self.render(state, snapshot)
+            instruction = self._with_handoff(
+                task_id, self.render(state, snapshot), opened
+            )
         self.children.reconcile_after_child(task_id)
         return self._tag_caller(instruction, caller_role)
 
@@ -3315,6 +3358,117 @@ class WorkflowService:
                 "ended. Stop here and return to your manager; run no further "
                 "ww command."
             )
+
+    def _check_performer(
+        self, task_id: str, caller_role: CallerRole | None, *, loop: bool = False
+    ) -> None:
+        """Refuse a completion by the role that does not perform the open step.
+
+        In ``auto`` the manager performs its own steps (``role: manager``, and
+        interactive ones), so a worker never completes one. The manager keeps
+        every override on the other steps; ``loop`` stays a worker command
+        there, as the pages give it only to the step's worker.
+        """
+        state, snapshot = self.load(task_id)
+        plan = snapshot.plan
+        item = (
+            plan.items[state.cursor]
+            if state.active_item_id is not None and state.cursor < len(plan.items)
+            else None
+        )
+        managers = (
+            state.workflow_runtime == "auto"
+            and item is not None
+            and item.id == state.active_item_id
+            and item.role == "manager"
+        )
+        if caller_role == "worker" and managers:
+            assert item is not None
+            raise StateError(
+                f"this step is the manager's: {item.name!r} is performed by the "
+                "manager in its own session, so a worker cannot complete it. "
+                "Stop here and return to your manager; run no further ww command."
+            )
+        if loop and caller_role == "manager" and not managers:
+            raise StateError("loop --break/--continue is a worker-role command")
+
+    def _open_assignment(
+        self, task_id: str, caller_role: CallerRole | None
+    ) -> OpenAssignment | None:
+        """The worker's open assignment before its command runs, in ``auto``."""
+        if caller_role != "worker":
+            return None
+        state, snapshot = self.load(task_id)
+        if state.workflow_runtime != "auto" or state.assignment_token is None:
+            return None
+        assignment = active_assignment(
+            snapshot.plan, state.assignment_item_id, runtime=state.workflow_runtime
+        )
+        if assignment is None:
+            return None
+        return OpenAssignment(
+            state.assignment_token,
+            tuple(
+                item.id
+                for item in snapshot.plan.items[assignment.start : assignment.stop]
+                if item.owner == "agent"
+            ),
+            state.active_item_id,
+        )
+
+    def _with_handoff(
+        self,
+        task_id: str,
+        instruction: Instruction,
+        opened: OpenAssignment | None,
+        *,
+        loop: str | None = None,
+    ) -> Instruction:
+        """Add ww's handoff block when the worker's command ended its turn.
+
+        A ``continue`` resets the round's records into the history, so the
+        items of the ended round are read from there.
+        """
+        if opened is None or instruction.next_role not in {"manager", "operator"}:
+            return instruction
+        state, snapshot = self.load(task_id)
+        items = {item.id: item for item in snapshot.plan.items}
+        current = {record.plan_item_id: record for record in state.item_executions}
+        if loop == "continue":
+            current.update(
+                (record.plan_item_id, record) for record in state.execution_history
+            )
+        performed = tuple(
+            (items[item_id], current[item_id])
+            for item_id in opened.items
+            if item_id in items and item_id in current
+        )
+        marked = next(
+            ((item, record) for item, record in performed if record.change_mark),
+            None,
+        )
+        files: tuple[str, ...] | None = None
+        if marked is not None:
+            directory = self._check_scope(state, snapshot.plan, marked[0]).directory
+            end = take_mark(directory)
+            if end is not None:
+                files, _ = change_set(directory, marked[1].change_mark, end)
+        block = handoff_block(
+            task_id,
+            opened.token,
+            performed,
+            root=self.storage.root,
+            files=files,
+            error=(
+                state.last_error
+                if state.status in {"failed", "interrupted"}
+                else None
+            ),
+            loop_outcome=(
+                (opened.active, loop) if loop and opened.active else None
+            ),
+        )
+        return replace(instruction, handoff_block=block)
 
     def _require_manager(self, command: str, caller_role: CallerRole | None) -> None:
         self._validate_caller_role(caller_role)
