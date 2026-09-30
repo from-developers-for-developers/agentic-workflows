@@ -877,9 +877,9 @@ gives the worker a lightweight scope boundary without repeating those steps'
 descriptions or prescribing a strict prohibition:
 
 ```markdown
-Avoid duplicating work that is better handled by the next steps.
-
 ### Next steps
+
+Leave to them the work they cover:
 
 - run-tests
 - check-code-quality

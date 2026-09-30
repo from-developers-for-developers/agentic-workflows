@@ -247,9 +247,9 @@ workflows:
     # What the handler actually printed, so the operator can decide at all.
     assert "2 failed" in page
     # What the agent must tell them, and that it must then stop.
-    assert "Then wait." in page
-    assert "the work completed so far is saved" in page
-    assert "you will not pick for them" in page
+    assert "Then wait for their choice" in page
+    assert "the work so far is saved" in page
+    assert "do not pick for them" in page
     # Both routes out, with the force needing a recorded reason.
     assert "--retry --yes --role manager" in page
     assert '--force --reason "<reason>" --yes' in page

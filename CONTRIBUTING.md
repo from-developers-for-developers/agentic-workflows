@@ -111,6 +111,26 @@ clean virtual environment outside this checkout:
 Please run the checks relevant to your change before submitting it. For a
 release-facing change, run the complete set above.
 
+## Change an instruction page
+
+Every token on an instruction page is read by an agent on every step, so keep
+pages short and say each thing once; stable guidance belongs in the agent
+instructions file (`src/ww/assets/agent_instructions.md`). A fixed set of real
+pages, rendered from fixture workflows in `tests/page_catalog.py`, is kept word
+for word under `tests/golden/pages`, and `tests/integration/test_page_gates.py`
+lists what each page must never lose: the completion command and what it
+carries, checks, loop and interaction commands, the "Handoff to manager" block,
+the subagent ban, and the operator's stop. After an intended wording change,
+refresh the golden pages, review their diff, and compare the sizes with an
+earlier measurement:
+
+```console
+.venv/bin/python scripts/measure_pages.py --json > before.json   # before the change
+.venv/bin/python scripts/measure_pages.py --write-golden --baseline before.json
+```
+
+A new kind of page gets a scenario in the catalog, a golden copy, and its gates.
+
 ## Add an internal workflow action
 
 Keep the action's typed payload and implementation together in a module under

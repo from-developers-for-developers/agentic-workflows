@@ -110,7 +110,8 @@ def test_worker_completes_full_assignment_then_hands_back(
     assert "Completion recorded successfully by `ww`" in rendered_handoff
     if runtime == "auto":
         assert "## Worker: return control to the manager" in rendered_handoff
-        assert "Stop here: do not run a manager command" in rendered_handoff
+        assert "This assignment is complete." in rendered_handoff
+        assert "run no further `ww` command" in rendered_handoff
     else:
         assert "## Manager and worker: dispatch" in rendered_handoff
         assert "act as the manager and do the work yourself" in rendered_handoff
@@ -508,7 +509,7 @@ workflows:
     assert rendered.index("### Task requirements") < rendered.index(
         "### Work instruction"
     )
-    assert "never create or edit files under `.ww`" in rendered
+    assert "write nothing under `.ww`" in rendered
 
     # The break leaves only the wrapper's commit hook, which wants a value.
     boundary = service.loop(
@@ -601,7 +602,7 @@ workflows:
     assert "The `research` step left this summary for you:" in rendered
     assert "> Three call sites found." in rendered
     assert plan.previous_step_summary == "Three call sites found."
-    assert "Its full result is the artifact `" in rendered
+    assert "Its full result, when you need more: `" in rendered
     assert "02-research.md`" in rendered
     # The body stays in the artifact; only the handover and reference travel.
     assert "Found three call sites." not in rendered
@@ -648,7 +649,7 @@ workflows:
     assert '--summary="<one or two sentences for the next step>"' in (
         research.continuation_command or ""
     )
-    assert "Replace `<one or two sentences for the next step>`" in rendered
+    assert "`--summary` is the next step's handover" in rendered
 
     with pytest.raises(StateError, match="needs --summary"):
         service.complete("TASK-1", artifact="Found three call sites.")
@@ -677,7 +678,7 @@ workflows:
     rendered = MarkdownOutputAdapter().render_instruction(plan)
     assert "The `research` step left this summary for you:" in rendered
     assert "> Three call sites use the old parser; see the list." in rendered
-    assert "Its full result is the artifact `" in rendered
+    assert "Its full result, when you need more: `" in rendered
     assert "Found three call sites." not in rendered
     state, _ = service.load("TASK-1")
     assert state.item_executions[1].summary_for_next == (
@@ -760,7 +761,7 @@ workflows:
         assignment=assignment_token(service, "TASK-1"),
     )
     assert handoff.next_role == "manager"
-    assert "Stop here: do not run a manager command" in md.render_instruction(handoff)
+    assert "run no further `ww` command" in md.render_instruction(handoff)
 
 
 def test_delegated_pending_input_page_has_a_delegate_heading(tmp_path: Path) -> None:

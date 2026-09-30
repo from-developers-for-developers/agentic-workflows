@@ -108,7 +108,7 @@ def test_failed_handler_directs_the_manager_to_an_operator() -> None:
 
     rendered = MarkdownOutputAdapter().render_instruction(instruction)
 
-    assert "manual intervention from the `ww` operator" in rendered
+    assert "Do not retry on your own" in rendered
     assert "### Retry" not in rendered
     assert "### Operator recovery" in rendered
     assert "./ww next TASK-1 --retry --yes --role manager" in rendered
@@ -215,8 +215,8 @@ def test_next_steps_warn_against_duplicate_work_and_list_only_names() -> None:
     rendered = MarkdownOutputAdapter().render_instruction(instruction)
 
     assert (
-        "Avoid duplicating work that is better handled by the next steps.\n\n"
         "### Next steps\n\n"
+        "Leave to them the work they cover:\n\n"
         "- run-tests\n"
         "- check-code-quality"
     ) in rendered
@@ -323,7 +323,7 @@ def test_task_id_completion_explains_how_to_replace_its_placeholder() -> None:
 
     rendered = MarkdownOutputAdapter().render_instruction(instruction)
 
-    assert "replace each `<...>` placeholder" in rendered
+    assert "Values to supply in place of their `<...>` placeholders" in rendered
     assert "do not submit the literal `<task_id>` placeholder" in rendered
 
 
@@ -360,12 +360,9 @@ def test_orchestrate_manager_delegates_a_worker_bootstrap_command() -> None:
     )
     assert "### Worker bootstrap" in rendered
     assert "- Profile: `developer`" in rendered
-    assert "Pass only this command to the selected worker:" in rendered
+    assert "Pass only this command to the selected worker" in rendered
     assert "./ww instruction TASK-1 --role worker" in rendered
-    assert (
-        "The worker runs it to receive the complete, role-specific assignment. "
-        "Do not add task details or commentary." in rendered
-    )
+    assert "with no task details or commentary" in rendered
     assert "### Working directory" not in rendered
     assert "### Work instruction" not in rendered
     assert "### Worker completion command" not in rendered

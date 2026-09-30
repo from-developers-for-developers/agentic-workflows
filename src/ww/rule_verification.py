@@ -234,8 +234,8 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
     the worker who did the step unless one session performs every step.
     """
     text = (
-        f"Verify the rules of the `{item.name}` step. Another worker did "
-        "that step's work; you judge it and do not change it. The "
+        f"Verify the rules of the `{item.name}` step: judge its work from the "
+        "change set and the rules alone, and do not change it. The "
         "Verification section lists the rules, the change set, and what to "
         "report for each rule."
     )

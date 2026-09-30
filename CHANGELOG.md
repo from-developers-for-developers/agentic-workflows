@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Shorter instruction pages: about 17% fewer tokens across the common pages (up to 42% on an operator stop), with
+  every gate kept; repeated guidance is said once, and golden page tests pin the wording. `8158548`
 - Agent hooks have their own guide, [documentation/agent-hooks.md](documentation/agent-hooks.md), and agent
   limitations are collected in `limitations.md`. `1e2a7a9`
 - Breaking: the v1 names. YAML: `assignment` (`together` / `per_item` / `per_round` / `per_step`), `variables`, `saves`
