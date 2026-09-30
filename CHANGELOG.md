@@ -11,10 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
-- One unreadable task no longer breaks the others: a task whose state ww cannot read (for example, one written with
-  a plan schema this build no longer reads) is skipped by `discover`, the agent hooks, `lookup` and `interrupted`
-  instead of failing them. `discover` lists such tasks under "Unreadable tasks" (`unreadable_tasks` in its JSON), and
-  `session-start` names them in one line. Commands addressing the task itself still fail with the exact error.
+- One task whose state ww cannot read no longer breaks `discover`, the agent hooks, `lookup` or `interrupted`;
+  `discover` lists it under "Unreadable tasks". `a85b2a2`
 - Owned assignments: in the `auto` runtime each assignment carries a token that the worker's commands must present
   (`--assignment`), so a worker whose assignment ended can no longer act; `next --reassign` issues a new one. `role:
   manager | worker` says who performs a step and is inherited like `profile`; `subagents: false` now means the
