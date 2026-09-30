@@ -11,6 +11,16 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- ww learns and suggests: built-in workflows `ww-learn` (interviews the operator about themselves, their team and
+  company), `ww-learn-project` (tooling, trackers, stack, conventions and recurring pitfalls, not features),
+  `ww-suggest` (a gentle starting setup, for you first, shared if you choose), `ww-solve`, `ww-rules-from-artifacts`
+  and `ww-automate`, in `onboarding.yaml`, with the documents `me` (user directory), `team`, `company` and `project`
+  (`.ww/<name>.md` at the project root), each starting with ww's "maintained by ww" remark, and the `ww-narrate`
+  mode. Proposals go through `ww setup apply` or `ww rules add`; nothing is committed. `init` installs the `ww-setup`
+  guide and the `ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`, `ww-rules-from-artifacts` and
+  `ww-automate` skills (existing projects are offered them once). Switch any off with `"workflows": {"<name>":
+  {"enabled": false}}`; a built-in's recommendation of a switched-off workflow is dropped. `{{ww.executable}}` names
+  how printed commands invoke ww, for step text.
 - `ww setup apply <file> --for me|team [--dry-run] [--yes] [--json]` places a proposed fragment (workflows, modes,
   profiles, documents, handlers, hooks, rules, plus `settings` for the JSON file): the YAML into `ww-setup.yaml`
   (imported by the repo file) or `ww-setup.local.yaml` (imported by the local file, created if missing), settings

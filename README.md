@@ -153,8 +153,10 @@ The wizard asks a few questions and then sets the project up:
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
   and so on), it offers to install a `ww` skill, so you can ask the agent to
   work through ww by name, a `noww` skill, so you can tell it to leave ww
-  out, and a `ww-rule` skill, which turns your own words into rules for ww's
-  steps.
+  out, a `ww-rule` skill, which turns your own words into rules for ww's
+  steps, and the `ww-setup` skill with the skills it guides through
+  (`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
+  `ww-rules-from-artifacts`, `ww-automate`).
 - **Your user configuration directory**, `~/.config/ww-agentic-workflows/`,
   where settings of your own for every project live.
 
@@ -163,6 +165,12 @@ It finishes by printing any manual additions you still need in `AGENTS.md` or
 asking each time (for Claude Code, the lines to add to
 `.claude/settings.json`), a reminder to define a workflow, and the next step:
 run the `ww-setup` skill to set ww up for you, your team and this project.
+That skill interviews you briefly about how you and your team work, reads how
+the project is organised (its tooling, tracker, conventions and recurring
+pitfalls, not its features), and proposes a small starting set of workflows,
+modes and gentle rules, which you try alone first and share with the team if
+you like. Each part is optional and shows you every change before ww places it;
+see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
 
 `init` takes flags for every prompt if you would rather not answer them
 interactively — `--no-input` accepts all defaults, and

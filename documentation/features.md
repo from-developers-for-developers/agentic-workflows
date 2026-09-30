@@ -14,6 +14,9 @@ and persistence invariants, see [architecture.md](architecture.md).
   the workflows ww ships itself.
 - Onboarding state, and setup fragments that ww validates and places in the
   shared or local configuration after asking.
+- Built-in learning and setup workflows, started by the `ww-setup` skills:
+  ww learns about the operator, team, company and project and proposes a
+  gentle starting setup.
 - An implicit, reserved `init` step that preserves task requirements.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
@@ -310,6 +313,94 @@ A setting that already holds a different value refuses the whole apply,
 listing each conflict: ww never overwrites one. After writing, ww loads the
 configuration again and restores every file if it would not load. Nothing is
 committed.
+
+## Setting ww up: learning and suggestions
+
+ww can learn who uses it and how the project works, and propose a gentle
+starting setup from that. The `ww-setup` skill guides the operator through it;
+`discover` offers the skill on the first use of ww in a project, while
+`setup.done` is not recorded (see [Onboarding state](#onboarding-state)). The
+work itself is done by ww's own [built-in workflows](specification.md#built-in-workflows),
+shipped as YAML and started like any workflow; each skill is a thin starter
+for one of them.
+
+| Skill | Workflow | Does |
+| --- | --- | --- |
+| `ww-setup` | — | The guide. Asks once whether the operator wants to see what ww does as it learns (`explain`), then offers learn → learn-project → suggest, each optional, and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
+| `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
+| `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does: agent tooling and MCP servers, issue trackers the code mentions, infrastructure and stack, conventions (branching, commit format, CI, reviews), and recurring pitfalls from the commit history and review comments. Changes no project file. |
+| `ww-suggest` | `ww-suggest` | From the learning files, proposes one to three workflows, modes, at most five simple rules, hooks where a project command plainly fits, and settings. Asks "set it up for yourself?" and then "share it with the team?", shows the proposal with `setup apply --dry-run`'s list of changes, and places it on confirmation. |
+| `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
+| `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, and applies it for the operator or the team on confirmation. |
+| `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
+| `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
+
+The questions are interactive steps with `choices`, asked through the agent's
+own question tool, one at a time; every question can be skipped, and every
+file is shown before it is written. These workflows declare `runtime: single`
+and give every step to the session that talks to the operator (`role:
+manager`), so they work in agents without subagents. When `explain` is `true`,
+the skills start them with the built-in `ww-narrate` mode, whose steps tell
+the operator what each one does and why.
+
+What ww learns goes into four files it keeps for its own use:
+
+| File | Where | Shared | Written by |
+| --- | --- | --- | --- |
+| `me.md` | the user configuration directory (`scope: user`) | no, personal | `ww-learn` |
+| `team.md`, `company.md` | `.ww/` at the project root | yes, once committed | `ww-learn` |
+| `project.md` | `.ww/` at the project root | yes, once committed | `ww-learn-project` |
+
+They are the built-in documents `me`, `team`, `company` and `project`, so
+`{{ww.documents.team}}` and the rest name them in any workflow. The project
+ones resolve against the project root even for a task working in a Git
+worktree. Every one starts with this remark, which tells any other agent to
+leave it alone:
+
+```markdown
+<!-- This file is maintained by ww for ww's own use. Do not use it for anything else. If you are an agent that is not doing ww work, ignore this file. -->
+```
+
+`init --update-gitignore` keeps `.ww/` out of Git except these three shared
+files. ww never commits them: the last step of each workflow names the files
+it left for the operator to review and commit, and records when ww learned
+with `ww onboarding --set learned.<me|team|company|project>=now`.
+
+The proposals never touch ww's configuration files through the agent. A
+workflow writes its fragment to the task's `setup_proposal` document
+(`.ww/tasks/<task-id>/setup-proposal.yaml`) and places it with
+[`ww setup apply`](#apply-a-proposed-setup): `--for me` into the local files,
+for trying a setup alone, `--for team` into the shared ones. Running
+`ww-suggest` again later and choosing to share offers the same setup to the
+team. A fragment cannot change a workflow the project's own
+`ww-agentic-workflows.yaml` defines, since that file keeps its own
+definitions; for such a change the workflow proposes a filtered hook or shows
+the YAML to edit by hand. Rules proposed from past artifacts are written with
+`rules add`, like the `ww-rule` skill's.
+
+**Refreshing.** Every learning step reads the existing file first, asks only
+what is missing or may have changed, keeps what still holds, updates what
+changed, and marks what no longer holds as superseded with the date. So
+refreshing is running `ww-learn` or `ww-learn-project` again, which is what
+the `ww-refresh` skill does after showing when ww last learned each.
+
+**Git hooks.** These workflows create no branch or worktree and commit
+nothing themselves. A project's global hooks filtered with `workflows:` to its
+own workflows, as the `ww/git` start hooks usually are, do not reach them; a
+global hook without a `workflows` filter does, so list your workflows in it
+if it creates branches or worktrees.
+
+**Switching them off.** Each is a built-in workflow, switched off by name in
+`ww-agentic-workflows.json`; the documents and the mode stay while any of them
+is enabled, and a recommendation of a switched-off one (`ww-learn` recommends
+`ww-learn-project`, which recommends `ww-suggest`) is dropped:
+
+```json
+{"workflows": {"ww-solve": {"enabled": false}, "ww-automate": {"enabled": false}}}
+```
+
+A workflow of the same name in any `ww-agentic-workflows.yaml` level replaces
+the shipped one.
 
 ## The catch-all workflow
 
@@ -1843,7 +1934,9 @@ it chose instead. `{{ww.project.name}}` is that project's name
 and `{{ww.project.dir}}` its directory, both empty for a task in the root;
 `{{ww.project.dir}}` keeps pointing at the project even after a worktree moves
 the task workspace. `{{ww.project.names}}` lists every configured project name, joined
-by commas.
+by commas. `{{ww.executable}}` is how the commands ww prints invoke ww, `./ww`
+or the configured [`executable`](#choosing-the-ww-binary), so a step's text can
+name a ww command as ww's own pages do: ``Run `{{ww.executable}} onboarding` ``.
 Values under `{{ww.<namespace>.*}}` come from a configured extension, such
 as [`ww/git`'s branch](#template-values-from-wwgit); a variable may not be
 named `ww` or start with `ww.` (or `__`).
@@ -3431,12 +3524,15 @@ round limit escalates the same way, and the force there leaves the loop.
 
 ## Installing the ww skills during init
 
-`init` offers the `ww`, `noww` and `ww-rule` skills to every agent integration it knows
-about. In a terminal it can redraw, that is one checklist rather than one
-question per agent:
+`init` offers its bundled skills to every agent integration it knows about:
+`ww`, `noww`, `ww-rule`, and `ww-setup` with the skills it guides through
+(`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
+`ww-rules-from-artifacts`, `ww-automate`; see
+[Setting ww up](#setting-ww-up-learning-and-suggestions)). In a terminal it
+can redraw, that is one checklist rather than one question per agent:
 
 ```text
-Install the ww, noww and ww-rule skills into which agent directories?
+Install the ww skills (ww, noww, ww-rule, ww-setup, ww-learn, …) into which agent directories?
   ↑↓ move · space toggles · a all · enter confirms
 
  > [ ] .agents

@@ -29,11 +29,15 @@ produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
 parsers do not acquire different workflow semantics. Validation is also where
 the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
-parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall` among
-them) with the same frontend, once per process, and adds each workflow the
+parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall`, and
+`onboarding.yaml` with ww's learning and setup workflows) with the same frontend, once per process, and adds each workflow the
 configuration does not define itself and `../ww-agentic-workflows.json` does not
-switch off, with the documents and modes its file declares; every loader passes
-through validation, so no frontend can miss them. The module imports the
+switch off, with the documents and modes its file declares, dropping a
+recommendation of a workflow that is switched off; every loader passes
+through validation, so no frontend can miss them. The learning workflows are
+plain notation: no core concept exists for them. They reach ww only through
+its CLI (`onboarding --set`, `setup apply`, `rules add`), named in their text
+with `{{ww.executable}}`, a runtime value from `../src/ww/executable.py`. The module imports the
 frontend only when it first reads a file, since the frontend validates through
 it. `lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
 point: `../src/ww/task_references.py` maps what the operator called a task onto
@@ -168,8 +172,9 @@ command rather than in copied prose means the guidance cannot drift from the
 configuration. Branch strategies are the one option core cannot know itself:
 an extension that names branches declares `branch_strategies`, and the registry
 asks only configured extensions, as it does for reserved paths. The shipped
-`ww` skill is a thin trigger for the same flow, `noww` its opt-out, and
-`ww-rule` the way rules are written; `init` installs them into each agent
+`ww` skill is a thin trigger for the same flow, `noww` its opt-out,
+`ww-rule` the way rules are written, and `ww-setup` with its siblings thin
+starters of the learning workflows; `init` installs them into each agent
 directory the discovery module knows about.
 Potentially project-opinionated edits such as `../.gitignore` remain explicit user
 choices.

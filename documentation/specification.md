@@ -16,7 +16,9 @@ and `init` renames it.
   automatic action returned. Every value ww provides lives under `ww.`:
   `{{ww.task.id}}`, `{{ww.task.workspace_dir}}`, `{{ww.task.workflows}}`
   (the configured workflow names), `{{ww.project.name}}`,
-  `{{ww.project.dir}}`, `{{ww.project.names}}`, `{{ww.documents.<name>}}`,
+  `{{ww.project.dir}}`, `{{ww.project.names}}`, `{{ww.executable}}` (how
+  printed commands invoke ww: `./ww` or the configured `executable`),
+  `{{ww.documents.<name>}}`,
   `{{ww.metadata.<path>}}`, `{{ww.project_metadata.<path>}}`, on a per-item
   stage `{{ww.item.id}}`, `{{ww.item.text}}`, and `{{ww.item.field.<name>}}`
   for the stage's own item, and on a per-child stage `{{ww.child.*}}`. A
@@ -311,6 +313,26 @@ user level:
 - `discover` lists `catchall` under its own heading, as before, and the other
   built-in workflows under "ww's own workflows" (`builtin_workflows` in JSON),
   apart from the project's.
+- A built-in's `recommended_next_workflow` naming a workflow that is switched
+  off is dropped.
+
+The built-in workflows:
+
+| Workflow | File | Purpose |
+| --- | --- | --- |
+| `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
+| `ww-learn` | `onboarding.yaml` | Interviews the operator into the documents `me`, `team` and `company`. |
+| `ww-learn-project` | `onboarding.yaml` | Scans how the project's work is organised into `project`. |
+| `ww-suggest` | `onboarding.yaml` | Proposes a starting setup and places it with `setup apply`. |
+| `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |
+| `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
+| `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
+
+`onboarding.yaml` also declares the documents `me` (`scope: user`), `team`,
+`company` and `project` (`scope: project`, `path: .ww/<name>.md`),
+`setup_proposal` (a task document at `.ww/tasks/{{ww.task.id}}/setup-proposal.yaml`),
+and the mode `ww-narrate`. See the features guide,
+[Setting ww up](features.md#setting-ww-up-learning-and-suggestions).
 
 Workflows cannot be nested. A profile value is either a name or a mapping with
 `name` and/or `description`:
