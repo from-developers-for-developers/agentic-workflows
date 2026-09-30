@@ -119,6 +119,21 @@ it ends with the exact commands to start a task, show a task's instructions,
 check its status, and inspect a workflow's plan. `discover` is read-only and
 leaves no audit record.
 
+A task whose state ww cannot read, such as one written by a build whose state
+schema this build no longer reads, does not break `discover`. It is listed
+under "Unreadable tasks" with the error, and `unreadable_tasks` in the JSON
+carries each `task_id` and `reason`. Other tasks and new work are unaffected;
+commands addressing that task keep failing with the same error, and whether to
+repair, reset, or delete its directory is the operator's decision.
+
+```markdown
+## Unreadable tasks
+
+- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema_version 14
+
+Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
+```
+
 Set `"runtime": "auto"` in `../ww-agentic-workflows.json` to make `auto` the runtime
 `start` uses when `--runtime` is omitted; `discover` then marks it as the
 default. The setting lives in the JSON file because whether delegation is
@@ -2917,6 +2932,16 @@ This project coordinates work through ww: `./ww discover` lists its workflows.
 Unfinished ww tasks, newest first:
 - TASK-16 (task, claudecode) develop: in progress · in ww-worktrees/TASK-16 · resume: `./ww instruction TASK-16 --role manager` · worker: `./ww instruction TASK-16 --run 01-task --role worker`
 ```
+
+A task whose state cannot be read never silences the hooks. `session-start`
+lists the readable tasks as usual and adds one line naming the others:
+
+```text
+ww cannot read the state of TASK-20; other tasks and new work are unaffected. `./ww discover` shows why; ask the operator before touching them.
+```
+
+`stop` and `interrupt` consider only the tasks that could be read, and
+`interrupted` and `lookup` skip a marked task they cannot read.
 
 After a compaction it starts with "Context was compacted; ww's task state is
 authoritative." Every unfinished task is listed, whichever agent started it,

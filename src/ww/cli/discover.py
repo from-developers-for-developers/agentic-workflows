@@ -21,6 +21,7 @@ from ww.hooks.notices import (
 )
 from ww.hooks.records import HookRecords
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
+from ww.open_work import open_work
 from ww.project_config import FILE_NAME
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
@@ -81,6 +82,11 @@ CATCHALL_GUIDANCE = (
     "with the next step: continue an unfinished run, start the catch-all on "
     "the task it found, or ask the operator, through your choice menu, before "
     "a task ww has never seen is created."
+)
+UNREADABLE_GUIDANCE = (
+    "Other tasks and new work are unaffected. Commands addressing these tasks "
+    "fail with the error shown; ask the operator, whose choice it is to repair, "
+    "reset, or delete each task directory."
 )
 MODES_GUIDANCE = (
     "Optional and repeatable. Explicit modes replace the workflow's default "
@@ -170,6 +176,10 @@ def render_discover(
     report = discover(storage, extensions)
     if report["enabled"]:
         report["interrupted_recently"] = _recent_interruptions(storage)
+        report["unreadable_tasks"] = [
+            task.to_dict()
+            for task in open_work(storage.task_persistence, storage.root).unreadable
+        ]
     if json_output:
         return json.dumps(report, indent=2)
     if not report["enabled"]:
@@ -203,6 +213,7 @@ def _markdown(report: dict[str, object]) -> list[str]:
         "command below.",
         "",
         *_pointer_lines(report),
+        *_unreadable_lines(report),
         "## Workflows",
         "",
     ]
@@ -372,6 +383,20 @@ def _recent_interruptions(storage: Storage) -> int:
     return len(
         HookRecords(storage, storage.task_persistence).recent(RECENT_INTERRUPTION_DAYS)
     )
+
+
+def _unreadable_lines(report: dict[str, object]) -> list[str]:
+    tasks = _entries(report.get("unreadable_tasks", []))
+    if not tasks:
+        return []
+    return [
+        "## Unreadable tasks",
+        "",
+        *(f"- `{task['task_id']}` — {task['reason']}" for task in tasks),
+        "",
+        UNREADABLE_GUIDANCE,
+        "",
+    ]
 
 
 def _pointer_lines(report: dict[str, object]) -> list[str]:

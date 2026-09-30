@@ -61,7 +61,12 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         if aggregate is None:
             return (), None, 0
         runs, handoff = aggregate
-        validate_task_runs(task_id, runs)
+        try:
+            validate_task_runs(task_id, runs)
+        except (StateError, ValueError) as error:
+            # The same error as the filesystem adapter's, so callers that
+            # tolerate one unreadable task treat both adapters alike.
+            raise StateError(f"invalid task state {task_id}: {error}") from error
         return runs, handoff, self.aggregate_revisions.get(task_id, 0)
 
     def commit_task_aggregate(

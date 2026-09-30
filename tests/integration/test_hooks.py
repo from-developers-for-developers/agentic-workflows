@@ -7,6 +7,7 @@ import io
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,12 @@ import pytest
 
 from tests.workflow_helpers import start_after_init
 from ww.cli import main
-from ww.hooks import answer_hook, hook_agent
+from ww.errors import StateError
+from ww.hooks import HookRecords, answer_hook, hook_agent
+from ww.open_work import open_work
 from ww.service import WorkflowService
 from ww.storage import Storage
+from ww.storage_adapters.memory import MemoryTaskStorageAdapter
 
 WORKFLOWS = """workflows:
   - name: task
@@ -482,11 +486,142 @@ def test_a_hook_never_fails_the_agent(
         == 0
     )
     assert main(["--root", str(root), "hook", "stop", "--agent", "someone"]) == 0
-    (root / ".ww/tasks/T9").mkdir(parents=True)
-    (root / ".ww/tasks/T9/state.json").write_text("{broken", encoding="utf-8")
+    (root / "ww-agentic-workflows.json").write_text(
+        json.dumps({"enabled": "maybe"}), encoding="utf-8"
+    )
     assert _hook(root, monkeypatch, capsys, "session-start") == ""
     assert _hook_log(root)[-1]["outcome"] == "error"
     assert capsys.readouterr().err == ""
+
+
+# Unreadable tasks
+
+
+def _unreadable(root: Path, task_id: str = "BAD") -> None:
+    """Leave ``task_id`` with a state file ww cannot read, marked interrupted."""
+    start_after_init(
+        WorkflowService(Storage(root)), "task", task_id, agent="claudecode"
+    )
+    directory = root / ".ww/tasks" / task_id
+    (directory / "state.json").write_text("{broken", encoding="utf-8")
+    (directory / "interrupted.json").write_text(
+        json.dumps(
+            {
+                "at": datetime.now(timezone.utc).isoformat(),
+                "run_id": "01-task",
+                "step": "develop",
+                "item_id": "develop",
+                "attempt": 1,
+                "agent": "claudecode",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_an_unreadable_task_leaves_discover_and_hooks_working(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_progress(root)
+    _hook(root, monkeypatch, capsys, "interrupt")
+    _unreadable(root)
+
+    assert main(["--root", str(root), "discover"]) == 0
+    output = capsys.readouterr().out
+    assert "## Unreadable tasks" in output
+    assert "- `BAD` — invalid task state " in output
+    assert "Other tasks and new work are unaffected." in output
+    assert "1 task was interrupted in the last 3 days" in output
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert [task["task_id"] for task in report["unreadable_tasks"]] == ["BAD"]
+    assert report["unreadable_tasks"][0]["reason"].startswith("invalid task state ")
+    assert report["interrupted_recently"] == 1
+
+    lines = _context(_hook(root, monkeypatch, capsys, "session-start")).splitlines()
+    assert lines[2].startswith("- T1 (task, claudecode) develop: in progress")
+    assert lines[3].startswith("  Interrupted: the previous session")
+    assert lines[-1] == (
+        "ww cannot read the state of BAD; other tasks and new work are "
+        "unaffected. `./ww discover` shows why; ask the operator before "
+        "touching them."
+    )
+
+    reminder = json.loads(_hook(root, monkeypatch, capsys, "stop"))
+    assert "T1 step `develop` is still in progress" in reminder["reason"]
+    assert "BAD" not in reminder["reason"]
+    assert main(["--root", str(root), "lookup", "--agent", "claudecode"]) == 0
+    capsys.readouterr()
+    assert main(["--root", str(root), "interrupted"]) == 0
+    assert capsys.readouterr().out.startswith("- T1 · develop")
+
+    # The task itself keeps failing with the exact error.
+    assert main(["--root", str(root), "status", "BAD"]) == 1
+    error = capsys.readouterr().err
+    assert "invalid task state " in error
+    assert str(root / ".ww/tasks/BAD/state.json") in error
+
+
+def test_discover_without_unreadable_tasks_has_no_such_section(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_progress(root)
+
+    assert main(["--root", str(root), "discover"]) == 0
+    assert "Unreadable tasks" not in capsys.readouterr().out
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["unreadable_tasks"] == []
+
+
+def test_an_unreadable_child_task_is_named_with_its_full_id(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    _in_progress(root)
+    child = root / ".ww/tasks/T1/T1.1"
+    child.mkdir(parents=True)
+    (child / "state.json").write_text("{broken", encoding="utf-8")
+
+    storage = Storage(root)
+    work = open_work(storage.task_persistence, root)
+
+    assert [task.task_id for task in work.tasks] == ["T1"]
+    assert [task.task_id for task in work.unreadable] == ["T1/T1.1"]
+
+
+def test_the_memory_adapter_reports_an_unreadable_task_the_same_way(
+    tmp_path: Path,
+) -> None:
+    root = _root(tmp_path)
+    persistence = MemoryTaskStorageAdapter()
+    service = WorkflowService(Storage(root), persistence)
+    for task_id in ("GOOD", "BAD"):
+        start_after_init(service, "task", task_id, agent="claudecode")
+    # Another task's runs: the identities no longer match, as after a bad write.
+    persistence.aggregates["BAD"] = persistence.aggregates["GOOD"]
+
+    with pytest.raises(StateError, match="^invalid task state BAD: "):
+        persistence.read_task_record("BAD")
+    work = open_work(persistence, root)
+    assert [task.task_id for task in work.tasks] == ["GOOD"]
+    assert [task.task_id for task in work.unreadable] == ["BAD"]
+    assert work.unreadable[0].reason.startswith("invalid task state BAD: ")
+
+    marker = Storage(root).runtime_path / "tasks/BAD/interrupted.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "at": datetime.now(timezone.utc).isoformat(),
+                "run_id": "01-task",
+                "item_id": "develop",
+                "attempt": 1,
+                "agent": "claudecode",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert HookRecords(Storage(root), persistence).recent(3) == ()
 
 
 # Setup commands and init

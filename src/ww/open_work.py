@@ -6,6 +6,9 @@ tasks are unfinished, and whether an agent-owned step is being worked on
 right now.  Both are answered here from the persisted runs alone, without
 rendering instructions, compiling plans, or loading extensions, so a hook
 stays fast and its answer is exactly what ``instruction`` would report.
+
+A task whose record cannot be read is reported beside the others, never
+raised: one broken task must not hide every other task from a scan.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ww.contracts import OperatorReason, run_is_open
+from ww.errors import StateError
 from ww.instructions.policy import operator_reason
 from ww.storage_adapters import TaskStorageAdapter
 from ww.workspace import resolve_workspace
@@ -76,15 +80,46 @@ class OpenTask:
         )
 
 
-def open_work(tasks: TaskStorageAdapter, root: Path) -> tuple[OpenTask, ...]:
+@dataclass(frozen=True)
+class UnreadableTask:
+    """A task whose persisted record cannot be read by this build of ww.
+
+    Commands addressing the task keep failing with ``reason``; scans across
+    tasks skip it and name it, so every other task stays usable.
+    """
+
+    task_id: str
+    reason: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"task_id": self.task_id, "reason": self.reason}
+
+
+@dataclass(frozen=True)
+class OpenWork:
+    """The unfinished tasks of a root, and the tasks that could not be read."""
+
+    tasks: tuple[OpenTask, ...]
+    unreadable: tuple[UnreadableTask, ...] = ()
+
+
+def open_work(tasks: TaskStorageAdapter, root: Path) -> OpenWork:
     """Every unfinished task in ``root``, children included, newest first."""
     found: list[OpenTask] = []
+    unreadable: list[UnreadableTask] = []
     for task_id in tasks.task_ids():
         for candidate in (task_id, *tasks.child_task_ids(task_id)):
-            task = _open_task(tasks, root, candidate)
+            try:
+                task = _open_task(tasks, root, candidate)
+            except StateError as error:
+                unreadable.append(UnreadableTask(candidate, str(error)))
+                continue
             if task is not None:
                 found.append(task)
-    return tuple(sorted(found, key=lambda task: task.updated_at, reverse=True))
+    return OpenWork(
+        tuple(sorted(found, key=lambda task: task.updated_at, reverse=True)),
+        tuple(unreadable),
+    )
 
 
 def _open_task(tasks: TaskStorageAdapter, root: Path, task_id: str) -> OpenTask | None:

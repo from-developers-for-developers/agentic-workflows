@@ -1377,7 +1377,11 @@ answers from the persisted runs alone which tasks are open and whether an
 agent step is dispatched and in progress, reusing the control policy's
 `operator_reason` so a task waiting for input or the operator never counts; it
 renders nothing, compiles nothing, and loads no extension, which keeps a hook
-fast. `ww.hooks.runtime` turns that into the three answers, and the adapters in
+fast. It returns `OpenWork`: the open tasks and, as `UnreadableTask`, every
+task whose record raised `StateError` (both storage adapters wrap a bad record
+that way), so one broken task never hides the others. The interruption scan in
+`ww.hooks.records` skips such a task, and `discover` lists what `open_work`
+reports; only commands addressing such a task still fail. `ww.hooks.runtime` turns that into the three answers, and the adapters in
 `ww.hooks.agents` only translate: each reads its agent's payload into one
 neutral record and renders ww's answer in the agent's reply shape. A new agent
 is one more adapter.
