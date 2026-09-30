@@ -26,6 +26,7 @@ from ww.operations import decode_operation
 from ww.plan import (
     PlanItem,
     PlannedCheck,
+    PlannedMode,
     PlannedRule,
     VerificationTarget,
     WorkflowPlan,
@@ -212,6 +213,7 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         ),
         rules=_planned_rules_from_list(raw.get("rules", []), item_path),
         checks=_planned_checks_from_list(raw.get("checks", []), item_path),
+        modes=_planned_modes_from_list(raw.get("modes", []), item_path),
         verifies=_verification_target(raw.get("verifies"), item_path),
     )
 
@@ -231,6 +233,15 @@ def _verification_target(value: Any, item_path: str) -> VerificationTarget | Non
         item_id=expect_string(value["item_id"], f"{path}.item_id"),
         ordinal=expect_positive_int(value["ordinal"], f"{path}.ordinal"),
         hints=_rule_hints(value.get("hints", {}), f"{path}.hints"),
+    )
+
+
+def _planned_modes_from_list(value: Any, item_path: str) -> tuple[PlannedMode, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{item_path}.modes must be a list")
+    return tuple(
+        PlannedMode.from_dict(raw, f"{item_path}.modes[{index}]")
+        for index, raw in enumerate(value)
     )
 
 

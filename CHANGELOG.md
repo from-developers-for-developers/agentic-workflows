@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Modes reach the agent: every agent step page lists its modes (before, their guidance was never shown), and a mode
+  with `workflows` / `steps` applies automatically where they match. `5deed4f`
 - One filter shape: hook and rule group `workflows` / `steps` take `"*"` or a list of names; a bare name or `"*"`
   mixed with names is now an error, and `rules add` / `rules filter` accept `'*'`. `8539f30`
 - One task whose state ww cannot read no longer breaks `discover`, the agent hooks, `lookup` or `interrupted`;

@@ -176,11 +176,50 @@ class ChoiceDefinition:
 
 @dataclass(frozen=True)
 class ModeDefinition:
+    """A root mode: guidance delivered on the pages of the steps it covers.
+
+    A mode applies where it is selected (``start --mode`` or the workflow's
+    default modes). ``workflows`` and ``steps`` are its filters: a mode with
+    either one also applies automatically wherever it matches; ``None`` means
+    the key is absent. On a mode, as on a hook, ``[]`` admits every name.
+    """
+
     name: str
     description: tuple[str, ...] = ()
+    workflows: NameFilter | None = None
+    steps: NameFilter | None = None
+
+    @property
+    def automatic(self) -> bool:
+        return self.workflows is not None or self.steps is not None
+
+    def applies_to(
+        self,
+        workflow_name: str,
+        step_name: str,
+        step_path: str,
+        precise_step_paths: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Whether this mode applies automatically to one step of one workflow."""
+        return self.automatic and step_filter_matches(
+            self.workflows or ALL,
+            self.steps or ALL,
+            workflow_name,
+            step_name,
+            step_path,
+            precise_step_paths,
+        )
 
     def to_dict(self) -> dict[str, object]:
-        return {"name": self.name, "description": list(self.description)}
+        data: dict[str, object] = {
+            "name": self.name,
+            "description": list(self.description),
+        }
+        if self.workflows is not None:
+            data["workflows"] = self.workflows.to_data()
+        if self.steps is not None:
+            data["steps"] = self.steps.to_data()
+        return data
 
 
 @dataclass(frozen=True)

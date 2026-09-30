@@ -82,6 +82,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _task_requirements(lines, instruction)
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
+        _modes(lines, instruction)
         _rules(lines, instruction)
         _verification(lines, instruction)
         _item_fields(lines, instruction)
@@ -574,6 +575,7 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
         ]
     )
     _work(lines, instruction)
+    _modes(lines, instruction)
     _rules(lines, instruction)
     _documents(lines, instruction)
     _loop_outcome(lines, instruction)
@@ -672,6 +674,18 @@ def _work(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", f"> **No subagents.** {NO_SUBAGENTS}"])
     _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
+
+
+def _modes(lines: Lines, instruction: Instruction) -> None:
+    """The modes the step works in, each with its guidance."""
+    if not instruction.modes or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Modes")
+    lines.append("Work in these modes throughout this step:")
+    lines.append("")
+    for mode in instruction.modes:
+        guidance = " ".join(mode.description)
+        lines.append(f"- `{mode.name}`" + (f" — {guidance}" if guidance else ""))
 
 
 def _rules(lines: Lines, instruction: Instruction) -> None:

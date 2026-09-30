@@ -111,7 +111,8 @@ configuration:
 ./ww discover --json
 ```
 
-It lists the workflows and modes with their descriptions and default modes,
+It lists the workflows and modes with their descriptions and default modes
+(an automatic mode with where it is always on),
 the configured projects, the runtimes and roles with what each means, and the
 start options with their possible values: agents, runtimes, projects, and the
 branch strategies an extension such as `ww/git` defines. It explains when to pass `--model` and `--reasoning`, and
@@ -711,6 +712,31 @@ ww-agentic-workflows start TASK-123 --workflow task --agent codex --role manager
   --init-artifact="Implement the requested change." \
   --mode economy --runtime auto --model gpt-5 --reasoning high
 ```
+
+Each agent step's page lists the modes it works in under **Modes**, with
+their descriptions, so the guidance reaches whoever performs the step. The
+same pages get modes as get rules: not `init`, hooks, verifiers, or the
+workflow summary.
+
+A mode may also apply by itself. Give it `workflows`, `steps`, or both, in the
+same shape as a hook's filters (`"*"` or a list of names), and it applies
+automatically to every step they admit, in addition to the selected modes:
+
+```yaml
+modes:
+  - name: tdd
+    description: Write the failing test first.
+    workflows: [task, bugfix]
+    steps: [develop]
+```
+
+Here every `develop` step of `task` and `bugfix` (and of workflows inheriting
+them) works in `tdd`, whatever `--mode` says: `--mode` replaces only the
+workflow's default modes. A mode without either key applies only when
+selected. `[]` on a mode means all, as on a hook. `discover` marks automatic
+modes with where they are always on. The modes of each step are fixed when
+the run starts; a later change to the configuration does not alter a running
+task's pages.
 
 `single` uses one session for manager and worker responsibilities. `auto`
 lets a manager dispatch assignments to separate workers; it does not make `ww`
@@ -1517,7 +1543,7 @@ step scope. Step lifecycle positions are `before_in_progress`,
 order for every matching step.
 Step filters accept bare names at any nesting level or slash-separated logical
 paths such as `plan-and-fix/fix` when only one substep should match.
-Hooks and rule groups take one filter shape: `workflows` and `steps` are each
+Hooks, rule groups and automatic modes take one filter shape: `workflows` and `steps` are each
 `"*"` for all or a list of names (`workflows: [task, bugfix]`); a bare name is
 not a list, and `"*"` cannot be mixed with names. One difference: `[]` on a
 hook means all, like omission, while on a rule group it means the group applies

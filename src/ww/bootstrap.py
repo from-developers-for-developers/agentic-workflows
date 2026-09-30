@@ -130,7 +130,7 @@ class BootstrapCoordinator:
             agent,
             None,
             self.extensions,
-            PlanCompilationOptions(project=project),
+            PlanCompilationOptions(project=project, modes=mode_names or None),
             self.extensions.config,
         )
         item = next(
@@ -193,6 +193,7 @@ class BootstrapCoordinator:
             "action_text": action_text(item),
             "profile_instruction": item.profile_instruction,
             "profile_path": item.profile_path,
+            "step_modes": [mode.to_dict() for mode in item.modes],
             "status": "pending",
             "created_at": self.now(),
         }

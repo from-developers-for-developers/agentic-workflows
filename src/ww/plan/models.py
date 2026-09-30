@@ -36,6 +36,49 @@ PayloadT = TypeVar("PayloadT")
 
 
 @dataclass(frozen=True)
+class PlannedMode:
+    """A mode frozen into the plan for one agent step.
+
+    ``automatic`` marks a mode the step gets from the mode's own filters
+    rather than from the run's selected modes. The description is frozen so
+    a run keeps delivering the guidance it started with.
+    """
+
+    name: str
+    description: tuple[str, ...] = ()
+    automatic: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "description": list(self.description),
+            "automatic": self.automatic,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object, path: str) -> PlannedMode:
+        """Read a mode written by :meth:`to_dict`, rejecting any other shape."""
+        keys = {"name", "description", "automatic"}
+        if not isinstance(value, dict) or set(value) != keys:
+            raise ValueError(
+                f"{path} must be an object of name, description, automatic"
+            )
+        name, description, automatic = (
+            value["name"],
+            value["description"],
+            value["automatic"],
+        )
+        if (
+            not isinstance(name, str)
+            or not isinstance(description, list)
+            or not all(isinstance(line, str) for line in description)
+            or not isinstance(automatic, bool)
+        ):
+            raise ValueError(f"{path} has an invalid name, description or automatic")
+        return cls(name, tuple(description), automatic)
+
+
+@dataclass(frozen=True)
 class PlannedRule:
     """A rule frozen into the plan for one agent step.
 
@@ -228,6 +271,9 @@ class PlanItem:
     # it completes.
     rules: tuple[PlannedRule, ...] = ()
     checks: tuple[PlannedCheck, ...] = ()
+    # The modes delivered on this agent step's page: the run's selected
+    # modes, then the automatic modes whose filters admit the step.
+    modes: tuple[PlannedMode, ...] = ()
     # Set on a verification item ww inserts before an agent step whose rules
     # without a command need a verifier; never compiled from configuration.
     verifies: VerificationTarget | None = None
@@ -344,6 +390,8 @@ class PlanItem:
             )
         if (self.rules or self.checks) and self.owner != "agent":
             raise ValueError("only agent-owned plan items carry rules and checks")
+        if self.modes and self.owner != "agent":
+            raise ValueError("only agent-owned plan items carry modes")
         if self.verifies is not None and (
             self.owner != "agent" or self.rules or self.checks or self.provide
         ):
@@ -399,6 +447,8 @@ class PlanItem:
             del data["rules"]
         if not self.checks:
             del data["checks"]
+        if not self.modes:
+            del data["modes"]
         if self.verifies is None:
             del data["verifies"]
         return data
@@ -470,6 +520,7 @@ class PlanItem:
             ),
             "rules": [rule.to_dict() for rule in self.rules],
             "checks": [check.to_dict() for check in self.checks],
+            "modes": [mode.to_dict() for mode in self.modes],
             "verifies": self.verifies.to_dict() if self.verifies else None,
         }
 

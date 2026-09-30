@@ -970,7 +970,7 @@ workflows:
     assert item.checks[0].command.assertion == AssertionDefinition("empty")
     snapshot = PlanSnapshot(PLAN_SCHEMA_VERSION, "test", "digest", "now", plan)
     assert PlanSnapshot.from_dict(snapshot.to_dict()).plan.to_dict() == plan.to_dict()
-    assert PLAN_SCHEMA_VERSION == 15
+    assert PLAN_SCHEMA_VERSION == 16
 
 
 def test_a_plan_without_rules_serializes_as_before(tmp_path: Path) -> None:

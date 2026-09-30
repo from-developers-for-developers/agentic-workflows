@@ -292,6 +292,7 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         assessment_outcome=None,
         rules=(),
         checks=(),
+        modes=(),
         verifies=VerificationTarget(item.id, ordinal, hints),
     )
 

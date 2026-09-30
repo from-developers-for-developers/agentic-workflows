@@ -40,7 +40,7 @@ from ww.execution_models import (
 )
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
-from ww.plan import PlanItem, PlannedRule, WorkflowPlan
+from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
@@ -804,6 +804,7 @@ class InstructionBuilder:
             ),
             continues_assignment=item.id in span_ids[1:],
             rules=rule_lines(item, record),
+            modes=item.modes,
             fix_required=fix_required(item, record),
             checks_waived=record.checks_waived,
             verification=verification,
@@ -1320,4 +1321,16 @@ def build_bootstrap_instruction(request: dict[str, object], root: Path) -> Instr
         next_role=next_role,
         control=control,
         operator_reason=reason,
+        modes=_bootstrap_modes(request) if in_progress else (),
+    )
+
+
+def _bootstrap_modes(request: dict[str, object]) -> tuple[PlannedMode, ...]:
+    """The bootstrap step's modes; a request recorded before them has none."""
+    entries = request.get("step_modes", [])
+    if not isinstance(entries, list):
+        raise ValueError("bootstrap request step_modes must be a list")
+    return tuple(
+        PlannedMode.from_dict(entry, f"bootstrap request step_modes[{index}]")
+        for index, entry in enumerate(entries)
     )
