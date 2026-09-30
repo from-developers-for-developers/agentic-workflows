@@ -16,6 +16,7 @@ from ww.extensions import (
     ExtensionCommand,
     ExtensionContext,
     ExtensionHandler,
+    ExtensionNamespace,
     ExtensionRegistry,
     ExtensionResult,
     ExtensionStore,
@@ -118,6 +119,67 @@ def test_an_extension_cannot_introduce_a_core_variable(tmp_path: Path) -> None:
             workflow_values={},
             workspace=None,
         )
+
+
+def _listing(root: Path, *identifiers: str) -> None:
+    (root / "ww-agentic-workflows.json").write_text(
+        json.dumps({"extensions": {identifier: {} for identifier in identifiers}}),
+        encoding="utf-8",
+    )
+
+
+def _namespaced(name: str, namespace: str = "vcs") -> Extension:
+    return Extension(
+        vendor="acme",
+        name=name,
+        namespace=ExtensionNamespace(
+            namespace,
+            (
+                ExtensionVariable("branch", lambda context: f"b-{context.task_id}"),
+                ExtensionVariable("tag", lambda context: None),
+            ),
+        ),
+    )
+
+
+def test_a_listed_extension_provides_its_namespace(tmp_path: Path) -> None:
+    _listing(tmp_path, "acme/demo")
+    registry = ExtensionRegistry(tmp_path, (_namespaced("demo"),))
+
+    names = registry.namespace_variables()
+    values = registry.namespace_values(
+        names,
+        task_id="TASK-1",
+        run_id="01-task",
+        workflow="task",
+        workflow_values={},
+        workspace=None,
+        project=None,
+    )
+
+    assert names == ("ww.vcs.branch", "ww.vcs.tag")
+    # ``None`` means not available yet: the name is left out.
+    assert values == {"ww.vcs.branch": "b-TASK-1"}
+
+
+def test_an_unlisted_extension_provides_no_namespace(tmp_path: Path) -> None:
+    registry = ExtensionRegistry(tmp_path, (_namespaced("demo"),))
+
+    assert registry.namespace_variables() == ()
+
+
+def test_two_extensions_may_not_share_a_namespace(tmp_path: Path) -> None:
+    _listing(tmp_path, "acme/one", "acme/two")
+    registry = ExtensionRegistry(tmp_path, (_namespaced("one"), _namespaced("two")))
+
+    with pytest.raises(ConfigurationError, match="template namespace 'vcs'"):
+        registry.namespace_variables()
+
+
+@pytest.mark.parametrize("name", ["ww", "task", "child", "Git"])
+def test_a_reserved_or_malformed_namespace_is_rejected(name: str) -> None:
+    with pytest.raises(ValueError, match="namespace"):
+        ExtensionNamespace(name, (ExtensionVariable("x", lambda context: None),))
 
 
 @pytest.mark.parametrize(

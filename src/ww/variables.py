@@ -29,6 +29,52 @@ CORE_VARIABLE_NAMES = (
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
 
+# Every ww-provided template value lives under ``ww.``; an extension's
+# namespace sits there too (ww/git provides ``{{ww.git.branch}}``).  The names
+# ww keeps for its own values may not be claimed as an extension namespace.
+WW_NAMESPACE = "ww"
+RESERVED_NAMESPACES = (
+    "task",
+    "project",
+    "documents",
+    "metadata",
+    "project_metadata",
+    "item",
+    "child",
+)
+
+
+def namespaced(namespace: str, name: str) -> str:
+    """The template name of ``name`` in an extension's ``namespace``."""
+    return f"{WW_NAMESPACE}.{namespace}.{name}"
+
+
+def is_reserved_name(name: str) -> bool:
+    """Whether a provided or output value name would shadow a ww value."""
+    return (
+        name.startswith("__")
+        or name in CORE_VARIABLE_NAMES
+        or name.split(".", 1)[0] == WW_NAMESPACE
+    )
+
+
+def unavailable_ww_values(
+    names: tuple[str, ...], values: Mapping[str, str]
+) -> tuple[str, ...]:
+    """The ``ww.`` names among ``names`` that ``values`` has no value for.
+
+    The plan compiler accepts only ``ww.`` names something provides, so one
+    missing here is a value its provider cannot give for this task yet, such
+    as ``{{ww.git.branch}}`` before ww/git recorded the branch.
+    """
+    return tuple(
+        dict.fromkeys(
+            name
+            for name in names
+            if name.split(".", 1)[0] == WW_NAMESPACE and name not in values
+        )
+    )
+
 
 def compile_variable_values(
     workflow_names: tuple[str, ...], task_id: str | None

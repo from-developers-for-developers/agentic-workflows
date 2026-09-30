@@ -15,7 +15,15 @@ and `init` renames it.
   results, extension outputs, `{{__task_workspace_dir}}`, `{{__task_id}}`, `{{__workflows}}`,
   `{{__project}}`, `{{__project_dir}}`, `{{__projects}}`, `{{metadata.<path>}}`,
   `{{project_metadata.<path>}}`, and on a per-item stage `{{item.id}}`,
-  `{{item.text}}`, and `{{field.<name>}}` for the stage's own item.
+  `{{item.text}}`, and `{{field.<name>}}` for the stage's own item. A
+  configured extension may add values under `{{ww.<namespace>.<name>}}`:
+  with `ww/git` listed in the settings, `{{ww.git.branch}}` (the task's
+  branch), `{{ww.git.base_branch}}` (the branch it was created from) and
+  `{{ww.git.branch_strategy}}` (the branch format key in use). Any other
+  `ww.` name is an error at load, and a value its extension cannot give yet,
+  such as the branch before ww/git recorded one, stops the task before an
+  agent step reading it starts (`operator_reason: value_unavailable`;
+  `next --retry` checks again) and fails an automatic handler reading it.
 
 Names must be unique within their catalog or sibling step list.
 
@@ -636,8 +644,8 @@ provide:
   - reason: ~
 ```
 
-Names must be unique in the list and cannot start with `__` or replace a core
-variable such as `__task_workspace_dir`.
+Names must be unique in the list and cannot start with `__` or `ww.`, be
+`ww`, or replace a core variable such as `__task_workspace_dir`.
 
 ### Assessments
 

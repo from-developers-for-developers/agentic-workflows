@@ -250,6 +250,38 @@ def dispute_check(
     )
 
 
+def stop_for_values(
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    item: PlanItem,
+    message: str,
+    now: Clock,
+) -> ExecutionState:
+    """Stop the run for the operator: a ``ww.`` value the step reads is missing.
+
+    The step does not start. ``next --retry`` checks the values again, for
+    example after the operator created the branch they come from; ``next
+    --force`` skips the step.
+    """
+    records = list(state.item_executions)
+    records[state.cursor] = replace(
+        records[state.cursor], status="failed", error=message
+    )
+    return project_steps(
+        replace(
+            state,
+            status="failed",
+            active_item_id=item.id,
+            item_executions=tuple(records),
+            last_error=message,
+            failure_kind="value_unavailable",
+            updated_at=now(),
+        ),
+        plan,
+        now,
+    )
+
+
 def skip_failed_item(
     state: ExecutionState, plan: WorkflowPlan, now: Clock, reason: str | None = None
 ) -> ExecutionState:

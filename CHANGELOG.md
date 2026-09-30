@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Templates can read the task's branch: with `ww/git` in the settings, `{{ww.git.branch}}`,
+  `{{ww.git.base_branch}}` and `{{ww.git.branch_strategy}}` work in any step or handler, from ww/git's branch record;
+  an agent step reading the branch before the task has one stops for the operator (`value_unavailable`, `next --retry`
+  checks again). Extensions may provide such values under their own `namespace`, and a provided value may no longer
+  be named `ww` or start with `ww.`.
 - Worker handoffs are written by ww: a delegated worker's last page ends with a "Handoff to manager" block to return
   verbatim, and a worker can no longer complete the manager's step. `e2b2efd`
 - The `handoff` workflow flag is removed: a `workflow:` transition on the last step declares a handoff workflow, and

@@ -955,3 +955,70 @@ def test_repository_resolves_the_task_workspace_and_its_worktrees(
     assert git_extension._repository(context(repository, workspace=plain)) == (
         repository.resolve()
     )
+
+
+# --------------------------------------------------------------------------- #
+# Template namespace
+# --------------------------------------------------------------------------- #
+
+
+def git_variable(name: str):
+    namespace = git_extension.EXTENSION.namespace
+    assert namespace is not None and namespace.name == "git"
+    return {variable.name: variable.resolve for variable in namespace.variables}[name]
+
+
+def test_git_variables_come_from_the_branch_record(repository: Path) -> None:
+    config = {
+        "use_separate_branch": True,
+        "base_branches": {"default": "main"},
+        "branch_name_formats": {"default": "feature/{{task_id}}"},
+    }
+    task_context = context(repository, config)
+    # Nothing recorded yet: not available, which ww reports as an error.
+    assert git_variable("branch")(task_context) is None
+    assert git_variable("base_branch")(task_context) is None
+
+    assert handler("start-task-branch")(task_context).ok
+    _run("git", "switch", "-q", "main", cwd=repository)
+
+    # The record, not whatever the checkout is on now.
+    assert git_variable("branch")(task_context) == "feature/task-1"
+    assert git_variable("base_branch")(task_context) == "main"
+
+
+def test_a_child_git_branch_is_its_parent_branch_and_child_id(
+    repository: Path,
+) -> None:
+    config = {
+        "use_separate_branch": True,
+        "base_branches": {"default": "main"},
+        "branch_name_formats": {"default": "feature/{{task_id}}"},
+    }
+    assert handler("start-task-branch")(context(repository, config)).ok
+    child_context = context(repository, config, task_id="TASK-1/TASK-1.1")
+    assert handler("start-task-branch")(child_context).ok
+
+    assert git_variable("branch")(child_context) == "feature/task-1-task-1.1"
+    assert git_variable("base_branch")(child_context) == "feature/task-1"
+
+
+def test_the_branch_strategy_variable_names_the_format_in_use(
+    repository: Path,
+) -> None:
+    config = {"branch_name_formats": {"default": "{{task_id}}", "hotfix": "h"}}
+    strategy = git_variable("branch_strategy")
+
+    assert strategy(context(repository, config, workflow="task")) == "default"
+    assert strategy(context(repository, config, workflow="hotfix")) == "hotfix"
+    assert (
+        strategy(
+            context(
+                repository,
+                config,
+                workflow="task",
+                values={BRANCH_NAMING_STRATEGY: "hotfix"},
+            )
+        )
+        == "hotfix"
+    )

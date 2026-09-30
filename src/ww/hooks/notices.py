@@ -29,6 +29,7 @@ _OPERATOR_REASONS = {
     "fix_limit": "a step's checks kept failing",
     "check_proposed": "verifiers proposed checks to approve",
     "check_disputed": "a worker disputed a check",
+    "value_unavailable": "a step's template value is not available yet",
 }
 
 

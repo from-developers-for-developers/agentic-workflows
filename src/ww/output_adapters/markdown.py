@@ -450,6 +450,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "fix_limit": "the step's checks reached their fix limit",
     "check_proposed": "verifiers proposed checks for the step's rules",
     "check_disputed": "the step's worker disputed a check",
+    "value_unavailable": "a value the step reads is not available yet",
 }
 
 
@@ -1619,6 +1620,9 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.dispute is not None:
         _check_disputed(lines, instruction)
         return
+    if instruction.operator_reason == "value_unavailable":
+        _value_unavailable(lines, instruction)
+        return
     child = _failed_child(instruction)
     if child is None:
         lines.extend(["", *_failed_handler_guidance(instruction)])
@@ -1770,6 +1774,48 @@ def _check_disputed(lines: Lines, instruction: Instruction) -> None:
             if command.action == "retry"
             else f"to waive `{dispute.failure.id}` for this step, only with the "
             "operator's explicit approval; the artifact records the reason"
+        )
+        lines.extend(
+            ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]
+        )
+
+
+def _value_unavailable(lines: Lines, instruction: Instruction) -> None:
+    """A ``ww.`` value the step reads is missing: the step has not started."""
+    worker = (
+        instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
+    )
+    lines.extend(
+        [
+            "",
+            "The step has not started: its text reads the value(s) named in the "
+            "error above, and what provides them has none for this task yet.",
+        ]
+    )
+    if worker:
+        lines.extend(
+            [
+                "",
+                f"Stop here. {_return_phrase(instruction)}: the operator decides "
+                "how to go on.",
+            ]
+        )
+        return
+    _append_section(lines, "Operator recovery")
+    lines.extend(
+        [
+            "Nothing else runs until the user, who is the `ww` operator, "
+            "decides. Show them the error above and ask for one of these "
+            "choices; do not pick for them, and do not create what is missing "
+            "yourself unless they ask you to.",
+        ]
+    )
+    for command in instruction.recovery_commands:
+        purpose = (
+            "to check the values again, once the operator made them available "
+            "(for example created the task's branch)"
+            if command.action == "retry"
+            else "to skip the step, only with the operator's explicit approval"
         )
         lines.extend(
             ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]

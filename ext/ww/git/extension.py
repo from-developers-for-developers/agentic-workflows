@@ -66,6 +66,7 @@ from ww.extensions.api import (
     ExtensionCommand,
     ExtensionContext,
     ExtensionHandler,
+    ExtensionNamespace,
     ExtensionResult,
     ExtensionVariable,
     ModeDefinition,
@@ -977,6 +978,44 @@ def _task_workspace_dir(context: ExtensionContext) -> str | None:
     return None
 
 
+def _recorded_field(context: ExtensionContext, key: str) -> str | None:
+    """A field of the task's latest branch record, never a live git lookup.
+
+    The primary checkout and a task's worktree may sit on different branches,
+    so what git reports depends on where it is asked; the record does not.
+    """
+    if not context.task_id:
+        return None
+    record = _recorded_branch(context, context.task_id)
+    value = record.get(key) if record else None
+    return value if isinstance(value, str) and value else None
+
+
+def _branch_variable(context: ExtensionContext) -> str | None:
+    """``{{ww.git.branch}}``: the task's branch, once ww/git recorded it."""
+    return _recorded_field(context, "branch")
+
+
+def _base_branch_variable(context: ExtensionContext) -> str | None:
+    """``{{ww.git.base_branch}}``: the branch the task's branch was made from."""
+    return _recorded_field(context, "base")
+
+
+def _branch_strategy_variable(context: ExtensionContext) -> str | None:
+    """``{{ww.git.branch_strategy}}``: the branch format key the task uses.
+
+    The one ``start --branch-strategy`` chose, else the workflow's own entry
+    in ``branch_name_formats``, else ``default``.
+    """
+    strategy = context.values.get(BRANCH_NAMING_STRATEGY)
+    if strategy:
+        return strategy
+    formats = settings_from(context.config).branch_name_formats
+    if context.workflow and context.workflow in formats:
+        return context.workflow
+    return "default"
+
+
 def _remove_worktree(context: ExtensionContext) -> ExtensionResult:
     settings = settings_from(context.config)
     if not settings.worktrees:
@@ -1084,6 +1123,14 @@ EXTENSION = Extension(
     version="0.2.0",
     description="Commit and branch through ww, and keep a record of both.",
     variables=(ExtensionVariable("__task_workspace_dir", _task_workspace_dir),),
+    namespace=ExtensionNamespace(
+        "git",
+        (
+            ExtensionVariable("branch", _branch_variable),
+            ExtensionVariable("base_branch", _base_branch_variable),
+            ExtensionVariable("branch_strategy", _branch_strategy_variable),
+        ),
+    ),
     reserved_paths=_reserved_paths,
     branch_strategies=_branch_strategies,
     handlers=(
