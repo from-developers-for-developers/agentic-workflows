@@ -642,8 +642,14 @@ rules, so recovery and first execution have one result contract. Explicit
 action-versus-segment scope prevents a generic checker success from being
 mistaken for evidence that every side effect in a multi-segment action occurred.
 
-`handoff: true` is the one supported cross-workflow operation. Its terminal
-transition completes the selection workflow's own run and opens the successor as
+A workflow transition is the one supported cross-workflow operation. The
+transition itself declares a handoff workflow: `WorkflowDefinition.hands_off`
+is derived from the steps, so inheritance copies it with them and there is no
+YAML flag. Configuration validation, not the compiler, places it: at most one
+transition, as the last top-level step with no completion hook applying to it,
+or as the last `after_complete` hook of that step, never at global or workflow
+scope. `WorkflowPlan.handoff` keeps the derived value, so the plan snapshot is
+unchanged. Its terminal transition completes the selection workflow's own run and opens the successor as
 the next numbered run, rather than replacing the plan in place. Both workflows
 therefore keep their own snapshot, state, and artifacts, and the run ledger shows
 how the task got from one to the other — the selection run's summary column, which

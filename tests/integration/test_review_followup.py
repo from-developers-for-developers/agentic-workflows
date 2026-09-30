@@ -302,7 +302,6 @@ def test_parent_follows_child_handoff_until_successor_finishes(
       - name: execute
         workflow_per_child: choose
   - name: choose
-    handoff: true
     steps:
       - name: select
         provide:

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     from ww.actions import Commands, DefinedAction
-    from ww.operations import ChildWorkflowRun, WorkflowHandoff
 
 from ww.contracts import (
     HookFailure,
@@ -25,6 +24,7 @@ from ww.contracts import (
     LoopAssignment,
     StepRole,
 )
+from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
@@ -579,7 +579,6 @@ class WorkflowDefinition:
     role: StepRole | None = None
     # Whether the performers of its steps may spawn subagents, inherited.
     subagents: bool | None = None
-    handoff: bool = False
     # The runtime ``start`` uses for this workflow when ``--runtime`` is
     # omitted; it outranks the project default, and the flag outranks it.
     runtime: str | None = None
@@ -591,6 +590,22 @@ class WorkflowDefinition:
     inherits: str | None = None
     # A workflow to offer the operator once this one completes.
     recommended_next_workflow: str | None = None
+
+    @property
+    def hands_off(self) -> bool:
+        """Whether the workflow ends by handing the task to another workflow.
+
+        The transition itself declares it: a ``workflow:`` step, or a
+        ``workflow:`` hook on a step.  Validation places it at the end.
+        """
+        return any(
+            isinstance(step.operation, WorkflowHandoff)
+            or any(
+                isinstance(hook.handler.operation, WorkflowHandoff)
+                for hook in step.hooks
+            )
+            for step in step_tree(self.steps)
+        )
 
 
 def binds_task_identity(workflow: WorkflowDefinition) -> bool:
@@ -618,7 +633,7 @@ def delegation_requests(workflow: WorkflowDefinition) -> tuple[str, ...]:
     requested: list[str] = []
     if _requests_worker(workflow):
         requested.append(workflow.name)
-    for step in _every_step(workflow.steps):
+    for step in step_tree(workflow.steps):
         if _requests_worker(step) and step.name not in requested:
             requested.append(step.name)
     return tuple(requested)
@@ -631,15 +646,15 @@ def _requests_worker(definition: object) -> bool:
     )
 
 
-def _every_step(steps: Iterable[StepDefinition]) -> Iterator[StepDefinition]:
+def step_tree(steps: Iterable[StepDefinition]) -> Iterator[StepDefinition]:
     """Walk a step tree: nested steps, loop bodies, assessments, item stages."""
     for step in steps:
         yield step
-        yield from _every_step(step.child_steps)
-        yield from _every_step(step.loop_steps)
-        yield from _every_step(step.assessment_outcomes)
+        yield from step_tree(step.child_steps)
+        yield from step_tree(step.loop_steps)
+        yield from step_tree(step.assessment_outcomes)
         if step.items is not None:
-            yield from _every_step(step.items.steps)
+            yield from step_tree(step.items.steps)
 
 
 @dataclass(frozen=True)
@@ -677,7 +692,7 @@ class WorkflowConfiguration:
 def every_step(configuration: WorkflowConfiguration) -> Iterator[StepDefinition]:
     """Every step of every workflow and of every step-shaped root handler."""
     for workflow in configuration.workflows:
-        yield from _every_step(workflow.steps)
+        yield from step_tree(workflow.steps)
     for handler in configuration.handlers:
         if isinstance(handler, StepDefinition):
-            yield from _every_step((handler,))
+            yield from step_tree((handler,))

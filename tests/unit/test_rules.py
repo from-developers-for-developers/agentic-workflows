@@ -637,7 +637,6 @@ def test_on_failure_fix_is_not_valid_on_a_workflow_transition(tmp_path: Path) ->
     steps:
       - work: Work.
   - name: task
-    handoff: true
     steps:
       - name: develop
         description: Develop.

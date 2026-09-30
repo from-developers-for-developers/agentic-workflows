@@ -4,7 +4,7 @@
   "cases": [
     {
       "name": "terminal_handoff",
-      "yaml": "handlers:\n  - name: finalize\n    prompt: true\nworkflows:\n  - name: decide\n    handoff: true\n    hooks:\n      before_complete_workflow:\n        - name: finalize\n    steps:\n      - name: choose\n        provide:\n          - name: workflow\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n",
+      "yaml": "handlers:\n  - name: finalize\n    prompt: true\nworkflows:\n  - name: decide\n    hooks:\n      before_complete_workflow:\n        - name: finalize\n    steps:\n      - name: choose\n        provide:\n          - name: workflow\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n",
       "workflow": "decide",
       "plan": {
         "workflow": "decide",
@@ -1087,7 +1087,7 @@
     },
     {
       "name": "sequence_and_command_hooks",
-      "yaml": "handlers:\n  - name: prepare\n    command:\n      shell: printf start > started.txt\n  - name: record\n    provide:\n      - name: commit_message\n        description: Commit summary.\n    command:\n      shell: printf \"%s\" \"$COMMIT_MESSAGE\" > committed.txt\n      env:\n        COMMIT_MESSAGE: \"{{commit_message}}\"\n\nhooks:\n  before_start_workflow:\n    - name: prepare\n  before_complete:\n    - steps: [fix]\n      name: record\n\nworkflows:\n  - name: task\n    steps:\n      - name: group\n        steps:\n          - name: plan\n            prompt: true\n            description: Plan it.\n          - name: fix\n            prompt: true\n            description: Fix it.\n  - name: choose\n    handoff: true\n    steps:\n      - name: select\n        prompt: true\n        provide:\n          - name: workflow\n            description: Target workflow.\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n",
+      "yaml": "handlers:\n  - name: prepare\n    command:\n      shell: printf start > started.txt\n  - name: record\n    provide:\n      - name: commit_message\n        description: Commit summary.\n    command:\n      shell: printf \"%s\" \"$COMMIT_MESSAGE\" > committed.txt\n      env:\n        COMMIT_MESSAGE: \"{{commit_message}}\"\n\nhooks:\n  before_start_workflow:\n    - name: prepare\n  before_complete:\n    - steps: [fix]\n      name: record\n\nworkflows:\n  - name: task\n    steps:\n      - name: group\n        steps:\n          - name: plan\n            prompt: true\n            description: Plan it.\n          - name: fix\n            prompt: true\n            description: Fix it.\n  - name: choose\n    steps:\n      - name: select\n        prompt: true\n        provide:\n          - name: workflow\n            description: Target workflow.\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n",
       "workflow": "task",
       "plan": {
         "workflow": "task",
@@ -2140,7 +2140,7 @@
     },
     {
       "name": "child_handoff",
-      "yaml": "workflows:\n  - name: parent\n    steps:\n      - name: split\n        children: ~\n      - name: execute\n        workflow_per_child: choose\n  - name: choose\n    handoff: true\n    steps:\n      - name: select\n        provide:\n          - name: workflow\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n  - name: work\n    steps:\n      - name: implement\n        artifact: false\n",
+      "yaml": "workflows:\n  - name: parent\n    steps:\n      - name: split\n        children: ~\n      - name: execute\n        workflow_per_child: choose\n  - name: choose\n    steps:\n      - name: select\n        provide:\n          - name: workflow\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n  - name: work\n    steps:\n      - name: implement\n        artifact: false\n",
       "workflow": "parent",
       "plan": {
         "workflow": "parent",

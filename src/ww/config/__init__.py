@@ -263,7 +263,6 @@ _OVERRIDES = {
     "profile": ("profile", "profile_description"),
     "role": ("role",),
     "subagents": ("subagents",),
-    "handoff": ("handoff",),
     "runtime": ("runtime",),
     "restartable": ("restartable",),
     "recommended_next_workflow": ("recommended_next_workflow",),
@@ -290,7 +289,6 @@ def _parse_workflow(
         "agent",
         "model",
         "reasoning",
-        "handoff",
         "profile",
         "role",
         "subagents",
@@ -303,17 +301,20 @@ def _parse_workflow(
         _mapping(data, path),
         path,
         allowed=workflow_keys,
-        ignored={"steps"},
+        # A removed key is never a shorthand name; it is rejected below.
+        ignored={"steps", "handoff"},
     )
     if "workflows" in mapping:
         raise ConfigurationError(
             f"{path}.workflows defines nested workflows, which are not supported"
         )
+    if "handoff" in mapping:
+        raise ConfigurationError(
+            f"{path}.handoff was removed: a workflow transition (`workflow:` "
+            "on the last step) makes a handoff workflow"
+        )
     _only(mapping, workflow_keys, path)
     name = _name(mapping, path)
-    handoff = mapping.get("handoff", False)
-    if not isinstance(handoff, bool):
-        raise ConfigurationError(f"{path}.handoff must be true or omitted")
     runtime = mapping.get("runtime")
     if runtime is not None and runtime not in RUNTIME_INSTRUCTIONS:
         raise ConfigurationError(
@@ -362,7 +363,6 @@ def _parse_workflow(
         **_profile(mapping, f"workflow {name!r}"),
         role=_role(mapping, f"workflow {name!r}"),
         subagents=_subagents(mapping, f"workflow {name!r}"),
-        handoff=handoff,
         runtime=runtime,
         restartable=restartable,
         inherits=inherits,

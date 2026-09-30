@@ -31,7 +31,6 @@ workflows:
           after_complete:
             - name: where
   - name: triage
-    handoff: true
     steps:
       - choose: Choose the follow-up workflow.
         provide:

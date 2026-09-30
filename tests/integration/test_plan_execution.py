@@ -51,7 +51,6 @@ workflows:
             prompt: true
             description: Fix it.
   - name: choose
-    handoff: true
     steps:
       - name: select
         prompt: true

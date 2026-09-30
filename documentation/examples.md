@@ -258,14 +258,14 @@ workflows:
 
 ## 10. A handoff workflow that chooses the next one
 
-A workflow with `handoff: true` ends in a transition step, `workflow` beside
-the step name, to another workflow, which continues as the next run of the same
-task. This is how one entry point routes a request to the right process.
+A workflow that ends in a transition step, `workflow` beside the step name,
+hands off to another workflow, which continues as the next run of the same
+task; the transition alone makes it a handoff workflow. This is how one entry
+point routes a request to the right process.
 
 ```yaml
 workflows:
   - name: route
-    handoff: true
     steps:
       - classify: Decide whether this request is a bug fix or a feature.
         artifact: false
