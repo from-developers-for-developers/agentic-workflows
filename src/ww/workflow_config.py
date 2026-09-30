@@ -349,7 +349,7 @@ def step_filter_matches(
     other matches the step's own name. Hooks and rule groups share this
     matching so a filter means the same in both.
     """
-    logical_path = step_path.replace("/{item}", "")
+    logical_path = step_path.replace("/{item}", "").replace("/{child}", "")
     step_matches = steps.names is None or any(
         logical_path == selector
         if selector in precise_step_paths
@@ -531,7 +531,7 @@ class StepDefinition(HandlerDefinition):
     item_operation: ItemOperation | None = None
     artifact: bool = True
     # A step with ``children`` collects child tasks, then runs each with
-    # ``children.workflow``.
+    # ``children.workflow``, or runs ``children.steps`` once per child.
     children: ChildFlow | None = None
     artifact_dependency: str | None = None
     # An assessment is an agent prompt whose named outcome selects a conditional
@@ -546,14 +546,19 @@ class StepDefinition(HandlerDefinition):
 class ChildFlow:
     """The child tasks owned by one ``children`` step.
 
-    The step's own action collects them with ``add-child``; ww then runs every
-    child, one at a time, with ``workflow``, and the parent continues after the
-    last one completes.
+    The step's own action collects them with ``add-child``.  Without
+    ``steps`` ww then runs every child, one at a time, with ``workflow``, and
+    the parent continues after the last one completes.  With ``steps`` the
+    parent runs those stages once per child, one child at a time; exactly one
+    of them runs the child task with ``workflow`` and waits for it.
     """
 
     workflow: str
     # Splitting guidance for the collecting agent, as ``items.description``.
     description: str | None = None
+    # The parent's stages per child; the one running the child carries a
+    # ``ChildWorkflowRun`` operation.  Empty in the simple form.
+    steps: tuple[StepDefinition, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -662,7 +667,8 @@ def _requests_worker(definition: object) -> bool:
 
 
 def step_tree(steps: Iterable[StepDefinition]) -> Iterator[StepDefinition]:
-    """Walk a step tree: nested steps, loop bodies, assessments, item stages."""
+    """Walk a step tree: nested steps, loop bodies, assessments, item and
+    per-child stages."""
     for step in steps:
         yield step
         yield from step_tree(step.child_steps)
@@ -670,6 +676,8 @@ def step_tree(steps: Iterable[StepDefinition]) -> Iterator[StepDefinition]:
         yield from step_tree(step.assessment_outcomes)
         if step.items is not None:
             yield from step_tree(step.items.steps)
+        if step.children is not None:
+            yield from step_tree(step.children.steps)
 
 
 @dataclass(frozen=True)

@@ -698,7 +698,8 @@ execution index.
 Reads recognize the new document by its `ww.task-state` format discriminator.
 The document carries one schema version. A document at another version is
 upgraded through the migration table in the codec when an upgrade exists, and
-rejected otherwise; the table is empty until a format change ships.
+rejected otherwise. Schema 2 (per-child stages) lets a child record be
+`skipped` and carry custom `fields`; a schema 1 document reads unchanged.
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
 Scoped cleanup of obsolete regular files follows. Cleanup failures are
@@ -1181,6 +1182,24 @@ artifacts, items, hooks, and workflow summary, while the parent's run-local
 `children.json` records the selected child workflow, status, and short result.
 This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
+
+With `children.steps` the parent instead owns a loop over its children. The
+parser turns the one stage carrying `workflow:` into a `ChildWorkflowRun`
+stage (inside `children`, `workflow:` runs a child, it never hands off), and
+`ChildFlowPlanner` compiles the stages as templates under `<step>/{child}`
+marked with `child_stage`, on the same machinery as per-item stages. When
+collection completes, `materialize_child_plan` in `../src/ww/transitions.py`
+(sharing `_expand_templates` with `materialize_item_plan`) expands them once
+per child, binding each copy to its child by `child_number`, the child's
+position in the append-only children list, which survives a child binding its
+own ID. Each per-child run leaf waits for its own child only;
+`ChildCoordinator` refuses to start any other, and on completion saves the
+child's summary as that leaf's artifact. `WorkflowService._child_values`
+resolves `{{ww.child.*}}` for a per-child item, including the child task's own
+extension namespace values, for agent pages, automatic handlers, and the
+`value_unavailable` check. A `break` in a stage (`PlanItem.breaks_children`)
+reuses the loop exit: `finish_loop_exit` skips the remaining per-child items
+and the drain marks the children that never started `skipped`.
 
 The scope is deliberately one level: a child workflow cannot itself declare
 `children`. When the last child completes, ww completes

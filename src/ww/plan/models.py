@@ -252,6 +252,13 @@ class PlanItem:
     # On a children collection: each child binds its own external ID through
     # the first step of the child workflow, so ``add-child`` takes no ``--id``.
     child_identity: bool = False
+    # On every per-child stage (``children.steps``) and its hooks: the path
+    # of the ``children`` step. Its templates carry ``item_template`` until
+    # the children are collected.
+    child_stage: str | None = None
+    # On a concrete per-child stage: the one-based position of its child in
+    # the run's children, which are append-only and never reordered.
+    child_number: int | None = None
     # Ordered logical container paths above ``parent``. Hierarchy is explicit
     # plan data; consumers must not reconstruct it by parsing ``step``.
     ancestors: tuple[str, ...] = ()
@@ -281,6 +288,19 @@ class PlanItem:
     @property
     def kind(self) -> PlanItemKind:
         return self.operation.kind
+
+    @property
+    def breaks_children(self) -> bool:
+        """Whether this step's ``break`` ends the per-child stages.
+
+        A ``break`` ends the nearest enclosing construct: a loop inside the
+        per-child stage, else the children, whose remaining ones are skipped.
+        """
+        if self.loop_break is None or self.child_stage is None:
+            return False
+        return self.loop_id is None or not self.loop_id.startswith(
+            f"{self.child_stage}/"
+        )
 
     @property
     def hands_over(self) -> bool:
@@ -340,6 +360,10 @@ class PlanItem:
             raise ValueError(f"invalid workdir: {self.workdir!r}")
         if self.child_operation not in {None, "collect"}:
             raise ValueError(f"invalid child operation: {self.child_operation!r}")
+        if self.child_number is not None and (
+            self.child_stage is None or not is_positive_int(self.child_number)
+        ):
+            raise ValueError("a child number belongs to a per-child stage")
         if self.step_ordinals and (
             len(self.step_ordinals) != len(self.ancestors) + 1
             or not all(is_positive_int(value) for value in self.step_ordinals)
@@ -451,6 +475,10 @@ class PlanItem:
             del data["modes"]
         if self.verifies is None:
             del data["verifies"]
+        if self.child_stage is None:
+            del data["child_stage"]
+        if self.child_number is None:
+            del data["child_number"]
         return data
 
     def _to_dict(self) -> dict[str, object]:
@@ -503,6 +531,8 @@ class PlanItem:
             "artifact": self.artifact,
             "child_operation": self.child_operation,
             "child_identity": self.child_identity,
+            "child_stage": self.child_stage,
+            "child_number": self.child_number,
             "ancestors": list(self.ancestors),
             "step_ordinals": list(self.step_ordinals),
             "artifact_dependency": self.artifact_dependency,

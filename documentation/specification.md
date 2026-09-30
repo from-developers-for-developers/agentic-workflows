@@ -334,7 +334,7 @@ A step accepts every [handler key](#handlers), plus:
 | `process_item` | `null` | Marks the step as updating processed item data. |
 | `resolve_item` | `null` | Marks the step as resolving an item. |
 | `report_item` | `null` | Marks the step as reporting an item. |
-| `children` | mapping | Collects child tasks with the step's own action, then runs every child with one workflow; see [Children](#children). |
+| `children` | mapping | Collects child tasks with the step's own action, then runs every child with one workflow, or runs the parent's own stages once per child; see [Children](#children). |
 | `handler` | handler name | Copies a root handler definition into this step; the step keeps its own name and any explicit step fields override the copied values. A step with no content of its own, `- fetch_requirements: ~`, and a root handler of the same name copies that handler implicitly. |
 
 `steps`, `loop`, `items`, and `children` are alternatives. A loop wrapper cannot
@@ -403,21 +403,91 @@ child completes.
 
 | Key | Value | Meaning |
 | --- | --- | --- |
-| `workflow` | workflow name | Required. The workflow every child runs. |
+| `workflow` | workflow name | The workflow every child runs. Required unless `steps` is given; the two are exclusive. |
+| `steps` | list of steps | The parent's own stages, run once per child; see [Per-child stages](#per-child-stages). |
 | `description` | non-empty string | Splitting guidance shown to the collecting agent, as `items.description`. |
 
 The run is compiled as a ww-owned item nested under the collecting step,
 `<step>/children`, so the step's completion hooks run after every child has
-finished. A workflow may contain at most one `children` step; the named
-workflow must exist and cannot itself use `children` (child tasks are one
-level deep). `children` cannot be combined with the step's own `workflow`
-transition. The former `children: ~` marker and the `workflow_per_child` key
-are rejected with the replacement named.
+finished. A workflow may contain at most one `children` step, and a children
+step cannot sit inside per-item stages; the named workflow must exist and
+cannot itself use `children` (child tasks are one level deep). `children`
+cannot be combined with the step's own `workflow` transition. The former
+`children: ~` marker and the `workflow_per_child` key are rejected with the
+replacement named.
 
-`update-child <task> <child> [--text TEXT] [--project NAME]` changes a child
-that has not started yet (status `pending`): during the collecting step and
-while the parent waits for its children. A started child is refused with its
-status.
+`add-child <task> [--id ID] --description TEXT [--project NAME] [--field
+NAME=VALUE]...` records a child during the collecting step; `--field` gives it
+custom fields, as `add-item --field` does for items.
+`update-child <task> <child> [--text TEXT] [--project NAME] [--field
+NAME=VALUE]...` changes a child's text or project while it has not started yet
+(status `pending`): during the collecting step, in a per-child stage before the
+child runs, and while the parent waits for its children; a started child is
+refused with its status. Its custom fields only feed the parent's per-child
+stages, so `--field` may change them at any time.
+
+#### Per-child stages
+
+With `steps`, the parent owns a loop over its children: once collection
+completes, ww runs the stages for the first child, then for the next, strictly
+one child at a time. Exactly one top-level stage carries `workflow:`; inside
+`children` it does not hand off, it starts the current child task with that
+workflow and waits for it to finish.
+
+```yaml
+- slices: One child per slice of the plan, with the slice's full text.
+  children:
+    steps:
+      - refine: Adjust {{ww.child.text}} to what earlier slices actually landed.
+        role: manager
+      - implement:
+          workflow: task
+      - review: Review {{ww.child.git.branch}} against the slice.
+        depends_on: implement
+        role: manager
+      - land: Merge {{ww.child.git.branch}} into {{ww.git.branch}}.
+```
+
+- The stages run in the parent task and run, with the parent's hooks,
+  profiles, rules, and roles; they are compiled like per-item stages, as
+  templates under `<step>/{child}` that become `<step>/child-1/...`,
+  `<step>/child-2/...` when collection completes.
+- A stage reads its child as `{{ww.child.id}}`, `{{ww.child.text}}`,
+  `{{ww.child.project}}` (empty in the root), `{{ww.child.field.<name>}}`, and
+  every extension value of the child's own task as `{{ww.child.<namespace>.<name>}}`,
+  for example `{{ww.child.git.branch}}` and `{{ww.child.git.base_branch}}`. The
+  exact names are checked when the plan is compiled, and only a per-child stage
+  may read them. A stage before the `workflow:` stage runs before the child
+  task exists, so it may read only `id`, `text`, `project`, and `field.*`; a
+  child extension value there is rejected at compile time. A value that is not
+  available yet, such as the branch of a child whose task has recorded none, or
+  a field the child does not carry, stops the task before the stage starts
+  (`operator_reason: value_unavailable`), as for `{{ww.git.*}}`; for a missing
+  field the error names the `update-child ... --field` command that sets it.
+- The `workflow:` stage takes a name and an optional `description`, and may be
+  written `- implement: {workflow: task}`. It shows the manager the
+  `child start` command for its own child; any other child is refused while it
+  waits. Its artifact is the child's workflow summary, so later stages use it
+  with `depends_on: implement`.
+- Stages before it may refine the child with `update-child`; the child's `init`
+  records the text it has when it starts as its requirements.
+- In `auto`, the parent's manager also manages the child: starting it returns
+  the child's page, and the child's steps are ordinary worker assignments the
+  same manager dispatches. A completed child's page names the parent command
+  to continue with. The stages are assigned one per step.
+- A child that fails stops the parent (`awaiting_operator`, `child_failed`), as
+  in the simple form.
+- `break` on a stage ends the loop over the children: the stage's completion
+  hooks run, every remaining per-child stage is skipped, and each child that has
+  not started is marked `skipped`; the parent continues after the `children`
+  step. A `break` inside a `loop` within a stage ends that loop only.
+  `continue` needs a loop of its own inside the stage.
+- Validation: exactly one top-level `workflow:` stage; no other workflow
+  transition anywhere inside `children.steps` (nested steps or hooks); the
+  child workflow may not use `children`; stages may not use `items` or
+  `children`; `steps` and `workflow` directly under `children` are exclusive;
+  a step with `children.steps` may not sit inside a `loop` (the stages expand
+  once, when collection completes), while the simple form may.
 
 Steps also accept the [named-entry shorthand](#named-entry-shorthand). For
 example, `- develop: Implement and test the change.` is equivalent to a step

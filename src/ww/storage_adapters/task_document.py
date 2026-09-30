@@ -26,10 +26,23 @@ from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
-TASK_STATE_SCHEMA_VERSION = 1
-# Upgrades keyed by the schema version they read.  Empty until a format change
-# ships; a document at any other version is rejected rather than guessed at.
-TASK_STATE_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+TASK_STATE_SCHEMA_VERSION = 2
+
+
+def _task_state_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
+    """Schema 2 lets a child be ``skipped`` and carry custom ``fields``.
+
+    A version 1 document has neither: its children read as they were, with
+    no fields, so only the version changes.
+    """
+    return {**data, "schema_version": 2}
+
+
+# Upgrades keyed by the schema version they read; a document at any other
+# version is rejected rather than guessed at.
+TASK_STATE_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    1: _task_state_1_to_2
+}
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -71,7 +84,7 @@ _STATE_DEFAULTS = _serialized_defaults(
     pending_task_metadata={},
 )
 _WORK_ITEM_DEFAULTS = _serialized_defaults(WorkItem)
-_CHILD_DEFAULTS = _serialized_defaults(ChildTask)
+_CHILD_DEFAULTS = _serialized_defaults(ChildTask, fields={})
 _LEDGER_EVENT_DEFAULTS: dict[str, object] = {"summary": None}
 
 _EXTENSION_SNAPSHOT_FIELDS = (

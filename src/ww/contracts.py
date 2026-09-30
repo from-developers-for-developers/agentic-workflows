@@ -115,7 +115,11 @@ def run_is_open(status: str) -> bool:
 
 
 StepStatus = Literal["pending", "in_progress", "interrupted", "completed", "failed"]
-ChildStatus = Literal["pending", "starting", "in_progress", "completed", "failed"]
+# ``skipped``: a ``break`` on a per-child parent stage ended the children
+# before this one started.
+ChildStatus = Literal[
+    "pending", "starting", "in_progress", "completed", "failed", "skipped"
+]
 RunStatus = Literal["pending", "in_progress", "completed", "failed"]
 InstructionStatus = Literal[
     "pending",

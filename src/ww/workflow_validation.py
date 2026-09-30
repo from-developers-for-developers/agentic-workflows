@@ -144,6 +144,7 @@ def _validate_steps(
     *,
     top_level: bool = False,
     inside_loop: bool = False,
+    inside_children: bool = False,
     enclosing: Mapping[str, StepDefinition] = MappingProxyType({}),
 ) -> None:
     """Validate one sibling list; ``enclosing`` holds earlier upper-level steps.
@@ -153,6 +154,10 @@ def _validate_steps(
     container's own step is visible to its nested steps only when its work
     has finished before them: an assessment to its outcomes and an item
     collection to its per-item stages, but never a running loop.
+
+    ``break`` ends the nearest enclosing loop, or the per-child stages of a
+    ``children`` step (``inside_children``): the remaining children are
+    skipped.  ``continue`` needs a loop.
     """
     _unique((step.name for step in steps), f"step in workflow {workflow_name!r}")
     prior: dict[str, StepDefinition] = (
@@ -172,9 +177,9 @@ def _validate_steps(
             raise ConfigurationError(
                 f"step name {INIT_STEP_NAME!r} is reserved and must not be declared"
             )
-        if (
-            step.loop_break is not None or step.loop_continue is not None
-        ) and not inside_loop:
+        if (step.loop_continue is not None and not inside_loop) or (
+            step.loop_break is not None and not (inside_loop or inside_children)
+        ):
             control = "break" if step.loop_break is not None else "continue"
             raise ConfigurationError(
                 f"step {step.name!r} in workflow {workflow_name!r} uses "
@@ -219,7 +224,11 @@ def _validate_steps(
         _validate_hooks(step.hooks, set(), expected_scope="step")
         visible = {**enclosing, **prior}
         _validate_steps(
-            workflow_name, step.child_steps, inside_loop=inside_loop, enclosing=visible
+            workflow_name,
+            step.child_steps,
+            inside_loop=inside_loop,
+            inside_children=inside_children,
+            enclosing=visible,
         )
         _validate_steps(
             workflow_name, step.loop_steps, inside_loop=True, enclosing=visible
@@ -230,12 +239,21 @@ def _validate_steps(
             inside_loop=inside_loop,
             enclosing={**visible, step.name: step},
         )
+        # A ``break`` in a per-child stage ends the children; a ``continue``
+        # needs a loop of its own inside the stage.
+        _validate_steps(
+            workflow_name,
+            _child_stages(step),
+            inside_children=True,
+            enclosing={**visible, step.name: step},
+        )
         # Outcomes are alternatives, so none is an earlier sibling of another.
         for outcome in step.assessment_outcomes:
             _validate_steps(
                 workflow_name,
                 (outcome,),
                 inside_loop=inside_loop,
+                inside_children=inside_children,
                 enclosing={**visible, step.name: step},
             )
         prior[step.name] = step
@@ -316,6 +334,15 @@ def _is_transition_hook(hook: HookDefinition) -> bool:
 
 def _item_steps(step: StepDefinition) -> tuple[StepDefinition, ...]:
     return step.items.steps if step.items is not None else ()
+
+
+def _child_stages(step: StepDefinition) -> tuple[StepDefinition, ...]:
+    return step.children.steps if step.children is not None else ()
+
+
+def _template_steps(step: StepDefinition) -> tuple[StepDefinition, ...]:
+    """The stages a step repeats: per item, or per child."""
+    return (*_item_steps(step), *_child_stages(step))
 
 
 def _validate_item_flows(workflow_name: str, steps: tuple[StepDefinition, ...]) -> None:
@@ -520,7 +547,7 @@ def _step_hooks(steps: tuple[StepDefinition, ...]) -> Iterable[HookDefinition]:
             (
                 *step.child_steps,
                 *step.loop_steps,
-                *_item_steps(step),
+                *_template_steps(step),
                 *step.assessment_outcomes,
             )
         )
@@ -532,7 +559,7 @@ def _walk_steps(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...]
         result.append(step)
         result.extend(_walk_steps(step.child_steps))
         result.extend(_walk_steps(step.loop_steps))
-        result.extend(_walk_steps(_item_steps(step)))
+        result.extend(_walk_steps(_template_steps(step)))
     return tuple(result)
 
 
@@ -560,7 +587,7 @@ def _logical_step_paths(
         result.add(path)
         result.update(_logical_step_paths(step.child_steps, path))
         result.update(_logical_step_paths(step.loop_steps, path))
-        result.update(_logical_step_paths(_item_steps(step), path))
+        result.update(_logical_step_paths(_template_steps(step), path))
     return result
 
 
@@ -574,7 +601,7 @@ def _step_filter_references(
         result.update((step.name, path))
         result.update(_step_filter_references(step.child_steps, path))
         result.update(_step_filter_references(step.loop_steps, path))
-        result.update(_step_filter_references(_item_steps(step), path))
+        result.update(_step_filter_references(_template_steps(step), path))
     return result
 
 
@@ -592,8 +619,35 @@ def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:
             )
         if not collectors:
             continue
+        per_item = [
+            step
+            for flow_step in _walk_steps(workflow.steps)
+            for step in _walk_steps(_item_steps(flow_step))
+            if step.children is not None
+        ]
+        if per_item:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} collects children in the per-item "
+                f"stage {per_item[0].name!r}; a children step cannot repeat per item"
+            )
         flow = collectors[0].children
         assert flow is not None
+        # Per-child stages expand once, when collection completes; a loop's
+        # next round would replay the first child's stages and never reach
+        # the others.
+        looped = [
+            step
+            for loop_owner in _walk_steps(workflow.steps)
+            for step in _walk_steps(loop_owner.loop_steps)
+            if step.children is not None and step.children.steps
+        ]
+        if looped:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} runs children.steps of "
+                f"{looped[0].name!r} inside a loop; per-child stages cannot "
+                "repeat per loop round, so move the children step out of the "
+                "loop or name the child workflow with children.workflow"
+            )
         target = by_name.get(flow.workflow)
         if target is None:
             raise ConfigurationError(
@@ -657,16 +711,14 @@ def _validate_document_updates(configuration: WorkflowConfiguration) -> None:
             walk(step.child_steps, label)
             walk(step.loop_steps, label)
             walk(step.assessment_outcomes, label)
-            if step.items is not None:
-                walk(step.items.steps, label)
+            walk(_template_steps(step), label)
 
     for handler in configuration.handlers:
         check(handler, f"handler {handler.name!r}")
         if isinstance(handler, StepDefinition):
             walk(handler.child_steps, f"handler {handler.name!r}")
             walk(handler.loop_steps, f"handler {handler.name!r}")
-            if handler.items is not None:
-                walk(handler.items.steps, f"handler {handler.name!r}")
+            walk(_template_steps(handler), f"handler {handler.name!r}")
     for hook in configuration.global_hooks:
         check(hook.handler, f"global hook {hook.handler.name!r}")
     for workflow in configuration.workflows:

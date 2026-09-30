@@ -521,6 +521,8 @@ class Instruction:
     action_text: str | None
     loop_break_prompt: str | None = None
     loop_break_command: str | None = None
+    # The break ends the per-child stages, skipping the remaining children.
+    breaks_children: bool = False
     loop_continue_prompt: str | None = None
     loop_continue_command: str | None = None
     loop_iteration: int | None = None
@@ -586,6 +588,8 @@ class Instruction:
     handoff: str | None = None
     # The workflow a completed run offers the operator next.
     recommended_workflow: str | None = None
+    # A completed child task's parent, which the manager continues next.
+    parent_task_id: str | None = None
     # A completed run's "Rules converted in this run", built from the store.
     rule_conversions: RuleConversions = RuleConversions()
     # An assessment's answers and what each does: on the assessment's own
@@ -682,6 +686,7 @@ class Instruction:
             "action_text": self.action_text,
             "loop_break_prompt": self.loop_break_prompt,
             "loop_break_command": self.loop_break_command,
+            "breaks_children": self.breaks_children,
             "loop_continue_prompt": self.loop_continue_prompt,
             "loop_continue_command": self.loop_continue_command,
             "loop_iteration": self.loop_iteration,
@@ -728,6 +733,7 @@ class Instruction:
             "error": self.error,
             "handoff": self.handoff,
             "recommended_workflow": self.recommended_workflow,
+            "parent_task_id": self.parent_task_id,
             "rule_conversions": self.rule_conversions.to_dict(),
             "assessment_outcomes": [
                 {

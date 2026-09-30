@@ -2,10 +2,11 @@
 """Parent and child workflow coordination.
 
 A parent workflow collects children, then a child-workflow coordinator item
-runs the configured workflow once per child, one at a time.  The parent's
-child records are a projection of the children's own run records; every
-reconciliation re-reads those records so an interrupted publication can be
-repaired instead of replayed.
+runs the configured workflow once per child, one at a time.  With per-child
+parent stages each child has its own coordinator item, which runs only that
+child.  The parent's child records are a projection of the children's own
+run records; every reconciliation re-reads those records so an interrupted
+publication can be repaired instead of replayed.
 """
 
 from __future__ import annotations
@@ -14,11 +15,13 @@ from dataclasses import replace
 from typing import Protocol
 
 from ww.children import ChildTask
+from ww.completion_artifacts import write_completion_artifacts
 from ww.contracts import ChildStatus, run_is_open
 from ww.control import child_workflow
 from ww.errors import StateError
-from ww.execution_models import ExecutionState
+from ww.execution_models import ExecutionState, PlanSnapshot
 from ww.instructions import Instruction
+from ww.plan import PlanItem
 from ww.run_coordination import RunLifecycle
 from ww.storage_adapters import TaskStorageAdapter
 from ww.task_ids import is_bootstrap_request, validate_child_id, validate_task_id
@@ -90,6 +93,12 @@ class ChildCoordinator:
             child = by_id.get(child_id)
             if child is None:
                 raise StateError(f"child {child_id!r} was not found")
+            current = snapshot.plan.items[parent.cursor].child_number
+            if current is not None and children[current - 1].id != child_id:
+                raise StateError(
+                    f"the parent runs child {children[current - 1].id!r} now; "
+                    f"child {child_id!r} waits for its own stages"
+                )
             if child.status not in {"pending", "starting"}:
                 raise StateError(f"child {child_id!r} is not pending")
             start_operation_id = child.start_operation_id
@@ -267,8 +276,14 @@ class ChildCoordinator:
                 if changed:
                     commit_children()
                 return
+            # A per-child coordinator waits for its own child only.
+            watched = (
+                (projected[item.child_number - 1],)
+                if item.child_number is not None
+                else projected
+            )
             failed = next(
-                (child for child in projected if child.status == "failed"), None
+                (child for child in watched if child.status == "failed"), None
             )
             if failed is not None:
                 if parent.status != "failed":
@@ -279,7 +294,7 @@ class ChildCoordinator:
                 elif changed:
                     commit_children()
                 return
-            if not projected or any(child.status != "completed" for child in projected):
+            if not watched or any(child.status != "completed" for child in watched):
                 # A recovery retry may find a published child whose parent
                 # relink was interrupted while the child was still pending.
                 # Persist the in-progress binding while the parent keeps waiting.
@@ -290,19 +305,60 @@ class ChildCoordinator:
                 elif changed:
                     commit_children()
                 return
-            parent = complete_child_workflow(parent, snapshot.plan, self.now)
+            parent = complete_child_workflow(
+                parent,
+                snapshot.plan,
+                self.now,
+                artifact=(
+                    self._write_child_result(parent, snapshot, item, watched[0])
+                    if item.child_number is not None
+                    else None
+                ),
+            )
             commit_children()
             parent, snapshot = self.lifecycle.drain(parent, snapshot)
             if (
                 parent.cursor < len(snapshot.plan.items)
                 and snapshot.plan.items[parent.cursor].summary
             ):
+                # A break in per-child stages skips the remaining children,
+                # which never ran.
                 summary = "Completed child tasks: " + ", ".join(
-                    child.summary or child.id for child in projected
+                    child.summary or child.id
+                    for child in projected
+                    if child.status == "completed"
                 )
+                skipped = [
+                    child.id for child in projected if child.status != "completed"
+                ]
+                if skipped:
+                    summary += "; skipped: " + ", ".join(skipped)
                 parent = complete_child_summary(parent, summary, self.now)
                 self.lifecycle.commit(parent, snapshot, children=projected)
                 self.lifecycle.drain(parent, snapshot)
+
+    def _write_child_result(
+        self,
+        parent: ExecutionState,
+        snapshot: PlanSnapshot,
+        item: PlanItem,
+        child: ChildTask,
+    ) -> str | None:
+        """Save a per-child run's result, the child's summary, as its artifact.
+
+        Later stages read it like any step's artifact (``depends_on``).
+        """
+        artifact, _ = write_completion_artifacts(
+            self.tasks,
+            parent.task_id,
+            parent,
+            snapshot,
+            item,
+            None,
+            f"Child task `{child.task_id}` completed its `{child.workflow}` "
+            f"workflow.\n\nSummary: {child.summary or 'none recorded'}",
+        )
+        return artifact
 
     def _refresh_child(self, parent_task_id: str, child: ChildTask) -> ChildTask | None:
         """Return the child record as its own run records describe it."""

@@ -474,8 +474,10 @@ def test_update_child_rejects_bad_requests(tmp_path: Path) -> None:
     service.next("TASK1")
     service.add_child("TASK1", "1", "First child")
 
-    with pytest.raises(StateError, match="needs --text, --project, or both"):
+    with pytest.raises(StateError, match="needs --text, --project, or --field"):
         service.update_child("TASK1", "1")
+    with pytest.raises(StateError, match="invalid child field name"):
+        service.update_child("TASK1", "1", fields=(("bad name", "x"),))
     with pytest.raises(StateError, match="child text must be non-empty"):
         service.update_child("TASK1", "1", text="  ")
     with pytest.raises(StateError, match="child 'nope' was not found"):

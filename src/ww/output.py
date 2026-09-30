@@ -314,6 +314,8 @@ def _item_flow_lines(item: PlanItem) -> list[str]:
             lines[0] += "  "
             lines.append(f"**Splitting guidance:** {item.split_instruction}")
         return [*lines, ""]
+    if item.item_template and item.child_stage is not None:
+        return ["**Per-child stage:** repeats for every collected child, in turn", ""]
     if item.item_template:
         return [
             "**Per-item stage:** repeats for every collected item  ",

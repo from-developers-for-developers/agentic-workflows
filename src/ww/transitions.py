@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from ww.assessments import outcome_region, pending_assessment
+from ww.children import ChildTask
 from ww.contracts import StepStatus
 from ww.control import loop_control
 from ww.errors import StateError
@@ -746,12 +747,21 @@ def fail_child_workflow(
 
 
 def complete_child_workflow(
-    state: ExecutionState, plan: WorkflowPlan, now: Clock
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    now: Clock,
+    artifact: str | None = None,
 ) -> ExecutionState:
-    """Complete a child coordinator after all of its children finish."""
+    """Complete a child coordinator after its children finish.
+
+    ``artifact`` is the saved result of a per-child run: the child's summary.
+    """
     records = list(state.item_executions)
     records[state.cursor] = replace(
-        records[state.cursor], status="completed", completed_at=now()
+        records[state.cursor],
+        status="completed",
+        completed_at=now(),
+        artifact=artifact,
     )
     return project_steps(
         replace(
@@ -1010,9 +1020,14 @@ def request_loop_exit(
     wrapper_artifact_reference: str | None,
     now: Clock,
 ) -> ExecutionState:
-    """Persist a worker's stop decision while its completion hooks still run."""
+    """Persist a worker's stop decision while its completion hooks still run.
+
+    A ``break`` that ends per-child stages has no loop wrapper to record.
+    """
     if stopped_item.loop_break is None or stopped_item.owner != "agent":
         raise StateError("request_loop_exit requires a break-enabled agent step")
+    if stopped_item.breaks_children:
+        return replace(state, loop_exit_item_id=stopped_item.id, updated_at=now())
     stopped_index = next(
         index for index, item in enumerate(plan.items) if item.id == stopped_item.id
     )
@@ -1118,7 +1133,12 @@ def finish_loop_continue(
 def finish_loop_exit(
     state: ExecutionState, plan: WorkflowPlan, now: Clock
 ) -> ExecutionState:
-    """Exit after the stopping step's own completion lifecycle has finished."""
+    """Exit after the stopping step's own completion lifecycle has finished.
+
+    A loop is left after its repeat boundary.  A ``break`` in a per-child
+    stage skips every remaining per-child stage instead; the caller marks
+    the children that never started as skipped.
+    """
     if state.loop_exit_item_id is None:
         return state
     completed_index = next(
@@ -1137,6 +1157,20 @@ def finish_loop_exit(
         and plan.items[state.cursor].step == stopped_item.step
     ):
         return state
+    if stopped_item.breaks_children:
+        last = max(
+            index
+            for index, item in enumerate(plan.items)
+            if item.child_stage == stopped_item.child_stage
+            and item.child_number is not None
+        )
+        return _skip_to(
+            state,
+            plan,
+            max(state.cursor, last + 1),
+            "skipped because a children break gate passed",
+            now,
+        )
     entry = enclosing_loop_entry_index(plan, completed_index)
     loop_id = _required_loop_control(plan.items[entry]).loop_id
     repeat = next(
@@ -1151,18 +1185,24 @@ def finish_loop_exit(
     )
     if repeat is None:
         raise StateError(f"loop {loop_id!r} has no repeat boundary")
+    return _skip_to(
+        state, plan, repeat + 1, "skipped because a loop break gate passed", now
+    )
+
+
+def _skip_to(
+    state: ExecutionState, plan: WorkflowPlan, stop: int, result: str, now: Clock
+) -> ExecutionState:
+    """Complete every item from the cursor up to ``stop`` as skipped by a break."""
     records = list(state.item_executions)
-    for index in range(state.cursor, repeat + 1):
+    for index in range(state.cursor, stop):
         records[index] = replace(
-            records[index],
-            status="completed",
-            completed_at=now(),
-            result="skipped because a loop break gate passed",
+            records[index], status="completed", completed_at=now(), result=result
         )
     return project_steps(
         replace(
             state,
-            cursor=repeat + 1,
+            cursor=stop,
             status="pending",
             active_item_id=None,
             item_executions=tuple(records),
@@ -1192,46 +1232,134 @@ def materialize_item_plan(
     now: Clock,
 ) -> tuple[ExecutionState, PlanSnapshot]:
     """Replace per-item templates with one concrete lifecycle per work item."""
-    templates = tuple(entry for entry in snapshot.plan.items if entry.item_template)
+    templates = tuple(
+        entry
+        for entry in snapshot.plan.items
+        if entry.item_template and entry.child_stage is None
+    )
     if not templates:
         return state, snapshot
     if not items:
         raise StateError("items step completed without recorded items; use add-item")
+    return _expand_templates(
+        state,
+        snapshot,
+        templates,
+        "{item}",
+        tuple(
+            (f"item-{number}", f"item:{work_item.id}", {"item_id": work_item.id})
+            for number, work_item in enumerate(items, 1)
+        ),
+        now,
+    )
+
+
+def materialize_child_plan(
+    state: ExecutionState,
+    snapshot: PlanSnapshot,
+    children: tuple[ChildTask, ...],
+    now: Clock,
+) -> tuple[ExecutionState, PlanSnapshot]:
+    """Replace per-child stage templates with one lifecycle per child.
+
+    Each child's stages carry its position in the run's children, which is
+    stable: children are only ever appended, and a child keeps its position
+    when it binds its own ID.
+    """
+    templates = tuple(
+        entry
+        for entry in snapshot.plan.items
+        if entry.item_template and entry.child_stage is not None
+    )
+    if not templates:
+        return state, snapshot
+    if not children:
+        raise StateError(
+            "children step completed without recorded children; use add-child"
+        )
+    return _expand_templates(
+        state,
+        snapshot,
+        templates,
+        "{child}",
+        tuple(
+            (f"child-{number}", f"child:{number}", {"child_number": number})
+            for number in range(1, len(children) + 1)
+        ),
+        now,
+    )
+
+
+def _expand_templates(
+    state: ExecutionState,
+    snapshot: PlanSnapshot,
+    templates: tuple[PlanItem, ...],
+    placeholder: str,
+    units: tuple[tuple[str, str, dict[str, str | int]], ...],
+    now: Clock,
+) -> tuple[ExecutionState, PlanSnapshot]:
+    """Expand ``templates`` once per unit at the first template's position.
+
+    Each unit is its path segment (replacing ``placeholder`` in every path),
+    its plan-item ID suffix, and the fields binding the copy to its unit.
+    """
+    template_ids = {template.id for template in templates}
+
+    def concrete_path(value: str, segment: str) -> str:
+        return value.replace(placeholder, segment)
+
+    def expand(
+        template: PlanItem, segment: str, suffix: str, bind: dict[str, str | int]
+    ) -> PlanItem:
+        operation = template.operation
+        if isinstance(operation, LoopBoundary):
+            operation = replace(
+                operation, loop_id=concrete_path(operation.loop_id, segment)
+            )
+        return replace(
+            template,
+            id=f"{template.id}:{suffix}",
+            operation=operation,
+            step=concrete_path(template.step, segment),
+            parent=(
+                concrete_path(template.parent, segment)
+                if template.parent is not None
+                else None
+            ),
+            ancestors=tuple(
+                concrete_path(path, segment) for path in template.ancestors
+            ),
+            artifact_dependency=(
+                concrete_path(template.artifact_dependency, segment)
+                if template.artifact_dependency is not None
+                else None
+            ),
+            loop_id=(
+                concrete_path(template.loop_id, segment)
+                if template.loop_id is not None
+                else None
+            ),
+            item_template=False,
+            item_id=str(bind["item_id"]) if "item_id" in bind else template.item_id,
+            child_number=(
+                int(bind["child_number"])
+                if "child_number" in bind
+                else template.child_number
+            ),
+        )
 
     concrete: list[PlanItem] = []
     expanded_templates = False
     for entry in snapshot.plan.items:
-        if not entry.item_template:
+        if entry.id not in template_ids:
             concrete.append(entry)
             continue
         if expanded_templates:
             continue
-        for number, work_item in enumerate(items, 1):
-            item_path = f"item-{number}"
-            for template in templates:
-                concrete.append(
-                    replace(
-                        template,
-                        id=f"{template.id}:item:{work_item.id}",
-                        step=template.step.replace("{item}", item_path),
-                        parent=(
-                            template.parent.replace("{item}", item_path)
-                            if template.parent is not None
-                            else None
-                        ),
-                        ancestors=tuple(
-                            path.replace("{item}", item_path)
-                            for path in template.ancestors
-                        ),
-                        artifact_dependency=(
-                            template.artifact_dependency.replace("{item}", item_path)
-                            if template.artifact_dependency is not None
-                            else None
-                        ),
-                        item_template=False,
-                        item_id=work_item.id,
-                    )
-                )
+        for segment, suffix, bind in units:
+            concrete.extend(
+                expand(template, segment, suffix, bind) for template in templates
+            )
         expanded_templates = True
 
     plan = replace(

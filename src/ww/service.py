@@ -26,7 +26,7 @@ from ww.assignments import (
 from ww.bootstrap import BootstrapCoordinator
 from ww.changes import take_mark
 from ww.child_coordination import ChildCoordinator
-from ww.children import ChildTask
+from ww.children import ChildTask, skip_pending
 from ww.completion_artifacts import rule_outcomes, write_completion_artifacts
 from ww.completion_inputs import (
     group_metadata_values,
@@ -157,6 +157,7 @@ from ww.transitions import (
     finish_selection,
     fix_limits,
     loop_limit_reached,
+    materialize_child_plan,
     materialize_item_plan,
     pause_for_agent,
     project_steps,
@@ -174,7 +175,11 @@ from ww.transitions import (
 )
 from ww.variables import (
     BRANCH_NAMING_STRATEGY,
+    CHILD_FIELD_PREFIX,
+    CHILD_VALUE_PREFIX,
     PROJECT,
+    child_value_name,
+    child_values,
     runtime_variable_values,
     unavailable_ww_values,
 )
@@ -276,6 +281,7 @@ class WorkflowService:
         self.instructions = InstructionBuilder(
             self.tasks,
             self._runtime_values,
+            child_values=self._child_values,
             root=self.storage.root,
             documents=self.documents,
             interactions=self.interactions,
@@ -304,6 +310,7 @@ class WorkflowService:
             write_command_output=self.tasks.write_command_output,
             read_command_output=self.tasks.read_command_output,
             task_values=self._runtime_values,
+            child_values=self._child_values,
         )
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)
         self.rule_checker = RuleChecker(self.tasks.write_command_output, _now)
@@ -1562,9 +1569,10 @@ class WorkflowService:
             raise StateError("active step is not permitted to break a loop")
         if continuing_loop and item.loop_continue is None:
             raise StateError("active step is not permitted to continue a loop")
+        # A break that ends per-child stages has no loop wrapper.
         loop_entry = (
             snapshot.plan.items[enclosing_loop_entry_index(snapshot.plan, state.cursor)]
-            if stopping_loop or continuing_loop
+            if (stopping_loop and not item.breaks_children) or continuing_loop
             else None
         )
         assignment = active_assignment(
@@ -1748,6 +1756,10 @@ class WorkflowService:
         elif item.item_operation == "collect":
             state, snapshot = materialize_item_plan(
                 state, snapshot, self.tasks.read_items(task_id, state.run_id), _now
+            )
+        elif item.child_operation == "collect":
+            state, snapshot = materialize_child_plan(
+                state, snapshot, self.tasks.read_children(task_id, state.run_id), _now
             )
         self.commit(state, snapshot)
         for document in promised_documents:
@@ -2240,18 +2252,100 @@ class WorkflowService:
         """The ``ww.`` values ``item``'s templates read that are missing now."""
         return unavailable_ww_values(
             item.dependencies,
-            {**dict(state.workflow_values), **self._runtime_values(state, plan)},
+            {
+                **dict(state.workflow_values),
+                **self._runtime_values(state, plan),
+                **self._child_values(state, plan, item),
+            },
         )
 
-    def _unavailable_error(self, names: tuple[str, ...]) -> str:
-        """Name each missing value and the extension that provides it."""
+    def _child_values(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> dict[str, str]:
+        """``{{ww.child.*}}`` for a per-child stage: its child as it stands now.
+
+        The child's extension values (``{{ww.child.git.branch}}``) are
+        resolved for the child's own task; one its extension cannot give yet,
+        such as the branch of a child that has not started, is left out.
+        """
+        if item.child_number is None:
+            return {}
+        children = self.tasks.read_children(state.task_id, state.run_id)
+        if item.child_number > len(children):
+            return {}
+        child = children[item.child_number - 1]
+        runs, _, _ = self.tasks.read_task_record(child.task_id)
+        run = next(
+            (
+                entry
+                for entry in reversed(runs)
+                if entry.state.parent_task_id == state.task_id
+                and entry.state.start_operation_id == child.start_operation_id
+            ),
+            None,
+        )
+        workflow = child.workflow or next(
+            (
+                coordinator.workflow
+                for entry in plan.items
+                if entry.child_number == item.child_number
+                and (coordinator := child_workflow(entry)) is not None
+            ),
+            state.workflow,
+        )
+        namespaced = self.extensions.namespace_values(
+            self.extensions.namespace_variables(),
+            task_id=child.task_id,
+            run_id=run.run_id if run else None,
+            workflow=workflow,
+            workflow_values=dict(run.state.workflow_values) if run else {},
+            workspace=(
+                resolve_workspace(self.storage.root, run.state.working_directory)
+                if run
+                else None
+            ),
+            project=child.project,
+        )
+        return {
+            **child_values(child.id, child.description, child.project, child.fields),
+            **{child_value_name(name): value for name, value in namespaced.items()},
+        }
+
+    def _stage_child_id(self, state: ExecutionState, item: PlanItem) -> str | None:
+        """The ID of the child a per-child stage belongs to, when it exists."""
+        if item.child_number is None:
+            return None
+        children = self.tasks.read_children(state.task_id, state.run_id)
+        if item.child_number > len(children):
+            return None
+        return children[item.child_number - 1].id
+
+    def _unavailable_error(
+        self, names: tuple[str, ...], state: ExecutionState, item: PlanItem
+    ) -> str:
+        """Name each missing value and what provides it.
+
+        A child's field comes from its record, so the message says how to
+        set it; any other value comes from an extension, the child's own for
+        ``{{ww.child.<namespace>.*}}``.
+        """
         owners = {
             name: identifier
             for name, (identifier, _) in self.extensions.namespaces().items()
         }
 
         def describe(name: str) -> str:
+            if name.startswith(CHILD_FIELD_PREFIX):
+                field = name.removeprefix(CHILD_FIELD_PREFIX)
+                child = self._stage_child_id(state, item) or "<child-id>"
+                return (
+                    f"{{{{{name}}}}} (the child has no field {field!r}; set it "
+                    f"with `ww update-child {state.task_id} {child} --field "
+                    f"{field}=<value>`, or `--field` on add-child)"
+                )
             _, _, rest = name.partition(".")
+            if name.startswith(CHILD_VALUE_PREFIX):
+                _, _, rest = rest.partition(".")
             owner = owners.get(rest.partition(".")[0])
             source = f" (provided by {owner})" if owner else ""
             return f"{{{{{name}}}}}{source}"
@@ -2467,10 +2561,12 @@ class WorkflowService:
         child_id: str | None,
         description: str,
         project: str | None = None,
+        fields: tuple[tuple[str, str], ...] = (),
     ) -> ChildTask:
         validate_task_id(task_id)
         if not description.strip():
             raise StateError("child description must be non-empty")
+        fields = _child_fields(fields)
         if project is not None:
             self._project_directory(project)
         with self.tasks.lock_task(task_id):
@@ -2504,6 +2600,7 @@ class WorkflowService:
                 ),
                 parent_task_id=task_id,
                 project=project,
+                fields=fields,
             )
             self.commit(
                 state,
@@ -2519,19 +2616,23 @@ class WorkflowService:
         *,
         text: str | None = None,
         project: str | None = None,
+        fields: tuple[tuple[str, str], ...] = (),
     ) -> ChildTask:
-        """Change a child's text or project before it starts.
+        """Change a child's text, project, or custom fields.
 
-        Allowed while the child is ``pending``: during the children step and
+        Text and project are allowed while the child is ``pending``: during
+        the children step, in a per-child stage before the child runs, and
         while the parent waits for its children. A started child already
-        holds its requirements.
+        holds its requirements. Custom fields only feed the parent's
+        per-child stages, so they may change at any time.
         """
         validate_task_id(task_id)
         validate_child_id(child_id)
-        if text is None and project is None:
-            raise StateError("update-child needs --text, --project, or both")
+        if text is None and project is None and not fields:
+            raise StateError("update-child needs --text, --project, or --field")
         if text is not None and not text.strip():
             raise StateError("child text must be non-empty")
+        fields = _child_fields(fields)
         if project is not None:
             self._project_directory(project)
         with self.tasks.lock_task(task_id):
@@ -2543,16 +2644,16 @@ class WorkflowService:
             if index is None:
                 raise StateError(f"child {child_id!r} was not found")
             child = children[index]
-            if child.status != "pending":
+            if (text is not None or project is not None) and child.status != "pending":
                 raise StateError(
                     f"child {child_id!r} is {child.status}; only a pending child "
-                    "can be updated"
+                    "can change its text or project"
                 )
             child = replace(
                 child,
                 description=text if text is not None else child.description,
                 project=project if project is not None else child.project,
-            )
+            ).with_fields(dict(fields))
             children[index] = child
             self.commit(state, snapshot, children=tuple(children))
             return child
@@ -2711,9 +2812,20 @@ class WorkflowService:
             state = finish_loop_continue(state, plan, _now)
             if state is not prior:
                 self.commit(state, snapshot)
+            exiting_children = _exiting_children(state, plan)
             state = finish_loop_exit(state, plan, _now)
             if state is not prior:
-                self.commit(state, snapshot)
+                self.commit(
+                    state,
+                    snapshot,
+                    children=(
+                        skip_pending(
+                            self.tasks.read_children(state.task_id, state.run_id)
+                        )
+                        if exiting_children and state.loop_exit_item_id is None
+                        else None
+                    ),
+                )
             if state.cursor >= len(plan.items):
                 break
             assignment = active_assignment(
@@ -2795,7 +2907,11 @@ class WorkflowService:
                 )
                 state = (
                     stop_for_values(
-                        state, plan, item, self._unavailable_error(unavailable), _now
+                        state,
+                        plan,
+                        item,
+                        self._unavailable_error(unavailable, state, item),
+                        _now,
                     )
                     if unavailable
                     else pause_for_agent(state, _now)
@@ -3730,6 +3846,22 @@ def _render_template(template: str, values: dict[str, str]) -> str:
             "automatic handler is missing variable(s): " + ", ".join(sorted(missing))
         )
     return interpolate(template, values)
+
+
+def _child_fields(fields: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """Validate ``--field`` values for a child, as for an item."""
+    try:
+        return validate_item_fields(dict(fields))
+    except ValueError as error:
+        raise StateError(str(error).replace("item field", "child field")) from error
+
+
+def _exiting_children(state: ExecutionState, plan: WorkflowPlan) -> bool:
+    """Whether a pending break ends the per-child stages."""
+    stopped = next(
+        (item for item in plan.items if item.id == state.loop_exit_item_id), None
+    )
+    return stopped is not None and stopped.breaks_children
 
 
 def _index_for_id(plan: WorkflowPlan, item_id: str) -> int:

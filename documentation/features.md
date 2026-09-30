@@ -2427,7 +2427,8 @@ item that runs the children; start a chosen child:
 ww-agentic-workflows child start TASK-123 TASK-123.1
 ```
 
-A child that has not started yet can still change its text or project:
+A child that has not started yet can still change its text or project (and,
+at any time, its custom `--field` values):
 
 ```console
 ww-agentic-workflows update-child TASK-123 TASK-123.1 --text "Implement the API and its client"
@@ -2446,6 +2447,74 @@ later steps follow.
 
 The earlier spelling, `children: ~` on one step and `workflow_per_child` on a
 later one, is rejected with this replacement named.
+
+### Per-child parent stages
+
+When the parent has its own work to do around each child, such as adjusting the
+next slice to what earlier ones landed, reviewing the child's branch, and
+merging it, give `children` a list of `steps` instead of a `workflow`. The
+parent then runs those stages once per child, strictly one child at a time.
+Exactly one stage carries `workflow:`; inside `children` that stage starts the
+current child with that workflow and waits for it, it does not hand off.
+
+```yaml
+workflows:
+  - name: roadmap
+    steps:
+      - read-plan: Add one child per slice of the plan, with the slice's full text.
+        children:
+          steps:
+            - refine: Adjust {{ww.child.text}} to what earlier slices landed.
+              role: manager
+            - implement:
+                workflow: task
+            - review: Review {{ww.child.git.branch}} against the slice.
+              depends_on: implement
+              role: manager
+              break: The roadmap is done; nothing else is worth building.
+            - land: Merge {{ww.child.git.branch}} into {{ww.git.branch}}.
+      - close-plan: Record what the roadmap delivered.
+
+  - name: task
+    steps:
+      - develop: Implement {{__task_id}}.
+```
+
+With two children `A` and `B`, the parent runs `refine`, `implement` (child `A`
+runs its `task` workflow), `review`, and `land` for `A`, then the same four for
+`B`, then `close-plan`. `ww plan --workflow roadmap` shows the stages under
+`read-plan/{child}`; once the children are collected they become
+`read-plan/child-1/refine`, `read-plan/child-2/refine`, and so on.
+
+- A stage reads its child as `{{ww.child.id}}`, `{{ww.child.text}}`,
+  `{{ww.child.project}}`, `{{ww.child.field.<name>}}`, and the child task's own
+  extension values, such as `{{ww.child.git.branch}}` and
+  `{{ww.child.git.base_branch}}`. Its page also names the current child and,
+  while it has not started, how to change it. Stages before `implement` run
+  before the child task exists, so they may read only its ID, text, project,
+  and fields; reading `{{ww.child.git.branch}}` there is a configuration error.
+  A value that is not available yet, such as a field the child does not carry,
+  stops the task before the stage starts, for the operator to retry or skip;
+  the error names the `update-child` command that sets a missing field.
+- `refine` runs before the child starts, so it may rewrite it with
+  `update-child TASK-123 A --text "..."`; the child's `init` records that text
+  as its requirements.
+- Children carry custom fields like items: `add-child ... --field area=parser`,
+  and `update-child ... --field area=lexer` at any time.
+- The `implement` stage shows `child start TASK-123 A` for its own child only;
+  its artifact is the child's workflow summary, which `review` reads through
+  `depends_on: implement`.
+- In `auto`, the parent's manager also manages the child: starting it returns
+  the child's page, the child's steps are ordinary worker assignments the same
+  manager dispatches, and the completed child's page names the parent command
+  to continue with.
+- A child that fails stops the parent for the operator, as in the simple form.
+- `break` on a stage ends the loop over the children: every remaining stage is
+  skipped and each child that has not started is marked `skipped`. A `break`
+  inside a `loop` within a stage ends that loop only; a `loop` inside the
+  stages runs its own rounds for each child.
+- A step with `children.steps` cannot sit inside a `loop`; the simple
+  `children: {workflow: ...}` form can.
 
 Steps may contain recursive `steps` without a depth limit. The plan remains
 flat: each leaf action uses a hierarchical ID such as `parent/child`, with its

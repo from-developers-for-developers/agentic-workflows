@@ -189,6 +189,12 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         child_identity=expect_bool(
             raw.get("child_identity", False), f"{item_path}.child_identity"
         ),
+        child_stage=expect_optional_string(
+            raw.get("child_stage"), f"{item_path}.child_stage"
+        ),
+        child_number=_optional_positive_int(
+            raw.get("child_number"), f"{item_path}.child_number"
+        ),
         ancestors=ancestors,
         step_ordinals=step_ordinals,
         artifact_dependency=expect_optional_string(
@@ -424,6 +430,14 @@ def _item_field_updates_from_list(
         )
         for item in value
     )
+
+
+def _optional_positive_int(value: Any, context: str) -> int | None:
+    if value is None:
+        return None
+    if not is_positive_int(value):
+        raise ValueError(f"{context} must be a positive integer or null")
+    return int(value)
 
 
 def _string_list(value: Any, context: str) -> tuple[str, ...]:

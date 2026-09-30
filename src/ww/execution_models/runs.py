@@ -26,7 +26,7 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 16
+PLAN_SCHEMA_VERSION = 17
 # Recorded on every snapshot; informational until a reader needs to branch on it.
 PLAN_COMPILER_VERSION = "plan-v9"
 
@@ -193,7 +193,16 @@ def _plan_15_to_16(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "schema_version": 16}
 
 
-PLAN_MIGRATIONS = {15: _plan_15_to_16}
+def _plan_16_to_17(data: dict[str, Any]) -> dict[str, Any]:
+    """Schema 17 adds per-child stages (``child_stage``, ``child_number``).
+
+    Both are written only where they apply, and a 16 plan has none, so only
+    the version changes.
+    """
+    return {**data, "schema_version": 17}
+
+
+PLAN_MIGRATIONS = {15: _plan_15_to_16, 16: _plan_16_to_17}
 
 
 def _migrate_snapshot(data: dict[str, Any]) -> dict[str, Any]:

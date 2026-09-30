@@ -994,7 +994,11 @@ def _remove_item(context: _Context) -> _Outcome:
 def _add_child(context: _Context) -> _Outcome:
     args = context.args
     child = context.service.add_child(
-        context.task_id, args.id, args.description, project=args.project
+        context.task_id,
+        args.id,
+        args.description,
+        project=args.project,
+        fields=_named_values(args.field, "--field"),
     )
     return _Outcome(_json(child.to_dict()))
 
@@ -1002,7 +1006,11 @@ def _add_child(context: _Context) -> _Outcome:
 def _update_child(context: _Context) -> _Outcome:
     args = context.args
     child = context.service.update_child(
-        context.task_id, args.child_id, text=args.text, project=args.project
+        context.task_id,
+        args.child_id,
+        text=args.text,
+        project=args.project,
+        fields=_named_values(args.field, "--field"),
     )
     return _Outcome(_json(child.to_dict()))
 
