@@ -603,6 +603,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    _setup_parser(subparsers, json_output)
+
     run_only = _shared("run")
     items = subparsers.add_parser(
         "items", parents=[run_only], help="List the latest workflow run's items."
@@ -772,6 +774,50 @@ def build_parser() -> argparse.ArgumentParser:
         "--all", action="store_true", help="Every interruption, however old."
     )
     return parser
+
+
+def _setup_parser(
+    subparsers: argparse._SubParsersAction[_Parser],
+    json_output: _Parser,
+) -> None:
+    """``setup apply``: place a proposed configuration fragment for me or the team."""
+    setup = subparsers.add_parser(
+        "setup",
+        parents=[json_output],
+        help="Place configuration a setup skill proposes, after asking.",
+    )
+    actions = setup.add_subparsers(dest="setup_action", required=True)
+    after = _Parser(add_help=False)
+    after.add_argument(
+        "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
+    )
+    apply = actions.add_parser(
+        "apply",
+        parents=[after],
+        help=(
+            "Validate a YAML fragment (workflows, modes, profiles, documents, "
+            "handlers, hooks, rules, settings) and write it to ww-setup.yaml "
+            "(--for team) or ww-setup.local.yaml (--for me)."
+        ),
+    )
+    apply.add_argument("fragment", type=Path, metavar="FILE")
+    apply.add_argument(
+        "--for",
+        dest="audience",
+        required=True,
+        choices=("me", "team"),
+        help="me: local files kept out of Git; team: files shared in the repo.",
+    )
+    apply.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and show the change, then put every file back.",
+    )
+    apply.add_argument(
+        "--yes",
+        action="store_true",
+        help="Write without the y/N prompt, on the operator's word.",
+    )
 
 
 def _rules_parser(

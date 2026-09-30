@@ -1619,4 +1619,22 @@ concern; the repo YAML is never rewritten, because PyYAML cannot round-trip
 comments, so new groups go into `ww-rules.yaml`, a ww-owned import, and the
 repo file gains only its `imports` entry, checked by reading it back.
 `rules promote` is the one write that also changes the store, after the rule
-files validated.
+files validated. The write mechanics both this and `ww setup apply` use — a
+`FileWrite` plan, the `Transaction` that restores every file, and
+`import_write`, which adds one `imports` entry and checks nothing else moved —
+live in `../src/ww/config_writes.py`.
+
+`ww setup apply` (`../src/ww/setup_apply.py`) is how the setup skills put
+configuration "in proper places" without an agent editing ww's own files, which
+some agents' safety layers refuse. It places a validated fragment into a
+ww-owned import file per audience — `ww-setup.yaml`, imported by the repo
+file, or `ww-setup.local.yaml`, imported by the local file (created holding
+only that import) — and merges the fragment's `settings` into the matching JSON
+level key by key, refusing rather than overwriting a different value. The setup
+file is rewritten whole with the same merge rules composition applies to
+imports (named entries replaced, rule groups whole, hooks appended), so a
+second apply refines the first. Because a level's root file folds after its
+imports, a fragment definition the root file also holds would have no effect;
+the plan warns about each one. The plan is written, validated by loading the
+configuration, and rolled back before the operator is asked, so only a change
+that loads is ever shown; the confirmed write is validated again.

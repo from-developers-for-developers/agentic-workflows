@@ -10,8 +10,9 @@ import pytest
 import yaml
 
 from ww.changes import project_files
+from ww.config_writes import with_import
 from ww.errors import StateError
-from ww.rule_writes import _set_key, _split, _with_import, rule_stem
+from ww.rule_writes import _set_key, _split, rule_stem
 
 
 @pytest.mark.parametrize(
@@ -61,13 +62,13 @@ def test_a_sentence_without_words_needs_an_id() -> None:
 def test_an_import_is_added_without_touching_the_rest(before: str, after: str) -> None:
     raw = yaml.safe_load(before)
 
-    assert _with_import(before, raw, "ww-rules.yaml") == after
+    assert with_import(before, raw, "ww-rules.yaml") == after
 
 
 def test_an_imports_list_ww_cannot_extend_is_returned_unchanged() -> None:
     text = "imports: !!seq [a.yaml]\nmodes: []\n"
 
-    assert _with_import(text, yaml.safe_load(text), "ww-rules.yaml") == text
+    assert with_import(text, yaml.safe_load(text), "ww-rules.yaml") == text
 
 
 def test_a_frontmatter_key_is_replaced_and_every_other_line_kept(

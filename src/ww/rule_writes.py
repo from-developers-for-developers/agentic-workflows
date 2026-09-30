@@ -44,6 +44,7 @@ from ww.config.rules import (
     rule_text_hash,
 )
 from ww.config_files import RULES_IMPORT_FILE, display_path
+from ww.config_writes import FileWrite, Transaction, dump_yaml, import_write
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
 from ww.rule_store import RuleAutomation, RuleStore, describe_command
@@ -68,14 +69,6 @@ _IMPORT_HEADER = (
     "# Rule groups written by `ww rules add --group` and `ww rules filter`.\n"
     "# ww rewrites this file whole; the repo file imports it.\n"
 )
-
-
-@dataclass(frozen=True)
-class FileWrite:
-    """One file's new content, or ``None`` to delete it."""
-
-    path: Path
-    content: str | None
 
 
 @dataclass(frozen=True)
@@ -206,7 +199,7 @@ def plan_add_rule(
     if check is not None:
         frontmatter["check"] = check
     content = (
-        f"---\n{_dump(frontmatter)}---\n{body}" if frontmatter else body
+        f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
     )
     rule_id = f"{group.name}/{stem}"
     return RuleWrite(
@@ -510,8 +503,8 @@ def apply_write(
 
     A dry run always puts the files back, after the same validation.
     """
-    with _Transaction() as transaction:
-        transaction.apply(write)
+    with Transaction() as transaction:
+        transaction.apply(write.writes, write.directories)
         try:
             configuration = load_configuration(project.config_path, project.extensions)
             _expect(configuration, write)
@@ -551,65 +544,6 @@ def _without_check(
             if not (key in covers and entry.check == name)
         },
     )
-
-
-class _Transaction:
-    """Files written together and restored together when anything fails."""
-
-    def __init__(self) -> None:
-        self._saved: list[tuple[Path, bytes | None]] = []
-        self._created: list[Path] = []
-        self._done = False
-
-    def __enter__(self) -> _Transaction:
-        return self
-
-    def __exit__(self, kind: object, error: object, trace: object) -> None:
-        if error is not None:
-            self.roll_back()
-
-    def apply(self, write: RuleWrite) -> None:
-        for directory in write.directories:
-            self._make_directory(directory)
-        for change in write.writes:
-            self._saved.append(
-                (
-                    change.path,
-                    change.path.read_bytes() if change.path.exists() else None,
-                )
-            )
-            if change.content is None:
-                change.path.unlink()
-            else:
-                self._make_directory(change.path.parent)
-                _atomic_write(change.path, change.content)
-
-    def _make_directory(self, directory: Path) -> None:
-        missing = [
-            folder for folder in (directory, *directory.parents) if not folder.exists()
-        ]
-        for folder in reversed(missing):
-            folder.mkdir()
-            self._created.append(folder)
-
-    def roll_back(self) -> None:
-        if self._done:
-            return
-        self._done = True
-        for path, content in reversed(self._saved):
-            if content is None:
-                path.unlink(missing_ok=True)
-            else:
-                path.write_bytes(content)
-        for folder in reversed(self._created):
-            if folder.is_dir() and not any(folder.iterdir()):
-                folder.rmdir()
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    temporary = path.with_name(f".{path.name}.ww-tmp")
-    temporary.write_text(content, encoding="utf-8")
-    temporary.replace(path)
 
 
 # Where a rule applies ---------------------------------------------------------
@@ -678,12 +612,6 @@ def _body(text: str) -> str:
             "--text must not start with a --- line, which opens frontmatter"
         )
     return body + "\n"
-
-
-def _dump(value: dict[str, Any]) -> str:
-    return yaml.safe_dump(  # type: ignore[no-any-return]
-        value, sort_keys=False, allow_unicode=True, default_flow_style=None, width=1000
-    )
 
 
 def _inside(project: RuleProject, path: Path) -> Path:
@@ -874,7 +802,7 @@ def _set_key(frontmatter: str, key: str, value: Any, file: Path) -> str:
         kept.append(line)
     if kept and not kept[-1].endswith("\n"):
         kept[-1] += "\n"
-    result = "".join(kept) + _dump({key: value})
+    result = "".join(kept) + dump_yaml({key: value})
     expected = {**{k: v for k, v in before.items() if k != key}, key: value}
     try:
         after = yaml.safe_load(result)
@@ -980,79 +908,15 @@ class _RulesImport:
 
     def write(self, groups: dict[str, Any]) -> FileWrite:
         return FileWrite(
-            self.path, _IMPORT_HEADER + _dump({**self.other, "rules": groups})
+            self.path, _IMPORT_HEADER + dump_yaml({**self.other, "rules": groups})
         )
 
     def import_it(self, project: RuleProject) -> FileWrite:
         """The repo file with this file added to its imports, nothing else."""
-        entry = RULES_IMPORT_FILE
-        text = _with_import(self.root_text, self.root_raw, entry)
-        imports = list(self.root_raw.get("imports") or [])
-        expected = {"imports": [*imports, entry]}
-        expected.update(
-            (key, value) for key, value in self.root_raw.items() if key != "imports"
+        return import_write(
+            project.config_path,
+            self.root_text,
+            self.root_raw,
+            RULES_IMPORT_FILE,
+            project.label(project.config_path),
         )
-        if yaml.safe_load(text) != expected:
-            raise StateError(
-                f"ww cannot add {entry} to the imports of "
-                f"{project.label(project.config_path)} without changing anything "
-                "else; add it by hand and run the command again"
-            )
-        return FileWrite(project.config_path, text)
-
-
-def _with_import(text: str, raw: dict[str, Any], entry: str) -> str:
-    """``text`` with ``entry`` appended to its top-level ``imports`` list.
-
-    Without ``imports``, the list goes before the first top-level key, since
-    imports come before every key but ``extends``. An existing list gains one
-    line in block style, or one element in a one-line flow list.
-    """
-    lines = text.splitlines(keepends=True)
-    if lines and not lines[-1].endswith("\n"):
-        lines[-1] += "\n"
-    if "imports" not in raw:
-        index = next(
-            (
-                position
-                for position, line in enumerate(lines)
-                if line.strip()
-                and not line.startswith(("#", "---", "%", " ", "\t"))
-            ),
-            len(lines),
-        )
-        return "".join([*lines[:index], f"imports:\n  - {entry}\n", *lines[index:]])
-    start = next(
-        (
-            position
-            for position, line in enumerate(lines)
-            if re.match(r"imports\s*:", line)
-        ),
-        None,
-    )
-    if start is None:
-        return text
-    value = lines[start].split(":", 1)[1].split(" #", 1)[0].strip()
-    if value.startswith("[") and value.endswith("]"):
-        line = lines[start]
-        close = line.rindex("]")
-        separator = ", " if value[1:-1].strip() else ""
-        lines[start] = f"{line[:close]}{separator}{entry}{line[close:]}"
-        return "".join(lines)
-    if value:
-        return text
-    last = None
-    prefix = "  - "
-    for position in range(start + 1, len(lines)):
-        line = lines[position]
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if line.lstrip().startswith("- ") and (line[0] in " \t-"):
-            last = position
-            prefix = line[: len(line) - len(line.lstrip())] + "- "
-            continue
-        break
-    if last is None:
-        return text
-    return "".join([*lines[: last + 1], f"{prefix}{entry}\n", *lines[last + 1 :]])
-

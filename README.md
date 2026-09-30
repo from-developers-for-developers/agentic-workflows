@@ -143,10 +143,13 @@ The wizard asks a few questions and then sets the project up:
 - **`ww-agentic-workflows.json`** — project configuration: task ID format,
   enabled extensions, base branches, optional multi-repository `projects`.
 - **Git setup**, in a Git repository: it enables the bundled `ww/git`
-  extension and asks about worktrees and branch formats, and offers to add
-  exactly `.ww/` to `.gitignore`. It also keeps local configuration files
-  (`*ww-agentic-workflows.local.yaml`, `*ww-agentic-workflows.local.json`) out
-  of Git.
+  extension and asks about worktrees and branch formats, and offers to keep
+  `.ww/` out of Git (`.ww/*` in `.gitignore`), except the files where ww
+  records what it learned about your team, company and project
+  (`.ww/team.md`, `.ww/company.md`, `.ww/project.md`), which are meant to be
+  committed. It also keeps local configuration files
+  (`*ww-agentic-workflows.local.yaml`, `*ww-agentic-workflows.local.json`,
+  `ww-setup.local.yaml`) out of Git.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
   and so on), it offers to install a `ww` skill, so you can ask the agent to
   work through ww by name, a `noww` skill, so you can tell it to leave ww
@@ -436,7 +439,8 @@ only the documented public extension API.
 
 ## Sensitive runtime data
 
-Treat `.ww/` as private runtime data. It can contain task errors, worker
+Treat `.ww/` as private runtime data, apart from the shared learning files
+`team.md`, `company.md` and `project.md`, which are meant for the repository. It can contain task errors, worker
 artifacts, command stdout/stderr, metadata, and configured extension settings;
 any of those may include credentials or other sensitive values supplied to a
 workflow. The audit file `.ww/executions.jsonl` is owner-readable only and

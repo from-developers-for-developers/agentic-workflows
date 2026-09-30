@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
-from ww import rule_writes
+from ww import rule_writes, setup_apply
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
@@ -934,6 +934,38 @@ def _onboarding(context: _Context) -> _Outcome:
     return _Outcome(render_onboarding(state, context.storage.root))
 
 
+def _setup(context: _Context) -> _Outcome:
+    """Show a setup fragment's placement, ask, and write it validated."""
+    args = context.args
+    root = context.storage.root
+    config_path = context.storage.config_path
+    plan = setup_apply.plan_setup(root, config_path, args.fragment, args.audience)
+    # Only a change that would load is shown to the operator.
+    setup_apply.apply_setup(root, config_path, plan, keep=False)
+    summary = setup_apply.render_plan(plan, root)
+    if args.dry_run:
+        if args.json_output:
+            return _Outcome(_json(setup_apply.plan_to_dict(plan, root, applied=False)))
+        return _Outcome(
+            summary + "Dry run: the configuration would be valid; nothing was "
+            "written.\n"
+        )
+    sys.stderr.write(summary)
+    if not confirm_operator(
+        "ww setup apply",
+        f"write these {len(plan.writes)} file(s) for "
+        + ("the team" if plan.audience == "team" else "you only"),
+        "Apply it?",
+        "Setup",
+        assume_yes=args.yes,
+    ):
+        return _Outcome("", error="setup apply cancelled", exit_code=1)
+    setup_apply.apply_setup(root, config_path, plan, keep=True)
+    if args.json_output:
+        return _Outcome(_json(setup_apply.plan_to_dict(plan, root, applied=True)))
+    return _Outcome("Applied.\n" + summary)
+
+
 def _documents(context: _Context) -> _Outcome:
     task_id = context.args.task_id
     return _Outcome(_json(context.service.documents_listing(task_id)), None, task_id)
@@ -1118,6 +1150,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "metadata": _metadata,
     "documents": _documents,
     "onboarding": _onboarding,
+    "setup": _setup,
     "items": _items,
     "item": _item,
     "artifacts": _artifacts,

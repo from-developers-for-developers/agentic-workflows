@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- `ww setup apply <file> --for me|team [--dry-run] [--yes] [--json]` places a proposed fragment (workflows, modes,
+  profiles, documents, handlers, hooks, rules, plus `settings` for the JSON file): the YAML into `ww-setup.yaml`
+  (imported by the repo file) or `ww-setup.local.yaml` (imported by the local file, created if missing), settings
+  merged key by key into the matching JSON file, refusing any conflicting value. A second apply merges by name. ww
+  shows the change, asks (or takes `--yes`), and restores every file when the configuration would not load.
 - Onboarding state: `ww onboarding [--json]` shows, and `--set KEY=VALUE` records, `explain` and `learned.me` (in
   `state.json` in the user directory) and `setup.done`, `learned.team|company|project` (in `.ww/metadata.json` under
   ww's reserved `ww.` namespace, which `saves: [project_metadata.ww...]` may no longer use). Until `setup.done`,

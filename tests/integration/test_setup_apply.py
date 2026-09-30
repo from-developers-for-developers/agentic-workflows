@@ -1,0 +1,329 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""``ww setup apply``: ww places a proposed configuration fragment itself."""
+
+from __future__ import annotations
+
+import io
+import json
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+from ww.cli import main
+from ww.config import load_configuration
+from ww.extensions import ExtensionRegistry
+
+REPO = """# The project's own workflows.
+workflows:
+  - name: task
+    description: Implement a change.
+    steps:
+      - work: Work.
+"""
+FRAGMENT = """workflows:
+  - name: review
+    description: Review a change.
+    modes: [gently]
+    steps:
+      - read: Read the change.
+modes:
+  - gently: Say it kindly.
+settings:
+  runtime: auto
+  extensions:
+    ww/git:
+      separate_branch: true
+"""
+
+
+@pytest.fixture
+def root(tmp_path: Path) -> Path:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "ww-agentic-workflows.yaml").write_text(REPO, encoding="utf-8")
+    (project / "ww-agentic-workflows.json").write_text(
+        json.dumps({"max_rounds": 3}, indent=2) + "\n", encoding="utf-8"
+    )
+    return project
+
+
+def _fragment(tmp_path: Path, text: str, name: str = "proposal.yaml") -> Path:
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _apply(root: Path, *arguments: str) -> int:
+    return main(["--root", str(root), "setup", "apply", *arguments])
+
+
+def _workflows(root: Path) -> list[str]:
+    configuration = load_configuration(
+        root / "ww-agentic-workflows.yaml", ExtensionRegistry.discover(root)
+    )
+    return [workflow.name for workflow in configuration.workflows]
+
+
+def _snapshot(root: Path) -> dict[str, str]:
+    return {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted(root.iterdir())
+        if path.is_file()
+    }
+
+
+def test_for_team_writes_the_shared_import_and_settings(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fragment = _fragment(tmp_path, FRAGMENT)
+
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 0
+
+    captured = capsys.readouterr()
+    assert "ww-setup.yaml (new): adds workflow `review`, mode `gently`" in captured.err
+    assert "ww-agentic-workflows.yaml: adds ww-setup.yaml to imports" in captured.err
+    assert (
+        "ww-agentic-workflows.json: sets runtime, extensions" in captured.err
+    )
+    assert captured.out.startswith("Applied.\n")
+    repo = (root / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
+    assert repo == "# The project's own workflows.\nimports:\n  - ww-setup.yaml\n" + (
+        REPO.split("\n", 1)[1]
+    )
+    setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
+    assert set(setup) == {"workflows", "modes"}
+    assert json.loads((root / "ww-agentic-workflows.json").read_text()) == {
+        "max_rounds": 3,
+        "runtime": "auto",
+        "extensions": {"ww/git": {"separate_branch": True}},
+    }
+    assert _workflows(root)[:2] == ["review", "task"]
+
+
+def test_for_me_writes_local_files_and_creates_the_local_root(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fragment = _fragment(tmp_path, FRAGMENT.replace("runtime: auto", "max_fixes: 5"))
+
+    assert _apply(root, str(fragment), "--for", "me", "--yes") == 0
+
+    capsys.readouterr()
+    assert (root / "ww-agentic-workflows.local.yaml").read_text() == (
+        "imports:\n  - ww-setup.local.yaml\n"
+    )
+    assert "review" in (root / "ww-setup.local.yaml").read_text()
+    assert json.loads((root / "ww-agentic-workflows.local.json").read_text()) == {
+        "max_fixes": 5,
+        "extensions": {"ww/git": {"separate_branch": True}},
+    }
+    # The shared files are untouched.
+    assert (root / "ww-agentic-workflows.yaml").read_text() == REPO
+    assert not (root / "ww-setup.yaml").exists()
+    assert "review" in _workflows(root)
+
+
+def test_for_me_adds_the_import_to_an_existing_local_file(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (root / "ww-agentic-workflows.local.yaml").write_text(
+        "modes:\n  - economy: Short.\n", encoding="utf-8"
+    )
+    fragment = _fragment(tmp_path, "modes:\n  - gently: Kindly.\n")
+
+    assert _apply(root, str(fragment), "--for", "me", "--yes") == 0
+
+    capsys.readouterr()
+    assert (root / "ww-agentic-workflows.local.yaml").read_text() == (
+        "imports:\n  - ww-setup.local.yaml\nmodes:\n  - economy: Short.\n"
+    )
+
+
+def test_a_second_apply_merges_by_name(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (root / "rules").mkdir()
+    (root / "rules/short.md").write_text("Keep functions short.\n", encoding="utf-8")
+    (root / "rules/named.md").write_text("Name things well.\n", encoding="utf-8")
+    first = _fragment(
+        tmp_path,
+        FRAGMENT.split("settings:")[0]
+        + "hooks:\n  after_complete:\n    - argv: ['true']\n"
+        + "rules:\n  style: [rules/short.md]\n",
+    )
+    assert _apply(root, str(first), "--for", "team", "--yes") == 0
+    second = _fragment(
+        tmp_path,
+        "workflows:\n  - name: review\n    description: Review again.\n"
+        "    steps:\n      - read: Read.\n"
+        "hooks:\n  after_complete:\n    - argv: ['echo', 'done']\n"
+        "rules:\n  style: [rules/named.md]\n",
+        "second.yaml",
+    )
+
+    assert _apply(root, str(second), "--for", "team", "--yes") == 0
+
+    err = capsys.readouterr().err
+    assert (
+        "ww-setup.yaml: replaces workflow `review`, rule group `style`; appends 1 "
+        "hook to after_complete"
+    ) in err
+    setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
+    assert setup["workflows"] == [
+        {
+            "name": "review",
+            "description": "Review again.",
+            "steps": [{"read": "Read."}],
+        }
+    ]
+    assert setup["modes"] == [{"gently": "Say it kindly."}]
+    assert setup["hooks"]["after_complete"] == [
+        {"argv": ["true"]},
+        {"argv": ["echo", "done"]},
+    ]
+    assert setup["rules"] == {"style": ["rules/named.md"]}
+    # The repo file lists the import once.
+    repo = yaml.safe_load((root / "ww-agentic-workflows.yaml").read_text())
+    assert repo["imports"] == ["ww-setup.yaml"]
+
+
+def test_a_setting_with_another_value_refuses_the_whole_apply(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _snapshot(root)
+    fragment = _fragment(tmp_path, FRAGMENT + "  max_rounds: 5\n")
+
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
+
+    err = capsys.readouterr().err
+    assert "does not overwrite them" in err
+    assert "- max_rounds is 3, the fragment proposes 5" in err
+    assert _snapshot(root) == before
+
+
+def test_a_fragment_that_would_not_load_restores_every_file(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _snapshot(root)
+    fragment = _fragment(tmp_path, FRAGMENT.replace("modes: [gently]", "modes: [x]"))
+
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
+
+    err = capsys.readouterr().err
+    assert "refused: the configuration would not be valid" in err
+    assert "unknown mode(s): x" in err
+    assert _snapshot(root) == before
+
+
+def test_dry_run_shows_the_change_and_writes_nothing(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _snapshot(root)
+    fragment = _fragment(tmp_path, FRAGMENT)
+
+    assert _apply(root, str(fragment), "--for", "team", "--dry-run") == 0
+
+    out = capsys.readouterr().out
+    assert "`ww setup apply --for team` writes for the team" in out
+    assert "Dry run: the configuration would be valid; nothing was written." in out
+    assert _snapshot(root) == before
+
+    assert _apply(root, str(fragment), "--for", "me", "--dry-run", "--json") == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["for"] == "me"
+    assert report["applied"] is False
+    assert [entry["path"] for entry in report["files"]] == [
+        "ww-setup.local.yaml",
+        "ww-agentic-workflows.local.yaml",
+        "ww-agentic-workflows.local.json",
+    ]
+    assert _snapshot(root) == before
+
+
+def test_without_a_terminal_it_needs_yes(
+    root: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO("y\n"))
+    before = _snapshot(root)
+
+    assert _apply(root, str(_fragment(tmp_path, FRAGMENT)), "--for", "team") == 1
+
+    err = capsys.readouterr().err
+    assert "there is no terminal to ask at" in err
+    assert _snapshot(root) == before
+
+
+def test_the_json_report_after_applying(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fragment = _fragment(tmp_path, "modes:\n  - gently: Kindly.\n")
+
+    assert _apply(root, str(fragment), "--for", "team", "--yes", "--json") == 0
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["applied"] is True
+    assert report["files"][0] == {
+        "path": "ww-setup.yaml",
+        "created": True,
+        "changes": ["adds mode `gently`"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("imports: [a.yaml]\n", "unknown key(s): imports"),
+        ("workflows: {task: {}}\n", "workflows must be a list"),
+        ("workflows:\n  - 42\n", "workflows[0] needs a name"),
+        ("settings: [1]\n", "settings must be a mapping"),
+        ("[]\n", "must be a mapping of configuration keys"),
+        ("settings:\n  max_rounds: 3\n", "changes nothing"),
+    ],
+)
+def test_a_malformed_fragment_is_refused(
+    root: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    message: str,
+) -> None:
+    before = _snapshot(root)
+
+    assert _apply(root, str(_fragment(tmp_path, text)), "--for", "team", "--yes") == 1
+
+    assert message in capsys.readouterr().err
+    assert _snapshot(root) == before
+
+
+def test_an_unimported_setup_file_is_left_to_the_operator(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (root / "ww-setup.yaml").write_text("modes: []\n", encoding="utf-8")
+    fragment = _fragment(tmp_path, FRAGMENT)
+
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
+
+    assert "exists but ww-agentic-workflows.yaml does not import it" in (
+        capsys.readouterr().err
+    )
+
+
+def test_a_definition_the_root_file_keeps_is_flagged(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fragment = _fragment(
+        tmp_path,
+        "workflows:\n  - name: task\n    description: Theirs.\n"
+        "    steps:\n      - work: Work.\n",
+    )
+
+    assert _apply(root, str(fragment), "--for", "team", "--dry-run") == 0
+
+    assert (
+        "Warning: workflow `task` is also defined in ww-agentic-workflows.yaml, "
+        "which takes precedence over ww-setup.yaml"
+    ) in capsys.readouterr().out

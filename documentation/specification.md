@@ -150,6 +150,44 @@ Projects, the directories a task may work in, are configured in
 `ww-agentic-workflows.json` rather than here because their locations differ per
 machine; see the features guide.
 
+## Setup fragments
+
+`ww setup apply <file> --for me|team` places configuration a setup skill
+proposes; see the features guide for the command. The file is a YAML
+fragment with any of the root keys `workflows`, `modes`, `profiles`,
+`documents`, `handlers`, `hooks`, and `rules`, in this notation, plus an
+optional `settings` mapping of `ww-agentic-workflows.json` keys:
+
+```yaml
+workflows:
+  - review: Review a change before it is merged.
+    steps:
+      - read: Read the change and report what to fix.
+modes:
+  - gently: Suggest rather than insist.
+settings:
+  runtime: auto
+```
+
+Any other key, `imports` and `extends` included, is an error, and every entry
+of a named catalog needs a name. The YAML part goes into a file ww owns and
+rewrites whole, which the level's root file imports:
+
+| `--for` | YAML part | Imported by | `settings` merge into |
+| --- | --- | --- | --- |
+| `team` | `ww-setup.yaml` | `ww-agentic-workflows.yaml` | `ww-agentic-workflows.json` |
+| `me` | `ww-setup.local.yaml` | `ww-agentic-workflows.local.yaml`, created with only `imports` when missing | `ww-agentic-workflows.local.json` |
+
+Each lives next to the repo file. An existing setup file keeps what the
+fragment does not name: a workflow, mode, document, or handler of the same
+name is replaced, a profile or rule group of the same name is replaced whole,
+and hooks are appended phase by phase. `settings` merge key by key, objects
+recursively; a key that already holds a different value is a conflict, and
+the whole apply is refused listing every one. A setup file the root file does
+not import is refused, since ww would not know why it is not applied. A
+fragment definition that the importing root file also defines is reported as a
+warning: the root file folds after its imports, so it keeps its own.
+
 ## Modes and profiles
 
 A mode has these keys:

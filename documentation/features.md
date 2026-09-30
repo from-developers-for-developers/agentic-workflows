@@ -10,7 +10,10 @@ and persistence invariants, see [architecture.md](architecture.md).
 - Read-only validation of `ww-agentic-workflows.yaml`, plus agent-specific workflow
   planning in Markdown or JSON.
 - A `ww-agentic-workflows.yaml` split across imported files, composed in memory.
-- User, repo, and local configuration levels, resolved automatically.
+- User, repo, and local configuration levels, resolved automatically, above
+  the workflows ww ships itself.
+- Onboarding state, and setup fragments that ww validates and places in the
+  shared or local configuration after asking.
 - An implicit, reserved `init` step that preserves task requirements.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
@@ -268,6 +271,45 @@ the operator wants to see what ww does while it learns, and to record the
 answer with `ww onboarding --set explain=…`. Its JSON carries `onboarding`
 with `setup_done`, `explain` and the `guidance` lines. Under `"enabled":
 "on_request"` the section only informs: it asks the agent to offer nothing.
+
+## Apply a proposed setup
+
+The setup skills propose configuration from what ww learned: workflows, modes,
+gentle rules, hooks, and settings. They never edit ww's configuration files
+themselves; they write the proposal to a scratch file and hand it to ww:
+
+```console
+./ww setup apply proposal.yaml --for me --dry-run
+./ww setup apply proposal.yaml --for me --yes
+```
+
+The file is a [setup fragment](specification.md#setup-fragments). `--for me`
+places it in your local files, kept out of version control
+(`ww-setup.local.yaml`, imported by `ww-agentic-workflows.local.yaml`, and
+`ww-agentic-workflows.local.json`), so you can try it first; `--for team`
+places it in the shared files (`ww-setup.yaml`, imported by
+`ww-agentic-workflows.yaml`, and `ww-agentic-workflows.json`), committed with
+the repository. Running it again refines the same setup file: definitions of
+the same name are replaced, the rest kept.
+
+ww first validates the fragment by writing it, loading the configuration as
+any command would, and putting every file back, so it only ever shows a change
+that works. It then prints what it will write, file by file:
+
+```text
+`ww setup apply --for team` writes for the team: files shared through the repository:
+- ww-setup.yaml (new): adds workflow `review`, mode `gently`
+- ww-agentic-workflows.yaml: adds ww-setup.yaml to imports
+- ww-agentic-workflows.json: sets runtime
+```
+
+and asks `Apply it? [y/N]` at a terminal. Without one, as in an agent's shell,
+it needs `--yes`, given once the operator agreed; `--dry-run` prints the same
+and writes nothing, and `--json` reports the files and changes for a program.
+A setting that already holds a different value refuses the whole apply,
+listing each conflict: ww never overwrites one. After writing, ww loads the
+configuration again and restores every file if it would not load. Nothing is
+committed.
 
 ## The catch-all workflow
 

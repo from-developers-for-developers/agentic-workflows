@@ -298,7 +298,7 @@ class _Composer:
         self._origins[(key, None)] = label
         if key in _NAMED_CATALOGS and isinstance(value, list):
             for entry in value:
-                self._origins[(key, _entry_name(entry))] = label
+                self._origins[(key, entry_name(entry))] = label
         elif key in {"profiles", "rules"} and isinstance(value, dict):
             for name in value:
                 self._origins[(key, name)] = label
@@ -314,10 +314,10 @@ class _Composer:
         positions = {
             name: index
             for index, entry in enumerate(merged)
-            if (name := _entry_name(entry)) is not None
+            if (name := entry_name(entry)) is not None
         }
         for entry in entries:
-            name = _entry_name(entry)
+            name = entry_name(entry)
             if name is not None and name in positions:
                 self._record(key, name, _NAMED_CATALOGS[key], label)
                 merged[positions.pop(name)] = entry
@@ -355,7 +355,7 @@ class _Composer:
         )
 
 
-def _entry_name(entry: Any) -> str | None:
+def entry_name(entry: Any) -> str | None:
     """The name a catalog entry declares, explicitly or by shorthand.
 
     An entry without a usable name is kept as it is, for the parser to report.
@@ -428,7 +428,7 @@ def _manager_setting_notices(raw: dict[str, Any], label: str) -> tuple[str, ...]
             if value.get("role") == "manager":
                 settings = [key for key in _WORKER_SETTINGS if key in value]
                 if settings:
-                    name = _entry_name(value) or "a step"
+                    name = entry_name(value) or "a step"
                     found.append(
                         f"{name} in {label} has role: manager, so "
                         + ", ".join(settings)

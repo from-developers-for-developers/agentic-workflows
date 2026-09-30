@@ -1,0 +1,169 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""File writes that ww makes to configuration, together or not at all.
+
+``ww rules add`` and ``ww setup apply`` plan their changes as
+:class:`FileWrite` values, apply them in a :class:`Transaction`, and load the
+configuration as ww would; when it would not load, the transaction puts every
+file back as it was. The import file each command owns is added to a root
+file's ``imports`` with :func:`import_write`, which changes that one list and
+refuses when it cannot do so without touching anything else.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from ww.errors import StateError
+
+
+@dataclass(frozen=True)
+class FileWrite:
+    """One file's new content, or ``None`` to delete it."""
+
+    path: Path
+    content: str | None
+
+
+class Transaction:
+    """Files written together and restored together when anything fails."""
+
+    def __init__(self) -> None:
+        self._saved: list[tuple[Path, bytes | None]] = []
+        self._created: list[Path] = []
+        self._done = False
+
+    def __enter__(self) -> Transaction:
+        return self
+
+    def __exit__(self, kind: object, error: object, trace: object) -> None:
+        if error is not None:
+            self.roll_back()
+
+    def apply(
+        self, writes: Iterable[FileWrite], directories: Iterable[Path] = ()
+    ) -> None:
+        for directory in directories:
+            self._make_directory(directory)
+        for change in writes:
+            self._saved.append(
+                (
+                    change.path,
+                    change.path.read_bytes() if change.path.exists() else None,
+                )
+            )
+            if change.content is None:
+                change.path.unlink()
+            else:
+                self._make_directory(change.path.parent)
+                atomic_write(change.path, change.content)
+
+    def _make_directory(self, directory: Path) -> None:
+        missing = [
+            folder for folder in (directory, *directory.parents) if not folder.exists()
+        ]
+        for folder in reversed(missing):
+            folder.mkdir()
+            self._created.append(folder)
+
+    def roll_back(self) -> None:
+        if self._done:
+            return
+        self._done = True
+        for path, content in reversed(self._saved):
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(content)
+        for folder in reversed(self._created):
+            if folder.is_dir() and not any(folder.iterdir()):
+                folder.rmdir()
+
+
+def atomic_write(path: Path, content: str) -> None:
+    temporary = path.with_name(f".{path.name}.ww-tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
+
+
+def dump_yaml(value: dict[str, Any]) -> str:
+    return yaml.safe_dump(  # type: ignore[no-any-return]
+        value, sort_keys=False, allow_unicode=True, default_flow_style=None, width=1000
+    )
+
+
+def import_write(
+    root: Path, text: str, raw: dict[str, Any], entry: str, label: str
+) -> FileWrite:
+    """``root`` with ``entry`` added to its imports, and nothing else changed."""
+    updated = with_import(text, raw, entry)
+    imports = list(raw.get("imports") or [])
+    expected = {"imports": [*imports, entry]}
+    expected.update((key, value) for key, value in raw.items() if key != "imports")
+    if yaml.safe_load(updated) != expected:
+        raise StateError(
+            f"ww cannot add {entry} to the imports of {label} without changing "
+            "anything else; add it by hand and run the command again"
+        )
+    return FileWrite(root, updated)
+
+
+def with_import(text: str, raw: dict[str, Any], entry: str) -> str:
+    """``text`` with ``entry`` appended to its top-level ``imports`` list.
+
+    Without ``imports``, the list goes before the first top-level key, since
+    imports come before every key but ``extends``. An existing list gains one
+    line in block style, or one element in a one-line flow list.
+    """
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    if "imports" not in raw:
+        index = next(
+            (
+                position
+                for position, line in enumerate(lines)
+                if line.strip()
+                and not line.startswith(("#", "---", "%", " ", "\t"))
+            ),
+            len(lines),
+        )
+        return "".join([*lines[:index], f"imports:\n  - {entry}\n", *lines[index:]])
+    start = next(
+        (
+            position
+            for position, line in enumerate(lines)
+            if re.match(r"imports\s*:", line)
+        ),
+        None,
+    )
+    if start is None:
+        return text
+    value = lines[start].split(":", 1)[1].split(" #", 1)[0].strip()
+    if value.startswith("[") and value.endswith("]"):
+        line = lines[start]
+        close = line.rindex("]")
+        separator = ", " if value[1:-1].strip() else ""
+        lines[start] = f"{line[:close]}{separator}{entry}{line[close:]}"
+        return "".join(lines)
+    if value:
+        return text
+    last = None
+    prefix = "  - "
+    for position in range(start + 1, len(lines)):
+        line = lines[position]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.lstrip().startswith("- ") and (line[0] in " \t-"):
+            last = position
+            prefix = line[: len(line) - len(line.lstrip())] + "- "
+            continue
+        break
+    if last is None:
+        return text
+    return "".join([*lines[: last + 1], f"{prefix}{entry}\n", *lines[last + 1 :]])
