@@ -601,7 +601,7 @@ def test_init_targets_new_directory_and_creates_approved_agent_files(
     project.mkdir()
     monkeypatch.chdir(project)
     monkeypatch.setattr(
-        "sys.stdin", InteractiveInput("uuid\ny\n" + _agent_answers(".codex"))
+        "sys.stdin", InteractiveInput("\nuuid\ny\n" + _agent_answers(".codex"))
     )
     assert main(["init"]) == 0
     output = capsys.readouterr().out
@@ -625,7 +625,7 @@ def test_init_remembers_agent_answers_and_restores_approved_skill(
             return True
 
     monkeypatch.setattr(
-        "sys.stdin", InteractiveInput("uuid\ny\n" + _agent_answers(".codex"))
+        "sys.stdin", InteractiveInput("\nuuid\ny\n" + _agent_answers(".codex"))
     )
     assert main(["--root", str(tmp_path), "init"]) == 0
     capsys.readouterr()
@@ -771,7 +771,7 @@ def test_init_interactive_wizard_collects_project_choices(
     monkeypatch.setattr(
         "sys.stdin",
         InteractiveInput(
-            "digit\ny\n\nhotfix/{{task_id}}\ny\ny\n" + _agent_answers()
+            "\ndigit\ny\n\nhotfix/{{task_id}}\ny\ny\n" + _agent_answers()
         ),
     )
 

@@ -39,6 +39,12 @@ from ww.task_ids import EXPLICIT_TASK_FORMAT
 from ww.task_references import resolve_task_reference
 
 WITHOUT_WW = "Work without ww"
+# Under ``"enabled": "on_request"`` lookup runs only because the user asked
+# for ww; an unasked change is made without it, and without asking.
+ON_REQUEST_NOTE = (
+    "ww is used here only on request. Go on only if the user explicitly asked "
+    "for ww; otherwise make the change without ww and do not ask."
+)
 
 
 @dataclass(frozen=True)
@@ -82,6 +88,7 @@ def lookup(
         else None
     )
     report: dict[str, object] = {
+        "on_request": extensions.config.on_request,
         "reference": reference,
         "matches": [
             _task(tasks, task_id)
@@ -235,7 +242,10 @@ def render_lookup(
 
 
 def _markdown(report: dict[str, object]) -> list[str]:
-    lines = ["# ww lookup", "", str(report["message"])]
+    lines = ["# ww lookup", ""]
+    if report.get("on_request"):
+        lines.extend([f"**{ON_REQUEST_NOTE}**", ""])
+    lines.append(str(report["message"]))
     count = report.get("interrupted_recently")
     pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0)
     if pointer:

@@ -23,7 +23,7 @@ from ww.hooks import (
     install_hooks,
 )
 from ww.output_adapters.terminal import initialization_progress
-from ww.project_config import compose_settings
+from ww.project_config import ON_REQUEST, Enabled, compose_settings
 from ww.results import InitializationResult
 from ww.storage import Storage
 
@@ -181,6 +181,7 @@ def _initialization_options(
     storage: Storage, args: argparse.Namespace
 ) -> tuple[str, str, bool, tuple[tuple[str, str], ...]]:
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
+    enabled = _enabled_choice(storage, interactive)
     task_kind = args.task_id_format
     if task_kind is None and interactive and not _configured_task_format(storage):
         print(
@@ -197,7 +198,7 @@ def _initialization_options(
     workflows = "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
 
     project: dict[str, object] = {
-        "enabled": True,
+        "enabled": enabled,
         "executable": DEFAULT_EXECUTABLE,
         "extensions": {},
     }
@@ -316,6 +317,54 @@ def _initialization_options(
         bool(ignore_runtime),
         _skill_installs(storage, args.skills, interactive, progress=True),
     )
+
+
+# The ``enabled`` values as the operator types them.
+_ENABLED_ANSWERS: dict[str, Enabled] = {
+    "true": True,
+    ON_REQUEST: ON_REQUEST,
+    "false": False,
+}
+
+
+def _enabled_value(value: object) -> Enabled | None:
+    if isinstance(value, bool):
+        return value
+    return ON_REQUEST if value == ON_REQUEST else None
+
+
+def _enabled_choice(storage: Storage, interactive: bool) -> Enabled:
+    """Whether agents use ww here by default, only on request, or never.
+
+    Asked once, and only when no settings level sets ``enabled`` yet; the
+    answer is remembered. Without a terminal init writes ``true``.
+    """
+    try:
+        raw, _ = compose_settings(storage.project_config_path)
+    except ConfigurationError:
+        raw = {}
+    for known in (raw.get("enabled"), _init_choices(storage).get("enabled")):
+        value = _enabled_value(known)
+        if value is not None:
+            return value
+    if not interactive:
+        return True
+    print(
+        "Choose when agents use ww in this project:\n"
+        "  true        by default, for requests that carry out project work "
+        "(default)\n"
+        "  on_request  only when the user explicitly asks for ww\n"
+        "  false       never\n"
+    )
+    enabled = _ENABLED_ANSWERS[
+        _ask_choice(
+            _init_prompt(2, "Use ww [true/on_request/false] (true): "),
+            tuple(_ENABLED_ANSWERS),
+            "true",
+        )
+    ]
+    _save_init_choice(storage, "enabled", enabled)
+    return enabled
 
 
 def _skill_location(directory: str) -> str:

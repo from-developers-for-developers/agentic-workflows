@@ -93,6 +93,26 @@ def test_session_start_without_tasks_prints_only_the_reminder(
     )
 
 
+def test_session_start_under_on_request_says_ww_is_used_only_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path, {"enabled": "on_request"})
+    _in_progress(root)
+
+    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
+    reminder = json.loads(_hook(root, monkeypatch, capsys, "stop"))
+
+    assert context.startswith(
+        "This project has ww available on request only: use it only when the "
+        "user explicitly asks for ww; otherwise work without it and do not ask. "
+        "`./ww discover` lists its workflows."
+    )
+    assert "coordinates work through ww" not in context
+    # Tasks already open are still listed and still reminded about.
+    assert "- T1 (task, claudecode) develop" in context
+    assert "T1 step `develop` is still in progress" in reminder["reason"]
+
+
 def test_session_start_lists_unfinished_tasks_with_resume_commands(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

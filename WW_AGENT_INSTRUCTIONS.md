@@ -1,12 +1,12 @@
 # Working with ww
 
 This project coordinates work through ww: it saves progress, runs automatic
-handlers, and tells you which role acts next. Use it for requests to implement,
-fix, investigate, review, or otherwise carry out project work, unless the user
-asks you not to. Questions and other read-only work need no task. Every change
-to files goes through ww: when no workflow fits, run `./ww lookup [<task>]
---agent <agent>` with the task in context, as the request names it, and follow
-it; it never creates a task without the operator's confirmation.
+handlers, and tells you which role acts next. Where ww is used by default, use
+it for requests to implement, fix, investigate, review, or otherwise carry out
+project work unless the user asks you not to, and every change to files goes
+through ww: when no workflow fits, run `./ww lookup [<task>] --agent <agent>`
+with the task in context and follow it; it never creates a task without the
+operator's confirmation. Questions and other read-only work need no task.
 
 ## Start here
 
@@ -16,11 +16,11 @@ Before starting new work, run:
 ./ww discover
 ```
 
-It says whether ww is enabled here, lists the workflows, modes, runtimes, and
-start options to choose from, and shows the exact commands. If ww is disabled,
-do not use it. Choose the workflow that matches the request, keep its default
-modes unless the user's wording matches another mode, and ask the user only
-when the choice would materially change the work.
+It lists the workflows, modes, runtimes, start options, and exact commands, and
+it says whether to use ww unasked. If ww is disabled, do not use it; if it is
+used only on request, use it only when the user explicitly asks for ww. Choose
+the matching workflow, keep its default modes unless the user's wording matches
+another mode, and ask only when the choice would materially change the work.
 
 When the request names an external ticket, such as a Jira key, start the task
 under that key so the task ID matches the issue. Omit the task ID only when the

@@ -299,7 +299,8 @@ class WorkflowService:
         fresh_items: bool = False,
     ) -> Instruction:
         self._require_manager("start", caller_role)
-        if not self.extensions.config.enabled:
+        # ``"on_request"`` allows it: an agent starts a task only when asked.
+        if self.extensions.config.disabled:
             raise StateError(
                 "ww is disabled for this project (ww-agentic-workflows.json has "
                 '"enabled": false); do not use ww for this work'

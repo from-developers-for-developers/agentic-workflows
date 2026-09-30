@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -160,6 +161,73 @@ def test_a_disabled_project_refuses_to_start(tmp_path: Path) -> None:
     assert not service.tasks.task_exists("TASK-1")
 
 
+def test_an_on_request_project_lists_everything_but_says_to_wait_for_a_request(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, {"enabled": "on_request"})
+
+    output = _discover(root, capsys)
+    report = json.loads(_discover(root, capsys, "--json"))
+
+    assert output.startswith(
+        "# ww discover\n\n**ww is used here only on request: use it only when "
+        "the user explicitly asks for ww"
+    )
+    assert "otherwise carry out the request without ww and do not ask." in output
+    assert "When the user has asked for ww, choose the workflow" in output
+    assert "ww is enabled for this project." not in output
+    # The full catalog follows, so an explicit request can proceed.
+    assert "- `task` — Implement a change." in output
+    assert "./ww start <TASK-ID> --workflow <workflow>" in output
+    catchall = output.split("## Changes no workflow covers", 1)[1]
+    assert "Only when the user has asked for ww; otherwise make the change" in (
+        catchall
+    )
+    assert report["enabled"] == "on_request"
+    assert [workflow["name"] for workflow in report["workflows"]] == [
+        "task",
+        "bugfix",
+    ]
+    assert report["catchall"]["guidance"].startswith("Only when the user has asked")
+
+
+def test_an_enabled_project_says_nothing_about_requests(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, {"enabled": True})
+
+    output = _discover(root, capsys)
+
+    assert "only on request" not in output
+    assert "Only when the user has asked for ww" not in output
+
+
+def test_an_on_request_project_starts_a_task_when_asked(tmp_path: Path) -> None:
+    root = _project(tmp_path, {"enabled": "on_request"})
+    service = WorkflowService(Storage(root))
+
+    service.start("task", "TASK-1", agent="codex")
+
+    assert service.tasks.task_exists("TASK-1")
+
+
+@pytest.mark.parametrize("enabled", [True, "on_request"])
+def test_lookup_under_on_request_proceeds_only_for_an_explicit_request(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], enabled: object
+) -> None:
+    root = _project(tmp_path, {"enabled": enabled})
+    arguments = ["--root", str(root), "lookup", "--agent", "codex"]
+
+    assert main(arguments) == 0
+    output = capsys.readouterr().out
+    assert main([*arguments, "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+
+    note = "ww is used here only on request. Go on only if the user explicitly"
+    assert (note in output) is (enabled == "on_request")
+    assert report["on_request"] is (enabled == "on_request")
+
+
 def test_discover_is_read_only(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -208,6 +276,19 @@ def test_the_skill_and_instructions_send_agents_to_discover() -> None:
     assert len(AGENT_INSTRUCTIONS.splitlines()) < 50
 
 
+def test_the_skill_and_instructions_let_discover_decide_whether_to_use_ww() -> None:
+    instructions = " ".join(AGENT_INSTRUCTIONS.split())
+    skill = " ".join(WW_SKILL.split())
+    description = WW_SKILL.split("\n")[2]
+
+    assert "it says whether to use ww unasked" in instructions
+    assert "Where ww is used by default" in instructions
+    assert "every change to files goes through ww" in instructions
+    assert "use it only when the user explicitly asks for ww" in instructions
+    assert "where `./ww discover` says ww is used by default" in description
+    assert "used only on request and the user did not explicitly ask" in skill
+
+
 def test_init_installs_the_skill_into_existing_agent_directories(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -250,6 +331,44 @@ def test_init_without_skills_suggests_installing_them(
     )
     config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     assert config["enabled"] is True
+
+
+@pytest.mark.parametrize(
+    ("answer", "enabled"),
+    [("", True), ("true", True), ("on_request", "on_request"), ("false", False)],
+)
+def test_init_asks_when_agents_use_ww_and_explains_each_value(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str,
+    enabled: object,
+) -> None:
+    class InteractiveInput(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr("sys.stdin", InteractiveInput(f"{answer}\nuuid\ny\nnone\n"))
+
+    assert main(["--root", str(tmp_path), "init"]) == 0
+    output = capsys.readouterr().out
+
+    assert "Choose when agents use ww in this project:" in output
+    assert "true        by default, for requests that carry out project work" in (
+        output
+    )
+    assert "on_request  only when the user explicitly asks for ww" in output
+    assert "false       never" in output
+    assert "Use ww [true/on_request/false] (true): " in output
+    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
+    assert config["enabled"] == enabled
+    choices = json.loads((tmp_path / ".ww/init-choices.json").read_text())
+    assert choices["enabled"] == enabled
+
+    # The file now answers the question: a second run does not ask again.
+    monkeypatch.setattr("sys.stdin", InteractiveInput(""))
+    assert main(["--root", str(tmp_path), "init"]) == 0
+    assert "Choose when agents use ww" not in capsys.readouterr().out
 
 
 def test_init_asks_before_installing_each_skill(
