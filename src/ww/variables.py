@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from ww.executable import ww_command
 from ww.workspace import Workdir, item_workspace, resolve_workspace
 
 TASK_ID = "ww.task.id"
@@ -20,6 +21,9 @@ BRANCH_NAMING_STRATEGY = "__branch_naming_strategy"
 PROJECT = "ww.project.name"
 PROJECT_DIR = "ww.project.dir"
 PROJECTS = "ww.project.names"
+# How a printed command invokes ww (``./ww`` or the configured executable), so
+# a step's text can name a ww command the way ww's own pages do.
+EXECUTABLE = "ww.executable"
 # What a template reads about saved metadata, documents, and the stage's item.
 METADATA_PREFIX = "ww.metadata."
 PROJECT_METADATA_PREFIX = "ww.project_metadata."
@@ -42,6 +46,7 @@ CORE_VARIABLE_NAMES = (
     PROJECT,
     PROJECT_DIR,
     PROJECTS,
+    EXECUTABLE,
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
 
@@ -93,6 +98,7 @@ def unknown_template_message(names: set[str] | tuple[str, ...]) -> str:
 # ww keeps for its own values may not be claimed as an extension namespace.
 WW_NAMESPACE = "ww"
 RESERVED_NAMESPACES = (
+    "executable",
     "task",
     "project",
     "documents",
@@ -198,6 +204,7 @@ def runtime_variable_values(
         PROJECT: project or "",
         PROJECT_DIR: project_dir or "",
         PROJECTS: ",".join(projects),
+        EXECUTABLE: ww_command(),
     }
 
 

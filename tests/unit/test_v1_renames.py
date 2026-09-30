@@ -521,6 +521,29 @@ def test_ww_values_compile_in_descriptions(tmp_path: Path) -> None:
     assert plan.documents[0].path == "plans/{{ww.task.id}}.md"
 
 
+def test_ww_executable_is_left_for_the_page_and_names_the_printed_command(
+    tmp_path: Path,
+) -> None:
+    from ww.executable import printed_executable
+    from ww.variables import EXECUTABLE, runtime_variable_values
+
+    path = tmp_path / "ww-agentic-workflows.yaml"
+    path.write_text(
+        _workflow("      - work: Run `{{ww.executable}} discover`.\n"),
+        encoding="utf-8",
+    )
+
+    plan = WorkflowPlanCompiler(
+        load_configuration(path), tmp_path, "codex", "T-1"
+    ).compile("task")
+
+    work = next(item for item in plan.items if item.name == "work")
+    assert work.description == "Run `{{ww.executable}} discover`."
+    assert runtime_variable_values(tmp_path, "T-1")[EXECUTABLE] == "./ww"
+    with printed_executable("my ww"):
+        assert runtime_variable_values(tmp_path, "T-1")[EXECUTABLE] == "'my ww'"
+
+
 def test_a_document_path_rejects_the_single_brace_task_id() -> None:
     with pytest.raises(ConfigurationError, match=r"was renamed to \{\{ww.task.id\}\}"):
         parse_yaml_text(
