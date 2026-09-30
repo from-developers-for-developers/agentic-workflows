@@ -34,6 +34,9 @@ MACHINE_SETTINGS_FILE = f"{FILE_STEM}.machine.json"
 # The rule-automation store: ww-owned derived knowledge at the project root,
 # committed so every checkout shares it, never part of a step's change set.
 RULE_AUTOMATION_FILE = "ww-rule-automation.json"
+# Rule groups ``ww rules add --group`` and ``ww rules filter`` write, imported
+# by the repo file so that file is never rewritten; ww owns this one.
+RULES_IMPORT_FILE = "ww-rules.yaml"
 # The .gitignore patterns ``init`` adds; they also cover local files a local
 # configuration imports, such as ``git.ww-agentic-workflows.local.yaml``.
 LOCAL_IGNORE_PATTERNS = (f"*{LOCAL_WORKFLOWS_FILE}", f"*{LOCAL_SETTINGS_FILE}")

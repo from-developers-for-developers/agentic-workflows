@@ -11,6 +11,14 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Writing rules: a new bundled skill, `ww-rule`, which `init` offers once, turns the operator's words into rules
+  (atomic rules, amendments, globs with their match counts, placement by real workflow and step names, one
+  confirmation) and writes them only through new validated commands: `ww rules add <group> --text`, `rules add
+  --group <name> --dir <path>`, `rules edit <id>`, `rules move <id> <group>`, `rules filter <group>` and `rules
+  promote <check>`, which copies an approved store check into the rule files it covers. Each write is undone when
+  the configuration would no longer load, `--dry-run` only validates, and nothing is committed. New groups go into
+  a ww-owned `ww-rules.yaml`, which the repo file imports; `ww-agentic-workflows.yaml` gains only that import
+  line. `ww rules --json` names each rule's approved store check (`store_check`).
 - Rule commands: `ww check <task>` runs the active step's checks without completing or recording anything;
   `ww dispute <task> --rule <id> --reason "<why>"` asks the operator to overrule a check that rejected the
   completion (`operator_reason: check_disputed`; `next --retry` lets it stand, `next --force` waives it for that

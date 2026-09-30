@@ -99,8 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Install the ww and noww skills into every agent directory found "
-            "in the project."
+            "Install the ww, noww and ww-rule skills into every agent "
+            "directory found in the project."
         ),
     )
 
@@ -445,20 +445,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rule.add_argument("task_id")
     rule.add_argument("rule_id", metavar="ID")
-    rules = subparsers.add_parser(
-        "rules",
-        parents=[json_output],
-        help=(
-            "List the rule groups with their filters and rules; `rules prune` "
-            "deletes orphan rule-automation store entries."
-        ),
-    )
-    rules.add_argument("rules_action", nargs="?", choices=("prune",), default=None)
-    rules.add_argument(
-        "--yes",
-        action="store_true",
-        help="With prune: delete without the y/N prompt, on the operator's word.",
-    )
+    _rules_parser(subparsers, json_output)
 
     with_run = _shared("json", "role", "run")
     status = subparsers.add_parser(
@@ -629,6 +616,118 @@ def build_parser() -> argparse.ArgumentParser:
         "--all", action="store_true", help="Every interruption, however old."
     )
     return parser
+
+
+def _rules_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    json_output: argparse.ArgumentParser,
+) -> None:
+    """``rules``: list and prune, and the validated writes the skill uses."""
+    rules = subparsers.add_parser(
+        "rules",
+        parents=[json_output],
+        help=(
+            "List the rule groups with their filters and rules; its actions "
+            "prune the store and write rule files and groups."
+        ),
+    )
+    actions = rules.add_subparsers(dest="rules_action", required=False)
+    # ``--json`` after the action; SUPPRESS keeps one given before it.
+    after = argparse.ArgumentParser(add_help=False)
+    after.add_argument(
+        "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
+    )
+    prune = actions.add_parser(
+        "prune",
+        parents=[after],
+        help="Delete orphan rule-automation store entries after asking.",
+    )
+    prune.add_argument(
+        "--yes",
+        action="store_true",
+        help="Delete without the y/N prompt, on the operator's word.",
+    )
+    dry_run = argparse.ArgumentParser(add_help=False)
+    dry_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate the write and report it, then put every file back.",
+    )
+    add = actions.add_parser(
+        "add",
+        parents=[dry_run],
+        help=(
+            "Add a rule file to a group (`add <group> --text`), or a new root "
+            "group (`add --group <name> --dir <path>`)."
+        ),
+    )
+    add.add_argument("group_name", nargs="?", metavar="GROUP")
+    add.add_argument("--text", help="The rule: one imperative sentence, then its body.")
+    add.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
+    command = add.add_mutually_exclusive_group()
+    command.add_argument("--check-shell", metavar="SCRIPT", default=None)
+    command.add_argument("--check-argv", nargs="+", metavar="ARG", default=None)
+    add.add_argument("--assert", dest="assertion", metavar="empty|eq:VALUE")
+    add.add_argument("--id", dest="stem", metavar="STEM", default=None)
+    add.add_argument("--group", dest="new_group", metavar="NAME", default=None)
+    add.add_argument("--dir", dest="directory", type=Path, default=None)
+    _filter_options(add)
+    edit = actions.add_parser(
+        "edit",
+        parents=[dry_run],
+        help="Replace a rule file's body or globs; the rest is kept.",
+    )
+    edit.add_argument("rule_id", metavar="ID")
+    edit.add_argument("--text", default=None)
+    edit.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
+    move = actions.add_parser(
+        "move",
+        parents=[dry_run],
+        help="Move a rule file into another group's directory.",
+    )
+    move.add_argument("rule_id", metavar="ID")
+    move.add_argument("target_group", metavar="GROUP")
+    filters = actions.add_parser(
+        "filter",
+        parents=[dry_run],
+        help="Set the workflows and steps a group in ww-rules.yaml applies to.",
+    )
+    filters.add_argument("group_name", metavar="GROUP")
+    _filter_options(filters)
+    filters.add_argument(
+        "--all-workflows",
+        action="store_true",
+        help="Remove the workflows filter: every workflow.",
+    )
+    filters.add_argument(
+        "--all-steps", action="store_true", help="Remove the steps filter: every step."
+    )
+    promote = actions.add_parser(
+        "promote",
+        parents=[dry_run],
+        help=(
+            "Copy an approved store check into the `check` of every rule file "
+            "it covers, and remove it from the store."
+        ),
+    )
+    promote.add_argument("check_name", metavar="CHECK")
+
+
+def _filter_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--workflows",
+        nargs="*",
+        metavar="NAME",
+        default=None,
+        help="Only these workflows; with no name, none (only where a step names it).",
+    )
+    parser.add_argument(
+        "--steps",
+        nargs="*",
+        metavar="NAME",
+        default=None,
+        help="Only these steps; with no name, none (only where a step names it).",
+    )
 
 
 def _variables(values: list[str]) -> tuple[tuple[str, str], ...]:

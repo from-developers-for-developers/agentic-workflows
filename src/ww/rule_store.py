@@ -5,8 +5,10 @@ A rule without a command is judged by a verifier agent. Once, with the
 operator's approval, a verifier may turn it into a command: first it proposes
 an approach, then it prepares the check. ww keeps that knowledge in
 ``ww-rule-automation.json`` at the project root, a file meant to be committed
-so every checkout and task shares it. Nothing here is configuration: ww never
-rewrites YAML or rule files, and the store is derived knowledge only.
+so every checkout and task shares it. Nothing here is configuration:
+verification never rewrites YAML or rule files, and the store is derived
+knowledge only; the operator's ``ww rules`` writes are the only way rule files
+change (:mod:`ww.rule_writes`).
 
 Two maps make up the store. ``rules`` is keyed by the hash of a rule's
 normalised text (:func:`ww.config.rules.rule_text_hash`, the single source of

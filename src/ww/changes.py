@@ -112,6 +112,31 @@ def all_files(workdir: Path) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+def project_files(workdir: Path) -> tuple[str, ...]:
+    """The files a glob in ``workdir`` could match, relative and sorted.
+
+    With git: tracked files and untracked ones git does not ignore, so a
+    dependency directory listed in ``.gitignore`` does not count. Without
+    git: :func:`all_files`.
+    """
+    if not _inside_work_tree(workdir):
+        return all_files(workdir)
+    output = _git(
+        workdir, "ls-files", "-z", "--cached", "--others", "--exclude-standard"
+    )
+    if output is None:
+        return all_files(workdir)
+    return tuple(
+        sorted(
+            {
+                path
+                for path in output.split("\0")
+                if path and path.split("/", 1)[0] not in _EXCLUDED
+            }
+        )
+    )
+
+
 def select_files(files: Iterable[str], globs: tuple[str, ...]) -> tuple[str, ...]:
     """The files matching any glob; every file when there are no globs.
 

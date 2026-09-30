@@ -149,8 +149,9 @@ The wizard asks a few questions and then sets the project up:
   of Git.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
   and so on), it offers to install a `ww` skill, so you can ask the agent to
-  work through ww by name, and a `noww` skill, so you can tell it to leave ww
-  out.
+  work through ww by name, a `noww` skill, so you can tell it to leave ww
+  out, and a `ww-rule` skill, which turns your own words into rules for ww's
+  steps.
 
 It finishes by printing any manual additions you still need in `AGENTS.md` or
 `CLAUDE.md`, and a reminder to define a workflow.

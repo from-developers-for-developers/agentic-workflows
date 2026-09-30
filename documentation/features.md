@@ -63,8 +63,10 @@ offers to install the shipped skills at `<directory>/skills/<name>/SKILL.md`.
 The `ww` skill lets a user ask explicitly to work through ww: it tells the
 agent to run `discover` and follow ww from there. The `noww` skill is the way
 out: invoked as `/noww`, it tells the agent not to use ww for the rest of the
-conversation, `catchall` included. `--skills` installs both everywhere without
-asking and `--no-skills` skips them; an existing skill file is never
+conversation, `catchall` included. The `ww-rule` skill writes rules for ww's
+steps from the operator's words; see [Writing rules with the ww-rule
+skill](#writing-rules-with-the-ww-rule-skill). `--skills` installs them all
+everywhere without asking and `--no-skills` skips them; an existing skill file is never
 overwritten, and a skill a later ww version bundles is offered once on its
 own, as described in [Installing the ww skills during
 init](#installing-the-ww-skills-during-init).
@@ -1328,6 +1330,73 @@ it, and for a rule without a command what the store knows about its wording.
 rule's ID and first sentence, and each step's own rules; `--json` gives the
 same for a program. `ww rules prune` deletes store entries no declared rule
 needs any more, after listing them and asking; `--yes` skips the question.
+
+### Writing rules with the ww-rule skill
+
+Rules are easiest to add in conversation. Invoked as `/ww-rule`, or when you
+ask an agent to add or change a rule, the `ww-rule` skill carries the
+judgment: it reads the groups (`ww rules --json`) and the real workflow and
+step names (`ww discover`), splits what you said into atomic obligations,
+tells a new rule from an amendment of an existing one or a change of where a
+group applies, gives a rule globs only when it names a kind of file and
+counts what each matches, places it in a group whose filters fit, and
+rewrites it as one imperative sentence with the rationale below. It shows
+you one confirmation block, with each rule's ID, group, filters, globs and
+match counts, sentence, and whether it is new or replaces an existing one,
+and writes nothing before you answer. `/ww-rule split <file>` does the same
+for every item of a prose document, in one batch; `/ww-rule from-review`
+turns the lasting conventions in a task's last review or fix page into
+rules.
+
+The skill writes only through `ww rules` commands, which validate every
+write: each loads the configuration as ww would once the write is made, and
+when that fails, or the write would not have its effect, every file is put
+back and the command reports why. `--dry-run` runs the same validation and
+writes nothing. Nothing is committed.
+
+```console
+$ ww rules add --group php --dir rules/php --workflows task --steps develop
+Added rule group `php` (rules/php/) to ww-rules.yaml.
+Added ww-rules.yaml to imports in ww-agentic-workflows.yaml.
+Warning: rules/php holds no rule yet, and git does not keep an empty directory: add one with `rules add php --text ...` before committing.
+Reaches these steps (an agent step's page shows it):
+- task: develop
+$ ww rules add php --text "Put every \`*Service.php\` under \`src/Service/\`." --paths "src/**/*.php"
+Created rules/php/put-every-service-php-under.md: rule `php/put-every-service-php-under`.
+`src/**/*.php` matches 14 file(s) now.
+Reaches these steps (an agent step's page shows it):
+- task: develop
+```
+
+- `rules add <group> --text "<sentence and body>"` creates a rule file in the
+  group's first directory, named after the first five words of its first
+  sentence unless `--id` names it, with `--paths` globs and a check from
+  `--check-shell` or `--check-argv` and `--assert empty|eq:<value>`. It never
+  overwrites a file.
+- `rules add --group <name> --dir <path>` adds a root group, with optional
+  `--workflows` and `--steps` filters. ww never rewrites
+  `ww-agentic-workflows.yaml`: the group goes into `ww-rules.yaml` next to
+  it, a file ww owns and rewrites whole, and the repo file gains one entry
+  under `imports` the first time, checked to change nothing else.
+- `rules edit <id> --text ... --paths ...` replaces a rule file's body or
+  globs and keeps every other line. A new wording has a new hash, so the
+  command says which rule-automation store entry stops matching and, when
+  the old wording had an approved check, that `rules promote` keeps it.
+- `rules move <id> <group>` moves the file, unchanged, into another group's
+  directory; its wording, and so what the store knows about it, stays.
+- `rules filter <group> --workflows ... --steps ...` changes where a group of
+  `ww-rules.yaml` applies (`--all-workflows` and `--all-steps` remove a
+  filter); a group declared elsewhere is yours, and the command says what to
+  write there.
+- `rules promote <check>` copies an approved store check into the `check`
+  frontmatter of every rule file it covers and removes the check and those
+  rules' entries from the store, since a rule with its own command is never
+  looked up there. It refuses a check awaiting a decision and a rule written
+  in a step's own `rules` list.
+
+Each command ends with the steps the rule or group now reaches. `ww rules`
+names the approved store check of a rule without a command of its own
+(`store_check` in `--json`), which is what a promotion would copy.
 
 In the `auto` runtime a worker that keeps asking for its page after its
 assignment ended is not given the manager's own work: for a step with
@@ -2700,12 +2769,12 @@ iteration limit escalates the same way, and the force there leaves the loop.
 
 ## Installing the ww skills during init
 
-`init` offers the `ww` and `noww` skills to every agent integration it knows
+`init` offers the `ww`, `noww` and `ww-rule` skills to every agent integration it knows
 about. In a terminal it can redraw, that is one checklist rather than one
 question per agent:
 
 ```text
-Install the ww and noww skills into which agent directories?
+Install the ww, noww and ww-rule skills into which agent directories?
   ↑↓ move · space toggles · a all · enter confirms
 
  > [ ] .agents
@@ -2730,7 +2799,7 @@ later ww version bundles a new one, the next `init` asks about that skill
 alone, into the directories you already chose, without the agent questions:
 
 ```text
-ww now ships the `noww` skill. Install into .claude? [Y/n]:
+ww now ships the `ww-rule` skill. Install into .claude? [Y/n]:
 ```
 
 Either answer is remembered, so it is asked once; a skill you declined is not
