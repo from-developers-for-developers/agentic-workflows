@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Modes reach the agent: every agent step's page now lists its modes with their descriptions (before, a selected
+  mode's guidance was never shown). A mode with `workflows` / `steps` applies automatically wherever they match, in
+  addition to the selected ones, and `--mode` does not remove it; `discover` marks it "always on". Plan schema 16;
+  schema 15 snapshots still load, and their steps show no modes.
 - One filter shape: hook and rule group `workflows` / `steps` take `"*"` or a list of names; a bare name or `"*"`
   mixed with names is now an error, and `rules add` / `rules filter` accept `'*'`. `8539f30`
 - One task whose state ww cannot read no longer breaks `discover`, the agent hooks, `lookup` or `interrupted`;

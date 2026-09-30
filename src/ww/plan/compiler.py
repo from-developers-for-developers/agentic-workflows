@@ -62,6 +62,7 @@ from .constructs import (
 from .models import (
     PlanItem,
     PlannedCheck,
+    PlannedMode,
     PlannedRule,
     WorkflowPlan,
     number_step_paths,
@@ -148,6 +149,8 @@ class PlanCompilationOptions:
     # The configured project the run works in; extension items working there
     # freeze that project's settings instead of the root's.
     project: str | None = None
+    # The modes selected for the run; ``None`` takes the workflow's defaults.
+    modes: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -241,12 +244,18 @@ class WorkflowPlanCompiler:
         # Step paths whose agent item took the step's ``fix`` hooks as checks;
         # those hooks are then not compiled as hook items as well.
         self._checked_steps: set[tuple[str, str]] = set()
+        # The run's selected modes, resolved when a workflow is compiled.
+        self._selected_modes: tuple[PlannedMode, ...] = ()
 
     def compile(self, workflow_name: str) -> WorkflowPlan:
         try:
             workflow = self.configuration.workflows_by_name[workflow_name]
         except KeyError as error:
             raise ConfigurationError(f"workflow not found: {workflow_name}") from error
+        selected = (
+            self.options.modes if self.options.modes is not None else workflow.modes
+        )
+        self._selected_modes = self._resolve_modes(selected)
         effective_steps = (implicit_init_step(), *workflow.steps)
         items: list[PlanItem] = []
         workflow_hints = ExecutionHints(self.agent).overlay(workflow)
@@ -334,7 +343,7 @@ class WorkflowPlanCompiler:
             workflow_description=workflow.description,
             agent=self.agent,
             task_id=self.task_id,
-            modes=workflow.modes,
+            modes=selected,
             handoff=workflow.handoff,
             items=number_step_paths(tuple(items)),
             documents=self.configuration.documents,
@@ -851,6 +860,7 @@ class WorkflowPlanCompiler:
         )
         rules: tuple[PlannedRule, ...] = ()
         checks: tuple[PlannedCheck, ...] = ()
+        modes: tuple[PlannedMode, ...] = ()
         if (
             phase == "step"
             and owner == "agent"
@@ -860,6 +870,7 @@ class WorkflowPlanCompiler:
             rules, checks = self._step_rules(
                 workflow, step, step_path, allowed, workdir
             )
+            modes = self._step_modes(workflow, step, step_path)
             self._checked_steps.add((workflow.name, step_path))
         ordinal = (
             sum(
@@ -939,12 +950,49 @@ class WorkflowPlanCompiler:
                 assessment_outcome=annotations.assessment_outcome,
                 rules=rules,
                 checks=checks,
+                modes=modes,
             )
         )
         return (
             *(item.name for item in handler.provide),
             *handler.outputs,
         )
+
+    def _resolve_modes(self, names: tuple[str, ...]) -> tuple[PlannedMode, ...]:
+        """The selected modes by name, with their descriptions frozen."""
+        catalog = {mode.name: mode for mode in self.configuration.modes}
+        resolved = []
+        for name in dict.fromkeys(names):
+            mode = catalog.get(name)
+            if (
+                mode is None
+                and self.extensions is not None
+                and is_extension_reference(name)
+            ):
+                mode = self.extensions.mode(name)
+            if mode is None:
+                raise ConfigurationError(f"unknown mode(s): {name}")
+            resolved.append(PlannedMode(mode.name, mode.description))
+        return tuple(resolved)
+
+    def _step_modes(
+        self, workflow: WorkflowDefinition, step: StepDefinition, step_path: str
+    ) -> tuple[PlannedMode, ...]:
+        """The modes delivered to one agent step.
+
+        The run's selected modes come first, in their order, then every
+        automatic mode whose filters admit the step, in declaration order; a
+        mode both selected and automatic is listed once, as selected.
+        """
+        precise = _logical_step_paths(workflow.steps)
+        selected = {mode.name for mode in self._selected_modes}
+        automatic = tuple(
+            PlannedMode(mode.name, mode.description, automatic=True)
+            for mode in self.configuration.modes
+            if mode.name not in selected
+            and mode.applies_to(workflow.name, step.name, step_path, precise)
+        )
+        return (*self._selected_modes, *automatic)
 
     def _step_rules(
         self,

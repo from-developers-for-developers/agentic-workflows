@@ -129,6 +129,7 @@ def validate_configuration(
         expected_scope="global",
     )
     _validate_rule_groups(normalized, all_steps, known_workflows)
+    _validate_mode_filters(normalized, all_steps, known_workflows)
     _validate_workflow_boundary_hooks(normalized)
     _validate_hook_references(normalized)
     _validate_recommendations(normalized)
@@ -405,6 +406,23 @@ def _validate_rule_groups(
         _validate_rule_hints(group.hints, f"rule group {group.name!r}")
         for rule in group.rules:
             _validate_rule_hints(rule.hints, f"rule {rule.id!r}")
+
+
+def _validate_mode_filters(
+    configuration: WorkflowConfiguration,
+    known_steps: set[str],
+    known_workflows: set[str],
+) -> None:
+    """An automatic mode's filters name workflows and steps that exist."""
+    for mode in configuration.modes:
+        if mode.automatic:
+            _validate_filters(
+                f"mode {mode.name!r}",
+                mode.workflows or NameFilter(),
+                mode.steps or NameFilter(),
+                known_steps,
+                known_workflows,
+            )
 
 
 def _validate_rule_hints(hints: RuleHints, path: str) -> None:

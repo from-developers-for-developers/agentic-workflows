@@ -1437,6 +1437,10 @@ composer merges them under the same names. The compiler freezes each step's
 applicable rules and checks into the plan item, and a `before_complete` hook
 with `on_failure: fix` becomes a check there rather than a hook item, so
 execution has one rejection mechanism and never reinterprets hooks or rules.
+Modes follow the same path: the compiler freezes each agent step's modes, the
+run's selected modes and the automatic ones whose filters admit the step,
+with their descriptions into the plan item, and the page renders them from
+there.
 `changes.py` measures a step's change set with git alone: a tree mark taken
 when the step begins and another at completion, both written from a temporary
 index so the real index, the stash and the worktree are untouched, and their

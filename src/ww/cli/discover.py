@@ -26,7 +26,7 @@ from ww.project_config import FILE_NAME
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
 from ww.task_ids import EXPLICIT_TASK_FORMAT
-from ww.workflow_config import delegation_requests
+from ww.workflow_config import ALL_NAMES, delegation_requests
 
 START_ARGUMENTS = (
     "start <TASK-ID> --workflow <workflow> --agent <agent> "
@@ -91,7 +91,8 @@ UNREADABLE_GUIDANCE = (
 MODES_GUIDANCE = (
     "Optional and repeatable. Explicit modes replace the workflow's default "
     "modes, so repeat any default you want to keep. Select a mode only when "
-    "the user's request matches its description."
+    "the user's request matches its description. A mode marked always on "
+    "applies by itself where it says; never select it."
 )
 
 
@@ -140,7 +141,22 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             else None
         ),
         "modes": [
-            {"name": mode.name, "description": " ".join(mode.description)}
+            {
+                "name": mode.name,
+                "description": " ".join(mode.description),
+                "automatic": (
+                    {
+                        key: value.to_data()
+                        for key, value in (
+                            ("workflows", mode.workflows),
+                            ("steps", mode.steps),
+                        )
+                        if value is not None
+                    }
+                    if mode.automatic
+                    else None
+                ),
+            }
             for mode in modes.values()
         ],
         "runtimes": [
@@ -193,6 +209,24 @@ def render_discover(
             ]
         )
     return "\n".join(_markdown(report))
+
+
+def _mode_line(mode: dict[str, object]) -> str:
+    """One catalog mode, with where it applies by itself when it is automatic."""
+    line = f"- `{mode['name']}` — {mode['description']}"
+    automatic = mode.get("automatic")
+    if isinstance(automatic, dict):
+        places = "; ".join(
+            f"{key} "
+            + (
+                "all"
+                if value == ALL_NAMES
+                else ", ".join(f"`{name}`" for name in _strings(value))
+            )
+            for key, value in automatic.items()
+        )
+        line += f" Always on: {places}."
+    return line
 
 
 def _markdown(report: dict[str, object]) -> list[str]:
@@ -287,7 +321,7 @@ def _markdown(report: dict[str, object]) -> list[str]:
             "a `task_format` of its own."
         )
     lines.extend(["", "## Modes", ""])
-    lines.extend(f"- `{mode['name']}` — {mode['description']}" for mode in modes)
+    lines.extend(_mode_line(mode) for mode in modes)
     if not modes:
         lines.append("No modes are configured.")
     lines.extend(["", "## Runtimes", ""])

@@ -174,11 +174,23 @@ def test_saved_metadata_round_trips_through_persisted_plan() -> None:
     )
 
 
-def test_previous_plan_schema_is_not_loaded() -> None:
+def test_a_plan_schema_without_a_migration_is_not_loaded() -> None:
     snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
-    snapshot["schema_version"] = PLAN_SCHEMA_VERSION - 1
-    with pytest.raises(ValueError, match="unsupported plan snapshot schema"):
+    snapshot["schema_version"] = 14
+    with pytest.raises(ValueError, match="unsupported plan snapshot schema: 14"):
         PlanSnapshot.from_dict(snapshot)
+
+
+def test_a_schema_15_plan_loads_with_no_modes_on_its_items() -> None:
+    snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
+    snapshot["schema_version"] = 15
+    assert "modes" not in snapshot["plan"]["items"][0]
+
+    loaded = PlanSnapshot.from_dict(snapshot)
+
+    assert loaded.schema_version == PLAN_SCHEMA_VERSION == 16
+    assert loaded.plan.items[0].modes == ()
+    assert loaded.to_dict()["plan"] == snapshot["plan"]
 
 
 def test_project_metadata_scope_round_trips_through_persisted_plan() -> None:

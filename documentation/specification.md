@@ -139,10 +139,28 @@ A mode has these keys:
 | --- | --- | --- |
 | `name` | name | yes |
 | `description` | string or list of non-empty strings | no |
+| `workflows` | `"*"` or list of workflow names | no |
+| `steps` | `"*"` or list of step names or paths | no |
 
 Modes accept the named-entry shorthand too: `- economy: Use fewer tokens.` is
 equivalent to `{name: economy, description: Use fewer tokens.}`. A null value
-omits the description.
+omits the description. The filters may sit beside the shorthand:
+`{economy: Use fewer tokens., steps: [develop]}`.
+
+A mode applies to a run when it is selected: `start --mode` names it, or,
+without `--mode`, the workflow lists it in its `modes`. A mode with
+`workflows` or `steps` (or both) is **automatic**: it also applies, without
+being selected, to every step its filters admit, matched like a hook's
+filters; a workflow's heirs follow it. `--mode` replaces only the workflow's
+default modes and never removes an automatic mode. See
+[Workflow and step filters](#workflow-and-step-filters) for the forms.
+
+Every agent step's page, including item stages and loop steps, lists its
+modes in a **Modes** section, each with its description: the selected modes
+first, then the automatic modes that admit the step, a mode both selected and
+automatic once. The same pages get modes as get rules: not `init`, hooks,
+verification items, or the built-in workflow summary. The modes are resolved
+per step when the run starts and frozen in its plan snapshot, like rules.
 
 Profiles use a mapping rather than a list:
 
@@ -803,16 +821,17 @@ hooks:
 
 ### Workflow and step filters
 
-Every construct that filters by workflow or step, hooks and rule groups, takes
-the same two keys, `workflows` and `steps`, each either the string `"*"` (all)
-or a list of names. Only where a construct may carry a filter differs.
+Every construct that filters by workflow or step, hooks, rule groups and
+modes, takes the same two keys, `workflows` and `steps`, each either the
+string `"*"` (all) or a list of names. Only where a construct may carry a
+filter differs.
 
-| Form | Hook | Rule group |
-| --- | --- | --- |
-| omitted | every workflow or step | every workflow or step |
-| `"*"` | every workflow or step | every workflow or step |
-| `[a, b]` | only those names | only those names |
-| `[]` | every workflow or step, like omission | none: the group applies only where a step names it |
+| Form | Hook | Rule group | Mode |
+| --- | --- | --- | --- |
+| omitted | every workflow or step | every workflow or step | every workflow or step if the other key is set; with neither key the mode is not automatic |
+| `"*"` | every workflow or step | every workflow or step | every workflow or step |
+| `[a, b]` | only those names | only those names | only those names |
+| `[]` | every workflow or step, like omission | none: the group applies only where a step names it | every workflow or step, as on a hook |
 
 `"*"` is never redundant, even where omission already means all. `"*"` inside
 a list (`["*", task]`) is an error, and so is any other string: a bare name is

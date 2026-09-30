@@ -20,6 +20,7 @@ from ww.contracts import (
 )
 from ww.execution_models import WorkflowRunSummary
 from ww.items import WorkItem
+from ww.plan import PlannedMode
 from ww.workflow_config import (
     ChoiceDefinition,
     ItemFieldUpdate,
@@ -499,6 +500,9 @@ class Instruction:
     # the step, each with the reason; ``dispute`` is the worker's objection
     # to one at a ``check_disputed`` stop.
     rules: tuple[RuleLine, ...] = ()
+    # The modes the active step works in: the run's selected modes, then the
+    # automatic ones whose filters admit the step.
+    modes: tuple[PlannedMode, ...] = ()
     fix_required: FixRequired | None = None
     checks_waived: tuple[tuple[str, str], ...] = ()
     dispute: DisputeView | None = None
@@ -624,6 +628,7 @@ class Instruction:
             "operator_reason": self.operator_reason,
             "result_saved": self.result_saved,
             "rules": [rule.to_dict() for rule in self.rules],
+            "modes": [mode.to_dict() for mode in self.modes],
             "fix_required": (
                 self.fix_required.to_dict() if self.fix_required else None
             ),

@@ -14,6 +14,7 @@ from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 from ww.workflow_config import (
+    ALL,
     DocumentDefinition,
     HandlerDefinition,
     HookDefinition,
@@ -38,6 +39,7 @@ from .values import (
     _description_items,
     _mapping,
     _name,
+    _name_filter,
     _named_entry,
     _only,
     _optional_agent,
@@ -120,7 +122,7 @@ def parse_yaml_text(
         _resolve_inheritance(parsed), handlers, rule_groups, base
     )
     return WorkflowConfiguration(
-        modes,
+        _extend_modes_to_heirs(modes, workflows),
         profiles,
         handlers,
         _extend_to_heirs(global_hooks, workflows),
@@ -177,13 +179,28 @@ def _parse_modes(data: Any) -> tuple[ModeDefinition, ...]:
         raise ConfigurationError("modes must be a list")
     result = []
     for index, item in enumerate(data):
-        mapping = _named_entry(_mapping(item, f"modes[{index}]"), f"modes[{index}]")
-        _only(mapping, {"name", "description"}, f"modes[{index}]")
-        name = _name(mapping, f"modes[{index}]")
+        path = f"modes[{index}]"
+        allowed = {"name", "description", "workflows", "steps"}
+        mapping = _named_entry(
+            _mapping(item, path),
+            path,
+            allowed=allowed,
+            ignored={"workflows", "steps"},
+        )
+        _only(mapping, allowed, path)
+        name = _name(mapping, path)
+        # A mode's ``[]`` admits every name, as a hook's does.
+        filters = {
+            key: _name_filter(mapping[key], f"mode {name!r} {key}", empty=ALL)
+            for key in ("workflows", "steps")
+            if key in mapping
+        }
         result.append(
             ModeDefinition(
                 name,
                 _description_items(mapping.get("description"), f"mode {name!r}"),
+                workflows=filters.get("workflows"),
+                steps=filters.get("steps"),
             )
         )
     return tuple(result)
@@ -432,6 +449,18 @@ def _extend_groups_to_heirs(
         if group.workflows.listed
         else group
         for group in groups
+    )
+
+
+def _extend_modes_to_heirs(
+    modes: tuple[ModeDefinition, ...], workflows: tuple[WorkflowDefinition, ...]
+) -> tuple[ModeDefinition, ...]:
+    """Let a mode filtered to a workflow also apply automatically to its heirs."""
+    return tuple(
+        replace(mode, workflows=_with_heirs(mode.workflows, workflows))
+        if mode.workflows is not None and mode.workflows.listed
+        else mode
+        for mode in modes
     )
 
 

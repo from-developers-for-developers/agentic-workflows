@@ -18,6 +18,7 @@ from ww.validation import (
     expect_optional_string,
     expect_positive_int,
     expect_string,
+    is_strict_int,
     require_keys,
 )
 
@@ -25,9 +26,9 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 15
+PLAN_SCHEMA_VERSION = 16
 # Recorded on every snapshot; informational until a reader needs to branch on it.
-PLAN_COMPILER_VERSION = "plan-v8"
+PLAN_COMPILER_VERSION = "plan-v9"
 
 
 @dataclass(frozen=True)
@@ -159,10 +160,7 @@ class PlanSnapshot:
             "plan",
         }
         require_keys(data, required, "plan snapshot")
-        if data.get("schema_version") != PLAN_SCHEMA_VERSION:
-            raise ValueError(
-                f"unsupported plan snapshot schema: {data['schema_version']!r}"
-            )
+        data = _migrate_snapshot(data)
         schema_version = data["schema_version"]
         plan = _plan_from_dict(data["plan"])
         return cls(
@@ -184,6 +182,29 @@ class PlanSnapshot:
                 else plan
             ),
         )
+
+
+def _plan_15_to_16(data: dict[str, Any]) -> dict[str, Any]:
+    """Schema 16 gives agent items their ``modes``; a 15 plan's items have none.
+
+    A missing item ``modes`` already reads as no modes, so only the version
+    changes: a run started before modes reached the page shows none.
+    """
+    return {**data, "schema_version": 16}
+
+
+PLAN_MIGRATIONS = {15: _plan_15_to_16}
+
+
+def _migrate_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a plan snapshot to the current schema, one version at a time."""
+    while data["schema_version"] != PLAN_SCHEMA_VERSION:
+        version = data["schema_version"]
+        migrate = PLAN_MIGRATIONS.get(version) if is_strict_int(version) else None
+        if migrate is None:
+            raise ValueError(f"unsupported plan snapshot schema: {version!r}")
+        data = migrate(data)
+    return data
 
 
 def validate_task_runs(task_id: str, runs: tuple[TaskRunAggregate, ...]) -> None:

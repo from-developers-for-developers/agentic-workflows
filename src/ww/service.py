@@ -491,6 +491,7 @@ class WorkflowService:
                 task_id=task_id,
                 completed_bootstrap_step=bootstrap_step,
                 project=project,
+                modes=mode_names or None,
             ),
             self.extensions.config,
         )
@@ -2700,6 +2701,7 @@ class WorkflowService:
                 PlanCompilationOptions(
                     task_id=state.task_id,
                     project=dict(state.workflow_values).get(PROJECT) or None,
+                    modes=state.modes,
                 ),
                 self.extensions.config,
             ),
