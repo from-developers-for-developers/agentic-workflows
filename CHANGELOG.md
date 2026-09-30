@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Templates can read the task's branch: `{{ww.git.branch}}`, `{{ww.git.base_branch}}` and `{{ww.git.branch_strategy}}`;
+  a step reading one before it exists stops for the operator (`value_unavailable`). `fceddfa`
 - Worker handoffs are written by ww: a delegated worker's last page ends with a "Handoff to manager" block to return
   verbatim, and a worker can no longer complete the manager's step. `e2b2efd`
 - The `handoff` workflow flag is removed: a `workflow:` transition on the last step declares a handoff workflow, and

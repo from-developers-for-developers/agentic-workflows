@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The contract a ww extension is written against.
 
-An extension adds handlers, modes, commands, core-variable overrides, and
-rule groups to ww. It is identified by a ``vendor/name`` pair and is addressed from
-``ww-agentic-workflows.yaml`` by its fully qualified reference, never by a bare name:
+An extension adds handlers, modes, commands, core-variable overrides, a
+template namespace, and rule groups to ww. It is identified by a
+``vendor/name`` pair and is addressed from ``ww-agentic-workflows.yaml`` by
+its fully qualified reference, never by a bare name:
 
 ```yaml
 hooks:
@@ -77,6 +78,17 @@ by listing the extension in its root settings ``extensions``, even with an
 empty section; they come before the project's own groups, and a name the
 project also declares is an error.
 
+Template namespace
+------------------
+
+An extension may declare one ``namespace``: an :class:`ExtensionNamespace`
+whose variables templates read as ``{{ww.<namespace>.<variable>}}``, for
+example ww/git's ``{{ww.git.branch}}``. They are available to every workflow
+of a project that configures the extension, are resolved for the task only
+when a rendered template references them, and a resolver returning ``None``
+stops an agent step reading the value before it starts (``value_unavailable``)
+and fails an automatic handler reading it.
+
 Branch strategies
 -----------------
 
@@ -110,7 +122,7 @@ from typing import Literal
 from ww.extensions.store import ExtensionStore
 from ww.validation import NAME_PATTERN as _GROUP_NAME
 from ww.validation import is_strict_int
-from ww.variables import CORE_VARIABLE_NAMES
+from ww.variables import RESERVED_NAMESPACES, WW_NAMESPACE, is_reserved_name
 from ww.workflow_config import ModeDefinition, ProvidedVariable, RuleHints
 
 __all__ = [
@@ -119,6 +131,7 @@ __all__ = [
     "ExtensionCommand",
     "ExtensionContext",
     "ExtensionHandler",
+    "ExtensionNamespace",
     "ExtensionResult",
     "ExtensionCheckResult",
     "ExtensionVariable",
@@ -166,7 +179,7 @@ class ExtensionResult:
                 raise TypeError(
                     "extension result value names must be normalized strings"
                 )
-            if name.startswith("__") or name in CORE_VARIABLE_NAMES:
+            if is_reserved_name(name):
                 raise ValueError(f"extension result value name {name!r} is reserved")
             if not isinstance(value, str):
                 raise TypeError("extension result values must be strings")
@@ -282,8 +295,7 @@ class ExtensionHandler:
             if (
                 not isinstance(value.name, str)
                 or not _VALUE_NAME.fullmatch(value.name)
-                or value.name.startswith("__")
-                or value.name in CORE_VARIABLE_NAMES
+                or is_reserved_name(value.name)
             ):
                 raise ValueError("extension handler input names must be normalized")
             if not isinstance(value.description, str):
@@ -297,7 +309,7 @@ class ExtensionHandler:
                 raise ValueError(
                     "extension handler output names must be normalized strings"
                 )
-            if name.startswith("__") or name in CORE_VARIABLE_NAMES:
+            if is_reserved_name(name):
                 raise ValueError(f"extension handler output name {name!r} is reserved")
 
 
@@ -327,11 +339,13 @@ class ExtensionCommand:
 
 @dataclass(frozen=True)
 class ExtensionVariable:
-    """A dynamic override for a variable defined by ww core.
+    """A variable an extension resolves for a task.
 
-    Returning ``None`` keeps the core value. Extensions cannot introduce new
-    global variables through this mechanism; the core name is validated when
-    the override is resolved.
+    In :attr:`Extension.variables` it overrides a variable defined by ww core:
+    returning ``None`` keeps the core value, and the core name is validated
+    when the override is resolved. In an :class:`ExtensionNamespace` it is a
+    new name under the extension's namespace, and ``None`` means the value is
+    not available yet.
     """
 
     name: str
@@ -342,6 +356,40 @@ class ExtensionVariable:
             raise ValueError("extension variable name must be normalized")
         if not callable(self.resolve):
             raise TypeError("extension variable resolver must be callable")
+
+
+@dataclass(frozen=True)
+class ExtensionNamespace:
+    """Template values an extension provides as ``{{ww.<name>.<variable>}}``.
+
+    Each variable resolves lazily, for the task on the context, and only when
+    a template being rendered references it; returning ``None`` means the
+    value is not available for that task yet, which stops the task for the
+    operator (``value_unavailable``) before a step reading it starts, or
+    fails a handler reading it.  Unlike an :class:`ExtensionVariable`, these
+    are new names, available whenever the project configures the extension
+    (a section in the settings, even an empty one), not only when a handler
+    of the extension is referenced.
+    """
+
+    name: str
+    variables: tuple[ExtensionVariable, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not _SEGMENT.fullmatch(self.name):
+            raise ValueError(
+                "extension namespace must be lowercase letters, digits, '_' or "
+                "'-', starting with a letter or digit"
+            )
+        if self.name == WW_NAMESPACE or self.name in RESERVED_NAMESPACES:
+            raise ValueError(f"extension namespace {self.name!r} is reserved")
+        if not isinstance(self.variables, tuple) or not self.variables:
+            raise ValueError("extension namespace variables must be a non-empty tuple")
+        if not all(isinstance(value, ExtensionVariable) for value in self.variables):
+            raise TypeError("extension namespace variables contain an invalid item")
+        names = [value.name for value in self.variables]
+        if len(names) != len(set(names)):
+            raise ValueError("extension namespace variable names must be unique")
 
 
 @dataclass(frozen=True)
@@ -404,8 +452,14 @@ class Extension:
     # Rule groups the extension ships; a project that configures the
     # extension gets them under the root ``rules`` by these names.
     rules: tuple[RuleGroupContribution, ...] = ()
+    # Template values under ``{{ww.<namespace>.*}}``; ``None`` for none.
+    namespace: ExtensionNamespace | None = None
 
     def __post_init__(self) -> None:
+        if self.namespace is not None and not isinstance(
+            self.namespace, ExtensionNamespace
+        ):
+            raise TypeError("extension namespace must be an ExtensionNamespace")
         if self.reserved_paths is not None and not callable(self.reserved_paths):
             raise TypeError("extension reserved_paths must be callable")
         if self.branch_strategies is not None and not callable(self.branch_strategies):

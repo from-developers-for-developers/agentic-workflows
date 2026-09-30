@@ -28,6 +28,7 @@ from ww.extensions.api import (
     ExtensionCommand,
     ExtensionContext,
     ExtensionHandler,
+    ExtensionNamespace,
     RuleGroupContribution,
 )
 from ww.extensions.store import ExtensionStore
@@ -38,7 +39,7 @@ from ww.project_config import (
     load_project_config,
     overlay_settings,
 )
-from ww.variables import OVERRIDABLE_CORE_VARIABLE_NAMES
+from ww.variables import OVERRIDABLE_CORE_VARIABLE_NAMES, namespaced
 from ww.workflow_config import ModeDefinition
 
 ENTRY_POINT_GROUP = "ww.extensions"
@@ -387,6 +388,95 @@ class ExtensionRegistry:
             if self.config.sections.lists(identifier)
             for group in self.get(identifier).rules
         )
+
+    def namespaces(self) -> dict[str, tuple[str, ExtensionNamespace]]:
+        """The template namespaces of the extensions the root lists, by name.
+
+        Like rule groups, a namespace comes with listing the extension in the
+        root settings, even with an empty section; two listed extensions
+        claiming one namespace are an error.
+        """
+        claimed: dict[str, tuple[str, ExtensionNamespace]] = {}
+        for identifier in self.identifiers:
+            if not self.config.sections.lists(identifier):
+                continue
+            namespace = self.get(identifier).namespace
+            if namespace is None:
+                continue
+            previous = claimed.get(namespace.name)
+            if previous is not None:
+                raise ConfigurationError(
+                    f"extensions {previous[0]!r} and {identifier!r} both provide "
+                    f"the template namespace {namespace.name!r}"
+                )
+            claimed[namespace.name] = (identifier, namespace)
+        return claimed
+
+    def namespace_variables(self) -> tuple[str, ...]:
+        """Every ``ww.<namespace>.<variable>`` name a template may reference."""
+        return tuple(
+            namespaced(name, variable.name)
+            for name, (_, namespace) in self.namespaces().items()
+            for variable in namespace.variables
+        )
+
+    def namespace_values(
+        self,
+        names: tuple[str, ...],
+        *,
+        task_id: str,
+        run_id: str | None,
+        workflow: str,
+        workflow_values: Mapping[str, str],
+        workspace: Path | None,
+        project: str | None,
+    ) -> dict[str, str]:
+        """Resolve the namespaced ``names`` for ``task_id``.
+
+        A name no listed namespace provides, or one whose resolver returns
+        ``None`` (not available for the task yet), is left out: an agent
+        step reading it stops for the operator before it starts, and an
+        automatic handler reading it fails.
+        """
+        wanted = set(names)
+        values: dict[str, str] = {}
+        for name, (identifier, namespace) in self.namespaces().items():
+            variables = [
+                variable
+                for variable in namespace.variables
+                if namespaced(name, variable.name) in wanted
+            ]
+            if not variables:
+                continue
+            context = ExtensionContext(
+                root=self.root,
+                store=self.store(identifier),
+                config=self.settings(identifier, project),
+                task_id=task_id,
+                run_id=run_id,
+                workflow=workflow,
+                values=dict(workflow_values),
+                workspace=workspace,
+            )
+            for variable in variables:
+                full_name = namespaced(name, variable.name)
+                try:
+                    value = variable.resolve(context)
+                except ConfigurationError:
+                    raise
+                except Exception as error:  # noqa: BLE001 - add extension context
+                    raise ConfigurationError(
+                        f"extension {identifier!r} failed to resolve "
+                        f"{full_name!r}: {error}"
+                    ) from error
+                if value is not None and not isinstance(value, str):
+                    raise ConfigurationError(
+                        f"extension {identifier!r} variable {full_name!r} "
+                        "must resolve to a string or null"
+                    )
+                if value is not None:
+                    values[full_name] = value
+        return values
 
     def configured(self, project: str | None = None) -> tuple[str, ...]:
         """The extensions with a settings section at the root or in ``project``.

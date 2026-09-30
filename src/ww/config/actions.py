@@ -11,7 +11,7 @@ from ww.contracts import HookFailure, HookPhase, HookScope, RequestedActionKind
 from ww.errors import ConfigurationError
 from ww.extensions import is_extension_reference
 from ww.operations import WorkflowHandoff
-from ww.variables import CORE_VARIABLE_NAMES
+from ww.variables import is_reserved_name
 from ww.workflow_config import (
     ALL,
     ALL_NAMES,
@@ -438,7 +438,7 @@ def _parse_provide(data: Any, path: str) -> tuple[ProvidedVariable, ...]:
         mapping = _named_entry(_mapping(item, item_path), item_path)
         _only(mapping, {"name", "description"}, item_path)
         name = _name(mapping, item_path)
-        if name.startswith("__") or name in CORE_VARIABLE_NAMES:
+        if is_reserved_name(name):
             raise ConfigurationError(f"{path}.provide name {name!r} is reserved")
         result.append(
             ProvidedVariable(
@@ -465,7 +465,7 @@ def _parse_outputs(data: Any, path: str) -> tuple[str, ...]:
             raise ConfigurationError(
                 f"{output_path} must be a normalized variable name"
             )
-        if value.startswith("__") or value in CORE_VARIABLE_NAMES:
+        if is_reserved_name(value):
             raise ConfigurationError(f"{output_path} {value!r} is reserved")
         outputs.append(value)
     _unique(outputs, f"output value in {path}")

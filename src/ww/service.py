@@ -168,6 +168,7 @@ from ww.transitions import (
     select_assessment_outcome,
     settle_stale_automatic_item,
     skip_failed_item,
+    stop_for_values,
     supply_requested_input,
     waive_checks,
 )
@@ -175,6 +176,7 @@ from ww.variables import (
     BRANCH_NAMING_STRATEGY,
     PROJECT,
     runtime_variable_values,
+    unavailable_ww_values,
 )
 from ww.workflow_config import (
     INIT_STEP_NAME,
@@ -2207,14 +2209,55 @@ class WorkflowService:
             identifier = parse_reference(binding.reference).identifier
             if identifier not in bound:
                 bound[identifier] = binding.settings
-        return self.extensions.apply_variable_overrides(
+        values = self.extensions.apply_variable_overrides(
             values,
             tuple(bound.items()),
             task_id=state.task_id,
             run_id=state.run_id,
             workflow=state.workflow,
             workflow_values=dict(state.workflow_values),
-            workspace=resolve_workspace(self.storage.root, state.working_directory),
+            workspace=workspace,
+        )
+        # Resolved now, for the task as it stands; a value not available yet
+        # is left out, and a step reading it stops for the operator
+        # (``value_unavailable``) before it starts.
+        return {
+            **values,
+            **self.extensions.namespace_values(
+                self.extensions.namespace_variables(),
+                task_id=state.task_id,
+                run_id=state.run_id,
+                workflow=state.workflow,
+                workflow_values=dict(state.workflow_values),
+                workspace=workspace,
+                project=project or None,
+            ),
+        }
+
+    def _unavailable_values(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> tuple[str, ...]:
+        """The ``ww.`` values ``item``'s templates read that are missing now."""
+        return unavailable_ww_values(
+            item.dependencies,
+            {**dict(state.workflow_values), **self._runtime_values(state, plan)},
+        )
+
+    def _unavailable_error(self, names: tuple[str, ...]) -> str:
+        """Name each missing value and the extension that provides it."""
+        owners = {
+            name: identifier
+            for name, (identifier, _) in self.extensions.namespaces().items()
+        }
+
+        def describe(name: str) -> str:
+            _, _, rest = name.partition(".")
+            owner = owners.get(rest.partition(".")[0])
+            source = f" (provided by {owner})" if owner else ""
+            return f"{{{{{name}}}}}{source}"
+
+        return "template value(s) not available for this task yet: " + ", ".join(
+            describe(name) for name in names
         )
 
     def reset(self, task_id: str) -> ResetResult:
@@ -2700,7 +2743,18 @@ class WorkflowService:
                 self._replay_held(state.task_id, state.cursor, caller_role=None)
                 return self.load(state.task_id, state.run_id)
             if item.owner == "agent":
-                state = pause_for_agent(state, _now)
+                unavailable = (
+                    self._unavailable_values(state, plan, item)
+                    if record.status != "in_progress"
+                    else ()
+                )
+                state = (
+                    stop_for_values(
+                        state, plan, item, self._unavailable_error(unavailable), _now
+                    )
+                    if unavailable
+                    else pause_for_agent(state, _now)
+                )
                 self.commit(state, snapshot)
                 return state, snapshot
             if not (item.execution == "automatic" and item.owner == "ww"):

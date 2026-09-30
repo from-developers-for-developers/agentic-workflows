@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path
 
 from ww.actions import (
@@ -246,6 +247,13 @@ class WorkflowPlanCompiler:
         self._checked_steps: set[tuple[str, str]] = set()
         # The run's selected modes, resolved when a workflow is compiled.
         self._selected_modes: tuple[PlannedMode, ...] = ()
+
+    @cached_property
+    def _namespace_variables(self) -> tuple[str, ...]:
+        """Values configured extensions provide under ``{{ww.<namespace>.*}}``."""
+        if self.extensions is None:
+            return ()
+        return self.extensions.namespace_variables()
 
     def compile(self, workflow_name: str) -> WorkflowPlan:
         try:
@@ -817,6 +825,7 @@ class WorkflowPlanCompiler:
                 f"documents.{document.name}"
                 for document in self.configuration.documents
             ),
+            *self._namespace_variables,
         }
         if isinstance(operation, WorkflowHandoff):
             operation = WorkflowHandoff(

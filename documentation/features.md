@@ -997,6 +997,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `fix_limit` | A step's check failed as many times as its `max_fixes` allows; see [Rules and checks](#rules-and-checks). |
 | `check_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
+| `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
 replays it without asking anyone, so the task stays `blocked` for the manager.
@@ -1677,6 +1678,9 @@ and `{{__project_dir}}` its directory, both empty for a task in the root;
 `{{__project_dir}}` keeps pointing at the project even after a worktree moves
 the task workspace. `{{__projects}}` lists every configured project name, joined
 by commas.
+Values under `{{ww.<namespace>.*}}` come from a configured extension, such
+as [`ww/git`'s branch](#template-values-from-wwgit); a provided value may not
+be named `ww` or start with `ww.`.
 Values in a handler’s `provide` list are declared inputs for that handler. Each
 entry supports either `name` plus an optional `description`, or the same compact
 `name: description` shorthand as handlers and steps. A step’s values are
@@ -2667,6 +2671,33 @@ a container that mounts the checkout elsewhere; project-local profile files are
 recorded and printed the same way.
 `ww-agentic-workflows extension ww/git branches <TASK-ID>` also reports it.
 
+#### Template values from `ww/git`
+
+With `ww/git` in the settings (a section, even an empty one), every template
+of every workflow may read the task's branch:
+
+| Value | What it is |
+| --- | --- |
+| `{{ww.git.branch}}` | The task's branch. A child task's is `<parent branch>-<child ID>`. |
+| `{{ww.git.base_branch}}` | The branch it was created from; a child's is its parent's branch. |
+| `{{ww.git.branch_strategy}}` | The branch format key in use: `start --branch-strategy`, else the workflow's own `branch_name_formats` entry, else `default`. |
+
+```yaml
+- land: Merge {{ww.git.branch}} into {{ww.git.base_branch}} and push.
+```
+
+The branch values come from what `start-task-branch` or `create-worktree`
+recorded for the task, never from a live `git rev-parse`: the primary
+checkout and a task's worktree can be on different branches. Before the task
+has a branch, an agent step that reads one does not start: the task stops
+for the operator with `operator_reason: value_unavailable` and an error naming
+the variable and its extension; `next --retry` checks again once the branch
+exists, and `next --force` skips the step. An automatic handler that reads one
+fails as any handler does (`handler_failed`). Wire `start-task-branch` before
+the first step that uses them. An unknown `ww.`
+name, or `{{ww.git.*}}` without `ww/git` in the settings, is an error when
+the workflow is loaded.
+
 ### Writing one
 
 Create `<project>/ext/<vendor>/<name>/extension.py` exposing `EXTENSION`, or
@@ -2742,6 +2773,29 @@ values declared by workflow steps. Only extensions already referenced by the
 saved plan participate, preserving lazy discovery. Conflicting overrides are
 configuration errors. The Git extension uses this contract to resolve
 `__task_workspace_dir` from the primary checkout or its recorded worktree.
+
+New values go in the extension's one `namespace`, an `ExtensionNamespace`
+whose `ExtensionVariable` entries templates read as
+`{{ww.<namespace>.<name>}}`. A namespace is available whenever the root
+settings list the extension, even with an empty section, and not only when
+one of its handlers is referenced. Each value is resolved for the task each
+time ww renders the task's templates; a resolver returning `None` means "not
+available yet": an agent step that reads it stops the task for the operator
+(`value_unavailable`) before it starts, and an automatic handler fails. The
+namespace `ww` and the names ww keeps for its own values (`task`, `project`,
+`documents`, `metadata`, `project_metadata`, `item`, `child`) cannot be
+claimed, and two listed extensions claiming one namespace are an error.
+`ww/git` declares `git`:
+
+```python
+namespace=ExtensionNamespace(
+    "git",
+    (
+        ExtensionVariable("branch", _branch_variable),
+        ExtensionVariable("base_branch", _base_branch_variable),
+    ),
+),
+```
 
 `ww/git` is bundled with the installed `ww-agentic-workflows` package, so it is
 available in every project, including a `pipx --editable` installation whose
