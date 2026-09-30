@@ -144,6 +144,7 @@ _MACHINE_READABLE_COMMANDS = frozenset(
         "projects",
         "remove-item",
         "runtimes",
+        "update-child",
         "workflows",
     }
 )
@@ -998,6 +999,14 @@ def _add_child(context: _Context) -> _Outcome:
     return _Outcome(_json(child.to_dict()))
 
 
+def _update_child(context: _Context) -> _Outcome:
+    args = context.args
+    child = context.service.update_child(
+        context.task_id, args.child_id, text=args.text, project=args.project
+    )
+    return _Outcome(_json(child.to_dict()))
+
+
 def _child(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
@@ -1093,6 +1102,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "update-item": _update_item,
     "remove-item": _remove_item,
     "add-child": _add_child,
+    "update-child": _update_child,
     "child": _child,
     "reset": _reset,
     "cleanup": _cleanup,

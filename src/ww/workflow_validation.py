@@ -11,7 +11,7 @@ from ww.actions import DefinedAction, Prompt
 from ww.core_workflows import with_core_workflows
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
-from ww.operations import ChildWorkflowRun, WorkflowHandoff
+from ww.operations import WorkflowHandoff
 from ww.project_config import ProjectConfig
 from ww.validation import is_positive_int
 from ww.workflow_config import (
@@ -331,12 +331,6 @@ def _validate_item_flows(workflow_name: str, steps: tuple[StepDefinition, ...]) 
             f"workflow {workflow_name!r} may define at most one items step; "
             "found " + ", ".join(repr(step.name) for step in flows)
         )
-    for step in flows:
-        if step.collect_children or step.child_workflow is not None:
-            raise ConfigurationError(
-                f"step {step.name!r} in workflow {workflow_name!r} cannot "
-                "combine items with child tasks"
-            )
 
 
 def _validate_hooks(
@@ -465,9 +459,10 @@ def _validate_rule_hints(hints: RuleHints, path: str) -> None:
 def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
     """Reject a hook naming a root handler that is a whole step tree.
 
-    A hook runs one action. A handler defining ``loop``, ``steps``, or
-    ``items`` is only usable as a workflow step; run as a hook it would lose
-    its tree and become a prompt carrying nothing but its name.
+    A hook runs one action. A handler defining ``loop``, ``steps``,
+    ``items``, or ``children`` is only usable as a workflow step; run as a
+    hook it would lose its tree and become a prompt carrying nothing but its
+    name.
     """
     handlers = configuration.handlers_by_name
     for hook in _every_hook(configuration):
@@ -477,8 +472,9 @@ def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
         if isinstance(registered, StepDefinition) and _is_container(registered):
             raise ConfigurationError(
                 f"{hook.path or 'hook'} runs handler {registered.name!r}, which "
-                "defines a loop, steps, or items; a hook runs a single action, "
-                f"so use {registered.name!r} as a workflow step instead"
+                "defines a loop, steps, items, or children; a hook runs a "
+                f"single action, so use {registered.name!r} as a workflow "
+                "step instead"
             )
 
 
@@ -502,7 +498,9 @@ def _validate_recommendations(configuration: WorkflowConfiguration) -> None:
 
 
 def _is_container(step: StepDefinition) -> bool:
-    return bool(step.child_steps or step.loop_steps or step.items)
+    return bool(
+        step.child_steps or step.loop_steps or step.items or step.children
+    )
 
 
 def _every_hook(configuration: WorkflowConfiguration) -> Iterable[HookDefinition]:
@@ -584,50 +582,31 @@ def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:
     """Keep task orchestration deliberately to one parent/child level."""
     by_name = {workflow.name: workflow for workflow in workflows}
     for workflow in workflows:
-        steps = _walk_steps(workflow.steps)
-        collectors = [step for step in steps if step.collect_children]
-        runners = [
-            (step, _child_workflow_target(step))
-            for step in steps
-            if _child_workflow_target(step) is not None
+        collectors = [
+            step for step in _walk_steps(workflow.steps) if step.children is not None
         ]
-        if len(collectors) > 1 or len(runners) > 1:
+        if len(collectors) > 1:
             raise ConfigurationError(
-                f"workflow {workflow.name!r} may define at most one children "
-                "collection step and one workflow_per_child step"
+                f"workflow {workflow.name!r} may define at most one children step; "
+                "found " + ", ".join(repr(step.name) for step in collectors)
             )
-        if runners and not collectors:
-            raise ConfigurationError(
-                f"workflow {workflow.name!r} uses workflow_per_child without "
-                "a children step"
-            )
-        if not runners:
+        if not collectors:
             continue
-        target_name = runners[0][1]
-        assert target_name is not None
-        target = by_name.get(target_name)
+        flow = collectors[0].children
+        assert flow is not None
+        target = by_name.get(flow.workflow)
         if target is None:
             raise ConfigurationError(
                 f"workflow {workflow.name!r} references unknown child workflow "
-                f"{target_name!r}"
+                f"{flow.workflow!r}"
             )
-        if target_name == workflow.name or any(
-            step.collect_children or _child_workflow_target(step) is not None
-            for step in _walk_steps(target.steps)
+        if target.name == workflow.name or any(
+            step.children is not None for step in _walk_steps(target.steps)
         ):
             raise ConfigurationError(
-                f"child workflow {target_name!r} cannot define child tasks; "
+                f"child workflow {target.name!r} cannot define child tasks; "
                 "recursive child tasks are not supported"
             )
-
-
-def _child_workflow_target(step: StepDefinition) -> str | None:
-    """Read a static child target from the shorthand or the explicit action form."""
-    if step.child_workflow is not None:
-        return step.child_workflow
-    if isinstance(step.operation, ChildWorkflowRun):
-        return step.operation.workflow
-    return None
 
 
 def _unique(names: Iterable[str], label: str) -> None:

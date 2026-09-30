@@ -24,6 +24,7 @@ from ww.contracts import (
 from ww.errors import ConfigurationError
 from ww.operations import ChildWorkflowRun
 from ww.workflow_config import (
+    ChildFlow,
     HandlerDefinition,
     ItemFlow,
     StepDefinition,
@@ -88,7 +89,6 @@ class ExpansionResult:
 class LeafRequest:
     reference: HandlerDefinition
     action: DefinedAction | None = None
-    operation: ChildWorkflowRun | None = None
     annotations: ItemAnnotations = EMPTY_ITEM_ANNOTATIONS
 
 
@@ -198,9 +198,13 @@ class LoopDefinition:
 
 
 @dataclass(frozen=True)
-class ChildWorkflowDefinition:
+class ChildFlowDefinition:
     step: StepDefinition
-    target: str
+    flow: ChildFlow
+
+
+# The leaf under a ``children`` step that runs the collected children.
+CHILDREN_RUN_STEP_NAME = "children"
 
 
 class LeafPlanner(ConstructPlanner[LeafDefinition]):
@@ -332,27 +336,51 @@ class LoopPlanner(ConstructPlanner[LoopDefinition]):
         return ExpansionResult(available_values=available)
 
 
-class ChildWorkflowPlanner(ConstructPlanner[ChildWorkflowDefinition]):
+class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
+    """Collect child tasks with the step's own action, then run them.
+
+    The run is a ww-owned leaf nested under the collecting step, so one step
+    owns the whole child lifecycle; the step's completion hooks follow it.
+    """
+
     def expand(
-        self, definition: ChildWorkflowDefinition, context: PlanningContext
+        self, definition: ChildFlowDefinition, context: PlanningContext
     ) -> ExpansionResult:
-        return ExpansionResult(
-            outputs=context.emit_leaf(
-                LeafRequest(
-                    definition.step,
-                    operation=ChildWorkflowRun(definition.target),
-                    annotations=step_annotations(definition.step),
-                )
+        flow = definition.flow
+        outputs = context.emit_leaf(
+            LeafRequest(
+                definition.step,
+                annotations=ItemAnnotations(
+                    child_operation="collect", split_instruction=flow.description
+                ),
             )
         )
+        run = StepDefinition(
+            name=CHILDREN_RUN_STEP_NAME,
+            description=(
+                f"Run every child task with the `{flow.workflow}` workflow, "
+                "one at a time."
+            ),
+            operation=ChildWorkflowRun(flow.workflow),
+        )
+        context.compile_steps(
+            (run,),
+            context.derive_scope(
+                parent=context.scope.path,
+                parent_ancestors=context.scope.ancestors,
+            ),
+        )
+        return ExpansionResult(outputs=outputs)
 
 
 def step_annotations(step: StepDefinition) -> ItemAnnotations:
-    """Return the operation annotations inherited by a step and its hooks."""
-    return ItemAnnotations(
-        item_operation=step.item_operation,
-        child_operation="collect" if step.collect_children else None,
-    )
+    """Return the operation annotations inherited by a step and its hooks.
+
+    Child collection is not among them: only the collect leaf of a
+    ``children`` step collects, while its hooks and the workflow's completion
+    items around it do not.
+    """
+    return ItemAnnotations(item_operation=step.item_operation)
 
 
 def normalize_construct(step: StepDefinition) -> object:
@@ -369,8 +397,8 @@ def normalize_construct(step: StepDefinition) -> object:
         )
     if step.child_steps:
         return SequenceDefinition(step, step.child_steps)
-    if step.child_workflow is not None:
-        return ChildWorkflowDefinition(step, step.child_workflow)
+    if step.children is not None:
+        return ChildFlowDefinition(step, step.children)
     return LeafDefinition(step, step_annotations(step))
 
 
@@ -381,5 +409,5 @@ def builtin_construct_planners() -> ConstructPlannerRegistry:
     registry.register(AssessmentDefinition, AssessmentPlanner())
     registry.register(ItemFlowDefinition, ItemFlowPlanner())
     registry.register(LoopDefinition, LoopPlanner())
-    registry.register(ChildWorkflowDefinition, ChildWorkflowPlanner())
+    registry.register(ChildFlowDefinition, ChildFlowPlanner())
     return registry

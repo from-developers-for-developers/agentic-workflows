@@ -530,8 +530,9 @@ class StepDefinition(HandlerDefinition):
     items: ItemFlow | None = None
     item_operation: ItemOperation | None = None
     artifact: bool = True
-    collect_children: bool = False
-    child_workflow: str | None = None
+    # A step with ``children`` collects child tasks, then runs each with
+    # ``children.workflow``.
+    children: ChildFlow | None = None
     artifact_dependency: str | None = None
     # An assessment is an agent prompt whose named outcome selects a conditional
     # subtree.  Empty outcomes use the compact positive/negative continuation.
@@ -539,6 +540,20 @@ class StepDefinition(HandlerDefinition):
     assessment_outcomes: tuple[StepDefinition, ...] = ()
     # An assessment outcome that ends the workflow instead of running steps.
     stop_workflow: bool = False
+
+
+@dataclass(frozen=True)
+class ChildFlow:
+    """The child tasks owned by one ``children`` step.
+
+    The step's own action collects them with ``add-child``; ww then runs every
+    child, one at a time, with ``workflow``, and the parent continues after the
+    last one completes.
+    """
+
+    workflow: str
+    # Splitting guidance for the collecting agent, as ``items.description``.
+    description: str | None = None
 
 
 @dataclass(frozen=True)

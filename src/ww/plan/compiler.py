@@ -29,7 +29,7 @@ from ww.discovery import AgentDiscovery
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies
-from ww.operations import ChildWorkflowRun, LoopBoundary, PlanOperation, WorkflowHandoff
+from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
 from ww.variables import CORE_VARIABLE_NAMES, compile_variable_values
 from ww.workflow_config import (
@@ -528,7 +528,6 @@ class WorkflowPlanCompiler:
                     ancestors=current_ancestors,
                     boundary_hints=current_action_hints,
                     action_override=request.action,
-                    operation_override=request.operation,
                     annotations=_merge_annotations(
                         current_annotations, request.annotations
                     ),
@@ -732,7 +731,6 @@ class WorkflowPlanCompiler:
         ancestors: tuple[str, ...] = (),
         boundary_hints: ExecutionHints | None = None,
         action_override: DefinedAction | None = None,
-        operation_override: ChildWorkflowRun | None = None,
         annotations: ItemAnnotations = EMPTY_ITEM_ANNOTATIONS,
     ) -> tuple[str, ...]:
         handler, registered_name, definition = self.actions._handler(
@@ -773,7 +771,7 @@ class WorkflowPlanCompiler:
             # whether its performer may spawn subagents still holds.
             hints = ExecutionHints(self.agent, subagents=hints.subagents)
             profile, profile_instruction, profile_path = (None, None, None)
-        operation = operation_override or handler.operation
+        operation = handler.operation
         action: DefinedAction | None = None
         owner: PlanItemOwner
         execution: ExecutionKind

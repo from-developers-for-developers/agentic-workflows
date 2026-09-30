@@ -2512,6 +2512,51 @@ class WorkflowService:
             )
             return child
 
+    def update_child(
+        self,
+        task_id: str,
+        child_id: str,
+        *,
+        text: str | None = None,
+        project: str | None = None,
+    ) -> ChildTask:
+        """Change a child's text or project before it starts.
+
+        Allowed while the child is ``pending``: during the children step and
+        while the parent waits for its children. A started child already
+        holds its requirements.
+        """
+        validate_task_id(task_id)
+        validate_child_id(child_id)
+        if text is None and project is None:
+            raise StateError("update-child needs --text, --project, or both")
+        if text is not None and not text.strip():
+            raise StateError("child text must be non-empty")
+        if project is not None:
+            self._project_directory(project)
+        with self.tasks.lock_task(task_id):
+            state, snapshot = self.load(task_id)
+            children = list(self.tasks.read_children(task_id, state.run_id))
+            index = next(
+                (i for i, child in enumerate(children) if child.id == child_id), None
+            )
+            if index is None:
+                raise StateError(f"child {child_id!r} was not found")
+            child = children[index]
+            if child.status != "pending":
+                raise StateError(
+                    f"child {child_id!r} is {child.status}; only a pending child "
+                    "can be updated"
+                )
+            child = replace(
+                child,
+                description=text if text is not None else child.description,
+                project=project if project is not None else child.project,
+            )
+            children[index] = child
+            self.commit(state, snapshot, children=tuple(children))
+            return child
+
     def start_child(self, parent_task_id: str, child_id: str) -> Instruction:
         return self.children.start_child(parent_task_id, child_id)
 

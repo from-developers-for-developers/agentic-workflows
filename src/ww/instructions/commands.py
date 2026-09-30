@@ -154,6 +154,12 @@ def child_start_command(task_id: str, child_id: str) -> str:
     return _command("child", "start", _arg(task_id), _arg(child_id))
 
 
+def update_child_command(task_id: str, child_id: str) -> str:
+    return _command(
+        "update-child", _arg(task_id), _arg(child_id), '--text="<child task text>"'
+    )
+
+
 def add_item_command(
     task_id: str = TASK_PLACEHOLDER, identity: str | None = None
 ) -> str:

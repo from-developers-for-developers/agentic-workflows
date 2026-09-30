@@ -2140,7 +2140,7 @@
     },
     {
       "name": "child_handoff",
-      "yaml": "workflows:\n  - name: parent\n    steps:\n      - name: split\n        children: ~\n      - name: execute\n        workflow_per_child: choose\n  - name: choose\n    steps:\n      - name: select\n        provide:\n          - name: workflow\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n  - name: work\n    steps:\n      - name: implement\n        artifact: false\n",
+      "yaml": "workflows:\n  - name: parent\n    steps:\n      - name: split\n        children:\n          workflow: choose\n  - name: choose\n    steps:\n      - name: select\n        provide:\n          - name: workflow\n        hooks:\n          after_complete:\n            - workflow: \"{{workflow}}\"\n  - name: work\n    steps:\n      - name: implement\n        artifact: false\n",
       "workflow": "parent",
       "plan": {
         "workflow": "parent",
@@ -2179,7 +2179,7 @@
             "requested_model": "cheapest",
             "requested_reasoning": "low",
             "role": "worker",
-          "subagents": true,
+            "subagents": true,
             "model": "cheapest",
             "reasoning": "low",
             "profile": null,
@@ -2234,7 +2234,7 @@
             "requested_model": "auto",
             "requested_reasoning": "auto",
             "role": "worker",
-          "subagents": true,
+            "subagents": true,
             "model": "auto",
             "reasoning": "auto",
             "profile": null,
@@ -2261,10 +2261,10 @@
             "assessment_outcome": null
           },
           {
-            "id": "parent:execute:step:step:1",
+            "id": "parent:split/children:step:step:1",
             "position": 3,
-            "name": "execute",
-            "description": "",
+            "name": "children",
+            "description": "Run every child task with the `choose` workflow, one at a time.",
             "operation": {
               "type": "child_workflow",
               "workflow": "choose"
@@ -2273,8 +2273,8 @@
             "execution": "agent_instruction",
             "requires_agent_input": false,
             "workflow": "parent",
-            "step": "execute",
-            "parent": null,
+            "step": "split/children",
+            "parent": "split",
             "phase": "step",
             "source": "step",
             "registered_handler": null,
@@ -2286,7 +2286,7 @@
             "requested_model": "auto",
             "requested_reasoning": "auto",
             "role": "worker",
-          "subagents": true,
+            "subagents": true,
             "model": "auto",
             "reasoning": "auto",
             "profile": null,
@@ -2300,9 +2300,12 @@
             "artifact": true,
             "child_operation": null,
             "child_identity": false,
-            "ancestors": [],
+            "ancestors": [
+              "split"
+            ],
             "step_ordinals": [
-              3
+              2,
+              1
             ],
             "artifact_dependency": null,
             "loop_break": null,
@@ -2313,7 +2316,7 @@
             "assessment_outcome": null
           },
           {
-            "id": "parent:execute:before_complete_workflow:internal:1",
+            "id": "parent:split:before_complete_workflow:internal:1",
             "position": 4,
             "name": "update-workflow-summary",
             "description": "Provide a concise summary of this workflow run's goal and result.",
@@ -2328,7 +2331,7 @@
             "execution": "agent_instruction",
             "requires_agent_input": false,
             "workflow": "parent",
-            "step": "execute",
+            "step": "split",
             "parent": null,
             "phase": "before_complete_workflow",
             "source": "internal",
@@ -2346,7 +2349,7 @@
             "requested_model": "auto",
             "requested_reasoning": "auto",
             "role": "worker",
-          "subagents": true,
+            "subagents": true,
             "model": "auto",
             "reasoning": "auto",
             "profile": null,
@@ -2362,7 +2365,7 @@
             "child_identity": false,
             "ancestors": [],
             "step_ordinals": [
-              3
+              2
             ],
             "artifact_dependency": null,
             "loop_break": null,

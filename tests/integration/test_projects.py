@@ -41,9 +41,8 @@ workflows:
   - name: parent
     steps:
       - split: Split the work.
-        children: ~
-      - execute:
-        workflow_per_child: feature
+        children:
+          workflow: feature
 """
 
 
@@ -222,6 +221,30 @@ def test_a_handoff_successor_keeps_the_project(tmp_path: Path) -> None:
     assert state is not None
     assert state.working_directory == "frontend"
     assert dict(state.workflow_values)["__project"] == "frontend"
+
+
+def test_update_child_moves_a_pending_child_to_another_project(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _workspace(tmp_path)
+    service = WorkflowService(Storage(root))
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    service.add_child("P", "web", "Web part", project="backend")
+    service.complete("P", artifact="split", summary_for_next="Done.")
+    service.next("P")
+
+    arguments = ["--root", str(root), "update-child", "P", "web"]
+    assert main([*arguments, "--project", "frontend", "--text", "Web app"]) == 0
+    updated = json.loads(capsys.readouterr().out)
+    assert (updated["project"], updated["description"]) == ("frontend", "Web app")
+
+    service.start_child("P", "web")
+    web = service.tasks.read_execution_state("P/web", "01-feature")
+    assert web is not None
+    assert web.working_directory == "frontend"
+    assert main([*arguments, "--text", "Too late"]) == 1
+    assert "child 'web' is in_progress" in capsys.readouterr().err
 
 
 def test_children_run_in_their_own_project(

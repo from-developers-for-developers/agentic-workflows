@@ -20,9 +20,8 @@ WORKFLOWS = """workflows:
   - name: epic
     steps:
       - split: Split the epic into stories.
-        children: ~
-      - execute:
-        workflow_per_child: story
+        children:
+          workflow: story
   - name: story
     steps:
       - create-story: Create the Jira story through the jira MCP connection.
@@ -33,9 +32,8 @@ WORKFLOWS = """workflows:
   - name: plain-parent
     steps:
       - split: Split the work.
-        children: ~
-      - execute:
-        workflow_per_child: plain
+        children:
+          workflow: plain
   - name: plain
     steps:
       - implement: Implement it.

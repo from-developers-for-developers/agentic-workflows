@@ -73,6 +73,8 @@ def action_text(
             )
             + "\n```\n\nRun this command once for every independent child task."
         )
+        if item.split_instruction:
+            result += f"\n\nHow to split: {item.split_instruction}"
         if item.child_identity:
             result += (
                 "\n\nDo not pass `--id`: each child receives its ID from the first "

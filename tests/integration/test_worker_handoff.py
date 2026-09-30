@@ -435,9 +435,8 @@ def test_child_workflow_coordination_returns_to_manager(tmp_path: Path) -> None:
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -456,7 +455,7 @@ def test_child_workflow_coordination_returns_to_manager(tmp_path: Path) -> None:
         assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
-    assert boundary.item_name == "execute"
+    assert boundary.item_name == "children"
     assert boundary.item_status == "pending"
     assert boundary.control == "blocked"
     assert boundary.next_role == "manager"

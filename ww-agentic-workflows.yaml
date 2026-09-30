@@ -146,8 +146,9 @@ workflows:
   # A roadmap implements a written plan slice by slice. The parent keeps the
   # plan as its task document and runs one `sliced-task` child per slice; each child
   # branches from the roadmap's branch and lands back on it, so every slice
-  # starts from the previous one. The parent waits at implement-slices; the
-  # manager starts each child by hand once the previous one has landed.
+  # starts from the previous one. After read-plan collects the children, the
+  # parent waits while they run; the manager starts each child by hand once
+  # the previous one has landed.
   - roadmap: >-
       Implement a written plan slice by slice: one child task per slice,
       each reviewed, reconciled with the plan, and landed on this task's
@@ -162,10 +163,8 @@ workflows:
           slice as the plan reads when the child starts. Nothing else.
         update_document:
           - plan: The copied plan with a Status section, one line per slice.
-        children: ~
-
-      - implement-slices: ~
-        workflow_per_child: sliced-task
+        children:
+          workflow: sliced-task
 
       - close-plan: >-
           Mark the roadmap done in {{documents.plan}}: which slices landed

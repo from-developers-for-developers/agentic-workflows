@@ -287,18 +287,19 @@ workflows:
 
 ## 11. Parent and child tasks
 
-A `children` step collects independent pieces of work and `workflow_per_child`
-runs a workflow for each as its own task under the parent. Children run one at
-a time; the parent completes when the last child does.
+A `children` step collects independent pieces of work and runs a workflow for
+each as its own task under the parent. Children run one at a time; the parent
+continues when the last child completes. Until a child starts, `update-child`
+can still change its text or project.
 
 ```yaml
 workflows:
   - name: epic
     steps:
       - split: Split the epic into independent stories.
-        children: ~
-      - execute:
-        workflow_per_child: story
+        children:
+          description: One child per story a user would notice.
+          workflow: story
       - summarize: Summarize what the stories delivered.
 
   - name: story
@@ -323,9 +324,8 @@ workflows:
         provide:
           - task_id: The epic key returned by Jira.
       - split: Split the epic into stories.
-        children: ~
-      - execute:
-        workflow_per_child: story
+        children:
+          workflow: story
 
   - name: story
     steps:
@@ -459,9 +459,8 @@ workflows:
     description: A change that may touch several repositories.
     steps:
       - split: Split the change into one child per repository.
-        children: ~
-      - execute:
-        workflow_per_child: feature
+        children:
+          workflow: feature
 
   - name: feature
     steps:

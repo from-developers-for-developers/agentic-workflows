@@ -331,7 +331,7 @@ records. A persisted plan item stores its operation under `operation` with an
 explicit `type`: `action` for registered actions (with their `identifier` and
 `payload`), or `loop`, `workflow_transition`, and `child_workflow` for core
 controls, whose fields are owned by `../src/ww/operations.py`. In YAML the core
-controls have their own keys, `workflow`, `workflow_per_child`, and `loop`; the
+controls have their own keys, `workflow`, `children.workflow`, and `loop`; the
 explicit `action: {type: ...}` form selects registered actions only and rejects
 a core control's type, so engine behaviour is never spelled as an action. This
 does not introduce a public YAML plugin format or new scheduling primitives.
@@ -1164,10 +1164,16 @@ integration failure.
 ## Parent and child tasks
 
 One workflow can decompose a task into independently executable child tasks.
-The parent owns the decomposition through a `children: ~` step, where the agent
-records each child with `ww add-child`. A later `workflow_per_child: <workflow>`
-step is a coordinator boundary rather than agent work: `ww child start <parent>
-<child>` starts one selected child workflow at a time.
+The parent owns the decomposition through one step with a `children` mapping
+(`ChildFlow` in `../src/ww/workflow_config.py`), whose own action records each
+child with `ww add-child`. `ChildFlowPlanner` in `../src/ww/plan/constructs.py`
+compiles it like an `items` step: the collect leaf, then a ww-owned
+`ChildWorkflowRun` leaf nested under it as `<step>/children`, so one step owns
+the whole child lifecycle and its completion hooks follow the children. The
+run leaf is a coordinator boundary rather than agent work: `ww child start
+<parent> <child>` starts one selected child workflow at a time. Until then a
+`pending` child record may still be edited with `ww update-child`
+(`WorkflowService.update_child`).
 
 Children are normal task containers stored directly beneath their parent, for
 example `.ww/tasks/TASK-123/TASK-123.1/`. They retain their own run history,
@@ -1177,7 +1183,7 @@ This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
 
 The scope is deliberately one level: a child workflow cannot itself declare
-`children` or `workflow_per_child`. When the last child completes, ww completes
+`children`. When the last child completes, ww completes
 the parent coordinator and resumes the parent's ordinary completion lifecycle,
 including its `after_complete` hooks and built-in workflow summary. A failed
 child instead marks that coordinator failed so the parent does not appear done.

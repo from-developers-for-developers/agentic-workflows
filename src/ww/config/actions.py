@@ -69,14 +69,20 @@ def _parse_handler(
         path,
     )
     if (inline or transition) and "workflow" in mapping:
-        if set(mapping) - {
+        extra = set(mapping) - {
             "name",
             "workflow",
             "description",
             "agent",
             "model",
             "reasoning",
-        }:
+        }
+        if "children" in extra:
+            raise ConfigurationError(
+                f"{path} cannot combine children with a workflow transition; "
+                "name the child workflow under children.workflow"
+            )
+        if extra:
             raise ConfigurationError(
                 f"{path} workflow transition cannot contain other handler fields"
             )
@@ -128,7 +134,7 @@ def _parse_handler(
             # registry actions selected by type.
             raise ConfigurationError(
                 f"{path}.action.type {identifier!r} is a core control; use "
-                "`workflow`, `workflow_per_child`, or `loop` on the step instead"
+                "`workflow`, `children`, or `loop` on the step instead"
             )
         implementation = actions.get(identifier)
         payload = implementation.parse(source, name, description, f"{path}.action")

@@ -565,6 +565,18 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME",
         help="Run the child in this configured project directory.",
     )
+    update_child = subparsers.add_parser(
+        "update-child", help="Change a child task that has not started yet."
+    )
+    update_child.add_argument("task_id")
+    update_child.add_argument("child_id")
+    update_child.add_argument("--text", help="The child's new text.")
+    update_child.add_argument(
+        "--project",
+        default=None,
+        metavar="NAME",
+        help="Run the child in this configured project directory.",
+    )
     child = subparsers.add_parser("child", help="Operate a child task.")
     child_subparsers = child.add_subparsers(dest="child_command", required=True)
     child_start = child_subparsers.add_parser(
