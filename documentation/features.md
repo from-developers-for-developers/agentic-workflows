@@ -148,14 +148,25 @@ Set `"enabled": false` in `../ww-agentic-workflows.json` to switch ww off for a
 project. `discover` then says only that ww is disabled and that the agent must
 not use it, and `start` refuses to create a task.
 
+Set `"enabled": "on_request"` to keep ww available but out of the way: an
+agent uses it only when the user explicitly asks for it (says to use ww, names
+a ww task, or invokes the `ww` skill), and otherwise works without ww and
+without asking. `discover` opens with that rule, then lists the full catalog so
+an explicit request can proceed, and its JSON carries `"enabled":
+"on_request"`. `start` and `lookup` work as usual, `lookup` reminding the agent
+to go on only for an explicit request, and the `session-start` hook says that
+ww is used here on request only. The static agent instructions and the `ww`
+skill defer to `discover` for this choice. `init` asks which of the three
+values to write, explaining each; without a terminal it writes `true`.
+
 ```json
 {"enabled": false, "extensions": {}}
 ```
 
 ## The catch-all workflow
 
-Every change to files goes through ww, including the small ones that fit no
-workflow: renaming a helper, fixing a typo, adjusting a setting. For those, ww
+Unless `enabled` is `"on_request"`, every change to files goes through ww,
+including the small ones that fit no workflow: renaming a helper, fixing a typo, adjusting a setting. For those, ww
 provides `catchall` to every project. It has one step, `work`, whose page tells
 the agent that the workflow only records the request: it carries the work out
 exactly as it would on a plain prompt, with the same judgement, tools,
@@ -2953,7 +2964,7 @@ blocked.
 
 | Hook | When it runs | What it does |
 | --- | --- | --- |
-| `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here and up to five unfinished tasks, newest first, with their step, workspace, and resume commands. |
+| `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here (under `"enabled": "on_request"`: that ww is used only when the user asks for it) and up to five unfinished tasks, newest first, with their step, workspace, and resume commands. |
 | `stop` | The agent ends its turn | Once per step attempt, asks the agent to record an agent-owned step it left in progress. The next stop is always allowed. |
 | `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work. |
 

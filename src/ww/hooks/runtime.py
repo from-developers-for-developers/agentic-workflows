@@ -43,14 +43,26 @@ ALLOW = HookAnswer("", "allowed")
 
 
 def answer_hook(
-    storage: Storage, agent: HookAgent, event: HookEvent, raw_payload: str
+    storage: Storage,
+    agent: HookAgent,
+    event: HookEvent,
+    raw_payload: str,
+    *,
+    on_request: bool = False,
 ) -> HookAnswer:
-    """ww's answer to one hook call; the caller contains every error."""
+    """ww's answer to one hook call; the caller contains every error.
+
+    ``on_request`` is the project's ``"enabled": "on_request"``: the session
+    is told that ww is used only when the user asks for it. Stop reminders
+    are unchanged, since they concern tasks already open.
+    """
     payload = agent.parse(event, _payload(raw_payload))
     records = HookRecords(storage, storage.task_persistence)
     work = open_work(storage.task_persistence, storage.root)
     if event == "session-start":
-        return _session_start(storage, agent, payload, records, work)
+        return _session_start(
+            storage, agent, payload, records, work, on_request=on_request
+        )
     # An unreadable task has no step anyone can close, so stop and interrupt
     # consider only the tasks that could be read.
     if event == "stop" and not payload.interrupted:
@@ -64,6 +76,8 @@ def _session_start(
     payload: HookPayload,
     records: HookRecords,
     work: OpenWork,
+    *,
+    on_request: bool,
 ) -> HookAnswer:
     if not payload.wants_context:
         return HookAnswer("", "no context needed")
@@ -79,6 +93,7 @@ def _session_start(
         storage.root,
         compacted=payload.source == "compact",
         unreadable=work.unreadable,
+        on_request=on_request,
     )
     return HookAnswer(
         agent.context_reply(text.rstrip("\n")) + "\n",

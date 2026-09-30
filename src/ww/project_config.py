@@ -24,6 +24,10 @@ contains ww-wide settings, built-in execution hints, and extension settings.
 }
 ```
 
+``enabled`` is ``true`` (agents use ww for project work), ``false`` (they
+never do), or ``"on_request"`` (ww is available, but agents use it only when
+the user explicitly asks for it).
+
 ``max_fixes`` is how many times a step's completion may be rejected for a
 failed check before ww stops for the operator; a rule may set its own.
 
@@ -60,7 +64,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ww.config_files import (
     SETTINGS_FILE,
@@ -91,6 +95,10 @@ TASK_FORMAT_PLACEHOLDERS = frozenset({"{digit}", "{timestamp}", "{uuid}"})
 # The keys ww takes from a configured project's own settings files. Anything
 # else in such a file describes the project as a ww root of its own.
 PROJECT_FILE_KEYS = ("extensions", "task_format")
+# ``enabled``: ww is used by default (``true``), never (``false``), or only
+# when the user explicitly asks for it (``"on_request"``).
+ON_REQUEST: Literal["on_request"] = "on_request"
+Enabled = bool | Literal["on_request"]
 
 
 @dataclass(frozen=True)
@@ -209,7 +217,9 @@ class ProjectConfig:
     # Rejected completions a check allows before the operator decides.
     max_fixes: int = DEFAULT_MAX_FIXES
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
-    enabled: bool = True
+    # ``"on_request"`` keeps ww available, but agents use it only when the
+    # user explicitly asks for it.
+    enabled: Enabled = True
     projects: tuple[ProjectDefinition, ...] = ()
     # The runtime ``start`` uses when ``--runtime`` is omitted.
     runtime: str = DEFAULT_RUNTIME
@@ -227,6 +237,16 @@ class ProjectConfig:
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
         return {project.name: project for project in self.projects}
+
+    @property
+    def disabled(self) -> bool:
+        """Whether agents must not use ww here at all."""
+        return self.enabled is False
+
+    @property
+    def on_request(self) -> bool:
+        """Whether agents use ww only when the user explicitly asks for it."""
+        return self.enabled == ON_REQUEST
 
     def workflow_enabled(self, name: str) -> bool:
         """Whether a core workflow is offered in this project."""
@@ -399,9 +419,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
             f"{path} has unknown key(s): {', '.join(sorted(unknown))}"
         )
     extensions = _parse_extensions(raw, path)
-    enabled = raw.get("enabled", True)
-    if not isinstance(enabled, bool):
-        raise ConfigurationError(f"{path}.enabled must be true or false")
+    enabled = _parse_enabled(raw.get("enabled", True), path)
     update_check = raw.get("update_check", True)
     if not isinstance(update_check, bool):
         raise ConfigurationError(f"{path}.update_check must be true or false")
@@ -453,6 +471,16 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         disabled_workflows=_parse_workflows(raw.get("workflows"), path),
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
+    )
+
+
+def _parse_enabled(data: Any, path: str) -> Enabled:
+    if isinstance(data, bool):
+        return data
+    if data == ON_REQUEST:
+        return ON_REQUEST
+    raise ConfigurationError(
+        f'{path}.enabled must be true, false, or "{ON_REQUEST}"'
     )
 
 

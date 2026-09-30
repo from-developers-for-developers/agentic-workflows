@@ -39,6 +39,7 @@ def session_context(
     *,
     compacted: bool,
     unreadable: tuple[UnreadableTask, ...] = (),
+    on_request: bool = False,
 ) -> str:
     """What a session learns about ww when it starts, resumes, or compacts."""
     ww = ww_command()
@@ -46,8 +47,12 @@ def session_context(
     if compacted:
         lines.append("Context was compacted; ww's task state is authoritative.")
     lines.append(
-        f"This project coordinates work through ww: `{ww} discover` lists its "
-        "workflows."
+        "This project has ww available on request only: use it only when the "
+        "user explicitly asks for ww; otherwise work without it and do not "
+        f"ask. `{ww} discover` lists its workflows."
+        if on_request
+        else f"This project coordinates work through ww: `{ww} discover` lists "
+        "its workflows."
     )
     if open_tasks:
         lines.append("Unfinished ww tasks, newest first:")

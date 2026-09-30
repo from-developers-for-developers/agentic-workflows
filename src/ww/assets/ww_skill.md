@@ -1,12 +1,14 @@
 ---
 name: ww
-description: Carry out the user's request through ww, this project's workflow tool. Use when the user asks to work via ww, to start or continue a ww task, or to run a ww workflow, and before changing files for any request, since every change goes through ww. Not for questions or other read-only work.
+description: Carry out the user's request through ww, this project's workflow tool. Use when the user asks to work via ww, to start or continue a ww task, or to run a ww workflow, and, where `./ww discover` says ww is used by default, before changing files for any request, since every change then goes through ww. Not for questions or other read-only work.
 ---
 
 # Work through ww
 
 1. Run `./ww discover` and read all of it. If it says ww is disabled, stop:
-   do not use ww, and tell the user.
+   do not use ww, and tell the user. If it says ww is used only on request
+   and the user did not explicitly ask for ww (invoking this skill counts),
+   carry out the request without ww and do not ask.
 2. To continue an existing task, run
    `./ww instruction <task-id> --role manager` instead of starting a new one.
 3. Otherwise choose the workflow that matches the request, keep its default

@@ -121,7 +121,7 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
     [
         ([], "must contain a JSON object"),
         ({"nope": 1}, "unknown key(s): nope"),
-        ({"enabled": "yes"}, "enabled must be true or false"),
+        ({"enabled": "yes"}, 'enabled must be true, false, or "on_request"'),
         ({"extensions": []}, "extensions must be an object"),
         ({"extensions": {"ww/git": 5}}, "must be an object of settings"),
         ({"loop_max_times": 0}, "loop_max_times must be a positive integer"),
@@ -157,6 +157,20 @@ def test_enabled_is_read_and_defaults_to_true(tmp_path: Path, enabled: bool) -> 
     assert load_project_config(write(tmp_path, {"enabled": enabled})).enabled is enabled
     assert load_project_config(write(tmp_path, {})).enabled is True
     assert load_project_config(tmp_path / "absent.json").enabled is True
+
+
+@pytest.mark.parametrize(
+    ("enabled", "disabled", "on_request"),
+    [(True, False, False), (False, True, False), ("on_request", False, True)],
+)
+def test_enabled_takes_three_values_read_through_properties(
+    tmp_path: Path, enabled: object, disabled: bool, on_request: bool
+) -> None:
+    config = load_project_config(write(tmp_path, {"enabled": enabled}))
+
+    assert config.enabled == enabled
+    assert config.disabled is disabled
+    assert config.on_request is on_request
 
 
 def test_core_workflows_are_enabled_unless_switched_off(tmp_path: Path) -> None:

@@ -22,7 +22,7 @@ from ww.hooks.notices import (
 from ww.hooks.records import HookRecords
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
 from ww.open_work import open_work
-from ww.project_config import FILE_NAME
+from ww.project_config import FILE_NAME, ON_REQUEST
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
 from ww.task_ids import EXPLICIT_TASK_FORMAT
@@ -36,6 +36,21 @@ DISABLED_MESSAGE = (
     "Do not use ww for this work: do not start, continue, or complete ww "
     "tasks. Carry out the request without ww, and tell the user that ww is "
     f'disabled in {FILE_NAME} ("enabled": false).'
+)
+ON_REQUEST_MESSAGE = (
+    "ww is used here only on request: use it only when the user explicitly "
+    "asks for ww, such as by saying to use ww, naming a ww task, or invoking "
+    "the `ww` skill; otherwise carry out the request without ww and do not ask."
+)
+ENABLED_MESSAGE = (
+    "ww is enabled for this project. Choose the workflow that matches the "
+    "request, and modes only when they apply, then start the task with the "
+    "command below."
+)
+ON_REQUEST_CHOOSE = (
+    "When the user has asked for ww, choose the workflow that matches the "
+    "request, and modes only when they apply, then start the task with the "
+    "command below."
 )
 ROLE_DESCRIPTIONS = {
     "manager": "Runs start and next, dispatches assignments, and handles recovery.",
@@ -83,6 +98,11 @@ CATCHALL_GUIDANCE = (
     "the task it found, or ask the operator, through your choice menu, before "
     "a task ww has never seen is created."
 )
+# Under ``"on_request"`` an unasked change never reaches the catch-all.
+ON_REQUEST_CATCHALL_PREFIX = (
+    "Only when the user has asked for ww; otherwise make the change without "
+    "ww. "
+)
 UNREADABLE_GUIDANCE = (
     "Other tasks and new work are unaffected. Commands addressing these tasks "
     "fail with the error shown; ask the operator, whose choice it is to repair, "
@@ -98,7 +118,8 @@ MODES_GUIDANCE = (
 
 def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, object]:
     """Collect the choices and commands for starting a task in this project."""
-    if not extensions.config.enabled:
+    config = extensions.config
+    if config.disabled:
         return {"enabled": False, "message": DISABLED_MESSAGE}
     configuration = load_configuration(storage.config_path, extensions)
     explicit_ids = extensions.task_format() == EXPLICIT_TASK_FORMAT
@@ -107,7 +128,9 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     modes.update({mode.name: mode for mode in extensions.qualified_modes()})
     catchall = configuration.workflows_by_name.get(CATCHALL)
     return {
-        "enabled": True,
+        # ``"on_request"`` still lists everything, so an explicit request can
+        # proceed; the header tells an agent not to use ww unasked.
+        "enabled": ON_REQUEST if config.on_request else True,
         "projects": [
             {
                 **project.to_dict(),
@@ -134,7 +157,11 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             {
                 "name": catchall.name,
                 "description": catchall.description,
-                "guidance": CATCHALL_GUIDANCE,
+                "guidance": (
+                    ON_REQUEST_CATCHALL_PREFIX + CATCHALL_GUIDANCE
+                    if config.on_request
+                    else CATCHALL_GUIDANCE
+                ),
                 "start": f"{ww_command()} lookup [<task>] --agent <agent>",
             }
             if catchall is not None
@@ -242,9 +269,11 @@ def _markdown(report: dict[str, object]) -> list[str]:
     lines = [
         "# ww discover",
         "",
-        "ww is enabled for this project. Choose the workflow that matches the "
-        "request, and modes only when they apply, then start the task with the "
-        "command below.",
+        *(
+            [f"**{ON_REQUEST_MESSAGE}**", "", ON_REQUEST_CHOOSE]
+            if report["enabled"] == ON_REQUEST
+            else [ENABLED_MESSAGE]
+        ),
         "",
         *_pointer_lines(report),
         *_unreadable_lines(report),

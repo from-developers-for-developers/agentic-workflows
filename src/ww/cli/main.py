@@ -1179,7 +1179,11 @@ def _answer_hook(arguments: list[str]) -> int:
         config = load_project_config(root / SETTINGS_FILE)
         with printed_executable(config.executable):
             answer = answer_hook(
-                storage, hook_agent(args.agent), args.hook_action, payload
+                storage,
+                hook_agent(args.agent),
+                args.hook_action,
+                payload,
+                on_request=config.on_request,
             )
     except BaseException as error:  # noqa: BLE001 - a hook must never break the agent
         if isinstance(error, KeyboardInterrupt):

@@ -204,7 +204,12 @@ the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 `start` and may not be `auto`.
 
 `../ww-agentic-workflows.json` sets ww-wide project behavior separately from workflow
-syntax. `loop_max_times` is a positive integer and defaults to `3`. The file may
+syntax. `enabled` is `true` (the default: agents use ww for project work),
+`false` (agents do not use ww, `discover` says only that, and `start` refuses),
+or `"on_request"` (ww stays available, but agents use it only when the user
+explicitly asks for it; `discover` says so before its full catalog and reports
+`"enabled": "on_request"` in JSON); any other value is an error naming the three.
+`loop_max_times` is a positive integer and defaults to `3`. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off the workflows ww provides to every project, currently only `catchall`; each
