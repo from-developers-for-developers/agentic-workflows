@@ -11,13 +11,6 @@ documents:
       slices must do now.
 
 handlers:
-  - land-on-base: >-
-      Merge this task's branch into its recorded base branch, the roadmap's
-      branch, with `git merge --no-ff` in that branch's worktree. Resolve every
-      conflict so that the intent of both sides survives, then conclude the
-      merge commit. Do not push. In the artifact, name the merge commit and
-      list each conflicted file and how you resolved it.
-
   - check-code-quality:
     model: cheapest
     reasoning: lowest
@@ -61,14 +54,14 @@ handlers:
 
 hooks:
   before_start_workflow:
-    - workflows: [task, hotfix, auto-refactor, roadmap, sliced-task]
+    - workflows: [task, hotfix, auto-refactor, roadmap]
       handlers:
         - ext/ww/git/handlers:is-git-clean: ~
         - ext/ww/git/handlers:start-task-branch: ~
         - ext/ww/git/handlers:create-worktree: ~
 
   before_complete_workflow:
-    - workflows: [task, hotfix, auto-refactor, sliced-task]
+    - workflows: [task, hotfix, auto-refactor]
       handlers:
         - update-documentation: ~
         - update-agent-instructions: ~
@@ -144,27 +137,88 @@ workflows:
         depends_on: merge
 
   # A roadmap implements a written plan slice by slice. The parent keeps the
-  # plan as its task document and runs one `sliced-task` child per slice; each child
-  # branches from the roadmap's branch and lands back on it, so every slice
-  # starts from the previous one. After read-plan collects the children, the
-  # parent waits while they run; the manager starts each child by hand once
-  # the previous one has landed.
+  # plan as its task document and adds one child per slice. For each child in
+  # turn, the parent refines the child's text, runs it as a `task` (which
+  # branches from the roadmap's branch and commits there, without landing),
+  # reviews it, merges it into the roadmap's branch, and reconciles the plan,
+  # so every slice starts from the previous one. Review, landing and
+  # reconciliation are the manager's own.
   - roadmap: >-
       Implement a written plan slice by slice: one child task per slice,
-      each reviewed, reconciled with the plan, and landed on this task's
-      branch.
+      each reviewed, landed on this task's branch, and reconciled with the
+      plan.
     steps:
-      - read-plan: >-
+      - name: read-plan
+        description: >-
           Read the plan file the requirements name and copy it to
           {{documents.plan}}, adding a "Status" section with one line per
           slice, all "pending". Then add one child per slice, in the plan's
-          order, with `add-child`: the description names the slice number and
-          the absolute path {{documents.plan}}, and says to implement that
-          slice as the plan reads when the child starts. Nothing else.
+          order, with `add-child`: the description is the slice's full text
+          as the plan gives it, not a reference to the slice. Nothing else.
         update_document:
           - plan: The copied plan with a Status section, one line per slice.
         children:
-          workflow: sliced-task
+          description: One child per slice of the plan, with the slice's full text.
+          steps:
+            - refine: >-
+                Rewrite this child's text, {{ww.child.text}}, with
+                `update-child --text` so that it stands alone as the task's
+                requirements: the slice's current text from
+                {{documents.plan}}, adjusted to what earlier slices actually
+                landed as the plan's Status section records it; the plan's
+                general rules that apply to every slice; the instruction to
+                verify the plan's claims about the code before editing, to
+                record each deviation in the develop artifact, to write the
+                slice's tests and documentation as part of the change, and to
+                build nothing from later slices; and the absolute path of
+                {{documents.plan}} for reference.
+              role: manager
+
+            - implement:
+                workflow: task
+
+            - name: review
+              loop:
+                - review-slice: >-
+                    Review the diff of {{ww.child.git.branch}} against
+                    {{ww.child.git.base_branch}}: does it do what the child's
+                    text asks, meet the slice's acceptance criteria in
+                    {{documents.plan}}, and follow
+                    documentation/python-agent-rules.md? List every finding as
+                    file:line and what to change; an empty list accepts the
+                    slice.
+                  role: manager
+                  break: There are no findings.
+
+                - fix: >-
+                    Apply every finding of the review artifact on
+                    {{ww.child.git.branch}}, in the worktree that `git worktree
+                    list` shows for that branch, not in this task's workspace.
+                    Run ruff, mypy and the whole pytest suite there in their
+                    least verbose mode that still shows every finding, fix
+                    what they report, and commit on that branch.
+                  depends_on: review-slice
+              loop_max_times: 3
+
+            - land: >-
+                Merge {{ww.child.git.branch}} into {{ww.git.branch}} with
+                `git merge --no-ff` in this task's workspace. Resolve every
+                conflict so that the intent of both sides survives, then
+                conclude the merge commit. Do not push. In the artifact, name
+                the merge commit and list each conflicted file and how you
+                resolved it.
+              role: manager
+
+            - reconcile: >-
+                Update {{documents.plan}}: mark this slice landed, or deviated
+                with the deviations the child's develop artifact and the
+                review record, and rewrite the remaining slices where this
+                slice changed their premises: names, shapes, files, decisions.
+                Implement nothing.
+              depends_on: implement
+              role: manager
+              update_document:
+                - plan: The plan with this slice's status and the remaining slices reconciled.
 
       - close-plan: >-
           Mark the roadmap done in {{documents.plan}}: which slices landed
@@ -172,55 +226,6 @@ workflows:
           follow-up.
         update_document:
           - plan: The final status per slice and the list of deviations.
-
-  # The child of a roadmap. Its steps are delegated; review, reconciliation
-  # and landing are the manager's own, so the session that runs the roadmap
-  # reviews every slice itself.
-  - sliced-task: >-
-      One slice of a roadmap plan: implement it, review it, reconcile the
-      plan, and land it on the roadmap's branch.
-    hooks:
-      before_complete_workflow:
-        - land-on-base: ~
-    steps:
-      - develop: >-
-          Read the whole plan named in the requirements, then implement only
-          the slice they name, in the order the plan gives. Verify the plan's
-          claims about the code before editing; where the plan is wrong,
-          choose the smallest fix that keeps its intent and record the
-          deviation in the artifact. Write the slice's tests and
-          documentation as part of the change. Build nothing from later
-          slices. Do not run tests or linters: the workflow runs them next.
-
-      - check-code-quality: ~
-      - run-tests: ~
-
-      - name: review-slice
-        loop:
-            - review: >-
-                Review this task's diff against its base branch: does it do
-                what the plan's slice says, meet the slice's acceptance
-                criteria, and follow documentation/python-agent-rules.md?
-                List every finding as file:line and what to change; an empty
-                list accepts the slice.
-              role: manager
-              break: There are no findings.
-
-            - fix: Apply every finding of the review artifact.
-              depends_on: review
-
-            - verify: >-
-                Run ruff, mypy and the whole pytest suite in their least
-                verbose mode that still shows every finding, and fix what
-                they report.
-        loop_max_times: 3
-
-      - reconcile-plan: >-
-          Update the plan named in the requirements: mark this slice landed,
-          or deviated with the deviations the develop and review artifacts
-          record, and rewrite the remaining slices where this slice changed
-          their premises: names, shapes, files, decisions. Implement nothing.
-        role: manager
 
   - auto-refactor: >-
       Review the development since the last refactoring and reshape the
