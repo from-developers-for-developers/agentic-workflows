@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- `limitations.md` notes that some agents' safety layers (Claude Code's auto mode) refuse edits to the workflow files
+  the agent runs under; the agent prepares a script or patch for the operator instead.
 - ww/git `merge-branch` lands a branch with `git merge --no-ff`: refuses a dirty workspace, aborts a conflict and
   fails naming the files, follows `on_signing_failure`, and records the merge commit. Extension handler references
   take positional `args` (templates allowed). A `git-commit` retry now finds its commit behind newer ones.

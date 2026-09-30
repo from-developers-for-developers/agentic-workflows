@@ -125,6 +125,11 @@ collects the limitations, so it is not repeated there.
   trusted; only Claude Code keeps a hooks file out of version control. See
   the per-agent table in
   [agent-hooks.md](agent-hooks.md#agents-and-their-files).
+- Editing its own workflow files: some agents' safety layers, such as Claude
+  Code's auto mode, refuse an agent's edits to the workflow files it runs
+  under (`ww-agentic-workflows.yaml` and `.json`) as self-modification, even
+  after the user agreed in chat. The agent then prepares the change as a
+  script or patch, and the operator applies it.
 
 ## Reporting a gap
 
