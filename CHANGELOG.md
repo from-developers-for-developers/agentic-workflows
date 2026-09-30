@@ -18,7 +18,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   with double braces in `task_format` and document paths. CLI: `start --requirements`, `complete --summary`,
   `next --force --reason`, `interact --operator-said/--agent-said/--end`, `--text` on item and child commands,
   `start-child`, `updates --now`, `init --task-format`. ww/git: `separate_branch`, `commit_format` only. Old names are
-  rejected with their replacement; saved tasks and rule approvals are migrated.
+  rejected with their replacement; saved tasks and rule approvals are migrated. `5579c0a`
 - Per-child parent stages: `children: {steps: [...]}` runs the parent's own stages once per child, around one
   `workflow:` stage that runs the child; loops inside repeated stages now run once per child or item. `f3f853c`
 - `children` is one mapping on the collecting step, `children: {workflow: <name>}`; `children: ~` and
