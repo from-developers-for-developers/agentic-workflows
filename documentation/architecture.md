@@ -145,8 +145,9 @@ command rather than in copied prose means the guidance cannot drift from the
 configuration. Branch strategies are the one option core cannot know itself:
 an extension that names branches declares `branch_strategies`, and the registry
 asks only configured extensions, as it does for reserved paths. The shipped
-`ww` skill is a thin trigger for the same flow, and `noww` its opt-out; `init`
-installs both into each agent directory the discovery module knows about.
+`ww` skill is a thin trigger for the same flow, `noww` its opt-out, and
+`ww-rule` the way rules are written; `init` installs them into each agent
+directory the discovery module knows about.
 Potentially project-opinionated edits such as `../.gitignore` remain explicit user
 choices.
 
@@ -1457,5 +1458,16 @@ operator, whose `--retry` lets the check stand and whose `--force` waives that
 one check for the step. Waivers are kept per check on the item record, and
 disputes in a log beside the store, so a check that is disputed often shows
 up in `lint`. `rule` and `rules` are read-only views over the frozen plan and
-the store; only `rules prune`, which deletes orphan store entries after
-asking, writes.
+the store; `rules prune` deletes orphan store entries after asking.
+
+Rules are written by the operator, through the `ww-rule` skill, never by a
+running task. The skill holds the judgment (atomic rules, amendments, globs,
+placement, wording, one confirmation); `rule_writes.py` holds the writes, each
+planned as a set of file contents and applied together, then validated by
+loading the configuration as any command would, and restored whole when that
+fails. Rule files are edited in place, keeping every line a change does not
+concern; the repo YAML is never rewritten, because PyYAML cannot round-trip
+comments, so new groups go into `ww-rules.yaml`, a ww-owned import, and the
+repo file gains only its `imports` entry, checked by reading it back.
+`rules promote` is the one write that also changes the store, after the rule
+files validated.

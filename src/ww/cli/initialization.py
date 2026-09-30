@@ -323,7 +323,13 @@ def _skill_location(directory: str) -> str:
     return skill_location(directory, WW_SKILL_NAME)
 
 
-_SKILL_NAMES = " and ".join(SKILLS)
+def _joined(names: tuple[str, ...]) -> str:
+    """``a, b and c``: names as a sentence lists them."""
+    *rest, last = names
+    return f"{', '.join(rest)} and {last}" if rest else last
+
+
+_SKILL_NAMES = _joined(tuple(SKILLS))
 
 
 def _agent_directories(storage: Storage) -> tuple[str, ...]:

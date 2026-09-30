@@ -977,8 +977,9 @@ included, then verifies what remains or records the held completion.
 ### The rule-automation store
 
 `ww-rule-automation.json` at the project root keeps what verification
-learned. It is meant to be committed; ww writes it under its own lock, never
-edits YAML or rule files, and leaves it out of every change set.
+learned. It is meant to be committed; ww writes it under its own lock, and
+leaves it out of every change set. Verification never edits YAML or rule
+files; only the operator's `rules` write commands do.
 
 ```json
 {
@@ -1026,6 +1027,24 @@ converted check. Only a `converted` check runs. An unknown key, status, or
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
+| `rules add <group> --text "<text>" [--paths <glob>...] [--check-shell "<sh>" \| --check-argv <arg>...] [--assert empty\|eq:<value>] [--id <stem>]` | Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. |
+| `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`. |
+| `rules edit <id> [--text "<text>"] [--paths <glob>...]` | Replaces a rule file's body, its `paths`, or both, keeping every other byte; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
+| `rules move <id> <group>` | Moves the rule file unchanged into the group's first directory; the rule's ID becomes `<group>/<stem>`. |
+| `rules filter <group> [--workflows <name>...] [--steps <name>...] [--all-workflows] [--all-steps]` | Sets a `ww-rules.yaml` group's filters; `--all-*` removes one. Refuses a group declared in another file. |
+| `rules promote <check>` | Copies a `converted` store check without a pending revision into the `check` of every rule file whose wording it covers, then deletes the check and those rules' entries from the store. Refuses when a covered rule is written in a step's `rules` list or already has a check. |
+
+Every write loads the configuration once the files are written; when it does
+not load, or the write would not have its effect, every file is restored and
+the command fails with the reason. `--dry-run` validates the same way and
+restores every file. Writes print the steps the rule or group reaches and
+never commit. `rules --json` gives each rule a `store_check`: the approved
+store check that runs for a rule without a command of its own.
+
+`ww-rules.yaml`, next to `ww-agentic-workflows.yaml`, holds only a `rules`
+mapping written by `rules add --group` and `rules filter`; ww rewrites it
+whole and it is composed like any import. While it exists without being
+imported, the write commands refuse to use it.
 
 At a `check_disputed` stop the operator answers with `next`:
 

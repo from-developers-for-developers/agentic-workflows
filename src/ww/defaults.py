@@ -107,11 +107,12 @@ AGENT_INSTRUCTIONS = (
     files("ww.assets").joinpath("agent_instructions.md").read_text(encoding="utf-8")
 )
 # The skills ``init`` offers to install into each agent directory, by name:
-# ``ww`` to work through ww, ``noww`` for the operator to opt out of it.
+# ``ww`` to work through ww, ``noww`` for the operator to opt out of it, and
+# ``ww-rule`` to write rules for ww's steps from the operator's words.
 WW_SKILL_NAME = "ww"
 SKILLS = {
     name: files("ww.assets").joinpath(f"{name}_skill.md").read_text(encoding="utf-8")
-    for name in (WW_SKILL_NAME, "noww")
+    for name in (WW_SKILL_NAME, "noww", "ww-rule")
 }
 
 

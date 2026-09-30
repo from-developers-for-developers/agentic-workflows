@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
+from ww import rule_writes
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
@@ -498,16 +499,98 @@ def _rules(context: _Context) -> _Outcome:
     )
     if args.rules_action == "prune":
         return _prune(context, configuration)
-    if args.yes:
-        raise StateError("--yes confirms `rules prune`; `rules` asks nothing")
+    if args.rules_action is not None:
+        return _rule_write(context, configuration)
     listing = rules_listing(
-        configuration, context.storage.root, DisputeLog(context.storage.root).load()
+        configuration,
+        context.storage.root,
+        DisputeLog(context.storage.root).load(),
+        RuleStore(context.storage.root).load(),
     )
     return _Outcome(
         _json(listing.to_dict())
         if args.json_output
         else render_rules_listing(listing)
     )
+
+
+def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
+    """Write a rule file or group, validated; nothing is committed."""
+    args = context.args
+    root = context.storage.root
+    project = rule_writes.RuleProject(
+        root,
+        context.storage.config_path,
+        configuration,
+        compose_configuration(context.storage.config_path),
+        context.extensions,
+    )
+    action = args.rules_action
+    if action == "add" and args.new_group is not None:
+        if args.group_name is not None or args.text is not None:
+            raise StateError(
+                "rules add takes either GROUP with --text, or --group with --dir"
+            )
+        if args.directory is None:
+            raise StateError("rules add --group needs --dir")
+        write = rule_writes.plan_add_group(
+            project,
+            args.new_group,
+            args.directory,
+            workflows=_names_option(args.workflows),
+            steps=_names_option(args.steps),
+        )
+    elif action == "add":
+        if args.group_name is None or args.text is None:
+            raise StateError(
+                "rules add takes GROUP with --text, or --group NAME with --dir"
+            )
+        if args.directory is not None or args.workflows is not None or (
+            args.steps is not None
+        ):
+            raise StateError("--dir, --workflows and --steps go with --group")
+        write = rule_writes.plan_add_rule(
+            project,
+            args.group_name,
+            args.text,
+            paths=tuple(args.paths or ()),
+            check=rule_writes.check_mapping(
+                args.check_shell,
+                tuple(args.check_argv) if args.check_argv else None,
+                args.assertion,
+            ),
+            stem=args.stem,
+        )
+    elif action == "edit":
+        write = rule_writes.plan_edit(
+            project,
+            RuleStore(root).load(),
+            args.rule_id,
+            text=args.text,
+            paths=tuple(args.paths) if args.paths is not None else None,
+        )
+    elif action == "move":
+        write = rule_writes.plan_move(project, args.rule_id, args.target_group)
+    elif action == "filter":
+        write = rule_writes.plan_filter(
+            project,
+            args.group_name,
+            workflows=_names_option(args.workflows),
+            steps=_names_option(args.steps),
+            all_workflows=args.all_workflows,
+            all_steps=args.all_steps,
+        )
+    else:
+        write = rule_writes.plan_promote(
+            project, RuleStore(root).load(), args.check_name
+        )
+    return _Outcome(
+        rule_writes.apply_write(project, write, dry_run=args.dry_run).render()
+    )
+
+
+def _names_option(values: list[str] | None) -> tuple[str, ...] | None:
+    return None if values is None else tuple(values)
 
 
 def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:

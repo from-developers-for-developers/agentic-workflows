@@ -231,7 +231,7 @@ def test_init_installs_the_skill_into_existing_agent_directories(
     # A directory set up before noww existed gains it; its ww skill is kept.
     assert (tmp_path / ".codex/skills/noww/SKILL.md").is_file()
     assert ".claude/skills/ww/SKILL.md" in output
-    assert "install the ww and noww skills" not in output
+    assert "install the ww, noww and ww-rule skills" not in output
 
 
 def test_init_without_skills_suggests_installing_them(
@@ -244,7 +244,8 @@ def test_init_without_skills_suggests_installing_them(
 
     assert not (tmp_path / ".claude/skills").exists()
     assert (
-        "Optionally install the ww and noww skills with `init --skills` for: "
+        "Optionally install the ww, noww and ww-rule skills with `init --skills` "
+        "for: "
         ".claude." in output
     )
     config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
@@ -274,10 +275,11 @@ def test_init_asks_before_installing_each_skill(
 
     paths = _skill_installs(Storage(tmp_path), None, interactive=True)
 
-    assert paths == ((".claude", "ww"), (".claude", "noww"))
+    assert paths == ((".claude", "ww"), (".claude", "noww"), (".claude", "ww-rule"))
     # A directory that exists is asked about on its own...
-    assert "Install the ww and noww skills into .claude/skills? [Y/n]: " in prompts
-    assert "Install the ww and noww skills into .cursor/skills? [Y/n]: " in prompts
+    question = "Install the ww, noww and ww-rule skills into {}/skills? [Y/n]: "
+    assert question.format(".claude") in prompts
+    assert question.format(".cursor") in prompts
     # ...and every agent without one shares a single question.
     assert "Create which? (comma-separated, or none): " in prompts
     assert len(prompts) == 3
@@ -305,8 +307,10 @@ def test_init_offers_the_absent_agent_directories_in_one_question(
     assert paths == (
         (".codex", "ww"),
         (".codex", "noww"),
+        (".codex", "ww-rule"),
         (".claude", "ww"),
         (".claude", "noww"),
+        (".claude", "ww-rule"),
     )
 
 
@@ -606,3 +610,57 @@ def test_the_noww_skill_only_turns_ww_off() -> None:
     assert noww.startswith("---\nname: noww\ndescription: ")
     assert "Do not use ww" in noww
     assert "catchall" in noww
+
+
+def test_the_ww_rule_skill_carries_the_judgment_and_writes_through_the_cli() -> None:
+    skill = SKILLS["ww-rule"]
+
+    assert skill.startswith("---\nname: ww-rule\ndescription: ")
+    for duty in (
+        "./ww rules --json",
+        "./ww discover",
+        "never invent one",
+        "atomic obligations",
+        "amendment",
+        "match count",
+        "one imperative sentence",
+        "Confirm once",
+        "./ww rules promote <check>",
+        "Write only through the CLI",
+        "./ww lint",
+        "/ww-rule split <file>",
+        "/ww-rule from-review",
+    ):
+        assert duty in skill, duty
+    for write in ("add", "add --group", "edit", "move", "filter", "promote"):
+        assert f"./ww rules {write} " in skill, write
+
+
+def test_init_offers_the_ww_rule_skill_once_to_a_project_set_up_before_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ww.cli.initialization import _known_agent_directories, _skill_installs
+
+    (tmp_path / ".claude/skills/ww").mkdir(parents=True)
+    (tmp_path / ".claude/skills/ww/SKILL.md").write_text("ww", encoding="utf-8")
+    choices = tmp_path / ".ww/init-choices.json"
+    choices.parent.mkdir()
+    agents = {name: name == ".claude" for name in _known_agent_directories()}
+    choices.write_text(
+        json.dumps({"agents": agents, "skills": {"ww": True, "noww": True}}),
+        encoding="utf-8",
+    )
+    prompts = _answers(monkeypatch, "")
+
+    installs = _skill_installs(Storage(tmp_path), None, interactive=True)
+
+    assert prompts == [
+        "ww now ships the `ww-rule` skill. Install into .claude? [Y/n]: "
+    ]
+    assert (".claude", "ww-rule") in installs
+    prompts.clear()
+    assert main(["--root", str(tmp_path), "init", "--no-input"]) == 0
+    assert prompts == []
+    skill = tmp_path / ".claude/skills/ww-rule/SKILL.md"
+    assert skill.read_text(encoding="utf-8") == SKILLS["ww-rule"]
+    assert (tmp_path / ".claude/skills/ww/SKILL.md").read_text(encoding="utf-8") == "ww"

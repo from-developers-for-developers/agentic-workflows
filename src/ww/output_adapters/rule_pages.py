@@ -189,7 +189,13 @@ def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
     lines.append("")
     for rule in rules:
         scope = f" — {', '.join(rule.paths)}" if rule.paths else ""
-        check = " (checked by its command)" if rule.has_check else ""
+        check = (
+            " (checked by its command)"
+            if rule.has_check
+            else f" (checked by store check `{rule.store_check}`)"
+            if rule.store_check
+            else ""
+        )
         disputed = (
             f" (disputed {rule.disputes} time{'s' if rule.disputes != 1 else ''})"
             if rule.disputes

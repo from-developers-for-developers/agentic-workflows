@@ -210,7 +210,12 @@ def _check(check: PlannedCheck, steps: tuple[str, ...]) -> RuleView:
 
 @dataclass(frozen=True)
 class ListedRule:
-    """One declared rule: its ID, first sentence, globs, and file."""
+    """One declared rule: its ID, first sentence, globs, and file.
+
+    ``store_check`` names the approved rule-automation check that runs for a
+    rule without a command of its own, the one ``rules promote`` copies into
+    its file.
+    """
 
     id: str
     summary: str
@@ -218,6 +223,7 @@ class ListedRule:
     has_check: bool = False
     source: str | None = None
     disputes: int = 0
+    store_check: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -227,6 +233,7 @@ class ListedRule:
             "has_check": self.has_check,
             "source": self.source,
             "disputes": self.disputes,
+            "store_check": self.store_check,
         }
 
 
@@ -290,12 +297,15 @@ def rules_listing(
     configuration: WorkflowConfiguration,
     root: Path,
     disputes: tuple[DisputeEntry, ...] = (),
+    automation: RuleAutomation | None = None,
 ) -> RulesListing:
     """Every root group with its filters and rules, then every step's own list.
 
     A step name repeated across workflows is listed once; ``disputes`` count
-    how often each rule was disputed.
+    how often each rule was disputed; ``automation`` names the approved
+    store check of each rule without a command.
     """
+    automation = automation if automation is not None else RuleAutomation()
     counts: dict[str, int] = {}
     for dispute in disputes:
         counts[dispute.check] = counts.get(dispute.check, 0) + 1
@@ -308,6 +318,7 @@ def rules_listing(
             has_check=rule.check is not None,
             source=rule_source(rule.source, root),
             disputes=counts.get(rule.id, 0),
+            store_check=_store_check(automation, rule),
         )
 
     groups = tuple(
@@ -337,6 +348,14 @@ def rules_listing(
             ),
         )
     return RulesListing(groups, tuple(steps.values()))
+
+
+def _store_check(automation: RuleAutomation, rule: RuleDefinition) -> str | None:
+    """The approved store check that runs for a rule without its own command."""
+    if rule.check is not None:
+        return None
+    converted = automation.converted_check(rule.text_hash)
+    return converted[0] if converted is not None else None
 
 
 def declared_hashes(configuration: WorkflowConfiguration) -> frozenset[str]:
