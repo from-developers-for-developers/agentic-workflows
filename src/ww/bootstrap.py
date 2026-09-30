@@ -108,7 +108,7 @@ class BootstrapCoordinator:
             return None
         if len(providers) != 1 or providers[0][0] != 0:
             raise ConfigurationError(
-                "provide: task_id is only supported on the first workflow step "
+                "variables: task_id is only supported on the first workflow step "
                 "when start has no task ID"
             )
         step = providers[0][1]
@@ -145,7 +145,7 @@ class BootstrapCoordinator:
             raise ConfigurationError("the bootstrap task_id step must be agent-owned")
         if tuple(value.name for value in item.provide) != ("task_id",):
             raise ConfigurationError(
-                "the bootstrap task_id step must provide exactly task_id"
+                "the bootstrap task_id step must hand back exactly the variable task_id"
             )
         return item
 

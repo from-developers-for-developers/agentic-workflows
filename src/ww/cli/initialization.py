@@ -204,7 +204,7 @@ def _initialization_options(
     }
     # A format another level already provides is not repeated in the repo file.
     if task_kind is not None or not _configured_task_format(storage):
-        project["task_format"] = f"TASK-{{{task_kind or 'uuid'}}}"
+        project["task_format"] = "TASK-{{" + (task_kind or "uuid") + "}}"
     has_git = (storage.root / ".git").exists()
     if has_git:
         existing_git = _existing_git_settings(storage)
@@ -230,7 +230,7 @@ def _initialization_options(
                 _init_prompt(25, "Worktree directory (./git-worktrees): ")
             )
         directory = directory or "./git-worktrees"
-        formats = {"default": "feature/{{task_id}}"}
+        formats = {"default": "feature/{{ww.task.id}}"}
         existing_formats = existing_git.get("branch_name_formats")
         if isinstance(existing_formats, dict):
             formats.update(existing_formats)
@@ -247,9 +247,9 @@ def _initialization_options(
                 if value:
                     formats[workflow] = value
         git: dict[str, object] = {
-            "commit_message": "{{task_id}}: {{commit_message}}",
+            "commit_format": "{{ww.task.id}}: {{commit_message}}",
             "base_branches": {"default": _git_base_branch(storage.root)},
-            "use_separate_branch": True,
+            "separate_branch": True,
             "branch_name_formats": formats,
             "worktrees": worktrees,
         }
@@ -257,7 +257,7 @@ def _initialization_options(
             git.update(
                 {
                     "worktree_dir": directory,
-                    "worktree_name_format": "{{task_id}}",
+                    "worktree_name_format": "{{ww.task.id}}",
                 }
             )
         project = {

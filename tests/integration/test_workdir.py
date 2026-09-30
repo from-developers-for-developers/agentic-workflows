@@ -23,7 +23,7 @@ WORKFLOWS = """handlers:
 workflows:
   - name: feature
     steps:
-      - develop: Work in {{__task_workspace_dir}}.
+      - develop: Work in {{ww.task.workspace_dir}}.
         workdir: root
         hooks:
           after_complete:
@@ -36,8 +36,8 @@ workflows:
       - outer:
         workdir: root
         steps:
-          - inherits: Work in {{__task_workspace_dir}}.
-          - overrides: Work in {{__task_workspace_dir}}.
+          - inherits: Work in {{ww.task.workspace_dir}}.
+          - overrides: Work in {{ww.task.workspace_dir}}.
             workdir: task
   - name: automatic
     steps:
@@ -188,12 +188,12 @@ def test_project_workdir_uses_the_project_checkout_not_the_task_worktree(
                 "projects": [{"name": "backend", "path": "./backend"}],
                 "extensions": {
                     "ww/git": {
-                        "use_separate_branch": True,
+                        "separate_branch": True,
                         "base_branches": {"default": "main"},
-                        "branch_name_formats": {"default": "feature/{{task_id}}"},
+                        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
                         "worktrees": True,
                         "worktree_dir": "./trees",
-                        "worktree_name_format": "{{task_id}}",
+                        "worktree_name_format": "{{ww.task.id}}",
                     }
                 },
             }

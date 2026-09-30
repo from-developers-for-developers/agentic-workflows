@@ -112,7 +112,7 @@ def test_failed_handler_directs_the_manager_to_an_operator() -> None:
     assert "### Retry" not in rendered
     assert "### Operator recovery" in rendered
     assert "./ww next TASK-1 --retry --yes --role manager" in rendered
-    assert '--force --force-reason "<reason>" --yes' in rendered
+    assert '--force --reason "<reason>" --yes' in rendered
 
 
 def test_manager_command_has_normalized_section_spacing() -> None:

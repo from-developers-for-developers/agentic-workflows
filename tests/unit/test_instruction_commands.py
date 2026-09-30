@@ -13,7 +13,7 @@ from ww.instructions.commands import (
 
 
 def test_placeholders_stay_bare_while_real_values_are_quoted() -> None:
-    assert add_item_command() == "./ww add-item <task-id> --id <id> --item <text>"
+    assert add_item_command() == "./ww add-item <task-id> --id <id> --text <text>"
     assert (
         instruction_command("TASK-1", "<run-id>", role="manager")
         == "./ww instruction TASK-1 --run <run-id> --role manager"
@@ -22,7 +22,7 @@ def test_placeholders_stay_bare_while_real_values_are_quoted() -> None:
     assert item_command("TASK-1", '"quoted"') == "./ww item TASK-1 --id '\"quoted\"'"
     assert (
         recovery_commands("TASK-1")[1].command
-        == './ww next TASK-1 --force --force-reason "<reason>" --yes --role manager'
+        == './ww next TASK-1 --force --reason "<reason>" --yes --role manager'
     )
 
 

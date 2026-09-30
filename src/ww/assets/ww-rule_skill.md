@@ -54,7 +54,7 @@ group, `ww-rules.yaml`, `ww-agentic-workflows.yaml` or
    moves (`./ww rules move <id> <group>`), filter changes
    (`./ww rules filter <group> [--workflows ...] [--steps ...]`), new rules
    (`./ww rules add <group> --text "<sentence and body>" [--paths <glob> ...]
-   [--check-shell "<sh>" | --check-argv <arg> ...] [--assert empty|eq:<v>]
+   [--check-shell "<sh>" | --check-argv <arg> ...] [--assert empty|equals:<v> ...]
    [--id <stem>]`). Each command refuses a write that would leave the
    configuration invalid and changes nothing then; `--dry-run` checks one
    first. A refusal is reported to the operator, not worked around.

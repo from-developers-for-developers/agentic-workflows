@@ -116,9 +116,9 @@ release-facing change, run the complete set above.
 Keep the action's typed payload and implementation together in a module under
 `src/ww/actions/`. Register it in
 `src/ww/actions/__init__.py`. The implementation owns parsing, validation,
-planning, instruction content, and plain-data payload encoding. Keep `provide`,
-`update_metadata`, execution settings, hooks, artifacts, and state transitions in
-core. Add a test that parses and compiles the action, saves and loads the plan,
+planning, instruction content, and plain-data payload encoding. Keep
+`variables`, `saves`, execution settings, workflow hooks, artifacts, and state
+transitions in core. Add a test that parses and compiles the action, saves and loads the plan,
 and renders its instruction. See the
 [architecture guide](documentation/architecture.md) for the registry and phase
 contexts. Keep a new payload beside its action implementation; do not reuse a

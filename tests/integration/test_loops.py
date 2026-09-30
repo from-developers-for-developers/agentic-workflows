@@ -118,8 +118,7 @@ def test_loop_command_output_keeps_each_iteration_evidence(
   before_complete:
     - steps: [review]
       name: record-operation
-      command:
-        shell: 'printf %s "$WW_ITEM_OPERATION_ID"'
+      shell: 'printf %s "$WW_ITEM_OPERATION_ID"'
 workflows:
   - task: ~
     steps:
@@ -275,7 +274,7 @@ def test_loop_stops_and_escalates_when_default_limit_is_reached(
     assert state is not None
     assert dict(state.loop_iterations) == {"review-and-fix": 3}
     assert limited.loop_iteration == 3
-    assert limited.loop_max_times == 3
+    assert limited.max_rounds == 3
     assert limited.loop_limit_reached is True
     assert limited.control == "awaiting_operator"
     assert limited.next_role == "operator"
@@ -289,7 +288,7 @@ def test_loop_stops_and_escalates_when_default_limit_is_reached(
     assert "Report the saved loop results and this warning to the user" in rendered
     assert "### Operator recovery" in rendered
     assert [command.action for command in limited.recovery_commands] == ["force"]
-    assert './ww next TASK-LIMIT --force --force-reason "<reason>"' in rendered
+    assert './ww next TASK-LIMIT --force --reason "<reason>"' in rendered
 
     # Asking again never starts a fourth round; it repeats the escalation.
     again = service.next("TASK-LIMIT", caller_role="manager")
@@ -309,7 +308,7 @@ def test_operator_force_leaves_a_loop_at_its_limit(tmp_path: Path) -> None:
   - task: ~
     steps:
       - review-and-fix: ~
-        loop_max_times: 1
+        max_rounds: 1
         loop:
           - review: Review the implementation.
             break: There are no meaningful findings.
@@ -361,7 +360,7 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
   - task: ~
     steps:
       - review-and-fix: ~
-        loop_max_times: 1
+        max_rounds: 1
         loop:
           - review: Review the implementation.
             break: There are no meaningful findings.
@@ -372,7 +371,7 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "task", "TASK-CLI", agent="codex")
     root = ["--root", str(tmp_path)]
-    force = ["next", "TASK-CLI", "--force", "--force-reason", "accepted"]
+    force = ["next", "TASK-CLI", "--force", "--reason", "accepted"]
 
     def refuse_prompt(_prompt: str) -> str:
         raise AssertionError("the operator must not be asked about a refused force")
@@ -402,14 +401,14 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
 
 def test_loop_step_limit_overrides_global_project_limit(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.json").write_text(
-        '{"loop_max_times": 9, "extensions": {}}', encoding="utf-8"
+        '{"max_rounds": 9, "extensions": {}}', encoding="utf-8"
     )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - task: ~
     steps:
       - review-and-fix: ~
-        loop_max_times: 1
+        max_rounds: 1
         loop:
           - review: Review the implementation.
             break: There are no meaningful findings.
@@ -424,7 +423,7 @@ def test_loop_step_limit_overrides_global_project_limit(tmp_path: Path) -> None:
     limited = service.status("TASK-OVERRIDE", caller_role="manager")
 
     assert limited.loop_iteration == 1
-    assert limited.loop_max_times == 1
+    assert limited.max_rounds == 1
     assert limited.loop_limit_reached is True
 
 
@@ -449,8 +448,7 @@ def test_wrapper_completion_hook_waits_for_an_explicit_stop(tmp_path: Path) -> N
         """hooks:
   before_complete:
     - steps: [code-review]
-      command:
-        argv: [printf, committed]
+      argv: [printf, committed]
 workflows:
   - task: ~
     steps:
@@ -479,7 +477,7 @@ workflows:
     hook_index = next(
         index
         for index, item in enumerate(snapshot.plan.items)
-        if item.name == "inline-command"
+        if item.name == "inline-argv"
     )
     assert state.item_executions[hook_index].status == "pending"
 
@@ -497,7 +495,7 @@ workflows:
         caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
-    assert stopped.item_name == "inline-command"
+    assert stopped.item_name == "inline-argv"
     service.next("TASK-WRAPPER-HOOK", caller_role="manager")
 
     state = service.tasks.read_execution_state("TASK-WRAPPER-HOOK", "01-task")
@@ -519,7 +517,7 @@ def test_cli_records_worker_stop_decision(tmp_path: Path, capsys) -> None:
                 "TASK-CLI-LOOP",
                 "--break",
                 "--artifact=No meaningful findings.",
-                "--summary-for-next-step=Review is clean.",
+                "--summary=Review is clean.",
                 "--role",
                 "worker",
             ]
@@ -625,7 +623,7 @@ def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
     assert stopped.item_name == "update-workflow-summary"
 
 
-def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
+def test_per_round_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - task: ~
@@ -658,9 +656,9 @@ def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
     )
     rendered = MarkdownOutputAdapter().render_instruction(review)
     assert review.loop_name == "review-and-fix"
-    assert (review.loop_iteration, review.loop_max_times) == (1, 3)
+    assert (review.loop_iteration, review.max_rounds) == (1, 3)
     assert review.assignment_scope == {
-        "loop_assignment": "per_iteration",
+        "loop_assignment": "per_round",
         "loop": "review-and-fix",
         "stages": ["review", "fix"],
     }
@@ -772,9 +770,8 @@ def test_one_manager_next_passes_preparation_hooks_and_nested_boundaries(
       - develop: Build it.
       - run-tests: ~
         hooks:
-          before_in_progress:
-            - command:
-                argv: [touch, prepared.txt]
+          before_start:
+            - argv: [touch, prepared.txt]
         loop:
           - test: Run the tests.
             break: Green.

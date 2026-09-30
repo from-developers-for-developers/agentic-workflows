@@ -5,7 +5,7 @@ A delegated worker used to end its turn with free text for the manager. The
 facts of the assignment are all in the saved state, so ww reports them itself:
 the items performed and how each ended, the artifacts, the files changed,
 the checks run and waived, and the fix rounds. The worker's judgment reaches
-the manager only through its short ``--summary-for-next-step``, and the
+the manager only through its short ``--summary``, and the
 worker returns the block verbatim.
 """
 

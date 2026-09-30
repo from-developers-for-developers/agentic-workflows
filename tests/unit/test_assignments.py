@@ -28,7 +28,7 @@ workflows:
     steps:
       - name: parent
         hooks:
-          before_in_progress:
+          before_start:
             - name: parent-preparation
           after_complete:
             - name: parent-finish
@@ -75,7 +75,7 @@ def _names(plan, assignment) -> list[str]:
     return [item.name for item in plan.items[assignment.start : assignment.stop]]
 
 
-def test_per_iteration_keeps_one_round_in_one_assignment(tmp_path: Path) -> None:
+def test_per_round_keeps_one_round_in_one_assignment(tmp_path: Path) -> None:
     plan = _loop_plan(
         tmp_path,
         """handlers:
@@ -90,7 +90,7 @@ workflows:
             break: Clean.
           - name: fix
             hooks:
-              before_in_progress:
+              before_start:
                 - name: prepare
           - name: verify
       - name: finish
@@ -99,7 +99,7 @@ workflows:
     by_name = {item.name: index for index, item in enumerate(plan.items)}
     body = [item for item in plan.items if item.loop_id == "review-and-fix"]
     assert [item.name for item in body] == ["review", "prepare", "fix", "verify"]
-    assert {item.loop_assignment for item in body} == {"per_iteration"}
+    assert {item.loop_assignment for item in body} == {"per_round"}
     assert plan.items[by_name["finish"]].loop_id is None
 
     review = assignment_at(plan, by_name["review"], runtime="auto")
@@ -122,7 +122,7 @@ def test_per_step_and_differing_worker_settings_end_the_round_assignment(
   - name: task
     steps:
       - name: stepwise
-        loop_assignment: per_step
+        assignment: per_step
         loop:
           - name: a
             break: Done.

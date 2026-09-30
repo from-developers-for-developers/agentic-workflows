@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Generic, Literal, Protocol, TypeVar
 
-from ww.contracts import AssertionOperator, ExecutionKind, PlanItemOwner
+from ww.contracts import AssertionKind, ExecutionKind, PlanItemOwner
 from ww.discovery import AvailableActions
 from ww.errors import ConfigurationError
 from ww.extensions import (
@@ -24,6 +24,7 @@ from ww.validation import (
     expect_string,
     is_strict_int,
 )
+from ww.variables import RUNTIME_PREFIXES, unknown_template_message
 
 
 @dataclass(frozen=True)
@@ -48,39 +49,64 @@ class Mcp:
 
 
 @dataclass(frozen=True)
-class AssertionDefinition:
-    """What a command's output must be: equal to ``expected``, or empty.
+class AssertionCondition:
+    """One condition on a command's output: ``empty``, or ``equals`` a value.
 
-    ``expected`` is ``None`` exactly when the operator is ``empty``.
+    ``value`` is ``None`` exactly when the kind is ``empty``.
     """
 
-    operator: AssertionOperator
-    expected: str | None = None
+    kind: AssertionKind
+    value: str | None = None
 
     def __post_init__(self) -> None:
-        if self.operator not in {"eq", "empty"}:
-            raise ValueError(f"invalid assertion operator: {self.operator!r}")
-        if (self.operator == "eq") != isinstance(self.expected, str):
+        if self.kind not in {"empty", "equals"}:
+            raise ValueError(f"invalid assertion condition: {self.kind!r}")
+        if (self.kind == "equals") != isinstance(self.value, str):
             raise ValueError(
-                "an eq assertion requires an expected value; empty takes none"
+                "an equals condition requires a value; empty takes none"
             )
 
     def holds(self, output: str) -> bool:
-        """Whether the command's stripped output satisfies the assertion."""
-        if self.operator == "empty":
+        if self.kind == "empty":
             return output.strip() == ""
-        return output == self.expected
+        return output == self.value
+
+    def describe(self) -> str:
+        if self.kind == "empty":
+            return "empty"
+        return f"equal to `{self.value}`"
+
+    def to_data(self) -> str | dict[str, str]:
+        """``"empty"``, or ``{"equals": <value>}``, as ``assert`` lists write it."""
+        if self.value is None:
+            return self.kind
+        return {self.kind: self.value}
+
+
+@dataclass(frozen=True)
+class AssertionDefinition:
+    """What a command's output must satisfy: every condition of ``assert``."""
+
+    conditions: tuple[AssertionCondition, ...]
+
+    def __post_init__(self) -> None:
+        if not self.conditions:
+            raise ValueError("an assertion needs at least one condition")
+
+    def holds(self, output: str) -> bool:
+        """Whether the command's output satisfies every condition."""
+        return all(condition.holds(output) for condition in self.conditions)
 
     def describe(self) -> str:
         """The requirement in words, for instructions and failure messages."""
-        if self.operator == "empty":
-            return "Command output must be empty."
-        return f"Command output must equal `{self.expected}`."
+        return (
+            "Command output must be "
+            + " and ".join(condition.describe() for condition in self.conditions)
+            + "."
+        )
 
-    def to_dict(self) -> dict[str, str]:
-        if self.expected is None:
-            return {"operator": self.operator}
-        return {"operator": self.operator, "expected": self.expected}
+    def to_data(self) -> list[str | dict[str, str]]:
+        return [condition.to_data() for condition in self.conditions]
 
 
 @dataclass(frozen=True)
@@ -229,15 +255,10 @@ class ResolutionContext:
             name
             for name in dependencies(value)
             if name not in self.allowed_variables
-            and not name.startswith(
-                ("metadata.", "project_metadata.", "item.", "field.", "ww.child.")
-            )
+            and not name.startswith(RUNTIME_PREFIXES)
         }
         if unknown:
-            raise ConfigurationError(
-                "handler references unavailable variable(s): "
-                + ", ".join(sorted(unknown))
-            )
+            raise ConfigurationError(unknown_template_message(unknown))
         return interpolate(value, self.builtins)
 
 

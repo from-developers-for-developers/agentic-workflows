@@ -20,8 +20,8 @@ WORKFLOWS = """workflows:
       - name: collect
         description: Read the test cases and make the items match them.
         items:
-          shared: true
-          process_item: Verify it.
+          persistent: true
+          analyze: Verify it.
   - name: plain
     steps:
       - name: collect
@@ -98,7 +98,7 @@ def test_a_shared_flow_seeds_every_run_and_reconciles_instead_of_splitting(
     assert "Do not split again: compare the source with this list" in rendered
     assert "- `upload-empty`: Upload an empty file." in rendered
     assert "./ww remove-item TASK-1 --id <id>" in rendered
-    assert "./ww update-item TASK-1 --id <id> --item <text>" in rendered
+    assert "./ww update-item TASK-1 --id <id> --text <text>" in rendered
 
     # Reconcile: reword one, drop one, add one.
     service.update_item("TASK-1", "upload-large", item="Upload a 25 MB image.")
@@ -154,7 +154,7 @@ def test_fresh_items_forgets_the_store_and_references_guard_removal(
                 "manual",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "Again.",
                 "--fresh-items",
             ]
@@ -165,8 +165,8 @@ def test_fresh_items_forgets_the_store_and_references_guard_removal(
     assert service.items("TASK-2") == ()
     assert service.tasks.read_shared_items("TASK-2") == ()
     service.next("TASK-2")
-    assert main([*root, "add-item", "TASK-2", "--id", "c", "--item", "C."]) == 0
-    reword = [*root, "update-item", "TASK-2", "--id", "c", "--item", "C, reworded."]
+    assert main([*root, "add-item", "TASK-2", "--id", "c", "--text", "C."]) == 0
+    reword = [*root, "update-item", "TASK-2", "--id", "c", "--text", "C, reworded."]
     assert main(reword) == 0
     assert main([*root, "remove-item", "TASK-2", "--id", "c"]) == 0
     out = capsys.readouterr().out
@@ -188,11 +188,20 @@ def test_a_plain_flow_keeps_items_to_its_run(tmp_path: Path) -> None:
     service.reset("TASK-3")
 
 
-def test_shared_is_a_boolean_on_the_items_mapping(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("setting", "message"),
+    [
+        ("persistent: yes please", "persistent must be true or false"),
+        ("shared: true", "shared was renamed to persistent"),
+    ],
+)
+def test_persistent_is_a_boolean_on_the_items_mapping(
+    tmp_path: Path, setting: str, message: str
+) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
-        "        items:\n          shared: yes please\n",
+        f"        items:\n          {setting}\n",
         encoding="utf-8",
     )
-    with pytest.raises(ConfigurationError, match="shared must be true or false"):
+    with pytest.raises(ConfigurationError, match=message):
         WorkflowService(Storage(tmp_path)).start("task", "TASK-4", agent="codex")

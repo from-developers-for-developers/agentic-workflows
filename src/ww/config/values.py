@@ -223,3 +223,15 @@ def _unique(values: Any, label: str) -> None:
         raise ConfigurationError(f"duplicate {label} name")
 
 
+def _reject_renamed(
+    mapping: dict[str, Any], path: str, renamed: dict[str, tuple[str, str]]
+) -> None:
+    """Reject a renamed key, naming its replacement and an example of it.
+
+    ``renamed`` maps an old key to its new name and a one-line example; ww
+    keeps no alias for an old name.
+    """
+    for key in mapping:
+        if key in renamed:
+            new, example = renamed[key]
+            raise ConfigurationError(f"{path}.{key} was renamed to {new}: {example}")

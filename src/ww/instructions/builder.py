@@ -50,12 +50,16 @@ from ww.transitions import (
     fix_limits,
     loop_limit_reached,
 )
-from ww.variables import item_workspace_values
+from ww.variables import (
+    ITEM_FIELD_PREFIX,
+    ITEM_ID,
+    ITEM_TEXT,
+    item_workspace_values,
+)
 from ww.workflow_config import INIT_STEP_NAME, ProvidedVariable
 from ww.workspace import resolve_workspace
 
 from .commands import (
-    child_start_command,
     complete_command,
     decision_commands,
     force_command,
@@ -63,6 +67,7 @@ from .commands import (
     interact_commands,
     next_command,
     recovery_commands,
+    start_child_command,
     update_child_command,
 )
 from .conversions import rule_conversions, run_reference
@@ -152,7 +157,7 @@ class InstructionBuilder:
         self.documents = documents
         self.interactions = interactions
         # Read for display only: the checks a verifier may extend, and the
-        # proposals the operator decides at a ``check_proposed`` stop.
+        # proposals the operator decides at a ``rules_proposed`` stop.
         self.rule_store = rule_store or RuleStore(root)
         # The project's ``rules.approval``, read when a completed run is shown.
         self.rule_approval = rule_approval or _operator_approval
@@ -434,7 +439,7 @@ class InstructionBuilder:
         )
 
     def _item_values(self, state: ExecutionState, item: PlanItem) -> dict[str, str]:
-        """``item.*`` and ``field.*`` for a per-item stage's own work item."""
+        """``{{ww.item.*}}`` for a per-item stage's own work item."""
         if item.item_id is None:
             return {}
         work = next(
@@ -448,9 +453,9 @@ class InstructionBuilder:
         if work is None:
             return {}
         return {
-            "item.id": work.id,
-            "item.text": work.item,
-            **{f"field.{name}": value for name, value in work.fields},
+            ITEM_ID: work.id,
+            ITEM_TEXT: work.item,
+            **{f"{ITEM_FIELD_PREFIX}{name}": value for name, value in work.fields},
         }
 
     def _current_child(self, state: ExecutionState, item: PlanItem) -> str:
@@ -531,7 +536,7 @@ class InstructionBuilder:
             operation_id=record.operation_id if record else None,
             recovery_commands=(
                 (force_command(state.task_id),)
-                if state.failure_kind == "check_proposed"
+                if state.failure_kind == "rules_proposed"
                 else recovery_commands(state.task_id)
                 if current
                 else ()
@@ -553,7 +558,7 @@ class InstructionBuilder:
             ),
             proposals=(
                 self._proposals(state.task_id, current, record)
-                if state.failure_kind == "check_proposed"
+                if state.failure_kind == "rules_proposed"
                 and current is not None
                 and record is not None
                 else ()
@@ -707,7 +712,7 @@ class InstructionBuilder:
         elif pending is not None:
             text = (
                 f"Start pending child `{pending.id}` with:\n\n```console\n"
-                f"{child_start_command(state.task_id, pending.id)}\n```\n\n"
+                f"{start_child_command(state.task_id, pending.id)}\n```\n\n"
                 "Until a child starts, its text or project can still change "
                 f"with `{update_child_command(state.task_id, pending.id)}`."
             )
@@ -776,7 +781,7 @@ class InstructionBuilder:
                         dict.fromkeys(
                             rule.check
                             for rule in verification.rules
-                            if rule.state == "approach-approved" and rule.check
+                            if rule.state == "approach_approved" and rule.check
                         )
                     )
                     if verification
@@ -830,7 +835,7 @@ class InstructionBuilder:
             ),
             loop_name=loop_round[0] if loop_round else None,
             loop_iteration=loop_round[1] if loop_round else None,
-            loop_max_times=loop_round[2] if loop_round else None,
+            max_rounds=loop_round[2] if loop_round else None,
             task_requirements=(
                 self._requirements(state, plan) if item.step != INIT_STEP_NAME else None
             ),
@@ -1085,7 +1090,7 @@ def _loop_control(
         action_text=text,
         continuation_command=continuation,
         loop_iteration=iteration,
-        loop_max_times=loop.max_times,
+        max_rounds=loop.max_times,
         loop_limit_reached=limit_reached,
         recovery_commands=recovery,
         is_loop_control=True,

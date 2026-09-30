@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from ww.actions import AssertionDefinition, CommandDefinition, Commands
+from ww.actions import (
+    AssertionCondition,
+    AssertionDefinition,
+    CommandDefinition,
+    Commands,
+)
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
 from ww.locking import FileLocks
@@ -31,7 +36,7 @@ def _check(covers: tuple[str, ...] = ()) -> CheckEntry:
         CheckSpec(
             Commands(
                 (CommandDefinition(shell="grep -L foo $WW_STEP_CHANGED_FILES"),),
-                AssertionDefinition("empty"),
+                AssertionDefinition((AssertionCondition("empty"),)),
             ),
             config=("deptrac.yaml",),
             covers=covers,
@@ -74,9 +79,9 @@ def test_the_store_round_trips_rules_and_checks(tmp_path: Path) -> None:
 
     assert store.load() == automation
     data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["checks"]["deptrac"]["shell"].startswith("grep -L foo")
-    assert data["checks"]["deptrac"]["assert"] == {"operator": "empty"}
+    assert data["checks"]["deptrac"]["assert"] == ["empty"]
     assert data["checks"]["deptrac"]["covers"] == [text_hash]
     assert automation.converted_check(text_hash) == ("deptrac", _check((text_hash,)))
 
@@ -98,7 +103,7 @@ def test_a_pending_revision_is_kept_beside_the_approved_check(tmp_path: Path) ->
     "content",
     [
         "not json",
-        json.dumps({"schema_version": 3, "rules": {}, "checks": {}}),
+        json.dumps({"schema_version": 4, "rules": {}, "checks": {}}),
         json.dumps(
             {
                 "schema_version": 2,
@@ -226,7 +231,7 @@ def test_a_version_1_store_is_read_with_an_unknown_approver(tmp_path: Path) -> N
     entry = loaded.rules[text_hash]
     store.modify(lambda automation: automation.with_rule("other", entry))
     data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
 
 
 def test_approval_provenance_round_trips(tmp_path: Path) -> None:

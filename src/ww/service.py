@@ -177,7 +177,10 @@ from ww.variables import (
     BRANCH_NAMING_STRATEGY,
     CHILD_FIELD_PREFIX,
     CHILD_VALUE_PREFIX,
+    DOCUMENTS_PREFIX,
+    METADATA_PREFIX,
     PROJECT,
+    PROJECT_METADATA_PREFIX,
     child_value_name,
     child_values,
     runtime_variable_values,
@@ -231,7 +234,7 @@ def _normalize_completion_selection(
     )
 
 
-# The longest ``--summary-for-next-step``: one or two short sentences, since
+# The longest ``--summary``: one or two short sentences, since
 # the detail belongs in the artifact and the summary reaches the manager.
 SUMMARY_LIMIT = 500
 
@@ -344,7 +347,7 @@ class WorkflowService:
         if not agent:
             raise StateError("start requires --agent")
         if init_artifact is None or not init_artifact.strip():
-            raise StateError("start requires a non-empty --init-artifact")
+            raise StateError("start requires a non-empty --requirements")
         self._validate_execution_metadata(model, reasoning)
         if workflow_runtime is None:
             # The flag outranks the workflow's own runtime, which outranks the
@@ -703,7 +706,7 @@ class WorkflowService:
         picks: tuple[tuple[str, int], ...] = (),
         reassign: bool = False,
     ) -> Instruction:
-        """Advance the task; at a ``check_proposed`` stop, apply the decisions.
+        """Advance the task; at a ``rules_proposed`` stop, apply the decisions.
 
         ``approve``, ``approaches`` and ``picks`` decide the proposals of the
         stop; ``force`` rejects every one still undecided. ``reassign`` gives
@@ -716,9 +719,9 @@ class WorkflowService:
                 raise StateError("next --reassign takes no other decision")
             return self._tag_caller(self._reassign(task_id), caller_role)
         if force and (force_reason is None or not force_reason.strip()):
-            raise StateError("next --force requires --force-reason")
+            raise StateError("next --force requires --reason")
         if force_reason is not None and not force:
-            raise StateError("--force-reason requires next --force")
+            raise StateError("--reason requires next --force")
         if retry and force:
             raise StateError("choose only one of next --retry or next --force")
         decisions = Decisions(approve, approaches, picks)
@@ -785,7 +788,7 @@ class WorkflowService:
         if retry:
             validate_task_id(task_id)
             state, _ = self.load(task_id)
-            if state.failure_kind == "check_proposed":
+            if state.failure_kind == "rules_proposed":
                 raise StateError(
                     "nothing to retry: the task waits for the operator to decide "
                     "the proposals with --approve, --approach, --pick, or --force"
@@ -873,7 +876,7 @@ class WorkflowService:
                 if replayed is None:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
-        if state.failure_kind == "check_proposed":
+        if state.failure_kind == "rules_proposed":
             if not decisions and not force:
                 return self.render(state, snapshot)
             if self._decide(
@@ -892,7 +895,7 @@ class WorkflowService:
             force = False
         elif decisions:
             raise StateError(
-                "--approve, --approach and --pick decide a check_proposed stop; "
+                "--approve, --approach and --pick decide a rules_proposed stop; "
                 f"task {task_id!r} is not stopped for one"
             )
         if state.status == "failed":
@@ -1023,7 +1026,7 @@ class WorkflowService:
     def _decide(
         self, state: ExecutionState, snapshot: PlanSnapshot, decisions: Decisions
     ) -> tuple[str, ...]:
-        """Apply the operator's decisions at a ``check_proposed`` stop.
+        """Apply the operator's decisions at a ``rules_proposed`` stop.
 
         The store changes under its own lock; the step keeps its still
         undecided proposals, and an approved check is enforced on it at once.
@@ -1073,7 +1076,7 @@ class WorkflowService:
         """
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
-        if state.failure_kind != "check_proposed":
+        if state.failure_kind != "rules_proposed":
             raise StateError(f"task {task_id!r} has no proposals to approve")
         record = state.item_executions[state.cursor]
         automation = self.rule_store.load()
@@ -1106,7 +1109,7 @@ class WorkflowService:
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         items = snapshot.plan.items
-        if state.status == "failed" and state.failure_kind == "check_proposed":
+        if state.status == "failed" and state.failure_kind == "rules_proposed":
             return (
                 f"reject every undecided proposal of `{items[state.cursor].name}`; "
                 "its completion then goes on with those rules judged by a "
@@ -1232,12 +1235,12 @@ class WorkflowService:
         choice = (choice or "").strip() or None
         if operator is None and agent is None and choice is None and not (end or pause):
             raise StateError(
-                "interact needs --operator, --agent, or --choice text, "
-                "--end-interaction, or --pause"
+                "interact needs --operator-said, --agent-said, or --choice text, "
+                "--end, or --pause"
             )
         if end and pause:
             raise StateError(
-                "--end-interaction finishes the conversation and --pause leaves it "
+                "--end finishes the conversation and --pause leaves it "
                 "open; use one of them"
             )
         with self.tasks.lock_task(task_id):
@@ -1609,7 +1612,7 @@ class WorkflowService:
         if item.interactive and not active_record.interaction_ended:
             raise StateError(
                 f"{item.name!r} is interactive: record the conversation with "
-                "`interact` and end it with --end-interaction once the operator "
+                "`interact` and end it with --end once the operator "
                 "says so, then complete"
             )
         summary_for_next = (summary_for_next or "").strip() or None
@@ -2178,9 +2181,9 @@ class WorkflowService:
         # rather than leaving its placeholder in a prompt.
         empty_lists = {
             (
-                f"project_metadata.{saved.key}"
+                f"{PROJECT_METADATA_PREFIX}{saved.key}"
                 if saved.scope == "project"
-                else f"metadata.{saved.key}"
+                else f"{METADATA_PREFIX}{saved.key}"
             ): ""
             for item in plan.items
             for saved in item.save_metadata
@@ -2188,7 +2191,7 @@ class WorkflowService:
         }
         workspace = resolve_workspace(self.storage.root, state.working_directory)
         document_paths = {
-            f"documents.{document.name}": str(
+            f"{DOCUMENTS_PREFIX}{document.name}": str(
                 self.documents.path(document, state.task_id, workspace)
             )
             for document in plan.documents
@@ -2581,7 +2584,7 @@ class WorkflowService:
             children = self.tasks.read_children(task_id, state.run_id)
             if child_id is None and self._children_bind_identity(snapshot.plan):
                 # The child gets its ID from its own first step; until then a
-                # request ID names it, and ``child start`` opens that request.
+                # request ID names it, and ``start-child`` opens that request.
                 child_id = generated_bootstrap_id()
                 while any(entry.id == child_id for entry in children):
                     child_id = generated_bootstrap_id()
@@ -2682,7 +2685,7 @@ class WorkflowService:
         )
         if item is None:
             raise StateError(
-                f"child workflow {workflow_name!r} does not provide task_id in "
+                f"child workflow {workflow_name!r} declares no variable task_id in "
                 "its first step; add the child with an explicit --id"
             )
         return self.bootstrap.start(

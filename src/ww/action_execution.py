@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable, Mapping
-from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -486,7 +485,9 @@ class ActionExecutor:
         root's for one working in the root.
         """
         if planned.settings is not None:
-            return deepcopy(planned.settings)
+            return self.extensions.frozen_settings(
+                parse_reference(planned.reference).identifier, planned.settings
+            )
         project = (
             dict(state.workflow_values).get(PROJECT) if item.workdir != "root" else None
         )

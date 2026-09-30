@@ -36,3 +36,16 @@ def _positive_int_mapping(value: Any, context: str) -> tuple[tuple[str, int], ..
     ):
         raise ValueError(f"{context} must be a mapping of positive integers")
     return tuple(value.items())
+
+
+def _renamed_assertion(value: Any) -> Any:
+    """A pre-rename ``{operator, expected}`` assertion as an ``assert`` list.
+
+    ``{operator: empty}`` is ``[empty]`` and ``{operator: eq, expected: X}``
+    is ``[{equals: X}]``; anything else is left for the strict decoders.
+    """
+    if value == {"operator": "empty"}:
+        return ["empty"]
+    if isinstance(value, dict) and value.get("operator") == "eq":
+        return [{"equals": value.get("expected")}]
+    return value

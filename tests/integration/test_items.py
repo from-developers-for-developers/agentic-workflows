@@ -22,13 +22,13 @@ def test_collected_items_expand_to_a_per_item_plan(tmp_path: Path, capsys) -> No
           steps:
             - name: process
               description: Process it.
-              process_item: ~
+              item_phase: analyze
             - name: resolve
               description: Resolve it.
-              resolve_item: ~
+              item_phase: resolve
             - name: report
               description: Report it.
-              report_item: ~
+              item_phase: report
 """,
         encoding="utf-8",
     )
@@ -194,9 +194,9 @@ def test_per_item_stages_materialize_their_full_hook_lifecycle(tmp_path: Path) -
           steps:
             - name: process
               description: Process it.
-              process_item: ~
+              item_phase: analyze
               hooks:
-                before_in_progress:
+                before_start:
                   - name: prepare
                     description: Prepare it.
                 after_complete:
@@ -241,8 +241,7 @@ def test_item_materialization_is_a_complete_executable_plan_revision(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: prepare
-    command:
-      shell: printf 'prepared\\n' >> expanded.txt
+    shell: printf 'prepared\\n' >> expanded.txt
 
 workflows:
   - name: task
@@ -253,9 +252,9 @@ workflows:
           steps:
             - name: process
               description: Process it.
-              process_item: ~
+              item_phase: analyze
               hooks:
-                before_in_progress:
+                before_start:
                   - name: prepare
 """,
         encoding="utf-8",

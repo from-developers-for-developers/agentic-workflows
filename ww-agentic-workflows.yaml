@@ -88,7 +88,7 @@ workflows:
           it with a failing test where you can.
 
       - fix: Fix the bug at the cause the investigation found.
-        depends_on: investigate
+        artifact_from: investigate
 
       - check-code-quality: ~
       - run-tests: ~
@@ -131,10 +131,10 @@ workflows:
 
       - finish: >-
           If the quality and test rounds changed anything, commit it on dev as
-          "{{__task_id}}: Fix the build after merging <branch>", naming the
+          "{{ww.task.id}}: Fix the build after merging <branch>", naming the
           merged branch. Then switch the primary checkout back to the branch it
           was on before the merge. Do not push.
-        depends_on: merge
+        artifact_from: merge
 
   # A roadmap implements a written plan slice by slice. The parent keeps the
   # plan as its task document and adds one child per slice. For each child in
@@ -151,12 +151,12 @@ workflows:
       - name: read-plan
         description: >-
           Read the plan file the requirements name and copy it to
-          {{documents.plan}}, adding a "Status" section with one line per
+          {{ww.documents.plan}}, adding a "Status" section with one line per
           slice, all "pending". Then add one child per slice, in the plan's
-          order, with `add-child`: the description is the slice's full text
+          order, with `add-child`: the text is the slice's full text
           as the plan gives it, not a reference to the slice. Nothing else.
-        update_document:
-          - plan: The copied plan with a Status section, one line per slice.
+        saves:
+          - documents.plan: The copied plan with a Status section, one line per slice.
         children:
           description: One child per slice of the plan, with the slice's full text.
           steps:
@@ -164,14 +164,14 @@ workflows:
                 Rewrite this child's text, {{ww.child.text}}, with
                 `update-child --text` so that it stands alone as the task's
                 requirements: the slice's current text from
-                {{documents.plan}}, adjusted to what earlier slices actually
+                {{ww.documents.plan}}, adjusted to what earlier slices actually
                 landed as the plan's Status section records it; the plan's
                 general rules that apply to every slice; the instruction to
                 verify the plan's claims about the code before editing, to
                 record each deviation in the develop artifact, to write the
                 slice's tests and documentation as part of the change, and to
                 build nothing from later slices; and the absolute path of
-                {{documents.plan}} for reference.
+                {{ww.documents.plan}} for reference.
               role: manager
 
             - implement:
@@ -183,7 +183,7 @@ workflows:
                     Review the diff of {{ww.child.git.branch}} against
                     {{ww.child.git.base_branch}}: does it do what the child's
                     text asks, meet the slice's acceptance criteria in
-                    {{documents.plan}}, and follow
+                    {{ww.documents.plan}}, and follow
                     documentation/python-agent-rules.md? List every finding as
                     file:line and what to change; an empty list accepts the
                     slice.
@@ -197,8 +197,8 @@ workflows:
                     Run ruff, mypy and the whole pytest suite there in their
                     least verbose mode that still shows every finding, fix
                     what they report, and commit on that branch.
-                  depends_on: review-slice
-              loop_max_times: 3
+                  artifact_from: review-slice
+              max_rounds: 3
 
             - land: >-
                 Merge {{ww.child.git.branch}} into {{ww.git.branch}} with
@@ -210,22 +210,22 @@ workflows:
               role: manager
 
             - reconcile: >-
-                Update {{documents.plan}}: mark this slice landed, or deviated
+                Update {{ww.documents.plan}}: mark this slice landed, or deviated
                 with the deviations the child's develop artifact and the
                 review record, and rewrite the remaining slices where this
                 slice changed their premises: names, shapes, files, decisions.
                 Implement nothing.
-              depends_on: implement
+              artifact_from: implement
               role: manager
-              update_document:
-                - plan: The plan with this slice's status and the remaining slices reconciled.
+              saves:
+                - documents.plan: The plan with this slice's status and the remaining slices reconciled.
 
       - close-plan: >-
-          Mark the roadmap done in {{documents.plan}}: which slices landed
+          Mark the roadmap done in {{ww.documents.plan}}: which slices landed
           as written, which deviated and how, and what remains for a
           follow-up.
-        update_document:
-          - plan: The final status per slice and the list of deviations.
+        saves:
+          - documents.plan: The final status per slice and the list of deviations.
 
   - auto-refactor: >-
       Review the development since the last refactoring and reshape the
@@ -234,16 +234,14 @@ workflows:
       - assess:
           question: >-
             Does the development since the last refactoring
-            ({{project_metadata.last_auto_refactored_at}}; empty means never)
+            ({{ww.project_metadata.last_auto_refactored_at}}; empty means never)
             show code smells or architectural drift worth refactoring?
 
       - plan: Make a detailed plan of the refactoring, point by point.
       - refactor: Carry out the plan without changing behaviour.
-        depends_on: plan
-        update_metadata:
-          - last_auto_refactored_at: The current time as YYYY-MM-DD HH:mm.
-            key: last_auto_refactored_at
-            scope: project
+        artifact_from: plan
+        saves:
+          - project_metadata.last_auto_refactored_at: The current time as YYYY-MM-DD HH:mm.
 
       - check-code-quality: ~
       - run-tests: ~

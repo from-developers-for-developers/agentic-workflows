@@ -73,10 +73,10 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
     assert "### Interaction with the operator" in rendered
     assert "The operator runs no `ww` command" in rendered
     assert (
-        './ww interact TASK-1 --role manager --operator="<what the operator said>"'
-        in rendered
+        "./ww interact TASK-1 --role manager "
+        '--operator-said="<what the operator said>"' in rendered
     )
-    assert "./ww interact TASK-1 --role manager --end-interaction" in rendered
+    assert "./ww interact TASK-1 --role manager --end" in rendered
     assert "Nothing is recorded yet." in rendered
 
     # No completion, and no ending, before anything was recorded.
@@ -84,7 +84,9 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
         service.complete("TASK-1", artifact="x", summary_for_next="x")
     with pytest.raises(StateError, match="nothing was recorded"):
         service.interact("TASK-1", end=True, caller_role="manager")
-    with pytest.raises(StateError, match="needs --operator, --agent, or --choice"):
+    with pytest.raises(
+        StateError, match="needs --operator-said, --agent-said, or --choice"
+    ):
         service.interact("TASK-1", caller_role="manager")
 
     service.interact(
@@ -139,8 +141,8 @@ def test_the_cli_records_and_prints_interactions(
     root = ["--root", str(tmp_path)]
 
     record = [*root, "interact", "TASK-2", "--role", "worker"]
-    assert main([*record, "--operator", "Go ahead."]) == 0
-    assert main([*record, "--end-interaction"]) == 0
+    assert main([*record, "--operator-said", "Go ahead."]) == 0
+    assert main([*record, "--end"]) == 0
     capsys.readouterr()
     assert main([*root, "interactions", "TASK-2"]) == 0
     out = capsys.readouterr().out
@@ -222,9 +224,8 @@ MANUAL_TESTS = """workflows:
       - name: collect
         description: Collect the test cases.
         items:
-          process_item: Show the test case to the operator.
-          interactive: true
-          ui: true
+          analyze: Show the test case to the operator.
+          interactive: page
           choices:
             - pass: The test case passed.
             - fail: The test case failed; the operator explains why.
@@ -511,12 +512,12 @@ def test_the_operator_page_serves_stages_declared_with_ui_only(
     assert "#### Operator page" not in (
         MarkdownOutputAdapter().render_instruction(discuss)
     )
-    with pytest.raises(StateError, match="declared with ui: true"):
+    with pytest.raises(StateError, match="serves per-item stages declared with"):
         run_operator_page(service, "TASK-5", timeout=1, open_browser=None)
 
     # An interactive item stage without ui is a conversation in the session.
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        MANUAL_TESTS.replace("          ui: true\n", ""), encoding="utf-8"
+        MANUAL_TESTS.replace("interactive: page", "interactive: true"), encoding="utf-8"
     )
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "manual", "TASK-7", agent="codex")
@@ -529,7 +530,7 @@ def test_the_operator_page_serves_stages_declared_with_ui_only(
         True,
         False,
     )
-    with pytest.raises(StateError, match="declared with ui: true"):
+    with pytest.raises(StateError, match="serves per-item stages declared with"):
         run_operator_page(service, "TASK-7", timeout=1, open_browser=None)
 
 
@@ -540,15 +541,16 @@ def test_the_cli_pauses_and_refuses_a_mixed_await(
     service.start("task", "TASK-6", agent="codex", init_artifact="Do it.")
     service.next("TASK-6")
     root = ["--root", str(tmp_path)]
-    assert main([*root, "interact", "TASK-6", "--operator", "Later.", "--pause"]) == 0
+    later = ["interact", "TASK-6", "--operator-said", "Later.", "--pause"]
+    assert main([*root, *later]) == 0
     assert "The operator is done for now. Stop here" in capsys.readouterr().out
-    assert main([*root, "interact", "TASK-6", "--agent", "Noted."]) == 0
+    assert main([*root, "interact", "TASK-6", "--agent-said", "Noted."]) == 0
     assert "The operator is done for now. Stop here" in capsys.readouterr().out
-    assert main([*root, "interact", "TASK-6", "--operator", "Back."]) == 0
+    assert main([*root, "interact", "TASK-6", "--operator-said", "Back."]) == 0
     assert "Stop here" not in capsys.readouterr().out
-    assert main([*root, "interact", "TASK-6", "--await", "--operator", "x"]) == 1
+    assert main([*root, "interact", "TASK-6", "--await", "--operator-said", "x"]) == 1
     assert "record entries with a separate interact call" in capsys.readouterr().err
-    assert main([*root, "interact", "TASK-6", "--pause", "--end-interaction"]) == 1
+    assert main([*root, "interact", "TASK-6", "--pause", "--end"]) == 1
     assert "use one of them" in capsys.readouterr().err
 
 
@@ -579,11 +581,10 @@ workflows:
       - name: collect
         description: Collect the test cases.
         items:
-          process_item: Show the test case to the operator.
-          interactive: true
-          ui: true
-          update_document:
-            - test_cases: Record the result under the case.
+          analyze: Show the test case to the operator.
+          interactive: page
+          saves:
+            - documents.test_cases: Record the result under the case.
           choices:
             - pass: The test case passed.
             - fail: The test case failed; the operator explains why.

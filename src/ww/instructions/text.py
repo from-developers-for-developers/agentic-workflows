@@ -55,7 +55,7 @@ def action_text(
             f"a unique ID. Use `{add_item_command()}` for "
             "each item. Combine related work under one canonical item only when that "
             "avoids duplicate analysis or fixes; retain each related source item and "
-            "link it with `--reference-to-id <canonical-id>` so it can still be "
+            "link it with `--refers-to <canonical-id>` so it can still be "
             "reported."
         )
         if item.split_instruction:

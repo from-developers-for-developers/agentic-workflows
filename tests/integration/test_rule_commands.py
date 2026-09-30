@@ -43,7 +43,7 @@ HEADER_RULE = """---
 paths: ["*.md"]
 check:
   shell: grep -L foo $WW_STEP_CHANGED_FILES || true
-  assert: { operator: empty }
+  assert: [empty]
 ---
 Include "foo" in every Markdown file you change.
 
@@ -51,7 +51,7 @@ A marker keeps the documentation searchable.
 """
 PASS = {
     "id": "develop/1",
-    "status": "not-convertible",
+    "status": "not_convertible",
     "reason": "A matter of review.",
     "verdict": "pass",
 }
@@ -330,7 +330,7 @@ def test_a_dispute_of_the_judged_rule_records_its_wording(tmp_path: Path) -> Non
             json.dumps(
                 {
                     "id": "develop/1",
-                    "status": "not-convertible",
+                    "status": "not_convertible",
                     "reason": "A matter of review.",
                     "verdict": "fail",
                     "failures": [{"file": "README.md", "what": "a flag changed"}],
@@ -503,7 +503,7 @@ def test_yes_confirms_a_retry_and_a_force(
             "next",
             "TASK-1",
             "--force",
-            "--force-reason",
+            "--reason",
             "Scratch.",
             "--yes",
         ]
@@ -571,7 +571,8 @@ def test_rule_shows_a_judged_rule_with_what_the_store_knows(tmp_path: Path) -> N
     view = service.rule("TASK-1", "develop/1")
 
     assert (view.source, view.command) == (None, None)
-    assert view.store_status == "not-convertible"
+    # A version 1 store spelled it with a hyphen; reading it upgrades it.
+    assert view.store_status == "not_convertible"
     assert view.interpretation == "No flag changes."
     assert view.resolution == "judged"
     assert view.text_hash == text_hash

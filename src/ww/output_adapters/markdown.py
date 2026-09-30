@@ -457,10 +457,10 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "handler_failed": "the automatic handler failed",
     "work_failed": "the step's work failed",
     "child_failed": "a child task failed",
-    "interrupted_command": "an automatic handler was interrupted",
+    "handler_interrupted": "an automatic handler was interrupted",
     "loop_limit": "the loop reached its iteration limit",
     "fix_limit": "the step's checks reached their fix limit",
-    "check_proposed": "verifiers proposed checks for the step's rules",
+    "rules_proposed": "verifiers proposed checks for the step's rules",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
 }
@@ -576,7 +576,7 @@ def _scope_summary(scope: dict[str, object]) -> str:
             f"`{scope['loop']}` loop."
         )
     item_ids = _strings(scope["item_ids"])
-    if scope["item_assignment"] == "all_items":
+    if scope["item_assignment"] == "together":
         return (
             f"one worker performs every stage ({stages}) of all {len(item_ids)} items."
         )
@@ -925,7 +925,7 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
         lines.extend(f"  {line}" for line in rule.text.splitlines())
         if rule.interpretation:
             lines.append(f"  Interpretation: {rule.interpretation}")
-        if rule.state == "approach-approved":
+        if rule.state == "approach_approved":
             lines.append(f"  Approved approach: {rule.approach}")
             lines.append(f"  Check to prepare: `{rule.check}`")
         if rule.pending_operator:
@@ -940,7 +940,7 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
 
 _VERIFICATION_ASK = {
     "unresolved": "unresolved: interpret it and propose how to check it",
-    "approach-approved": "approach approved: prepare and prove its check",
+    "approach_approved": "approach approved: prepare and prove its check",
     "judged": "judged: give a verdict",
 }
 
@@ -1005,7 +1005,7 @@ def _verification_duties(lines: Lines, page: VerificationPage) -> None:
                 "yet: the operator approves the approach first.",
             ]
         )
-    if "approach-approved" in states:
+    if "approach_approved" in states:
         lines.extend(
             [
                 "- For a rule to prepare: install a tool into the project's "
@@ -1014,7 +1014,7 @@ def _verification_duties(lines: Lines, page: VerificationPage) -> None:
                 "`config`. The command must run offline. Prove every check: "
                 "construct a deliberately violating input in a temporary copy "
                 "and show the command fails there and passes on the real change "
-                "set. Report `not-convertible` with a reason when preparation "
+                "set. Report `not_convertible` with a reason when preparation "
                 "shows the approach does not work.",
             ]
         )
@@ -1047,14 +1047,14 @@ def _verification_results(lines: Lines, page: VerificationPage) -> None:
                 '"candidates": ["<reading>", "<reading>"]}`',
             ]
         )
-    if "approach-approved" in states:
+    if "approach_approved" in states:
         lines.append(
             '- a prepared check: `{"id": "<rule>", "status": "approach", '
             '"check": "<kebab-name>"}`'
         )
-    if states & {"unresolved", "approach-approved"}:
+    if states & {"unresolved", "approach_approved"}:
         lines.append(
-            '- not convertible: `{"id": "<rule>", "status": "not-convertible", '
+            '- not convertible: `{"id": "<rule>", "status": "not_convertible", '
             '"reason": "<why>", "verdict": "pass"}`'
         )
     lines.append(
@@ -1071,12 +1071,14 @@ def _verification_results(lines: Lines, page: VerificationPage) -> None:
                 '"assert": null, "config": ["<path>"], "covers": ["<rule>"], '
                 '"proven": true}`; a shell check gives `"shell"` (with '
                 '`"args"` and `"env"`) instead of `"argv"`, and '
-                '`"assert": {"operator": "empty"}` when it must print nothing.',
+                '`"assert": ["empty"]` when it must print nothing, or '
+                '`"assert": [{"equals": "<value>"}]` when it must print exactly '
+                "that value.",
             ]
         )
 
 
-def _check_proposed(lines: Lines, instruction: Instruction) -> None:
+def _rules_proposed(lines: Lines, instruction: Instruction) -> None:
     """The operator's stop: what the verifiers proposed, and each decision."""
     worker = (
         instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
@@ -1220,7 +1222,7 @@ def _loop_round(lines: Lines, instruction: Instruction) -> None:
         [
             "",
             f"This is round {instruction.loop_iteration} of the `{name}` loop, "
-            f"limit {instruction.loop_max_times}. Concentrate on the work done "
+            f"limit {instruction.max_rounds}. Concentrate on the work done "
             "in the previous rounds of this loop, not on the whole task. Their "
             "results are the artifacts in the loop's earlier iteration "
             "directories; list them with:",
@@ -1548,7 +1550,7 @@ def _loop_limit_recovery(lines: Lines, instruction: Instruction) -> None:
         [
             "",
             "Do not run it without the operator's explicit approval. A further "
-            "iteration needs a higher `loop_max_times` in the configuration.",
+            "iteration needs a higher `max_rounds` in the configuration.",
         ]
     )
 
@@ -1633,8 +1635,8 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.fix_required is not None:
         _fix_limit(lines, instruction)
         return
-    if instruction.operator_reason == "check_proposed":
-        _check_proposed(lines, instruction)
+    if instruction.operator_reason == "rules_proposed":
+        _rules_proposed(lines, instruction)
         return
     if instruction.dispute is not None:
         _check_disputed(lines, instruction)
@@ -1853,7 +1855,7 @@ def _interrupted(lines: Lines, instruction: Instruction) -> None:
                 locked_next,
                 "",
                 "Use `next --retry` to replay it, or `next --force "
-                "--force-reason` to skip it after operator confirmation.",
+                "--reason` to skip it after operator confirmation.",
             ]
         )
         if instruction.recovery_commands:
@@ -2002,9 +2004,8 @@ def _required_metadata(lines: Lines, instruction: Instruction) -> None:
     )
     lines.extend([f"Detect and preserve these {scope_label} values:", ""])
     lines.extend(
-        f"- `{value.name}` as `"
-        f"{'project_metadata' if value.scope == 'project' else 'metadata'}"
-        f".{value.key}`"
+        f"- `{'project_metadata' if value.scope == 'project' else 'metadata'}"
+        f".{value.key}`, passed as `--metadata {value.name}=<value>`"
         + (f" — {value.description}" if value.description else "")
         + (
             f" (a list: repeat `--metadata {value.name}=<value>` once per value, "

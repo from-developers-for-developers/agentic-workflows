@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from importlib import util
@@ -91,25 +92,62 @@ def command(name: str):
 def test_defaults_apply_when_nothing_is_configured() -> None:
     settings = git_extension.settings_from({})
 
-    assert settings.commit_format == "{{task_id}}: {{commit_message}}"
-    assert settings.use_separate_branch is False
+    assert settings.commit_format == "{{ww.task.id}}: {{commit_message}}"
+    assert settings.separate_branch is False
     assert settings.worktrees is False
-    assert settings.branch_format("task") == "{{task_id}}"
+    assert settings.branch_format("task") == "{{ww.task.id}}"
 
 
-def test_commit_message_is_an_initializer_friendly_alias() -> None:
-    settings = git_extension.settings_from(
-        {"commit_message": "Commit {{task_id}}: {{commit_message}}"}
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        (
+            {"commit_message": "Commit {{ww.task.id}}: {{commit_message}}"},
+            "commit_message was renamed to commit_format",
+        ),
+        (
+            {"use_separate_branch": True},
+            "use_separate_branch was renamed to separate_branch",
+        ),
+        (
+            {"branch_name_formats": {"default": "feature/{{task_id}}"}},
+            "{{task_id}} was renamed to {{ww.task.id}}",
+        ),
+    ],
+)
+def test_renamed_settings_are_rejected_naming_their_replacement(
+    config: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ConfigurationError, match=re.escape(message)):
+        git_extension.settings_from(config)
+
+
+def test_frozen_settings_are_upgraded_to_the_current_names() -> None:
+    upgraded = git_extension.upgrade_settings(
+        {
+            "commit_message": "{{task_id}}: {{commit_message}}",
+            "use_separate_branch": True,
+            "branch_name_formats": {"default": "feature/{{task_id}}/{{workflow}}"},
+            "worktree_name_format": "{{task_id}}-{{run_id}}",
+        }
     )
 
-    assert settings.commit_format == "Commit {{task_id}}: {{commit_message}}"
+    assert upgraded == {
+        "commit_format": "{{ww.task.id}}: {{commit_message}}",
+        "separate_branch": True,
+        "branch_name_formats": {
+            "default": "feature/{{ww.task.id}}/{{ww.task.workflow}}"
+        },
+        "worktree_name_format": "{{ww.task.id}}-{{ww.task.run}}",
+    }
+    assert git_extension.settings_from(upgraded).separate_branch is True
 
 
 @pytest.mark.parametrize(
     ("config", "message"),
     [
         ({"commit_format": "{{unknown}}: {{commit_message}}"}, "unknown placeholder"),
-        ({"commit_format": "{{task_id}}: subject"}, "commit_message"),
+        ({"commit_format": "{{ww.task.id}}: subject"}, "commit_message"),
         (
             {"commit_format": "{{commit_message}} / {{commit_message}}"},
             "exactly one",
@@ -135,7 +173,7 @@ def test_an_unknown_setting_is_rejected() -> None:
 @pytest.mark.parametrize(
     ("config", "message"),
     [
-        ({"use_separate_branch": "yes"}, "must be true or false"),
+        ({"separate_branch": "yes"}, "must be true or false"),
         ({"commit_format": ""}, "must be a non-empty string"),
         ({"branch_name_formats": ["a"]}, "map workflow names to formats"),
         ({"base_branches": {"default": {"shell": "echo main"}}}, "containing argv"),
@@ -160,15 +198,15 @@ def test_branch_formats_fall_back_to_default() -> None:
     settings = git_extension.settings_from(
         {
             "branch_name_formats": {
-                "default": "feature/{{task_id}}",
-                "bugfix": "hotfix/{{task_id}}",
+                "default": "feature/{{ww.task.id}}",
+                "bugfix": "hotfix/{{ww.task.id}}",
             }
         }
     )
 
-    assert settings.branch_format("bugfix") == "hotfix/{{task_id}}"
-    assert settings.branch_format("task") == "feature/{{task_id}}"
-    assert settings.branch_format(None) == "feature/{{task_id}}"
+    assert settings.branch_format("bugfix") == "hotfix/{{ww.task.id}}"
+    assert settings.branch_format("task") == "feature/{{ww.task.id}}"
+    assert settings.branch_format(None) == "feature/{{ww.task.id}}"
 
 
 def test_the_settings_command_prints_what_resolved(repository: Path) -> None:
@@ -201,7 +239,11 @@ def test_commit_format_renders_the_subject(repository: Path) -> None:
     result = handler("git-commit")(
         context(
             repository,
-            {"commit_format": "Task {{task_id}}: {{commit_message}} [{{workflow}}]"},
+            {
+                "commit_format": (
+                    "Task {{ww.task.id}}: {{commit_message}} [{{ww.task.workflow}}]"
+                )
+            },
             values={"commit_message": "do a thing"},
         )
     )
@@ -478,9 +520,9 @@ def test_a_task_branch_is_created_from_the_base(repository: Path) -> None:
         context(
             repository,
             {
-                "use_separate_branch": True,
+                "separate_branch": True,
                 "base_branches": {"default": "main"},
-                "branch_name_formats": {"default": "feature/{{task_id}}"},
+                "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
             },
         )
     )
@@ -497,9 +539,9 @@ def test_a_task_branch_is_created_from_the_base(repository: Path) -> None:
 
 def test_a_child_task_branch_uses_its_parent_task_branch(repository: Path) -> None:
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "base_branches": {"default": "main"},
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
     }
     parent = handler("start-task-branch")(context(repository, config, task_id="TASK-1"))
     assert parent.ok, parent.error
@@ -521,10 +563,10 @@ def test_a_child_task_branch_uses_its_parent_task_branch(repository: Path) -> No
 
 def test_the_branch_format_is_chosen_per_workflow(repository: Path) -> None:
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "branch_name_formats": {
-            "default": "feature/{{task_id}}",
-            "bugfix": "hotfix/{{task_id}}",
+            "default": "feature/{{ww.task.id}}",
+            "bugfix": "hotfix/{{ww.task.id}}",
         },
     }
 
@@ -535,11 +577,11 @@ def test_the_branch_format_is_chosen_per_workflow(repository: Path) -> None:
 
 def test_an_explicit_branch_strategy_overrides_the_workflow(repository: Path) -> None:
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "branch_name_formats": {
-            "default": "feature/{{task_id}}",
-            "bugfix": "hotfix/{{task_id}}",
-            "experiment": "experiment/{{task_id}}",
+            "default": "feature/{{ww.task.id}}",
+            "bugfix": "hotfix/{{ww.task.id}}",
+            "experiment": "experiment/{{ww.task.id}}",
         },
     }
 
@@ -561,8 +603,8 @@ def test_an_unknown_explicit_branch_strategy_fails(repository: Path) -> None:
         context(
             repository,
             {
-                "use_separate_branch": True,
-                "branch_name_formats": {"default": "feature/{{task_id}}"},
+                "separate_branch": True,
+                "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
             },
             values={BRANCH_NAMING_STRATEGY: "missing"},
         )
@@ -575,7 +617,7 @@ def test_an_unknown_explicit_branch_strategy_fails(repository: Path) -> None:
 def test_the_base_branch_is_chosen_per_workflow(repository: Path) -> None:
     _run("git", "branch", "develop", cwd=repository)
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "base_branches": {"default": "main", "bugfix": "develop"},
     }
 
@@ -590,7 +632,7 @@ def test_the_base_branch_is_chosen_per_workflow(repository: Path) -> None:
 def test_an_argv_command_can_choose_the_base_branch(repository: Path) -> None:
     _run("git", "branch", "develop", cwd=repository)
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "base_branches": {
             "default": "main",
             "task": {
@@ -613,14 +655,14 @@ def test_an_argv_command_can_choose_the_base_branch(repository: Path) -> None:
 def test_base_branch_command_arguments_support_context_tokens(repository: Path) -> None:
     _run("git", "branch", "task-base", cwd=repository)
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "base_branches": {
             "default": {
                 "argv": [
                     sys.executable,
                     "-c",
                     "import sys; print(sys.argv[1] + '-base')",
-                    "{{workflow}}",
+                    "{{ww.task.workflow}}",
                 ]
             }
         },
@@ -647,7 +689,7 @@ def test_an_invalid_base_branch_command_fails_cleanly(
         context(
             repository,
             {
-                "use_separate_branch": True,
+                "separate_branch": True,
                 "base_branches": {"default": {"argv": [sys.executable, "-c", script]}},
             },
         )
@@ -658,7 +700,7 @@ def test_an_invalid_base_branch_command_fails_cleanly(
 
 
 def test_starting_a_branch_twice_adopts_it(repository: Path) -> None:
-    config = {"use_separate_branch": True}
+    config = {"separate_branch": True}
     start = handler("start-task-branch")
     start(context(repository, config))
 
@@ -670,7 +712,7 @@ def test_starting_a_branch_twice_adopts_it(repository: Path) -> None:
 
 
 def test_a_branch_is_adopted_after_switching_away(repository: Path) -> None:
-    config = {"use_separate_branch": True}
+    config = {"separate_branch": True}
     handler("start-task-branch")(context(repository, config))
     _run("git", "switch", "-q", "main", cwd=repository)
 
@@ -682,7 +724,7 @@ def test_a_branch_is_adopted_after_switching_away(repository: Path) -> None:
 
 def test_a_task_is_required_to_name_a_branch(repository: Path) -> None:
     result = handler("start-task-branch")(
-        context(repository, {"use_separate_branch": True}, task_id=None)
+        context(repository, {"separate_branch": True}, task_id=None)
     )
 
     assert not result.ok
@@ -690,7 +732,7 @@ def test_a_task_is_required_to_name_a_branch(repository: Path) -> None:
 
 
 def test_returning_to_base_switches_back(repository: Path) -> None:
-    config = {"use_separate_branch": True, "base_branches": {"default": "main"}}
+    config = {"separate_branch": True, "base_branches": {"default": "main"}}
     handler("start-task-branch")(context(repository, config))
     assert branch_of(repository) == "task-1"
 
@@ -718,9 +760,9 @@ def _worktree_config(repository: Path) -> dict[str, object]:
     return {
         "worktrees": True,
         "worktree_dir": str(repository / "trees"),
-        "worktree_name_format": "{{task_id}}",
+        "worktree_name_format": "{{ww.task.id}}",
         "base_branches": {"default": "main"},
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
     }
 
 
@@ -835,7 +877,7 @@ def test_primary_checkout_is_used_when_it_has_the_configured_task_branch(
 ) -> None:
     config = {
         **_worktree_config(repository),
-        "branch_name_formats": {"task": "custom/{{workflow}}/{{task_id}}"},
+        "branch_name_formats": {"task": "custom/{{ww.task.workflow}}/{{ww.task.id}}"},
     }
     task_branch = "custom/task/task-1"
     _run("git", "branch", task_branch, "main", cwd=repository)
@@ -903,7 +945,7 @@ def test_removing_a_worktree_is_a_noop_when_none_was_recorded(
 
 
 def test_branches_lists_what_was_opened(repository: Path) -> None:
-    config = {"use_separate_branch": True, "base_branches": {"default": "main"}}
+    config = {"separate_branch": True, "base_branches": {"default": "main"}}
     handler("start-task-branch")(context(repository, config))
 
     assert "No branches recorded" in command("branches")(
@@ -970,9 +1012,9 @@ def git_variable(name: str):
 
 def test_git_variables_come_from_the_branch_record(repository: Path) -> None:
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "base_branches": {"default": "main"},
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
     }
     task_context = context(repository, config)
     # Nothing recorded yet: not available, which ww reports as an error.
@@ -991,9 +1033,9 @@ def test_a_child_git_branch_is_its_parent_branch_and_child_id(
     repository: Path,
 ) -> None:
     config = {
-        "use_separate_branch": True,
+        "separate_branch": True,
         "base_branches": {"default": "main"},
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
     }
     assert handler("start-task-branch")(context(repository, config)).ok
     child_context = context(repository, config, task_id="TASK-1/TASK-1.1")
@@ -1006,7 +1048,7 @@ def test_a_child_git_branch_is_its_parent_branch_and_child_id(
 def test_the_branch_strategy_variable_names_the_format_in_use(
     repository: Path,
 ) -> None:
-    config = {"branch_name_formats": {"default": "{{task_id}}", "hotfix": "h"}}
+    config = {"branch_name_formats": {"default": "{{ww.task.id}}", "hotfix": "h"}}
     strategy = git_variable("branch_strategy")
 
     assert strategy(context(repository, config, workflow="task")) == "default"

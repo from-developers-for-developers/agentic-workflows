@@ -82,13 +82,13 @@ class ChecklistAction(Action[Checklist, Checklist]):
 def test_checklist_contract() -> None:
     planned = assert_action_contract(
         ChecklistAction(),
-        {"checks": ["Inspect {{__task_id}}", "Run tests"]},
+        {"checks": ["Inspect {{ww.task.id}}", "Run tests"]},
         ResolutionContext(
             agent="codex",
             available=AvailableActions(frozenset(), frozenset()),
             extensions=None,
-            builtins={"__task_id": "EXAMPLE"},
-            allowed_variables=frozenset({"__task_id"}),
+            builtins={"ww.task.id": "EXAMPLE"},
+            allowed_variables=frozenset({"ww.task.id"}),
         ),
         InstructionContext(description="", name="review", task_values={}),
     )
@@ -111,7 +111,7 @@ def test_checklist_registration_works_through_saved_workflow(tmp_path: Path) -> 
       - name: review
         action:
           type: example_checklist
-          checks: ["Inspect {{__task_id}}", "Run tests"]
+          checks: ["Inspect {{ww.task.id}}", "Run tests"]
 """,
             encoding="utf-8",
         )

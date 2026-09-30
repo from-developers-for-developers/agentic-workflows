@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,6 +27,7 @@ from ww.actions import (
     ResolutionContext,
     actions,
 )
+from ww.actions.command import _parse_command_action
 from ww.config import load_configuration
 from ww.errors import ConfigurationError
 from ww.execution_models import (
@@ -114,6 +116,15 @@ class CheckableCommandAction(CommandAction):
 
     def __init__(self) -> None:
         self.recovery_result = RecoveryCheckResult.unknown()
+
+    def parse(
+        self, source: dict[str, Any], name: str, description: str, path: str
+    ) -> Commands:
+        """Several commands in one payload, which the cli shape cannot write."""
+        del name, description
+        return Commands(
+            tuple(_parse_command_action(item, path) for item in source["commands"])
+        )
 
     def check_recovery(
         self, planned: Commands, context: ExecutionContext
@@ -269,10 +280,10 @@ def test_custom_action_yaml_outputs_are_declared_and_reach_downstream_steps(
         action:
           type: test_output_probe
           text: "printf issued"
-        outputs: [token]
+        variables: [token]
       - name: consume-token
         description: "The token is {{token}}."
-        prompt: true
+        kind: prompt
 """,
             encoding="utf-8",
         )
@@ -307,7 +318,7 @@ def test_custom_command_payload_overrides_text_through_aliases(
     action:
       type: test_output_probe
       text: "printf inherited"
-    outputs: [token]
+    variables: [token]
 workflows:
   - name: task
     steps:
@@ -318,7 +329,7 @@ workflows:
           text: "printf overridden"
       - name: consume-token
         description: "Token is {{token}}."
-        prompt: true
+        kind: prompt
 """,
             encoding="utf-8",
         )
@@ -361,7 +372,7 @@ def test_registered_action_round_trips_without_consumer_changes(tmp_path: Path) 
       - name: probe
         action:
           type: test_probe
-          message: Inspect {{__task_id}}
+          message: Inspect {{ww.task.id}}
 """,
             encoding="utf-8",
         )
@@ -433,7 +444,7 @@ def test_registered_action_can_supply_the_bootstrap_task_id(tmp_path: Path) -> N
         action:
           type: test_probe
           message: Create the external task.
-        provide:
+        variables:
           - name: task_id
       - name: work
         description: Complete the work.
@@ -507,10 +518,10 @@ def test_checker_segment_attestation_resumes_a_generic_command_sequence(
       - name: run-commands
         action:
           type: test_checkable_command
-          command:
+          commands:
             - shell: printf first > first.txt
             - shell: printf second > second.txt
-        outputs: [token]
+        variables: [token]
 """,
             encoding="utf-8",
         )

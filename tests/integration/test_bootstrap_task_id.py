@@ -17,7 +17,7 @@ def _service(tmp_path: Path) -> WorkflowService:
       - name: create-jira
         mcp: jira
         description: Create the Jira issue.
-        provide:
+        variables:
           - name: task_id
       - name: develop
         description: Implement work for {{task_id}}.
@@ -130,7 +130,7 @@ def test_task_id_provider_must_be_the_first_step(tmp_path: Path) -> None:
         description: Prepare.
       - name: create-jira
         description: Create.
-        provide:
+        variables:
           - name: task_id
 """,
         encoding="utf-8",
@@ -146,8 +146,7 @@ def test_start_hooks_run_only_after_external_id_is_bound(tmp_path: Path) -> None
         (tmp_path / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
         + """handlers:
   - name: record-start
-    command:
-      argv: [touch, bootstrap-hook-ran]
+    argv: [touch, bootstrap-hook-ran]
 hooks:
   before_start_workflow:
     - name: record-start

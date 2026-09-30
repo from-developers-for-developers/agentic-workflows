@@ -114,7 +114,7 @@ def test_add_writes_a_rule_file_into_the_groups_directory(
         "check:\n"
         "  shell: find $WW_STEP_CHANGED_FILES -name '*Service.php' -not -path "
         "'src/Service/*'\n"
-        "  assert: {operator: empty}\n"
+        "  assert: [empty]\n"
         "---\n"
         f"{SERVICES}\n\nOne class per file.\n"
     )
@@ -232,7 +232,15 @@ def test_add_options_are_checked(
             "--assert", "ne:1")
         == 1
     )
-    assert "--assert takes empty or eq:<value>" in capsys.readouterr().err
+    assert "--assert takes empty or equals:<value>" in capsys.readouterr().err
+    assert (
+        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--check-argv", "x",
+            "--assert", "eq:1")
+        == 1
+    )
+    assert "--assert eq:<value> was renamed to equals:<value>" in (
+        capsys.readouterr().err
+    )
     assert _ww(root, "rules", "add", "docs", "--steps", "develop", "--text", "A.") == 1
     assert "--dir, --workflows and --steps go with --group" in capsys.readouterr().err
     assert _ww(root, "rules", "add", "docs") == 1
@@ -601,7 +609,7 @@ def test_promote_moves_an_approved_check_into_the_rule_files(
     out = capsys.readouterr().out
     check = (
         "check:\n  shell: grep -L foo $WW_STEP_CHANGED_FILES || true\n"
-        "  assert: {operator: empty}\n"
+        "  assert: [empty]\n"
     )
     assert _text(root / "rules/docs/header.md") == HEADER_RULE.replace(
         "max_fixes: 2\n", "max_fixes: 2\n" + check

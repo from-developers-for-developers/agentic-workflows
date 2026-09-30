@@ -142,18 +142,20 @@ def rule_stem(text: str) -> str:
 
 
 def check_mapping(
-    shell: str | None, argv: tuple[str, ...] | None, assertion: str | None
+    shell: str | None,
+    argv: tuple[str, ...] | None,
+    assertion: tuple[str, ...] | None,
 ) -> dict[str, Any] | None:
     """A rule file's ``check`` from the command-line options, validated."""
     if shell is None and not argv:
-        if assertion is not None:
+        if assertion:
             raise StateError("--assert needs --check-shell or --check-argv")
         return None
     mapping: dict[str, Any] = (
         {"shell": shell} if shell is not None else {"argv": list(argv or ())}
     )
-    if assertion is not None:
-        mapping["assert"] = _assertion(assertion)
+    if assertion:
+        mapping["assert"] = [_assertion(value) for value in assertion]
     try:
         parse_check_command(dict(mapping), "--check")
     except ConfigurationError as error:
@@ -161,13 +163,19 @@ def check_mapping(
     return mapping
 
 
-def _assertion(value: str) -> dict[str, str]:
+def _assertion(value: str) -> str | dict[str, str]:
+    """One ``--assert`` condition: ``empty``, or ``equals:<value>``."""
     if value == "empty":
-        return {"operator": "empty"}
-    operator, separator, expected = value.partition(":")
-    if operator == "eq" and separator:
-        return {"operator": "eq", "expected": expected}
-    raise StateError(f"--assert takes empty or eq:<value>, not {value!r}")
+        return "empty"
+    kind, separator, expected = value.partition(":")
+    if kind == "equals" and separator:
+        return {"equals": expected}
+    if kind == "eq" and separator:
+        raise StateError(
+            f"--assert eq:<value> was renamed to equals:<value>: "
+            f"--assert equals:{expected}"
+        )
+    raise StateError(f"--assert takes empty or equals:<value>, not {value!r}")
 
 
 def plan_add_rule(
@@ -429,7 +437,7 @@ def plan_promote(
         )
     command = dict(check.spec.command.commands[0].to_dict())
     if check.spec.command.assertion is not None:
-        command["assert"] = check.spec.command.assertion.to_dict()
+        command["assert"] = check.spec.command.assertion.to_data()
     writes: dict[Path, FileWrite] = {}
     for rule in rules:
         if rule.check is not None:

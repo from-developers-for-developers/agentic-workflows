@@ -60,15 +60,15 @@ def test_bootstrap_requests_are_recognised_by_prefix() -> None:
 
 def test_generated_ids_follow_the_format() -> None:
     assert re.fullmatch(r"TASK-\d{14}", generated_task_id())
-    assert re.fullmatch(r"JOB-\d{14}", generated_task_id("JOB-{timestamp}"))
+    assert re.fullmatch(r"JOB-\d{14}", generated_task_id("JOB-{{timestamp}}"))
     assert re.fullmatch(
         r"ID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-        generated_task_id("ID-{uuid}"),
+        generated_task_id("ID-{{uuid}}"),
     )
 
 
 def test_digit_formats_count_without_limit() -> None:
-    candidates = list(itertools.islice(candidate_task_ids("TASK-{digit}"), 100))
+    candidates = list(itertools.islice(candidate_task_ids("TASK-{{digit}}"), 100))
 
     assert candidates[:3] == ["TASK-1", "TASK-2", "TASK-3"]
     assert candidates[-1] == "TASK-100"

@@ -332,7 +332,7 @@ class PlanItem:
     def __post_init__(self) -> None:
         if self.phase not in {
             "before_start_workflow",
-            "before_in_progress",
+            "before_start",
             "step",
             "before_complete",
             "after_complete",

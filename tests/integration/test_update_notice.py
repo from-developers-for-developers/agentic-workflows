@@ -137,7 +137,7 @@ def test_updates_reports_an_up_to_date_checkout(
     _project(project)
     _git("pull", "-q", cwd=behind_checkout)
 
-    assert main(["--root", str(project), "updates", "--check"]) == 0
+    assert main(["--root", str(project), "updates", "--now"]) == 0
     assert capsys.readouterr().out.strip() == "ww is up to date."
 
 

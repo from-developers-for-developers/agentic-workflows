@@ -97,7 +97,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
   - name: task
     steps:
       - name: consume
-        depends_on: produce
+        artifact_from: produce
       - name: produce
 """,
     )
@@ -113,7 +113,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
             """      - name: group
         steps:
           - name: consume
-            depends_on: produce
+            artifact_from: produce
       - name: produce
 """,
             id="later-upper-level-step",
@@ -122,7 +122,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
             """      - name: review
         loop:
           - name: consume
-            depends_on: review
+            artifact_from: review
             break: Done
 """,
             id="running-loop",
@@ -133,7 +133,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
           - name: inner
             steps:
               - name: consume
-                depends_on: inner
+                artifact_from: inner
 """,
             id="enclosing-group",
         ),
@@ -146,7 +146,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
             negative:
               steps:
                 - name: consume
-                  depends_on: positive
+                  artifact_from: positive
 """,
             id="other-outcome",
         ),
@@ -157,7 +157,7 @@ def test_depends_on_rejects_steps_that_have_not_run(
 ) -> None:
     path = _write(
         tmp_path / "ww-agentic-workflows.yaml",
-        "handlers:\n  - name: ship\n    description: Ship it.\n    prompt: true\n"
+        "handlers:\n  - name: ship\n    description: Ship it.\n    kind: prompt\n"
         "workflows:\n  - name: task\n    steps:\n" + steps,
     )
 
@@ -175,7 +175,7 @@ def test_depends_on_rejects_a_group_that_saves_no_artifact(tmp_path: Path) -> No
         steps:
           - name: work
       - name: consume
-        depends_on: group
+        artifact_from: group
 """,
     )
 
@@ -191,25 +191,19 @@ def test_parses_normalized_records_and_command_forms(tmp_path: Path) -> None:
     description: Use fewer tokens.
 handlers:
   - name: check
-    command:
-      command:
-        - argv: [printf, first]
-        - argv: [printf, second]
-      assert:
-        operator: eq
-        expected: second
+    argv: [printf, second]
+    assert: [{equals: second}]
   - name: write
-    command:
-      argv: [printf, hello]
+    argv: [printf, hello]
   - name: ask
-    prompt: true
+    kind: prompt
     description: Explain the work.
 workflows:
   - name: task
     modes: [economy]
     steps:
       - name: prepare
-        provide:
+        variables:
           - name: decision
             description: Chosen workflow.
       - name: finish
@@ -222,13 +216,10 @@ workflows:
     assert configuration.modes[0].description == ("Use fewer tokens.",)
     check, write, ask = configuration.handlers
     assert tuple(command.argv for command in check.action.payload.commands) == (
-        ("printf", "first"),
         ("printf", "second"),
     )
-    assert (
-        check.action.payload.assertion
-        and check.action.payload.assertion.operator == "eq"
-    )
+    assert check.action.payload.assertion is not None
+    assert check.action.payload.assertion.to_data() == [{"equals": "second"}]
     assert write.action.payload.commands[0].argv == ("printf", "hello")
     assert ask.action.identifier == "prompt"
     assert configuration.workflows[0].steps[0].provide[0].name == "decision"
@@ -264,17 +255,15 @@ def test_parses_saved_task_metadata_declarations(tmp_path: Path) -> None:
     steps:
       - name: create-issue
         description: Create an issue.
-        update_metadata:
-          - name: jira_id
-            key: integrations.jira.issue_id
-            description: The created Jira issue ID.
+        saves:
+          - metadata.integrations.jira.issue_id: The created Jira issue ID.
 """,
         )
     )
 
     saved = configuration.workflows[0].steps[0].save_metadata[0]
     assert (saved.name, saved.key, saved.description) == (
-        "jira_id",
+        "integrations.jira.issue_id",
         "integrations.jira.issue_id",
         "The created Jira issue ID.",
     )
@@ -288,10 +277,8 @@ def test_parses_project_metadata_scope(tmp_path: Path) -> None:
   - name: task
     steps:
       - name: discover
-        update_metadata:
-          - name: url
-            key: environments.staging.url
-            scope: project
+        saves:
+          - project_metadata.environments.staging.url: ~
 """,
         )
     )
@@ -299,7 +286,7 @@ def test_parses_project_metadata_scope(tmp_path: Path) -> None:
     assert configuration.workflows[0].steps[0].save_metadata[0].scope == "project"
 
 
-def test_expands_named_entry_shorthand_for_provide_and_save_metadata(
+def test_expands_named_entry_shorthand_for_variables_and_saves(
     tmp_path: Path,
 ) -> None:
     configuration = parse_yaml_configuration(
@@ -309,15 +296,12 @@ def test_expands_named_entry_shorthand_for_provide_and_save_metadata(
   - name: task
     steps:
       - name: choose
-        provide:
+        variables:
           - workflow: The selected workflow.
           - reason: ~
-        update_metadata:
-          - last_auto_refactored_at: Save the current timestamp.
-            key: last_auto_refactored_at
-            scope: project
-          - result: ~
-            key: task.result
+        saves:
+          - project_metadata.last_auto_refactored_at: Save the current timestamp.
+          - metadata.task.result: ~
 """,
         )
     )
@@ -329,16 +313,16 @@ def test_expands_named_entry_shorthand_for_provide_and_save_metadata(
     )
     assert step.save_metadata == (
         SavedMetadata(
-            "last_auto_refactored_at",
+            "project_metadata.last_auto_refactored_at",
             "last_auto_refactored_at",
             "Save the current timestamp.",
             "project",
         ),
-        SavedMetadata("result", "task.result", "", "task"),
+        SavedMetadata("task.result", "task.result", "", "task"),
     )
 
 
-def test_explicit_name_preserves_provide_and_save_metadata_long_form(
+def test_explicit_name_preserves_variables_and_saves_long_form(
     tmp_path: Path,
 ) -> None:
     configuration = parse_yaml_configuration(
@@ -348,13 +332,12 @@ def test_explicit_name_preserves_provide_and_save_metadata_long_form(
   - name: task
     steps:
       - name: work
-        provide:
+        variables:
           - description: Existing provided value.
             name: result
-        update_metadata:
-          - key: task.result
-            description: Existing metadata value.
-            name: result
+        saves:
+          - description: Existing metadata value.
+            name: metadata.task.result
 """,
         )
     )
@@ -362,7 +345,7 @@ def test_explicit_name_preserves_provide_and_save_metadata_long_form(
     step = configuration.workflows[0].steps[0]
     assert step.provide[0] == ProvidedVariable("result", "Existing provided value.")
     assert step.save_metadata[0] == SavedMetadata(
-        "result", "task.result", "Existing metadata value.", "task"
+        "task.result", "task.result", "Existing metadata value.", "task"
     )
 
 
@@ -374,12 +357,9 @@ def test_allows_the_same_metadata_path_in_different_scopes(tmp_path: Path) -> No
   - name: task
     steps:
       - name: discover
-        update_metadata:
-          - name: task_url
-            key: environment.url
-          - name: project_url
-            key: environment.url
-            scope: project
+        saves:
+          - metadata.environment.url: ~
+          - project_metadata.environment.url: ~
 """,
         )
     )
@@ -395,9 +375,8 @@ def test_rejects_non_dotted_task_metadata_keys(tmp_path: Path, key: str) -> None
   - name: task
     steps:
       - name: work
-        update_metadata:
-          - name: result
-            key: {key}
+        saves:
+          - metadata.{key}: ~
 """,
     )
 
@@ -411,12 +390,12 @@ def test_parses_structured_argv_and_explicit_shell_actions(tmp_path: Path) -> No
             tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: run
-    command:
-      - argv: [printf, "%s", "{{value}}"]
-      - shell: printf '%s' "$VALUE" > result.txt
-        env:
-          VALUE: "{{value}}"
-        args: ["{{value}}"]
+    shell: printf '%s' "$VALUE" > result.txt
+    env:
+      VALUE: "{{value}}"
+    args: ["{{value}}"]
+  - name: run-argv
+    argv: [printf, "%s", "{{value}}"]
 workflows:
   - name: task
     steps:
@@ -425,7 +404,8 @@ workflows:
         )
     )
 
-    argv, shell = configuration.handlers[0].action.payload.commands
+    (shell,) = configuration.handlers[0].action.payload.commands
+    (argv,) = configuration.handlers[1].action.payload.commands
     assert argv.argv == ("printf", "%s", "{{value}}")
     assert shell.shell == "printf '%s' \"$VALUE\" > result.txt"
     assert shell.env == (("VALUE", "{{value}}"),)
@@ -438,8 +418,7 @@ def test_parses_explicit_inline_handler_command(tmp_path: Path) -> None:
             tmp_path / "ww-agentic-workflows.yaml",
             """hooks:
   before_start_workflow:
-    - command:
-        argv: [printf, ready]
+    - argv: [printf, ready]
 workflows:
   - name: task
     steps:
@@ -450,7 +429,7 @@ workflows:
 
     handler = configuration.global_hooks[0].handler
     assert not isinstance(handler, str)
-    assert handler.name == "inline-command"
+    assert handler.name == "inline-argv"
     assert handler.action.payload.commands[0].argv == ("printf", "ready")
 
 
@@ -487,8 +466,10 @@ workflows:
     assert inline.handler.action.payload.commands[0].argv == ("printf", "done")
 
 
-def test_rejects_string_prompt_value(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="prompt must be true"):
+def test_rejects_an_unknown_kind_and_the_old_kind_flags(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError, match="prompt was renamed to kind: kind: prompt"
+    ):
         load_configuration(
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
@@ -496,7 +477,21 @@ def test_rejects_string_prompt_value(tmp_path: Path) -> None:
   - task: ~
     steps:
       - name: work
-        prompt: Is this needed?
+        prompt: true
+""",
+            )
+        )
+    with pytest.raises(
+        ConfigurationError, match="kind must be one of: skill, slash_command, prompt"
+    ):
+        load_configuration(
+            _write(
+                tmp_path / "ww-agentic-workflows.yaml",
+                """workflows:
+  - task: ~
+    steps:
+      - name: work
+        kind: mcp
 """,
             )
         )
@@ -511,7 +506,7 @@ def test_step_handler_copies_a_catalog_handler_with_step_identity(
             """handlers:
   - handler_name: Run the shared check.
     argv: [printf, ready]
-    provide:
+    variables:
       - value: A supplied value.
     agent: reviewer
 workflows:
@@ -563,7 +558,7 @@ def test_step_handler_overrides_prompt_text_and_retains_command_permissions(
             tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: ask
-    prompt: true
+    kind: prompt
     description: Original instruction.
   - name: restricted
     argv: [printf, inherited]
@@ -596,14 +591,14 @@ def test_step_handler_explicit_prompt_retains_inherited_prompt_text(
             tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: ask
-    prompt: true
+    kind: prompt
     description: Original instruction.
 workflows:
   - name: task
     steps:
       - name: ask-again
         handler: ask
-        prompt: true
+        kind: prompt
 """,
         )
     )
@@ -621,7 +616,7 @@ def test_step_handler_empty_prompt_description_uses_the_step_name(
             tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: ask
-    prompt: true
+    kind: prompt
     description: Original instruction.
 workflows:
   - name: task
@@ -676,7 +671,7 @@ def test_step_handler_requires_a_known_handler_name(
         tmp_path / "ww-agentic-workflows.yaml",
         """handlers:
   - name: shared
-    prompt: true
+    kind: prompt
 workflows:
   - name: task
     steps:
@@ -811,7 +806,7 @@ def test_expands_grouped_hook_handlers_using_the_shared_handler_shape(
             tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - name: update-architecture
-    prompt: true
+    kind: prompt
 hooks:
   before_complete:
     - workflows: [task]
@@ -851,10 +846,9 @@ def test_parses_hierarchical_step_hook_filter(tmp_path: Path) -> None:
         _write(
             tmp_path / "ww-agentic-workflows.yaml",
             """hooks:
-  before_in_progress:
+  before_start:
     - steps: [plan-and-fix/fix]
-      command:
-        argv: [printf, ready]
+      argv: [printf, ready]
 workflows:
   - name: task
     steps:
@@ -869,7 +863,7 @@ workflows:
 
 
 _FILTERED_HOOK = """hooks:
-  before_in_progress:
+  before_start:
     - name: prepare
       workflows: {workflows}
       steps: {steps}
@@ -967,8 +961,7 @@ def test_shell_source_cannot_interpolate_workflow_values(tmp_path: Path) -> None
                 tmp_path / "ww-agentic-workflows.yaml",
                 """handlers:
   - name: unsafe
-    command:
-      shell: echo "{{value}}"
+    shell: echo "{{value}}"
 workflows:
   - name: task
     steps:
@@ -984,13 +977,13 @@ workflows:
         ("tasks: []\nworkflows: []\n", "legacy 'tasks'"),
         (
             """hooks:
-  before_start:
+  before_in_progress:
     - name: check
 workflows:
   - name: task
     steps: []
 """,
-            "unknown key.*before_start",
+            "hooks.before_in_progress was renamed to before_start",
         ),
         (
             "workflows:\n  - name: task\n    steps:\n      - init: {}\n",
@@ -1005,10 +998,10 @@ workflows:
   - name: task
     steps:
       - name: work
-        skill: true
-        slash_command: true
+        kind: skill
+        argv: [printf, ok]
 """,
-            "conflicting kinds",
+            "cannot combine a command and kind",
         ),
         (
             """workflows:
@@ -1025,18 +1018,14 @@ workflows:
         (
             """handlers:
   - name: check
-    command:
-      command:
-        argv: [printf, ok]
-      assert:
-        operator: ne
-        expected: ok
+    argv: [printf, ok]
+    assert: [{ne: ok}]
 workflows:
   - name: task
     steps:
       - name: work
 """,
-            "must be eq",
+            "unknown key",
         ),
         (
             """handlers:
@@ -1047,7 +1036,7 @@ workflows:
     steps:
       - name: work
 """,
-            "action mappings with argv or shell",
+            "command was removed",
         ),
         (
             """hooks:
@@ -1094,16 +1083,16 @@ def test_hook_filters_are_scoped_and_transition_accepts_interpolation(
       name: document
 handlers:
   - name: document
-    prompt: true
+    kind: prompt
 workflows:
   - name: chooser
     steps:
       - name: decide
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
 """,
     )
 
@@ -1124,7 +1113,7 @@ def test_workflow_boundary_hooks_reject_step_filters(
       name: check
 handlers:
   - name: check
-    prompt: true
+    kind: prompt
 workflows:
   - name: task
     steps:
@@ -1286,7 +1275,7 @@ def test_parses_loop_wrapper_with_ordinary_nested_steps(tmp_path: Path) -> None:
   - task: ~
     steps:
       - review-and-fix: ~
-        loop_max_times: 5
+        max_rounds: 5
         loop:
           - review: Review the implementation.
             break: There are no meaningful findings.
@@ -1299,7 +1288,7 @@ def test_parses_loop_wrapper_with_ordinary_nested_steps(tmp_path: Path) -> None:
 
     wrapper = configuration.workflows[0].steps[0]
     assert wrapper.loop_break is None
-    assert wrapper.loop_max_times == 5
+    assert wrapper.max_rounds == 5
     assert [step.name for step in wrapper.loop_steps] == ["review", "fix"]
     assert wrapper.loop_steps[0].loop_break == "There are no meaningful findings."
     items = wrapper.loop_steps[1].items
@@ -1318,7 +1307,7 @@ def test_loop_assignment_is_parsed_and_inherited_from_a_handler(
             tmp_path / "ww-agentic-workflows.yaml",
             """handlers:
   - handle_tests:
-    loop_assignment: per_step
+    assignment: per_step
     loop:
       - test: Run the tests.
         break: No failures.
@@ -1348,19 +1337,28 @@ workflows:
         ("loop: []\n        break: Done.", "loop must contain at least one step"),
         ("break: Done.", "uses break outside a loop"),
         ("stop: Done.", "stop is obsolete; use break"),
-        ("loop_max_times: 3", "loop_max_times requires a loop"),
-        ("loop_assignment: per_step", "loop_assignment requires a loop"),
+        ("max_rounds: 3", "max_rounds requires a loop"),
+        ("assignment: per_step", "assignment on a step goes beside a loop"),
         (
-            "loop_assignment: all_items\n        loop:\n          - work: Do it.",
-            "loop_assignment must be one of: per_step, per_iteration",
+            "assignment: together\n        loop:\n          - work: Do it.",
+            "assignment must be one of: per_round, per_step",
         ),
         (
-            "loop_max_times: 0\n        loop:\n          - work: Do it.",
-            "loop_max_times must be a positive integer",
+            "assignment: per_iteration\n        loop:\n          - work: Do it.",
+            "per_iteration was renamed to per_round: assignment: per_round",
         ),
         (
-            "loop_max_times: true\n        loop:\n          - work: Do it.",
-            "loop_max_times must be a positive integer",
+            "loop_max_times: 3",
+            "loop_max_times was renamed to max_rounds: max_rounds: 5",
+        ),
+        ("loop_assignment: per_step", "loop_assignment was renamed to assignment"),
+        (
+            "max_rounds: 0\n        loop:\n          - work: Do it.",
+            "max_rounds must be a positive integer",
+        ),
+        (
+            "max_rounds: true\n        loop:\n          - work: Do it.",
+            "max_rounds must be a positive integer",
         ),
     ],
 )
@@ -1408,7 +1406,7 @@ def test_transition_step_carries_only_its_target(tmp_path: Path) -> None:
   - name: choose
     steps:
       - select: Hand off.
-        workflow: target
+        handoff_to: target
         argv: [true]
   - name: target
     steps:
@@ -1424,41 +1422,43 @@ def test_transition_step_carries_only_its_target(tmp_path: Path) -> None:
     [
         (
             "  - name: choose\n    steps:\n"
-            "      - go: ~\n        workflow: target\n      - after: Never.\n",
-            "must place its workflow transition step 'go' last",
+            "      - go: ~\n        handoff_to: target\n      - after: Never.\n",
+            "must place its handoff_to step 'go' last",
         ),
         (
             "  - name: choose\n    steps:\n"
-            "      - go: ~\n        workflow: target\n"
-            "      - again: ~\n        workflow: target\n",
-            "more than one workflow transition",
+            "      - go: ~\n        handoff_to: target\n"
+            "      - again: ~\n        handoff_to: target\n",
+            "more than one handoff_to",
         ),
         (
             "  - name: choose\n    steps:\n      - group: Group.\n        steps:\n"
-            "          - go: ~\n            workflow: target\n",
-            "must place its workflow transition step 'go' last",
+            "          - go: ~\n            handoff_to: target\n",
+            "must place its handoff_to step 'go' last",
         ),
         (
             "  - name: choose\n    steps:\n      - pick: Pick.\n        hooks:\n"
-            "          after_complete:\n            - workflow: target\n"
+            "          after_complete:\n            - handoff_to: target\n"
             "      - after: Never.\n",
-            "transition hook in the after_complete hooks of its last step 'after'",
+            "must place its handoff_to hook in the after_complete hooks of its "
+            "last step 'after'",
         ),
         (
             "  - name: choose\n    steps:\n      - pick: Pick.\n        hooks:\n"
-            "          before_complete:\n            - workflow: target\n",
-            "transition hook in the after_complete hooks of its last step 'pick'",
+            "          before_complete:\n            - handoff_to: target\n",
+            "must place its handoff_to hook in the after_complete hooks of its "
+            "last step 'pick'",
         ),
         (
             "  - name: choose\n    steps:\n      - pick: Pick.\n        hooks:\n"
-            "          after_complete:\n            - workflow: target\n"
+            "          after_complete:\n            - handoff_to: target\n"
             "            - handlers:\n                - note: Too late.\n",
-            "handoff workflow 'choose' must end with a workflow transition",
+            "handoff workflow 'choose' must end with its handoff_to",
         ),
         (
             "  - name: choose\n    hooks:\n      after_complete:\n"
-            "        - workflow: target\n    steps:\n      - pick: Pick.\n",
-            "is a workflow transition at workflow scope",
+            "        - handoff_to: target\n    steps:\n      - pick: Pick.\n",
+            "is a handoff_to transition at workflow scope",
         ),
     ],
 )
@@ -1481,7 +1481,7 @@ def test_a_global_transition_hook_is_rejected(tmp_path: Path) -> None:
         """hooks:
   after_complete:
     - workflows: [choose]
-      workflow: target
+      handoff_to: target
 workflows:
   - name: choose
     steps:
@@ -1506,13 +1506,13 @@ workflows:
   - name: choose
     steps:
       - go: ~
-        workflow: target
+        handoff_to: target
   - name: target
     steps:
       - work: Work.
 """,
     )
-    with pytest.raises(ConfigurationError, match="must end with a workflow transition"):
+    with pytest.raises(ConfigurationError, match="must end with its handoff_to"):
         load_configuration(path)
 
 
@@ -1524,7 +1524,7 @@ def test_the_removed_handoff_key_names_its_replacement(tmp_path: Path) -> None:
     handoff: true
     steps:
       - go: ~
-        workflow: target
+        handoff_to: target
   - name: target
     steps:
       - work: Work.
@@ -1557,12 +1557,10 @@ def test_save_metadata_append_is_parsed(tmp_path: Path) -> None:
   - task: ~
     steps:
       - report: Report the outcome.
-        update_metadata:
-          - handled: Root comment ids handled.
-            key: pull_request.handled
+        saves:
+          - metadata.pull_request.handled: Root comment ids handled.
             append: true
-          - url: The pull request URL.
-            key: pull_request.url
+          - metadata.pull_request.url: The pull request URL.
 """,
         )
     )
@@ -1583,9 +1581,8 @@ def test_save_metadata_append_must_be_boolean(tmp_path: Path) -> None:
   - task: ~
     steps:
       - report: Report.
-        update_metadata:
-          - handled: Ids.
-            key: handled
+        saves:
+          - metadata.handled: Ids.
             append: yes please
 """,
             )
@@ -1606,9 +1603,9 @@ workflows:
   - task: ~
     steps:
       - derive: Derive the test cases.
-        update_document:
-          - test_cases: Save every test case as a checklist item.
-      - report: Build the report from {{documents.test_cases}}.
+        saves:
+          - documents.test_cases: Save every test case as a checklist item.
+      - report: Build the report from {{ww.documents.test_cases}}.
 """,
         )
     )
@@ -1662,8 +1659,8 @@ def test_update_document_must_name_a_declared_document(tmp_path: Path) -> None:
   - task: ~
     steps:
       - derive: Derive.
-        update_document:
-          - test_cases: Save them.
+        saves:
+          - documents.test_cases: Save them.
 """,
             )
         )
@@ -1693,7 +1690,7 @@ def test_a_bare_step_named_like_a_root_handler_copies_it(tmp_path: Path) -> None
             """handlers:
   - fetch_requirements: Fetch the issue and its comments.
     mcp: atlassian
-    provide:
+    variables:
       - issue_key: The issue key.
   - skim: Skim the issue.
     mcp: atlassian
@@ -1734,7 +1731,7 @@ def test_document_paths_are_parsed_and_kept_inside_the_project(
             tmp_path / "ww-agentic-workflows.yaml",
             """documents:
   - notes: Notes on the branch.
-    path: documentation/issues/{task_id}/notes.md
+    path: documentation/issues/{{ww.task.id}}/notes.md
   - glossary: Shared terms.
     scope: project
     path: docs/glossary.md
@@ -1746,7 +1743,7 @@ workflows:
         )
     )
     notes, glossary = configuration.documents
-    assert notes.path == "documentation/issues/{task_id}/notes.md"
+    assert notes.path == "documentation/issues/{{ww.task.id}}/notes.md"
     assert glossary.path == "docs/glossary.md"
     assert notes.to_dict()["path"] == notes.path
 
@@ -1757,8 +1754,12 @@ workflows:
         ("    path: /etc/notes.md\n", "must stay inside the project"),
         ("    path: ../notes.md\n", "must stay inside the project"),
         (
-            "    scope: project\n    path: docs/{task_id}.md\n",
+            "    scope: project\n    path: docs/{{ww.task.id}}.md\n",
             "project document path cannot use",
+        ),
+        (
+            "    path: docs/{task_id}.md\n",
+            "\\{task_id\\} in a document path was renamed to",
         ),
     ],
 )
@@ -1800,7 +1801,9 @@ workflows:
     assert build.interactive is False
     assert manual.items is not None
     assert manual.items.steps[0].interactive is True
-    with pytest.raises(ConfigurationError, match="interactive must be true or false"):
+    with pytest.raises(
+        ConfigurationError, match="interactive must be true, false, or page"
+    ):
         load_configuration(
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
@@ -1869,7 +1872,7 @@ def test_choices_are_labels_with_descriptions_and_need_an_interactive_step(
         )
 
 
-def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> None:
+def test_interactive_page_is_declared_on_per_item_stages_only(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
             tmp_path / "ww-agentic-workflows.yaml",
@@ -1879,8 +1882,7 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
       - name: collect
         description: Collect the cases.
         items:
-          interactive: true
-          ui: true
+          interactive: page
   - name: review
     steps:
       - name: review
@@ -1889,8 +1891,7 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
           steps:
             - name: verify
               description: Verify it.
-              interactive: true
-              ui: true
+              interactive: page
             - name: report
               description: Report it.
 """,
@@ -1900,7 +1901,9 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
     assert collect.items is not None and collect.items.steps[0].ui is True
     assert review.items is not None
     assert [stage.ui for stage in review.items.steps] == [True, False]
-    with pytest.raises(ConfigurationError, match="ui.*requires interactive: true"):
+    with pytest.raises(
+        ConfigurationError, match="items.ui was renamed to interactive: page"
+    ):
         load_configuration(
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
@@ -1913,22 +1916,25 @@ def test_ui_is_declared_on_interactive_per_item_stages_only(tmp_path: Path) -> N
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - discuss: Talk.\n"
-                "        interactive: true\n        ui: true\n",
+                "        interactive: page\n",
             )
         )
-    with pytest.raises(ConfigurationError, match="ui must be true or false"):
+    with pytest.raises(
+        ConfigurationError, match="interactive must be true, false, or page"
+    ):
         load_configuration(
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
-                "        items:\n          interactive: true\n"
-                "          ui: yes please\n",
+                "        items:\n          interactive: yes please\n",
             )
         )
 
 
 def test_one_stage_per_item_flow_is_answered_on_the_page(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="found ui: true on verify, report"):
+    with pytest.raises(
+        ConfigurationError, match="found interactive: page on verify, report"
+    ):
         load_configuration(
             _write(
                 tmp_path / "ww-agentic-workflows.yaml",
@@ -1941,12 +1947,10 @@ def test_one_stage_per_item_flow_is_answered_on_the_page(tmp_path: Path) -> None
           steps:
             - name: verify
               description: Verify it.
-              interactive: true
-              ui: true
+              interactive: page
             - name: report
               description: Report it.
-              interactive: true
-              ui: true
+              interactive: page
 """,
             )
         )

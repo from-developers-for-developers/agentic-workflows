@@ -147,11 +147,11 @@ def test_an_heir_of_a_handoff_workflow_hands_off(tmp_path: Path) -> None:
   - name: choose
     steps:
       - name: pick
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
   - target: Work.
     steps:
       - work: Work.

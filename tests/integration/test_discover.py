@@ -57,8 +57,8 @@ def test_discover_lists_choices_options_and_commands(
             "extensions": {
                 "ww/git": {
                     "branch_name_formats": {
-                        "default": "feature/{{task_id}}",
-                        "bugfix": "hotfix/{{task_id}}",
+                        "default": "feature/{{ww.task.id}}",
+                        "bugfix": "hotfix/{{ww.task.id}}",
                     }
                 }
             }
@@ -86,7 +86,7 @@ def test_discover_lists_choices_options_and_commands(
         "- `--model`, `--reasoning`: Optional.",
         "- `--branch-strategy`: `default`, `bugfix`.",
         "./ww start <TASK-ID> --workflow <workflow> --agent <agent> "
-        '--init-artifact "<the user\'s requirements, normalized>" --role manager',
+        '--requirements "<the user\'s requirements, normalized>" --role manager',
         "./ww instruction <task-id> --role manager",
         "./ww status <task-id>",
         "./ww plan --workflow <workflow> --agent <agent>",
@@ -562,7 +562,7 @@ def test_explicit_task_format_requires_an_id(
         + """  - name: tracked
     steps:
       - create: Create the issue and return its key.
-        provide:
+        variables:
           - task_id: The issue key.
       - work: Work.
   - name: parent
@@ -615,7 +615,7 @@ def test_the_project_may_choose_the_default_runtime(
                 "task",
                 "-a",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "x",
                 "--role",
                 "manager",

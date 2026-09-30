@@ -19,7 +19,6 @@ from ww.workflow_config import (
     HandlerDefinition,
     HookDefinition,
     ItemFieldUpdate,
-    MetadataScope,
     ProvidedVariable,
     SavedMetadata,
 )
@@ -36,12 +35,13 @@ from .values import (
     _optional_agent,
     _optional_bool,
     _optional_string,
+    _reject_renamed,
     _unique,
 )
 
 HOOK_PHASES: tuple[HookPhase, ...] = (
     "before_start_workflow",
-    "before_in_progress",
+    "before_start",
     "before_complete",
     "after_complete",
     "before_complete_workflow",
@@ -50,6 +50,40 @@ HOOK_PHASES: tuple[HookPhase, ...] = (
 
 # ``action.type`` names that spell a core control rather than a registered action.
 CORE_ACTION_TYPES = frozenset({"loop", "workflow_transition", "child_workflow"})
+# The agent action kinds ``kind`` chooses between.
+ACTION_KINDS: tuple[RequestedActionKind, ...] = ("skill", "slash_command", "prompt")
+# Handler keys that were renamed, with the new name and an example of it.
+RENAMED_HANDLER_KEYS = {
+    "skill": ("kind", "kind: skill"),
+    "slash_command": ("kind", "kind: slash_command"),
+    "prompt": ("kind", "kind: prompt"),
+    "provide": ("variables", "variables: [<name>: <description>]"),
+    "outputs": ("variables", "variables: [<name>]"),
+    "update_metadata": ("saves", "saves: [metadata.<path>: <description>]"),
+    "update_document": ("saves", "saves: [documents.<name>: <description>]"),
+    "update_item": ("saves", "saves: [item.field.<name>: <description>]"),
+    "workflow": ("handoff_to", "handoff_to: <workflow>"),
+}
+RENAMED_HOOK_PHASES = {"before_in_progress": ("before_start", "before_start: [...]")}
+# The prefixes of ``saves`` entries; the prefix is the kind and scope of the
+# saved value, the rest its storage path.
+_SAVE_PREFIXES = ("metadata.", "project_metadata.", "documents.", "item.field.")
+_METADATA_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*")
+_VARIABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
+
+
+# Removed handler keys, never read as an entry's shorthand name.
+_REMOVED_HANDLER_KEYS = frozenset({*RENAMED_HANDLER_KEYS, "command"})
+
+
+def reject_removed_handler_keys(mapping: dict[str, Any], path: str) -> None:
+    """Reject handler keys ww no longer reads, naming what replaced them."""
+    if "command" in mapping:
+        raise ConfigurationError(
+            f"{path}.command was removed: run several commands as a hook's "
+            "handlers list, one argv or shell each"
+        )
+    _reject_renamed(mapping, path, RENAMED_HANDLER_KEYS)
 
 
 def _parse_handler(
@@ -60,18 +94,19 @@ def _parse_handler(
     transition: bool = False,
     allowed_extra: set[str] | None = None,
 ) -> HandlerDefinition:
-    """Parse one handler; ``transition`` admits the ``workflow`` key on a step."""
+    """Parse one handler; ``transition`` admits the ``handoff_to`` key on a step."""
+    reject_removed_handler_keys(mapping, path)
     _only(
         mapping,
         _handler_keys()
-        | ({"workflow"} if inline or transition else set())
+        | ({"handoff_to"} if inline or transition else set())
         | (allowed_extra or set()),
         path,
     )
-    if (inline or transition) and "workflow" in mapping:
+    if (inline or transition) and "handoff_to" in mapping:
         extra = set(mapping) - {
             "name",
-            "workflow",
+            "handoff_to",
             "description",
             "agent",
             "model",
@@ -79,17 +114,19 @@ def _parse_handler(
         }
         if "children" in extra:
             raise ConfigurationError(
-                f"{path} cannot combine children with a workflow transition; "
+                f"{path} cannot combine children with handoff_to; "
                 "name the child workflow under children.workflow"
             )
         if extra:
             raise ConfigurationError(
-                f"{path} workflow transition cannot contain other handler fields"
+                f"{path} handoff_to cannot contain other handler fields"
             )
         return HandlerDefinition(
             _name(mapping, path) if "name" in mapping else "start-workflow",
             _description(mapping.get("description"), path),
-            operation=WorkflowHandoff(_nonempty_string(mapping, "workflow", path)),
+            operation=WorkflowHandoff(
+                _nonempty_string(mapping, "handoff_to", path)
+            ),
             agent=_optional_agent(mapping, "agent", path),
             model=_optional_string(mapping, "model", path),
             reasoning=_optional_string(mapping, "reasoning", path),
@@ -99,8 +136,6 @@ def _parse_handler(
             name = "inline-argv"
         elif "shell" in mapping:
             name = "inline-shell"
-        elif "command" in mapping:
-            name = "inline-command"
         elif "mcp" in mapping and isinstance(mapping["mcp"], str):
             name = f"mcp-{mapping['mcp']}"
         else:
@@ -110,9 +145,7 @@ def _parse_handler(
     description = _description(mapping.get("description"), f"handler {name!r}")
     if "action" in mapping:
         shorthand_keys = {
-            "skill",
-            "slash_command",
-            "prompt",
+            "kind",
             "mcp",
             "argv",
             "shell",
@@ -120,7 +153,6 @@ def _parse_handler(
             "env",
             "assert",
             "idempotent",
-            "command",
         }
         if shorthand_keys & set(mapping):
             raise ConfigurationError(
@@ -134,7 +166,7 @@ def _parse_handler(
             # registry actions selected by type.
             raise ConfigurationError(
                 f"{path}.action.type {identifier!r} is a core control; use "
-                "`workflow`, `children`, or `loop` on the step instead"
+                "`handoff_to`, `children`, or `loop` on the step instead"
             )
         implementation = actions.get(identifier)
         payload = implementation.parse(source, name, description, f"{path}.action")
@@ -144,40 +176,26 @@ def _parse_handler(
             name=name,
             description=description,
             action=action,
-            provide=_parse_provide(mapping.get("provide", []), f"handler {name!r}"),
-            outputs=_parse_outputs(mapping.get("outputs", []), f"handler {name!r}"),
-            save_metadata=_parse_save_metadata(
-                mapping.get("update_metadata", []), f"handler {name!r}"
-            ),
-            update_document=_parse_update_document(
-                mapping.get("update_document", []), f"handler {name!r}"
-            ),
-            update_item=_parse_update_item(
-                mapping.get("update_item", []), f"handler {name!r}"
-            ),
+            **handler_values(mapping, f"handler {name!r}"),
             agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
             model=_optional_string(mapping, "model", f"handler {name!r}"),
             reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
             workdir=_optional_workdir(mapping, f"handler {name!r}"),
         )
-    explicit: list[RequestedActionKind] = [
-        key for key in ("skill", "slash_command") if key in mapping
-    ]
-    prompt_value = mapping.get("prompt")
+    explicit: list[RequestedActionKind] = []
+    if "kind" in mapping:
+        kind = mapping["kind"]
+        if kind not in ACTION_KINDS:
+            raise ConfigurationError(
+                f"handler {name!r} kind must be one of: " + ", ".join(ACTION_KINDS)
+            )
+        explicit.append(cast(RequestedActionKind, kind))
     mcp_value = mapping.get("mcp")
-    if "prompt" in mapping and isinstance(prompt_value, bool):
-        explicit.append("prompt")
-    if len(explicit) > 1:
-        raise ConfigurationError(f"handler {name!r} declares conflicting kinds")
-    if any(mapping.get(key) is not True for key in explicit):
-        raise ConfigurationError(f"handler {name!r} kind flags must be true")
-    has_command = bool({"command", "argv", "shell"} & set(mapping))
+    has_command = bool({"argv", "shell"} & set(mapping))
     if {"args", "env", "assert", "idempotent"} & set(mapping) and not has_command:
         actions.get("cli").parse(mapping, name, description, f"handler {name!r}")
     if has_command and explicit:
-        raise ConfigurationError(
-            f"handler {name!r} cannot combine command and a kind flag"
-        )
+        raise ConfigurationError(f"handler {name!r} cannot combine a command and kind")
     if mcp_value is not None:
         if not isinstance(mcp_value, str) or not mcp_value.strip():
             raise ConfigurationError(f"handler {name!r} mcp must be non-empty")
@@ -186,8 +204,6 @@ def _parse_handler(
                 f"handler {name!r} cannot combine mcp with another action"
             )
         requested_kind: RequestedActionKind | None = "mcp"
-    elif "prompt" in mapping and not isinstance(prompt_value, bool):
-        raise ConfigurationError(f"handler {name!r} prompt must be true")
     else:
         requested_kind = explicit[0] if explicit else None
     action_kind = (
@@ -203,17 +219,7 @@ def _parse_handler(
         name=name,
         description=description,
         action=typed_action,
-        provide=_parse_provide(mapping.get("provide", []), f"handler {name!r}"),
-        outputs=_parse_outputs(mapping.get("outputs", []), f"handler {name!r}"),
-        save_metadata=_parse_save_metadata(
-            mapping.get("update_metadata", []), f"handler {name!r}"
-        ),
-        update_document=_parse_update_document(
-            mapping.get("update_document", []), f"handler {name!r}"
-        ),
-        update_item=_parse_update_item(
-            mapping.get("update_item", []), f"handler {name!r}"
-        ),
+        **handler_values(mapping, f"handler {name!r}"),
         agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
         model=_optional_string(mapping, "model", f"handler {name!r}"),
         reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
@@ -236,9 +242,7 @@ def _handler_keys() -> set[str]:
     return {
         "name",
         "description",
-        "skill",
-        "slash_command",
-        "prompt",
+        "kind",
         "mcp",
         "argv",
         "shell",
@@ -247,12 +251,8 @@ def _handler_keys() -> set[str]:
         "assert",
         "idempotent",
         "agent",
-        "command",
-        "provide",
-        "outputs",
-        "update_metadata",
-        "update_document",
-        "update_item",
+        "variables",
+        "saves",
         "model",
         "reasoning",
         "action",
@@ -264,6 +264,7 @@ def _parse_hooks(data: Any, scope: HookScope, path: str) -> tuple[HookDefinition
     if data is None:
         return ()
     mapping = _mapping(data, path)
+    _reject_renamed(mapping, path, RENAMED_HOOK_PHASES)
     _only(mapping, set(HOOK_PHASES), path)
     result: list[HookDefinition] = []
     for phase in HOOK_PHASES:
@@ -282,7 +283,7 @@ def _parse_hook(
     data: Any, phase: HookPhase, scope: HookScope, path: str
 ) -> tuple[HookDefinition, ...]:
     mapping = _mapping(data, path)
-    allowed = _handler_keys() | {"handlers", "workflow", "on_failure"}
+    allowed = _handler_keys() | {"handlers", "handoff_to", "on_failure"}
     if scope in {"global", "workflow"} and phase not in {
         "before_start_workflow",
         "before_complete_workflow",
@@ -291,12 +292,16 @@ def _parse_hook(
     if scope == "global":
         allowed.add("workflows")
     mapping = _named_entry(
-        mapping, path, allowed=allowed, ignored={"workflows", "steps", "on_failure"}
+        mapping,
+        path,
+        allowed=allowed | _REMOVED_HANDLER_KEYS,
+        ignored={"workflows", "steps", "on_failure"},
     )
+    reject_removed_handler_keys(mapping, path)
     _only(mapping, allowed, path)
     on_failure = _on_failure(mapping, path, "operator")
     if "handlers" in mapping:
-        action_keys = set(mapping) & (_handler_keys() | {"workflow"})
+        action_keys = set(mapping) & (_handler_keys() | {"handoff_to"})
         if action_keys:
             raise ConfigurationError(
                 f"{path} cannot combine handlers with handler key(s): "
@@ -355,7 +360,7 @@ def _parse_hook_member(
     mapping = _named_entry(
         _mapping(data, path),
         path,
-        allowed=_handler_keys() | {"workflow", "on_failure"},
+        allowed=_handler_keys() | {"handoff_to", "on_failure"} | _REMOVED_HANDLER_KEYS,
         ignored={"on_failure"},
     )
     failure = _on_failure(mapping, path, group_failure)
@@ -365,7 +370,9 @@ def _parse_hook_member(
 
 def _parse_hook_handler(data: Any, path: str) -> HandlerDefinition:
     mapping = _named_entry(
-        _mapping(data, path), path, allowed=_handler_keys() | {"workflow"}
+        _mapping(data, path),
+        path,
+        allowed=_handler_keys() | {"handoff_to"} | _REMOVED_HANDLER_KEYS,
     )
     if _bare_extension_reference(mapping):
         return HandlerDefinition(
@@ -388,128 +395,132 @@ def _bare_extension_reference(mapping: dict[str, Any]) -> bool:
     )
 
 
-def _parse_update_document(data: Any, path: str) -> tuple[DocumentUpdate, ...]:
-    """Parse ``update_document``: named entries whose text instructs the update."""
+def handler_values(mapping: dict[str, Any], path: str) -> dict[str, Any]:
+    """The ``variables`` and ``saves`` of a handler, as its definition fields."""
+    provide, outputs = parse_variables(mapping.get("variables", []), path)
+    save_metadata, update_document, update_item = parse_saves(
+        mapping.get("saves", []), path
+    )
+    return {
+        "provide": provide,
+        "outputs": outputs,
+        "save_metadata": save_metadata,
+        "update_document": update_document,
+        "update_item": update_item,
+    }
+
+
+def parse_variables(
+    data: Any, path: str
+) -> tuple[tuple[ProvidedVariable, ...], tuple[str, ...]]:
+    """Parse ``variables``: what the step hands back, read as ``{{name}}``.
+
+    ``- name: description`` is a value the performer supplies with
+    ``--variable``; a bare ``- name`` is one an automatic action returns
+    itself.  A name may not start with ``ww`` (or ``__``): those are ww's.
+    """
     if data is None:
-        return ()
+        return (), ()
     if not isinstance(data, list):
-        raise ConfigurationError(f"{path}.update_document must be a list")
-    result = []
+        raise ConfigurationError(f"{path}.variables must be a list")
+    provided: list[ProvidedVariable] = []
+    returned: list[str] = []
     for index, item in enumerate(data):
-        item_path = f"{path}.update_document[{index}]"
-        mapping = _named_entry(_mapping(item, item_path), item_path)
-        _only(mapping, {"name", "description"}, item_path)
-        result.append(
-            DocumentUpdate(
-                _name(mapping, item_path),
-                _description(mapping.get("description"), item_path),
+        item_path = f"{path}.variables[{index}]"
+        if isinstance(item, str):
+            name = item
+            if not _VARIABLE_NAME.fullmatch(name):
+                raise ConfigurationError(
+                    f"{item_path} must be a normalized variable name"
+                )
+        else:
+            mapping = _named_entry(_mapping(item, item_path), item_path)
+            _only(mapping, {"name", "description"}, item_path)
+            name = _name(mapping, item_path)
+        if is_reserved_name(name):
+            raise ConfigurationError(
+                f"{path}.variables name {name!r} is reserved: names starting "
+                "with ww are ww's own values"
             )
-        )
-    _unique((item.name for item in result), f"document update in {path}")
-    return tuple(result)
-
-
-def _parse_update_item(data: Any, path: str) -> tuple[ItemFieldUpdate, ...]:
-    """Parse ``update_item``: named fields whose text says what to put there."""
-    if data is None:
-        return ()
-    if not isinstance(data, list):
-        raise ConfigurationError(f"{path}.update_item must be a list")
-    result = []
-    for index, item in enumerate(data):
-        item_path = f"{path}.update_item[{index}]"
-        mapping = _named_entry(_mapping(item, item_path), item_path)
-        _only(mapping, {"name", "description"}, item_path)
-        try:
-            result.append(
-                ItemFieldUpdate(
-                    _name(mapping, item_path),
-                    _description(mapping.get("description"), item_path),
+        if isinstance(item, str):
+            returned.append(name)
+        else:
+            provided.append(
+                ProvidedVariable(
+                    name, _description(mapping.get("description"), item_path)
                 )
             )
+    _unique((*(item.name for item in provided), *returned), f"variable in {path}")
+    return tuple(provided), tuple(returned)
+
+
+def parse_saves(
+    data: Any, path: str
+) -> tuple[
+    tuple[SavedMetadata, ...], tuple[DocumentUpdate, ...], tuple[ItemFieldUpdate, ...]
+]:
+    """Parse ``saves``: what the step writes to metadata, documents, or its item.
+
+    Each entry names a prefixed path, ``metadata.<path>``,
+    ``project_metadata.<path>``, ``documents.<name>`` or
+    ``item.field.<name>``, with the text saying what to put there; a
+    metadata entry may add ``append: true``.
+    """
+    if data is None:
+        return (), (), ()
+    if not isinstance(data, list):
+        raise ConfigurationError(f"{path}.saves must be a list")
+    metadata: list[SavedMetadata] = []
+    documents: list[DocumentUpdate] = []
+    fields: list[ItemFieldUpdate] = []
+    for index, item in enumerate(data):
+        item_path = f"{path}.saves[{index}]"
+        mapping = _named_entry(_mapping(item, item_path), item_path)
+        _only(mapping, {"name", "description", "append"}, item_path)
+        target = mapping.get("name")
+        if not isinstance(target, str) or not target.startswith(_SAVE_PREFIXES):
+            hint = (
+                "; saves take no ww. prefix"
+                if isinstance(target, str) and target.startswith("ww.")
+                else ""
+            )
+            raise ConfigurationError(
+                f"{item_path} must name metadata.<path>, project_metadata.<path>, "
+                f"documents.<name>, or item.field.<name>{hint}"
+            )
+        description = _description(mapping.get("description"), item_path)
+        append = _optional_bool(mapping, "append", item_path)
+        prefix = next(prefix for prefix in _SAVE_PREFIXES if target.startswith(prefix))
+        rest = target.removeprefix(prefix)
+        if append is not None and prefix not in {"metadata.", "project_metadata."}:
+            raise ConfigurationError(f"{item_path}.append applies to metadata only")
+        try:
+            if prefix in {"metadata.", "project_metadata."}:
+                if not _METADATA_PATH.fullmatch(rest):
+                    raise ConfigurationError(
+                        f"{item_path} must name a dotted metadata path"
+                    )
+                project = prefix == "project_metadata."
+                metadata.append(
+                    SavedMetadata(
+                        target if project else rest,
+                        rest,
+                        description,
+                        "project" if project else "task",
+                        append=append or False,
+                    )
+                )
+            elif prefix == "documents.":
+                documents.append(DocumentUpdate(rest, description))
+            else:
+                fields.append(ItemFieldUpdate(rest, description))
         except ValueError as error:
             raise ConfigurationError(f"{item_path}: {error}") from error
-    _unique((item.name for item in result), f"item field in {path}")
-    return tuple(result)
-
-
-def _parse_provide(data: Any, path: str) -> tuple[ProvidedVariable, ...]:
-    if data is None:
-        return ()
-    if not isinstance(data, list):
-        raise ConfigurationError(f"{path}.provide must be a list")
-    result = []
-    for index, item in enumerate(data):
-        item_path = f"{path}.provide[{index}]"
-        mapping = _named_entry(_mapping(item, item_path), item_path)
-        _only(mapping, {"name", "description"}, item_path)
-        name = _name(mapping, item_path)
-        if is_reserved_name(name):
-            raise ConfigurationError(f"{path}.provide name {name!r} is reserved")
-        result.append(
-            ProvidedVariable(
-                name,
-                _description(mapping.get("description"), item_path),
-            )
-        )
-    _unique((item.name for item in result), f"provided value in {path}")
-    return tuple(result)
-
-
-def _parse_outputs(data: Any, path: str) -> tuple[str, ...]:
-    """Parse values produced by an automatic action's successful result."""
-    if data is None:
-        return ()
-    if not isinstance(data, list):
-        raise ConfigurationError(f"{path}.outputs must be a list")
-    outputs: list[str] = []
-    for index, value in enumerate(data):
-        output_path = f"{path}.outputs[{index}]"
-        if not isinstance(value, str) or not value:
-            raise ConfigurationError(f"{output_path} must be a non-empty string")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", value):
-            raise ConfigurationError(
-                f"{output_path} must be a normalized variable name"
-            )
-        if is_reserved_name(value):
-            raise ConfigurationError(f"{output_path} {value!r} is reserved")
-        outputs.append(value)
-    _unique(outputs, f"output value in {path}")
-    return tuple(outputs)
-
-
-def _parse_save_metadata(data: Any, path: str) -> tuple[SavedMetadata, ...]:
-    if data is None:
-        return ()
-    if not isinstance(data, list):
-        raise ConfigurationError(f"{path}.update_metadata must be a list")
-    result = []
-    for index, item in enumerate(data):
-        item_path = f"{path}.update_metadata[{index}]"
-        mapping = _named_entry(_mapping(item, item_path), item_path)
-        _only(mapping, {"name", "key", "description", "scope", "append"}, item_path)
-        name = _name(mapping, item_path)
-        key = _nonempty_string(mapping, "key", item_path)
-        if not re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*", key
-        ):
-            raise ConfigurationError(f"{item_path}.key must be a dotted metadata path")
-        result.append(
-            SavedMetadata(
-                name,
-                key,
-                _description(mapping.get("description"), item_path),
-                _metadata_scope(mapping.get("scope", "task"), item_path),
-                append=_optional_bool(mapping, "append", item_path) or False,
-            )
-        )
-    _unique((item.name for item in result), f"saved metadata name in {path}")
-    _unique(
-        ((item.scope, item.key) for item in result),
-        f"saved metadata scope and key in {path}",
-    )
+    _unique((item.name for item in metadata), f"saved metadata path in {path}")
+    _unique((item.name for item in documents), f"document in {path}")
+    _unique((item.name for item in fields), f"item field in {path}")
     for scope in ("task", "project"):
-        keys = [item.key for item in result if item.scope == scope]
+        keys = [item.key for item in metadata if item.scope == scope]
         for index, key in enumerate(keys):
             if any(
                 key.startswith(f"{other}.") or other.startswith(f"{key}.")
@@ -519,10 +530,4 @@ def _parse_save_metadata(data: Any, path: str) -> tuple[SavedMetadata, ...]:
                     f"saved metadata paths in {path} cannot overlap within "
                     f"the {scope} scope"
                 )
-    return tuple(result)
-
-
-def _metadata_scope(value: Any, path: str) -> MetadataScope:
-    if value not in {"task", "project"}:
-        raise ConfigurationError(f"{path}.scope must be 'task' or 'project'")
-    return cast(MetadataScope, value)
+    return tuple(metadata), tuple(documents), tuple(fields)

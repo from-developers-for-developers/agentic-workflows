@@ -49,7 +49,7 @@ def test_children_step_owns_the_collection_and_the_run(tmp_path: Path) -> None:
         "          description: One child per story.\n"
         "          workflow: child\n"
         "        hooks:\n          after_complete:\n"
-        "            - command:\n                argv: ['true']\n"
+        "            - argv: ['true']\n"
         "      - wrap-up: Summarize.\n",
     )
     plan = compile_workflow_plan(configuration, tmp_path, "parent", "codex")
@@ -115,10 +115,10 @@ def test_last_children_step_leaves_the_workflow_summary_alone(tmp_path: Path) ->
             "takes workflow or steps, not both",
         ),
         (
-            "      - split: ~\n        workflow: child\n        children:\n"
+            "      - split: ~\n        handoff_to: child\n        children:\n"
             "          workflow: child\n",
             CHILD,
-            "cannot combine children with a workflow transition",
+            "cannot combine children with handoff_to",
         ),
         (
             "      - split: Split it.\n        children:\n          workflow: child\n"

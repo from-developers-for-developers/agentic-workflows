@@ -139,7 +139,7 @@ def test_builtins_use_independent_defaults_without_affecting_hooks(
         tmp_path,
         """
 hooks:
-  before_in_progress:
+  before_start:
     - name: prepare
       description: Prepare.
 workflows:

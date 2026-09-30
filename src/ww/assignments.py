@@ -51,9 +51,9 @@ def assignment_at(
     built-in workflow summary is deliberately included in the final assignment.
 
     In the ``auto`` runtime, an ``items`` step with ``item_assignment`` set to
-    ``per_item`` or ``all_items`` keeps later stages of the same item, or of
+    ``per_item`` or ``together`` keeps later stages of the same item, or of
     every item, in the assignment, and a ``loop`` with ``loop_assignment``
-    ``per_iteration`` keeps the following body steps of the same round while
+    ``per_round`` keeps the following body steps of the same round while
     they resolve to the same worker settings.  The ``single`` runtime keeps
     per-step boundaries because one session already performs every assignment.
 
@@ -78,7 +78,7 @@ def assignment_at(
         if item.summary:
             stop += 1
             continue
-        if item.phase in {"before_start_workflow", "before_in_progress", "step"}:
+        if item.phase in {"before_start_workflow", "before_start", "step"}:
             if item.step != first.step:
                 if not spans_steps or not (
                     shares_item_span(first, item, worker=worker)
@@ -117,7 +117,7 @@ def shares_loop_span(
     """Whether ``item`` continues the loop round begun at ``first``."""
     if first.loop_id is None or first.loop_id != item.loop_id:
         return False
-    if item.loop_assignment != "per_iteration":
+    if item.loop_assignment != "per_round":
         return False
     return _same_worker(item, worker)
 
@@ -160,7 +160,7 @@ class LoopSpan:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "loop_assignment": "per_iteration",
+            "loop_assignment": "per_round",
             "loop": self.loop_id,
             "stages": list(self.stage_names),
         }

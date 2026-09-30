@@ -24,8 +24,8 @@ class SlashCommandAction(Action[SlashCommand, SlashCommand]):
     def parse(
         self, source: dict[str, Any], name: str, description: str, path: str
     ) -> SlashCommand:
-        if source.get("slash_command") is not True:
-            raise ConfigurationError(f"{path} slash_command must be true")
+        # ``kind: slash_command`` already chose this action; the command is
+        # the handler's name.
         return SlashCommand(name)
 
     def validate(self, definition: SlashCommand, path: str) -> None:

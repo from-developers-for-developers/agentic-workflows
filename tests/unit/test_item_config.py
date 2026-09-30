@@ -37,7 +37,7 @@ def test_bare_items_get_one_built_in_stage(tmp_path: Path) -> None:
 
     assert flow is not None
     assert flow.description is None
-    assert flow.assignment == "all_items"
+    assert flow.assignment == "together"
     assert [(step.name, step.item_operation) for step in flow.steps] == [
         ("handle-item", "handle_item")
     ]
@@ -126,7 +126,7 @@ def test_item_assignment_is_carried_by_every_stage_and_hook(tmp_path: Path) -> N
         tmp_path,
         """      - review: Review.
         items:
-          item_assignment: all_items
+          assignment: together
           steps:
             - analyze: Analyze.
               hooks:
@@ -138,7 +138,7 @@ def test_item_assignment_is_carried_by_every_stage_and_hook(tmp_path: Path) -> N
 
     assert {
         (item.name, item.item_assignment) for item in plan.items if item.item_template
-    } == {("analyze", "all_items"), ("note", "all_items")}
+    } == {("analyze", "together"), ("note", "together")}
     assert next(
         item for item in plan.items if item.name == "review"
     ).item_assignment == ("per_step")
@@ -152,7 +152,7 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
   - name: triage
     description: Triage the findings.
     items:
-      item_assignment: per_item
+      assignment: per_item
       steps:
         - analyze: Analyze.
         - fix: Fix.
@@ -180,8 +180,23 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
         ),
         (
             "      - review: Review.\n"
-            "        items:\n          item_assignment: batch\n",
-            "item_assignment must be one of: per_step, per_item, all_items",
+            "        items:\n          assignment: batch\n",
+            "items.assignment must be one of: together, per_item, per_step",
+        ),
+        (
+            "      - review: Review.\n"
+            "        items:\n          assignment: all_items\n",
+            "all_items was renamed to together: assignment: together",
+        ),
+        (
+            "      - review: Review.\n"
+            "        items:\n          item_assignment: per_item\n",
+            "items.item_assignment was renamed to assignment",
+        ),
+        (
+            "      - review: Review.\n"
+            "        items:\n          shared: true\n",
+            "items.shared was renamed to persistent: persistent: true",
         ),
         (
             "      - review: Review.\n        items:\n          unknown: 1\n",
@@ -198,8 +213,16 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
             "cannot combine steps, loop, items, and children",
         ),
         (
-            "      - review: Review.\n        items: ~\n        process_item: ~\n",
-            "cannot combine items with an item operation marker",
+            "      - review: Review.\n        items: ~\n        item_phase: analyze\n",
+            "cannot combine items with item_phase",
+        ),
+        (
+            "      - review: Review.\n        process_item: ~\n",
+            "process_item was renamed to item_phase: item_phase: analyze",
+        ),
+        (
+            "      - review: Review.\n        item_phase: triage\n",
+            "item_phase must be one of: analyze, resolve, report",
         ),
         (
             "      - review: Review.\n        items: ~\n"
@@ -219,7 +242,7 @@ def test_invalid_items_are_rejected(tmp_path: Path, steps: str, message: str) ->
         _compile(tmp_path, steps)
 
 
-@pytest.mark.parametrize("assignment", ["per_item", "all_items"])
+@pytest.mark.parametrize("assignment", ["per_item", "together"])
 def test_differing_stage_settings_compile_under_a_shared_assignment(
     tmp_path: Path, assignment: str
 ) -> None:
@@ -227,7 +250,7 @@ def test_differing_stage_settings_compile_under_a_shared_assignment(
         tmp_path,
         f"""      - review: Review.
         items:
-          item_assignment: {assignment}
+          assignment: {assignment}
           steps:
             - analyze: Analyze.
             - fix: Fix.
@@ -253,7 +276,7 @@ def test_shared_assignment_accepts_settings_set_on_items(tmp_path: Path) -> None
         tmp_path,
         """      - review: Review.
         items:
-          item_assignment: per_item
+          assignment: per_item
           model: opus
           steps:
             - analyze: Analyze.
@@ -294,7 +317,7 @@ def test_plan_view_shows_collection_guidance_and_item_assignment(
         """      - review: Review.
         items:
           description: Split by pull request comment.
-          item_assignment: per_item
+          assignment: per_item
           steps:
             - analyze: Analyze.
 """,
@@ -342,8 +365,8 @@ def test_phase_guidance_extends_the_built_in_stage(tmp_path: Path) -> None:
             "      - review: Review.\n"
             "        items:\n"
             "          description: Split by comment.\n"
-            "          report_item: Reply in the same thread, then resolve it.\n"
-            "          process_item: Quote the comment first.\n",
+            "          report: Reply in the same thread, then resolve it.\n"
+            "          analyze: Quote the comment first.\n",
         )
         .workflows[0]
         .steps[0]
@@ -366,16 +389,20 @@ def test_phase_guidance_extends_the_built_in_stage(tmp_path: Path) -> None:
     ("body", "message"),
     [
         (
-            "          report_item: Reply.\n"
+            "          report: Reply.\n"
             "          steps:\n"
             "            - reply: Reply.\n"
-            "              report_item: ~\n",
-            r"phase guidance \(report_item\) describes the built-in handle-item",
+            "              item_phase: report\n",
+            r"phase guidance \(report\) describes the built-in handle-item",
         ),
-        ("          report_item: Reply.\n          steps: []\n", "phase guidance"),
+        ("          report: Reply.\n          steps: []\n", "phase guidance"),
         (
-            "          resolve_item: ~\n",
-            "items.resolve_item must be a non-empty string",
+            "          resolve: ~\n",
+            "items.resolve must be a non-empty string",
+        ),
+        (
+            "          report_item: Reply.\n",
+            "items.report_item was renamed to report: report: <guidance>",
         ),
     ],
 )
@@ -392,9 +419,8 @@ def test_items_save_metadata_belongs_to_the_built_in_stage(tmp_path: Path) -> No
             tmp_path,
             "      - review: Review.\n"
             "        items:\n"
-            "          update_metadata:\n"
-            "            - handled: The comment id.\n"
-            "              key: pull_request.handled\n"
+            "          saves:\n"
+            "            - metadata.pull_request.handled: The comment id.\n"
             "              append: true\n",
         )
         .workflows[0]
@@ -407,7 +433,7 @@ def test_items_save_metadata_belongs_to_the_built_in_stage(tmp_path: Path) -> No
     assert stage.name == "handle-item"
     (saved,) = stage.save_metadata
     assert (saved.name, saved.key, saved.append) == (
-        "handled",
+        "pull_request.handled",
         "pull_request.handled",
         True,
     )
@@ -416,15 +442,14 @@ def test_items_save_metadata_belongs_to_the_built_in_stage(tmp_path: Path) -> No
 def test_items_save_metadata_is_rejected_beside_configured_steps(
     tmp_path: Path,
 ) -> None:
-    with pytest.raises(ConfigurationError, match="update_metadata belongs to the"):
+    with pytest.raises(ConfigurationError, match="saves belongs to the"):
         _load(
             tmp_path,
             "      - review: Review.\n"
             "        items:\n"
-            "          update_metadata:\n"
-            "            - handled: The comment id.\n"
-            "              key: handled\n"
+            "          saves:\n"
+            "            - metadata.handled: The comment id.\n"
             "          steps:\n"
             "            - reply: Reply.\n"
-            "              report_item: ~\n",
+            "              item_phase: report\n",
         )

@@ -47,7 +47,7 @@ TWO_HINTS = f"""workflows:
 FOO_CHECK = {
     "name": "cli-surface",
     "shell": "grep -L foo $WW_STEP_CHANGED_FILES || true",
-    "assert": {"operator": "empty"},
+    "assert": ["empty"],
     "config": [],
     "covers": ["develop/1"],
     "proven": True,
@@ -209,13 +209,13 @@ def test_the_two_stages_and_their_approvals_end_in_a_derived_check(
     stop = _report(service, _approach())
 
     assert stop.status == "failed"
-    assert stop.operator_reason == "check_proposed"
+    assert stop.operator_reason == "rules_proposed"
     assert [(p.kind, p.key) for p in stop.proposals] == [("approach", text_hash[:12])]
     rendered = _markdown(stop)
     assert "verifiers proposed checks for the step's rules" in rendered
     assert "Approach: diff the parser's help output" in rendered
     assert f"--approve {text_hash[:12]}" in rendered
-    assert _store(root)["rules"][text_hash]["status"] == "approach-proposed"
+    assert _store(root)["rules"][text_hash]["status"] == "approach_proposed"
     with pytest.raises(StateError, match="nothing to retry"):
         service.next("TASK-1", retry=True)
 
@@ -223,14 +223,18 @@ def test_the_two_stages_and_their_approvals_end_in_a_derived_check(
 
     assert prepare.item_name == "develop-verify-1"
     assert prepare.verification is not None
-    assert prepare.verification.rules[0].state == "approach-approved"
-    assert "--check-result='<JSON check cli-surface>'" in _markdown(prepare)
+    assert prepare.verification.rules[0].state == "approach_approved"
+    prepare_page = _markdown(prepare)
+    assert "--check-result='<JSON check cli-surface>'" in prepare_page
+    assert '`"assert": ["empty"]` when it must print nothing' in prepare_page
+    assert '`"assert": [{"equals": "<value>"}]`' in prepare_page
+    assert '"operator"' not in prepare_page
     stop = _report(
         service,
         {"id": "develop/1", "status": "approach", "check": "cli-surface"},
         checks=(FOO_CHECK,),
     )
-    assert stop.operator_reason == "check_proposed"
+    assert stop.operator_reason == "rules_proposed"
     assert [(p.kind, p.key, p.command) for p in stop.proposals] == [
         ("check", "cli-surface", FOO_CHECK["shell"])
     ]
@@ -283,7 +287,7 @@ def test_a_failing_verdict_is_a_fix_round_counted_with_the_checks(
     service, _ = _developed(root)
     failing = {
         "id": "develop/1",
-        "status": "not-convertible",
+        "status": "not_convertible",
         "reason": "It needs a reviewer.",
         "verdict": "fail",
         "failures": [{"file": "app.py", "line": 1, "what": "prints to stdout"}],
@@ -299,7 +303,7 @@ def test_a_failing_verdict_is_a_fix_round_counted_with_the_checks(
     rendered = _markdown(back)
     assert "### `develop/1` (verifier's verdict)" in rendered
     assert "    app.py:1 — prints to stdout" in rendered
-    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "not-convertible"
+    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "not_convertible"
     again = service.complete("TASK-1", artifact="Fixed.", summary_for_next="Fixed.")
     assert again.verification is not None
     assert [rule.state for rule in again.verification.rules] == ["judged"]
@@ -317,7 +321,7 @@ def test_judged_failures_reach_the_fix_limit(tmp_path: Path) -> None:
     service, _ = _developed(root)
     failing = {
         "id": "develop/1",
-        "status": "not-convertible",
+        "status": "not_convertible",
         "reason": "Review.",
         "verdict": "fail",
         "failures": [{"file": "app.py", "what": "bad"}],
@@ -436,7 +440,7 @@ def test_a_pending_proposal_elsewhere_is_judged_for_now(tmp_path: Path) -> None:
             "rules": {
                 text_hash: {
                     "text": CLI,
-                    "status": "approach-proposed",
+                    "status": "approach_proposed",
                     "approach": "a",
                     "check": "x",
                     "interpretation": "No flag changes.",
@@ -500,7 +504,7 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
             json.dumps(
                 {
                     "id": "develop/1",
-                    "status": "not-convertible",
+                    "status": "not_convertible",
                     "reason": "Review.",
                     "verdict": "pass",
                 }
@@ -520,7 +524,7 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
             json.dumps(
                 {
                     "id": "develop/2",
-                    "status": "not-convertible",
+                    "status": "not_convertible",
                     "reason": "Taste.",
                     "verdict": "pass",
                 }
@@ -580,7 +584,7 @@ def test_the_state_with_a_held_completion_survives_a_round_trip(
     state, snapshot = reloaded.load("TASK-1")
     record = state.item_executions[state.cursor]
 
-    assert state.failure_kind == "check_proposed"
+    assert state.failure_kind == "rules_proposed"
     assert record.held_completion is not None
     assert record.open_proposals == (rule_text_hash(CLI),)
     assert record.rule_resolutions[0].status == "unresolved"
@@ -658,7 +662,7 @@ def test_the_cli_refuses_a_malformed_rule_result(
 
 PASS = {
     "id": "develop/1",
-    "status": "not-convertible",
+    "status": "not_convertible",
     "reason": "A matter of review.",
     "verdict": "pass",
 }
@@ -827,7 +831,7 @@ def test_yes_approves_without_the_prompt(
     error = capsys.readouterr().err
     assert "approach for rule" in error
     assert "Approved with --yes." in error
-    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "approach-approved"
+    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "approach_approved"
 
 
 # rules.approval ------------------------------------------------------------------
@@ -904,11 +908,11 @@ def test_check_approval_approves_the_approach_and_stops_for_the_check(
 
     assert prepare.item_name == "develop-verify-1"
     assert prepare.verification is not None
-    assert prepare.verification.rules[0].state == "approach-approved"
+    assert prepare.verification.rules[0].state == "approach_approved"
     entry = _store(root)["rules"][text_hash]
-    assert (entry["status"], entry["approved_by"]) == ("approach-approved", "auto")
+    assert (entry["status"], entry["approved_by"]) == ("approach_approved", "auto")
     stop = _report(service, STAGE_B, checks=(FOO_CHECK,))
-    assert stop.operator_reason == "check_proposed"
+    assert stop.operator_reason == "rules_proposed"
     assert [(p.kind, p.key) for p in stop.proposals] == [("check", "cli-surface")]
 
     recorded = service.next("TASK-1", approve=("cli-surface",))
@@ -927,7 +931,7 @@ def test_check_approval_still_stops_for_an_ambiguous_rule(tmp_path: Path) -> Non
         {"id": "develop/1", "status": "ambiguous", "candidates": ["a", "b"]},
     )
 
-    assert stop.operator_reason == "check_proposed"
+    assert stop.operator_reason == "rules_proposed"
     assert stop.proposals[0].kind == "ambiguous"
 
 
@@ -941,7 +945,7 @@ def test_auto_approval_converts_a_proven_check_without_a_stop(
 
     prepare = _active(service, _report(service, _approach()))
     assert prepare.verification is not None
-    assert prepare.verification.rules[0].state == "approach-approved"
+    assert prepare.verification.rules[0].state == "approach_approved"
     recorded = _report(service, STAGE_B, checks=(FOO_CHECK,))
 
     assert recorded.status != "failed"

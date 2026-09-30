@@ -86,7 +86,7 @@ tracker a repository uses, not what a workflow does, so it is a key of
 `../ww-agentic-workflows.json`, parsed and validated in
 `../src/ww/project_config.py` at every settings level, and the YAML frontend
 rejects the key in any file with an error that names the file. It accepts
-only the explicit `{timestamp}`, `{digit}`, and `{uuid}` placeholders, or
+only the explicit `{{timestamp}}`, `{{digit}}`, and `{{uuid}}` placeholders, or
 `explicit`, and drives generated top-level and child task IDs; when it is
 absent, ww retains the standard `TASK-<timestamp>` convention. A task started
 in a configured project follows that project's own format when its settings
@@ -209,7 +209,7 @@ item path throughout that relationship and rebuilds the recursive step
 projection. The executor therefore never has to infer hierarchy from display
 paths.
 
-`depends_on` is deliberately an artifact-reference hint, not a scheduler. The
+`artifact_from` is deliberately an artifact-reference hint, not a scheduler. The
 semantic validator resolves it to the nearest earlier artifact-producing step
 of that name: an earlier sibling, else an earlier step of an enclosing level.
 An enclosing container is visible to its nested steps only when its own work
@@ -246,7 +246,9 @@ refuses.
 
 `HandlerDefinition` holds a typed `DefinedAction` or a core handoff definition,
 plus shared defaults such as
-execution settings, `provide`, and `update_metadata`. A `StepDefinition` adds
+execution settings and what the YAML's `variables` and `saves` declare
+(`provide`/`outputs`, `save_metadata`, `update_document`, `update_item` on the
+model; the notation names never reach the plan). A `StepDefinition` adds
 container and step policy. `HookDefinition` adds filters, lifecycle phase, and
 provenance while storing the handler directly. Named hook references
 and name-only extension steps are represented as name-only handlers and
@@ -331,7 +333,7 @@ records. A persisted plan item stores its operation under `operation` with an
 explicit `type`: `action` for registered actions (with their `identifier` and
 `payload`), or `loop`, `workflow_transition`, and `child_workflow` for core
 controls, whose fields are owned by `../src/ww/operations.py`. In YAML the core
-controls have their own keys, `workflow`, `children.workflow`, and `loop`; the
+controls have their own keys, `handoff_to`, `children.workflow`, and `loop`; the
 explicit `action: {type: ...}` form selects registered actions only and rejects
 a core control's type, so engine behaviour is never spelled as an action. This
 does not introduce a public YAML plugin format or new scheduling primitives.
@@ -415,7 +417,8 @@ segments, output attestation, what an operator may attest manually, artifact
 attribution, extension binding—comes from one
 `traits(planned)` call returning an `ActionTraits` value with plain defaults,
 so core keeps the policy and actions only state facts about themselves.
-Explicit action YAML can declare `outputs`; core still validates and
+Explicit action YAML can declare returned values as bare `variables` entries
+(the model's `outputs`); core still validates and
 persists them, so a custom automatic action can feed downstream values without
 new parser or executor branches.
 
@@ -440,16 +443,16 @@ and top-level artifact dependencies.
 
 The compiler emits workflow and step lifecycles in one ordered plan. Global and
 workflow `before_start_workflow` hooks run once before the implicit `init` step.
-At `start`, the manager immediately records the supplied `--init-artifact` in
+At `start`, the manager immediately records the supplied `--requirements` in
 the implicit step; it is never dispatched as an agent assignment. Each declared
-step then runs `before_in_progress`, the step itself, `before_complete`, and
+step then runs `before_start`, the step itself, `before_complete`, and
 `after_complete` in global, workflow, then step order. After the final step,
 global and workflow `before_complete_workflow` hooks run once, followed by the
 built-in summary or handoff transition. Workflow boundaries reject step filters
 because their purpose is to provide one stable location independent of workflow
 shape. Filters remove an item from the plan entirely. Because `init` is an
 ordinary artifact-producing step in the compiled plan, a first
-declared step can consume its artifact with `depends_on: init`.
+declared step can consume its artifact with `artifact_from: init`.
 
 The compiler carries declared values forward after both steps and hooks,
 validates `{{name}}` interpolation data flow, binds available built-ins, and
@@ -457,17 +460,25 @@ preserves unresolved declared inputs for future execution. A plan is therefore
 safe to render before a task exists.
 
 Core variable names and value construction are owned by `../src/ww/variables.py`.
-Stable values such as `__task_id` and `__workflows` are bound during compilation;
-dynamic values are resolved from current execution state when an instruction or
-automatic action is rendered. This lets `__task_workspace_dir` follow a run's
-selected checkout without freezing a path into the plan snapshot.
+Every ww-provided value lives under `ww.` (`ww.task.id`, `ww.project.dir`,
+`ww.metadata.<path>`, `ww.item.field.<name>`, ...); a user variable may not
+start with `ww`, and `renamed_template_name` maps a pre-`ww.` name to its
+replacement for the interpolation error. Stable values such as `ww.task.id`
+and `ww.task.workflows` are bound during compilation; dynamic values are
+resolved from current execution state when an instruction or automatic action
+is rendered. This lets `ww.task.workspace_dir` follow a run's selected
+checkout without freezing a path into the plan snapshot. ww's own namespaces
+never count as "not available yet": only extension namespaces (and a per-child
+stage's `ww.child.*`) stop a step for `value_unavailable`.
 
 Durable metadata is separate from the workflow-value ledger. Agent-owned
-handlers declare captures with `update_metadata`; the compiled item retains each
-agent-facing completion name, dotted storage path, scope, and description so a
+handlers declare captures as `metadata.<path>` or `project_metadata.<path>`
+entries of `saves`; the compiled item retains each agent-facing completion
+name (the path as written, `project_metadata.`-prefixed for project scope),
+dotted storage path, scope, and description so a
 resumed run produces the same instruction. Task-scoped references use
-`{{metadata.<path>}}`, while project-scoped references use
-`{{project_metadata.<path>}}`. Both remain unresolved at compile time because a
+`{{ww.metadata.<path>}}`, while project-scoped references use
+`{{ww.project_metadata.<path>}}`. Both remain unresolved at compile time because a
 value may be created by an earlier item or another task. Explicit namespaces
 keep ownership visible and avoid implicit task-over-project shadowing.
 
@@ -494,8 +505,8 @@ cursor ranges. Parent-only preparation hooks are separate assignments; trailing
 parent completion hooks follow the final descendant. Concrete dynamic items,
 child coordination, workflow transitions, and successor execution instances
 remain manager boundaries. The exceptions are an `items` step whose
-`item_assignment` is `per_item` or `all_items`, and a loop body under
-`per_iteration`: in the `auto` runtime the bound extends across later stages
+`assignment` is `per_item` or `together`, and a loop body under
+`per_round`: in the `auto` runtime the bound extends across later stages
 of the same item, of every item, or of the same loop round, and grows its
 lineage as it absorbs each stage so stage completion hooks stay inside. Both
 share one rule for where a span ends early: a stage that resolves to another
@@ -526,7 +537,7 @@ or `worker`; `NextRole` adds `operator`, the human ww waits for, who is never a
 caller. `operator_reason` in `../src/ww/instructions/policy.py` derives from
 the saved state alone whether a task needs that human, and why: a failed item
 is `child_failed`, `work_failed`, or `handler_failed` by the kind of item at the
-cursor; an interrupted item is `interrupted_command` unless its handler replays
+cursor; an interrupted item is `handler_interrupted` unless its handler replays
 harmlessly; and a repeat boundary at its limit is `loop_limit`. The control
 decision asks that function first, so every such state is `awaiting_operator`
 with next role `operator`, and `blocked` is left to states where ww waits on
@@ -579,7 +590,7 @@ counters to insert an `iteration-NN` directory beneath each enclosing loop
 wrapper. This keeps every round's results addressable and prevents a repeated
 body step from overwriting its earlier artifact; nested loops naturally add one
 directory at each loop boundary. Body items carry the enclosing loop's
-identity and its `loop_assignment`, so `assignment_at` can keep consecutive
+identity and its assignment (`PlanItem.loop_assignment`), so `assignment_at` can keep consecutive
 body steps of one round in one worker assignment when they resolve to the same
 worker settings; the boundaries remain coordinators and always end an
 assignment. The loop entry also represents the wrapper's
@@ -642,7 +653,7 @@ rules, so recovery and first execution have one result contract. Explicit
 action-versus-segment scope prevents a generic checker success from being
 mistaken for evidence that every side effect in a multi-segment action occurred.
 
-A workflow transition is the one supported cross-workflow operation. The
+A workflow transition (`handoff_to` in YAML) is the one supported cross-workflow operation. The
 transition itself declares a handoff workflow: `WorkflowDefinition.hands_off`
 is derived from the steps, so inheritance copies it with them and there is no
 YAML flag. Configuration validation, not the compiler, places it: at most one
@@ -699,7 +710,15 @@ Reads recognize the new document by its `ww.task-state` format discriminator.
 The document carries one schema version. A document at another version is
 upgraded through the migration table in the codec when an upgrade exists, and
 rejected otherwise. Schema 2 (per-child stages) lets a child record be
-`skipped` and carry custom `fields`; a schema 1 document reads unchanged.
+`skipped` and carry custom `fields`; a schema 1 document reads unchanged. The
+records inside it migrate on their own: the plan snapshot codec upgrades one
+version at a time through `PLAN_MIGRATIONS` in
+`../src/ww/execution_models/runs.py` (schema 18 applies the v1 renames to what
+a plan froze: assignment values, the `before_start` phase, `ww.` template
+names, a document path's `{{ww.task.id}}`, and `assert` lists; plan item IDs
+keep their old spelling because they are opaque and records refer to them),
+and `ExecutionState` reads schema 10 and upgrades it to 11
+(`rules_proposed`, the `ww.project.name` workflow value).
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
 Scoped cleanup of obsolete regular files follows. Cleanup failures are
@@ -751,7 +770,8 @@ extension API contracts. Release notes must call out an incompatible change and
 the affected boundary.
 
 Persisted plans and execution records carry their current format versions. The
-reader rejects every other version rather than guessing or migrating it.
+reader upgrades a version its codec has a migration for and rejects every
+other version rather than guessing.
 Plan schema 9 stores each item's operation with an explicit type: registered
 actions keep their identifier and type-specific plain payload, and resumed work
 uses those saved payloads without resolving workflow configuration again. An unavailable action stays inspectable as saved data; instruction or
@@ -821,7 +841,7 @@ each assignment to a worker. The worker submits its own item and hook results
 until explicit handoff, then returns the "Handoff to manager" block that ww
 builds from the saved state (`instructions/handoff.py`): the items performed
 with their outcomes, artifacts, checks, fix rounds and change set, plus the
-worker's capped `--summary-for-next-step`. The service takes the open
+worker's capped `--summary`. The service takes the open
 assignment's items before a worker command runs, so the block can still name
 them after the command closed the assignment. A worker's `complete` or `loop`
 on a `role: manager` item is refused; the manager completes it with `--role
@@ -891,7 +911,7 @@ the meaning of a name already in use. That property is what makes automatic
 discovery safe, and it is why no `extensions:` allow-list is needed: nothing
 discovered has any effect until it is named in full.
 
-**Extensions provide no hooks.** A hook decides when work runs against a
+**Extensions provide no workflow hooks.** A workflow hook decides when work runs against a
 particular workflow and step. That is knowledge the project's configuration
 holds and an extension cannot; an extension supplies the work, never its
 placement.
@@ -936,7 +956,13 @@ or item fails at compile time — before a task exists.
 The item also freezes the public API version, extension version, provider
 source, source fingerprint, and that extension's settings. Dispatch uses the
 frozen settings and rejects a different version, API version, or provider
-source. The fingerprint is recorded for audit only: like ww's own code, an
+source. Before an extension receives frozen settings, the registry passes
+them through the extension's `upgrade_settings` when it declares one
+(`ExtensionRegistry.frozen_settings`, used by the executor and by variable
+overrides), so an extension that renamed a setting keeps runs frozen under
+the old name working while its live settings reject the old name; `ww/git`
+uses it for `commit_message`, `use_separate_branch`, and its pre-`ww.` format
+tokens. The fingerprint is recorded for audit only: like ww's own code, an
 extension may be fixed in place while a task is in flight, so a change in
 behaviour is signalled by a version bump rather than by the bytes of the file.
 Project-extension fingerprints cover `extension.py`; installed-provider
@@ -1055,12 +1081,12 @@ external trackers such as Jira.
 The task root also retains the generic metadata object shared by all of those
 runs. Agent completions can update only paths declared by the active plan item,
 while prompts, automatic commands, extension contexts, and workflow transitions
-can consume them through the `metadata` interpolation namespace. The
+can consume them through the `ww.metadata` interpolation namespace. The
 `metadata <task-id>` command exposes the complete object as JSON for inspection
 without making the execution aggregate the source of truth for it.
 
 Project metadata provides the same validated dotted-path model across task
-containers through the explicit `project_metadata` namespace. It is read live
+containers through the explicit `ww.project_metadata` namespace. It is read live
 when actions are rendered, supporting project-wide discoveries that evolve over
 time; workflows needing a stable per-task value must capture that value into
 task metadata. `metadata --project` exposes the shared object without coupling
@@ -1076,7 +1102,7 @@ completion without requiring workflow configuration.
 
 Most tracker-backed workflows do not know their durable ID until an agent has
 created or fetched the external issue. The first declared workflow step may
-provide exactly `task_id` and therefore has a narrow bootstrap role when `start` is called
+declare exactly the variable `task_id` and therefore has a narrow bootstrap role when `start` is called
 without an ID. ww records that short-lived request under `../.ww/bootstrap`, runs
 only that agent-owned action, and binds the returned normalized ID before it
 creates any task state, branch, worktree, run ledger, or ordinary lifecycle
@@ -1113,7 +1139,7 @@ commits in the same checkout instead of silently falling back to the root
 worktree.
 
 The same selection is exposed to workflow interpolation as
-`{{__task_workspace_dir}}`. Core resolves it to the canonical project root (or the
+`{{ww.task.workspace_dir}}`. Core resolves it to the canonical project root (or the
 persisted working directory); referenced extensions then receive a constrained
 override opportunity. The Git override prefers the primary checkout when it is
 on the exact task branch and otherwise uses the selected or recorded worktree.
@@ -1171,7 +1197,7 @@ child with `ww add-child`. `ChildFlowPlanner` in `../src/ww/plan/constructs.py`
 compiles it like an `items` step: the collect leaf, then a ww-owned
 `ChildWorkflowRun` leaf nested under it as `<step>/children`, so one step owns
 the whole child lifecycle and its completion hooks follow the children. The
-run leaf is a coordinator boundary rather than agent work: `ww child start
+run leaf is a coordinator boundary rather than agent work: `ww start-child
 <parent> <child>` starts one selected child workflow at a time. Until then a
 `pending` child record may still be edited with `ww update-child`
 (`WorkflowService.update_child`).
@@ -1279,9 +1305,9 @@ plan: a step inherits it along the step chain, as it inherits a profile, while
 a hook takes it only from its own entry or the handler it names. The plan
 omits the default `task`, so plans without the setting are unchanged.
 `ww.workspace.item_workspace` resolves the value against the root, the
-persisted working directory, and the run's `__project_dir`, and
+persisted working directory, and the run's `ww.project.dir`, and
 `ww.variables.item_workspace_values` pairs that directory with the item's
-interpolation values, overriding `__task_workspace_dir` for a non-`task` item.
+interpolation values, overriding `ww.task.workspace_dir` for a non-`task` item.
 The instruction builder and every executor context (commands, extensions,
 preflight, and recovery) derive the item's directory and values from that one
 function, so the `cd`, the process directory, and the interpolated path cannot
@@ -1292,10 +1318,10 @@ directory, and core adds no Git handling for it.
 
 A document is the durable complement of metadata: a free-format file declared
 once at the root, resolved to a task or project location, and edited in place
-by the agent that a step's `update_document` names. Core deliberately owns as
+by the agent that a step's `documents.<name>` entry of `saves` names. Core deliberately owns as
 little of it as possible. The compiler freezes the declarations into the plan
 so a run resolves paths without the configuration, the compiler admits
-`documents.<name>` as an interpolation name, and completion checks that each
+`ww.documents.<name>` as an interpolation name, and completion checks that each
 promised file exists before journaling run, step, time, and content hash. The
 journal, not the file, is what state knows; the file's content and format stay
 the workflow's. The document store and the interaction log are the two task
@@ -1307,7 +1333,7 @@ what it owns, so a task started later under the same ID inherits nothing.
 
 A child added without an ID under a child workflow whose first step provides
 `task_id` is recorded under a temporary request ID, the same shape the
-top-level bootstrap flow uses. `child start` then opens an identity request
+top-level bootstrap flow uses. `start-child` then opens an identity request
 bound to the parent instead of a run. Completing the request validates the
 supplied ID as one segment beneath the parent, starts the child run with the
 identity step already done and the parent binding recorded, and finally renames
@@ -1353,7 +1379,7 @@ The item commands are the only mutation boundary, which keeps external agents
 from editing task files directly. The executor refuses to leave an item phase
 until every collected item is both resolved and reported.
 
-A flow declared `shared` adds one task-level store beside the per-run copies,
+A flow declared `persistent` adds one task-level store beside the per-run copies,
 through the storage adapter like metadata. The run's copy stays the working
 set and the source of every expansion; the store is written from it after
 each item command, so it holds the latest outcome of every item, and a new
@@ -1363,8 +1389,8 @@ the engine: the compiler marks the collection item, the seeding happens at
 run start, and nothing about expansion or per-item execution changes.
 
 Custom fields keep the item a closed record: a string mapping on the work
-item, declared per step with `update_item` and gated at completion exactly
-as `update_metadata` is, so a step cannot finish having promised a field it
+item, declared per step as `item.field.<name>` entries of `saves` and gated
+at completion exactly as saved metadata is, so a step cannot finish having promised a field it
 did not set. `identity` and `unique` are flow-level rules the compiler
 carries on the collection item and the item commands enforce, against the
 run's items and the shared store, because a duplicate an agent could add by
@@ -1381,10 +1407,11 @@ agent's business; the choice mechanisms table in `agents.py` is core knowledge
 of what each integration offers, not an extension point.
 
 The operator page is an extra on top of that, not part of it. The core knows
-it by one flag, `ui` on a per-item stage, which the step's page turns into
+it by one flag, `interactive: page` on a per-item stage (`ui` on the
+model and plan item), which the step's page turns into
 one command; the `operator_ui` package owns the rest and drives the task only
 through the public service calls an agent uses: `interact` to record the pick
-and the comment and end the stage, `update_item` to mark the built-in stage's
+and the comment and end the stage, `update-item` to mark the built-in stage's
 item, `complete`, and `next`. Nothing in it writes task state, and the
 engine, the records, the work items, and the instruction builder know nothing
 about answers or pages.
@@ -1400,7 +1427,7 @@ daemon and no state in the server. When the wait ends, the package consumes
 the sheet in plan order, and a stage is committed before its answer leaves
 the sheet, so a cut wait leaves a stale entry that the next wait drops. The
 pairing of an answer with the stage it completes is unambiguous because an
-item flow may declare one `ui` stage. The port is derived from the task ID
+item flow may declare one `interactive: page` stage. The port is derived from the task ID
 so an open tab survives between waits, and the wait is bounded so an agent's
 shell timeout never kills it mid-way. A pause is kept on the execution
 state, not on a stage, because it outlives the stage that was current when
@@ -1501,11 +1528,12 @@ and ww inserts one verification item per distinct worker setting before the
 step as a new plan revision, each an assignment of its own. A verifier gives
 verdicts with evidence, or, once per rule wording, interprets the rule and
 proposes how to check it; the operator approves the approach and then the
-prepared command at a `check_proposed` stop, and only then does the command
+prepared command at a `rules_proposed` stop, and only then does the command
 run, on the held completion first. What ww learns this way lives in
 `ww-rule-automation.json` at the project root, keyed by the hash of the rule
-text, with checks that may cover several rules; it is derived knowledge that
-ww owns and commits, never configuration, so YAML and rule files are never
+text, with checks that may cover several rules (store schema 3; versions 1
+and 2, with hyphenated statuses and single-mapping `assert`, are upgraded on
+read); it is derived knowledge that ww owns and commits, never configuration, so YAML and rule files are never
 rewritten. A failing verdict is a rejection like a failed check and counts
 toward the same limit; when nothing is left to verify or decide, ww records
 the held completion by replaying it with the saved arguments.

@@ -9,14 +9,14 @@ one per distinct worker hint set among the rules, each asked about its rules:
 - an ``unresolved`` rule (the store knows nothing, or the operator picked its
   reading) gets an interpretation and an approach: which command or tool
   would check it, and which check it would join (stage A);
-- an ``approach-approved`` rule gets its check prepared, proven, and reported
+- an ``approach_approved`` rule gets its check prepared, proven, and reported
   (stage B);
 - a ``judged`` rule, and one the verifier could not convert, gets a verdict.
 
 What the verifiers report goes into the rule-automation store as proposals,
 never as approved checks. A failing verdict sends the step back to its worker
 through the fix loop. A proposal stops the task for the operator
-(``check_proposed``), who approves, rewrites, picks, or rejects; ww then
+(``rules_proposed``), who approves, rewrites, picks, or rejects; ww then
 re-verifies what is left and finally records the held completion, running
 any newly approved check on it first. Nothing is reasoned about twice: a
 wording with an approved check is checked by it in every later step.
@@ -123,7 +123,7 @@ def resolve_rules(
             )
             continue
         status: RuleResolutionStatus
-        if entry is None or entry.status in {"interpreted", "approach-approved"}:
+        if entry is None or entry.status in {"interpreted", "approach_approved"}:
             status = "unresolved"
         elif entry.status in UNDECIDED_RULE_STATUSES:
             status = "pending_operator"
@@ -186,8 +186,8 @@ def verification_needs(
         interpretation = entry.interpretation if entry else None
         if entry is None or entry.status == "interpreted":
             state: VerificationState = "unresolved"
-        elif entry.status == "approach-approved":
-            state = "approach-approved"
+        elif entry.status == "approach_approved":
+            state = "approach_approved"
         else:
             state = "judged"
         needs.append(
@@ -198,7 +198,7 @@ def verification_needs(
                 state=state,
                 interpretation=interpretation,
                 approach=entry.approach if entry and state != "unresolved" else None,
-                check=entry.check if entry and state == "approach-approved" else None,
+                check=entry.check if entry and state == "approach_approved" else None,
                 pending_operator=(
                     state == "judged"
                     and entry is not None
@@ -520,7 +520,7 @@ def stop_for_proposals(
             replace(
                 state,
                 status="failed",
-                failure_kind="check_proposed",
+                failure_kind="rules_proposed",
                 cursor=index,
                 active_item_id=plan.items[index].id,
                 item_executions=tuple(records),
@@ -664,8 +664,8 @@ class CheckProposal:
 
 
 _ALLOWED: dict[VerificationState, tuple[RuleResultStatus, ...]] = {
-    "unresolved": ("approach", "not-convertible", "ambiguous"),
-    "approach-approved": ("approach", "not-convertible"),
+    "unresolved": ("approach", "not_convertible", "ambiguous"),
+    "approach_approved": ("approach", "not_convertible"),
     "judged": ("judged",),
 }
 _RULE_RESULT_KEYS = {
@@ -756,7 +756,7 @@ def _rule_result(data: dict[str, Any], rule: VerificationRule) -> RuleResult:
             raise StateError(f"{label}: check must be a short kebab-case name")
         approach = text("approach", required=rule.state == "unresolved")
         forbid("reason", "candidates", "verdict", "failures")
-    elif status == "not-convertible":
+    elif status == "not_convertible":
         reason = text("reason", required=True)
         forbid("check", "approach", "candidates")
     elif status == "ambiguous":
@@ -773,7 +773,7 @@ def _rule_result(data: dict[str, Any], rule: VerificationRule) -> RuleResult:
         forbid("check", "approach", "reason", "candidates")
     verdict: Verdict | None = None
     failures: tuple[JudgedFailure, ...] = ()
-    if status in {"judged", "not-convertible"}:
+    if status in {"judged", "not_convertible"}:
         value = data.get("verdict")
         if value not in {"pass", "fail"}:
             raise StateError(f"{label}: {status} requires verdict pass or fail")
@@ -826,7 +826,7 @@ def parse_check_results(
     states = {rule.id: rule.state for rule in rules}
     naming: dict[str, list[str]] = {}
     for result in results:
-        if result.status == "approach" and states[result.id] == "approach-approved":
+        if result.status == "approach" and states[result.id] == "approach_approved":
             assert result.check is not None
             naming.setdefault(result.check, []).append(result.id)
     judged = {rule.id for rule in judged_rules(item)}
@@ -973,7 +973,7 @@ def record_results(
         expected = (
             {None, "interpreted"}
             if rule.state == "unresolved"
-            else {"approach-approved"}
+            else {"approach_approved"}
         )
         # The verifier's own earlier write, from a completion interrupted
         # before the task state recorded it, is rewritten, not refused.
@@ -988,7 +988,7 @@ def record_results(
         if result.status == "approach" and rule.state == "unresolved":
             updated = RuleEntry(
                 text=rule.text,
-                status="approach-proposed",
+                status="approach_proposed",
                 interpretation=interpretation,
                 approach=result.approach,
                 check=result.check,
@@ -1008,10 +1008,10 @@ def record_results(
                 proposed_in=by,
                 proposed_run=run,
             )
-        elif result.status == "not-convertible":
+        elif result.status == "not_convertible":
             updated = RuleEntry(
                 text=rule.text,
-                status="not-convertible",
+                status="not_convertible",
                 interpretation=interpretation,
                 reason=result.reason,
                 proposed_in=by,
@@ -1054,7 +1054,7 @@ def record_results(
 
 @dataclass(frozen=True)
 class Decisions:
-    """What the operator decided at a ``check_proposed`` stop, or what ww
+    """What the operator decided at a ``rules_proposed`` stop, or what ww
     approves on its own under ``rules.approval`` (:func:`automatic_decisions`)."""
 
     approve: tuple[str, ...] = ()
@@ -1106,7 +1106,7 @@ def automatic_decisions(
                 approve.append(key)
             continue
         entry = automation.rules.get(key)
-        if entry is not None and entry.status == "approach-proposed":
+        if entry is not None and entry.status == "approach_proposed":
             approve.append(key)
     return Decisions(approve=tuple(approve))
 
@@ -1168,22 +1168,22 @@ def apply_decisions(
             raise StateError(
                 f"rule {_short(name)} is ambiguous: choose a reading with --pick"
             )
-        if entry.status != "approach-proposed":
+        if entry.status != "approach_proposed":
             raise StateError(f"rule {_short(name)} has no approach to approve")
         automation = automation.with_rule(
-            name, replace(entry, status="approach-approved", **approval)
+            name, replace(entry, status="approach_approved", **approval)
         )
     for key, text in decisions.approaches:
         name = resolve_key(key, keys)
         entry = automation.rules.get(name)
-        if entry is None or entry.status != "approach-proposed":
+        if entry is None or entry.status != "approach_proposed":
             raise StateError(f"{_short(name)} is not a rule with a proposed approach")
         if not text.strip():
             raise StateError("--approach needs the approach in words")
         automation = automation.with_rule(
             name,
             replace(
-                entry, status="approach-approved", approach=text.strip(), **approval
+                entry, status="approach_approved", approach=text.strip(), **approval
             ),
         )
     for key, number in decisions.picks:

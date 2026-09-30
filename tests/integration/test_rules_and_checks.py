@@ -42,7 +42,7 @@ HEADER_RULE = """---
 paths: ["*.md"]
 check:
   shell: grep -L foo $WW_STEP_CHANGED_FILES || true
-  assert: { operator: empty }
+  assert: [empty]
 ---
 Include "foo" in every Markdown file you change.
 """
@@ -100,7 +100,7 @@ def _verify(service: WorkflowService) -> Instruction:
             json.dumps(
                 {
                     "id": "develop/1",
-                    "status": "not-convertible",
+                    "status": "not_convertible",
                     "reason": "A matter of review.",
                     "verdict": "pass",
                 }
@@ -442,7 +442,7 @@ def test_the_complete_command_exits_non_zero_on_a_rejection(
             "TASK-1",
             "--artifact",
             "Try.",
-            "--summary-for-next-step",
+            "--summary",
             "Done.",
         ]
     )

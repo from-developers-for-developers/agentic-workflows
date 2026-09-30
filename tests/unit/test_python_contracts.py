@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from ww.actions import (
+    AssertionCondition,
     AssertionDefinition,
     CommandDefinition,
     Commands,
@@ -106,9 +107,11 @@ def test_plan_item_rejects_unknown_closed_values(
         _item(**changes)
 
 
-def test_assertion_rejects_unknown_operator() -> None:
-    with pytest.raises(ValueError, match="invalid assertion operator"):
-        AssertionDefinition(operator="contains", expected="done")  # type: ignore[arg-type]
+def test_assertion_rejects_unknown_condition_and_empty_lists() -> None:
+    with pytest.raises(ValueError, match="invalid assertion condition"):
+        AssertionCondition(kind="contains", value="done")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="at least one condition"):
+        AssertionDefinition(())
 
 
 def test_persisted_input_request_rejects_malformed_entries() -> None:
@@ -188,7 +191,7 @@ def test_a_schema_15_plan_loads_with_no_modes_on_its_items() -> None:
 
     loaded = PlanSnapshot.from_dict(snapshot)
 
-    assert loaded.schema_version == PLAN_SCHEMA_VERSION == 17
+    assert loaded.schema_version == PLAN_SCHEMA_VERSION == 18
     assert loaded.plan.items[0].modes == ()
     assert loaded.to_dict()["plan"] == snapshot["plan"]
 
@@ -201,7 +204,7 @@ def test_a_schema_16_plan_loads_without_per_child_stages() -> None:
 
     loaded = PlanSnapshot.from_dict(snapshot)
 
-    assert loaded.schema_version == 17
+    assert loaded.schema_version == 18
     assert (loaded.plan.items[0].child_stage, loaded.plan.items[0].child_number) == (
         None,
         None,

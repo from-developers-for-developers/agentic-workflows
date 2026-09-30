@@ -36,10 +36,74 @@ from ww.validation import (
 )
 from ww.workflow_config import ProvidedVariable
 
-from .decoding import _positive_int_mapping, _variables
+from .decoding import _positive_int_mapping, _renamed_assertion, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 10
+EXECUTION_SCHEMA_VERSION = 11
+PREVIOUS_EXECUTION_SCHEMA_VERSION = 10
+# Renamed persisted names, read from a version 10 state: a failure kind, and
+# the core value keys a run keeps among its workflow values.
+_FAILURE_KINDS_10 = {"check_proposed": "rules_proposed"}
+_WORKFLOW_VALUES_10 = {"__project": "ww.project.name"}
+_VERIFICATION_STATES_10 = {"approach-approved": "approach_approved"}
+
+
+def _item_execution_10(record: Any) -> Any:
+    """A version 10 item record with renamed states and ``assert`` lists."""
+    if not isinstance(record, dict):
+        return record
+    upgraded = dict(record)
+    verification = record.get("verification")
+    if isinstance(verification, list):
+        upgraded["verification"] = [
+            {**rule, "state": _VERIFICATION_STATES_10[rule["state"]]}
+            if isinstance(rule, dict) and rule.get("state") in _VERIFICATION_STATES_10
+            else rule
+            for rule in verification
+        ]
+    checks = record.get("resolved_checks")
+    if isinstance(checks, list):
+        upgraded["resolved_checks"] = [
+            {
+                **check,
+                "command": {
+                    **check["command"],
+                    "assert": _renamed_assertion(check["command"]["assert"]),
+                },
+            }
+            if isinstance(check, dict)
+            and isinstance(check.get("command"), dict)
+            and "assert" in check["command"]
+            else check
+            for check in checks
+        ]
+    return upgraded
+
+
+def _execution_10_to_11(data: dict[str, Any]) -> dict[str, Any]:
+    """Schema 11 renames ``check_proposed`` and the ``__project`` value.
+
+    Every ww value moved under ``ww.`` (``__project`` is ``ww.project.name``),
+    the failure kind of a run waiting on rule proposals is
+    ``rules_proposed``, a verification rule's ``approach-approved`` state is
+    ``approach_approved``, and a resolved check's ``assert`` is a list of
+    conditions.
+    """
+    upgraded = {**data, "schema_version": 11}
+    kind = data.get("failure_kind")
+    if isinstance(kind, str) and kind in _FAILURE_KINDS_10:
+        upgraded["failure_kind"] = _FAILURE_KINDS_10[kind]
+    values = data.get("workflow_values")
+    if isinstance(values, dict):
+        upgraded["workflow_values"] = {
+            _WORKFLOW_VALUES_10.get(key, key): value for key, value in values.items()
+        }
+    records = data.get("item_executions")
+    if isinstance(records, list):
+        upgraded["item_executions"] = [_item_execution_10(record) for record in records]
+    return upgraded
+
+
 PAIR_SIZE = 2
 
 
@@ -383,7 +447,7 @@ class VerificationRule:
 
     ``state`` says what is asked: an approach (``unresolved``; a fixed
     ``interpretation`` when the operator picked one), a prepared check for
-    the ``approach`` the operator approved (``approach-approved``, with the
+    the ``approach`` the operator approved (``approach_approved``, with the
     proposed ``check`` name), or a verdict (``judged``;
     ``pending_operator`` when the store holds an undecided proposal).
     """
@@ -1041,6 +1105,9 @@ class ExecutionState:
         if not isinstance(data, dict):
             raise ValueError("execution state must be a mapping")
         schema_version = data.get("schema_version")
+        if schema_version == PREVIOUS_EXECUTION_SCHEMA_VERSION:
+            data = _execution_10_to_11(data)
+            schema_version = data["schema_version"]
         if schema_version != EXECUTION_SCHEMA_VERSION:
             raise ValueError(f"unsupported execution state schema: {schema_version!r}")
         required = {

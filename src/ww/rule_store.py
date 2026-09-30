@@ -26,6 +26,7 @@ the command that changes it and never the other way round.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from collections.abc import Callable
@@ -47,9 +48,16 @@ from ww.validation import (
 )
 
 STORE_FILE = RULE_AUTOMATION_FILE
-STORE_SCHEMA_VERSION = 2
+STORE_SCHEMA_VERSION = 3
 # Version 1 had no approver fields; its approvals read as "unknown approver".
-READABLE_SCHEMA_VERSIONS = frozenset({1, STORE_SCHEMA_VERSION})
+# Versions 1 and 2 spelled statuses with hyphens and ``assert`` as one
+# ``{operator, expected}`` mapping; reading them upgrades both.
+READABLE_SCHEMA_VERSIONS = frozenset({1, 2, STORE_SCHEMA_VERSION})
+_OLD_RULE_STATUSES = {
+    "approach-proposed": "approach_proposed",
+    "approach-approved": "approach_approved",
+    "not-convertible": "not_convertible",
+}
 # Who approved a proposal: the operator, or ww under ``rules.approval``.
 RuleApprover = Literal["operator", "auto"]
 # A check name: short, lower-case, kebab-case.
@@ -57,7 +65,7 @@ CHECK_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CHECK_NAME_LIMIT = 40
 # Rule statuses that wait for the operator's decision.
 UNDECIDED_RULE_STATUSES: frozenset[RuleAutomationStatus] = frozenset(
-    {"approach-proposed", "proposed", "ambiguous"}
+    {"approach_proposed", "proposed", "ambiguous"}
 )
 _RULE_KEYS = {
     "text",
@@ -91,7 +99,7 @@ class RuleEntry:
 
     ``check`` names the check that covers the rule, or, for an approach, the
     check the verifier would create or extend (``extends``). ``reason``
-    explains a ``not-convertible`` or ``rejected`` rule; ``candidates`` are
+    explains a ``not_convertible`` or ``rejected`` rule; ``candidates`` are
     the readings of an ``ambiguous`` one. ``proposed_in`` is the
     verification item that last reported on it, and ``proposed_run`` its run
     (``<task>/<run>``). ``approved_by`` and ``approved_in`` record who
@@ -195,7 +203,7 @@ class CheckSpec:
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = dict(self.command.commands[0].to_dict())
         data["assert"] = (
-            self.command.assertion.to_dict() if self.command.assertion else None
+            self.command.assertion.to_data() if self.command.assertion else None
         )
         data["config"] = list(self.config)
         data["covers"] = list(self.covers)
@@ -377,6 +385,8 @@ class RuleAutomation:
             raise ValueError(
                 "unknown rule automation keys: " + ", ".join(sorted(unknown))
             )
+        if data["schema_version"] != STORE_SCHEMA_VERSION:
+            data = _store_2_to_3(data)
         rules = data.get("rules", {})
         checks = data.get("checks", {})
         if not isinstance(rules, dict) or not isinstance(checks, dict):
@@ -396,6 +406,40 @@ class RuleAutomation:
                 for key, value in checks.items()
             },
         )
+
+
+def _store_2_to_3(data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a version 1 or 2 store: snake_case statuses, ``assert`` lists.
+
+    ``{operator: empty}`` becomes ``[empty]`` and ``{operator: eq, expected:
+    X}`` becomes ``[{equals: X}]``; anything else is left for the strict
+    decoders to reject.
+    """
+    upgraded = copy.deepcopy(data)
+    rules = upgraded.get("rules")
+    if isinstance(rules, dict):
+        for entry in rules.values():
+            if isinstance(entry, dict) and entry.get("status") in _OLD_RULE_STATUSES:
+                entry["status"] = _OLD_RULE_STATUSES[entry["status"]]
+    checks = upgraded.get("checks")
+    if isinstance(checks, dict):
+        for entry in checks.values():
+            if isinstance(entry, dict):
+                _upgrade_assert(entry)
+                if isinstance(entry.get("pending"), dict):
+                    _upgrade_assert(entry["pending"])
+    upgraded["schema_version"] = STORE_SCHEMA_VERSION
+    return upgraded
+
+
+def _upgrade_assert(spec: dict[str, Any]) -> None:
+    value = spec.get("assert")
+    if not isinstance(value, dict):
+        return
+    if value == {"operator": "empty"}:
+        spec["assert"] = ["empty"]
+    elif value.get("operator") == "eq" and set(value) == {"operator", "expected"}:
+        spec["assert"] = [{"equals": value["expected"]}]
 
 
 class RuleStore:

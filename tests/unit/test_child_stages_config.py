@@ -26,7 +26,7 @@ STAGES = """      - slices: One child per slice.
             - implement:
                 workflow: child
             - review: Review {{ww.child.field.area}} in {{ww.child.project}}.
-              depends_on: implement
+              artifact_from: implement
               break: Nothing is left worth doing.
             - land: Land {{ww.child.id}}.
 """
@@ -151,9 +151,9 @@ def test_per_child_stages_read_the_childs_extension_values(tmp_path: Path) -> No
         (
             "      - slices: Split.\n        children:\n          steps:\n"
             "            - name: group\n              steps:\n"
-            "                - name: inner\n                  workflow: child\n"
+            "                - name: inner\n                  handoff_to: child\n"
             "            - implement:\n                workflow: child\n",
-            "'inner' would be a workflow transition",
+            "'inner' carries handoff_to",
         ),
         (
             "      - slices: Split.\n        children:\n          steps:\n"

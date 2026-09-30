@@ -11,6 +11,7 @@ import pytest
 
 from ww.actions import (
     ActionTraits,
+    AssertionCondition,
     AssertionDefinition,
     CommandDefinition,
     Commands,
@@ -64,9 +65,7 @@ def test_prompt_uses_description_then_name() -> None:
     action = actions.get("prompt")
 
     assert action.parse({}, "step", "Do the work.", "p") == Prompt("Do the work.")
-    assert action.parse({"prompt": True}, "step", "", "p") == Prompt("step")
-    with pytest.raises(ConfigurationError, match="p prompt must be true"):
-        action.parse({"prompt": "yes"}, "step", "", "p")
+    assert action.parse({}, "step", "", "p") == Prompt("step")
     with pytest.raises(ConfigurationError, match="p prompt requires text"):
         action.validate(Prompt(""), "p")
 
@@ -111,9 +110,8 @@ def test_named_actions_require_a_discovered_name(
 ) -> None:
     action = actions.get(identifier)
 
-    assert action.parse({key: True}, "review", "", "p") == payload_type("review")
-    with pytest.raises(ConfigurationError, match=f"p {key} must be true"):
-        action.parse({key: "review"}, "review", "", "p")
+    # ``kind:`` chose the action; the payload is the handler's name.
+    assert action.parse({}, "review", "", "p") == payload_type("review")
     with pytest.raises(ConfigurationError, match=f"p {label} requires a name"):
         action.validate(payload_type(""), "p")
     assert action.templates(payload_type("review")) == ()
@@ -205,7 +203,7 @@ def test_mcp_plans_both_fields_and_renders_failure_guidance() -> None:
                         shell='echo "$1"', args=("x",), env=(("A", "b"),)
                     ),
                 ),
-                AssertionDefinition("eq", "x"),
+                AssertionDefinition((AssertionCondition("equals", "x"),)),
             ),
         ),
         ("cli", Commands((CommandDefinition(argv=("true",)),))),
@@ -242,14 +240,10 @@ def test_command_idempotent_default_is_omitted_from_saved_plans() -> None:
         ("cli", {"commands": [{"argv": ["a"], "shell": "b"}], "assert": None}),
         ("cli", {"commands": [{"shell": "a", "env": {"A": 1}}], "assert": None}),
         ("cli", {"commands": [{"argv": ["a"]}], "assert": "x"}),
-        ("cli", {"commands": [{"argv": ["a"]}], "assert": {"operator": "eq"}}),
-        (
-            "cli",
-            {
-                "commands": [{"argv": ["a"]}],
-                "assert": {"operator": "ne", "expected": "x"},
-            },
-        ),
+        ("cli", {"commands": [{"argv": ["a"]}], "assert": {"operator": "empty"}}),
+        ("cli", {"commands": [{"argv": ["a"]}], "assert": []}),
+        ("cli", {"commands": [{"argv": ["a"]}], "assert": [{"ne": "x"}]}),
+        ("cli", {"commands": [{"argv": ["a"]}], "assert": ["equals"]}),
         (
             "cli",
             {"commands": [{"argv": ["a"]}], "assert": None, "idempotent": "yes"},
@@ -293,7 +287,7 @@ def test_command_parses_argv_shell_and_nested_forms() -> None:
             "shell": 'echo "$1" "$NAME"',
             "args": ["{{task_id}}"],
             "env": {"NAME": "x"},
-            "assert": {"operator": "eq", "expected": "ok"},
+            "assert": [{"equals": "ok"}, "empty"],
         }
     ) == Commands(
         (
@@ -301,23 +295,9 @@ def test_command_parses_argv_shell_and_nested_forms() -> None:
                 shell='echo "$1" "$NAME"', args=("{{task_id}}",), env=(("NAME", "x"),)
             ),
         ),
-        AssertionDefinition("eq", "ok"),
-    )
-    nested = _parse_command(
-        {
-            "command": {
-                "command": [{"argv": ["a"]}, {"shell": "b"}],
-                "assert": {"operator": "eq", "expected": "done"},
-            }
-        }
-    )
-    assert [command.to_dict() for command in nested.commands] == [
-        {"argv": ["a"]},
-        {"shell": "b"},
-    ]
-    assert nested.assertion == AssertionDefinition("eq", "done")
-    assert _parse_command({"command": {"argv": ["a"]}}).commands == (
-        CommandDefinition(argv=("a",)),
+        AssertionDefinition(
+            (AssertionCondition("equals", "ok"), AssertionCondition("empty"))
+        ),
     )
 
 
@@ -328,7 +308,6 @@ def test_command_idempotent_is_parsed_planned_and_shown() -> None:
 
     assert planned.idempotent
     assert not plain.idempotent
-    assert _parse_command({"command": [{"argv": ["a"]}], "idempotent": True}).idempotent
     assert action.plan(planned, _resolution()).idempotent
     assert action.traits(planned).idempotent
     assert not action.traits(plain).idempotent
@@ -352,13 +331,19 @@ def test_command_idempotent_is_parsed_planned_and_shown() -> None:
         ({"shell": "echo {{task_id}}"}, "shell source cannot interpolate values"),
         ({"shell": "a", "args": "x"}, "shell args must be a list of strings"),
         ({"shell": "a", "env": {"1BAD": "x"}}, "shell env must map variable names"),
-        ({"shell": "a", "assert": {"operator": "ne", "expected": "x"}}, "must be eq"),
-        ({"shell": "a", "assert": {"operator": "eq"}}, "expected"),
-        ({"command": {"argv": ["a"]}, "shell": "b"}, "cannot combine command"),
-        ({"command": {"assert": {}}}, "command mapping requires command"),
-        ({"command": []}, "must contain action mappings"),
-        ({"command": ["a"]}, "must contain action mappings"),
-        ({"command": {"command": [{"cwd": "/"}]}}, "requires argv or shell"),
+        ({"shell": "a", "assert": []}, "must be a non-empty list of conditions"),
+        ({"shell": "a", "assert": "empty"}, "must be a non-empty list of conditions"),
+        ({"shell": "a", "assert": [{"ne": "x"}]}, "unknown"),
+        ({"shell": "a", "assert": [{}]}, "must be empty or"),
+        (
+            {"shell": "a", "assert": {"operator": "empty"}},
+            "was renamed to a list of conditions: assert: \\[empty\\]",
+        ),
+        (
+            {"shell": "a", "assert": {"operator": "eq", "expected": "x"}},
+            "assert: \\[\\{equals: x\\}\\]",
+        ),
+        ({"command": {"argv": ["a"]}}, "p.command was removed"),
     ],
 )
 def test_command_parse_errors(source: dict[str, Any], message: str) -> None:
@@ -400,7 +385,7 @@ def test_command_instruction_shows_the_commands_and_check() -> None:
             CommandDefinition(argv=("git", "commit", "-m", "a b")),
             CommandDefinition(shell='echo "$1"', args=("x",), env=(("A", "b c"),)),
         ),
-        AssertionDefinition("eq", "x"),
+        AssertionDefinition((AssertionCondition("equals", "x"),)),
     )
 
     content = action.instruction(planned, _context("Commit."))
@@ -411,7 +396,7 @@ def test_command_instruction_shows_the_commands_and_check() -> None:
     assert content.after_shared == (
         "**Check**",
         "",
-        "Command output must equal `x`.",
+        "Command output must be equal to `x`.",
         "",
     )
     assert action.traits(planned) == ActionTraits(
@@ -521,7 +506,8 @@ def test_execute_reports_command_failures(outcome: CommandOutcome, error: str) -
 
 def test_execute_checks_the_assertion_against_all_output() -> None:
     planned = Commands(
-        (CommandDefinition(argv=("x",)),), AssertionDefinition("eq", "expected")
+        (CommandDefinition(argv=("x",)),),
+        AssertionDefinition((AssertionCondition("equals", "expected"),)),
     )
 
     failed = _execute(planned, _Commands([CommandOutcome(True, stdout="actual")]))

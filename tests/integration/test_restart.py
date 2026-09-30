@@ -18,7 +18,7 @@ WORKFLOWS = """workflows:
     steps:
       - collect: Collect the cases.
         items:
-          shared: true
+          persistent: true
   - name: fix
     steps:
       - work: Fix it.

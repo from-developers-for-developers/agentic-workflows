@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any, NoReturn
 
 from ww import STAGE, __version__
 from ww.contracts import CALLER_ROLES
@@ -14,11 +16,80 @@ from ww.hooks.notices import RECENT_INTERRUPTION_DAYS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 
 HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
+# Flags that were renamed, by command: argparse refuses the old one and the
+# error names the new one, so an agent's old command fails with its fix.
+RENAMED_FLAGS: dict[str, dict[str, str]] = {
+    "init": {"--task-id-format": "--task-format"},
+    "start": {
+        "--init-artifact": "--requirements",
+        "--branch-naming-strategy": "--branch-strategy",
+    },
+    "next": {"--force-reason": "--reason"},
+    "complete": {"--summary-for-next-step": "--summary"},
+    "loop": {"--summary-for-next-step": "--summary"},
+    "interact": {
+        "--operator": "--operator-said",
+        "--agent": "--agent-said",
+        "--end-interaction": "--end",
+    },
+    "add-item": {"--item": "--text", "--reference-to-id": "--refers-to"},
+    "update-item": {"--item": "--text"},
+    "add-child": {"--description": "--text"},
+    "updates": {"--check": "--now"},
+}
+# Commands that were renamed; ``child start`` became ``start-child``.
+RENAMED_COMMANDS = {"child": "start-child <parent> <child>"}
 
 
-def _shared(*add: str) -> argparse.ArgumentParser:
+class _Parser(argparse.ArgumentParser):
+    """An argument parser whose errors name the replacement of a renamed flag.
+
+    Abbreviated flags are off, so an old flag that prefixes its new name
+    (``--operator`` of ``--operator-said``) is refused rather than accepted.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+        self._arguments: list[str] = []
+
+    def parse_known_args(  # type: ignore[override]
+        self, args: Sequence[str] | None = None, namespace: Any = None
+    ) -> tuple[argparse.Namespace, list[str]]:
+        if args is not None:
+            self._arguments = list(args)
+        return super().parse_known_args(args, namespace)
+
+    def error(self, message: str) -> NoReturn:
+        # A subcommand's parser is named "<prog> <command>"; unrecognized
+        # arguments are reported by the top-level parser, which finds the
+        # command among the arguments it was given.
+        command = self.prog.split()[-1] if " " in self.prog else next(
+            (
+                argument
+                for argument in self._arguments
+                if argument in RENAMED_FLAGS or argument in RENAMED_COMMANDS
+            ),
+            "",
+        )
+        hints = [
+            f"{old} was renamed to {new}"
+            for old, new in RENAMED_FLAGS.get(command, {}).items()
+            if any(
+                argument == old or argument.startswith(f"{old}=")
+                for argument in self._arguments
+            )
+        ]
+        if "invalid choice: 'child'" in message:
+            hints.append(f"child start was renamed to {RENAMED_COMMANDS['child']}")
+        if hints:
+            message = message + "\n" + "; ".join(hints)
+        super().error(message)
+
+
+def _shared(*add: str) -> _Parser:
     """Build a parent parser carrying the named shared options."""
-    parent = argparse.ArgumentParser(add_help=False)
+    parent = _Parser(add_help=False)
     if "json" in add:
         parent.add_argument("--json", action="store_true", dest="json_output")
     if "role" in add:
@@ -50,7 +121,7 @@ def _true_false(value: str) -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="ww-agentic-workflows", description="Resumable agentic workflows."
     )
     parser.add_argument(
@@ -81,7 +152,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add @WW_AGENT_INSTRUCTIONS.md to agent instruction files.",
     )
     init.add_argument(
-        "--task-id-format", choices=("digit", "timestamp", "uuid"), default=None
+        "--task-format",
+        dest="task_id_format",
+        choices=("digit", "timestamp", "uuid"),
+        default=None,
+        help="Generated task IDs: TASK-{{digit}}, TASK-{{timestamp}} or TASK-{{uuid}}",
     )
     init.add_argument(
         "--worktrees", action=argparse.BooleanOptionalAction, default=None
@@ -196,10 +271,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     start.add_argument(
-        "--init-artifact",
+        "--requirements",
         required=True,
         help=(
-            "Requirements from the user prompt, normalized for grammar and style. "
+            "What the user asked, restated and normalized for grammar and style. "
             "Saved immediately as the built-in init artifact."
         ),
     )
@@ -207,7 +282,6 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("-a", "--agent", required=True)
     start.add_argument(
         "--branch-strategy",
-        "--branch-naming-strategy",
         dest="branch_naming_strategy",
         default=None,
         metavar="NAME",
@@ -265,7 +339,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replay an interrupted automatic operation after operator confirmation.",
     )
     next_step.add_argument(
-        "--force-reason",
+        "--reason",
+        dest="force_reason",
         help="Required explanation for --force; retained with the skipped item.",
     )
     next_step.add_argument(
@@ -293,7 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="HASH_OR_CHECK",
         help=(
-            "At a check_proposed stop: approve a rule's proposed approach (by "
+            "At a rules_proposed stop: approve a rule's proposed approach (by "
             "rule hash) or a proposed check (by name). Repeatable."
         ),
     )
@@ -304,7 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("HASH", "TEXT"),
         help=(
-            "At a check_proposed stop: approve your own approach for a rule "
+            "At a rules_proposed stop: approve your own approach for a rule "
             "instead of the verifier's. Repeatable."
         ),
     )
@@ -314,7 +389,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="HASH=NUMBER",
         help=(
-            "At a check_proposed stop: choose the reading of an ambiguous rule "
+            "At a rules_proposed stop: choose the reading of an ambiguous rule "
             "by its number. Repeatable."
         ),
     )
@@ -337,9 +412,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Full Markdown result produced by the break-enabled step worker.",
     )
     loop.add_argument(
-        "--summary-for-next-step",
+        "--summary",
         default=None,
-        help="One or two sentences the next step reads; required for a step.",
+        help=(
+            "One or two sentences for whoever performs the next step; required "
+            "for a step."
+        ),
     )
     complete = subparsers.add_parser(
         "complete", parents=[completion], help="Complete the current workflow step."
@@ -350,7 +428,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--metadata",
         action="append",
         default=[],
-        help="A declared task or project metadata value, as name=value.",
+        help=(
+            "A declared metadata value, as path=value with the path written as "
+            "in saves (project_metadata.<path> for a project value)."
+        ),
     )
     complete.add_argument(
         "--artifact",
@@ -358,9 +439,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Full Markdown result produced by the step worker.",
     )
     complete.add_argument(
-        "--summary-for-next-step",
+        "--summary",
         default=None,
-        help="One or two sentences the next step reads; required for a step.",
+        help=(
+            "One or two sentences for whoever performs the next step; required "
+            "for a step."
+        ),
     )
     complete.add_argument(
         "--rule-result",
@@ -382,15 +466,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Record one exchange of an interactive step, or end its interaction.",
     )
     interact.add_argument("task_id")
-    interact.add_argument("--operator", default=None, help="What the operator said.")
-    interact.add_argument("--agent", default=None, help="What you said or proposed.")
+    interact.add_argument(
+        "--operator-said", dest="operator", default=None, help="What the operator said."
+    )
+    interact.add_argument(
+        "--agent-said", dest="agent", default=None, help="What you said or proposed."
+    )
     interact.add_argument(
         "--choice",
         default=None,
         help="The option the operator picked: label or number.",
     )
     interact.add_argument(
-        "--end-interaction",
+        "--end",
         action="store_true",
         dest="end_interaction",
         help="The operator said the conversation is finished.",
@@ -513,8 +601,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_item.add_argument("task_id")
     add_item.add_argument("--id", required=True)
-    add_item.add_argument("--item", required=True)
-    add_item.add_argument("--reference-to-id")
+    add_item.add_argument("--text", required=True, help="The item's wording.")
+    add_item.add_argument(
+        "--refers-to", metavar="ID", help="The ID of the item this one refers to."
+    )
     add_item.add_argument(
         "--field",
         action="append",
@@ -530,7 +620,7 @@ def build_parser() -> argparse.ArgumentParser:
     update_item.add_argument("task_id")
     update_item.add_argument("--id", dest="item_id", required=True)
     update_item.add_argument(
-        "--item",
+        "--text",
         help="New item text; allowed only while the collection step is in progress.",
     )
     update_item.add_argument("--processed-item")
@@ -558,7 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--id",
         help="Optional child ID; defaults to the configured task ID format.",
     )
-    add_child.add_argument("--description", required=True)
+    add_child.add_argument("--text", required=True, help="The child's text.")
     add_child.add_argument(
         "--project",
         default=None,
@@ -591,13 +681,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME=VALUE",
         help="Set a custom field of the child; allowed at any time.",
     )
-    child = subparsers.add_parser("child", help="Operate a child task.")
-    child_subparsers = child.add_subparsers(dest="child_command", required=True)
-    child_start = child_subparsers.add_parser(
-        "start", parents=[json_output], help="Start one child task."
+    start_child = subparsers.add_parser(
+        "start-child", parents=[json_output], help="Start one child task."
     )
-    child_start.add_argument("parent_task_id")
-    child_start.add_argument("child_id")
+    start_child.add_argument("parent_task_id")
+    start_child.add_argument("child_id")
     reset = subparsers.add_parser(
         "reset", parents=[json_output], help="Delete a task's state and artifacts."
     )
@@ -616,7 +704,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show whether the ww checkout is behind its remote.",
     )
     updates.add_argument(
-        "--check",
+        "--now",
         action="store_true",
         help="Look again now instead of waiting for the next scheduled check.",
     )
@@ -659,8 +747,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _rules_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
-    json_output: argparse.ArgumentParser,
+    subparsers: argparse._SubParsersAction[_Parser],
+    json_output: _Parser,
 ) -> None:
     """``rules``: list, prune and revoke, and the validated writes the skill uses."""
     rules = subparsers.add_parser(
@@ -673,7 +761,7 @@ def _rules_parser(
     )
     actions = rules.add_subparsers(dest="rules_action", required=False)
     # ``--json`` after the action; SUPPRESS keeps one given before it.
-    after = argparse.ArgumentParser(add_help=False)
+    after = _Parser(add_help=False)
     after.add_argument(
         "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
     )
@@ -704,7 +792,7 @@ def _rules_parser(
         action="store_true",
         help="Revoke without the y/N prompt, on the operator's word.",
     )
-    dry_run = argparse.ArgumentParser(add_help=False)
+    dry_run = _Parser(add_help=False)
     dry_run.add_argument(
         "--dry-run",
         action="store_true",
@@ -724,7 +812,13 @@ def _rules_parser(
     command = add.add_mutually_exclusive_group()
     command.add_argument("--check-shell", metavar="SCRIPT", default=None)
     command.add_argument("--check-argv", nargs="+", metavar="ARG", default=None)
-    add.add_argument("--assert", dest="assertion", metavar="empty|eq:VALUE")
+    add.add_argument(
+        "--assert",
+        dest="assertion",
+        action="append",
+        metavar="empty|equals:VALUE",
+        help="A condition the check's output must meet; repeat for several.",
+    )
     add.add_argument("--id", dest="stem", metavar="STEM", default=None)
     add.add_argument("--group", dest="new_group", metavar="NAME", default=None)
     add.add_argument("--dir", dest="directory", type=Path, default=None)

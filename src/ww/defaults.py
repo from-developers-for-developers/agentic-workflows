@@ -21,9 +21,9 @@ workflows: []
 DEFAULT_PROJECT_CONFIG_JSON = f"""{{
   "enabled": true,
   "executable": "{DEFAULT_EXECUTABLE}",
-  "loop_max_times": 3,
+  "max_rounds": 3,
   "max_fixes": 3,
-  "task_format": "TASK-{{uuid}}",
+  "task_format": "TASK-{{{{uuid}}}}",
   "extensions": {{}}
 }}
 """

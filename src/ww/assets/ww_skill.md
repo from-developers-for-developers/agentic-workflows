@@ -14,7 +14,7 @@ description: Carry out the user's request through ww, this project's workflow to
 3. Otherwise choose the workflow that matches the request, keep its default
    modes unless the user's wording matches another mode, and start the task
    with the start command `discover` shows. Pass the user's requirements,
-   normalized, as `--init-artifact`. When the request names an external
+   normalized, as `--requirements`. When the request names an external
    ticket, such as a Jira key, use that key as the task ID; omit the ID only
    when there is none or the workflow obtains its own.
    When no workflow fits and you are about to change files, do not start
@@ -31,4 +31,4 @@ description: Carry out the user's request through ww, this project's workflow to
    command, a loop at its iteration limit), stop and report the task, its
    `operator_reason` and the exact error to the user; when they decide, run
    the recovery command ww showed, `./ww next <task-id> --retry` to run the
-   handler again or `--force --force-reason` to skip it or leave the loop.
+   handler again or `--force --reason` to skip it or leave the loop.

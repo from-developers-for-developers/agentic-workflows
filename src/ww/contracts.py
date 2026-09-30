@@ -5,18 +5,19 @@ from __future__ import annotations
 
 from typing import Literal
 
-AssertionOperator = Literal["eq", "empty"]
+# One condition of a command's ``assert`` list.
+AssertionKind = Literal["empty", "equals"]
 RequestedActionKind = Literal["mcp", "prompt", "skill", "slash_command"]
 HookPhase = Literal[
     "before_start_workflow",
-    "before_in_progress",
+    "before_start",
     "before_complete",
     "after_complete",
     "before_complete_workflow",
 ]
 PlanItemPhase = Literal[
     "before_start_workflow",
-    "before_in_progress",
+    "before_start",
     "step",
     "before_complete",
     "after_complete",
@@ -34,17 +35,17 @@ CheckStatus = Literal["passed", "failed", "not_applicable"]
 CheckSource = Literal["rule", "hook", "derived", "judged"]
 # Why a failed run failed, when the reason is not the item's own error.
 FailureKind = Literal[
-    "fix_limit", "check_proposed", "check_disputed", "value_unavailable"
+    "fix_limit", "rules_proposed", "check_disputed", "value_unavailable"
 ]
 # A rule's standing in the rule-automation store, keyed by its text hash.
 RuleAutomationStatus = Literal[
-    "approach-proposed",
-    "approach-approved",
+    "approach_proposed",
+    "approach_approved",
     "interpreted",
     "proposed",
     "converted",
     "rejected",
-    "not-convertible",
+    "not_convertible",
     "ambiguous",
 ]
 # A derived check's standing in the rule-automation store.
@@ -56,9 +57,9 @@ CheckAutomationStatus = Literal["proposed", "converted", "rejected"]
 RuleResolutionStatus = Literal["converted", "judged", "pending_operator", "unresolved"]
 # What a verifier is asked about one rule: an approach, a prepared check for
 # an approved approach, or a verdict.
-VerificationState = Literal["unresolved", "approach-approved", "judged"]
+VerificationState = Literal["unresolved", "approach_approved", "judged"]
 # What a verifier reports about one rule.
-RuleResultStatus = Literal["approach", "not-convertible", "ambiguous", "judged"]
+RuleResultStatus = Literal["approach", "not_convertible", "ambiguous", "judged"]
 Verdict = Literal["pass", "fail"]
 ItemOperation = Literal[
     "collect", "process_item", "resolve_item", "report_item", "handle_item"
@@ -67,12 +68,12 @@ ItemOperation = Literal[
 # declared on a configured step.
 # How the per-item stages of an ``items`` step are split into worker
 # assignments in the ``auto`` runtime.
-ItemAssignment = Literal["per_step", "per_item", "all_items"]
+ItemAssignment = Literal["together", "per_item", "per_step"]
 # How the body steps of a ``loop`` are split into worker assignments in the
 # ``auto`` runtime: one assignment per body step, or one per loop round for
 # consecutive steps that resolve to the same worker settings.
-LoopAssignment = Literal["per_step", "per_iteration"]
-DEFAULT_LOOP_ASSIGNMENT: LoopAssignment = "per_iteration"
+LoopAssignment = Literal["per_round", "per_step"]
+DEFAULT_LOOP_ASSIGNMENT: LoopAssignment = "per_round"
 ChildOperation = Literal["collect"]
 
 # Action identifiers are registry keys; third-party internal registrations may
@@ -144,10 +145,10 @@ OperatorReason = Literal[
     "handler_failed",
     "work_failed",
     "child_failed",
-    "interrupted_command",
+    "handler_interrupted",
     "loop_limit",
     "fix_limit",
-    "check_proposed",
+    "rules_proposed",
     "check_disputed",
     "value_unavailable",
 ]

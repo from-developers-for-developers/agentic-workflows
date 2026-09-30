@@ -10,7 +10,7 @@ from ww.storage_adapters.filesystem import FileTaskStorageAdapter
 
 _RUNNER = "import sys; from ww.cli import main; sys.exit(main(sys.argv[1:]))"
 
-_SUMMARY = ("--summary-for-next-step", "ok")
+_SUMMARY = ("--summary", "ok")
 
 
 def _project(root: Path) -> None:
@@ -64,7 +64,7 @@ def test_parallel_next_hands_the_step_to_exactly_one_process(tmp_path: Path) -> 
         "task",
         "--agent",
         "codex",
-        "--init-artifact",
+        "--requirements",
         "requirements",
     )
     assert started.returncode == 0, started.stderr
@@ -96,7 +96,7 @@ def test_parallel_starts_reserve_distinct_generated_task_ids(tmp_path: Path) -> 
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             )
         ]
@@ -126,7 +126,7 @@ def test_parallel_completes_record_one_artifact_per_step(tmp_path: Path) -> None
             "task",
             "--agent",
             "codex",
-            "--init-artifact",
+            "--requirements",
             "requirements",
         )
     ).returncode == 0
@@ -159,7 +159,7 @@ def test_status_never_observes_a_half_written_task(tmp_path: Path) -> None:
             "task",
             "--agent",
             "codex",
-            "--init-artifact",
+            "--requirements",
             "requirements",
         )
     ).returncode == 0
@@ -167,7 +167,7 @@ def test_status_never_observes_a_half_written_task(tmp_path: Path) -> None:
 
     results = _run_together(
         tmp_path,
-        [("complete", "TASK-3", "--artifact", "done", "--summary-for-next-step", "ok")]
+        [("complete", "TASK-3", "--artifact", "done", "--summary", "ok")]
         + [("status", "TASK-3")] * 5,
     )
     readers = results[1:]
@@ -180,8 +180,7 @@ def test_status_does_not_wait_for_a_writer_that_is_mid_command(tmp_path: Path) -
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: slow
-    command:
-      argv: [sleep, "1.0"]
+    argv: [sleep, "1.0"]
 workflows:
   - name: task
     steps:
@@ -201,7 +200,7 @@ workflows:
             "task",
             "--agent",
             "codex",
-            "--init-artifact",
+            "--requirements",
             "requirements",
         )
     ).returncode == 0
@@ -215,7 +214,7 @@ workflows:
             "TASK-5",
             "--artifact",
             "done",
-            "--summary-for-next-step",
+            "--summary",
             "ok",
         )
         time.sleep(0.2)

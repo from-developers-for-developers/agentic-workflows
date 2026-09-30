@@ -25,7 +25,7 @@ WORKFLOWS = """workflows:
   - name: story
     steps:
       - create-story: Create the Jira story through the jira MCP connection.
-        provide:
+        variables:
           - name: task_id
             description: The Jira key returned by the tracker.
       - implement: Implement the story.
@@ -63,7 +63,7 @@ def test_collection_step_explains_that_children_bind_their_own_ids(
 
     text = service.status("EPIC-1").action_text or ""
 
-    assert './ww add-child EPIC-1 --description="<child task description>"' in text
+    assert './ww add-child EPIC-1 --text="<child task text>"' in text
     assert "--id <child-id>" not in text
     assert "Do not pass `--id`" in text
     plain = _service(tmp_path / "other")
@@ -96,7 +96,7 @@ def test_the_child_binds_its_id_and_the_parent_record_is_renamed(
     child = service.add_child("EPIC-1", None, "Story one", project="backend")
     service.complete("EPIC-1", artifact="split", summary_for_next="Done.")
     waiting = service.next("EPIC-1")
-    assert f"./ww child start EPIC-1 {child.id}" in (waiting.action_text or "")
+    assert f"./ww start-child EPIC-1 {child.id}" in (waiting.action_text or "")
 
     request = service.start_child("EPIC-1", child.id)
     assert (request.task_id, request.workflow, request.item_name) == (
@@ -200,13 +200,13 @@ def test_the_identity_flow_works_through_the_cli(
     _split(service)
     root = str(tmp_path)
 
-    assert main(["--root", root, "add-child", "EPIC-1", "--description", "S1"]) == 0
+    assert main(["--root", root, "add-child", "EPIC-1", "--text", "S1"]) == 0
     child_id = json.loads(capsys.readouterr().out)["id"]
     assert is_bootstrap_request(child_id)
     service.complete("EPIC-1", artifact="split", summary_for_next="Done.")
     service.next("EPIC-1")
 
-    assert main(["--root", root, "child", "start", "EPIC-1", child_id, "--json"]) == 0
+    assert main(["--root", root, "start-child", "EPIC-1", child_id, "--json"]) == 0
     started = json.loads(capsys.readouterr().out)
     assert (started["task_id"], started["item_name"]) == (child_id, "create-story")
     assert main(["--root", root, "next", child_id, "--role", "manager"]) == 0

@@ -310,7 +310,7 @@ def _parse_workflow(
         )
     if "handoff" in mapping:
         raise ConfigurationError(
-            f"{path}.handoff was removed: a workflow transition (`workflow:` "
+            f"{path}.handoff was removed: a workflow transition (`handoff_to:` "
             "on the last step) makes a handoff workflow"
         )
     _only(mapping, workflow_keys, path)

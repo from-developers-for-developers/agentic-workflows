@@ -156,7 +156,7 @@ def test_the_block_names_a_loop_continue(tmp_path: Path) -> None:
     # A continue at the loop's limit stops the task for the operator, which
     # ends the worker's assignment; below the limit the worker goes on.
     service = _auto(
-        tmp_path, ROUND.replace("loop:", "loop_max_times: 1\n        loop:", 1)
+        tmp_path, ROUND.replace("loop:", "max_rounds: 1\n        loop:", 1)
     )
     service.next(TASK, caller_role="manager")
     _worker_complete(service, "Findings.")
@@ -306,7 +306,7 @@ def test_a_retried_handlers_values_carry_the_open_token(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: gate
-    provide:
+    variables:
       - name: value
         description: Must be ok.
     shell: test "$VALUE" = ok
@@ -320,7 +320,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )

@@ -36,6 +36,7 @@ from ww.variables import (
     CHILD_VALUE_NAMES,
     CHILD_VALUE_PREFIX,
     CORE_VARIABLE_NAMES,
+    DOCUMENTS_PREFIX,
     child_value_name,
     compile_variable_values,
 )
@@ -166,7 +167,7 @@ class _CompilerPlanningContext(PlanningContext):
     """Compiler-private implementation of the construct planning primitives."""
 
     scope: PlanningScope
-    default_loop_max_times: int
+    default_max_rounds: int
     _compile: Callable[[tuple[StepDefinition, ...], PlanningScope], tuple[str, ...]]
     _compile_region: Callable[
         [tuple[StepDefinition, ...], PlanningScope, ItemAnnotations], tuple[str, ...]
@@ -532,7 +533,7 @@ class WorkflowPlanCompiler:
                     step,
                     path,
                     parent,
-                    "before_in_progress",
+                    "before_start",
                     values,
                     item_template=item_template,
                     ancestors=ancestors,
@@ -624,7 +625,7 @@ class WorkflowPlanCompiler:
 
             context = _CompilerPlanningContext(
                 scope,
-                self.project_config.loop_max_times,
+                self.project_config.max_rounds,
                 compile_nested,
                 compile_region,
                 emit_leaf,
@@ -750,7 +751,7 @@ class WorkflowPlanCompiler:
     ) -> tuple[str, ...]:
         available = (
             before_variables
-            if phase in {"before_start_workflow", "before_in_progress"}
+            if phase in {"before_start_workflow", "before_start"}
             else after_variables
         )
         hooks = (
@@ -892,13 +893,11 @@ class WorkflowPlanCompiler:
                 f"handler {handler.name!r} can update documents only when agent-owned"
             )
         allowed = {
-            "__workflows",
-            "__task_id",
             *CORE_VARIABLE_NAMES,
             *available_variables,
             *(item.name for item in handler.provide),
             *(
-                f"documents.{document.name}"
+                f"{DOCUMENTS_PREFIX}{document.name}"
                 for document in self.configuration.documents
             ),
             *self._namespace_variables,

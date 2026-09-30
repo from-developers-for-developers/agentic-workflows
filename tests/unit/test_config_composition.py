@@ -404,7 +404,7 @@ def test_a_file_cannot_be_imported_by_two_levels(machine: Path, repo: Path) -> N
 def test_settings_deep_merge_across_levels(machine: Path, repo: Path) -> None:
     _write(
         machine / "ww-agentic-workflows.machine.json",
-        '{"loop_max_times": 5, "extensions": {"ww/git": '
+        '{"max_rounds": 5, "extensions": {"ww/git": '
         '{"worktrees": true, "base_branches": {"default": "main"}}}, '
         '"projects": [{"name": "a", "path": "./a"}]}',
     )
@@ -420,7 +420,7 @@ def test_settings_deep_merge_across_levels(machine: Path, repo: Path) -> None:
     raw, sources = compose_settings(repo_file)
 
     assert raw == {
-        "loop_max_times": 5,
+        "max_rounds": 5,
         "extensions": {
             "ww/git": {"worktrees": False, "base_branches": {"default": "main"}}
         },
@@ -432,20 +432,20 @@ def test_settings_deep_merge_across_levels(machine: Path, repo: Path) -> None:
         repo / "ww-agentic-workflows.local.json",
     )
     settings = load_project_config(repo_file)
-    assert settings.loop_max_times == 5
+    assert settings.max_rounds == 5
     assert [project.name for project in settings.projects] == ["b"]
 
 
 def test_settings_apply_from_the_machine_without_a_repo_file(
     machine: Path, repo: Path
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.json", '{"loop_max_times": 7}')
+    _write(machine / "ww-agentic-workflows.machine.json", '{"max_rounds": 7}')
 
-    assert load_project_config(repo / "ww-agentic-workflows.json").loop_max_times == 7
+    assert load_project_config(repo / "ww-agentic-workflows.json").max_rounds == 7
 
 
 def test_settings_errors_name_the_files_read(machine: Path, repo: Path) -> None:
-    _write(machine / "ww-agentic-workflows.machine.json", '{"loop_max_times": 0}')
+    _write(machine / "ww-agentic-workflows.machine.json", '{"max_rounds": 0}')
     repo_file = _write(repo / "ww-agentic-workflows.json", "{}")
 
     with pytest.raises(ConfigurationError) as error:
@@ -453,7 +453,7 @@ def test_settings_errors_name_the_files_read(machine: Path, repo: Path) -> None:
 
     message = str(error.value)
     assert "ww-agentic-workflows.machine.json + " in message
-    assert "loop_max_times must be a positive integer" in message
+    assert "max_rounds must be a positive integer" in message
 
 
 def test_an_invalid_settings_level_is_reported_by_path(

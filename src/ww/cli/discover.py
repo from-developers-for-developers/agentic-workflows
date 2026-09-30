@@ -30,7 +30,7 @@ from ww.workflow_config import ALL_NAMES, delegation_requests
 
 START_ARGUMENTS = (
     "start <TASK-ID> --workflow <workflow> --agent <agent> "
-    '--init-artifact "<the user\'s requirements, normalized>" --role manager'
+    '--requirements "<the user\'s requirements, normalized>" --role manager'
 )
 DISABLED_MESSAGE = (
     "Do not use ww for this work: do not start, continue, or complete ww "

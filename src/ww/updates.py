@@ -10,7 +10,7 @@ user cloned from, and it is skipped entirely when the check is turned off.
 
 The notice is announced, never enforced. It is written before the command's
 own output and recorded as seen, so it appears once rather than on every
-invocation; ``ww updates`` reprints the last one, and ``ww updates --check``
+invocation; ``ww updates`` reprints the last one, and ``ww updates --now``
 looks again ahead of the interval.
 """
 

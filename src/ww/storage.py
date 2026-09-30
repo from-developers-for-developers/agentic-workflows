@@ -176,7 +176,7 @@ class Storage:
         ):
             actions.append(
                 "WW_AGENT_INSTRUCTIONS.md was preserved; review it before use. "
-                "Current start commands require --init-artifact."
+                "Current start commands require --requirements."
             )
         return InitializationResult(
             str(self.root), tuple(created), tuple(preserved), tuple(actions)
@@ -243,14 +243,6 @@ class Storage:
             raise ConfigurationError(
                 f"{self.project_config_path} must contain a JSON object"
             )
-        existing_git = existing.get("extensions", {}).get("ww/git", {})
-        desired_git = desired.get("extensions", {}).get("ww/git", {})
-        if (
-            isinstance(existing_git, dict)
-            and isinstance(desired_git, dict)
-            and "commit_format" in existing_git
-        ):
-            desired_git.pop("commit_message", None)
 
         def merge(target: dict[str, Any], source: dict[str, Any]) -> bool:
             changed = False

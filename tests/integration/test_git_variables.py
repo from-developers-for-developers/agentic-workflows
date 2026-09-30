@@ -32,9 +32,9 @@ workflows:
 """
 
 GIT_SETTINGS = {
-    "use_separate_branch": True,
+    "separate_branch": True,
     "base_branches": {"default": "main"},
-    "branch_name_formats": {"default": "feature/{{task_id}}"},
+    "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
 }
 
 
@@ -201,7 +201,7 @@ def test_a_provided_value_may_not_start_with_ww(tmp_path: Path) -> None:
                 tmp_path,
                 "workflows:\n  - name: feature\n    steps:\n"
                 "      - review: Review.\n"
-                "        provide:\n"
+                "        variables:\n"
                 "          - ww.git.branch: The branch.\n",
             )
         )

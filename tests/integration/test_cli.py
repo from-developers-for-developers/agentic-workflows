@@ -39,8 +39,7 @@ def _project(root: Path) -> None:
     (root / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: check
-    command:
-      argv: [printf, ok]
+    argv: [printf, ok]
 workflows:
   - name: task
     hooks:
@@ -87,8 +86,8 @@ def test_plan_cli_renders_json_and_does_not_mutate_project(
     assert not (tmp_path / ".ww/executions.jsonl").exists()
 
 
-def test_child_start_parser_initializes_json_output() -> None:
-    args = build_parser().parse_args(["child", "start", "TASK-1", "child-1"])
+def test_start_child_parser_initializes_json_output() -> None:
+    args = build_parser().parse_args(["start-child", "TASK-1", "child-1"])
 
     assert args.json_output is False
 
@@ -109,7 +108,7 @@ def test_start_cli_persists_an_explicit_branch_naming_strategy(
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "Record the task requirements.",
                 "--branch-strategy",
                 "experiment",
@@ -194,7 +193,7 @@ def test_artifacts_cli_lists_steps_and_hooks_as_json(tmp_path: Path, capsys) -> 
                 "task",
                 "-a",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -243,7 +242,7 @@ def test_workflow_agent_and_runtime_short_options(tmp_path: Path, capsys) -> Non
                 "codex",
                 "-r",
                 "auto",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -298,7 +297,7 @@ def test_cli_roles_are_parsed_rendered_and_enforced(tmp_path: Path, capsys) -> N
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
                 "--role=manager",
                 "--json",
@@ -343,7 +342,7 @@ def test_lifecycle_commands_start_from_the_compiled_plan(
                 "gpt",
                 "--reasoning",
                 "high",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -369,10 +368,8 @@ def test_metadata_command_prints_nested_task_metadata_json(
     steps:
       - name: create
         artifact: false
-        update_metadata:
-          - name: jira_id
-            key: foo.bar.baz.jira_id
-            description: The created Jira issue ID.
+        saves:
+          - metadata.foo.bar.baz.jira_id: The created Jira issue ID.
 """,
         encoding="utf-8",
     )
@@ -387,7 +384,7 @@ def test_metadata_command_prints_nested_task_metadata_json(
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -399,7 +396,9 @@ def test_metadata_command_prints_nested_task_metadata_json(
     instruction = capsys.readouterr().out
     assert "Detect and preserve these task metadata values" in instruction
     assert "The created Jira issue ID." in instruction
-    assert '--metadata jira_id="<jira_id>"' in instruction
+    assert (
+        '--metadata foo.bar.baz.jira_id="<foo.bar.baz.jira_id>"' in instruction
+    )
     assert (
         main(
             [
@@ -407,10 +406,10 @@ def test_metadata_command_prints_nested_task_metadata_json(
                 str(tmp_path),
                 "complete",
                 "TASK-1",
-                "--summary-for-next-step",
+                "--summary",
                 "Metadata saved.",
                 "--metadata",
-                "jira_id=PROJ-123",
+                "foo.bar.baz.jira_id=PROJ-123",
             ]
         )
         == 0
@@ -435,16 +434,13 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
     steps:
       - name: discover
         artifact: false
-        update_metadata:
-          - name: staging_url
-            key: environments.staging.url
-            scope: project
-            description: The shared staging URL.
+        saves:
+          - project_metadata.environments.staging.url: The shared staging URL.
   - name: consume
     steps:
       - name: deploy
         artifact: false
-        description: Deploy to {{project_metadata.environments.staging.url}}.
+        description: Deploy to {{ww.project_metadata.environments.staging.url}}.
 """,
         encoding="utf-8",
     )
@@ -460,7 +456,7 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
                 "capture",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -478,10 +474,11 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
                 *common,
                 "complete",
                 "TASK-1",
-                "--summary-for-next-step",
+                "--summary",
                 "Metadata saved.",
                 "--metadata",
-                "staging_url=https://staging.example.com",
+                "project_metadata.environments.staging.url="
+                "https://staging.example.com",
             ]
         )
         == 0
@@ -506,7 +503,7 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
                 "consume",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -552,11 +549,11 @@ def test_start_cli_delivers_runtime_guidance(
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
                 "--runtime",
                 runtime,
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -579,7 +576,7 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
     )
     assert (
         json.loads((tmp_path / "ww-agentic-workflows.json").read_text())["task_format"]
-        == "TASK-{uuid}"
+        == "TASK-{{uuid}}"
     )
     assert "Create your first workflow" in output
     assert "Define the steps in ww-agentic-workflows.yaml." in output
@@ -717,10 +714,10 @@ def test_init_enables_git_with_safe_defaults(tmp_path: Path, capsys) -> None:
     settings = config["extensions"]["ww/git"]
 
     assert settings == {
-        "commit_message": "{{task_id}}: {{commit_message}}",
+        "commit_format": "{{ww.task.id}}: {{commit_message}}",
         "base_branches": {"default": "master"},
-        "use_separate_branch": True,
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "separate_branch": True,
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
         "worktrees": False,
     }
 
@@ -740,7 +737,7 @@ def test_init_worktree_and_gitignore_choices_are_explicit(
                 "--worktrees",
                 "--update-gitignore",
                 "--branch-format",
-                "bugfix=hotfix/{{task_id}}",
+                "bugfix=hotfix/{{ww.task.id}}",
             ]
         )
         == 0
@@ -752,8 +749,8 @@ def test_init_worktree_and_gitignore_choices_are_explicit(
 
     assert (tmp_path / "git-worktrees").is_dir()
     assert settings["worktree_dir"] == "./git-worktrees"
-    assert settings["worktree_name_format"] == "{{task_id}}"
-    assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{task_id}}"
+    assert settings["worktree_name_format"] == "{{ww.task.id}}"
+    assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{ww.task.id}}"
     assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == _GITIGNORE_WITH_WW
 
 
@@ -771,7 +768,7 @@ def test_init_interactive_wizard_collects_project_choices(
     monkeypatch.setattr(
         "sys.stdin",
         InteractiveInput(
-            "\ndigit\ny\n\nhotfix/{{task_id}}\ny\ny\n" + _agent_answers()
+            "\ndigit\ny\n\nhotfix/{{ww.task.id}}\ny\ny\n" + _agent_answers()
         ),
     )
 
@@ -780,8 +777,8 @@ def test_init_interactive_wizard_collects_project_choices(
     project = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     settings = project["extensions"]["ww/git"]
 
-    assert project["task_format"] == "TASK-{digit}"
-    assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{task_id}}"
+    assert project["task_format"] == "TASK-{{digit}}"
+    assert settings["branch_name_formats"]["bugfix"] == "hotfix/{{ww.task.id}}"
     assert settings["worktrees"] is True
     assert (tmp_path / "git-worktrees").is_dir()
     assert (tmp_path / ".gitignore").read_text() == _GITIGNORE_WITH_WW
@@ -803,7 +800,7 @@ def test_init_completes_an_existing_enabled_worktree_config(
     ]["ww/git"]
 
     assert settings["worktree_dir"] == "./git-worktrees"
-    assert settings["worktree_name_format"] == "{{task_id}}"
+    assert settings["worktree_name_format"] == "{{ww.task.id}}"
     assert (tmp_path / "git-worktrees").is_dir()
 
 
@@ -831,7 +828,7 @@ def test_fail_cli_records_agent_functional_error(tmp_path: Path, capsys) -> None
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
                 "--json",
             ]
@@ -877,8 +874,7 @@ def test_failed_instruction_returns_exit_code_one(tmp_path: Path, capsys) -> Non
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: reject
-    command:
-      argv: ["false"]
+    argv: ["false"]
 hooks:
   after_complete:
     - steps: [init]
@@ -899,7 +895,7 @@ workflows:
             "task",
             "-a",
             "codex",
-            "--init-artifact",
+            "--requirements",
             "requirements",
         ]
     )
@@ -933,7 +929,7 @@ def test_complete_on_a_failed_task_returns_the_saved_failure_instruction(
                 "task",
                 "-a",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -980,7 +976,7 @@ def test_force_next_requires_explicit_operator_confirmation(
                 "task",
                 "-a",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -1002,7 +998,7 @@ def test_force_next_requires_explicit_operator_confirmation(
                 "next",
                 "TASK-FORCE",
                 "--force",
-                "--force-reason",
+                "--reason",
                 "Outside issue resolved manually",
             ]
         )
@@ -1021,7 +1017,7 @@ def test_force_next_requires_explicit_operator_confirmation(
                 "next",
                 "TASK-FORCE",
                 "--force",
-                "--force-reason",
+                "--reason",
                 "Outside issue resolved manually",
             ]
         )
@@ -1046,12 +1042,12 @@ def test_an_agent_confirms_a_force_with_yes_and_the_audit_says_so(
     )
     common = ["--root", str(tmp_path)]
     start = ["start", "TASK-YES", "-w", "task", "-a", "codex"]
-    assert main([*common, *start, "--init-artifact", "requirements"]) == 0
+    assert main([*common, *start, "--requirements", "requirements"]) == 0
     assert main([*common, "next", "TASK-YES"]) == 0
     assert main([*common, "fail", "TASK-YES", "--error", "outside issue"]) == 1
     capsys.readouterr()
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    force = ["next", "TASK-YES", "--force", "--force-reason", "Fixed by hand"]
+    force = ["next", "TASK-YES", "--force", "--reason", "Fixed by hand"]
 
     # No terminal, no --yes: refused at once, nothing read from stdin.
     assert main([*common, *force]) == 1
@@ -1139,7 +1135,7 @@ def test_cli_discovers_the_primary_project_from_a_linked_worktree(
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )

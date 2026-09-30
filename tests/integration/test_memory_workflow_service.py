@@ -89,7 +89,7 @@ def test_generated_task_id_start_works_without_shared_storage(tmp_path: Path) ->
 
 def test_configured_task_format_drives_generated_ids(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.json").write_text(
-        '{"task_format": "WORK-{digit}"}', encoding="utf-8"
+        '{"task_format": "WORK-{{digit}}"}', encoding="utf-8"
     )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
@@ -110,7 +110,7 @@ def test_configured_task_format_drives_generated_ids(tmp_path: Path) -> None:
 
 def test_configured_uuid_task_format_drives_generated_ids(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.json").write_text(
-        '{"task_format": "TASK-{uuid}"}', encoding="utf-8"
+        '{"task_format": "TASK-{{uuid}}"}', encoding="utf-8"
     )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
@@ -129,7 +129,7 @@ def test_configured_uuid_task_format_drives_generated_ids(tmp_path: Path) -> Non
 
 def test_generated_task_id_skips_existing_task_directories(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.json").write_text(
-        '{"task_format": "TASK-{digit}"}', encoding="utf-8"
+        '{"task_format": "TASK-{{digit}}"}', encoding="utf-8"
     )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
@@ -158,12 +158,12 @@ def test_generated_task_id_skips_existing_configured_worktree(tmp_path: Path) ->
     )
     (tmp_path / "ww-agentic-workflows.json").write_text(
         """{
-  "task_format": "TASK-{digit}",
+  "task_format": "TASK-{{digit}}",
   "extensions": {
     "ww/git": {
       "worktrees": true,
       "worktree_dir": "worktrees",
-      "worktree_name_format": "{{task_id}}"
+      "worktree_name_format": "{{ww.task.id}}"
     }
   }
 }
@@ -185,7 +185,7 @@ def test_task_metadata_is_read_through_the_adapter(tmp_path: Path) -> None:
     steps:
       - name: inspect
         mcp: github
-        description: Inspect {{metadata.github.repository}}.
+        description: Inspect {{ww.metadata.github.repository}}.
 """,
         encoding="utf-8",
     )
@@ -209,12 +209,10 @@ def test_agent_saves_task_metadata_for_later_steps(tmp_path: Path) -> None:
       - name: create
         description: Create the Jira issue.
         artifact: false
-        update_metadata:
-          - name: jira_id
-            key: foo.bar.baz.jira_id
-            description: Preserve the created issue ID.
+        saves:
+          - metadata.foo.bar.baz.jira_id: Preserve the created issue ID.
       - name: inspect
-        description: Inspect {{metadata.foo.bar.baz.jira_id}}.
+        description: Inspect {{ww.metadata.foo.bar.baz.jira_id}}.
         artifact: false
 """,
         encoding="utf-8",
@@ -226,9 +224,13 @@ def test_agent_saves_task_metadata_for_later_steps(tmp_path: Path) -> None:
     create = service.next("TASK-1")
 
     assert create.required_metadata[0].key == "foo.bar.baz.jira_id"
-    assert '--metadata jira_id="<jira_id>"' in (create.continuation_command or "")
+    assert '--metadata foo.bar.baz.jira_id="<foo.bar.baz.jira_id>"' in (
+        create.continuation_command or ""
+    )
 
-    with pytest.raises(StateError, match="missing required task metadata.*jira_id"):
+    with pytest.raises(
+        StateError, match="missing required task metadata.*foo.bar.baz.jira_id"
+    ):
         service.complete("TASK-1", summary_for_next="Done.")
     with pytest.raises(StateError, match="unexpected task metadata.*other"):
         service.complete(
@@ -239,7 +241,7 @@ def test_agent_saves_task_metadata_for_later_steps(tmp_path: Path) -> None:
 
     service.complete(
         "TASK-1",
-        metadata_values=(("jira_id", "PROJ-123"),),
+        metadata_values=(("foo.bar.baz.jira_id", "PROJ-123"),),
         summary_for_next="Done.",
     )
     inspect = service.next("TASK-1")
@@ -259,12 +261,9 @@ def test_metadata_is_not_published_when_completion_commit_fails(
     steps:
       - name: capture
         artifact: false
-        update_metadata:
-          - name: task_value
-            key: result.task
-          - name: project_value
-            key: result.project
-            scope: project
+        saves:
+          - metadata.result.task:
+          - project_metadata.result.project:
 """,
         encoding="utf-8",
     )
@@ -282,8 +281,8 @@ def test_metadata_is_not_published_when_completion_commit_fails(
         service.complete(
             "TASK-1",
             metadata_values=(
-                ("task_value", "task-result"),
-                ("project_value", "project-result"),
+                ("result.task", "task-result"),
+                ("project_metadata.result.project", "project-result"),
             ),
             summary_for_next="Done.",
         )
@@ -295,8 +294,8 @@ def test_metadata_is_not_published_when_completion_commit_fails(
     service.complete(
         "TASK-1",
         metadata_values=(
-            ("task_value", "task-result"),
-            ("project_value", "project-result"),
+            ("result.task", "task-result"),
+            ("project_metadata.result.project", "project-result"),
         ),
         summary_for_next="Done.",
     )
@@ -315,10 +314,8 @@ def test_project_metadata_retry_detects_an_intervening_update(
     steps:
       - name: capture
         artifact: false
-        update_metadata:
-          - name: value
-            key: result.value
-            scope: project
+        saves:
+          - project_metadata.result.value:
 """,
         encoding="utf-8",
     )
@@ -341,7 +338,7 @@ def test_project_metadata_retry_detects_an_intervening_update(
     with pytest.raises(StateError, match="injected project publication failure"):
         service.complete(
             "TASK-1",
-            metadata_values=(("value", "produced"),),
+            metadata_values=(("project_metadata.result.value", "produced"),),
             summary_for_next="Done.",
         )
 
@@ -360,10 +357,8 @@ def test_project_metadata_publication_is_idempotent_after_clear_commit_failure(
     steps:
       - name: capture
         artifact: false
-        update_metadata:
-          - name: value
-            key: result.value
-            scope: project
+        saves:
+          - project_metadata.result.value:
 """,
         encoding="utf-8",
     )
@@ -384,7 +379,7 @@ def test_project_metadata_publication_is_idempotent_after_clear_commit_failure(
     with pytest.raises(StateError, match="injected publication-clear commit failure"):
         service.complete(
             "TASK-1",
-            metadata_values=(("value", "published"),),
+            metadata_values=(("project_metadata.result.value", "published"),),
             summary_for_next="Done.",
         )
     assert service.project_metadata() == {"result": {"value": "published"}}
@@ -402,15 +397,13 @@ def test_saved_task_metadata_is_available_to_automatic_commands(tmp_path: Path) 
       - name: capture
         description: Capture the value.
         artifact: false
-        update_metadata:
-          - name: token
-            key: service.token
+        saves:
+          - metadata.service.token:
       - name: write
         artifact: false
-        command:
-          shell: printf '%s' "$TOKEN" > metadata.txt
-          env:
-            TOKEN: "{{metadata.service.token}}"
+        shell: printf '%s' "$TOKEN" > metadata.txt
+        env:
+          TOKEN: "{{ww.metadata.service.token}}"
 """,
         encoding="utf-8",
     )
@@ -421,7 +414,7 @@ def test_saved_task_metadata_is_available_to_automatic_commands(tmp_path: Path) 
     service.next("TASK-1")
     service.complete(
         "TASK-1",
-        metadata_values=(("token", "secret-ref"),),
+        metadata_values=(("service.token", "secret-ref"),),
         summary_for_next="Done.",
     )
 
@@ -438,16 +431,13 @@ def test_saved_project_metadata_is_available_to_automatic_commands(
       - name: capture
         description: Capture the value.
         artifact: false
-        update_metadata:
-          - name: url
-            key: service.url
-            scope: project
+        saves:
+          - project_metadata.service.url:
       - name: write
         artifact: false
-        command:
-          shell: printf '%s' "$URL" > project-metadata.txt
-          env:
-            URL: "{{project_metadata.service.url}}"
+        shell: printf '%s' "$URL" > project-metadata.txt
+        env:
+          URL: "{{ww.project_metadata.service.url}}"
 """,
         encoding="utf-8",
     )
@@ -457,7 +447,9 @@ def test_saved_project_metadata_is_available_to_automatic_commands(
     service.next("TASK-1")
     service.complete(
         "TASK-1",
-        metadata_values=(("url", "https://staging.example.com"),),
+        metadata_values=(
+            ("project_metadata.service.url", "https://staging.example.com"),
+        ),
         summary_for_next="Done.",
     )
 
