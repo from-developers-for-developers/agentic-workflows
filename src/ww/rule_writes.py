@@ -50,6 +50,7 @@ from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.workflow_config import (
     INIT_STEP_NAME,
     ItemFlow,
+    NameFilter,
     RuleDefinition,
     RuleGroup,
     RuleGroupRef,
@@ -216,10 +217,13 @@ def plan_add_group(
     name: str,
     directory: Path,
     *,
-    workflows: tuple[str, ...] | None = None,
-    steps: tuple[str, ...] | None = None,
+    workflows: NameFilter | None = None,
+    steps: NameFilter | None = None,
 ) -> RuleWrite:
-    """A new root group in ``ww-rules.yaml``, imported by the repo file."""
+    """A new root group in ``ww-rules.yaml``, imported by the repo file.
+
+    A filter left ``None`` is not written, so the group applies everywhere.
+    """
     if name in project.configuration.rule_groups_by_name:
         raise StateError(f"rule group {name!r} already exists")
     folder = _inside(project, directory)
@@ -321,15 +325,17 @@ def plan_filter(
     project: RuleProject,
     group_name: str,
     *,
-    workflows: tuple[str, ...] | None,
-    steps: tuple[str, ...] | None,
+    workflows: NameFilter | None,
+    steps: NameFilter | None,
     all_workflows: bool = False,
     all_steps: bool = False,
 ) -> RuleWrite:
     """New ``workflows``/``steps`` filters for a group in ``ww-rules.yaml``.
 
-    ``None`` leaves a filter as it is; an empty tuple admits nothing, so the
-    group applies only where a step names it; ``all_*`` removes the filter.
+    ``None`` leaves a filter as it is; a filter admitting every name is
+    written as ``"*"``; an empty one admits nothing, so the group applies only
+    where a step names it; ``all_*`` removes the filter, which also admits
+    every name.
     """
     if workflows is None and steps is None and not all_workflows and not all_steps:
         raise StateError(
@@ -368,7 +374,7 @@ def plan_filter(
         if clear:
             entry.pop(key, None)
         elif value is not None:
-            entry[key] = list(value)
+            entry[key] = value.to_data()
     groups = {**imports.groups, group_name: entry}
     return RuleWrite(
         writes=(imports.write(groups),),
@@ -717,22 +723,25 @@ def _group_mapping(raw: Any) -> dict[str, Any]:
 
 def _group_entry(
     items: list[str],
-    workflows: tuple[str, ...] | None,
-    steps: tuple[str, ...] | None,
+    workflows: NameFilter | None,
+    steps: NameFilter | None,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {"rules": items}
     if workflows is not None:
-        entry["workflows"] = list(workflows)
+        entry["workflows"] = workflows.to_data()
     if steps is not None:
-        entry["steps"] = list(steps)
+        entry["steps"] = steps.to_data()
     return entry
 
 
 def _filter_yaml(
-    name: str, workflows: tuple[str, ...] | None, steps: tuple[str, ...] | None
+    name: str, workflows: NameFilter | None, steps: NameFilter | None
 ) -> str:
-    parts = [f"{key}: [{', '.join(value)}]" for key, value in (
-        ("workflows", workflows), ("steps", steps)) if value is not None]
+    parts = [
+        f"{key}: " + ('"*"' if value.admits_all else f"[{', '.join(value.listed)}]")
+        for key, value in (("workflows", workflows), ("steps", steps))
+        if value is not None
+    ]
     return f"rules.{name}: " + ("; ".join(parts) if parts else "remove the filter keys")
 
 

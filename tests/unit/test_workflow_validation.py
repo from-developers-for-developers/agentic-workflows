@@ -13,6 +13,7 @@ from ww.workflow_config import (
     HandlerDefinition,
     HookDefinition,
     ModeDefinition,
+    NameFilter,
     StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
@@ -78,7 +79,7 @@ def test_rejects_workflow_boundary_hook_filtered_by_step() -> None:
                 HandlerDefinition(
                     "prepare", action=DefinedAction("prompt", Prompt("Prepare."))
                 ),
-                step_names=("develop",),
+                steps=NameFilter.of(("develop",)),
                 path="hooks.before_start_workflow[0]",
             ),
         ),
@@ -102,7 +103,7 @@ def test_global_workflow_boundary_hook_may_filter_by_workflow() -> None:
                 HandlerDefinition(
                     "prepare", action=DefinedAction("prompt", Prompt("Prepare."))
                 ),
-                workflow_names=("delivery",),
+                workflows=NameFilter.of(("delivery",)),
             ),
         ),
         workflows=(

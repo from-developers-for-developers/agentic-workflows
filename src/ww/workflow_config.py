@@ -252,9 +252,53 @@ class HandlerDefinition:
         )
 
 
+ALL_NAMES = "*"
+
+
+@dataclass(frozen=True)
+class NameFilter:
+    """The names a ``workflows`` or ``steps`` filter admits.
+
+    ``names`` is ``None`` when every name is admitted (``"*"``, or an omitted
+    key); otherwise only the names listed, and none when it is empty. The
+    configuration writes it as ``"*"`` or a list of names.
+    """
+
+    names: tuple[str, ...] | None = None
+
+    @classmethod
+    def of(cls, names: Iterable[str]) -> NameFilter:
+        return cls(tuple(names))
+
+    @property
+    def admits_all(self) -> bool:
+        return self.names is None
+
+    @property
+    def admits_none(self) -> bool:
+        return self.names == ()
+
+    @property
+    def listed(self) -> tuple[str, ...]:
+        """The names listed; empty when the filter admits every name."""
+        return self.names or ()
+
+    def admits(self, name: str) -> bool:
+        return self.names is None or name in self.names
+
+    def to_data(self) -> str | list[str]:
+        """``"*"`` for every name, else the list of names."""
+        return ALL_NAMES if self.names is None else list(self.names)
+
+
+ALL = NameFilter()
+# Admits no name: a rule group with ``[]`` applies only where a step names it.
+NO_NAMES = NameFilter(())
+
+
 def step_filter_matches(
-    workflow_names: tuple[str, ...] | None,
-    step_names: tuple[str, ...] | None,
+    workflows: NameFilter,
+    steps: NameFilter,
     workflow_name: str,
     step_name: str,
     step_path: str,
@@ -262,28 +306,27 @@ def step_filter_matches(
 ) -> bool:
     """Whether ``workflows``/``steps`` filters admit one step of one workflow.
 
-    ``None`` admits everything; a selector that is a precise logical path
-    matches that path, any other matches the step's own name. Hooks and rule
-    groups share this matching so a filter means the same in both.
+    A step selector that is a precise logical path matches that path, any
+    other matches the step's own name. Hooks and rule groups share this
+    matching so a filter means the same in both.
     """
     logical_path = step_path.replace("/{item}", "")
-    step_matches = step_names is None or any(
+    step_matches = steps.names is None or any(
         logical_path == selector
         if selector in precise_step_paths
         else step_name == selector
-        for selector in step_names
+        for selector in steps.names
     )
-    return (workflow_names is None or workflow_name in workflow_names) and (
-        step_matches
-    )
+    return workflows.admits(workflow_name) and step_matches
 
 
 @dataclass(frozen=True)
 class HookDefinition:
     phase: HookPhase
     handler: HandlerDefinition
-    workflow_names: tuple[str, ...] = ()
-    step_names: tuple[str, ...] = ()
+    # A hook's ``[]`` admits every name, like an omitted key.
+    workflows: NameFilter = ALL
+    steps: NameFilter = ALL
     scope: HookScope = "global"
     path: str = ""
     # ``fix`` turns a failed ``before_complete`` hook into a rejected
@@ -298,8 +341,8 @@ class HookDefinition:
         precise_step_paths: frozenset[str] = frozenset(),
     ) -> bool:
         return step_filter_matches(
-            self.workflow_names or None,
-            self.step_names or None,
+            self.workflows,
+            self.steps,
             workflow_name,
             step_name,
             step_path,
@@ -387,15 +430,14 @@ StepRule = RuleDefinition | RuleGroupRef | UnresolvedStepRule
 class RuleGroup:
     """A named set of rules and where they apply on their own.
 
-    ``workflows`` and ``steps`` filter like a global hook's, except that
-    ``None`` admits every workflow or step while an empty tuple admits none:
-    such a group applies only where a step names it.
+    ``workflows`` and ``steps`` filter like a global hook's, except that an
+    empty filter admits none: such a group applies only where a step names it.
     """
 
     name: str
     rules: tuple[RuleDefinition, ...] = ()
-    workflows: tuple[str, ...] | None = None
-    steps: tuple[str, ...] | None = None
+    workflows: NameFilter = ALL
+    steps: NameFilter = ALL
     hints: RuleHints = RuleHints()
     # Where the group was declared: the YAML, or the extension that ships it.
     origin: str = "configuration"

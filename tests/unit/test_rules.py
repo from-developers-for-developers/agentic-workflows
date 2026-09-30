@@ -30,6 +30,7 @@ from ww.extensions import Extension, ExtensionRegistry, RuleGroupContribution
 from ww.plan import PlanItem, WorkflowPlan, WorkflowPlanCompiler
 from ww.project_config import ProjectConfig
 from ww.workflow_config import (
+    ALL,
     RuleDefinition,
     RuleGroup,
     RuleGroupRef,
@@ -250,10 +251,10 @@ def test_root_groups_resolve_directories_files_and_nested_groups(
     groups = _groups(tmp_path)
 
     assert [rule.id for rule in groups["php"].rules] == ["php/a-first", "php/b-second"]
-    assert groups["php"].workflows is None and groups["php"].steps is None
+    assert groups["php"].workflows == ALL and groups["php"].steps == ALL
     docs = groups["docs"]
     assert [rule.id for rule in docs.rules] == ["docs/docs"]
-    assert docs.workflows == ("task",) and docs.steps == ("review",)
+    assert docs.workflows.names == ("task",) and docs.steps.names == ("review",)
     assert docs.rules[0].hints == RuleHints(reasoning="high")
     assert [rule.id for rule in groups["engineering"].rules] == [
         "php/a-first",
@@ -276,6 +277,31 @@ def test_a_file_listed_in_two_groups_takes_each_groups_id(tmp_path: Path) -> Non
     assert groups["one"].rules[0].text_hash == groups["two"].rules[0].text_hash
 
 
+def test_group_filters_take_star_a_list_or_nothing(tmp_path: Path) -> None:
+    _rule(tmp_path, "rules/one.md", "One.")
+    _config(
+        tmp_path,
+        """rules:
+  starred: {rules: [rules/one.md], workflows: "*", steps: "*"}
+  listed: {rules: [rules/one.md], workflows: [bugfix], steps: [develop]}
+  named-only: {rules: [rules/one.md], steps: []}
+"""
+        + _WORKFLOWS,
+    )
+
+    groups = _groups(tmp_path)
+
+    starred = groups["starred"]
+    assert starred.workflows == ALL and starred.steps == ALL
+    assert starred.applies_to("task", "review", "review")
+    listed = groups["listed"]
+    assert listed.applies_to("bugfix", "develop", "develop")
+    assert not listed.applies_to("task", "develop", "develop")
+    named_only = groups["named-only"]
+    assert named_only.workflows == ALL and named_only.steps.admits_none
+    assert not named_only.applies_to("task", "develop", "develop")
+
+
 @pytest.mark.parametrize(
     ("rules", "message"),
     [
@@ -287,6 +313,14 @@ def test_a_file_listed_in_two_groups_takes_each_groups_id(tmp_path: Path) -> Non
         ("  Bad Name: [rules/one.md]\n", "normalized group names"),
         ("  php: {rules: [rules/one.md], workflows: [nope]}\n", "unknown workflow"),
         ("  php: {rules: [rules/one.md], steps: [nope]}\n", "unknown step"),
+        (
+            '  php: {rules: [rules/one.md], workflows: ["*", task]}\n',
+            r'workflows cannot mix "\*" with names',
+        ),
+        (
+            "  php: {rules: [rules/one.md], steps: develop}\n",
+            r"steps must be \"\*\" or a list of names \(write \[develop\]",
+        ),
     ],
 )
 def test_root_mapping_errors(tmp_path: Path, rules: str, message: str) -> None:
@@ -667,7 +701,7 @@ workflows:
     names = [group.name for group in configuration.rule_groups]
     assert names == ["acme-python", "local"]
     assert groups["acme-python"].origin == "extension acme/rules"
-    assert groups["acme-python"].steps == ()
+    assert groups["acme-python"].steps.admits_none
     assert groups["local"].rules[0].id == "acme-python/typed"
     assert _step(configuration).rules == (RuleGroupRef("acme-python"),)
 

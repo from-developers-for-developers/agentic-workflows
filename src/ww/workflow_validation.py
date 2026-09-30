@@ -19,6 +19,7 @@ from ww.workflow_config import (
     INIT_STEP_PROMPT,
     HandlerDefinition,
     HookDefinition,
+    NameFilter,
     RuleHints,
     StepDefinition,
     WorkflowConfiguration,
@@ -329,17 +330,17 @@ def _validate_hooks(
                 f"{hook.path or 'hook'} has scope {hook.scope!r}; "
                 f"expected {expected_scope!r}"
             )
-        if expected_scope != "global" and hook.workflow_names:
+        if expected_scope != "global" and not hook.workflows.admits_all:
             raise ConfigurationError(
                 f"{hook.path or 'hook'} cannot filter by workflow at "
                 f"{expected_scope} scope"
             )
-        if expected_scope == "step" and hook.step_names:
+        if expected_scope == "step" and not hook.steps.admits_all:
             raise ConfigurationError(
                 f"{hook.path or 'hook'} cannot filter by step at step scope"
             )
         if hook.phase in {"before_start_workflow", "before_complete_workflow"} and (
-            hook.step_names
+            not hook.steps.admits_all
         ):
             raise ConfigurationError(
                 f"{hook.path or 'hook'} cannot filter a workflow boundary by step"
@@ -357,8 +358,8 @@ def _validate_hooks(
                 )
         _validate_filters(
             hook.path or "hook",
-            hook.workflow_names,
-            hook.step_names,
+            hook.workflows,
+            hook.steps,
             known_steps,
             known_workflows,
         )
@@ -366,20 +367,20 @@ def _validate_hooks(
 
 def _validate_filters(
     label: str,
-    workflow_names: tuple[str, ...],
-    step_names: tuple[str, ...],
+    workflows: NameFilter,
+    steps: NameFilter,
     known_steps: set[str],
     known_workflows: set[str] | None,
 ) -> None:
     """Reject ``workflows``/``steps`` filters naming nothing that exists."""
     if known_workflows is not None:
-        unknown_workflows = set(workflow_names) - known_workflows
+        unknown_workflows = set(workflows.listed) - known_workflows
         if unknown_workflows:
             raise ConfigurationError(
                 f"{label} references unknown workflow(s): "
                 + ", ".join(sorted(unknown_workflows))
             )
-    unknown_steps = set(step_names) - known_steps
+    unknown_steps = set(steps.listed) - known_steps
     if unknown_steps:
         raise ConfigurationError(
             f"{label} references unknown step(s): " + ", ".join(sorted(unknown_steps))
@@ -396,8 +397,8 @@ def _validate_rule_groups(
     for group in configuration.rule_groups:
         _validate_filters(
             f"rule group {group.name!r}",
-            group.workflows or (),
-            group.steps or (),
+            group.workflows,
+            group.steps,
             known_steps,
             known_workflows,
         )

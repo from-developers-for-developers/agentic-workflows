@@ -629,7 +629,7 @@ def test_rules_lists_groups_and_step_rules(
     assert main(["--root", str(root), "rules", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     (group,) = data["groups"]
-    assert (group["name"], group["workflows"], group["steps"]) == ("docs", None, None)
+    assert (group["name"], group["workflows"], group["steps"]) == ("docs", "*", "*")
     assert group["rules"][0]["source"] == "rules/docs/header.md"
     assert data["steps"][0]["rules"][0]["id"] == "develop/1"
 

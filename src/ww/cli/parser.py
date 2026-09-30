@@ -733,14 +733,20 @@ def _filter_options(parser: argparse.ArgumentParser) -> None:
         nargs="*",
         metavar="NAME",
         default=None,
-        help="Only these workflows; with no name, none (only where a step names it).",
+        help=(
+            "Only these workflows; '*' for all; with no name, none (only where "
+            "a step names it)."
+        ),
     )
     parser.add_argument(
         "--steps",
         nargs="*",
         metavar="NAME",
         default=None,
-        help="Only these steps; with no name, none (only where a step names it).",
+        help=(
+            "Only these steps; '*' for all; with no name, none (only where a "
+            "step names it)."
+        ),
     )
 
 

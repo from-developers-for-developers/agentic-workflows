@@ -735,7 +735,7 @@ workflows:
         "direct-inline",
         "Run the direct hook.",
     )
-    assert all(not hook.step_names for hook in configuration.global_hooks)
+    assert all(hook.steps.admits_all for hook in configuration.global_hooks)
 
 
 @pytest.mark.parametrize("value", ("[]", "{}", "true"))
@@ -833,8 +833,8 @@ workflows:
 
     hooks = configuration.global_hooks
     assert len(hooks) == 3
-    assert all(hook.workflow_names == ("task",) for hook in hooks)
-    assert all(hook.step_names == ("develop",) for hook in hooks)
+    assert all(hook.workflows.names == ("task",) for hook in hooks)
+    assert all(hook.steps.names == ("develop",) for hook in hooks)
     assert hooks[0].handler.name == "update-architecture"
     readme = hooks[1].handler
     publish = hooks[2].handler
@@ -865,7 +865,99 @@ workflows:
         )
     )
 
-    assert configuration.global_hooks[0].step_names == ("plan-and-fix/fix",)
+    assert configuration.global_hooks[0].steps.names == ("plan-and-fix/fix",)
+
+
+_FILTERED_HOOK = """hooks:
+  before_in_progress:
+    - name: prepare
+      workflows: {workflows}
+      steps: {steps}
+      description: Get ready.
+workflows:
+  - name: task
+    steps:
+      - name: develop
+      - name: review
+  - name: bugfix
+    steps:
+      - name: develop
+"""
+
+
+@pytest.mark.parametrize("value", ['"*"', "[]"])
+def test_a_hook_filter_of_star_or_empty_admits_everything(
+    tmp_path: Path, value: str
+) -> None:
+    configuration = load_configuration(
+        _write(
+            tmp_path / "ww-agentic-workflows.yaml",
+            _FILTERED_HOOK.format(workflows=value, steps=value),
+        )
+    )
+
+    hook = configuration.global_hooks[0]
+    assert hook.workflows.admits_all and hook.steps.admits_all
+    assert hook.applies_to("bugfix", "develop", "develop")
+    assert hook.applies_to("task", "review", "review")
+
+
+def test_a_hook_filter_list_admits_only_its_names(tmp_path: Path) -> None:
+    configuration = load_configuration(
+        _write(
+            tmp_path / "ww-agentic-workflows.yaml",
+            _FILTERED_HOOK.format(workflows="[task]", steps='"*"'),
+        )
+    )
+
+    hook = configuration.global_hooks[0]
+    assert hook.workflows.names == ("task",)
+    assert hook.applies_to("task", "review", "review")
+    assert not hook.applies_to("bugfix", "develop", "develop")
+
+
+@pytest.mark.parametrize(
+    ("workflows", "steps", "message"),
+    [
+        ('["*", task]', '"*"', r'workflows cannot mix "\*" with names'),
+        ('"*"', '["*", develop]', r'steps cannot mix "\*" with names'),
+        ("task", '"*"', r"workflows must be \"\*\" or a list of names \(write \[task"),
+        ('"*"', "develop", r"steps must be \"\*\" or a list of names"),
+        ('"*"', "7", r"steps must be \"\*\" or a list of names"),
+        ('["1task"]', '"*"', "workflows must be .* normalized names"),
+    ],
+)
+def test_a_hook_filter_rejects_a_bare_name_and_star_among_names(
+    tmp_path: Path, workflows: str, steps: str, message: str
+) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        _FILTERED_HOOK.format(workflows=workflows, steps=steps),
+    )
+
+    with pytest.raises(ConfigurationError, match=message):
+        load_configuration(path)
+
+
+def test_a_star_filter_is_not_accepted_where_the_hook_takes_no_filter(
+    tmp_path: Path,
+) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        """hooks:
+  before_start_workflow:
+    - name: prepare
+      steps: "*"
+      description: Get ready.
+workflows:
+  - name: task
+    steps:
+      - name: develop
+""",
+    )
+
+    with pytest.raises(ConfigurationError, match="steps"):
+        load_configuration(path)
 
 
 def test_shell_source_cannot_interpolate_workflow_values(tmp_path: Path) -> None:
@@ -1021,7 +1113,7 @@ workflows:
     transition = configuration.workflows[0].hooks[0].handler
     assert transition.operation is not None
     assert transition.operation.target == "{{workflow}}"
-    assert configuration.global_hooks[0].workflow_names == ("chooser",)
+    assert configuration.global_hooks[0].workflows.names == ("chooser",)
 
 
 @pytest.mark.parametrize("phase", ("before_start_workflow", "before_complete_workflow"))

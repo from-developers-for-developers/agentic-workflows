@@ -70,7 +70,14 @@ from ww.rule_store import UNDECIDED_RULE_STATUSES, RuleStore
 from ww.rule_views import declared_hashes, orphans, prune, rules_listing
 from ww.service import WorkflowService
 from ww.storage import Storage
-from ww.workflow_config import RuleDefinition, WorkflowConfiguration, every_step
+from ww.workflow_config import (
+    ALL,
+    ALL_NAMES,
+    NameFilter,
+    RuleDefinition,
+    WorkflowConfiguration,
+    every_step,
+)
 
 from .audit import _log_record
 from .catalogs import (
@@ -548,8 +555,8 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             project,
             args.new_group,
             args.directory,
-            workflows=_names_option(args.workflows),
-            steps=_names_option(args.steps),
+            workflows=_filter_option(args.workflows, "--workflows"),
+            steps=_filter_option(args.steps, "--steps"),
         )
     elif action == "add":
         if args.group_name is None or args.text is None:
@@ -586,8 +593,8 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
         write = rule_writes.plan_filter(
             project,
             args.group_name,
-            workflows=_names_option(args.workflows),
-            steps=_names_option(args.steps),
+            workflows=_filter_option(args.workflows, "--workflows"),
+            steps=_filter_option(args.steps, "--steps"),
             all_workflows=args.all_workflows,
             all_steps=args.all_steps,
         )
@@ -600,8 +607,18 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
     )
 
 
-def _names_option(values: list[str] | None) -> tuple[str, ...] | None:
-    return None if values is None else tuple(values)
+def _filter_option(values: list[str] | None, option: str) -> NameFilter | None:
+    """``--workflows``/``--steps``: ``'*'`` alone for all, else the names given.
+
+    ``None`` when the option is absent; with no name, an empty filter.
+    """
+    if values is None:
+        return None
+    if values == [ALL_NAMES]:
+        return ALL
+    if ALL_NAMES in values:
+        raise StateError(f"{option} takes '*' alone or names, not both")
+    return NameFilter.of(values)
 
 
 def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:

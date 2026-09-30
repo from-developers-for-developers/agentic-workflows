@@ -17,6 +17,7 @@ from ww.validation import (
     expect_normalized_name,
     reject_unknown_keys,
 )
+from ww.workflow_config import ALL, ALL_NAMES, NameFilter
 
 
 def _mapping(value: Any, path: str) -> dict[str, Any]:
@@ -188,17 +189,32 @@ def _string_list(value: Any, path: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _step_filter_list(value: Any, path: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or not all(
+def _name_filter(value: Any, path: str, *, empty: NameFilter) -> NameFilter:
+    """Parse a ``workflows`` or ``steps`` filter: ``"*"`` or a list of names.
+
+    A step name may be a ``/``-separated path. ``empty`` is what ``[]``
+    means where the filter is written: every name for a hook, none for a
+    rule group.
+    """
+    if value == ALL_NAMES:
+        return ALL
+    if not isinstance(value, list):
+        raise ConfigurationError(
+            f'{path} must be "*" or a list of names'
+            + (f" (write [{value}] for one name)" if isinstance(value, str) else "")
+        )
+    if ALL_NAMES in value:
+        raise ConfigurationError(
+            f'{path} cannot mix "*" with names; write "*" alone for all'
+        )
+    if not all(
         isinstance(item, str)
         and item
         and all(_NAME.fullmatch(segment) for segment in item.split("/"))
         for item in value
     ):
-        raise ConfigurationError(
-            f"{path} must be a list of normalized step names or paths"
-        )
-    return tuple(value)
+        raise ConfigurationError(f'{path} must be "*" or a list of normalized names')
+    return NameFilter.of(value) if value else empty
 
 
 def _unique(values: Any, label: str) -> None:

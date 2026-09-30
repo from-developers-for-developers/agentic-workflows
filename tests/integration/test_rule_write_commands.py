@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from ww.cli import main
 from ww.config import load_configuration
@@ -488,13 +489,51 @@ def test_filter_rewrites_a_group_of_the_import_file(
     group = load_configuration(
         root / "ww-agentic-workflows.yaml"
     ).rule_groups_by_name["php"]
-    assert (group.workflows, group.steps) == ((), ("develop", "review"))
+    assert (group.workflows.names, group.steps.names) == ((), ("develop", "review"))
     assert _ww(root, "rules", "filter", "php", "--all-workflows", "--all-steps") == 0
     group = load_configuration(
         root / "ww-agentic-workflows.yaml"
     ).rule_groups_by_name["php"]
-    assert (group.workflows, group.steps) == (None, None)
+    assert group.workflows.admits_all and group.steps.admits_all
     assert "- task: develop, review" in capsys.readouterr().out
+
+
+def test_a_star_filter_option_writes_star(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/docs",
+               "--steps", "*") == 0
+    assert yaml.safe_load(_text(root / "ww-rules.yaml"))["rules"]["php"] == {
+        "rules": ["rules/docs/"],
+        "steps": "*",
+    }
+
+    assert _ww(root, "rules", "filter", "php", "--workflows", "*") == 0
+
+    entry = yaml.safe_load(_text(root / "ww-rules.yaml"))["rules"]["php"]
+    assert (entry["workflows"], entry["steps"]) == ("*", "*")
+    group = load_configuration(
+        root / "ww-agentic-workflows.yaml"
+    ).rule_groups_by_name["php"]
+    assert group.workflows.admits_all and group.steps.admits_all
+    capsys.readouterr()
+
+    assert _ww(root, "rules", "--json") == 0
+    listed = json.loads(capsys.readouterr().out)["groups"][0]
+    assert (listed["workflows"], listed["steps"]) == ("*", "*")
+
+
+def test_a_star_filter_option_cannot_mix_with_names(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/docs") == 0
+    capsys.readouterr()
+
+    assert _ww(root, "rules", "filter", "php", "--steps", "*", "develop") == 1
+
+    assert "--steps takes '*' alone or names, not both" in capsys.readouterr().err
 
 
 def test_filter_refuses_a_group_declared_by_hand(
