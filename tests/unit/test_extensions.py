@@ -586,6 +586,7 @@ def test_the_bundled_git_extension_declares_its_contributions() -> None:
         "create-worktree",
         "git-commit",
         "is-git-clean",
+        "merge-branch",
         "remove-task-worktree",
         "return-to-base-branch",
         "start-task-branch",
@@ -594,6 +595,7 @@ def test_the_bundled_git_extension_declares_its_contributions() -> None:
     assert sorted(git.commands_by_name) == ["branches", "commits", "settings"]
     assert [variable.name for variable in git.variables] == ["ww.task.workspace_dir"]
     assert git.handlers_by_name["git-commit"].provide[0].name == "commit_message"
+    assert git.handlers_by_name["merge-branch"].arguments == ("branch", "message")
     assert isinstance(git.modes_by_name["conventional-commits"], ModeDefinition)
     assert isinstance(git.commands_by_name["commits"], ExtensionCommand)
     assert isinstance(git.handlers_by_name["git-commit"], ExtensionHandler)

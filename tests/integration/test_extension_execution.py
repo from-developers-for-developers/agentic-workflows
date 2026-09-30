@@ -1102,3 +1102,83 @@ def test_the_git_extension_refuses_a_dirty_tree(tmp_path: Path) -> None:
 
     assert result.status == "failed"
     assert "uncommitted change" in (result.error or "")
+
+
+ARGUMENTS_EXTENSION = """
+from ww.extensions.api import Extension, ExtensionHandler, ExtensionResult
+
+def _greet(context):
+    context.store.write_text("greeting", " | ".join(context.arguments))
+    return ExtensionResult(True, output="greeted")
+
+EXTENSION = Extension(
+    vendor="acme", name="greeter",
+    handlers=(
+        ExtensionHandler(
+            "greet", _greet, "Greet.", arguments=("greeting", "addressee")
+        ),
+    ),
+)
+"""
+
+
+def _arguments_project(root: Path, args: str) -> None:
+    directory = root / "ext" / "acme" / "greeter"
+    directory.mkdir(parents=True)
+    (directory / "extension.py").write_text(ARGUMENTS_EXTENSION, encoding="utf-8")
+    (root / "ww-agentic-workflows.yaml").write_text(
+        f"""workflows:
+  - name: task
+    steps:
+      - name: work
+        kind: prompt
+        variables:
+          - note: Who to greet.
+      - name: ext/acme/greeter/handlers:greet
+        args: {args}
+""",
+        encoding="utf-8",
+    )
+
+
+def test_extension_args_are_rendered_when_the_handler_runs(tmp_path: Path) -> None:
+    _arguments_project(tmp_path, '["Hello {{note}}", "task {{ww.task.id}}"]')
+    service = _service(tmp_path)
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    service.next("TASK-1")
+
+    service.complete(
+        "TASK-1", (("note", "world"),), "# work\n", summary_for_next="Done."
+    )
+
+    snapshot = service.tasks.read_plan_snapshot("TASK-1", "01-task")
+    assert snapshot is not None
+    greet = next(item for item in snapshot.plan.items if item.name == "greet")
+    # Values known when compiling are rendered then; the rest when it runs.
+    assert greet.payload_as(Extension).arguments == ("Hello {{note}}", "task TASK-1")
+    greeting = tmp_path / ".ww/ext/acme/greeter/greeting"
+    assert greeting.read_text(encoding="utf-8") == "Hello world | task TASK-1"
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        ('["Hello"]', r"takes 2 args \(greeting, addressee\); 1 given"),
+        ('["Hello", "{{ww.nothing}}"]', "ww.nothing"),
+        ('"Hello"', "args must be a list of strings"),
+    ],
+)
+def test_extension_args_are_checked_before_the_run(
+    tmp_path: Path, args: str, message: str
+) -> None:
+    _arguments_project(tmp_path, args)
+    extensions = ExtensionRegistry.discover(tmp_path)
+
+    with pytest.raises(ConfigurationError, match=message):
+        compile_workflow_plan(
+            load_configuration(tmp_path / "ww-agentic-workflows.yaml", extensions),
+            tmp_path,
+            "task",
+            "codex",
+            extensions=extensions,
+        )

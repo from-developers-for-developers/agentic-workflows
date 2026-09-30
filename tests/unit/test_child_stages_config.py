@@ -130,6 +130,33 @@ def test_per_child_stages_read_the_childs_extension_values(tmp_path: Path) -> No
     assert set(land.dependencies) == {"ww.child.git.branch", "ww.git.branch"}
 
 
+def test_a_per_child_stage_can_land_the_child_with_merge_branch(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww-agentic-workflows.json").write_text(
+        '{"extensions": {"ww/git": {}}}', encoding="utf-8"
+    )
+    configuration = _load(
+        tmp_path,
+        "      - slices: Split.\n        children:\n          steps:\n"
+        "            - implement:\n                workflow: child\n"
+        "            - name: ext/ww/git/handlers:merge-branch\n"
+        '              args: ["{{ww.child.git.branch}}", "Land {{ww.child.id}}"]\n',
+    )
+    plan = compile_workflow_plan(
+        configuration,
+        tmp_path,
+        "parent",
+        "codex",
+        extensions=ExtensionRegistry.discover(tmp_path),
+    )
+
+    land = next(item for item in plan.items if item.name == "merge-branch")
+    assert (land.kind, land.owner) == ("extension", "ww")
+    assert land.outputs == ("merge_commit",)
+    assert set(land.dependencies) == {"ww.child.git.branch", "ww.child.id"}
+
+
 @pytest.mark.parametrize(
     ("steps", "message"),
     [

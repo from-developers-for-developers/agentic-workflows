@@ -955,7 +955,13 @@ not a recorded failure. The same boundary makes retry honest about values: a
 failed automatic item that declares `provide` drops those values from the
 workflow values when it is returned to pending, keeping them on its record,
 so `drain` raises the ordinary input request again and the page can show what
-the handler was given last time. The compiled item stores the
+the handler was given last time. A reference's `args` are the other input:
+the name-only handler carries them, the compiler checks their count against
+the handler's declared `arguments` and validates their templates like shell
+`args`, the plan payload keeps them (omitted when empty, so older plans read
+unchanged), and the extension service renders them with the item's values
+into `ExtensionContext.arguments` when the handler or its checker runs. The
+compiled item stores the
 reference and declared output names rather than the callable, so a persisted
 snapshot stays readable without loading anyone's code, and an unknown extension
 or item fails at compile time — before a task exists.

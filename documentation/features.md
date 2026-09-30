@@ -2762,8 +2762,8 @@ The selection is persisted with the run, so later or retried branch and
 worktree handlers use the same format. An unknown explicit strategy fails
 instead of silently falling back.
 
-`on_signing_failure` says what `git-commit` does when git cannot sign a
-commit, for example because the signing agent is locked while the run goes on
+`on_signing_failure` says what `git-commit` and `merge-branch` do when git
+cannot sign a commit, for example because the signing agent is locked while the run goes on
 unattended. `operator`, the default, stops for the operator as for any failed
 handler. `unsigned` commits once more with `commit.gpgsign=false`, records
 `signed: false` for the commit, and says so in the handler's result; any
@@ -2779,6 +2779,7 @@ as the machine or local settings file:
 | Handler | Settings it acts on |
 | --- | --- |
 | `git-commit` | `commit_format`, `on_signing_failure` |
+| `merge-branch` | `commit_format`, `on_signing_failure` |
 | `start-task-branch` | `base_branches`, `separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
 | `return-to-base-branch` | `base_branches`, `separate_branch` |
 | `remove-task-worktree` | `worktrees` |
@@ -2802,6 +2803,41 @@ hooks:
 happened, so deleting it the moment a workflow ends should be your choice, not a
 default. `ww-agentic-workflows extension ww/git branches [TASK-ID]` shows what was opened, and
 `commits` what was committed.
+
+#### Landing a branch with `merge-branch`
+
+`merge-branch` merges a branch into the task's current branch, in the task
+workspace, with `git merge --no-ff`, so a "land" stage is ww's work instead of
+an agent's. It takes two `args`, the branch to merge and the merge message;
+both may use templates, and the message goes through `commit_format` like a
+`git-commit` subject:
+
+```yaml
+children:
+  steps:
+    - implement:
+        workflow: task
+    - name: ext/ww/git/handlers:merge-branch
+      args: ["{{ww.child.git.branch}}", "Land slice {{ww.child.id}}"]
+```
+
+It refuses a workspace with uncommitted changes and a branch that does not
+exist. On a conflict it runs `git merge --abort` and fails naming the
+conflicting files, so the task stops for the operator with the workspace as
+it was. When git cannot sign the merge commit it follows `on_signing_failure`
+exactly as `git-commit` does: it stops, or, with `unsigned`, aborts the
+half-made merge, merges once more without a signature, and records
+`signed: false`. It reports success only when no merge is left in progress
+(no `MERGE_HEAD`) and `HEAD` is a merge commit of the branch. The merge commit's
+sha is its output, `{{merge_commit}}`, and the commit is recorded with the
+merged branch; `commits` lists it. A branch already contained in the current
+one merges nothing and succeeds with an empty `merge_commit`.
+
+Like `git-commit`, it puts ww's operation ID in a `WW-Operation` trailer, so a
+retry after an interruption finds the merge commit the earlier attempt made
+instead of merging again, and a merge that attempt left half-done (its own
+trailer in `MERGE_MSG`) is aborted and redone. Any other merge in progress is
+refused.
 
 `create-worktree` reuses a worktree that already exists at the configured
 path. When none does but git reports the task branch checked out in another
@@ -2886,6 +2922,17 @@ operation. Human-readable `output` is kept on the execution record; structured
 handler returning values lists them as bare `variables` entries) and become
 available to later workflow actions as `{{greeting}}`. Invalid return types,
 undeclared values, and missing declared values fail the handler consistently.
+
+A handler that needs settings per use declares `arguments`, the names of its
+positional arguments in order. A reference passes them as `args`, a list of
+strings in which templates are allowed; ww checks the count and the template
+names when it compiles the workflow, renders the templates when the handler
+runs, and hands the result over as `context.arguments`. A reference to a
+handler that declares none may not pass `args`.
+
+```python
+ExtensionHandler("merge-branch", _merge, arguments=("branch", "message"))
+```
 
 A handler that declares `provide` (its agent-supplied inputs, the Python
 counterpart of `variables`) may also declare `validate`, a callable that

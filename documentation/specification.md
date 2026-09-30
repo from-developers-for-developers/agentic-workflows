@@ -543,8 +543,15 @@ workflows:
 An extension handler reference can be used directly as a step, for
 example `- ext/ww/git/handlers:is-git-clean: ~`. It is resolved and validated
 when the workflow plan is compiled, just like an extension handler in a hook.
-Such an entry, as a step or as a hook, may carry `workdir` and no other key;
-everything else about the handler is the extension's to define.
+Such an entry, as a step or as a hook, may carry `workdir` and `args` and no
+other key; everything else about the handler is the extension's to define.
+`args` is the handler's positional arguments, templates allowed, and must
+match the number of arguments it declares:
+
+```yaml
+- name: ext/ww/git/handlers:merge-branch
+  args: ["{{ww.child.git.branch}}", "Land slice {{ww.child.id}}"]
+```
 
 ### Items
 
@@ -657,7 +664,7 @@ Each root handler, and each step through the same shared shape, accepts:
 | `mcp` | non-empty string | no | MCP connection; `description` supplies its work instruction. |
 | `argv` | string list | no | Automatic argument-vector action run by `ww`. |
 | `shell` | string | no | Automatic shell action run by `ww`. |
-| `args` | string list | no | Positional arguments for `shell`. |
+| `args` | string list | no | Positional arguments for `shell`, or, beside only `name` and `workdir`, for the extension handler that `name` references, which must declare exactly that many. Templates are allowed. |
 | `env` | string mapping | no | Environment values for `shell`. |
 | `assert` | list of conditions | no | Conditions the command output must all meet; see [Commands](#commands). |
 | `idempotent` | boolean | no | Running the command action again is harmless: an interrupted run is replayed by `next` instead of waiting for an operator. Requires `argv` or `shell`. Defaults to `false`. |

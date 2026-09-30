@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -293,6 +294,7 @@ def test_a_commit_records_the_branch_it_landed_on(repository: Path) -> None:
 def _refuse_signing(repository: Path) -> None:
     """Sign every commit with a program that always fails, like a locked agent."""
     _run("git", "config", "commit.gpgsign", "true", cwd=repository)
+    _run("git", "config", "gpg.format", "openpgp", cwd=repository)
     _run("git", "config", "gpg.program", "false", cwd=repository)
 
 
@@ -450,6 +452,31 @@ def test_a_commit_retry_checks_the_operation_trailer(repository: Path) -> None:
     assert count == "2"
 
 
+def test_a_commit_retry_finds_its_commit_behind_newer_ones(repository: Path) -> None:
+    (repository / "new.txt").write_text("x\n", encoding="utf-8")
+    first = handler("git-commit")(
+        context(
+            repository,
+            values={"commit_message": "work"},
+            operation_id="TASK-1:01-task:commit",
+        )
+    )
+    assert first.ok, first.error
+    subprocess.run(
+        ["git", "commit", "-q", "--allow-empty", "-m", "later\n\nwith a body"],
+        cwd=repository,
+        check=True,
+        env={**os.environ, "GIT_COMMITTER_DATE": "2090-01-01T00:00:00+0000"},
+    )
+
+    found = git_extension._check_commit(
+        context(repository, operation_id="TASK-1:01-task:commit")
+    )
+
+    assert found.status == "succeeded"
+    assert found.result.output == first.output
+
+
 def test_git_commit_does_not_duplicate_when_checker_is_uncertain(
     repository: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -498,6 +525,199 @@ def test_status_path_parser_checks_both_sides_of_a_rename() -> None:
         "renamed.txt",
         "original.txt",
     )
+
+
+# --------------------------------------------------------------------------- #
+# merge-branch
+# --------------------------------------------------------------------------- #
+
+
+def _feature_branch(repository: Path, name: str = "feature", path: str = "b.txt"):
+    """A branch with one commit of its own, and one more commit on main."""
+    _run("git", "checkout", "-qb", name, cwd=repository)
+    (repository / path).write_text(f"{name}\n", encoding="utf-8")
+    _run("git", "add", "-A", cwd=repository)
+    _run("git", "commit", "-qm", f"work on {name}", cwd=repository)
+    _run("git", "checkout", "-q", "main", cwd=repository)
+    (repository / "main.txt").write_text("main\n", encoding="utf-8")
+    _run("git", "add", "-A", cwd=repository)
+    _run("git", "commit", "-qm", "work on main", cwd=repository)
+
+
+def _merge(repository: Path, config: dict[str, object] | None = None, **kwargs):
+    return handler("merge-branch")(
+        context(
+            repository,
+            config,
+            arguments=("feature", "Land slice TASK-1.1"),
+            **kwargs,
+        )
+    )
+
+
+def _head(repository: Path) -> str:
+    return _run("git", "rev-parse", "HEAD", cwd=repository).stdout.strip()
+
+
+def _merging(repository: Path) -> bool:
+    return (repository / ".git/MERGE_HEAD").exists()
+
+
+def test_merge_branch_merges_with_a_merge_commit_and_records_it(
+    repository: Path,
+) -> None:
+    _feature_branch(repository)
+    tip = _run("git", "rev-parse", "feature", cwd=repository).stdout.strip()
+
+    result = _merge(repository)
+
+    assert result.ok, result.error
+    head = _head(repository)
+    assert result.values == {"merge_commit": head}
+    assert _run("git", "rev-parse", "HEAD^2", cwd=repository).stdout.strip() == tip
+    subject = _run("git", "log", "-1", "--format=%s", cwd=repository).stdout.strip()
+    assert subject == "TASK-1: Land slice TASK-1.1"
+    assert not _merging(repository)
+    recorded = json.loads(
+        (repository / ".ww/ext/ww/git/commits.jsonl").read_text(encoding="utf-8")
+    )
+    assert (recorded["sha"], recorded["branch"], recorded["merged"]) == (
+        head,
+        "main",
+        "feature",
+    )
+
+
+def test_merge_branch_aborts_a_conflict_and_fails_naming_the_files(
+    repository: Path,
+) -> None:
+    _feature_branch(repository, path="seed.txt")
+    (repository / "seed.txt").write_text("main side\n", encoding="utf-8")
+    _run("git", "commit", "-qam", "change seed on main", cwd=repository)
+    before = _head(repository)
+
+    result = _merge(repository)
+
+    assert not result.ok
+    assert "merging feature conflicts in: seed.txt" in result.error
+    assert "the merge was aborted" in result.error
+    assert not _merging(repository)
+    assert _head(repository) == before
+    assert _run("git", "status", "--porcelain", cwd=repository).stdout == ""
+
+
+def test_merge_branch_refuses_a_dirty_workspace(repository: Path) -> None:
+    _feature_branch(repository)
+    before = _head(repository)
+    (repository / "seed.txt").write_text("edited\n", encoding="utf-8")
+
+    result = _merge(repository)
+
+    assert not result.ok
+    assert "uncommitted change(s)" in result.error
+    assert _head(repository) == before
+
+
+def test_merge_branch_stops_on_a_signing_failure_by_default(
+    repository: Path,
+) -> None:
+    _feature_branch(repository)
+    before = _head(repository)
+    _refuse_signing(repository)
+
+    result = _merge(repository)
+
+    assert not result.ok
+    assert "failed to write commit object" in result.error
+    assert "the merge was aborted" in result.error
+    assert not _merging(repository)
+    assert _head(repository) == before
+
+
+def test_merge_branch_merges_unsigned_when_on_signing_failure_allows(
+    repository: Path,
+) -> None:
+    _feature_branch(repository)
+    tip = _run("git", "rev-parse", "feature", cwd=repository).stdout.strip()
+    _refuse_signing(repository)
+
+    result = _merge(repository, {"on_signing_failure": "unsigned"})
+
+    assert result.ok, result.error
+    assert "(unsigned: git could not sign it" in result.output
+    assert _run("git", "rev-parse", "HEAD^2", cwd=repository).stdout.strip() == tip
+    assert not _merging(repository)
+    recorded = json.loads(
+        (repository / ".ww/ext/ww/git/commits.jsonl").read_text(encoding="utf-8")
+    )
+    assert recorded["signed"] is False
+
+
+def test_merge_branch_retry_returns_the_merge_an_attempt_already_made(
+    repository: Path,
+) -> None:
+    _feature_branch(repository)
+    first = _merge(repository, operation_id="TASK-1:01-task:land")
+    assert first.ok, first.error
+
+    second = _merge(repository, operation_id="TASK-1:01-task:land")
+
+    assert second.ok, second.error
+    assert second.values == first.values
+    assert _head(repository) == first.values["merge_commit"]
+
+
+def test_merge_branch_redoes_its_own_interrupted_merge_but_not_another(
+    repository: Path,
+) -> None:
+    _feature_branch(repository)
+    _run(
+        "git", "merge", "--no-ff", "--no-commit", "-m", "Land",
+        "-m", "WW-Operation: TASK-1:01-task:land", "feature",
+        cwd=repository,
+    )
+
+    foreign = _merge(repository, operation_id="TASK-1:01-task:other")
+    assert not foreign.ok
+    assert "a merge is already in progress" in foreign.error
+    assert _merging(repository)
+
+    own = _merge(repository, operation_id="TASK-1:01-task:land")
+    assert own.ok, own.error
+    assert not _merging(repository)
+    assert own.values == {"merge_commit": _head(repository)}
+
+
+def test_merge_branch_reports_a_branch_already_merged(repository: Path) -> None:
+    _feature_branch(repository)
+    assert _merge(repository).ok
+    head = _head(repository)
+
+    again = _merge(repository)
+
+    assert again.ok, again.error
+    assert "already merged" in again.output
+    assert again.values == {"merge_commit": ""}
+    assert _head(repository) == head
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (("feature",), "takes two args"),
+        (("", "Land"), "rendered empty"),
+        (("--force", "Land"), "not a branch name"),
+        (("feature", "two\nlines"), "one non-empty line"),
+        (("missing", "Land"), "branch 'missing' does not exist"),
+    ],
+)
+def test_merge_branch_rejects_unusable_arguments(
+    repository: Path, arguments: tuple[str, ...], message: str
+) -> None:
+    result = handler("merge-branch")(context(repository, arguments=arguments))
+
+    assert not result.ok
+    assert message in result.error
 
 
 # --------------------------------------------------------------------------- #

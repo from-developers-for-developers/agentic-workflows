@@ -132,7 +132,7 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
         parse_reference(definition.reference)
 
     def templates(self, definition: Extension) -> tuple[str, ...]:
-        return ()
+        return definition.arguments
 
     def plan(self, definition: Extension, context: ResolutionContext) -> Extension:
         if context.extensions is None:
@@ -146,6 +146,7 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
             identity.source,
             identity.fingerprint,
             context.extensions.settings(reference.identifier, context.project),
+            tuple(context.interpolate(argument) for argument in definition.arguments),
         )
 
     def instruction(
@@ -154,7 +155,7 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
         return InstructionContent(context.description or context.name, ())
 
     def encode(self, planned: Extension) -> dict[str, object]:
-        return {
+        encoded: dict[str, object] = {
             "reference": planned.reference,
             "version": planned.version,
             "api_version": planned.api_version,
@@ -162,6 +163,11 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
             "fingerprint": planned.fingerprint,
             "settings": planned.settings,
         }
+        # Absent without ``args``, so plans saved before arguments existed
+        # read and compare unchanged.
+        if planned.arguments:
+            encoded["arguments"] = list(planned.arguments)
+        return encoded
 
     def decode(self, data: dict[str, Any]) -> Extension:
         expect_keys(
@@ -174,7 +180,8 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
                 "fingerprint",
                 "settings",
             },
-            f"action {self.identifier!r} payload")
+            f"action {self.identifier!r} payload",
+        )
         return Extension(
             expect_string(data["reference"], "extension reference"),
             expect_optional_string(data["version"], "extension version"),
@@ -182,4 +189,13 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
             expect_optional_string(data["source"], "extension source"),
             expect_optional_string(data["fingerprint"], "extension fingerprint"),
             expect_optional_mapping(data["settings"], "extension settings"),
+            _arguments(data.get("arguments", [])),
         )
+
+
+def _arguments(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(
+        isinstance(argument, str) for argument in value
+    ):
+        raise ValueError("extension arguments must be a list of strings")
+    return tuple(value)

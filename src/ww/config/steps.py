@@ -30,9 +30,9 @@ from .actions import (
     RENAMED_HANDLER_KEYS,
     _bare_extension_reference,
     _handler_keys,
-    _optional_workdir,
     _parse_handler,
     _parse_hooks,
+    extension_reference,
     reject_removed_handler_keys,
 )
 from .rules import parse_step_rules
@@ -299,9 +299,7 @@ def _parse_step(
     reject_removed_handler_keys(mapping, path)
     _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}, path)
     base = (
-        HandlerDefinition(
-            mapping["name"], workdir=_optional_workdir(mapping, path)
-        )
+        extension_reference(mapping, path)
         if _bare_extension_reference(mapping)
         else _parse_handler(
             mapping, path, transition=True, allowed_extra=STEP_ONLY_KEYS
@@ -548,6 +546,7 @@ def _parse_step(
         model=base.model,
         reasoning=base.reasoning,
         workdir=base.workdir,
+        extension_arguments=base.extension_arguments,
         role=role,
         subagents=subagents,
         interactive=interactive,

@@ -282,6 +282,9 @@ class HandlerDefinition:
     # The directory this handler or step works in; ``None`` leaves the
     # choice to the enclosing step (for a step) or the task workspace.
     workdir: Workdir | None = None
+    # ``args`` of a reference to an extension handler: the positional
+    # arguments it is run with, templates allowed.
+    extension_arguments: tuple[str, ...] = ()
 
     @property
     def is_reference(self) -> bool:

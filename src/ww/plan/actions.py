@@ -51,25 +51,42 @@ class ActionResolver:
         if not resolve_reference or not value.is_reference:
             return value, None, None
         if is_extension_reference(value.name):
-            definition = self._extension_handler(value.name)
+            definition = self._extension_handler(
+                value.name, value.extension_arguments
+            )
             return replace(definition), value.name, definition
         registered = self.configuration.handlers_by_name.get(value.name)
         if registered is not None:
             return replace(registered), registered.name, registered
         return value, None, None
 
-    def _extension_handler(self, value: str) -> HandlerDefinition:
+    def _extension_handler(
+        self, value: str, arguments: tuple[str, ...] = ()
+    ) -> HandlerDefinition:
         if self.extensions is None:
             raise ConfigurationError(
                 f"{value!r} references an extension, but no extensions are loaded"
             )
         handler = self.extensions.handler(value)
+        if len(arguments) != len(handler.arguments):
+            expected = (
+                f"takes {len(handler.arguments)} args ("
+                + ", ".join(handler.arguments)
+                + ")"
+                if handler.arguments
+                else "takes no args"
+            )
+            raise ConfigurationError(
+                f"{value!r} {expected}; {len(arguments)} given"
+            )
         return HandlerDefinition(
             handler.name,
             description=handler.description,
             provide=handler.provide,
             outputs=handler.outputs,
-            action=DefinedAction("extension", Extension(value)),
+            action=DefinedAction(
+                "extension", Extension(value, arguments=arguments)
+            ),
         )
 
     def _resolve(

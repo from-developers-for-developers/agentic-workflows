@@ -157,6 +157,9 @@ class Extension:
     source: str | None = None
     fingerprint: str | None = None
     settings: dict[str, object] | None = None
+    # Positional arguments from the reference's ``args``; templates until
+    # the item runs, when they are rendered with its values.
+    arguments: tuple[str, ...] = ()
 
 
 ActionPayload = (

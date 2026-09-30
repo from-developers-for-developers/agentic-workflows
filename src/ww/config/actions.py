@@ -375,23 +375,36 @@ def _parse_hook_handler(data: Any, path: str) -> HandlerDefinition:
         allowed=_handler_keys() | {"handoff_to"} | _REMOVED_HANDLER_KEYS,
     )
     if _bare_extension_reference(mapping):
-        return HandlerDefinition(
-            mapping["name"], workdir=_optional_workdir(mapping, path)
-        )
+        return extension_reference(mapping, path)
     return _parse_handler(mapping, path, inline=True)
 
 
 def _bare_extension_reference(mapping: dict[str, Any]) -> bool:
     """Whether ``mapping`` names an extension handler as is.
 
-    Such an entry carries at most the directory it works in; everything else
-    about the handler is the extension's to define.
+    Such an entry carries at most the directory it works in and the
+    arguments it runs with; everything else about the handler is the
+    extension's to define.
     """
     name = mapping.get("name")
     return (
         isinstance(name, str)
         and is_extension_reference(name)
-        and set(mapping) <= {"name", "workdir"}
+        and set(mapping) <= {"name", "workdir", "args"}
+    )
+
+
+def extension_reference(mapping: dict[str, Any], path: str) -> HandlerDefinition:
+    """A bare reference to an extension handler, with its ``args``."""
+    arguments = mapping.get("args", [])
+    if not isinstance(arguments, list) or not all(
+        isinstance(argument, str) for argument in arguments
+    ):
+        raise ConfigurationError(f"{path}.args must be a list of strings")
+    return HandlerDefinition(
+        mapping["name"],
+        workdir=_optional_workdir(mapping, path),
+        extension_arguments=tuple(arguments),
     )
 
 

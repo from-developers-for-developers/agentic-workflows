@@ -32,8 +32,12 @@ settings from the ``ww/git`` section of ``ww-agentic-workflows.json``:
 Handlers adopt state that already satisfies their request where possible and
 refuse destructive recovery: nothing here passes ``--force``, discards a
 change, or moves work you did not ask it to move. This is not a general
-exactly-once guarantee. ``git-commit`` uses ww's stable operation ID and its
-checker to recognize a commit made by an interrupted attempt before retrying.
+exactly-once guarantee. ``git-commit`` and ``merge-branch`` use ww's stable
+operation ID and their checkers to recognize a commit made by an interrupted
+attempt before retrying. ``merge-branch`` runs ``git merge --abort`` only on a
+merge it started itself from a clean workspace: after a conflict, after a
+refused signature, or when an interrupted attempt of the same operation left
+it in progress.
 Rendered task branch names are normalized to lowercase before Git operations.
 
 A note on worktrees
@@ -113,6 +117,10 @@ _SETTING_KEYS = {
 # What the commit handler does when git cannot sign a commit: stop for the
 # operator, or commit once more without a signature and say so.
 SIGNING_FAILURE_POLICIES = ("operator", "unsigned")
+# The fields ``git log`` prints per commit when looking for an operation.
+_LOG_FIELDS = 3
+# The positional ``args`` of merge-branch.
+MERGE_ARGUMENTS = ("branch", "message")
 # What git prints when it cannot sign: its own marker, and the signing
 # programs' usual wording (gpg, ssh-keygen, 1Password's op-ssh-sign).
 _SIGNING_FAILURE_MARKERS = (
@@ -704,6 +712,14 @@ def _without_rendered_prefix(
     return message
 
 
+def _subject(context: ExtensionContext, settings: Settings, message: str) -> str:
+    """A commit's subject: ``message`` rendered through ``commit_format``."""
+    message = _without_rendered_prefix(message.strip(), settings.commit_format, context)
+    return interpolate(
+        settings.commit_format, {**_tokens(context), "commit_message": message}
+    ).strip()
+
+
 def _commit_message_error(values: Mapping[str, str]) -> str | None:
     """The one shape a subject must have; checked when supplied and when run."""
     message = values.get("commit_message", "").strip()
@@ -719,11 +735,7 @@ def _commit(context: ExtensionContext) -> ExtensionResult:
     error = _commit_message_error(context.values)
     if error is not None:
         return ExtensionResult(False, error=error)
-    message = context.values["commit_message"].strip()
-    message = _without_rendered_prefix(message, settings.commit_format, context)
-    subject = interpolate(
-        settings.commit_format, {**_tokens(context), "commit_message": message}
-    ).strip()
+    subject = _subject(context, settings, context.values["commit_message"])
     if not subject:
         return ExtensionResult(False, error="commit_format rendered an empty message")
     # A retry may arrive after git committed but before ww recorded the
@@ -763,7 +775,7 @@ def _commit(context: ExtensionContext) -> ExtensionResult:
         )
     commit_args = ["commit", "-m", subject]
     if context.operation_id:
-        commit_args.extend(["-m", f"WW-Operation: {context.operation_id}"])
+        commit_args.extend(["-m", _operation_marker(context)])
     committed = _git(context, *commit_args)
     signed = True
     if (
@@ -818,30 +830,10 @@ def _check_commit(context: ExtensionContext) -> ExtensionCheckResult:
     ``not_succeeded`` when no marker exists, and ``unknown`` when Git or the
     commit record cannot establish a safe outcome.
     """
-    if not context.operation_id:
-        return ExtensionCheckResult.unknown("operation ID is missing")
-    if not context.operation_id_known:
-        return ExtensionCheckResult.unknown(
-            "operation ID was synthesized while migrating legacy state"
-        )
-    log = _git(context, "log", "--all", "--format=%H%x00%s%x00%B")
-    if log.returncode:
-        return ExtensionCheckResult.unknown(_failed(log, "git log failed"))
-    marker = f"WW-Operation: {context.operation_id}"
-    fields = log.stdout.split("\x00")
-    matches = []
-    for index in range(0, len(fields) - 2, 3):
-        sha, subject, body = fields[index : index + 3]
-        if marker not in body.splitlines():
-            continue
-        matches.append((sha.strip(), subject.strip()))
-    if len(matches) != 1:
-        if len(matches) > 1:
-            return ExtensionCheckResult.unknown(
-                f"multiple Git commits claim operation {context.operation_id!r}"
-            )
-        return ExtensionCheckResult.not_succeeded()
-    sha, subject = matches[0]
+    found = _operation_commit(context)
+    if isinstance(found, ExtensionCheckResult):
+        return found
+    sha, subject = found
     try:
         record = {
             "sha": sha,
@@ -862,6 +854,275 @@ def _check_commit(context: ExtensionContext) -> ExtensionCheckResult:
         )
     except Exception as error:  # noqa: BLE001 - checker must remain tri-state
         return ExtensionCheckResult.unknown(f"could not record Git result: {error}")
+
+
+def _merge_arguments(context: ExtensionContext) -> tuple[str, str] | str:
+    """The branch to merge and the merge message, or why they are unusable."""
+    if len(context.arguments) != len(MERGE_ARGUMENTS):
+        return "merge-branch takes two args: the branch to merge and the message"
+    branch, message = (argument.strip() for argument in context.arguments)
+    if not branch:
+        return "the branch to merge rendered empty"
+    if branch.startswith("-") or any(character.isspace() for character in branch):
+        return f"not a branch name: {branch!r}"
+    if not message or "\n" in message or "\r" in message:
+        return "the merge message must be one non-empty line"
+    return branch, message
+
+
+def _merge_in_progress(context: ExtensionContext) -> bool:
+    return _git(context, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0
+
+
+def _own_merge_in_progress(context: ExtensionContext) -> bool:
+    """Whether the merge in progress was started by this very operation.
+
+    Its message, which git keeps in ``MERGE_MSG`` until the merge concludes,
+    then carries this operation's trailer.
+    """
+    if not context.operation_id:
+        return False
+    located = _git(context, "rev-parse", "--git-path", "MERGE_MSG")
+    if located.returncode:
+        return False
+    path = Path(located.stdout.strip())
+    if not path.is_absolute():
+        path = (context.workspace or context.root) / path
+    try:
+        message = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return _operation_marker(context) in message.splitlines()
+
+
+def _abort_merge(context: ExtensionContext) -> str | None:
+    """Abort the merge in progress; the error when git cannot."""
+    aborted = _git(context, "merge", "--abort")
+    if aborted.returncode:
+        return _failed(aborted, "git merge --abort failed")
+    return None
+
+
+def _merge(context: ExtensionContext) -> ExtensionResult:
+    """Merge a branch into the workspace's branch with ``git merge --no-ff``.
+
+    A conflict is never resolved here: the merge is aborted and the handler
+    fails naming the conflicting files, so the task stops for the operator.
+    """
+    settings = settings_from(context.config)
+    parsed = _merge_arguments(context)
+    if isinstance(parsed, str):
+        return ExtensionResult(False, error=parsed)
+    branch, message = parsed
+    subject = _subject(context, settings, message)
+    if not subject:
+        return ExtensionResult(False, error="commit_format rendered an empty message")
+    # As for git-commit: the operation trailer lets a retry recognize the
+    # merge commit an interrupted attempt already made.
+    if context.operation_id:
+        existing = _check_merge(context)
+        if existing.status == "succeeded" and existing.result is not None:
+            return existing.result
+        if existing.status == "unknown":
+            return ExtensionResult(
+                False,
+                error=(
+                    existing.error
+                    or "Git could not establish the interrupted operation outcome"
+                ),
+            )
+    _, workspace_error = _workspace_root(context)
+    if workspace_error:
+        return ExtensionResult(False, error=workspace_error)
+    if _merge_in_progress(context):
+        if not _own_merge_in_progress(context):
+            return ExtensionResult(
+                False,
+                error=(
+                    "a merge is already in progress in the workspace; conclude "
+                    "it or run `git merge --abort`, then retry"
+                ),
+            )
+        # An interrupted attempt of this operation stopped mid-merge on a
+        # workspace it had found clean: undo it and merge again.
+        abort_error = _abort_merge(context)
+        if abort_error:
+            return ExtensionResult(False, error=abort_error)
+    status = _git(context, "status", "--porcelain")
+    if status.returncode:
+        return ExtensionResult(False, error=_failed(status, "git status failed"))
+    changed = [line for line in status.stdout.splitlines() if line.strip()]
+    if changed:
+        return ExtensionResult(
+            False,
+            error=(
+                f"working tree has {len(changed)} uncommitted change(s); "
+                f"commit or remove them before merging {branch}"
+            ),
+        )
+    tip = _git(context, "rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}")
+    if tip.returncode:
+        return ExtensionResult(False, error=f"branch {branch!r} does not exist")
+    tip_sha = tip.stdout.strip()
+    target = _current_branch(context)
+    if _git(context, "merge-base", "--is-ancestor", tip_sha, "HEAD").returncode == 0:
+        return ExtensionResult(
+            True,
+            output=f"{branch} is already merged into {target}; nothing to merge",
+            values={"merge_commit": ""},
+        )
+    merge_args = ["merge", "--no-ff", "--no-edit", "-m", subject]
+    if context.operation_id:
+        merge_args.extend(["-m", _operation_marker(context)])
+    merge_args.append(branch)
+    merged = _git(context, *merge_args)
+    signed = True
+    if (
+        merged.returncode
+        and settings.on_signing_failure == "unsigned"
+        and _signing_failed(context, merged)
+    ):
+        # git merged the tree but could not sign the commit, and left the
+        # merge in progress: undo it and merge once more without signing.
+        if _merge_in_progress(context):
+            abort_error = _abort_merge(context)
+            if abort_error:
+                return ExtensionResult(False, error=abort_error)
+        merged = _git(context, "-c", "commit.gpgsign=false", *merge_args)
+        signed = False
+    if merged.returncode:
+        return ExtensionResult(False, error=_merge_failure(context, branch, merged))
+    if _merge_in_progress(context):
+        return ExtensionResult(
+            False,
+            error=(
+                f"git reported merging {branch} as done, but a merge is still "
+                "in progress (MERGE_HEAD exists); conclude or abort it"
+            ),
+        )
+    head = _git(context, "rev-parse", "HEAD").stdout.strip()
+    second_parent = _git(context, "rev-parse", "--verify", "--quiet", "HEAD^2")
+    if second_parent.stdout.strip() != tip_sha:
+        return ExtensionResult(
+            False,
+            error=f"HEAD {head[:12]} is not a merge commit of {branch}",
+        )
+    record: dict[str, Any] = {
+        "sha": head,
+        "message": subject,
+        "branch": target,
+        "merged": branch,
+        "task_id": context.task_id,
+        "run_id": context.run_id,
+        "workflow": context.workflow,
+        "committed_at": _now(),
+    }
+    if context.operation_id:
+        record["operation_id"] = context.operation_id
+    if not signed:
+        record["signed"] = False
+    _record_commit(context, record)
+    output = f"{head[:12]} {subject}"
+    if not signed:
+        output += (
+            " (unsigned: git could not sign it, and on_signing_failure allows this)"
+        )
+    return ExtensionResult(True, output=output, values={"merge_commit": head})
+
+
+def _merge_failure(
+    context: ExtensionContext,
+    branch: str,
+    result: subprocess.CompletedProcess[str],
+) -> str:
+    """Why the merge failed, after aborting whatever it left in progress."""
+    conflicted = _git(context, "diff", "--name-only", "--diff-filter=U", "-z")
+    files = [path for path in conflicted.stdout.split("\0") if path]
+    if not _merge_in_progress(context):
+        return _failed(result, "git merge failed")
+    abort_error = _abort_merge(context)
+    state = (
+        "the merge was aborted, so the workspace is as it was before"
+        if abort_error is None
+        else f"aborting the merge failed ({abort_error}); the workspace is mid-merge"
+    )
+    if files:
+        return (
+            f"merging {branch} conflicts in: {', '.join(files)}; {state}. "
+            "Resolve the conflicts, then retry"
+        )
+    return f"{_failed(result, 'git merge failed')}; {state}"
+
+
+def _check_merge(context: ExtensionContext) -> ExtensionCheckResult:
+    """Find the merge commit made by a previous attempt of this operation."""
+    found = _operation_commit(context)
+    if isinstance(found, ExtensionCheckResult):
+        return found
+    sha, subject = found
+    parsed = _merge_arguments(context)
+    try:
+        record: dict[str, Any] = {
+            "sha": sha,
+            "message": subject,
+            "branch": _current_branch(context),
+            "merged": parsed[0] if isinstance(parsed, tuple) else None,
+            "task_id": context.task_id,
+            "run_id": context.run_id,
+            "workflow": context.workflow,
+            "committed_at": _now(),
+            "operation_id": context.operation_id,
+        }
+        _record_commit(context, record)
+        return ExtensionCheckResult.succeeded(
+            ExtensionResult(
+                True, output=f"{sha[:12]} {subject}", values={"merge_commit": sha}
+            )
+        )
+    except Exception as error:  # noqa: BLE001 - checker must remain tri-state
+        return ExtensionCheckResult.unknown(f"could not record Git result: {error}")
+
+
+def _operation_commit(
+    context: ExtensionContext,
+) -> tuple[str, str] | ExtensionCheckResult:
+    """The one commit whose ``WW-Operation`` trailer names this operation.
+
+    Returns its sha and subject, or the checker result when there is not
+    exactly one: ``not_succeeded`` for none, ``unknown`` when Git or the
+    operation identity cannot establish a safe outcome.
+    """
+    if not context.operation_id:
+        return ExtensionCheckResult.unknown("operation ID is missing")
+    if not context.operation_id_known:
+        return ExtensionCheckResult.unknown(
+            "operation ID was synthesized while migrating legacy state"
+        )
+    # Each commit ends with a record separator: a body spans lines, so a
+    # line break cannot tell one commit from the next.
+    log = _git(context, "log", "--all", "--format=%H%x00%s%x00%B%x1e")
+    if log.returncode:
+        return ExtensionCheckResult.unknown(_failed(log, "git log failed"))
+    marker = _operation_marker(context)
+    matches = []
+    for entry in log.stdout.split("\x1e"):
+        fields = entry.strip("\n").split("\x00")
+        if len(fields) != _LOG_FIELDS:
+            continue
+        sha, subject, body = fields
+        if marker in body.splitlines():
+            matches.append((sha.strip(), subject.strip()))
+    if len(matches) > 1:
+        return ExtensionCheckResult.unknown(
+            f"multiple Git commits claim operation {context.operation_id!r}"
+        )
+    if not matches:
+        return ExtensionCheckResult.not_succeeded()
+    return matches[0]
+
+
+def _operation_marker(context: ExtensionContext) -> str:
+    return f"WW-Operation: {context.operation_id}"
 
 
 def _is_clean(context: ExtensionContext) -> ExtensionResult:
@@ -1223,6 +1484,15 @@ EXTENSION = Extension(
             ),
             check=_check_commit,
             validate=_commit_message_error,
+        ),
+        ExtensionHandler(
+            "merge-branch",
+            _merge,
+            "Merge a branch into the task's branch with git merge --no-ff, "
+            "aborting on a conflict, and record the merge commit.",
+            check=_check_merge,
+            outputs=("merge_commit",),
+            arguments=MERGE_ARGUMENTS,
         ),
         ExtensionHandler(
             "is-git-clean",

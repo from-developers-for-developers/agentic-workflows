@@ -263,6 +263,11 @@ class ExtensionHandler:
     declared values and returns an error message to refuse them, or ``None``.
     ww then rejects the completion carrying a refused value before saving
     anything, so the agent corrects it instead of the handler failing later.
+
+    ``arguments`` names the positional arguments a reference must pass with
+    ``args``, in order; ww renders their templates when the handler runs and
+    hands them over as ``ExtensionContext.arguments``.  A reference passing
+    a different number is a configuration error.
     """
 
     name: str
@@ -272,6 +277,7 @@ class ExtensionHandler:
     check: Callable[[ExtensionContext], ExtensionCheckResult] | None = None
     outputs: tuple[str, ...] = ()
     validate: Callable[[Mapping[str, str]], str | None] | None = None
+    arguments: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _VALUE_NAME.fullmatch(self.name):
@@ -311,6 +317,15 @@ class ExtensionHandler:
                 )
             if is_reserved_name(name):
                 raise ValueError(f"extension handler output name {name!r} is reserved")
+        if not isinstance(self.arguments, tuple) or not all(
+            isinstance(name, str) and _VALUE_NAME.fullmatch(name)
+            for name in self.arguments
+        ):
+            raise ValueError(
+                "extension handler arguments must be a tuple of normalized names"
+            )
+        if len(self.arguments) != len(set(self.arguments)):
+            raise ValueError("extension handler argument names must be unique")
 
 
 @dataclass(frozen=True)

@@ -41,6 +41,7 @@ from ww.extensions import (
     ExtensionRegistry,
     parse_reference,
 )
+from ww.interpolation import dependencies, interpolate
 from ww.plan import PlanItem, WorkflowPlan
 from ww.storage_adapters import CommandOutputAddress
 from ww.variables import PROJECT, item_workspace_values
@@ -255,6 +256,19 @@ class _ExtensionService:
         workspace, values = executor.item_scope(
             state, self._dispatch.snapshot.plan, item
         )
+        missing = sorted(
+            {
+                name
+                for argument in planned.arguments
+                for name in dependencies(argument)
+                if name not in values
+            }
+        )
+        if missing:
+            raise StateError(
+                "extension handler arguments are missing variable(s): "
+                + ", ".join(missing)
+            )
         return ExtensionContext(
             root=executor.root,
             store=executor.extensions.store(reference.identifier),
@@ -263,6 +277,9 @@ class _ExtensionService:
             run_id=state.run_id,
             workflow=state.workflow,
             values=values,
+            arguments=tuple(
+                interpolate(argument, values) for argument in planned.arguments
+            ),
             workspace=workspace,
             item_id=item.id,
             work_item_id=item.item_id,
