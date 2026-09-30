@@ -11,9 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
-- `"enabled": "on_request"` in `ww-agentic-workflows.json`: ww stays available, but agents use it only when the user
-  explicitly asks for it. `discover`, `lookup`, the `session-start` hook, the agent instructions and the `ww` skill
-  say so, and `init` now asks which of `true`, `"on_request"` or `false` to write.
+- `"enabled": "on_request"`: ww stays available, but agents use it only when the user explicitly asks; `init` now
+  asks which of `true`, `"on_request"` or `false` to write. `ad03eef`
 - Modes reach the agent: every agent step page lists its modes (before, their guidance was never shown), and a mode
   with `workflows` / `steps` applies automatically where they match. `5deed4f`
 - One filter shape: hook and rule group `workflows` / `steps` take `"*"` or a list of names; a bare name or `"*"`
