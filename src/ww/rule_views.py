@@ -24,6 +24,7 @@ from ww.rule_disputes import DisputeEntry
 from ww.rule_store import RuleAutomation, describe_command
 from ww.rule_verification import to_verify
 from ww.workflow_config import (
+    NameFilter,
     RuleDefinition,
     RuleGroupRef,
     WorkflowConfiguration,
@@ -241,14 +242,15 @@ class ListedRule:
 class ListedGroup:
     """One root rule group: where it applies on its own, and its rules.
 
-    ``workflows`` and ``steps`` are ``None`` when the group admits every
-    workflow or step, and empty when it applies only where a step names it.
+    ``workflows`` and ``steps`` admit every workflow or step, render as
+    ``"*"``, or list names; an empty one means the group applies only where a
+    step names it.
     """
 
     name: str
     origin: str
-    workflows: tuple[str, ...] | None
-    steps: tuple[str, ...] | None
+    workflows: NameFilter
+    steps: NameFilter
     hints: dict[str, str]
     rules: tuple[ListedRule, ...]
 
@@ -256,8 +258,8 @@ class ListedGroup:
         return {
             "name": self.name,
             "origin": self.origin,
-            "workflows": None if self.workflows is None else list(self.workflows),
-            "steps": None if self.steps is None else list(self.steps),
+            "workflows": self.workflows.to_data(),
+            "steps": self.steps.to_data(),
             "hints": self.hints,
             "rules": [rule.to_dict() for rule in self.rules],
         }

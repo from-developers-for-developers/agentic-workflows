@@ -1227,8 +1227,9 @@ the work never grades it: a claim that can be a command is run by ww.
 
 Rules live in Markdown files grouped under the root `rules`, or inline in a
 step's `rules` list; the [specification](specification.md#rules) has the
-format. A group applies where its `workflows` and `steps` filters allow, and a
-step may name a group to get it regardless.
+format. A group applies where its `workflows` and `steps` filters allow (each
+`"*"` or a list of names, as on hooks), and a step may name a group to get it
+regardless.
 
 ```yaml
 rules:
@@ -1472,8 +1473,8 @@ Reaches these steps (an agent step's page shows it):
 - `rules move <id> <group>` moves the file, unchanged, into another group's
   directory; its wording, and so what the store knows about it, stays.
 - `rules filter <group> --workflows ... --steps ...` changes where a group of
-  `ww-rules.yaml` applies (`--all-workflows` and `--all-steps` remove a
-  filter); a group declared elsewhere is yours, and the command says what to
+  `ww-rules.yaml` applies (`--workflows '*'` writes `"*"`; `--all-workflows`
+  and `--all-steps` remove a filter, which also means all); a group declared elsewhere is yours, and the command says what to
   write there.
 - `rules promote <check>` copies an approved store check into the `check`
   frontmatter of every rule file it covers and removes the check and those
@@ -1516,6 +1517,12 @@ step scope. Step lifecycle positions are `before_in_progress`,
 order for every matching step.
 Step filters accept bare names at any nesting level or slash-separated logical
 paths such as `plan-and-fix/fix` when only one substep should match.
+Hooks and rule groups take one filter shape: `workflows` and `steps` are each
+`"*"` for all or a list of names (`workflows: [task, bugfix]`); a bare name is
+not a list, and `"*"` cannot be mixed with names. One difference: `[]` on a
+hook means all, like omission, while on a rule group it means the group applies
+only where a step names it. The
+[specification](specification.md#workflow-and-step-filters) has the table.
 
 A singular hook is written directly as the normal handler shape; there is no
 `handler` wrapper. A name-only mapping references a catalog handler, while

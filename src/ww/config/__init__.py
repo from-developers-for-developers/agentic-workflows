@@ -19,6 +19,7 @@ from ww.workflow_config import (
     HookDefinition,
     MetadataScope,
     ModeDefinition,
+    NameFilter,
     ProfileDefinition,
     RuleGroup,
     StepDefinition,
@@ -415,8 +416,8 @@ def _extend_to_heirs(
     ``hotfix`` also runs for a ``bugfix`` that inherits it.
     """
     return tuple(
-        replace(hook, workflow_names=_with_heirs(hook.workflow_names, workflows))
-        if hook.workflow_names
+        replace(hook, workflows=_with_heirs(hook.workflows, workflows))
+        if hook.workflows.listed
         else hook
         for hook in hooks
     )
@@ -428,16 +429,17 @@ def _extend_groups_to_heirs(
     """Let a rule group filtered to a workflow also apply to its heirs."""
     return tuple(
         replace(group, workflows=_with_heirs(group.workflows, workflows))
-        if group.workflows
+        if group.workflows.listed
         else group
         for group in groups
     )
 
 
 def _with_heirs(
-    names: tuple[str, ...], workflows: tuple[WorkflowDefinition, ...]
-) -> tuple[str, ...]:
-    """``names`` followed by every workflow that inherits one of them."""
+    selected: NameFilter, workflows: tuple[WorkflowDefinition, ...]
+) -> NameFilter:
+    """``selected`` followed by every workflow that inherits one of them."""
+    names = selected.listed
     parents = {workflow.name: workflow.inherits for workflow in workflows}
 
     def lineage(name: str) -> set[str]:
@@ -448,11 +450,14 @@ def _with_heirs(
             current = parents.get(current)
         return found
 
-    return (
-        *names,
-        *(
-            workflow.name
-            for workflow in workflows
-            if workflow.name not in names and lineage(workflow.name).intersection(names)
-        ),
+    return NameFilter.of(
+        (
+            *names,
+            *(
+                workflow.name
+                for workflow in workflows
+                if workflow.name not in names
+                and lineage(workflow.name).intersection(names)
+            ),
+        )
     )

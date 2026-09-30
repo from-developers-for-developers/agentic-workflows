@@ -738,10 +738,12 @@ Each hook entry accepts one handler form and optional filters:
 | --- | --- | --- |
 | handler keys | shared handler shape | All scopes; used directly for a singular hook. |
 | `handlers` | non-empty list of handler mappings | All scopes; used only for multiple actions. |
-| `steps` | list of step names or paths | Global and workflow step-lifecycle hooks only; unavailable to workflow-boundary hooks. |
-| `workflows` | list of names/references | Global hooks only. |
+| `steps` | `"*"` or list of step names or paths | Global and workflow step-lifecycle hooks only; unavailable to workflow-boundary hooks. |
+| `workflows` | `"*"` or list of workflow names | Global hooks only. |
 | `on_failure` | `fix` or `operator` | `before_complete` hooks only, and not on a workflow transition. `fix` makes the hook a check of the step: a failure rejects the step's completion and returns the step to its worker; see [Rules](#rules). Default `operator`: a failure stops the task for the operator. Also accepted on each member of `handlers`, which inherits the group's value. |
 
+The filter forms are described in
+[Workflow and step filters](#workflow-and-step-filters).
 Filters must refer to configured workflows or effective steps; the reserved
 `init` step is always an effective step. A bare step name such as `fix` matches
 that name at any nesting level unless the same selector is also an exact logical
@@ -799,6 +801,25 @@ hooks:
     - workflow: "{{next_workflow}}"
 ```
 
+### Workflow and step filters
+
+Every construct that filters by workflow or step, hooks and rule groups, takes
+the same two keys, `workflows` and `steps`, each either the string `"*"` (all)
+or a list of names. Only where a construct may carry a filter differs.
+
+| Form | Hook | Rule group |
+| --- | --- | --- |
+| omitted | every workflow or step | every workflow or step |
+| `"*"` | every workflow or step | every workflow or step |
+| `[a, b]` | only those names | only those names |
+| `[]` | every workflow or step, like omission | none: the group applies only where a step names it |
+
+`"*"` is never redundant, even where omission already means all. `"*"` inside
+a list (`["*", task]`) is an error, and so is any other string: a bare name is
+not a list, write `[task]`.
+
+`ww rules --json` renders a filter that admits all as `"*"`.
+
 ## Rules
 
 A rule is a sentence a step's agent follows while working. It may carry a
@@ -855,8 +876,8 @@ rules:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `rules` | non-empty list of strings | Each is a group name, else a path relative to the file that declares it: a directory contributes every `*.md` directly inside it, sorted by name; a file, that rule. |
-| `workflows` | list of workflow names | The workflows the group applies to; omitted, every workflow, and a workflow's heirs follow it. |
-| `steps` | list of step names or paths | The steps it applies to, matched like a hook's `steps`; omitted, every step. `steps: []` applies nowhere on its own: only a step naming the group gets it. |
+| `workflows` | `"*"` or list of workflow names | The workflows the group applies to; omitted or `"*"`, every workflow, and a workflow's heirs follow it. |
+| `steps` | `"*"` or list of step names or paths | The steps it applies to, matched like a hook's `steps`; omitted or `"*"`, every step. `steps: []` applies nowhere on its own: only a step naming the group gets it. See [Workflow and step filters](#workflow-and-step-filters). |
 | `agent`, `model`, `reasoning` | string | Defaults for the group's rules; a rule file's own value wins. |
 
 A rule's ID is `<group>/<file stem>`. Two files with the same stem in one group
@@ -1032,10 +1053,10 @@ converted check. Only a `converted` check runs. An unknown key, status, or
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--check-shell "<sh>" \| --check-argv <arg>...] [--assert empty\|eq:<value>] [--id <stem>]` | Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. |
-| `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`. |
+| `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |
 | `rules edit <id> [--text "<text>"] [--paths <glob>...]` | Replaces a rule file's body, its `paths`, or both, keeping every other byte; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
 | `rules move <id> <group>` | Moves the rule file unchanged into the group's first directory; the rule's ID becomes `<group>/<stem>`. |
-| `rules filter <group> [--workflows <name>...] [--steps <name>...] [--all-workflows] [--all-steps]` | Sets a `ww-rules.yaml` group's filters; `--all-*` removes one. Refuses a group declared in another file. |
+| `rules filter <group> [--workflows <name>...] [--steps <name>...] [--all-workflows] [--all-steps]` | Sets a `ww-rules.yaml` group's filters; `--workflows '*'` / `--steps '*'` writes `"*"`, and `--all-*` removes one, which also admits all. Refuses a group declared in another file. |
 | `rules promote <check>` | Copies a `converted` store check without a pending revision into the `check` of every rule file whose wording it covers, then deletes the check and those rules' entries from the store. Refuses when a covered rule is written in a step's `rules` list or already has a check. |
 
 Every write loads the configuration once the files are written; when it does

@@ -152,14 +152,12 @@ def render_rules_listing(listing: RulesListing) -> str:
         return _document(lines)
     for group in listing.groups:
         _append_section(lines, f"Group `{group.name}`")
-        filters = []
-        if group.workflows is not None:
-            filters.append(
-                "workflows " + (_ids(group.workflows) if group.workflows else "none")
-            )
-        if group.steps is not None:
-            filters.append("steps " + (_ids(group.steps) if group.steps else "none"))
-        if group.workflows == () or group.steps == ():
+        filters = [
+            f"{label} {_ids(names.listed)}"
+            for label, names in (("workflows", group.workflows), ("steps", group.steps))
+            if not names.admits_all
+        ]
+        if group.workflows.admits_none or group.steps.admits_none:
             scope = "only where a step names it"
         elif filters:
             scope = "; ".join(filters)

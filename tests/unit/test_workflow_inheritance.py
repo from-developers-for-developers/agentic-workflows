@@ -86,7 +86,7 @@ def test_inheritance_chains_and_reaches_every_heir(tmp_path: Path) -> None:
 
     assert configuration.workflows_by_name["hotfix-docs"].inherits == "bugfix"
     (prepare,) = configuration.global_hooks
-    assert set(prepare.workflow_names) == {"hotfix", "bugfix", "hotfix-docs"}
+    assert set(prepare.workflows.listed) == {"hotfix", "bugfix", "hotfix-docs"}
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,8 @@ from ww.extensions import is_extension_reference
 from ww.operations import WorkflowHandoff
 from ww.variables import CORE_VARIABLE_NAMES
 from ww.workflow_config import (
+    ALL,
+    ALL_NAMES,
     DocumentUpdate,
     HandlerDefinition,
     HookDefinition,
@@ -27,14 +29,13 @@ from .values import (
     _description,
     _mapping,
     _name,
+    _name_filter,
     _named_entry,
     _nonempty_string,
     _only,
     _optional_agent,
     _optional_bool,
     _optional_string,
-    _step_filter_list,
-    _string_list,
     _unique,
 )
 
@@ -312,14 +313,16 @@ def _parse_hook(
             raise ConfigurationError(f"{path} requires a handler action")
         references = ((_parse_hook_handler(action, path), on_failure),)
 
-    workflow_names = _string_list(mapping.get("workflows", []), f"{path}.workflows")
-    step_names = _step_filter_list(mapping.get("steps", []), f"{path}.steps")
+    workflows = _name_filter(
+        mapping.get("workflows", ALL_NAMES), f"{path}.workflows", empty=ALL
+    )
+    steps = _name_filter(mapping.get("steps", ALL_NAMES), f"{path}.steps", empty=ALL)
     return tuple(
         HookDefinition(
             phase=phase,
             handler=reference,
-            workflow_names=workflow_names,
-            step_names=step_names,
+            workflows=workflows,
+            steps=steps,
             scope=scope,
             path=path,
             on_failure=failure,

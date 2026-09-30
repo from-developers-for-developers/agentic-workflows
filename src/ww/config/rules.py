@@ -28,8 +28,12 @@ from ww.errors import ConfigurationError
 from ww.extensions.api import RuleGroupContribution
 from ww.validation import is_positive_int
 from ww.workflow_config import (
+    ALL,
+    ALL_NAMES,
+    NO_NAMES,
     HandlerDefinition,
     ItemFlow,
+    NameFilter,
     RuleDefinition,
     RuleGroup,
     RuleGroupRef,
@@ -40,7 +44,14 @@ from ww.workflow_config import (
     WorkflowDefinition,
 )
 
-from .values import _NAME, _mapping, _only, _optional_agent, _optional_string
+from .values import (
+    _NAME,
+    _mapping,
+    _name_filter,
+    _only,
+    _optional_agent,
+    _optional_string,
+)
 
 RULE_FILE_KEYS = {"paths", "check", "max_fixes", "agent", "model", "reasoning"}
 STEP_RULE_KEYS = {
@@ -110,8 +121,8 @@ class _DeclaredGroup:
 
     name: str
     items: tuple[Path | str, ...]
-    workflows: tuple[str, ...] | None
-    steps: tuple[str, ...] | None
+    workflows: NameFilter
+    steps: NameFilter
     hints: RuleHints
     origin: str
     base: Path | None
@@ -240,8 +251,8 @@ def parse_rules_root(
         declared[contribution.name] = _DeclaredGroup(
             contribution.name,
             contribution.items,
-            contribution.workflows,
-            contribution.steps,
+            _contributed_filter(contribution.workflows),
+            _contributed_filter(contribution.steps),
             contribution.hints,
             f"extension {origin}",
             None,
@@ -281,27 +292,19 @@ def _declared_group(name: str, value: Any, base: Path) -> _DeclaredGroup:
     return _DeclaredGroup(
         name,
         tuple(items),
-        (
-            _names(mapping.get("workflows"), f"{path}.workflows")
-            if "workflows" in mapping
-            else None
+        _name_filter(
+            mapping.get("workflows", ALL_NAMES), f"{path}.workflows", empty=NO_NAMES
         ),
-        _names(mapping.get("steps"), f"{path}.steps") if "steps" in mapping else None,
+        _name_filter(mapping.get("steps", ALL_NAMES), f"{path}.steps", empty=NO_NAMES),
         _hints(mapping, path),
         "configuration",
         base,
     )
 
 
-def _names(value: Any, context: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or not all(
-        isinstance(item, str)
-        and item
-        and all(_NAME.fullmatch(segment) for segment in item.split("/"))
-        for item in value
-    ):
-        raise ConfigurationError(f"{context} must be a list of names")
-    return tuple(value)
+def _contributed_filter(names: tuple[str, ...] | None) -> NameFilter:
+    """An extension group's filter: ``None`` admits all, a tuple its names."""
+    return ALL if names is None else NameFilter(names)
 
 
 class _GroupResolver:
