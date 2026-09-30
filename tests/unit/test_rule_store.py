@@ -74,7 +74,7 @@ def test_the_store_round_trips_rules_and_checks(tmp_path: Path) -> None:
 
     assert store.load() == automation
     data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
     assert data["checks"]["deptrac"]["shell"].startswith("grep -L foo")
     assert data["checks"]["deptrac"]["assert"] == {"operator": "empty"}
     assert data["checks"]["deptrac"]["covers"] == [text_hash]
@@ -98,7 +98,15 @@ def test_a_pending_revision_is_kept_beside_the_approved_check(tmp_path: Path) ->
     "content",
     [
         "not json",
-        json.dumps({"schema_version": 2, "rules": {}, "checks": {}}),
+        json.dumps({"schema_version": 3, "rules": {}, "checks": {}}),
+        json.dumps(
+            {
+                "schema_version": 2,
+                "rules": {
+                    "h": {"text": "x", "status": "converted", "approved_by": "bot"}
+                },
+            }
+        ),
         json.dumps({"schema_version": 1, "rules": {}, "checks": {}, "extra": 1}),
         json.dumps({"schema_version": 1, "rules": {"h": {"text": "x"}}}),
         json.dumps(
@@ -192,3 +200,64 @@ def test_check_names_are_short_kebab_case() -> None:
     assert not is_check_name("No-Print")
     assert not is_check_name("a" * 41)
     assert not is_check_name("x--y")
+
+
+def test_a_version_1_store_is_read_with_an_unknown_approver(tmp_path: Path) -> None:
+    text_hash = rule_text_hash(TEXT)
+    (tmp_path / STORE_FILE).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "rules": {
+                    text_hash: {"text": TEXT, "status": "converted", "check": "deptrac"}
+                },
+                "checks": {"deptrac": _check((text_hash,)).to_dict()},
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = RuleStore(tmp_path)
+
+    loaded = store.load()
+
+    assert loaded.rules[text_hash].approved_by is None
+    assert loaded.checks["deptrac"].approved_by is None
+    assert loaded.converted_check(text_hash) is not None
+    entry = loaded.rules[text_hash]
+    store.modify(lambda automation: automation.with_rule("other", entry))
+    data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2
+
+
+def test_approval_provenance_round_trips(tmp_path: Path) -> None:
+    text_hash = rule_text_hash(TEXT)
+    check = CheckEntry(
+        _check((text_hash,)).spec,
+        "rejected",
+        reason="revoked by the operator: too slow",
+        proposed_run="TASK-1/01-task",
+        approved_by="auto",
+        approved_in="TASK-1/01-task",
+    )
+    rule = RuleEntry(
+        TEXT,
+        "converted",
+        check="deptrac",
+        proposed_run="TASK-1/01-task",
+        approved_by="operator",
+        approved_in="TASK-2/01-task",
+    )
+    store = RuleStore(tmp_path)
+
+    store.modify(
+        lambda automation: automation.with_rule(text_hash, rule).with_check(
+            "deptrac", check
+        )
+    )
+
+    loaded = store.load()
+    assert loaded.checks["deptrac"] == check
+    assert loaded.rules[text_hash] == rule
+    data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
+    assert data["checks"]["deptrac"]["approved_by"] == "auto"
+    assert data["rules"][text_hash]["approved_in"] == "TASK-2/01-task"

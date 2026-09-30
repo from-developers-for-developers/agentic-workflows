@@ -31,7 +31,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from ww.actions import Commands
 from ww.config.rules import parse_check_command
@@ -47,7 +47,11 @@ from ww.validation import (
 )
 
 STORE_FILE = RULE_AUTOMATION_FILE
-STORE_SCHEMA_VERSION = 1
+STORE_SCHEMA_VERSION = 2
+# Version 1 had no approver fields; its approvals read as "unknown approver".
+READABLE_SCHEMA_VERSIONS = frozenset({1, STORE_SCHEMA_VERSION})
+# Who approved a proposal: the operator, or ww under ``rules.approval``.
+RuleApprover = Literal["operator", "auto"]
 # A check name: short, lower-case, kebab-case.
 CHECK_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CHECK_NAME_LIMIT = 40
@@ -65,7 +69,11 @@ _RULE_KEYS = {
     "reason",
     "candidates",
     "proposed_in",
+    "proposed_run",
+    "approved_by",
+    "approved_in",
 }
+_APPROVAL_KEYS = {"proposed_run", "approved_by", "approved_in"}
 _SPEC_KEYS = {"argv", "shell", "args", "env", "assert", "config", "covers", "proven"}
 _CHECK_KEYS = _SPEC_KEYS | {
     "status",
@@ -73,7 +81,8 @@ _CHECK_KEYS = _SPEC_KEYS | {
     "approved_at",
     "proposed_in",
     "pending",
-}
+    "reason",
+} | _APPROVAL_KEYS
 
 
 @dataclass(frozen=True)
@@ -84,7 +93,10 @@ class RuleEntry:
     check the verifier would create or extend (``extends``). ``reason``
     explains a ``not-convertible`` or ``rejected`` rule; ``candidates`` are
     the readings of an ``ambiguous`` one. ``proposed_in`` is the
-    verification item that last reported on it.
+    verification item that last reported on it, and ``proposed_run`` its run
+    (``<task>/<run>``). ``approved_by`` and ``approved_in`` record who
+    approved its approach, reading, or check, and in which run; ``None`` for
+    an approval recorded before the store kept them.
     """
 
     text: str
@@ -96,6 +108,9 @@ class RuleEntry:
     reason: str | None = None
     candidates: tuple[str, ...] = ()
     proposed_in: str | None = None
+    proposed_run: str | None = None
+    approved_by: RuleApprover | None = None
+    approved_in: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {"text": self.text, "status": self.status}
@@ -105,6 +120,9 @@ class RuleEntry:
             ("check", self.check),
             ("reason", self.reason),
             ("proposed_in", self.proposed_in),
+            ("proposed_run", self.proposed_run),
+            ("approved_by", self.approved_by),
+            ("approved_in", self.approved_in),
         ):
             if value is not None:
                 data[key] = value
@@ -135,7 +153,26 @@ class RuleEntry:
             proposed_in=expect_optional_string(
                 mapping.get("proposed_in"), f"{path}.proposed_in"
             ),
+            **_approval(mapping, path),
         )
+
+
+def _approval(mapping: dict[str, Any], path: str) -> dict[str, Any]:
+    """The provenance fields an entry shares: its run, approver, approval run."""
+    approver = mapping.get("approved_by")
+    return {
+        "proposed_run": expect_optional_string(
+            mapping.get("proposed_run"), f"{path}.proposed_run"
+        ),
+        "approved_by": (
+            expect_literal(approver, RuleApprover, f"{path}.approved_by")
+            if approver is not None
+            else None
+        ),
+        "approved_in": expect_optional_string(
+            mapping.get("approved_in"), f"{path}.approved_in"
+        ),
+    }
 
 
 @dataclass(frozen=True)
@@ -219,7 +256,9 @@ class CheckEntry:
 
     ``pending`` is a proposed revision of a ``converted`` check, such as an
     extended configuration covering one more rule; the approved ``spec`` keeps
-    running until the operator approves the revision.
+    running until the operator approves the revision. ``reason`` explains a
+    ``rejected`` check, such as the operator's ``ww rules revoke``. The
+    provenance fields are those of :class:`RuleEntry`.
     """
 
     spec: CheckSpec
@@ -228,6 +267,10 @@ class CheckEntry:
     approved_at: str | None = None
     proposed_in: str | None = None
     pending: CheckSpec | None = None
+    reason: str | None = None
+    proposed_run: str | None = None
+    approved_by: RuleApprover | None = None
+    approved_in: str | None = None
 
     @property
     def undecided(self) -> bool:
@@ -241,6 +284,10 @@ class CheckEntry:
             ("proposed_at", self.proposed_at),
             ("approved_at", self.approved_at),
             ("proposed_in", self.proposed_in),
+            ("reason", self.reason),
+            ("proposed_run", self.proposed_run),
+            ("approved_by", self.approved_by),
+            ("approved_in", self.approved_in),
         ):
             if value is not None:
                 data[key] = value
@@ -273,6 +320,8 @@ class CheckEntry:
                 if pending is not None
                 else None
             ),
+            reason=expect_optional_string(mapping.get("reason"), f"{path}.reason"),
+            **_approval(mapping, path),
         )
 
 
@@ -318,7 +367,7 @@ class RuleAutomation:
     def from_dict(cls, data: Any) -> RuleAutomation:
         if not isinstance(data, dict):
             raise ValueError("the rule automation store must be an object")
-        if data.get("schema_version") != STORE_SCHEMA_VERSION:
+        if data.get("schema_version") not in READABLE_SCHEMA_VERSIONS:
             raise ValueError(
                 "unsupported rule automation schema: "
                 f"{data.get('schema_version')!r}"

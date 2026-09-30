@@ -16,7 +16,7 @@ from ww.output_adapters.markdown import (
     _fix_failures,
     _waivers,
 )
-from ww.rule_store import RuleAutomation
+from ww.rule_store import CheckEntry, RuleAutomation, describe_command
 from ww.rule_views import ListedRule, Orphans, RulesListing, RuleView
 
 
@@ -215,4 +215,33 @@ def render_orphans(listed: Orphans, automation: RuleAutomation) -> str:
     lines.extend(
         f"- check {name} ({automation.checks[name].status})" for name in listed.checks
     )
+    return "\n".join(lines) + "\n"
+
+
+def render_revoke_preview(name: str, check: CheckEntry) -> str:
+    """The check ``ww rules revoke`` would reject, as the operator reads it."""
+    spec = check.pending or check.spec
+    lines = [
+        f"Check {name} ({check.status}): {describe_command(spec.command)}",
+        f"- covers {len(spec.covers)} rule(s)",
+    ]
+    if check.approved_by is not None:
+        lines.append(f"- approved by {check.approved_by}")
+    if spec.config:
+        lines.append("- config files: " + ", ".join(spec.config))
+    return "\n".join(lines) + "\n"
+
+
+def render_revoked(name: str, rules: tuple[str, ...], config: tuple[str, ...]) -> str:
+    """What ``ww rules revoke`` changed, and what it left for the operator."""
+    listed = " (" + ", ".join(key[:12] for key in rules) + ")" if rules else ""
+    files = f" and the check's config files ({', '.join(config)})" if config else ""
+    lines = [
+        f"Revoked check {name}: it is rejected in the rule-automation store "
+        "and no longer runs.",
+        f"Rules rejected with it, judged by a verifier from now on: "
+        f"{len(rules)}{listed}",
+        f"Nothing else changed: the YAML and rule files{files} stay as they "
+        "are, for the operator to keep or remove.",
+    ]
     return "\n".join(lines) + "\n"

@@ -30,6 +30,7 @@ from ww.instructions.commands import (
     set_item_fields_command,
     start_command,
 )
+from ww.instructions.conversions import conversions_markdown
 from ww.instructions.models import FixFailure, Proposal, VerificationPage
 from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
@@ -349,6 +350,15 @@ def _completed(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", f"Handoff: `{instruction.handoff}`"])
     if instruction.control == "handoff_manager":
         lines.extend(["", "Control is with the manager for final reporting."])
+    if instruction.rule_conversions:
+        lines.extend(
+            [
+                "",
+                *conversions_markdown(instruction.rule_conversions, "###")
+                .rstrip()
+                .splitlines(),
+            ]
+        )
     _recommendation(lines, instruction)
 
 

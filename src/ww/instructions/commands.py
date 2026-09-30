@@ -145,6 +145,11 @@ def dispute_command(
     )
 
 
+def rules_revoke_command(check: str) -> str:
+    """The operator's undo of a check ww approved automatically."""
+    return _command("rules", "revoke", _arg(check))
+
+
 def child_start_command(task_id: str, child_id: str) -> str:
     return _command("child", "start", _arg(task_id), _arg(child_id))
 

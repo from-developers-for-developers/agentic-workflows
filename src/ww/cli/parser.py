@@ -636,13 +636,13 @@ def _rules_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
     json_output: argparse.ArgumentParser,
 ) -> None:
-    """``rules``: list and prune, and the validated writes the skill uses."""
+    """``rules``: list, prune and revoke, and the validated writes the skill uses."""
     rules = subparsers.add_parser(
         "rules",
         parents=[json_output],
         help=(
             "List the rule groups with their filters and rules; its actions "
-            "prune the store and write rule files and groups."
+            "prune the store, revoke a check, and write rule files and groups."
         ),
     )
     actions = rules.add_subparsers(dest="rules_action", required=False)
@@ -660,6 +660,23 @@ def _rules_parser(
         "--yes",
         action="store_true",
         help="Delete without the y/N prompt, on the operator's word.",
+    )
+    revoke = actions.add_parser(
+        "revoke",
+        parents=[after],
+        help=(
+            "Reject a converted or proposed store check and the rules it "
+            "covers, after asking; they are judged from then on."
+        ),
+    )
+    revoke.add_argument("check_name", metavar="CHECK")
+    revoke.add_argument(
+        "--reason", default=None, help="Why the check is revoked; recorded."
+    )
+    revoke.add_argument(
+        "--yes",
+        action="store_true",
+        help="Revoke without the y/N prompt, on the operator's word.",
     )
     dry_run = argparse.ArgumentParser(add_help=False)
     dry_run.add_argument(

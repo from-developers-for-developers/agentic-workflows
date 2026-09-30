@@ -1023,6 +1023,41 @@ A rule hash may be given by a unique prefix of at least 8 characters. Once
 nothing is undecided, ww runs the step's checks again, newly approved ones
 included, then verifies what remains or records the held completion.
 
+#### Who approves: `rules.approval`
+
+`ww-agentic-workflows.json` sets who approves what verifiers propose:
+
+```json
+"rules": { "approval": "operator" }
+```
+
+| Value | Approaches | Checks | Stops per converted rule |
+| --- | --- | --- | --- |
+| `operator` (default) | the operator | the operator | 2 |
+| `check` | automatic | the operator | 1 |
+| `auto` | automatic | automatic, only when `proven: true` | 0 |
+
+`rules` takes only `approval`; another key or value is an error. The setting
+is read when a verification item completes, not frozen into the run. ww's
+approvals go through the same code as the operator's `next --approve`, are
+recorded with `approved_by: auto`, and an approved check runs on the held
+completion at once. Under `check`, an ambiguous rule and a proposed check
+still stop the task. Under `auto` nothing stops it: an unproven check stays
+`proposed` and an ambiguous rule stays `ambiguous` in the store, and meanwhile
+a verifier judges their rules, as for an undecided proposal from elsewhere;
+`not-convertible` is recorded as always.
+
+#### Rules converted in this run
+
+When a run completes, ww lists what it converted, from the store entries whose
+`approved_in` is the run: for each check its status, who approved it, the rule
+IDs it covers with a wording summary, its command, config files, and whether it
+was proven, and for an automatic approval the undo command, `rules revoke
+<check>`. Under `auto` the run's proposals left undecided follow. The section
+is shown on the completion page (JSON: `rule_conversions`) and appended by ww
+to the workflow summary artifact as `## Rules converted in this run`, in every
+approval mode, whenever it is not empty. No agent writes it.
+
 ### The rule-automation store
 
 `ww-rule-automation.json` at the project root keeps what verification
@@ -1032,7 +1067,7 @@ files; only the operator's `rules` write commands do.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "rules": {
     "9f2a…": {
       "text": "Controllers must not instantiate services; inject them.",
@@ -1040,7 +1075,10 @@ files; only the operator's `rules` write commands do.
       "interpretation": "No `new *Service(` in src/Controller.",
       "approach": "deptrac layer rule",
       "check": "deptrac",
-      "proposed_in": "task:develop:verify:1"
+      "proposed_in": "task:develop:verify:1",
+      "proposed_run": "TASK-7/01-task",
+      "approved_by": "operator",
+      "approved_in": "TASK-7/01-task"
     }
   },
   "checks": {
@@ -1052,7 +1090,11 @@ files; only the operator's `rules` write commands do.
       "proven": true,
       "status": "converted",
       "proposed_at": "2026-09-29T10:00:00Z",
-      "approved_at": "2026-09-29T11:00:00Z"
+      "approved_at": "2026-09-29T11:00:00Z",
+      "proposed_in": "task:develop:verify:2",
+      "proposed_run": "TASK-7/01-task",
+      "approved_by": "operator",
+      "approved_in": "TASK-7/01-task"
     }
   }
 }
@@ -1064,7 +1106,13 @@ files; only the operator's `rules` write commands do.
 rejected or unconvertible rule and `candidates` for an ambiguous one. `checks`
 is keyed by check name; `status` is `proposed`, `converted`, or `rejected`,
 `covers` lists rule hashes, and `pending` holds a proposed revision of a
-converted check. Only a `converted` check runs. An unknown key, status, or
+converted check, and `reason` explains a rejected one. Only a `converted`
+check runs. On both maps, `proposed_in` is the verification item that last
+reported on the entry and `proposed_run` its run, as `<task>/<run>`;
+`approved_by` (`operator` or `auto`) and `approved_in` (`<task>/<run>`) record
+who approved an approach, a picked reading, or a check, and in which run.
+Version 1 of the store, without these fields, is still read, its approvals
+with an unknown approver; ww writes version 2. An unknown key, status, or
 `schema_version` is an error.
 
 ### Rule commands
@@ -1075,6 +1123,7 @@ converted check. Only a `converted` check runs. An unknown key, status, or
 | `dispute <task> --rule <id> --reason "<why>"` | Only while the step is in progress, and only for an ID a rejected completion of it failed: a rule, a `fix` hook, a derived check, or a judged rule. Stops the task with `operator_reason: check_disputed`; the page shows the check's text, command, and last output, and the worker's reason. |
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
+| `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--check-shell "<sh>" \| --check-argv <arg>...] [--assert empty\|eq:<value>] [--id <stem>]` | Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. |
 | `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |

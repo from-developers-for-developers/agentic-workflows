@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.contracts import (
     CallerRole,
+    CheckAutomationStatus,
     Control,
     InstructionStatus,
     ItemStatus,
@@ -16,11 +18,13 @@ from ww.contracts import (
     OperatorReason,
     PlanItemKind,
     RecoveryAction,
+    RuleAutomationStatus,
     StepRole,
 )
 from ww.execution_models import WorkflowRunSummary
 from ww.items import WorkItem
 from ww.plan import PlannedMode
+from ww.rule_store import RuleApprover
 from ww.workflow_config import (
     ChoiceDefinition,
     ItemFieldUpdate,
@@ -365,6 +369,84 @@ class FixRequired:
 
 
 @dataclass(frozen=True)
+class CoveredRule:
+    """One rule a check covers: its ID in this run's plan, and a wording summary.
+
+    ``id`` is the rule's short text hash when no step of the run declares it.
+    """
+
+    id: str
+    wording: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"id": self.id, "wording": self.wording}
+
+
+@dataclass(frozen=True)
+class ConvertedCheck:
+    """A check approved in this run. ``undo`` is the command that revokes an
+    automatic approval; an operator's approval has none."""
+
+    name: str
+    status: CheckAutomationStatus
+    rules: tuple[CoveredRule, ...]
+    command: str
+    config: tuple[str, ...]
+    proven: bool
+    approved_by: RuleApprover | None
+    undo: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "rules": [rule.to_dict() for rule in self.rules],
+            "command": self.command,
+            "config": list(self.config),
+            "proven": self.proven,
+            "approved_by": self.approved_by,
+            "undo": self.undo,
+        }
+
+
+@dataclass(frozen=True)
+class UndecidedProposal:
+    """A proposal of this run still waiting for the operator (under ``auto``)."""
+
+    kind: Literal["check", "rule"]
+    key: str
+    status: CheckAutomationStatus | RuleAutomationStatus
+    rules: tuple[CoveredRule, ...]
+    command: str | None = None
+    proven: bool | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "key": self.key,
+            "status": self.status,
+            "rules": [rule.to_dict() for rule in self.rules],
+            "command": self.command,
+            "proven": self.proven,
+        }
+
+
+@dataclass(frozen=True)
+class RuleConversions:
+    converted: tuple[ConvertedCheck, ...] = ()
+    undecided: tuple[UndecidedProposal, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.converted or self.undecided)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "converted": [check.to_dict() for check in self.converted],
+            "undecided": [proposal.to_dict() for proposal in self.undecided],
+        }
+
+
+@dataclass(frozen=True)
 class Instruction:
     """A presentation-ready view derived only from persisted execution state."""
 
@@ -446,6 +528,8 @@ class Instruction:
     handoff: str | None = None
     # The workflow a completed run offers the operator next.
     recommended_workflow: str | None = None
+    # A completed run's "Rules converted in this run", built from the store.
+    rule_conversions: RuleConversions = RuleConversions()
     # An assessment's answers and what each does: on the assessment's own
     # page, and on the page that asks ``next`` for the chosen one.
     assessment_outcomes: tuple[AssessmentOutcome, ...] = ()
@@ -583,6 +667,7 @@ class Instruction:
             "error": self.error,
             "handoff": self.handoff,
             "recommended_workflow": self.recommended_workflow,
+            "rule_conversions": self.rule_conversions.to_dict(),
             "assessment_outcomes": [
                 {
                     "label": outcome.label,

@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Fewer rule stops: `"rules": {"approval": "operator" | "check" | "auto"}` in `ww-agentic-workflows.json` lets ww
+  approve a verifier's approaches (`check`), or approaches and proven checks (`auto`, which never stops the task).
+  A completed run lists its "Rules converted in this run" on the completion page and in the workflow summary
+  artifact, and `ww rules revoke <check>` undoes a conversion. The rule-automation store moves to schema 2
+  (`approved_by`, `approved_in`); version 1 is still read.
 - `"enabled": "on_request"`: ww stays available, but agents use it only when the user explicitly asks; `init` now
   asks which of `true`, `"on_request"` or `false` to write. `ad03eef`
 - Modes reach the agent: every agent step page lists its modes (before, their guidance was never shown), and a mode

@@ -64,6 +64,11 @@ from ww.extensions import ExtensionRegistry, is_extension_reference, parse_refer
 from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
+from ww.instructions.conversions import (
+    conversions_markdown,
+    rule_conversions,
+    run_reference,
+)
 from ww.instructions.models import CheckPreview
 from ww.interactions import InteractionLog
 from ww.interpolation import dependencies, interpolate
@@ -92,6 +97,8 @@ from ww.rule_verification import (
     add_resolved_checks,
     apply_decisions,
     approved_checks,
+    automatic_decisions,
+    blocking_proposals,
     close_round,
     decide_proposals,
     hold_completion,
@@ -252,6 +259,7 @@ class WorkflowService:
             documents=self.documents,
             interactions=self.interactions,
             rule_store=self.rule_store,
+            rule_approval=lambda: self.extensions.config.rule_approval,
         )
         self.runs = RunCoordinator(self.tasks)
         self.metadata_publisher = MetadataPublisher(
@@ -1001,7 +1009,12 @@ class WorkflowService:
         def change(automation: RuleAutomation) -> RuleAutomation:
             keys = undecided_proposals(record, automation)
             updated, remaining, approved = apply_decisions(
-                automation, keys, decisions, _now()
+                automation,
+                keys,
+                decisions,
+                _now(),
+                approved_by="operator",
+                run=run_reference(state.task_id, state.run_id, state.workflow),
             )
             outcome.append((remaining, approved))
             return updated
@@ -1640,6 +1653,8 @@ class WorkflowService:
             task_id, state, item, task_metadata, project_metadata
         )
         promised_documents = self._promised_documents(snapshot.plan, item, state)
+        if item.summary and artifact is not None:
+            artifact = self._with_conversions(state, snapshot.plan, artifact)
         artifact_reference, wrapper_artifact_reference = write_completion_artifacts(
             self.tasks,
             task_id,
@@ -2966,6 +2981,20 @@ class WorkflowService:
         self.commit(state, snapshot)
         return replace(self.render(state, snapshot), completion_held=True)
 
+    def _with_conversions(
+        self, state: ExecutionState, plan: WorkflowPlan, artifact: str
+    ) -> str:
+        """The workflow summary with ww's "Rules converted in this run" section."""
+        section = conversions_markdown(
+            rule_conversions(
+                self.rule_store.load(),
+                run_reference(state.task_id, state.run_id, state.workflow),
+                plan,
+                auto=self.extensions.config.rule_approval == "auto",
+            )
+        )
+        return f"{artifact.rstrip()}\n\n{section}" if section else artifact
+
     def _write_draft(
         self,
         state: ExecutionState,
@@ -3005,9 +3034,12 @@ class WorkflowService:
         The store is written first, under its own lock, then the task state,
         so an interruption between the two leaves the verification to be
         completed again; the verifier's own earlier entries are then
-        rewritten, not refused. A failing verdict sends the step back to its
-        worker; otherwise the next verifier of the round goes on, or the
-        operator decides the proposals, or ww records the held completion.
+        rewritten, not refused. What ``rules.approval`` lets ww approve on
+        its own is approved in the same store change, through the operator's
+        code path, and enforced on the step at once. A failing verdict sends
+        the step back to its worker; otherwise the next verifier of the round
+        goes on, or the operator decides the proposals that stop the task, or
+        ww records the held completion.
         """
         record = state.item_executions[state.cursor]
         target = item.verifies
@@ -3024,17 +3056,50 @@ class WorkflowService:
         step = plan.items[index]
         results = parse_rule_results(rule_results, record.verification)
         checks = parse_check_results(check_results, record.verification, results, step)
-        recorded: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+        # Read live: a changed setting applies from the next verification on.
+        approval = self.extensions.config.rule_approval
+        run = run_reference(state.task_id, state.run_id, state.workflow)
+        earlier = state.item_executions[index].open_proposals
+        recorded: list[
+            tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]
+        ] = []
 
         def change(automation: RuleAutomation) -> RuleAutomation:
             updated, opened, notices = record_results(
-                automation, record.verification, results, checks, step, item.id, _now()
+                automation,
+                record.verification,
+                results,
+                checks,
+                step,
+                item.id,
+                _now(),
+                run=run,
             )
-            recorded.append((opened, notices))
-            return updated
+            keys = tuple(
+                key
+                for key in dict.fromkeys((*earlier, *opened))
+                if updated.undecided(key)
+            )
+            decided, remaining, approved = apply_decisions(
+                updated,
+                keys,
+                automatic_decisions(updated, keys, approval),
+                _now(),
+                approved_by="auto",
+                run=run,
+            )
+            recorded.append(
+                (
+                    opened,
+                    notices,
+                    blocking_proposals(decided, remaining, approval),
+                    approved,
+                )
+            )
+            return decided
 
-        self.rule_store.modify(change)
-        opened, notices = recorded[-1]
+        automation = self.rule_store.modify(change)
+        opened, notices, blocking, auto_approved = recorded[-1]
         artifact_reference, _ = write_completion_artifacts(
             self.tasks, state.task_id, state, snapshot, item, None, artifact
         )
@@ -3047,6 +3112,13 @@ class WorkflowService:
             state = replace(state, item_executions=tuple(records))
         verdicts = verdicts_of(results, item.id)
         state = record_round(state, index, verdicts, opened, _now)
+        # Only what stops the task stays open on the step; an automatically
+        # decided or exempt proposal is no longer waited for, so its rules
+        # are verified again: prepared once approved, else judged.
+        state = decide_proposals(state, index, blocking, _now)
+        auto_checks = approved_checks(step, automation, auto_approved)
+        if auto_checks:
+            state = add_resolved_checks(state, index, auto_checks, _now)
         step_record = state.item_executions[index]
         if any(verdict.verdict == "fail" for verdict in verdicts):
             at_step = replace(close_round(state, plan, step.id, _now), cursor=index)

@@ -31,6 +31,16 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
     assert config.settings_for("ww/git") == {}
     assert config.loop_max_times == 3
     assert config.max_fixes == 3
+    assert config.rule_approval == "operator"
+
+
+@pytest.mark.parametrize("value", ["operator", "check", "auto"])
+def test_the_rule_approval_loads_from_project_config(
+    tmp_path: Path, value: str
+) -> None:
+    path = write(tmp_path, {"rules": {"approval": value}})
+
+    assert load_project_config(path).rule_approval == value
 
 
 def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
@@ -129,6 +139,12 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"loop_max_times": "3"}, "loop_max_times must be a positive integer"),
         ({"max_fixes": 0}, "max_fixes must be a positive integer"),
         ({"max_fixes": False}, "max_fixes must be a positive integer"),
+        ({"rules": "auto"}, "rules must be an object"),
+        ({"rules": {"approve": "auto"}}, "rules has unknown key(s): approve"),
+        (
+            {"rules": {"approval": "never"}},
+            'rules.approval must be one of: "operator", "check", "auto"',
+        ),
     ],
 )
 def test_a_malformed_file_is_rejected(

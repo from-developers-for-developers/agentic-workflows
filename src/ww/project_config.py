@@ -99,6 +99,12 @@ PROJECT_FILE_KEYS = ("extensions", "task_format")
 # when the user explicitly asks for it (``"on_request"``).
 ON_REQUEST: Literal["on_request"] = "on_request"
 Enabled = bool | Literal["on_request"]
+# ``rules.approval``: who approves what a rule verifier proposes. The operator
+# approves approaches and checks (``operator``), only checks (``check``), or
+# nothing, a proven check being approved automatically (``auto``).
+RuleApproval = Literal["operator", "check", "auto"]
+RULE_APPROVALS: tuple[RuleApproval, ...] = ("operator", "check", "auto")
+DEFAULT_RULE_APPROVAL: RuleApproval = "operator"
 
 
 @dataclass(frozen=True)
@@ -220,6 +226,9 @@ class ProjectConfig:
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
     enabled: Enabled = True
+    # Who approves rule verifiers' proposals; read when a verification
+    # completes, never frozen into a run.
+    rule_approval: RuleApproval = DEFAULT_RULE_APPROVAL
     projects: tuple[ProjectDefinition, ...] = ()
     # The runtime ``start`` uses when ``--runtime`` is omitted.
     runtime: str = DEFAULT_RUNTIME
@@ -413,6 +422,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "workflows",
         "executable",
         "task_format",
+        "rules",
     }
     if unknown:
         raise ConfigurationError(
@@ -471,6 +481,28 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         disabled_workflows=_parse_workflows(raw.get("workflows"), path),
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
+        rule_approval=_parse_rules(raw.get("rules"), path),
+    )
+
+
+def _parse_rules(data: Any, path: str) -> RuleApproval:
+    """``rules``: an object whose one key, ``approval``, names the approver."""
+    if data is None:
+        return DEFAULT_RULE_APPROVAL
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{path}.rules must be an object")
+    unknown = set(data) - {"approval"}
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.rules has unknown key(s): {', '.join(sorted(unknown))}"
+        )
+    approval = data.get("approval", DEFAULT_RULE_APPROVAL)
+    for value in RULE_APPROVALS:
+        if approval == value:
+            return value
+    raise ConfigurationError(
+        f"{path}.rules.approval must be one of: "
+        + ", ".join(f'"{value}"' for value in RULE_APPROVALS)
     )
 
 

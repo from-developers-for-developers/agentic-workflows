@@ -745,6 +745,133 @@ def test_prune_keeps_a_check_a_live_rule_still_names(tmp_path: Path) -> None:
     assert set(automation.checks) == {"old-tool"}
 
 
+# rules revoke ------------------------------------------------------------------
+
+
+def _converted_store(root: Path) -> str:
+    """A converted check, approved automatically, covering the judged rule."""
+    live = rule_text_hash(JUDGED)
+    (root / STORE_FILE).write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "rules": {
+                    live: {
+                        "text": JUDGED,
+                        "status": "converted",
+                        "check": "cli-diff",
+                        "approved_by": "auto",
+                        "approved_in": "TASK-1/01-task",
+                    }
+                },
+                "checks": {
+                    "cli-diff": {
+                        "argv": ["scripts/cli-diff"],
+                        "assert": None,
+                        "config": ["cli-diff.toml"],
+                        "covers": [live],
+                        "proven": True,
+                        "status": "converted",
+                        "approved_by": "auto",
+                        "approved_in": "TASK-1/01-task",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "cli-diff.toml").write_text("strict = true\n", encoding="utf-8")
+    return live
+
+
+def test_revoke_shows_the_check_and_asks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _project(tmp_path)
+    live = _converted_store(root)
+    answers = iter(["n"])
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    assert main(["--root", str(root), "rules", "revoke", "cli-diff"]) == 1
+
+    error = capsys.readouterr().err
+    assert "Check cli-diff (converted): scripts/cli-diff" in error
+    assert "- approved by auto" in error
+    assert "Revoke cancelled" in error
+    assert RuleStore(root).load().checks["cli-diff"].status == "converted"
+    answers = iter(["y"])
+
+    assert (
+        main(
+            ["--root", str(root), "rules", "revoke", "cli-diff", "--reason", "slow"]
+        )
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert "Revoked check cli-diff" in out
+    assert "judged by a verifier from now on: 1" in out
+    assert "config files (cli-diff.toml) stay" in out
+    automation = RuleStore(root).load()
+    check = automation.checks["cli-diff"]
+    assert check.status == "rejected"
+    assert check.reason == "revoked by the operator: slow"
+    assert automation.rules[live].status == "rejected"
+    assert automation.rules[live].reason == "revoked by the operator: slow"
+    assert automation.converted_check(live) is None
+    # Only the store changed: the check's configuration stays.
+    assert (root / "cli-diff.toml").read_text(encoding="utf-8") == "strict = true\n"
+
+
+def test_revoke_with_yes_prints_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _project(tmp_path)
+    live = _converted_store(root)
+    _no_prompt(monkeypatch)
+
+    assert (
+        main(["--root", str(root), "rules", "revoke", "cli-diff", "--yes", "--json"])
+        == 0
+    )
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "revoked": {
+            "check": "cli-diff",
+            "rules": [live],
+            "reason": "revoked by the operator",
+            "config": ["cli-diff.toml"],
+        }
+    }
+    assert "Confirmed with --yes" in captured.err
+    assert main(["--root", str(root), "rules", "revoke", "cli-diff", "--yes"]) == 1
+    assert "already rejected" in capsys.readouterr().err
+
+
+def test_revoke_refuses_without_a_terminal_or_an_unknown_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _project(tmp_path)
+    _converted_store(root)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    _no_prompt(monkeypatch)
+
+    assert main(["--root", str(root), "rules", "revoke", "cli-diff"]) == 1
+
+    assert "no terminal to ask at" in capsys.readouterr().err
+    assert RuleStore(root).load().checks["cli-diff"].status == "converted"
+    assert main(["--root", str(root), "rules", "revoke", "nothing", "--yes"]) == 1
+    assert "has no check 'nothing'" in capsys.readouterr().err
+
+
 # instruction --role worker on the manager's item ------------------------------
 
 

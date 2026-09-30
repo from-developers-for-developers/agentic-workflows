@@ -65,10 +65,12 @@ from ww.plan import (
     WorkflowPlan,
     number_step_paths,
 )
+from ww.project_config import RuleApproval
 from ww.rule_store import (
     UNDECIDED_RULE_STATUSES,
     CheckEntry,
     CheckSpec,
+    RuleApprover,
     RuleAutomation,
     RuleEntry,
     is_check_name,
@@ -946,6 +948,8 @@ def record_results(
     item: PlanItem,
     by: str,
     now: str,
+    *,
+    run: str | None = None,
 ) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
     """Write a verifier's results into the store; return proposals and notices.
 
@@ -955,6 +959,8 @@ def record_results(
     began, say another task's decision, is not overwritten: a notice says so.
     A prepared extension of an approved check becomes its pending revision,
     so the approved command keeps running until the operator approves it.
+    Every entry written records ``run`` (``<task>/<run>``) as its
+    ``proposed_run``.
     """
     hashes = {rule.id: rule.text_hash for rule in item.rules}
     opened: list[str] = []
@@ -988,6 +994,7 @@ def record_results(
                 check=result.check,
                 extends=result.check in automation.checks,
                 proposed_in=by,
+                proposed_run=run,
             )
             opened.append(rule.text_hash)
         elif result.status == "approach":
@@ -999,6 +1006,7 @@ def record_results(
                 approach=result.approach or entry.approach,
                 check=result.check,
                 proposed_in=by,
+                proposed_run=run,
             )
         elif result.status == "not-convertible":
             updated = RuleEntry(
@@ -1007,6 +1015,7 @@ def record_results(
                 interpretation=interpretation,
                 reason=result.reason,
                 proposed_in=by,
+                proposed_run=run,
             )
         else:
             updated = RuleEntry(
@@ -1015,6 +1024,7 @@ def record_results(
                 interpretation=interpretation,
                 candidates=result.candidates,
                 proposed_in=by,
+                proposed_run=run,
             )
             opened.append(rule.text_hash)
         automation = automation.with_rule(rule.text_hash, updated)
@@ -1027,9 +1037,13 @@ def record_results(
         )
         existing = automation.checks.get(check.name)
         if existing is not None and existing.status == "converted":
-            revised = replace(existing, pending=spec, proposed_in=by)
+            revised = replace(
+                existing, pending=spec, proposed_in=by, proposed_run=run
+            )
         else:
-            revised = CheckEntry(spec, "proposed", proposed_at=now, proposed_in=by)
+            revised = CheckEntry(
+                spec, "proposed", proposed_at=now, proposed_in=by, proposed_run=run
+            )
         automation = automation.with_check(check.name, revised)
         opened.append(check.name)
     return automation, tuple(dict.fromkeys(opened)), tuple(notices)
@@ -1040,7 +1054,8 @@ def record_results(
 
 @dataclass(frozen=True)
 class Decisions:
-    """What the operator decided at a ``check_proposed`` stop."""
+    """What the operator decided at a ``check_proposed`` stop, or what ww
+    approves on its own under ``rules.approval`` (:func:`automatic_decisions`)."""
 
     approve: tuple[str, ...] = ()
     approaches: tuple[tuple[str, str], ...] = ()
@@ -1070,20 +1085,64 @@ def resolve_key(key: str, keys: tuple[str, ...]) -> str:
     )
 
 
+def automatic_decisions(
+    automation: RuleAutomation, keys: tuple[str, ...], approval: RuleApproval
+) -> Decisions:
+    """What ww approves on its own among ``keys`` under ``rules.approval``.
+
+    ``check`` and ``auto`` approve every proposed approach; ``auto`` also
+    approves every proposed check, or check revision, that its verifier
+    proved. Nothing else is decided: an unproven check and an ambiguous rule
+    stay undecided.
+    """
+    if approval == "operator":
+        return Decisions()
+    approve: list[str] = []
+    for key in keys:
+        check = automation.checks.get(key)
+        if check is not None:
+            proposed = check.pending or check.spec
+            if approval == "auto" and check.undecided and proposed.proven:
+                approve.append(key)
+            continue
+        entry = automation.rules.get(key)
+        if entry is not None and entry.status == "approach-proposed":
+            approve.append(key)
+    return Decisions(approve=tuple(approve))
+
+
+def blocking_proposals(
+    automation: RuleAutomation, keys: tuple[str, ...], approval: RuleApproval
+) -> tuple[str, ...]:
+    """The undecided proposals among ``keys`` that stop the task for the operator.
+
+    Under ``auto`` none does: an unproven check and an ambiguous rule stay
+    undecided in the store while a verifier judges their rules, like any
+    proposal from elsewhere. Otherwise every undecided proposal stops it.
+    """
+    undecided = tuple(key for key in keys if automation.undecided(key))
+    return () if approval == "auto" else undecided
+
+
 def apply_decisions(
     automation: RuleAutomation,
     keys: tuple[str, ...],
     decisions: Decisions,
     now: str,
+    *,
+    approved_by: RuleApprover = "operator",
+    run: str | None = None,
 ) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
-    """Apply the operator's decisions to the stop's undecided proposals.
+    """Apply decisions, the operator's or ww's, to undecided proposals.
 
     Returns the store, the proposals still undecided, and the checks now
     approved. Approving a rule's approach lets a verifier prepare its check;
     approving a check converts it and every rule it covers, or replaces the
     approved command with its pending revision. ``reject`` rejects every
-    proposal still undecided.
+    proposal still undecided. Each approval, and each picked reading, records
+    ``approved_by`` and the run it was made in (``<task>/<run>``).
     """
+    approval: dict[str, Any] = {"approved_by": approved_by, "approved_in": run}
     approved: list[str] = []
     for key in decisions.approve:
         name = resolve_key(key, keys)
@@ -1093,13 +1152,14 @@ def apply_decisions(
                 check = replace(check, spec=check.pending, pending=None)
             elif check.status != "proposed":
                 raise StateError(f"check {name!r} has nothing to approve")
-            check = replace(check, status="converted", approved_at=now)
+            check = replace(check, status="converted", approved_at=now, **approval)
             automation = automation.with_check(name, check)
             for text_hash in check.spec.covers:
                 entry = automation.rules.get(text_hash)
                 if entry is not None:
                     automation = automation.with_rule(
-                        text_hash, replace(entry, status="converted", check=name)
+                        text_hash,
+                        replace(entry, status="converted", check=name, **approval),
                     )
             approved.append(name)
             continue
@@ -1111,7 +1171,7 @@ def apply_decisions(
         if entry.status != "approach-proposed":
             raise StateError(f"rule {_short(name)} has no approach to approve")
         automation = automation.with_rule(
-            name, replace(entry, status="approach-approved")
+            name, replace(entry, status="approach-approved", **approval)
         )
     for key, text in decisions.approaches:
         name = resolve_key(key, keys)
@@ -1121,7 +1181,10 @@ def apply_decisions(
         if not text.strip():
             raise StateError("--approach needs the approach in words")
         automation = automation.with_rule(
-            name, replace(entry, status="approach-approved", approach=text.strip())
+            name,
+            replace(
+                entry, status="approach-approved", approach=text.strip(), **approval
+            ),
         )
     for key, number in decisions.picks:
         name = resolve_key(key, keys)
@@ -1139,6 +1202,7 @@ def apply_decisions(
                 entry,
                 status="interpreted",
                 interpretation=entry.candidates[number - 1],
+                **approval,
             ),
         )
     if decisions.reject is not None:
@@ -1173,6 +1237,40 @@ def apply_decisions(
                 )
     remaining = tuple(key for key in keys if automation.undecided(key))
     return automation, remaining, tuple(approved)
+
+
+def revoke_check(
+    automation: RuleAutomation, name: str, reason: str
+) -> tuple[RuleAutomation, tuple[str, ...]]:
+    """Reject a converted or proposed check and the rules it covers.
+
+    The rules are judged by a verifier from then on. A pending revision is
+    dropped with it. Returns the store and the text hashes of the rules
+    rejected. Nothing outside the store changes.
+    """
+    check = automation.checks.get(name)
+    if check is None:
+        raise StateError(f"the rule-automation store has no check {name!r}")
+    if check.status == "rejected":
+        raise StateError(f"check {name!r} is already rejected")
+    covers = tuple(
+        dict.fromkeys(
+            (*check.spec.covers, *(check.pending.covers if check.pending else ()))
+        )
+    )
+    automation = automation.with_check(
+        name, replace(check, status="rejected", pending=None, reason=reason)
+    )
+    rejected: list[str] = []
+    for text_hash in covers:
+        entry = automation.rules.get(text_hash)
+        if entry is None or entry.check != name or entry.status == "rejected":
+            continue
+        automation = automation.with_rule(
+            text_hash, replace(entry, status="rejected", reason=reason)
+        )
+        rejected.append(text_hash)
+    return automation, tuple(rejected)
 
 
 def approved_checks(
