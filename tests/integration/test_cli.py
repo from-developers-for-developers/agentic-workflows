@@ -992,6 +992,7 @@ def test_force_next_requires_explicit_operator_confirmation(
     assert main([*common, "fail", "TASK-FORCE", "--error", "outside issue"]) == 1
     capsys.readouterr()
 
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     prompts: list[str] = []
     monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "no")
     assert (
@@ -1008,7 +1009,8 @@ def test_force_next_requires_explicit_operator_confirmation(
         == 1
     )
     cancelled = capsys.readouterr()
-    assert "If you are an agent, you should never call this command" in prompts[0]
+    assert prompts == ["Proceed with force? [y/N] "]
+    assert "`ww next --force` will skip" in cancelled.err
     assert "Force cancelled: explicit confirmation is required." in cancelled.err
 
     monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
@@ -1026,6 +1028,48 @@ def test_force_next_requires_explicit_operator_confirmation(
         == 0
     )
     assert "later-work" in capsys.readouterr().out
+
+
+def test_an_agent_confirms_a_force_with_yes_and_the_audit_says_so(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        """workflows:
+  - name: task
+    steps:
+      - name: failed-work
+        description: Complete the work.
+      - name: later-work
+        description: Continue after the failed work.
+""",
+        encoding="utf-8",
+    )
+    common = ["--root", str(tmp_path)]
+    start = ["start", "TASK-YES", "-w", "task", "-a", "codex"]
+    assert main([*common, *start, "--init-artifact", "requirements"]) == 0
+    assert main([*common, "next", "TASK-YES"]) == 0
+    assert main([*common, "fail", "TASK-YES", "--error", "outside issue"]) == 1
+    capsys.readouterr()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    force = ["next", "TASK-YES", "--force", "--force-reason", "Fixed by hand"]
+
+    # No terminal, no --yes: refused at once, nothing read from stdin.
+    assert main([*common, *force]) == 1
+    refused = capsys.readouterr().err
+    assert "force needs the operator's confirmation" in refused
+    assert "rerun with --yes only once they have agreed" in refused
+
+    assert main([*common, *force, "--yes"]) == 0
+    assert "Confirmed with --yes" in capsys.readouterr().err
+    records = [
+        json.loads(line)
+        for line in (tmp_path / ".ww/executions.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    forced = [record for record in records if "--force" in record["invocation"]]
+    assert forced[-1]["confirmation"] == "--yes"
+    assert "--yes" in forced[-1]["invocation"]
 
 
 def test_current_reformatted_project_file_compiles_without_running_handlers(

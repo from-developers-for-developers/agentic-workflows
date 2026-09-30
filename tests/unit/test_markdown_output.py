@@ -111,8 +111,8 @@ def test_failed_handler_directs_the_manager_to_an_operator() -> None:
     assert "manual intervention from the `ww` operator" in rendered
     assert "### Retry" not in rendered
     assert "### Operator recovery" in rendered
-    assert "./ww next TASK-1 --retry --role manager" in rendered
-    assert '--force --force-reason "<reason>"' in rendered
+    assert "./ww next TASK-1 --retry --yes --role manager" in rendered
+    assert '--force --force-reason "<reason>" --yes' in rendered
 
 
 def test_manager_command_has_normalized_section_spacing() -> None:
@@ -140,7 +140,7 @@ def test_manager_command_has_normalized_section_spacing() -> None:
     assert "\n\n\n### Manager command" not in rendered
 
 
-def test_orchestrate_subagents_false_keeps_work_with_the_manager() -> None:
+def test_orchestrate_a_manager_step_keeps_work_with_the_manager() -> None:
     instruction = Instruction(
         task_id="TASK-1",
         workflow="task",
@@ -157,7 +157,7 @@ def test_orchestrate_subagents_false_keeps_work_with_the_manager() -> None:
         workflow_runtime_instruction=("Do not delegate this step.",),
         caller_role="manager",
         next_role="worker",
-        subagents=False,
+        role="manager",
     )
 
     rendered = MarkdownOutputAdapter().render_instruction(instruction)

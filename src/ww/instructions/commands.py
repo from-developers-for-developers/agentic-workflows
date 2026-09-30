@@ -37,6 +37,13 @@ def _command(*parts: str) -> str:
     return " ".join((ww_command(), *parts))
 
 
+def _worker(role: CallerRole, assignment: str | None) -> tuple[str, ...]:
+    """``--role`` and, for a worker of an open assignment, its token."""
+    if role == "worker" and assignment:
+        return ("--role", role, "--assignment", _arg(assignment))
+    return ("--role", role)
+
+
 def next_command(
     task_id: str,
     *,
@@ -47,12 +54,19 @@ def next_command(
     reasoning: str | None = None,
     outcome: str | None = None,
 ) -> str:
-    """The manager command that advances a task, with optional recovery flags."""
+    """The manager command that advances a task, with optional recovery flags.
+
+    A retry or force is the operator's choice, which the agent carries out
+    only once they made it; ``--yes`` records that, since the agent's shell
+    has no terminal to confirm at.
+    """
     parts = ["next", _arg(task_id)]
     if retry:
         parts.append("--retry")
     if force_reason is not None:
         parts.extend(("--force", "--force-reason", _arg(force_reason)))
+    if retry or force_reason is not None:
+        parts.append("--yes")
     parts.extend(("--role", "manager"))
     for flag, value in (
         ("--selected-agent", selected_agent),
@@ -66,12 +80,16 @@ def next_command(
 
 
 def instruction_command(
-    task_id: str, run_id: str | None = None, *, role: CallerRole
+    task_id: str,
+    run_id: str | None = None,
+    *,
+    role: CallerRole,
+    assignment: str | None = None,
 ) -> str:
     parts = ["instruction", _arg(task_id)]
     if run_id is not None:
         parts.extend(("--run", _arg(run_id)))
-    parts.extend(("--role", role))
+    parts.extend(_worker(role, assignment))
     return _command(*parts)
 
 
@@ -112,11 +130,14 @@ def rule_command(task_id: str, rule_id: str = "<id>") -> str:
     return _command("rule", _arg(task_id), _arg(rule_id))
 
 
-def dispute_command(task_id: str, check_id: str = "<id>") -> str:
+def dispute_command(
+    task_id: str, check_id: str = "<id>", *, assignment: str | None = None
+) -> str:
     """Ask the operator to overrule a check that rejected the completion."""
     return _command(
         "dispute",
         _arg(task_id),
+        *_worker("worker", assignment),
         "--rule",
         _arg(check_id),
         "--reason",
@@ -213,6 +234,7 @@ def complete_command(
     summary: bool = False,
     rule_results: tuple[str, ...] = (),
     check_results: tuple[str, ...] = (),
+    assignment: str | None = None,
 ) -> str:
     """The command that submits a step or breaks/continues its loop.
 
@@ -224,7 +246,7 @@ def complete_command(
     parts = ["loop" if loop_control else "complete", _arg(task_id)]
     if loop_control:
         parts.append(f"--{loop_control}")
-    parts.extend(("--role", role))
+    parts.extend(_worker(role, assignment))
     parts.extend(f'--variable {value.name}="<{value.name}>"' for value in values)
     parts.extend(f'--metadata {value.name}="<{value.name}>"' for value in metadata)
     for flag, value in (
@@ -243,11 +265,13 @@ def complete_command(
     return _command(*parts)
 
 
-def interact_commands(task_id: str, role: CallerRole) -> InteractCommands:
+def interact_commands(
+    task_id: str, role: CallerRole, assignment: str | None = None
+) -> InteractCommands:
     """The commands of an interactive step, for the role that performs it."""
 
     def interact(*parts: str) -> str:
-        return _command("interact", _arg(task_id), "--role", role, *parts)
+        return _command("interact", _arg(task_id), *_worker(role, assignment), *parts)
 
     return InteractCommands(
         operator=interact('--operator="<what the operator said>"'),
@@ -255,7 +279,7 @@ def interact_commands(task_id: str, role: CallerRole) -> InteractCommands:
         choice=interact('--choice="<label or number>"'),
         end=interact("--end-interaction"),
         wait=interact("--await"),
-        resume=instruction_command(task_id, role=role),
+        resume=instruction_command(task_id, role=role, assignment=assignment),
     )
 
 
@@ -283,7 +307,7 @@ def decision_commands(task_id: str, kind: str, key: str) -> tuple[RecoveryComman
 
     if kind == "ambiguous":
         return (RecoveryCommand("pick", decide("--pick", f"{key}=<number>")),)
-    commands = [RecoveryCommand("approve", decide("--approve", _arg(key)))]
+    commands = [RecoveryCommand("approve", decide("--approve", _arg(key), "--yes"))]
     if kind == "approach":
         commands.append(
             RecoveryCommand(

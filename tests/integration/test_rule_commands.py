@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.cli import main
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
@@ -147,7 +148,8 @@ def test_the_fix_page_offers_check_and_dispute(tmp_path: Path) -> None:
 
     assert "Run `./ww check TASK-1` to see the checks' result" in rendered
     assert (
-        './ww dispute TASK-1 --rule <id> --reason "<why the check is wrong here>"'
+        "./ww dispute TASK-1 --role worker --rule <id> "
+        '--reason "<why the check is wrong here>"'
         in rendered
     )
 
@@ -448,11 +450,19 @@ def test_the_worker_in_auto_returns_the_dispute(tmp_path: Path) -> None:
     service = _develop(root, runtime="auto")
     _violate(root)
     service.complete(
-        "TASK-1", artifact="Try.", summary_for_next="Done.", caller_role="worker"
+        "TASK-1",
+        artifact="Try.",
+        summary_for_next="Done.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
 
     stop = service.dispute(
-        "TASK-1", "docs/header", "Scratch file.", caller_role="worker"
+        "TASK-1",
+        "docs/header",
+        "Scratch file.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
 
     rendered = _markdown(stop)
@@ -683,6 +693,7 @@ def test_prune_lists_the_orphans_and_asks(
     root = _project(tmp_path)
     live = _orphaned_store(root)
     answers = iter(["n"])
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
 
     assert main(["--root", str(root), "rules", "prune"]) == 1
@@ -740,7 +751,7 @@ def test_prune_keeps_a_check_a_live_rule_still_names(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("setting", "why"),
     [
-        ("subagents: false", "sets `subagents: false`"),
+        ("role: manager", "is the manager's (`role: manager`)"),
         ("interactive: true", "is interactive"),
     ],
 )
@@ -763,13 +774,19 @@ def test_a_worker_is_refused_the_managers_item(
     )
     service.next("TASK-1", caller_role="manager")
     service.complete(
-        "TASK-1", artifact="Built.", summary_for_next="Built.", caller_role="worker"
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     manager = service.next("TASK-1", caller_role="manager")
     assert manager.item_name == "review"
     assert manager.item_status == "in_progress"
 
-    page = service.instruction("TASK-1", caller_role="worker")
+    page = service.instruction(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
 
     assert page.manager_only is True
     assert page.continuation_command is None

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -663,13 +664,20 @@ class WorkflowService:
         approve: tuple[str, ...] = (),
         approaches: tuple[tuple[str, str], ...] = (),
         picks: tuple[tuple[str, int], ...] = (),
+        reassign: bool = False,
     ) -> Instruction:
         """Advance the task; at a ``check_proposed`` stop, apply the decisions.
 
         ``approve``, ``approaches`` and ``picks`` decide the proposals of the
-        stop; ``force`` rejects every one still undecided.
+        stop; ``force`` rejects every one still undecided. ``reassign`` gives
+        the open assignment a new token, so its previous worker can no longer
+        act, and returns the page to dispatch it again.
         """
         self._require_manager("next", caller_role)
+        if reassign:
+            if force or retry or approve or approaches or picks or outcome:
+                raise StateError("next --reassign takes no other decision")
+            return self._tag_caller(self._reassign(task_id), caller_role)
         if force and (force_reason is None or not force_reason.strip()):
             raise StateError("next --force requires --force-reason")
         if force_reason is not None and not force:
@@ -1135,6 +1143,7 @@ class WorkflowService:
         error: str,
         *,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
     ) -> Instruction:
         self._validate_caller_role(caller_role)
         request = (
@@ -1153,6 +1162,7 @@ class WorkflowService:
         if not error.strip():
             raise StateError("--error must be non-empty")
         with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
             instruction = self._fail(task_id, error.strip())
         self.children.reconcile_after_child(task_id)
         return self._tag_caller(instruction, caller_role)
@@ -1167,6 +1177,7 @@ class WorkflowService:
         end: bool = False,
         pause: bool = False,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
     ) -> Instruction:
         """Record one exchange of an interactive step, end it, or pause it."""
         self._validate_caller_role(caller_role)
@@ -1185,6 +1196,7 @@ class WorkflowService:
                 "open; use one of them"
             )
         with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
             state, snapshot = self.load(task_id)
             state = self._record_interaction(
                 state,
@@ -1288,6 +1300,7 @@ class WorkflowService:
         *,
         summary_for_next: str | None = None,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
     ) -> Instruction:
         """Complete a loop-control worker step."""
         self._validate_caller_role(caller_role)
@@ -1302,6 +1315,7 @@ class WorkflowService:
                 raise StateError(f"{name} must be non-empty")
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
             instruction = self._complete(
                 task_id,
                 variables,
@@ -1346,6 +1360,7 @@ class WorkflowService:
         caller_role: CallerRole | None = None,
         rule_results: tuple[str, ...] = (),
         check_results: tuple[str, ...] = (),
+        assignment: str | None = None,
     ) -> Instruction:
         """Complete the active agent item.
 
@@ -1387,6 +1402,7 @@ class WorkflowService:
             )
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
             instruction = self._complete(
                 task_id,
                 variables,
@@ -1803,6 +1819,7 @@ class WorkflowService:
         run_id: str | None = None,
         *,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
     ) -> Instruction:
         self._validate_caller_role(caller_role)
         request = (
@@ -1818,6 +1835,7 @@ class WorkflowService:
                 manager_intro=True,
             )
         validate_task_id(task_id)
+        self._authorize_worker(task_id, caller_role, assignment, read=True)
         instruction = self.instruction_status(task_id, run_id)
         if instruction.is_child_workflow_control:
             refreshed = self.children.refresh_parent(task_id)
@@ -1858,6 +1876,7 @@ class WorkflowService:
         reason: str,
         *,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
     ) -> Instruction:
         """Stop for the operator: the step's worker disputes a check.
 
@@ -1872,6 +1891,7 @@ class WorkflowService:
         if not reason:
             raise StateError("dispute --reason must be non-empty")
         with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
             state, snapshot = self.load(task_id)
             item, _ = self._active_step(state, snapshot, "nothing to dispute")
             failed = [
@@ -1998,9 +2018,12 @@ class WorkflowService:
         run_id: str | None = None,
         *,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
     ) -> Instruction:
         """Backward-compatible service alias for :meth:`instruction`."""
-        return self.instruction(task_id, run_id, caller_role=caller_role)
+        return self.instruction(
+            task_id, run_id, caller_role=caller_role, assignment=assignment
+        )
 
     def instruction_status(self, task_id: str, run_id: str | None) -> Instruction:
         """Render a task from one record read, so it reflects one revision."""
@@ -2828,6 +2851,7 @@ class WorkflowService:
         state = replace(
             state,
             assignment_item_id=assignment.first_item_id,
+            assignment_token=secrets.token_hex(4),
             assignment_model=assigned_model,
             assignment_reasoning=assigned_reasoning,
             assignment_selected_agent=selected_agent,
@@ -2867,6 +2891,7 @@ class WorkflowService:
             state = replace(
                 state,
                 assignment_item_id=None,
+                assignment_token=None,
                 assignment_model=None,
                 assignment_reasoning=None,
                 assignment_selected_agent=None,
@@ -3165,6 +3190,62 @@ class WorkflowService:
         if caller_role is not None and caller_role not in CALLER_ROLES:
             raise StateError("caller role must be 'manager' or 'worker'")
 
+    def _reassign(self, task_id: str) -> Instruction:
+        """Close the open assignment's token and issue a new one."""
+        validate_task_id(task_id)
+        with self.tasks.lock_task(task_id):
+            state, snapshot = self.load(task_id)
+            if state.assignment_item_id is None:
+                raise StateError(
+                    f"task {task_id!r} has no open assignment to reassign; "
+                    "run next to dispatch one"
+                )
+            state = replace(state, assignment_token=secrets.token_hex(4))
+            self.commit(state, snapshot)
+            return self.render(state, snapshot)
+
+    def _authorize_worker(
+        self,
+        task_id: str,
+        caller_role: CallerRole | None,
+        assignment: str | None,
+        *,
+        read: bool = False,
+    ) -> None:
+        """Refuse a worker command that does not carry the open assignment's token.
+
+        Only the ``auto`` runtime delegates, so only a worker there can outlive
+        its assignment. A missing or stale token ends the worker's turn: it
+        returns to the manager, who alone can re-issue the token. A ``read``
+        while no assignment is open is answered: its page only sends the
+        worker back to the manager.
+        """
+        if caller_role != "worker":
+            return
+        state, _ = self.load(task_id)
+        if state.workflow_runtime != "auto":
+            return
+        manager = instruction_command(task_id, role="manager")
+        if state.assignment_token is None:
+            if read:
+                return
+            raise StateError(
+                "no assignment is open: your assignment has ended. Stop here "
+                "and return to your manager; run no further ww command."
+            )
+        if assignment is None:
+            raise StateError(
+                "a worker command needs --assignment <token>, which the "
+                "manager's bootstrap command gives. Stop and return to your "
+                f"manager; it gets the token with `{manager}`."
+            )
+        if assignment != state.assignment_token:
+            raise StateError(
+                f"assignment {assignment} is not open: your assignment has "
+                "ended. Stop here and return to your manager; run no further "
+                "ww command."
+            )
+
     def _require_manager(self, command: str, caller_role: CallerRole | None) -> None:
         self._validate_caller_role(caller_role)
         if caller_role == "worker":
@@ -3278,7 +3359,7 @@ def _manager_performs(instruction: Instruction) -> bool:
         instruction.workflow_runtime == "auto"
         and instruction.item_status == "in_progress"
         and instruction.status == "in_progress"
-        and (not instruction.subagents or instruction.interactive)
+        and instruction.role == "manager"
     )
 
 

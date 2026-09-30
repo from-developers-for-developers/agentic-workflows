@@ -12,7 +12,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
-from ww.contracts import ItemAssignment, LoopAssignment
+from ww.contracts import ItemAssignment, LoopAssignment, StepRole
 from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
 from ww.validation import is_positive_int
@@ -39,9 +39,10 @@ from .values import (
     _nonempty_string,
     _only,
     _optional_agent,
-    _optional_bool,
     _optional_string,
     _profile,
+    _reject_subagents,
+    _role,
     _unique,
 )
 
@@ -53,7 +54,7 @@ STEP_ONLY_KEYS: set[str] = {
     "loop_assignment",
     "break",
     "continue",
-    "subagents",
+    "role",
     "interactive",
     "choices",
     "ui",
@@ -92,9 +93,9 @@ ITEM_FLOW_KEYS = {
     "model",
     "reasoning",
     "profile",
-    "subagents",
+    "role",
 }
-_ITEM_FLOW_SETTINGS = ("agent", "model", "reasoning", "profile", "subagents")
+_ITEM_FLOW_SETTINGS = ("agent", "model", "reasoning", "profile", "role")
 BUILTIN_ITEM_STEP_NAME = "handle-item"
 BUILTIN_ITEM_STEP_PROMPT = (
     "Handle this item end to end: analyze it, resolve it, and report the outcome."
@@ -261,6 +262,7 @@ def _parse_step(
         mapping = {**mapping, "handler": mapping["name"]}
     if "stop" in mapping:
         raise ConfigurationError(f"{path}.stop is obsolete; use break")
+    _reject_subagents(mapping, path)
     _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"workflow"}, path)
     base = (
         HandlerDefinition(
@@ -413,9 +415,7 @@ def _parse_step(
     artifact = mapping.get("artifact", True)
     if not isinstance(artifact, bool):
         raise ConfigurationError(f"{path}.artifact must be true or false")
-    subagents = mapping.get("subagents", True)
-    if not isinstance(subagents, bool):
-        raise ConfigurationError(f"{path}.subagents must be true or false")
+    role = _role(mapping, path)
     interactive = mapping.get("interactive", False)
     if not isinstance(interactive, bool):
         raise ConfigurationError(f"{path}.interactive must be true or false")
@@ -448,16 +448,19 @@ def _parse_step(
             "profile_description": referenced_step.profile_description,
         }
     )
-    subagents = (
-        subagents
-        if "subagents" in mapping or referenced_step is None
-        else referenced_step.subagents
+    role = (
+        role if "role" in mapping or referenced_step is None else referenced_step.role
     )
     interactive = (
         interactive
         if "interactive" in mapping or referenced_step is None
         else referenced_step.interactive
     )
+    if interactive and role == "worker":
+        raise ConfigurationError(
+            f"{path} is interactive, so the manager holds the conversation; "
+            "role: worker contradicts it"
+        )
     choices = (
         choices
         if "choices" in mapping or referenced_step is None
@@ -479,7 +482,7 @@ def _parse_step(
             f"{path}.ui is offered on per-item stages only; declare it under items"
         )
     items = (
-        _parse_items(mapping, path, handlers_by_name, profile, subagents)
+        _parse_items(mapping, path, handlers_by_name, profile, role)
         if "items" in mapping
         else referenced_step.items
         if referenced_step is not None
@@ -506,7 +509,7 @@ def _parse_step(
         model=base.model,
         reasoning=base.reasoning,
         workdir=base.workdir,
-        subagents=subagents,
+        role=role,
         interactive=interactive,
         choices=choices,
         ui=ui,
@@ -558,7 +561,7 @@ def _parse_items(
     path: str,
     handlers_by_name: dict[str, HandlerDefinition],
     step_profile: dict[str, str | None],
-    step_subagents: bool,
+    step_role: StepRole | None,
 ) -> ItemFlow:
     """Parse ``items``: ``~``, splitting guidance text, or a full mapping."""
     value = mapping["items"]
@@ -571,6 +574,7 @@ def _parse_items(
         raise ConfigurationError(
             f"{items_path} must be null, splitting guidance text, or a mapping"
         )
+    _reject_subagents(value, items_path)
     _only(value, ITEM_FLOW_KEYS, items_path)
     description = (
         _nonempty_string(value, "description", items_path)
@@ -639,7 +643,7 @@ def _parse_items(
                 + " has no effect"
             )
         return ItemFlow((), description, assignment, shared, identity, unique)
-    defaults = _item_flow_defaults(value, path, step_profile, step_subagents)
+    defaults = _item_flow_defaults(value, path, step_profile, step_role)
     if "steps" in value:
         steps = _parse_nested_steps(
             value,
@@ -696,16 +700,16 @@ def _item_flow_defaults(
     items_mapping: dict[str, Any],
     path: str,
     step_profile: dict[str, str | None],
-    step_subagents: bool,
+    step_role: StepRole | None,
 ) -> dict[str, Any]:
     """Worker settings every per-item stage inherits unless it sets its own.
 
-    ``items`` settings win; profile and subagents otherwise come from the
+    ``items`` settings win; profile and role otherwise come from the
     ``items`` step itself.  Agent, model, and reasoning already cascade from
     that step through the compiler's execution hints.
     """
     items_path = f"{path}.items"
-    subagents = _optional_bool(items_mapping, "subagents", items_path)
+    role = _role(items_mapping, items_path)
     return {
         "agent": _optional_agent(items_mapping, "agent", items_path),
         "model": _optional_string(items_mapping, "model", items_path),
@@ -715,7 +719,7 @@ def _item_flow_defaults(
             if "profile" in items_mapping
             else step_profile
         ),
-        "subagents": step_subagents if subagents is None else subagents,
+        "role": step_role if role is None else role,
     }
 
 
@@ -734,12 +738,8 @@ def _with_item_flow_defaults(
     ):
         changes["profile"] = defaults["profile"]
         changes["profile_description"] = defaults["profile_description"]
-    if (
-        "subagents" not in declared
-        and step.subagents
-        and defaults["subagents"] is False
-    ):
-        changes["subagents"] = False
+    if "role" not in declared and step.role is None and defaults["role"]:
+        changes["role"] = defaults["role"]
     return replace(step, **changes) if changes else step
 
 

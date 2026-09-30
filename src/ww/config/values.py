@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast, get_args
 
+from ww.contracts import StepRole
 from ww.errors import ConfigurationError
 from ww.extensions import is_extension_reference
 from ww.validation import (
@@ -97,6 +98,26 @@ def _optional_agent(mapping: dict[str, Any], key: str, path: str) -> str | None:
     if value == "auto":
         raise ConfigurationError(f"{path}.{key} must not be 'auto'")
     return value
+
+
+def _role(mapping: dict[str, Any], path: str) -> StepRole | None:
+    """The declared ``role``, or ``None`` when the step inherits one."""
+    if "role" not in mapping:
+        return None
+    value = mapping["role"]
+    if value not in get_args(StepRole):
+        raise ConfigurationError(f"{path}.role must be manager or worker")
+    return cast(StepRole, value)
+
+
+def _reject_subagents(mapping: dict[str, Any], path: str) -> None:
+    """``subagents`` was replaced by ``role``; say how to write it now."""
+    if "subagents" in mapping:
+        raise ConfigurationError(
+            f"{path}.subagents is no longer supported: write role: manager for a "
+            "step the manager performs itself (subagents: false), or leave role "
+            "out for a delegated step"
+        )
 
 
 def _optional_name(mapping: dict[str, Any], key: str, path: str) -> str | None:

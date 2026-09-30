@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.config import load_configuration
 from ww.errors import ConfigurationError
 from ww.output import render_plan
@@ -95,7 +96,7 @@ workflows:
     )
 
 
-def test_subagents_false_removes_step_execution_hints_and_profile(
+def test_role_manager_removes_step_execution_hints_and_profile(
     tmp_path: Path,
 ) -> None:
     plan = _plan(
@@ -112,7 +113,7 @@ workflows:
     steps:
       - name: local-work
         description: Do this locally.
-        subagents: false
+        role: manager
         agent: step-agent
         model: step-model
         reasoning: medium
@@ -121,7 +122,7 @@ workflows:
     )
 
     work = next(item for item in plan.items if item.name == "local-work")
-    assert work.subagents is False
+    assert work.role == "manager"
     assert (
         work.requested_agent,
         work.requested_model,
@@ -227,7 +228,7 @@ workflows:
         selected_agent="delegate",
         selected_model="delegate-model",
         selected_reasoning="low",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     state = service.tasks.read_execution_state("TASK-1", "01-task")
@@ -283,12 +284,22 @@ workflows:
     assert "--reasoning" not in preview
 
     service.next("TASK-1", selected_agent="codex", caller_role="manager")
-    worker = md.render_instruction(service.status("TASK-1", caller_role="worker"))
+    worker = md.render_instruction(
+        service.status(
+            "TASK-1",
+            caller_role="worker",
+            assignment=assignment_token(service, "TASK-1"),
+        )
+    )
     assert "`auto`" not in worker
     assert "- Model:" not in worker
 
     service.complete(
-        "TASK-1", artifact="done", caller_role="worker", summary_for_next="Done."
+        "TASK-1",
+        artifact="done",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+        summary_for_next="Done.",
     )
     reviewing = md.render_instruction(service.status("TASK-1", caller_role="manager"))
     assert "Requested reasoning: `high`" in reviewing
@@ -319,7 +330,7 @@ workflows:
           - name: review
             profile: reviewer
           - name: local
-            subagents: false
+            role: manager
       - name: group
         steps:
           - name: leaf

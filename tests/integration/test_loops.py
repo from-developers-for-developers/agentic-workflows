@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import start_after_init
+from tests.workflow_helpers import assignment_token, start_after_init
 from ww.cli import main
 from ww.errors import StateError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -40,7 +40,7 @@ def _complete_iteration(service: WorkflowService, task_id: str) -> None:
     ready = service.complete(
         task_id,
         artifact="findings",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, task_id),
         summary_for_next="Done.",
     )
     assert ready.item_name == "fix"
@@ -48,7 +48,7 @@ def _complete_iteration(service: WorkflowService, task_id: str) -> None:
     repeat = service.complete(
         task_id,
         artifact="fixed",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, task_id),
         summary_for_next="Done.",
     )
     assert repeat.action_kind == "loop"
@@ -82,7 +82,7 @@ def test_loop_repeats_automatically_until_worker_stops(tmp_path: Path) -> None:
     stopped = service.loop(
         "TASK-LOOP",
         artifact="clean review",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-LOOP"),
         summary_for_next="Done.",
     )
     assert stopped.item_name == "update-workflow-summary"
@@ -208,7 +208,7 @@ def test_loop_wrapper_artifact_can_be_disabled(tmp_path: Path) -> None:
     service.loop(
         "TASK-NO-WRAPPER",
         artifact="accepted",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-NO-WRAPPER"),
         summary_for_next="Done.",
     )
 
@@ -247,7 +247,7 @@ def test_loop_stop_requires_wrapper_artifact_when_body_artifact_is_disabled(
     service.loop(
         "TASK-WRAPPER-ONLY",
         artifact="accepted",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-ONLY"),
         summary_for_next="Done.",
     )
 
@@ -390,9 +390,13 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
         prompts.append(prompt)
         return "y"
 
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", approve)
     assert main([*root, *force]) == 0
-    assert "leave the `review-and-fix` loop at its limit of 1 iterations" in prompts[0]
+    assert prompts == ["Proceed with force? [y/N] "]
+    assert "leave the `review-and-fix` loop at its limit of 1 iterations" in (
+        capsys.readouterr().err
+    )
     assert service.status("TASK-CLI").item_name == "finish"
 
 
@@ -435,7 +439,7 @@ def test_only_stop_enabled_active_step_may_exit_loop(tmp_path: Path) -> None:
         service.loop(
             "TASK-NOT-GATE",
             artifact="fixed",
-            caller_role="worker",
+            caller_role="worker", assignment=assignment_token(service, "TASK-NOT-GATE"),
             summary_for_next="Done.",
         )
 
@@ -465,7 +469,7 @@ workflows:
     ready = service.complete(
         "TASK-WRAPPER-HOOK",
         artifact="finding",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
     assert ready.item_name == "fix"
@@ -483,14 +487,14 @@ workflows:
     service.complete(
         "TASK-WRAPPER-HOOK",
         artifact="fixed",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
     service.next("TASK-WRAPPER-HOOK")
     stopped = service.loop(
         "TASK-WRAPPER-HOOK",
         artifact="clean",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
     assert stopped.item_name == "inline-command"
@@ -551,14 +555,14 @@ def test_stop_finishes_step_hooks_before_skipping_remaining_body(
     hook = service.loop(
         "TASK-HOOK",
         artifact="clean",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-HOOK"),
         summary_for_next="Done.",
     )
     assert hook.item_name == "preserve-review"
     service.complete(
         "TASK-HOOK",
         artifact="preserved",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-HOOK"),
         summary_for_next="Done.",
     )
 
@@ -597,7 +601,7 @@ def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
         "TASK-CONTINUE",
         artifact="findings remain",
         continue_loop=True,
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-CONTINUE"),
         summary_for_next="Done.",
     )
     assert repeated.item_name == "review"
@@ -608,14 +612,14 @@ def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
     service.complete(
         "TASK-CONTINUE",
         artifact="clean",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-CONTINUE"),
         summary_for_next="Done.",
     )
     service.next("TASK-CONTINUE")
     stopped = service.loop(
         "TASK-CONTINUE",
         artifact="fixed",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-CONTINUE"),
         summary_for_next="Done.",
     )
     assert stopped.item_name == "update-workflow-summary"
@@ -647,7 +651,11 @@ def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
     dispatched = service.next("TASK-ROUND", caller_role="manager")
     assert (dispatched.item_name, dispatched.next_role) == ("review", "worker")
 
-    review = service.status("TASK-ROUND", caller_role="worker")
+    review = service.status(
+        "TASK-ROUND",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-ROUND"),
+    )
     rendered = MarkdownOutputAdapter().render_instruction(review)
     assert review.loop_name == "review-and-fix"
     assert (review.loop_iteration, review.loop_max_times) == (1, 3)
@@ -672,6 +680,7 @@ def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
         "TASK-ROUND",
         artifact="findings",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-ROUND"),
         summary_for_next="Done.",
     )
     assert (fix.item_name, fix.item_status, fix.next_role) == (
@@ -689,6 +698,7 @@ def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
         "TASK-ROUND",
         artifact="fixed",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-ROUND"),
         summary_for_next="Done.",
     )
     assert boundary.action_kind == "loop"
@@ -696,7 +706,11 @@ def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
 
     second = service.next("TASK-ROUND", caller_role="manager")
     assert second.item_name == "review"
-    review_again = service.status("TASK-ROUND", caller_role="worker")
+    review_again = service.status(
+        "TASK-ROUND",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-ROUND"),
+    )
     rendered = MarkdownOutputAdapter().render_instruction(review_again)
     assert review_again.loop_iteration == 2
     assert "This is round 2 of the `review-and-fix` loop, limit 3." in rendered
@@ -708,6 +722,7 @@ def test_per_iteration_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
         "TASK-ROUND",
         artifact="clean",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-ROUND"),
         summary_for_next="Done.",
     )
     assert done.status == "completed" or done.item_name != "fix"
@@ -726,6 +741,7 @@ def test_a_later_round_sees_the_previous_round_last_step(tmp_path: Path) -> None
         "TASK-PREV",
         artifact="Two findings.",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-PREV"),
         summary_for_next="Done.",
     )
     fix = service.next("TASK-PREV", caller_role="manager")
@@ -735,6 +751,7 @@ def test_a_later_round_sees_the_previous_round_last_step(tmp_path: Path) -> None
         "TASK-PREV",
         artifact="Both fixed.",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-PREV"),
         summary_for_next="Done.",
     )
 
@@ -781,7 +798,11 @@ def test_one_manager_next_passes_preparation_hooks_and_nested_boundaries(
     )
     service.next("TASK-ONE", caller_role="manager")
     handoff = service.complete(
-        "TASK-ONE", artifact="built", summary_for_next="Built.", caller_role="worker"
+        "TASK-ONE",
+        artifact="built",
+        summary_for_next="Built.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-ONE"),
     )
     assert handoff.next_role == "manager"
     assert not (tmp_path / "prepared.txt").exists()
@@ -793,7 +814,11 @@ def test_one_manager_next_passes_preparation_hooks_and_nested_boundaries(
     assert (tmp_path / "prepared.txt").exists()
 
     service.loop(
-        "TASK-ONE", artifact="green", summary_for_next="Green.", caller_role="worker"
+        "TASK-ONE",
+        artifact="green",
+        summary_for_next="Green.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-ONE"),
     )
     probe = service.next("TASK-ONE", caller_role="manager")
     assert (probe.item_name, probe.item_status) == ("probe", "in_progress")

@@ -500,7 +500,7 @@ of the same item, of every item, or of the same loop round, and grows its
 lineage as it absorbs each stage so stage completion hooks stay inside. Both
 share one rule for where a span ends early: a stage that resolves to another
 agent, model, reasoning, or profile, or that is reserved for the manager with
-`subagents: false`, starts a new assignment, because one running worker
+`role: manager`, starts a new assignment, because one running worker
 cannot change those. The `single` runtime keeps per-step bounds. Each stage is still its own plan item
 with its own record, so completion, reload, and recovery need no span-specific
 state; only the instruction builder marks the first stage of a span with its
@@ -812,11 +812,22 @@ with the session's model and reasoning and does not delegate hooks.
 `auto` keeps manager commands and recovery in the main session and gives
 each assignment to a worker. The worker submits its own item and hook results
 until explicit handoff, then returns a concise outcome and artifact references.
-A step may set `subagents: false` to keep its own action in the current session.
-For that action, the compiler clears profile and execution-selection hints, so
+A step's `role` says who performs it, and it is resolved along the same chain
+as the profile: workflow, enclosing steps, the step. For a `role: manager`
+action the compiler clears profile and execution-selection hints, so
 orchestration cannot accidentally treat inherited or step-level agent, model,
-or reasoning values as a delegation request. The setting is persisted with the
+or reasoning values as a delegation request. The role is persisted with the
 compiled item to keep resumed instructions equally local.
+
+Ownership of an assignment is enforced, not only described. The manager's
+`next` mints a token for each assignment it opens and stores it beside the
+assignment in the task state; the worker's pages carry it, and every
+worker-role command of the `auto` runtime must present it. The token is
+closed wherever the assignment ends, so a worker that outlived its assignment,
+or one told to do the manager's step, is refused by the service rather than
+trusted to stop. The manager is identified by its role, not a token, which is
+what lets it recover the open token from state after its own context was
+compacted.
 A worker may delegate one bounded hook when its runtime permits, but remains
 responsible for completing that item; nested workers cannot take over manager
 commands or submit the same item independently. Worker selection still belongs

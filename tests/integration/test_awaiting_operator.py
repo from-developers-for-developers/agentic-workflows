@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.errors import StateError
 from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -51,7 +52,11 @@ def _service(root: Path, config: str, runtime: str = "single") -> WorkflowServic
 def test_a_failed_handler_awaits_the_operator(tmp_path: Path) -> None:
     service = _service(tmp_path, REJECTING)
     service.complete(
-        "TASK-1", artifact="done", caller_role="worker", summary_for_next="Done."
+        "TASK-1",
+        artifact="done",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+        summary_for_next="Done.",
     )
 
     status = service.status("TASK-1", caller_role="manager")
@@ -75,7 +80,12 @@ def test_a_failed_handler_awaits_the_operator(tmp_path: Path) -> None:
 def test_failed_agent_work_awaits_the_operator(tmp_path: Path) -> None:
     service = _service(tmp_path, PLAIN)
 
-    failed = service.fail("TASK-1", "The API is down.", caller_role="worker")
+    failed = service.fail(
+        "TASK-1",
+        "The API is down.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+    )
 
     assert (failed.control, failed.next_role, failed.operator_reason) == (
         "awaiting_operator",
@@ -93,7 +103,11 @@ def test_a_delegated_worker_returns_the_operator_wait_to_its_manager(
 ) -> None:
     service = _service(tmp_path, REJECTING, runtime="auto")
     failed = service.complete(
-        "TASK-1", artifact="done", caller_role="worker", summary_for_next="Done."
+        "TASK-1",
+        artifact="done",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+        summary_for_next="Done.",
     )
     rendered = MarkdownOutputAdapter().render_instruction(failed)
 
@@ -105,7 +119,9 @@ def test_a_delegated_worker_returns_the_operator_wait_to_its_manager(
 def test_work_in_progress_has_no_operator_reason(tmp_path: Path) -> None:
     service = _service(tmp_path, PLAIN)
 
-    active = service.status("TASK-1", caller_role="worker")
+    active = service.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
 
     assert active.control == "continue_worker"
     assert active.operator_reason is None
@@ -115,7 +131,11 @@ def test_work_in_progress_has_no_operator_reason(tmp_path: Path) -> None:
 def test_the_operator_is_not_a_caller_role(tmp_path: Path) -> None:
     service = _service(tmp_path, REJECTING)
     service.complete(
-        "TASK-1", artifact="done", caller_role="worker", summary_for_next="Done."
+        "TASK-1",
+        artifact="done",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+        summary_for_next="Done.",
     )
 
     with pytest.raises(StateError, match="caller role must be"):

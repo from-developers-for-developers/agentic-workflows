@@ -90,7 +90,19 @@ _SETTING_KEYS = {
     "worktrees",
     "worktree_dir",
     "worktree_name_format",
+    "on_signing_failure",
 }
+# What the commit handler does when git cannot sign a commit: stop for the
+# operator, or commit once more without a signature and say so.
+SIGNING_FAILURE_POLICIES = ("operator", "unsigned")
+# What git prints when it cannot sign: its own marker, and the signing
+# programs' usual wording (gpg, ssh-keygen, 1Password's op-ssh-sign).
+_SIGNING_FAILURE_MARKERS = (
+    "failed to write commit object",
+    "failed to sign",
+    "gpg failed",
+    "signing failed",
+)
 
 
 @dataclass(frozen=True)
@@ -109,6 +121,7 @@ class Settings:
     worktrees: bool = False
     worktree_dir: str | None = None
     worktree_name_format: str = DEFAULT_BRANCH_FORMAT
+    on_signing_failure: str = "operator"
 
     def branch_format(
         self, workflow: str | None, strategy: str | None = None
@@ -138,6 +151,7 @@ class Settings:
             "worktrees": self.worktrees,
             "worktree_dir": self.worktree_dir,
             "worktree_name_format": self.worktree_name_format,
+            "on_signing_failure": self.on_signing_failure,
         }
 
 
@@ -202,7 +216,13 @@ def settings_from(config: Any) -> Settings:
         worktree_name_format=_string(
             config, "worktree_name_format", DEFAULT_BRANCH_FORMAT
         ),
+        on_signing_failure=_string(config, "on_signing_failure", "operator"),
     )
+    if settings.on_signing_failure not in SIGNING_FAILURE_POLICIES:
+        raise ConfigurationError(
+            "ww/git on_signing_failure must be one of: "
+            + ", ".join(SIGNING_FAILURE_POLICIES)
+        )
     _validate_commit_format(settings.commit_format)
     if settings.worktrees and not settings.worktree_dir:
         # Every default is wrong somewhere: inside the repository a worktree
@@ -671,6 +691,16 @@ def _commit(context: ExtensionContext) -> ExtensionResult:
     if context.operation_id:
         commit_args.extend(["-m", f"WW-Operation: {context.operation_id}"])
     committed = _git(context, *commit_args)
+    signed = True
+    if (
+        committed.returncode
+        and settings.on_signing_failure == "unsigned"
+        and _signing_failed(context, committed)
+    ):
+        # The signing agent refused, as a locked 1Password does overnight:
+        # the operator allowed an unsigned commit rather than a stop.
+        committed = _git(context, "-c", "commit.gpgsign=false", *commit_args)
+        signed = False
     if committed.returncode:
         return ExtensionResult(False, error=_failed(committed, "git commit failed"))
     revision = _git(context, "rev-parse", "HEAD")
@@ -685,8 +715,26 @@ def _commit(context: ExtensionContext) -> ExtensionResult:
     }
     if context.operation_id:
         record["operation_id"] = context.operation_id
+    if not signed:
+        record["signed"] = False
     _record_commit(context, record)
-    return ExtensionResult(True, output=f"{record['sha'][:12]} {subject}")
+    output = f"{record['sha'][:12]} {subject}"
+    if not signed:
+        output += (
+            " (unsigned: git could not sign it, and on_signing_failure allows this)"
+        )
+    return ExtensionResult(True, output=output)
+
+
+def _signing_failed(
+    context: ExtensionContext, result: subprocess.CompletedProcess[str]
+) -> bool:
+    """Whether a failed commit failed because git could not sign it."""
+    enabled = _git(context, "config", "--bool", "commit.gpgsign")
+    if enabled.stdout.strip() != "true":
+        return False
+    message = (result.stderr + result.stdout).lower()
+    return any(marker in message for marker in _SIGNING_FAILURE_MARKERS)
 
 
 def _check_commit(context: ExtensionContext) -> ExtensionCheckResult:

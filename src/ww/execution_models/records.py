@@ -39,7 +39,7 @@ from ww.workflow_config import ProvidedVariable
 from .decoding import _positive_int_mapping, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 9
+EXECUTION_SCHEMA_VERSION = 10
 PAIR_SIZE = 2
 
 
@@ -960,6 +960,9 @@ class ExecutionState:
     model: str = "auto"
     reasoning: str = "auto"
     assignment_item_id: str | None = None
+    # The open assignment's token: every worker command of the ``auto``
+    # runtime must carry it, so a worker whose assignment ended cannot act.
+    assignment_token: str | None = None
     assignment_model: str | None = None
     assignment_reasoning: str | None = None
     assignment_selected_agent: str | None = None
@@ -1013,6 +1016,7 @@ class ExecutionState:
             "model": self.model,
             "reasoning": self.reasoning,
             "assignment_item_id": self.assignment_item_id,
+            "assignment_token": self.assignment_token,
             "assignment_model": self.assignment_model,
             "assignment_reasoning": self.assignment_reasoning,
             "assignment_selected_agent": self.assignment_selected_agent,
@@ -1123,6 +1127,9 @@ class ExecutionState:
             reasoning=expect_string(data.get("reasoning", "auto"), "reasoning"),
             assignment_item_id=expect_optional_string(
                 data.get("assignment_item_id"), "assignment item ID"
+            ),
+            assignment_token=expect_optional_string(
+                data.get("assignment_token"), "assignment token"
             ),
             assignment_model=expect_optional_string(
                 data.get("assignment_model"), "assignment model"

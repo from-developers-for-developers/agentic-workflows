@@ -16,6 +16,7 @@ from ww.contracts import (
     OperatorReason,
     PlanItemKind,
     RecoveryAction,
+    StepRole,
 )
 from ww.execution_models import WorkflowRunSummary
 from ww.items import WorkItem
@@ -466,7 +467,7 @@ class Instruction:
     requested_model: str | None = None
     requested_reasoning: str | None = None
     requested_profile: str | None = None
-    subagents: bool = True
+    role: StepRole = "worker"
     selected_agent: str | None = None
     selected_model: str | None = None
     selected_reasoning: str | None = None
@@ -499,10 +500,13 @@ class Instruction:
     fix_required: FixRequired | None = None
     checks_waived: tuple[tuple[str, str], ...] = ()
     dispute: DisputeView | None = None
-    # A worker asked for an item the manager performs itself (``subagents:
-    # false`` or ``interactive`` in the ``auto`` runtime): the page names it
+    # A worker asked for an item the manager performs itself (``role:
+    # manager`` or ``interactive`` in the ``auto`` runtime): the page names it
     # and offers no completion command.
     manager_only: bool = False
+    # The open assignment's token in the ``auto`` runtime, carried by every
+    # worker command the page prints.
+    assignment_token: str | None = None
     # A verification item's rules and evidence, and, at a ``check_proposed``
     # stop, the proposals the operator decides.
     verification: VerificationPage | None = None
@@ -598,7 +602,7 @@ class Instruction:
             "requested_model": self.requested_model,
             "requested_reasoning": self.requested_reasoning,
             "requested_profile": self.requested_profile,
-            "subagents": self.subagents,
+            "role": self.role,
             "selected_agent": self.selected_agent,
             "selected_model": self.selected_model,
             "selected_reasoning": self.selected_reasoning,
@@ -623,6 +627,7 @@ class Instruction:
             "checks_waived": dict(self.checks_waived),
             "dispute": self.dispute.to_dict() if self.dispute else None,
             "manager_only": self.manager_only,
+            "assignment_token": self.assignment_token,
             "verification": (
                 self.verification.to_dict() if self.verification else None
             ),

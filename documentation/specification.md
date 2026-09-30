@@ -169,6 +169,7 @@ Each item in `workflows` accepts:
 | `model` | non-empty string | no | Default model guidance; `auto` stops inheritance. |
 | `reasoning` | non-empty string | no | Default reasoning guidance. |
 | `profile` | profile value | no | Default agent profile. |
+| `role` | `manager` or `worker` | no | The role every step inherits unless it or an enclosing step sets its own; see the step key. |
 | `handoff` | boolean | no | If `true`, the workflow must end with its single workflow transition; a task hands off at most once, and a transition never returns. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww-agentic-workflows.json`, and the flag outranks it. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
@@ -282,8 +283,8 @@ A step accepts every [handler key](#handlers), plus:
 | `hooks` | hooks mapping | Hooks local to this step. |
 | `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
-| `subagents` | boolean | When `false`, an `auto` run performs this step without delegation and ignores its profile, agent, model, and reasoning settings. Defaults to `true`. |
-| `interactive` | boolean | The step is a conversation with the operator, held by the session that can talk to them; it implies `subagents: false`. Its completion is refused until the conversation was recorded with `interact` and ended. Defaults to `false`. |
+| `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. `subagents` is no longer accepted; write `role: manager` for what `subagents: false` meant. |
+| `interactive` | boolean | The step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. Defaults to `false`. |
 | `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `ui` | boolean | The operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends. Valid on one per-item stage per `items` step and requires `interactive: true`. Defaults to `false`. |
 | `update_item` | list of item fields | Custom fields this step sets on its item, `- <name>: <what to put there>`; on the collection step, on every collected item. Completion is refused while any is empty. Set them with `update-item --field NAME=VALUE`, several per call. |
@@ -450,7 +451,7 @@ The mapping form accepts these keys, all optional:
 | `model` | non-empty string | Model for the per-item stages. |
 | `reasoning` | non-empty string | Reasoning for the per-item stages. |
 | `profile` | profile value | Profile for the per-item stages. |
-| `subagents` | boolean | `false` performs the per-item stages without delegation. |
+| `role` | `manager` or `worker` | `manager` performs the per-item stages in the managing session. |
 
 ```yaml
 - review: Review the pull request.
@@ -471,7 +472,7 @@ The mapping form accepts these keys, all optional:
 
 Worker settings cascade from the `items` step, to `items`, to each stage, and
 the most specific value wins. The step's own `agent`, `model`, `reasoning`,
-`profile`, and `subagents` apply to collection and are inherited by the stages;
+`profile`, and `role` apply to collection and are inherited by the stages;
 the same keys under `items` apply only to the stages. The cascade reaches each
 configured stage directly; stages nested deeper inherit like ordinary nested
 steps.
@@ -488,7 +489,7 @@ runtime:
 It has no effect in the `single` runtime, where one session already performs
 every assignment. A running worker cannot change its agent, model, reasoning,
 or profile, so a stage that resolves to different settings than the worker's,
-or that sets `subagents: false`, starts a new assignment; the span resumes
+or that is the manager's (`role: manager`), starts a new assignment; the span resumes
 with the next stage that matches. Set shared settings on `items` to keep a
 whole span with one worker.
 
@@ -1057,8 +1058,10 @@ At the `fix_limit` stop `--force` waives every check and rule of the step. The
 step record keeps its waivers as `checks_waived`, a mapping of ID to reason.
 `next --yes` confirms `--retry`, `--force`, or `--approve` without the y/N
 prompt, for an agent carrying out the operator's stated decision; the effect
-or the approved command is still printed. `--yes` without one of them is an
-error.
+or the approved command is still printed, and the audit record notes the
+confirmation. `--yes` without one of them is an error. ww asks only at a
+terminal: without one and without `--yes` it refuses at once, never reading
+an answer from a pipe.
 
 Every dispute is also appended to `.ww/rule-disputes.json`, beside the task
 states, so `lint` can list disputed IDs without reading every task:

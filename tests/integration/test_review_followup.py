@@ -9,6 +9,7 @@ import pytest
 
 from tests.workflow_helpers import (
     advance_init,
+    assignment_token,
     start_after_init,
     start_child_after_init,
 )
@@ -84,7 +85,7 @@ workflows:
     assert assigned.next_role == "worker"
     handoff = service.complete(
         "TASK-ROLES",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-ROLES"),
         summary_for_next="Done.",
     )
     assert handoff.item_name == "work"

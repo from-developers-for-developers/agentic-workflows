@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.cli import main
 from ww.errors import StateError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -55,14 +56,14 @@ def test_the_session_that_got_the_prompt_does_the_work(tmp_path: Path) -> None:
     service.complete(
         TASK,
         artifact="Fixed the typo.",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, TASK),
         summary_for_next="Fixed the typo.",
     )
     done = service.complete(
         TASK,
         artifact="Fixed a README typo.",
         variables={"summary": "Fixed a README typo."},
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, TASK),
     )
     assert done.status == "completed"
 

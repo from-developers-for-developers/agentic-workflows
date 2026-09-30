@@ -33,3 +33,9 @@ def start_child_after_init(
     service: WorkflowService, parent_id: str, child_id: str
 ) -> Instruction:
     return advance_init(service, service.start_child(parent_id, child_id))
+
+
+def assignment_token(service: WorkflowService, task_id: str) -> str | None:
+    """The open assignment's token, which the manager's pages hand a worker."""
+    state, _ = service.load(task_id)
+    return state.assignment_token

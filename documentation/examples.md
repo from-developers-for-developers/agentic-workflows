@@ -104,7 +104,7 @@ workflows:
 
 Modes are selectable guidance, profiles describe how an agent should behave,
 and `agent`, `model`, and `reasoning` are advisory requests the manager sees in
-the `auto` runtime. `subagents: false` keeps a step in the managing session.
+the `auto` runtime. `role: manager` keeps a step in the managing session.
 
 ```yaml
 modes:
@@ -123,9 +123,7 @@ workflows:
     reasoning: high
     steps:
       - plan: Outline the change before touching code.
-        subagents: false
-        model: cheapest
-        reasoning: low
+        role: manager
       - implement: Implement the plan.
       - review: Review the implementation.
         profile: reviewer

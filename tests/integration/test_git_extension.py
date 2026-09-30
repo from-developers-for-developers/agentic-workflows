@@ -248,6 +248,76 @@ def test_a_commit_records_the_branch_it_landed_on(repository: Path) -> None:
     assert recorded["message"] == "TASK-1: work"
 
 
+def _refuse_signing(repository: Path) -> None:
+    """Sign every commit with a program that always fails, like a locked agent."""
+    _run("git", "config", "commit.gpgsign", "true", cwd=repository)
+    _run("git", "config", "gpg.program", "false", cwd=repository)
+
+
+def test_a_signing_failure_stops_for_the_operator_by_default(
+    repository: Path,
+) -> None:
+    _refuse_signing(repository)
+    (repository / "new.txt").write_text("x\n", encoding="utf-8")
+
+    result = handler("git-commit")(
+        context(repository, values={"commit_message": "work"})
+    )
+
+    assert not result.ok
+    assert "failed to write commit object" in (result.error or "")
+
+
+def test_on_signing_failure_unsigned_commits_once_more_without_a_signature(
+    repository: Path,
+) -> None:
+    _refuse_signing(repository)
+    (repository / "new.txt").write_text("x\n", encoding="utf-8")
+
+    result = handler("git-commit")(
+        context(
+            repository,
+            {"on_signing_failure": "unsigned"},
+            values={"commit_message": "work"},
+        )
+    )
+
+    assert result.ok, result.error
+    assert "(unsigned: git could not sign it" in (result.output or "")
+    assert _run("git", "log", "-1", "--format=%s", cwd=repository).stdout.strip() == (
+        "TASK-1: work"
+    )
+    recorded = json.loads(
+        (repository / ".ww/ext/ww/git/commits.jsonl").read_text(encoding="utf-8")
+    )
+    assert recorded["signed"] is False
+
+
+def test_on_signing_failure_leaves_other_commit_errors_to_the_operator(
+    repository: Path,
+) -> None:
+    hook = repository / ".git/hooks/pre-commit"
+    hook.write_text("#!/bin/sh\necho refused by hook >&2\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    (repository / "new.txt").write_text("x\n", encoding="utf-8")
+
+    result = handler("git-commit")(
+        context(
+            repository,
+            {"on_signing_failure": "unsigned"},
+            values={"commit_message": "work"},
+        )
+    )
+
+    assert not result.ok
+    assert "refused by hook" in (result.error or "")
+
+
+def test_on_signing_failure_accepts_only_its_two_policies() -> None:
+    with pytest.raises(ConfigurationError, match="on_signing_failure must be one of"):
+        git_extension.settings_from({"on_signing_failure": "skip"})
+
+
 def test_commit_rejects_a_multiline_subject(repository: Path) -> None:
     (repository / "new.txt").write_text("x\n", encoding="utf-8")
 

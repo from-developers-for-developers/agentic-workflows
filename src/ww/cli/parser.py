@@ -28,6 +28,12 @@ def _shared(*add: str) -> argparse.ArgumentParser:
             default=None,
             help="Responsibility of the caller for this command.",
         )
+        parent.add_argument(
+            "--assignment",
+            default=None,
+            help="The open assignment's token, which every worker command of "
+            "the auto runtime carries.",
+        )
     if "run" in add:
         parent.add_argument("--run", dest="run_id")
     if "selection" in add:
@@ -261,6 +267,14 @@ def build_parser() -> argparse.ArgumentParser:
     next_step.add_argument(
         "--force-reason",
         help="Required explanation for --force; retained with the skipped item.",
+    )
+    next_step.add_argument(
+        "--reassign",
+        action="store_true",
+        help=(
+            "Give the open assignment a new token and dispatch it again; the "
+            "worker holding the old token can no longer act."
+        ),
     )
     next_step.add_argument(
         "--yes",

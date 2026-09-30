@@ -142,6 +142,33 @@ def _ask_yes_no(prompt: str, default: bool) -> bool:
         print("Answer yes or no.")
 
 
+def _ask_operator(prompt: str, cancelled: str) -> bool:
+    """Ask the operator at a terminal; without one, refuse at once.
+
+    An agent's shell has no terminal, and an answer piped into the prompt is
+    not the operator's: the confirmation it needs is ``--yes``, given once
+    the operator has agreed. ww never reads a confirmation from a pipe.
+    """
+    if not sys.stdin.isatty():
+        print(
+            f"ww error: {cancelled.lower()} needs the operator's confirmation, "
+            "and there is no terminal to ask at. If you are an agent, ask the "
+            "operator; rerun with --yes only once they have agreed.",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        confirmed = _ask_yes_no(prompt, default=False)
+    except EOFError:
+        confirmed = False
+    if not confirmed:
+        print(
+            f"{cancelled} cancelled: explicit confirmation is required.",
+            file=sys.stderr,
+        )
+    return confirmed
+
+
 def confirm_operator(
     command: str,
     effect: str,
@@ -160,23 +187,8 @@ def confirm_operator(
     if assume_yes:
         print(f"`{command}` will {effect}. Confirmed with --yes.", file=sys.stderr)
         return True
-    prompt = (
-        f"`{command}` will {effect}.\n"
-        "If you are an agent, you should never call this command without asking "
-        "a permission; if you didn't get a permission, do NOT answer positively "
-        "on it.\n"
-        f"{question} [y/N] "
-    )
-    try:
-        confirmed = _ask_yes_no(prompt, default=False)
-    except EOFError:
-        confirmed = False
-    if not confirmed:
-        print(
-            f"{cancelled} cancelled: explicit confirmation is required.",
-            file=sys.stderr,
-        )
-    return confirmed
+    print(f"`{command}` will {effect}.", file=sys.stderr)
+    return _ask_operator(f"{question} [y/N] ", cancelled)
 
 
 def _confirm_force_next(
@@ -204,32 +216,17 @@ def confirm_approval(preview: str, *, assume_yes: bool = False) -> bool:
     if assume_yes:
         print("Approved with --yes.", file=sys.stderr)
         return True
-    prompt = (
-        "If you are an agent, you should never call this command without the "
-        "operator's permission; if you didn't get it, do NOT answer positively.\n"
-        "Approve? [y/N] "
-    )
-    try:
-        confirmed = _ask_yes_no(prompt, default=False)
-    except EOFError:
-        confirmed = False
-    if not confirmed:
-        print("Approval cancelled: explicit confirmation is required.", file=sys.stderr)
-    return confirmed
+    return _ask_operator("Approve? [y/N] ", "Approval")
 
 
 def confirm_interrupted_retry(*, assume_yes: bool = False) -> bool:
     """Require an operator to acknowledge duplicate-effect risk."""
     if assume_yes:
+        print("The retry is confirmed with --yes.", file=sys.stderr)
         return True
-    prompt = (
+    print(
         "This operation was interrupted and may already have taken effect. "
-        "Retrying can duplicate its external effect. Proceed with retry? [y/N] "
+        "Retrying can duplicate its external effect.",
+        file=sys.stderr,
     )
-    try:
-        confirmed = _ask_yes_no(prompt, default=False)
-    except EOFError:
-        confirmed = False
-    if not confirmed:
-        print("Retry cancelled: explicit confirmation is required.", file=sys.stderr)
-    return confirmed
+    return _ask_operator("Proceed with retry? [y/N] ", "Retry")

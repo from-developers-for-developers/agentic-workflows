@@ -105,20 +105,20 @@ def test_item_settings_cascade_from_step_then_items_then_stage(tmp_path: Path) -
     )
 
 
-def test_items_subagents_false_applies_to_its_stages(tmp_path: Path) -> None:
+def test_items_role_manager_applies_to_its_stages(tmp_path: Path) -> None:
     plan = _compile(
         tmp_path,
         """      - review: Review.
         items:
-          subagents: false
+          role: manager
           steps:
             - analyze: Analyze.
 """,
     )
 
     by_name = {item.name: item for item in plan.items}
-    assert by_name["review"].subagents
-    assert not by_name["analyze"].subagents
+    assert by_name["review"].role == "worker"
+    assert by_name["analyze"].role == "manager"
 
 
 def test_item_assignment_is_carried_by_every_stage_and_hook(tmp_path: Path) -> None:
@@ -233,15 +233,19 @@ def test_differing_stage_settings_compile_under_a_shared_assignment(
             - fix: Fix.
               model: opus
             - local: Note it locally.
-              subagents: false
+              role: manager
 """,
     )
 
     assert [
-        (item.name, item.requested_model, item.subagents)
+        (item.name, item.requested_model, item.role)
         for item in plan.items
         if item.item_template
-    ] == [("analyze", "auto", True), ("fix", "opus", True), ("local", None, False)]
+    ] == [
+        ("analyze", "auto", "worker"),
+        ("fix", "opus", "worker"),
+        ("local", None, "manager"),
+    ]
 
 
 def test_shared_assignment_accepts_settings_set_on_items(tmp_path: Path) -> None:
@@ -270,7 +274,7 @@ def test_per_step_allows_differing_stage_settings(tmp_path: Path) -> None:
         items:
           steps:
             - analyze: Analyze.
-              subagents: false
+              role: manager
             - fix: Fix.
               model: opus
 """,
@@ -304,10 +308,13 @@ def test_plan_view_shows_collection_guidance_and_item_assignment(
 
 @pytest.mark.parametrize(
     ("setting", "expected"),
-    [("profile: reviewer", ("reviewer", True)), ("subagents: false", (None, False))],
+    [
+        ("profile: reviewer", ("reviewer", "worker")),
+        ("role: manager", (None, "manager")),
+    ],
 )
 def test_step_settings_copied_from_a_handler_reach_the_stages(
-    tmp_path: Path, setting: str, expected: tuple[str | None, bool]
+    tmp_path: Path, setting: str, expected: tuple[str | None, str]
 ) -> None:
     plan = _compile(
         tmp_path,
@@ -325,7 +332,7 @@ def test_step_settings_copied_from_a_handler_reach_the_stages(
     )
 
     analyze = next(item for item in plan.items if item.name == "analyze")
-    assert (analyze.profile, analyze.subagents) == expected
+    assert (analyze.profile, analyze.role) == expected
 
 
 def test_phase_guidance_extends_the_built_in_stage(tmp_path: Path) -> None:

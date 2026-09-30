@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import start_after_init
+from tests.workflow_helpers import assignment_token, start_after_init
 from ww.errors import StateError
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -41,7 +41,7 @@ workflows:
     hook = service.complete(
         "TASK-1",
         artifact="implemented",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert hook.item_name == "document"
@@ -51,7 +51,9 @@ workflows:
     assert state.assignment_model == "worker-model"
 
     reloaded = WorkflowService(Storage(tmp_path), persistence)
-    visible = reloaded.status("TASK-1", caller_role="worker")
+    visible = reloaded.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(reloaded, "TASK-1")
+    )
     assert visible.item_name == "document"
     assert visible.control == "continue_worker"
 

@@ -263,7 +263,7 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         requested_agent=hints.agent,
         requested_model=hints.model,
         requested_reasoning=hints.reasoning,
-        subagents=True,
+        role="worker",
         interactive=False,
         choices=(),
         ui=False,
@@ -609,6 +609,7 @@ def _without_assignment(state: ExecutionState) -> ExecutionState:
     return replace(
         state,
         assignment_item_id=None,
+        assignment_token=None,
         assignment_model=None,
         assignment_reasoning=None,
         assignment_selected_agent=None,

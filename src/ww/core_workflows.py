@@ -46,7 +46,7 @@ CATCHALL_WORKFLOW = WorkflowDefinition(
             ),
             # The session that received the prompt does the work, as it would
             # without ww; any subagents it uses along the way are its choice.
-            subagents=False,
+            role="manager",
         ),
     ),
     # A plain prompt leaves the agent free to delegate; so does this.

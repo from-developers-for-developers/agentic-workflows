@@ -72,7 +72,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _worker_selection(lines, instruction)
         _assignment_preview(lines, instruction)
         delegating = audience(instruction) is Audience.MANAGER_DELEGATING
-        if delegating and instruction.subagents:
+        if delegating and instruction.role == "worker":
             _worker_bootstrap(lines, instruction)
             return _document(lines)
         _assignment_scope(lines, instruction)
@@ -587,7 +587,12 @@ def _worker_bootstrap(lines: Lines, instruction: Instruction) -> None:
             "Pass only this command to the selected worker:",
             "",
             "```console",
-            instruction_command(instruction.task_id, instruction.run_id, role="worker"),
+            instruction_command(
+                instruction.task_id,
+                instruction.run_id,
+                role="worker",
+                assignment=instruction.assignment_token,
+            ),
             "```",
             "",
             "The worker runs it to receive the complete, role-specific "
@@ -756,7 +761,9 @@ def _fix_required(lines: Lines, instruction: Instruction) -> None:
             "operator decides whether it stands:",
             "",
             "```console",
-            dispute_command(instruction.task_id),
+            dispute_command(
+                instruction.task_id, assignment=instruction.assignment_token
+            ),
             "```",
         ]
     )
@@ -777,7 +784,7 @@ def _manager_only(lines: Lines, instruction: Instruction) -> None:
     why = (
         "is interactive: only the manager's session can talk to the operator"
         if instruction.interactive
-        else "sets `subagents: false`"
+        else "is the manager's (`role: manager`)"
     )
     lines.extend(
         [
@@ -1967,7 +1974,7 @@ def _action_heading(instruction: Instruction) -> str:
     if instruction.is_loop_control:
         return f"advance the `{name}` loop"
     if reader is Audience.MANAGER_DELEGATING:
-        verb = "delegate" if instruction.subagents else "perform"
+        verb = "delegate" if instruction.role == "worker" else "perform"
         return f"{verb} the `{instruction.assignment_step or name}` assignment"
     if instruction.item_status == "pending":
         if reader is Audience.WORKER_RETURNING:
@@ -1994,7 +2001,9 @@ def _assignment_coverage(instruction: Instruction) -> Lines:
     if not rest:
         return []
     names = ", ".join(f"`{name}`" for name in (first, *rest))
-    performer = "One worker performs" if instruction.subagents else "You perform"
+    performer = (
+        "One worker performs" if instruction.role == "worker" else "You perform"
+    )
     return [
         f"This assignment covers, in order: {names}. {performer} them "
         "all; `ww` hands each one over after the previous completion.",
@@ -2043,9 +2052,9 @@ def _role_instruction(instruction: Instruction) -> Lines:
             ]
         case Audience.WORKER_RETURNING:
             return [_ASSIGNMENT_COMPLETE, ""]
-        case Audience.MANAGER_DELEGATING if not instruction.subagents:
+        case Audience.MANAGER_DELEGATING if instruction.role == "manager":
             return [
-                "You are the manager. This step sets `subagents: false`: perform "
+                "You are the manager. This step is yours (`role: manager`): perform "
                 "it yourself in this session, not through a worker, and run the "
                 "displayed worker completion command.",
                 "",

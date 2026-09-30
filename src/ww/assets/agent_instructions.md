@@ -34,15 +34,15 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
 
 - Each ww response is authoritative. Run the displayed commands with every
   placeholder replaced, supply what they ask for, and continue until ww
-  reports that the workflow is complete or reports an error. One completion
-  rarely finishes the task.
+  reports the workflow complete, an error, or that your assignment ended,
+  then stop. One completion rarely finishes the task.
 - Perform only agent-owned work. Never run or work around a ww-owned handler,
   edit ww state, or read `ww-agentic-workflows.yaml` or ww's source to reconstruct what
   happens next.
 - On a nonzero exit, read the whole response. On "Fix required", fix the causes
   and complete again (`./ww check <task-id>` previews checks) or `./ww dispute`
-  a wrong check. `./ww fail <task-id> --role worker --error "<reason>"` records
-  agent work that cannot finish. On `awaiting_operator` (failed handler or
+  a wrong check; `./ww fail` with the page's `--role` and `--assignment`
+  records work that cannot finish. On `awaiting_operator` (failed handler or
   work, interruption, loop or fix limit, proposed or disputed checks), stop,
   report the task, `operator_reason` and the exact error to the user, and run
   only the `./ww next` option they pick (`--retry`, `--force`, `--approve`,

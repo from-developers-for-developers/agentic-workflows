@@ -48,7 +48,7 @@ def render_check_preview(preview: CheckPreview) -> str:
                 "completion is wrong for this change, dispute it:",
                 "",
                 "```console",
-                dispute_command(preview.task_id),
+                dispute_command(preview.task_id, assignment="<your-assignment-token>"),
                 "```",
             ]
         )

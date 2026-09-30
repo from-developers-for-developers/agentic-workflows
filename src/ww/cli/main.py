@@ -393,6 +393,11 @@ def _start(context: _Context) -> _Outcome:
     )
 
 
+def _confirmation(assume_yes: bool) -> str:
+    """How a gated choice was confirmed, for the audit record."""
+    return "--yes" if assume_yes else "operator at a terminal"
+
+
 def _next(context: _Context) -> _Outcome:
     args = context.args
     return _with_interruption(
@@ -411,6 +416,7 @@ def _next(context: _Context) -> _Outcome:
                 approve=tuple(args.approve),
                 approaches=tuple((key, text) for key, text in args.approach),
                 picks=_picks(args.pick),
+                reassign=args.reassign,
             ),
             args.json_output,
         ),
@@ -442,6 +448,7 @@ def _loop(context: _Context) -> _Outcome:
             continue_loop=args.continue_loop,
             summary_for_next=args.summary_for_next_step,
             caller_role=args.role,
+            assignment=args.assignment,
         ),
         args.json_output,
         completing=True,
@@ -474,7 +481,11 @@ def _dispute(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
         context.service.dispute(
-            context.task_id, args.check_id, args.reason, caller_role=args.role
+            context.task_id,
+            args.check_id,
+            args.reason,
+            caller_role=args.role,
+            assignment=args.assignment,
         ),
         args.json_output,
     )
@@ -646,6 +657,7 @@ def _complete(context: _Context) -> _Outcome:
             caller_role=args.role,
             rule_results=tuple(args.rule_result),
             check_results=tuple(args.check_result),
+            assignment=args.assignment,
         ),
         args.json_output,
         completing=True,
@@ -669,7 +681,7 @@ def _interact(context: _Context) -> _Outcome:
             caller_role=args.role,
         )
         instruction = context.service.instruction(
-            context.task_id, caller_role=args.role
+            context.task_id, caller_role=args.role, assignment=args.assignment
         )
         outcome = _instruction_outcome(instruction, args.json_output)
         if args.json_output:
@@ -686,6 +698,7 @@ def _interact(context: _Context) -> _Outcome:
             end=args.end_interaction,
             pause=args.pause,
             caller_role=args.role,
+            assignment=args.assignment,
         ),
         args.json_output,
     )
@@ -699,7 +712,12 @@ def _interactions(context: _Context) -> _Outcome:
 def _fail(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
-        context.service.fail(context.task_id, args.error, caller_role=args.role),
+        context.service.fail(
+            context.task_id,
+            args.error,
+            caller_role=args.role,
+            assignment=args.assignment,
+        ),
         args.json_output,
     )
 
@@ -725,7 +743,10 @@ def _instruction(context: _Context) -> _Outcome:
         context,
         _instruction_outcome(
             context.service.instruction(
-                context.task_id, args.run_id, caller_role=args.role
+                context.task_id,
+                args.run_id,
+                caller_role=args.role,
+                assignment=args.assignment,
             ),
             args.json_output,
         ),
@@ -1030,6 +1051,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if args.retry and not confirm_interrupted_retry(assume_yes=args.yes):
             return 1
+        if args.retry:
+            args.confirmation = _confirmation(args.yes)
         if args.yes and not (args.retry or args.force or args.approve):
             print(
                 "ww error: --yes confirms next --retry, --force or --approve",
@@ -1075,12 +1098,14 @@ def main(argv: list[str] | None = None) -> int:
             effect = service.force_target(args.task_id)
             if not _confirm_force_next(effect, assume_yes=args.yes):
                 return 1
+            args.confirmation = _confirmation(args.yes)
         # An approval is shown in full first: reading the command is the
         # operator's safety, as ww keeps no allowlist of executables.
         if args.command == "next" and args.approve:
             preview = service.approval_preview(args.task_id, tuple(args.approve))
             if not confirm_approval(preview, assume_yes=args.yes):
                 return 1
+            args.confirmation = _confirmation(args.yes)
         if logged:
             log("started", None)
         # Every command this invocation prints starts with the project's ww.

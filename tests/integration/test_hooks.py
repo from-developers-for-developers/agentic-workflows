@@ -700,7 +700,7 @@ def test_session_start_names_each_tasks_agent(
 def _delegated(root: Path, own_step: bool = False) -> WorkflowService:
     (root / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - develop: Implement it.\n"
-        + ("        subagents: false\n" if own_step else ""),
+        + ("        role: manager\n" if own_step else ""),
         encoding="utf-8",
     )
     service = WorkflowService(Storage(root))

@@ -82,7 +82,7 @@ workflows:
       - develop: >-
           Research the codebase, analyse the request, and implement it. Do not
           run tests or linters: the workflow runs them next.
-        subagents: false
+        role: manager
 
       - check-code-quality: ~
       - run-tests: ~
@@ -117,7 +117,7 @@ workflows:
           intent of both sides survives, then conclude the merge commit. In the
           artifact, list each conflicted file and how you resolved it. Do not
           push.
-        subagents: false
+        role: manager
 
       # Only a non-trivial conflict resolution is new code worth reviewing.
       - assess:
@@ -204,7 +204,7 @@ workflows:
                 criteria, and follow documentation/python-agent-rules.md?
                 List every finding as file:line and what to change; an empty
                 list accepts the slice.
-              subagents: false
+              role: manager
               break: There are no findings.
 
             - fix: Apply every finding of the review artifact.
@@ -221,7 +221,7 @@ workflows:
           or deviated with the deviations the develop and review artifacts
           record, and rewrite the remaining slices where this slice changed
           their premises: names, shapes, files, decisions. Implement nothing.
-        subagents: false
+        role: manager
 
   - auto-refactor: >-
       Review the development since the last refactoring and reshape the

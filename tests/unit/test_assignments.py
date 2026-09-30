@@ -137,7 +137,7 @@ def test_per_step_and_differing_worker_settings_end_the_round_assignment(
           - name: verify
             profile: developer
           - name: local
-            subagents: false
+            role: manager
 """,
     )
     by_name = {item.name: index for index, item in enumerate(plan.items)}

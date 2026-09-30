@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The manager's pages for a ``subagents: false`` step under ``auto``."""
+"""The manager's pages for a ``role: manager`` step under ``auto``."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ WORKFLOWS = """workflows:
   - name: task
     steps:
       - coordinate: Coordinate it.
-        subagents: false
+        role: manager
 """
 
 

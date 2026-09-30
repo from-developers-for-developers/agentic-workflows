@@ -1102,22 +1102,27 @@ workflows:
     assert step.profile_description == "Review this step carefully."
 
 
-def test_parses_step_subagents_flag(tmp_path: Path) -> None:
+def test_parses_step_role(tmp_path: Path) -> None:
     configuration = load_configuration(
         _write(
             tmp_path / "ww-agentic-workflows.yaml",
             """workflows:
   - name: task
+    role: manager
     steps:
       - name: local-work
-        subagents: false
+        role: worker
+      - name: inherits
 """,
         )
     )
 
-    assert configuration.workflows[0].steps[0].subagents is False
+    workflow = configuration.workflows[0]
+    assert workflow.role == "manager"
+    assert workflow.steps[0].role == "worker"
+    assert workflow.steps[1].role is None
 
-    with pytest.raises(ConfigurationError, match="subagents must be true or false"):
+    with pytest.raises(ConfigurationError, match="role must be manager or worker"):
         load_configuration(
             _write(
                 tmp_path / "invalid.yaml",
@@ -1125,7 +1130,41 @@ def test_parses_step_subagents_flag(tmp_path: Path) -> None:
   - name: task
     steps:
       - name: local-work
-        subagents: disabled
+        role: operator
+""",
+            )
+        )
+
+
+def test_subagents_is_refused_with_a_pointer_to_role(tmp_path: Path) -> None:
+    for step in ("subagents: false", "items:\n          subagents: false"):
+        with pytest.raises(
+            ConfigurationError, match="subagents is no longer supported: write role"
+        ):
+            load_configuration(
+                _write(
+                    tmp_path / "ww-agentic-workflows.yaml",
+                    f"""workflows:
+  - name: task
+    steps:
+      - name: local-work
+        {step}
+""",
+                )
+            )
+
+
+def test_an_interactive_step_cannot_be_a_workers(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="role: worker contradicts it"):
+        load_configuration(
+            _write(
+                tmp_path / "ww-agentic-workflows.yaml",
+                """workflows:
+  - name: task
+    steps:
+      - name: talk
+        interactive: true
+        role: worker
 """,
             )
         )

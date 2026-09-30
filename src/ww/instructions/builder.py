@@ -205,7 +205,8 @@ class InstructionBuilder:
             requested_model=shape.requested_model if shape else None,
             requested_reasoning=shape.requested_reasoning if shape else None,
             requested_profile=shape.profile if shape else None,
-            subagents=shape.subagents if shape else True,
+            role=shape.role if shape else "worker",
+            assignment_token=worker_token(state),
             profile_instruction=(
                 built.profile_instruction
                 or (
@@ -704,6 +705,7 @@ class InstructionBuilder:
                     if verification
                     else ()
                 ),
+                assignment=worker_token(state),
             )
 
         loop_break_command = None
@@ -757,7 +759,9 @@ class InstructionBuilder:
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(
-                interact_commands(state.task_id, role) if item.interactive else None
+                interact_commands(state.task_id, role, worker_token(state))
+                if item.interactive
+                else None
             ),
             choices=item.choices,
             choice_mechanism=(
@@ -790,7 +794,7 @@ class InstructionBuilder:
                 else ()
             ),
             profile_instruction=profile_instruction(item, self.root),
-            subagents=item.subagents,
+            role=item.role,
             # A task still in the root needs no ``cd``; an item that chose
             # its own directory always names it.
             working_directory=str(workspace) if workspace is not None else None,
@@ -928,6 +932,15 @@ def dispute_view(item: PlanItem, record: PlanItemExecution) -> DisputeView | Non
 def _stored_text(automation: RuleAutomation, text_hash: str) -> str:
     entry = automation.rules.get(text_hash)
     return entry.text if entry is not None else text_hash[:12]
+
+
+def worker_token(state: ExecutionState) -> str | None:
+    """The token a worker command of the open assignment carries, if any.
+
+    Only the ``auto`` runtime delegates, so only there can a worker outlive
+    its assignment; ``single`` runs every step in one session.
+    """
+    return state.assignment_token if state.workflow_runtime == "auto" else None
 
 
 def _base(
@@ -1115,13 +1128,14 @@ def _assignment_preview(
         driver = selection_item(plan, assignment)
         if driver is None:
             return None
-        if not driver.subagents:
+        if driver.role == "manager":
             return {
                 "first_item_id": assignment.first_item_id,
                 "start": assignment.start,
                 "stop": assignment.stop,
                 "message": (
-                    f"`{driver.name}` sets `subagents: false`, so no worker is "
+                    f"`{driver.name}` is the manager's (`role: manager`), so no "
+                    "worker is "
                     "selected: after the manager command, perform it yourself "
                     "in this session."
                 ),
@@ -1201,10 +1215,10 @@ def _guidance(
             "talk to them. Perform it yourself and do not delegate it. Its "
             "profile, agent, model, and reasoning settings are ignored.",
         )
-    elif not item.subagents:
+    elif item.role == "manager":
         guidance = (
             *guidance,
-            "This step sets `subagents: false`: perform it yourself rather "
+            "This step is the manager's (`role: manager`): perform it yourself rather "
             "than handing it to a worker. Its profile, agent, model, and "
             "reasoning settings are ignored.",
         )

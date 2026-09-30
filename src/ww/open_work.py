@@ -119,8 +119,7 @@ def _open_task(tasks: TaskStorageAdapter, root: Path, task_id: str) -> OpenTask 
         delegated=(
             state.workflow_runtime == "auto"
             and item is not None
-            and item.subagents
-            and not item.interactive
+            and item.role == "worker"
         ),
     )
 

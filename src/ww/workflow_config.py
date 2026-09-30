@@ -23,6 +23,7 @@ from ww.contracts import (
     ItemAssignment,
     ItemOperation,
     LoopAssignment,
+    StepRole,
 )
 from ww.workspace import Workdir
 
@@ -418,10 +419,11 @@ class RuleGroup:
 
 @dataclass(frozen=True)
 class StepDefinition(HandlerDefinition):
-    # ``false`` prevents orchestration settings from applying to this step.
-    subagents: bool = True
+    # Who performs the step: ``manager`` in its own session, ``worker`` when
+    # delegated. ``None`` inherits along the step chain, like ``profile``.
+    role: StepRole | None = None
     # A conversation with the operator, held by the session that can talk to
-    # them; implies the step is performed without delegation.
+    # them; implies ``role: manager``.
     interactive: bool = False
     # The options the operator chooses from during an interactive step.
     choices: tuple[ChoiceDefinition, ...] = ()
@@ -489,6 +491,8 @@ class WorkflowDefinition:
     reasoning: str | None = None
     profile: str | None = None
     profile_description: str | None = None
+    # The role every step of the workflow inherits unless it sets its own.
+    role: StepRole | None = None
     handoff: bool = False
     # The runtime ``start`` uses for this workflow when ``--runtime`` is
     # omitted; it outranks the project default, and the flag outranks it.

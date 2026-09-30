@@ -24,8 +24,8 @@ def _record(**fields: Any) -> dict[str, Any]:
     return record
 
 
-def test_the_state_schema_is_nine() -> None:
-    assert EXECUTION_SCHEMA_VERSION == 9
+def test_the_state_schema_is_ten() -> None:
+    assert EXECUTION_SCHEMA_VERSION == 10
 
 
 def test_a_dispute_and_waivers_round_trip_on_the_record() -> None:

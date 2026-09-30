@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.cli import main
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
@@ -468,7 +469,11 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
     service.next("TASK-1", caller_role="manager")
 
     returned = service.complete(
-        "TASK-1", artifact="Built.", summary_for_next="Built.", caller_role="worker"
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
 
     assert returned.control == "handoff_manager"
@@ -482,7 +487,9 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
     first = service.next("TASK-1", caller_role="manager")
     assert first.item_name == "develop-verify-1"
     assert first.assignment_items == ("develop-verify-1",)
-    page = service.instruction("TASK-1", caller_role="worker")
+    page = service.instruction(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
     assert page.verification is not None
     assert [rule.id for rule in page.verification.rules] == ["develop/1"]
     assert "this session also did" not in _markdown(page)
@@ -500,6 +507,7 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
             ),
         ),
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     assert done.control == "handoff_manager"
     second = service.next("TASK-1", caller_role="manager")
@@ -519,6 +527,7 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
             ),
         ),
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     after = service.next("TASK-1", caller_role="manager")
     assert after.item_name == "check"
@@ -533,7 +542,11 @@ def _stage_a_store(root: Path, runtime: str) -> dict:
     worker = "worker" if runtime == "auto" else None
     service.next("TASK-1", caller_role=role)
     service.complete(
-        "TASK-1", artifact="Built.", summary_for_next="Built.", caller_role=worker
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built.",
+        caller_role=worker,
+        assignment=assignment_token(service, "TASK-1"),
     )
     if runtime == "auto":
         service.next("TASK-1", caller_role="manager")
@@ -542,6 +555,7 @@ def _stage_a_store(root: Path, runtime: str) -> dict:
         artifact="Findings.",
         rule_results=(json.dumps(_approach()),),
         caller_role=worker,
+        assignment=assignment_token(service, "TASK-1"),
     )
     return _store(root)
 
@@ -607,6 +621,7 @@ def test_the_cli_shows_an_approval_in_full_and_asks_first(
         checks=(FOO_CHECK,),
     )
     answers = iter(["n"])
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
 
     code = main(["--root", str(root), "next", "TASK-1", "--approve", "cli-surface"])
@@ -753,7 +768,11 @@ def test_a_replayed_completion_ends_the_verifiers_assignment(tmp_path: Path) -> 
     service.next("TASK-1", caller_role="manager")
     (root / "app.py").write_text("print(1)\n", encoding="utf-8")
     service.complete(
-        "TASK-1", artifact="Built.", summary_for_next="Built.", caller_role="worker"
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     verifier = service.next("TASK-1", caller_role="manager")
     assert verifier.item_name == "develop-verify-1"
@@ -763,6 +782,7 @@ def test_a_replayed_completion_ends_the_verifiers_assignment(tmp_path: Path) -> 
         artifact="Findings.",
         rule_results=(json.dumps(PASS),),
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
 
     assert done.control == "handoff_manager"

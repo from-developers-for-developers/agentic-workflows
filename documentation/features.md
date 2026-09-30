@@ -184,7 +184,7 @@ seen is only created when the operator says so. A `catchall` start on a task
 with an unfinished run of another workflow is refused, and the error names
 the `instruction` command that continues it.
 
-The workflow declares `runtime: auto` and its step `subagents: false`: the
+The workflow declares `runtime: auto` and its step `role: manager`: the
 session that received the prompt does the work, and whether it uses subagents
 along the way is its own choice, as without ww. It is `restartable`, so a new
 request on the same task replaces one that was never finished, and it is not
@@ -704,31 +704,40 @@ Workflow and step `model` and `reasoning` values are recorded with the work, and
 step values override workflow values. Use `modes`, `runtimes`, and `agents` to
 inspect the available choices.
 
-### Local-only auto-runtime steps
+### Steps the manager performs
 
-Use `subagents: false` on a step when an `auto` run must perform that
-step in the current session rather than dispatching a worker. The step's
-profile, agent, model, and reasoning settings are deliberately ignored, whether
-they are set on the step or inherited from its workflow. The manager's pages
-say so: the dispatch page states that no worker is selected and shows a plain
-`next`, and the page after it tells the manager to perform the step itself,
-with no worker bootstrap.
+`role` says who performs a step: `worker`, the default, is delegated in the
+`auto` runtime; `manager` keeps the step in the managing session in every
+runtime, such as a review whose judgement the manager keeps for itself. The
+step's profile, agent, model, and reasoning settings are deliberately ignored
+for a manager's step, whether set on it or inherited, and `lint` notes them.
+The manager's pages say so: the dispatch page states that no worker is
+selected and shows a plain `next`, and the page after it tells the manager to
+perform the step itself, with no worker bootstrap. An interactive step is
+always the manager's, since only its session can talk to the operator.
+
+`role` is inherited like `profile`: set on a workflow, a group of steps, or a
+loop wrapper, it applies to everything inside, and a nested step overrides it.
+A step ww runs itself, such as a command, has no role; setting one on it is an
+error, while an inherited role passes over it.
 
 ```yaml
 workflows:
   - name: task
-    agent: codex
     model: gpt-5
-    reasoning: high
     steps:
-      - name: coordinate
-        subagents: false
-        profile: developer
-        agent: custom:coordinator
-        model: gpt-5-mini
-        reasoning: low
-        description: Coordinate the next action locally.
+      - develop: Implement the change.
+      - name: review-loop
+        role: manager
+        loop:
+          - review: Review the diff and list the findings.
+            break: There are no findings.
+          - fix: Apply the findings.
+            role: worker
 ```
+
+`subagents` is no longer accepted: `lint` refuses it and says to write
+`role: manager` for what `subagents: false` meant.
 
 ## Manager and worker assignments
 
@@ -805,6 +814,49 @@ and states whether a preceding worker result was already saved.
 `instruction --role worker` reconstructs the same continuation or handoff from
 persisted state after a restart. Caller roles do not add stale assignment
 tokens or change the existing concurrency guarantees.
+
+### Assignment tokens
+
+In the `auto` runtime every assignment the manager hands out carries a short
+token. The bootstrap command gives it to the worker, and every command a
+worker page prints repeats it:
+
+```console
+./ww instruction TASK-7 --run 01-task --role worker --assignment 3f9a1c07
+./ww complete TASK-7 --role worker --assignment 3f9a1c07 --artifact="..." --summary-for-next-step="..."
+```
+
+`instruction`, `complete`, `loop`, `fail`, `interact`, and `dispute` with
+`--role worker` accept a call only when its token is the open assignment's,
+so a worker whose assignment ended, or that holds another assignment's token,
+cannot act. When the assignment ends, at a handoff to the manager, a return
+from a loop, or a failure, ww closes the token. A worker command after that is
+refused with "your assignment has ended", and one without a token is sent back
+to the manager. While no assignment is open, a worker's `instruction` still
+answers with the page that only sends it back.
+
+The manager needs no token, and it never has to remember one. After a context
+compaction, `instruction <task> --role manager` shows the open assignment and
+its bootstrap command with the same token, so a worker still holding it
+carries on. `next <task> --role manager --reassign` issues a new token for the
+open assignment and closes the old one, for a worker that was lost or must be
+replaced. A step the manager performs itself, `role: manager`, is an assignment
+of its own with its own token, which no worker page ever shows.
+
+Tokens guard against a confused agent, not a hostile one: a worker that runs
+the manager's commands is still not stopped. The `single` runtime, where one
+session does every step, uses no tokens.
+
+### Confirmations
+
+`next --retry`, `next --force`, `next --approve`, and `rules prune` ask the
+operator to confirm, because they can repeat an external effect, skip work, or
+approve a command that will run from then on. ww asks only at a terminal. An
+agent's shell has none, so there ww refuses at once and names `--yes`, and it
+never reads an answer from a pipe. The pages that show these choices print
+them with `--yes`, since the agent runs one only after the operator chose it;
+the effect is still printed, and the task's audit record notes whether the
+operator confirmed at a terminal or an agent did with `--yes`.
 
 ### Awaiting the operator
 
@@ -1399,9 +1451,10 @@ names the approved store check of a rule without a command of its own
 (`store_check` in `--json`), which is what a promotion would copy.
 
 In the `auto` runtime a worker that keeps asking for its page after its
-assignment ended is not given the manager's own work: for a step with
-`subagents: false` or `interactive: true`, `instruction --role worker` names
-the step as the manager's and offers no completion command.
+assignment ended is not given the manager's own work: its assignment token no
+longer opens anything (see [Assignment tokens](#assignment-tokens)), and for a
+`role: manager` or interactive step `instruction --role worker` names the step
+as the manager's and offers no completion command.
 
 ### Rules from extensions
 
@@ -1621,8 +1674,8 @@ file.
 
 The limitation to know: a delegated worker is a subagent and cannot talk to the
 operator. An interactive step is therefore always performed by the session that
-holds the conversation, the manager in the `auto` runtime, exactly as
-`subagents: false` works, and the step's profile, agent, model, and reasoning
+holds the conversation, the manager in the `auto` runtime: it is a
+`role: manager` step, and the step's profile, agent, model, and reasoning
 are ignored. For a manual-testing workflow, put `interactive: true` on the
 per-item stage: the manager presents each test case, waits for the operator's
 result, records it, ends the interaction, and completes the item.
@@ -1887,7 +1940,7 @@ workflows:
 ```
 
 Worker settings cascade from the `items` step, to `items`, to each stage. The
-step's `agent`, `model`, `reasoning`, `profile`, and `subagents` apply to
+step's `agent`, `model`, `reasoning`, `profile`, and `role` apply to
 collection and are inherited by the stages; the same keys under `items` apply
 only to the stages, and a stage's own value wins.
 
@@ -1924,7 +1977,7 @@ workspace, profile, and item context. Every stage is still completed, saved,
 and recoverable on its own, so `next`, `status`, reloads, and interrupted-hook
 recovery behave exactly as with separate assignments. Because one worker
 performs the shared stages, a stage that requests a different agent, model,
-reasoning, or profile, or sets `subagents: false`, starts a new assignment,
+reasoning, or profile, or is the manager's (`role: manager`), starts a new assignment,
 exactly as a loop body step does. The setting has no effect in
 the `single` runtime.
 
@@ -2380,11 +2433,23 @@ The selection is persisted with the run, so later or retried branch and
 worktree handlers use the same format. An unknown explicit strategy fails
 instead of silently falling back.
 
+`on_signing_failure` says what `git-commit` does when git cannot sign a
+commit, for example because the signing agent is locked while the run goes on
+unattended. `operator`, the default, stops for the operator as for any failed
+handler. `unsigned` commits once more with `commit.gpgsign=false`, records
+`signed: false` for the commit, and says so in the handler's result; any
+other commit error still stops. Set it where the unattended run happens, such
+as the machine or local settings file:
+
+```json
+{ "extensions": { "ww/git": { "on_signing_failure": "unsigned" } } }
+```
+
 #### What `ww/git` does with those settings
 
 | Handler | Settings it acts on |
 | --- | --- |
-| `git-commit` | `commit_format` |
+| `git-commit` | `commit_format`, `on_signing_failure` |
 | `start-task-branch` | `base_branches`, `use_separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
 | `return-to-base-branch` | `base_branches`, `use_separate_branch` |
 | `remove-task-worktree` | `worktrees` |
@@ -2860,11 +2925,11 @@ Which tasks concern a session:
   the tasks its own agent started, so a Claude Code session is never reminded
   about a Codex session's step.
 - A manager waiting on a worker is not reminded. On a run started with
-  `--runtime auto`, a step that may go to a worker (`subagents` not false, not
-  interactive) is delegated: the main session's stop skips it, and the worker's
+  `--runtime auto`, a step that may go to a worker (`role: worker`, the
+  default) is delegated: the main session's stop skips it, and the worker's
   own stop (`SubagentStop` in Claude Code and Codex, `subagentStop` in Cursor)
-  reminds instead. A step the manager performs itself, such as a
-  `subagents: false` step, is still reminded. Antigravity reports no worker
+  reminds instead. A step the manager performs itself, a `role: manager` or
+  interactive step, is still reminded. Antigravity reports no worker
   stop, so its manager is simply not reminded about delegated steps.
 
 ### Agents and their files

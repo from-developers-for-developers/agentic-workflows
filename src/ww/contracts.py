@@ -127,6 +127,9 @@ InstructionStatus = Literal[
 ]
 RecoveryAction = Literal["retry", "force", "approve", "approach", "pick"]
 CallerRole = Literal["manager", "worker"]
+# Who performs an agent step: the manager in its own session, or a worker it
+# delegates to. Both are also the caller roles.
+StepRole = Literal["manager", "worker"]
 # Who acts next. The operator is the human ww waits for; never a caller role.
 NextRole = Literal["manager", "worker", "operator"]
 Control = Literal["continue_worker", "handoff_manager", "blocked", "awaiting_operator"]

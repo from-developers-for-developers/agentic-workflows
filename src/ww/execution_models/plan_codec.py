@@ -20,6 +20,7 @@ from ww.contracts import (
     LoopAssignment,
     PlanItemOwner,
     PlanItemPhase,
+    StepRole,
 )
 from ww.operations import decode_operation
 from ww.plan import (
@@ -149,7 +150,10 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             raw.get("requested_reasoning", raw.get("reasoning", "auto")),
             "requested reasoning",
         ),
-        subagents=expect_bool(raw.get("subagents", True), f"{item_path}.subagents"),
+        role=cast(
+            StepRole,
+            expect_literal(raw.get("role", "worker"), StepRole, f"{item_path}.role"),
+        ),
         interactive=expect_bool(
             raw.get("interactive", False), f"{item_path}.interactive"
         ),

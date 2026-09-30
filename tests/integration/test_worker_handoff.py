@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.errors import StateError
 from ww.items import WorkItem
 from ww.output_adapters.json_adapter import JsonOutputAdapter
@@ -80,7 +81,7 @@ def test_worker_completes_full_assignment_then_hands_back(
     work = service.complete(
         "TASK-1",
         artifact="prepared",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert work.item_name == "work"
@@ -88,7 +89,7 @@ def test_worker_completes_full_assignment_then_hands_back(
     documented = service.complete(
         "TASK-1",
         artifact="implemented",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert (tmp_path / "completed-hook.txt").exists()
@@ -98,7 +99,7 @@ def test_worker_completes_full_assignment_then_hands_back(
     handoff = service.complete(
         "TASK-1",
         artifact="documented",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert handoff.item_name == "inline-command"
@@ -117,7 +118,9 @@ def test_worker_completes_full_assignment_then_hands_back(
         assert "act as the manager and do the work yourself" in rendered_handoff
 
     reloaded = WorkflowService(Storage(tmp_path))
-    status = reloaded.status("TASK-1", caller_role="worker")
+    status = reloaded.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(reloaded, "TASK-1")
+    )
     assert status.control == "handoff_manager"
     assert status.item_status == "pending"
     assert status.manager_intro is True
@@ -131,6 +134,7 @@ def test_worker_completes_full_assignment_then_hands_back(
         "TASK-1",
         artifact="verified",
         caller_role="worker",
+        assignment=assignment_token(reloaded, "TASK-1"),
         summary_for_next="Done.",
     )
     assert summary.item_name == "update-workflow-summary"
@@ -149,6 +153,7 @@ def test_worker_completes_full_assignment_then_hands_back(
         "TASK-1",
         variables=(("summary", "Implemented and verified."),),
         caller_role="worker",
+        assignment=assignment_token(reloaded, "TASK-1"),
         summary_for_next="Done.",
     )
     assert done.status == "completed"
@@ -193,7 +198,9 @@ def test_protocol_renderers_and_role_rejection_are_consistent(tmp_path: Path) ->
     service.start("task", "TASK-1", agent="codex", caller_role="manager")
     with pytest.raises(StateError, match="manager-role command"):
         service.next("TASK-1", caller_role="worker")
-    pending = service.status("TASK-1", caller_role="worker")
+    pending = service.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
     data = pending.to_dict()
     markdown = MarkdownOutputAdapter().render_instruction(pending)
     rendered_json = JsonOutputAdapter().render_instruction(pending)
@@ -232,6 +239,7 @@ workflows:
         "TASK-1",
         artifact="finished work",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert failed.status == "failed"
@@ -242,7 +250,9 @@ workflows:
     assert failed.continuation_command is None
 
     reloaded = WorkflowService(Storage(tmp_path))
-    visible = reloaded.status("TASK-1", caller_role="worker")
+    visible = reloaded.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(reloaded, "TASK-1")
+    )
     assert visible.result_saved is True
     assert visible.control == "awaiting_operator"
 
@@ -287,6 +297,7 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
         "TASK-I",
         artifact="collected",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-I"),
         summary_for_next="Done.",
     )
     assert boundary.control == "handoff_manager"
@@ -304,6 +315,7 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
         variables=(("workflow", "target"),),
         artifact="selected target",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-H"),
         summary_for_next="Done.",
     )
     assert transition.action_kind == "workflow_transition"
@@ -348,11 +360,14 @@ workflows:
             "TASK-1",
             artifact="done",
             caller_role="worker",
+            assignment=assignment_token(service, "TASK-1"),
             summary_for_next="Done.",
         )
 
     resumed = WorkflowService(Storage(tmp_path))
-    uncertain = resumed.status("TASK-1", caller_role="worker")
+    uncertain = resumed.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(resumed, "TASK-1")
+    )
     assert uncertain.control == "blocked"
     assert uncertain.next_role == "manager"
     assert uncertain.result_saved is True
@@ -407,6 +422,7 @@ workflows:
         "TASK-1",
         variables=(("note", "prepared"),),
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert active.item_name == "work"
@@ -438,6 +454,7 @@ def test_child_workflow_coordination_returns_to_manager(tmp_path: Path) -> None:
         "TASK-1",
         artifact="children collected",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert boundary.item_name == "execute"
@@ -488,7 +505,9 @@ workflows:
     service.next("TASK-1", caller_role="manager")
 
     # Every worker reads the saved requirements and the artifact contract.
-    review = service.status("TASK-1", caller_role="worker")
+    review = service.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
     assert review.task_requirements == (
         "Reimplement the parser fresh; do not reuse the old commits."
     )
@@ -505,6 +524,7 @@ workflows:
         "TASK-1",
         artifact="Clean.",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     preview = boundary.assignment_preview or {}
@@ -721,21 +741,32 @@ workflows:
         "This assignment covers, in order: `jira-in-progress`, `develop`." in rendered
     )
 
-    worker = service.status("TASK-1", caller_role="worker")
+    worker = service.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
     rendered = md.render_instruction(worker)
     assert "## Worker: perform `jira-in-progress`" in rendered
     assert "covers, in order: `jira-in-progress`, `develop`." in rendered
     assert "Build it well." in rendered
     assert worker.assignment_continues is False
 
-    develop = service.complete("TASK-1", artifact="Moved.", caller_role="worker")
+    develop = service.complete(
+        "TASK-1",
+        artifact="Moved.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+    )
     assert (develop.item_name, develop.assignment_continues) == ("develop", True)
     rendered = md.render_instruction(develop)
     assert "Same assignment continues: next item `develop`." in rendered
     assert "Do not return to the manager yet." in rendered
 
     handoff = service.complete(
-        "TASK-1", artifact="Built.", summary_for_next="Built it.", caller_role="worker"
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built it.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     assert handoff.next_role == "manager"
     assert "Stop here: do not run a manager command" in md.render_instruction(handoff)
@@ -783,6 +814,7 @@ workflows:
         artifact="Clean.",
         summary_for_next="Nothing to fix.",
         caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     md = MarkdownOutputAdapter()
 
@@ -802,13 +834,18 @@ workflows:
         "`update-workflow-summary`." in rendered
     )
 
-    worker = service.status("TASK-1", caller_role="worker")
+    worker = service.status(
+        "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
+    )
     rendered = md.render_instruction(worker)
     assert "## Worker: provide required input" in rendered
     assert '--role worker --variable commit_message="<commit_message>"' in rendered
 
     notify = service.complete(
-        "TASK-1", variables=(("commit_message", "Reviewed"),), caller_role="worker"
+        "TASK-1",
+        variables=(("commit_message", "Reviewed"),),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     assert (notify.item_name, notify.item_status) == ("notify", "in_progress")
     assert (tmp_path / "commit.txt").read_text(encoding="utf-8") == "Reviewed"

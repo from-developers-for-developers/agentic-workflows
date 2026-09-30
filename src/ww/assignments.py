@@ -127,13 +127,13 @@ def _same_worker(item: PlanItem, worker: PlanItem | None) -> bool:
 
     ``worker`` is the first agent-owned item of the assignment so far. A step
     that needs a different agent, model, reasoning, or profile, or that is
-    reserved for the manager with ``subagents: false``, starts a new
+    reserved for the manager with ``role: manager``, starts a new
     assignment, because one running worker cannot change any of them.
     """
     if item.owner != "agent":
         # Automatic work inside the span drains within the assignment.
         return True
-    if not item.subagents or (worker is not None and not worker.subagents):
+    if item.role == "manager" or (worker is not None and worker.role == "manager"):
         return False
     return worker is None or _worker_settings(worker) == _worker_settings(item)
 

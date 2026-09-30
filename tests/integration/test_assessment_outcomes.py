@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.config import load_configuration
 from ww.errors import ConfigurationError, StateError
 from ww.instructions import Instruction
@@ -108,7 +109,7 @@ def test_a_working_outcome_runs_and_the_workflow_continues(tmp_path: Path) -> No
         "TASK-1",
         artifact="Reviewed.",
         summary_for_next="Reviewed.",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
     )
     assert tests.item_name == "tests"
 
@@ -171,11 +172,19 @@ def test_a_delegating_manager_chooses_without_a_worker_preview(
     for _ in ("merge", "assess"):
         service.next("TASK-1", caller_role="manager")
         service.complete(
-            "TASK-1", artifact="Done.", summary_for_next="Done.", caller_role="worker"
+            "TASK-1",
+            artifact="Done.",
+            summary_for_next="Done.",
+            caller_role="worker",
+            assignment=assignment_token(service, "TASK-1"),
         )
 
     returned = md.render_instruction(
-        service.instruction("TASK-1", caller_role="worker")
+        service.instruction(
+            "TASK-1",
+            caller_role="worker",
+            assignment=assignment_token(service, "TASK-1"),
+        )
     )
     # The worker that assessed hands back; choosing is the manager's.
     assert "## Worker: return control to the manager" in returned

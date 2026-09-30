@@ -21,6 +21,7 @@ from ww.contracts import (
     PlanItemKind,
     PlanItemOwner,
     PlanItemPhase,
+    StepRole,
 )
 from ww.control import child_workflow, workflow_transition
 from ww.discovery import AgentDiscovery
@@ -83,6 +84,8 @@ class ExecutionHints:
     profile: str | None = None
     profile_description: str | None = None
     workdir: Workdir = "task"
+    # Who performs the steps below: inherited like the profile.
+    role: StepRole = "worker"
 
     @classmethod
     def builtin(cls, agent: str, settings: dict[str, str]) -> ExecutionHints:
@@ -109,8 +112,11 @@ class ExecutionHints:
                 profile_description = value.profile_description
         if isinstance(value, StepDefinition) and value.workdir is not None:
             workdir = value.workdir
+        role = self.role
+        if isinstance(value, StepDefinition | WorkflowDefinition) and value.role:
+            role = value.role
         return ExecutionHints(
-            agent, model, reasoning, profile, profile_description, workdir
+            agent, model, reasoning, profile, profile_description, workdir, role
         )
 
 
@@ -731,7 +737,11 @@ class WorkflowPlanCompiler:
             or (definition.workdir if definition is not None else None)
             or "task"
         )
-        local = phase == "step" and (not step.subagents or step.interactive)
+        # A hook of a step the manager performs is the manager's too.
+        role: StepRole = "manager" if hints.role == "manager" or (
+            phase == "step" and step.interactive
+        ) else "worker"
+        local = phase == "step" and role == "manager"
         if local:
             # An explicitly local step, or a conversation with the operator
             # that only the talking session can hold, has no worker shape.
@@ -765,6 +775,11 @@ class WorkflowPlanCompiler:
         ):
             raise ConfigurationError(
                 f"step {step.name!r} uses break/continue but is not agent-owned"
+            )
+        if phase == "step" and step.role is not None and owner != "agent":
+            raise ConfigurationError(
+                f"step {step.name!r} sets role, but ww runs it: role applies to "
+                "agent steps only"
             )
         if handler.save_metadata and owner != "agent":
             raise ConfigurationError(
@@ -870,7 +885,7 @@ class WorkflowPlanCompiler:
                 requested_agent=hints.agent if not local else None,
                 requested_model=hints.model if not local else None,
                 requested_reasoning=hints.reasoning if not local else None,
-                subagents=not local if phase == "step" else step.subagents,
+                role=role,
                 interactive=step.interactive and phase == "step",
                 choices=step.choices if phase == "step" else (),
                 ui=step.ui and phase == "step",

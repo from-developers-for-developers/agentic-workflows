@@ -175,8 +175,8 @@ def test_a_failed_handler_shows_the_operator_recovery_commands(tmp_path: Path) -
     rendered = MarkdownOutputAdapter().render_instruction(failed)
     assert "Do not retry on your own" in rendered
     assert "### Operator recovery" in rendered
-    assert "./ww next TASK-1 --retry --role manager" in rendered
-    assert '--force --force-reason "<reason>"' in rendered
+    assert "./ww next TASK-1 --retry --yes --role manager" in rendered
+    assert '--force --force-reason "<reason>" --yes' in rendered
     # Once the operator has fixed the cause and says so, retry re-runs it.
     (tmp_path / "ready.txt").write_text("", encoding="utf-8")
     retried = service.next(TASK, retry=True)
@@ -252,5 +252,5 @@ workflows:
     assert "the work completed so far is saved" in page
     assert "you will not pick for them" in page
     # Both routes out, with the force needing a recorded reason.
-    assert "--retry --role manager" in page
-    assert '--force --force-reason "<reason>"' in page
+    assert "--retry --yes --role manager" in page
+    assert '--force --force-reason "<reason>" --yes' in page

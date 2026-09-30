@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.assignments import assignment_at
 from ww.instructions import Instruction
 from ww.items import WorkItem
@@ -46,7 +47,7 @@ def _collect(service: WorkflowService, runtime: str = "auto") -> Instruction:
     return service.complete(
         TASK,
         artifact="collected",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, TASK),
         summary_for_next="Done.",
     )
 
@@ -61,7 +62,7 @@ def _finish_stage(service: WorkflowService, item_id: str, stage: str) -> Instruc
     return service.complete(
         TASK,
         artifact=f"{stage} done",
-        caller_role="worker",
+        caller_role="worker", assignment=assignment_token(service, TASK),
         summary_for_next="Done.",
     )
 
@@ -71,7 +72,9 @@ def _boundaries(service: WorkflowService) -> list[tuple[str, str | None, str | N
     route: list[tuple[str, str | None, str | None]] = []
     for item_id in ("c1", "c2"):
         for stage in ("analyze", "fix"):
-            current = service.status(TASK, caller_role="worker")
+            current = service.status(
+                TASK, caller_role="worker", assignment=assignment_token(service, TASK)
+            )
             if current.item_status != "in_progress":
                 current = service.next(TASK, caller_role="manager")
             assert (current.item_name, current.item_status) == (stage, "in_progress")
@@ -140,7 +143,9 @@ def test_span_survives_a_reload_between_stages(tmp_path: Path) -> None:
     _finish_stage(service, "c1", "analyze")
 
     reloaded = WorkflowService(Storage(tmp_path))
-    current = reloaded.status(TASK, caller_role="worker")
+    current = reloaded.status(
+        TASK, caller_role="worker", assignment=assignment_token(reloaded, TASK)
+    )
     assert (current.item_name, current.item_status, current.control) == (
         "fix",
         "in_progress",
@@ -175,11 +180,14 @@ def test_interrupted_stage_hook_recovers_inside_the_span(
                 TASK,
                 artifact="analyze done",
                 caller_role="worker",
+                assignment=assignment_token(service, TASK),
                 summary_for_next="Done.",
             )
 
     resumed = WorkflowService(Storage(tmp_path))
-    uncertain = resumed.status(TASK, caller_role="worker")
+    uncertain = resumed.status(
+        TASK, caller_role="worker", assignment=assignment_token(resumed, TASK)
+    )
     assert (uncertain.control, uncertain.next_role) == ("blocked", "manager")
     assert resumed.next(TASK, caller_role="manager").status == "interrupted"
 
@@ -207,7 +215,11 @@ def test_span_instructions_describe_scope_then_stay_compact(tmp_path: Path) -> N
     )
 
     service.next(TASK, caller_role="manager")
-    first = md.render_instruction(service.status(TASK, caller_role="worker"))
+    first = md.render_instruction(
+        service.status(
+            TASK, caller_role="worker", assignment=assignment_token(service, TASK)
+        )
+    )
     assert "### Assignment scope" in first
     assert "Do not start a later stage early." in first
 
@@ -216,6 +228,7 @@ def test_span_instructions_describe_scope_then_stay_compact(tmp_path: Path) -> N
         TASK,
         artifact="analyze done",
         caller_role="worker",
+        assignment=assignment_token(service, TASK),
         summary_for_next="Done.",
     )
     assert compact.continues_assignment
@@ -235,7 +248,11 @@ def test_span_instructions_describe_scope_then_stay_compact(tmp_path: Path) -> N
 
     # A fresh look at the same stage, for example after losing context,
     # gets the full instruction again.
-    full = md.render_instruction(service.status(TASK, caller_role="worker"))
+    full = md.render_instruction(
+        service.status(
+            TASK, caller_role="worker", assignment=assignment_token(service, TASK)
+        )
+    )
     assert "You are the worker for this assignment" in full
 
 
@@ -244,7 +261,9 @@ def test_all_items_scope_names_every_item(tmp_path: Path) -> None:
     _collect(service)
     service.next(TASK, caller_role="manager")
 
-    first = service.status(TASK, caller_role="worker")
+    first = service.status(
+        TASK, caller_role="worker", assignment=assignment_token(service, TASK)
+    )
 
     assert first.assignment_scope == {
         "item_assignment": "all_items",

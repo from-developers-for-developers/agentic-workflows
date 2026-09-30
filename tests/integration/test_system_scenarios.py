@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.config import parse_yaml_text
 from ww.extensions import ExtensionRegistry, ExtensionStore
 from ww.instructions import Instruction
@@ -264,13 +265,16 @@ def run_feature(project: Project) -> None:
     develop = service.next(task, caller_role="manager")
     assert develop.action_text == "Implement the greeting."
     assert "You are the worker for this assignment" in project.render(
-        service.status(task, caller_role="worker")
+        service.status(
+            task, caller_role="worker", assignment=assignment_token(service, task)
+        )
     )
     project.edit("greeting.txt", "hello\n")
     boundary = service.complete(
         task,
         artifact="Implemented.",
         caller_role="worker",
+        assignment=assignment_token(service, task),
         summary_for_next="Done.",
     )
     assert (boundary.item_name, boundary.next_role) == ("review", "manager")
@@ -294,6 +298,7 @@ def run_feature(project: Project) -> None:
         task,
         artifact="Collected.",
         caller_role="worker",
+        assignment=assignment_token(service, task),
         summary_for_next="Done.",
     )
     assert boundary.assignment_preview is not None
@@ -314,6 +319,7 @@ def run_feature(project: Project) -> None:
             task,
             artifact="Analyzed.",
             caller_role="worker",
+            assignment=assignment_token(service, task),
             summary_for_next="Done.",
         )
         assert (fix.item_name, fix.continues_assignment) == ("fix", True)
@@ -323,6 +329,7 @@ def run_feature(project: Project) -> None:
             task,
             artifact="Fixed.",
             caller_role="worker",
+            assignment=assignment_token(service, task),
             summary_for_next="Done.",
         )
         assert (reply.item_name, reply.continues_assignment) == ("reply", True)
@@ -331,6 +338,7 @@ def run_feature(project: Project) -> None:
             task,
             artifact="Reported.",
             caller_role="worker",
+            assignment=assignment_token(service, task),
             summary_for_next="Done.",
         )
         assert after.next_role == "manager"
@@ -341,12 +349,15 @@ def run_feature(project: Project) -> None:
     assert first.item_name == "check"
     assert first.loop_break_prompt == "Nothing is left to polish."
     assert "./ww loop TASK-1 --break --role worker" in project.render(
-        service.status(task, caller_role="worker")
+        service.status(
+            task, caller_role="worker", assignment=assignment_token(service, task)
+        )
     )
     repeat = service.complete(
         task,
         artifact="Checked once.",
         caller_role="worker",
+        assignment=assignment_token(service, task),
         summary_for_next="Done.",
     )
     assert (repeat.item_name, repeat.control) == ("polish", "blocked")
@@ -356,6 +367,7 @@ def run_feature(project: Project) -> None:
         task,
         artifact="Nothing left.",
         caller_role="worker",
+        assignment=assignment_token(service, task),
         summary_for_next="Done.",
     )
     assert commit.item_name == "git-commit"
@@ -381,6 +393,7 @@ def run_feature(project: Project) -> None:
         task,
         variables=(("summary", "Greeting added."),),
         caller_role="worker",
+        assignment=assignment_token(service, task),
         summary_for_next="Done.",
     )
     assert done.status == "completed"

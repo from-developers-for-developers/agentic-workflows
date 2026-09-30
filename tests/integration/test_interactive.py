@@ -61,10 +61,10 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
     md = MarkdownOutputAdapter()
 
     discuss = service.next("TASK-1", caller_role="manager")
-    assert (discuss.item_name, discuss.interactive, discuss.subagents) == (
+    assert (discuss.item_name, discuss.interactive, discuss.role) == (
         "discuss",
         True,
-        False,
+        "manager",
     )
     assert discuss.requested_profile is None
     rendered = md.render_instruction(discuss)

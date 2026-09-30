@@ -17,6 +17,7 @@ from ww.contracts import (
     PlanItemKind,
     PlanItemOwner,
     PlanItemPhase,
+    StepRole,
 )
 from ww.operations import LoopBoundary, PlanOperation, encode_operation
 from ww.validation import is_positive_int
@@ -168,9 +169,10 @@ class PlanItem:
     requested_agent: str | None = None
     requested_model: str | None = None
     requested_reasoning: str | None = None
-    subagents: bool = True
+    # Who performs the item: the manager in its own session, or a worker.
+    role: StepRole = "worker"
     # A conversation with the operator; performed by the session that can
-    # talk to them, so ``subagents`` is false as well.
+    # talk to them, so ``role`` is ``manager`` as well.
     interactive: bool = False
     choices: tuple[ChoiceDefinition, ...] = ()
     # A per-item stage the operator answers on the operator page.
@@ -423,7 +425,7 @@ class PlanItem:
             "requested_agent": self.requested_agent,
             "requested_model": self.requested_model,
             "requested_reasoning": self.requested_reasoning,
-            "subagents": self.subagents,
+            "role": self.role,
             "interactive": self.interactive,
             "choices": [choice.to_dict() for choice in self.choices],
             "ui": self.ui,

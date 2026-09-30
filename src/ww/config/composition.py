@@ -93,7 +93,8 @@ class ComposedConfiguration:
     overrides: tuple[Override, ...] = ()
     sources: tuple[str, ...] = ()
     ignored: tuple[str, ...] = ()
-    # One notice per absolute rule path, in the files folded in.
+    # One notice per absolute rule path, and per manager step that also asks
+    # for worker settings, in the files folded in.
     rule_notices: tuple[str, ...] = ()
 
     @property
@@ -141,7 +142,10 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
                 text,
                 raw,
                 sources=(label,),
-                rule_notices=_absolute_rule_notices(raw, label),
+                rule_notices=(
+                    *_absolute_rule_notices(raw, label),
+                    *_manager_setting_notices(raw, label),
+                ),
             )
     seen = {level.path.resolve() for level in present}
     levels = [_read_level(level, base, seen) for level in present]
@@ -160,6 +164,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
     notices: list[str] = []
     for file_label, raw, file in applied:
         notices.extend(_absolute_rule_notices(raw, file_label))
+        notices.extend(_manager_setting_notices(raw, file_label))
         composer.apply(
             _rebase_rule_paths(raw, file.parent, base, group_names), file_label
         )
@@ -404,6 +409,40 @@ def _absolute_rule_notices(raw: dict[str, Any], label: str) -> tuple[str, ...]:
         for item in items
         if isinstance(item, str) and Path(item).is_absolute() and Path(item).exists()
     )
+
+
+_WORKER_SETTINGS = ("agent", "model", "reasoning", "profile")
+
+
+def _manager_setting_notices(raw: dict[str, Any], label: str) -> tuple[str, ...]:
+    """A step or workflow with ``role: manager`` that also asks for a worker.
+
+    The manager is whichever session runs the task, so those settings have no
+    effect there; they are kept for the steps below that are delegated.
+    """
+    found: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if value.get("role") == "manager":
+                settings = [key for key in _WORKER_SETTINGS if key in value]
+                if settings:
+                    name = _entry_name(value) or "a step"
+                    found.append(
+                        f"{name} in {label} has role: manager, so "
+                        + ", ".join(settings)
+                        + " has no effect on it; only nested steps that set "
+                        "role: worker use it."
+                    )
+            for nested in value.values():
+                walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    walk(raw.get("workflows"))
+    walk(raw.get("handlers"))
+    return tuple(found)
 
 
 def _rebase_rule_paths(

@@ -35,6 +35,9 @@ def _log_record(
         "error": "protected runtime detail; see task state" if error else None,
         "error_code": "command_failed" if error else None,
         "ww_version": __version__,
+        # Who confirmed a gated choice: the operator at a terminal, or an
+        # agent carrying out the operator's decision with --yes.
+        "confirmation": getattr(args, "confirmation", None),
     }
 
 
@@ -75,6 +78,8 @@ def _invocation(args: argparse.Namespace) -> str:
         )
     if getattr(args, "role", None) is not None:
         values.extend(["--role", args.role])
+    if getattr(args, "assignment", None) is not None:
+        values.extend(["--assignment", args.assignment])
     if args.command == "plan":
         values.extend(["--workflow", args.workflow, "--agent", args.agent])
         if args.task_id:
@@ -89,6 +94,12 @@ def _invocation(args: argparse.Namespace) -> str:
             values.append("--retry")
         if args.force_reason is not None:
             values.extend(["--force-reason", "<redacted>"])
+        for key in args.approve:
+            values.extend(["--approve", key])
+        if args.reassign:
+            values.append("--reassign")
+        if args.yes:
+            values.append("--yes")
     if args.command in {"status", "instruction"} and args.run_id:
         values.extend(["--run", args.run_id])
     if args.command == "metadata" and args.project:

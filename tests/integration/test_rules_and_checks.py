@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import assignment_token
 from ww.cli import main
 from ww.execution_models import ExecutionState, PlanItemExecution, TaskRunAggregate
 from ww.instructions import Instruction
@@ -411,7 +412,11 @@ def test_the_auto_runtime_returns_the_fix_page_to_the_worker(tmp_path: Path) -> 
     _violate(root)
 
     rejected = service.complete(
-        "TASK-1", artifact="Try.", summary_for_next="Done.", caller_role="worker"
+        "TASK-1",
+        artifact="Try.",
+        summary_for_next="Done.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
 
     assert rejected.fix_required is not None
