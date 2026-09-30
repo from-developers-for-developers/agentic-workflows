@@ -11,10 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
-- One filter shape: hook and rule group `workflows` / `steps` each take `"*"` for all or a list of names, and
-  `rules add` / `rules filter` accept `--workflows '*'` / `--steps '*'`. A bare name (`workflows: task`) or `"*"`
-  mixed with names is now an error; `[]` keeps its meaning (all on a hook, nowhere on a rule group). `rules --json`
-  shows a group filter that admits all as `"*"` instead of `null`.
+- One filter shape: hook and rule group `workflows` / `steps` take `"*"` or a list of names; a bare name or `"*"`
+  mixed with names is now an error, and `rules add` / `rules filter` accept `'*'`. `8539f30`
 - One task whose state ww cannot read no longer breaks `discover`, the agent hooks, `lookup` or `interrupted`;
   `discover` lists it under "Unreadable tasks". `a85b2a2`
 - Owned assignments: in the `auto` runtime each assignment carries a token that the worker's commands must present
