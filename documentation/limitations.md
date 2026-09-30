@@ -93,10 +93,6 @@ fails loudly rather than hanging.
   Collected items belong to the workflow run, and ww expands every per-item
   stage in one place when collection completes. An `items` step cannot also
   declare `steps`, `loop`, an item operation marker, or child tasks.
-- An interactive step is always performed by the session that holds the
-  conversation with the operator — the manager in the `auto` runtime. A
-  delegated worker is a subagent and cannot talk to the operator, so an
-  interactive step's `profile`, `agent`, `model`, and `reasoning` are ignored.
 - Each started run executes from its saved plan snapshot, so edits to
   `ww-agentic-workflows.yaml` cannot alter work already in progress. To pick up a
   configuration change, start a new task.
@@ -106,6 +102,29 @@ fails loudly rather than hanging.
 - The operator page is a local page served only for as long as a wait is in
   progress. There is no persistent web UI, no multi-user access control, and
   no remote operator.
+
+## Agent limitations
+
+Some boundaries come from the agent, not from ww. The detail behind the hook
+gaps below lives in [agent-hooks.md](agent-hooks.md); this section only
+collects the limitations, so it is not repeated there.
+
+- An interactive step is always performed by the session that holds the
+  conversation with the operator — the manager in the `auto` runtime. A
+  delegated worker is a subagent and cannot talk to the operator, so an
+  interactive step's `profile`, `agent`, `model`, and `reasoning` are ignored.
+- Nested subagents: a delegated worker is itself a subagent. Whether it can
+  spawn further subagents of its own varies by agent — Claude Code, for
+  one, may not let it — and ww does not verify or enforce this; check the
+  agent's own documentation before relying on nested delegation.
+  `subagents: false` is likewise only an instruction on the step's page
+  today, not a hard block: ww has no pre-spawn hook yet.
+- Per-agent hook gaps: Antigravity has no session-start event and never
+  reports a worker's own stop, so its manager is never reminded about a
+  delegated step; Codex only loads project hooks once `.codex/` is
+  trusted; only Claude Code keeps a hooks file out of version control. See
+  the per-agent table in
+  [agent-hooks.md](agent-hooks.md#agents-and-their-files).
 
 ## Reporting a gap
 

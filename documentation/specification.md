@@ -887,7 +887,7 @@ assert: [empty]
 ## Hooks
 
 A hooks mapping (workflow hooks; the agent's own hooks are `ww hook`, see
-features.md) accepts these lifecycle phases, each containing a list:
+agent-hooks.md) accepts these lifecycle phases, each containing a list:
 
 - `before_start_workflow`
 - `before_start` (the former `before_in_progress` is rejected naming it)

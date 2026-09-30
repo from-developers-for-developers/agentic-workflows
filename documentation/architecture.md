@@ -1435,6 +1435,10 @@ the operator left, and only the operator's own words lift it.
 
 ## Agent hooks
 
+See [documentation/agent-hooks.md](agent-hooks.md) for the user-facing
+behaviour (events, per-agent table, install/uninstall/show, interrupted
+tasks); this section is the internal design behind it.
+
 Agent hooks exist to carry state the static instructions cannot: which task
 is unfinished when a session starts or compacts, and whether it is ending with
 an agent-owned step still open. Every decision lives in ww. `ww.open_work`
