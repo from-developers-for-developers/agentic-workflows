@@ -1097,20 +1097,18 @@ handlers:
     prompt: true
 workflows:
   - name: chooser
-    handoff: true
-    hooks:
-      after_complete:
-        - steps: [decide]
-          workflow: "{{workflow}}"
     steps:
       - name: decide
         provide:
           - name: workflow
+        hooks:
+          after_complete:
+            - workflow: "{{workflow}}"
 """,
     )
 
     configuration = load_configuration(path)
-    transition = configuration.workflows[0].hooks[0].handler
+    transition = configuration.workflows[0].steps[0].hooks[0].handler
     assert transition.operation is not None
     assert transition.operation.target == "{{workflow}}"
     assert configuration.global_hooks[0].workflows.names == ("chooser",)
@@ -1408,7 +1406,6 @@ def test_transition_step_carries_only_its_target(tmp_path: Path) -> None:
         tmp_path / "ww-agentic-workflows.yaml",
         """workflows:
   - name: choose
-    handoff: true
     steps:
       - select: Hand off.
         workflow: target
@@ -1426,24 +1423,42 @@ def test_transition_step_carries_only_its_target(tmp_path: Path) -> None:
     ("workflow", "message"),
     [
         (
-            "  - name: choose\n    steps:\n      - go: ~\n        workflow: target\n",
-            "must declare handoff: true",
-        ),
-        (
-            "  - name: choose\n    handoff: true\n    steps:\n"
+            "  - name: choose\n    steps:\n"
             "      - go: ~\n        workflow: target\n      - after: Never.\n",
             "must place its workflow transition step 'go' last",
         ),
         (
-            "  - name: choose\n    handoff: true\n    steps:\n"
+            "  - name: choose\n    steps:\n"
             "      - go: ~\n        workflow: target\n"
             "      - again: ~\n        workflow: target\n",
             "more than one workflow transition",
         ),
         (
+            "  - name: choose\n    steps:\n      - group: Group.\n        steps:\n"
+            "          - go: ~\n            workflow: target\n",
+            "must place its workflow transition step 'go' last",
+        ),
+        (
             "  - name: choose\n    steps:\n      - pick: Pick.\n        hooks:\n"
-            "          after_complete:\n            - workflow: target\n",
-            "must declare handoff: true",
+            "          after_complete:\n            - workflow: target\n"
+            "      - after: Never.\n",
+            "transition hook in the after_complete hooks of its last step 'after'",
+        ),
+        (
+            "  - name: choose\n    steps:\n      - pick: Pick.\n        hooks:\n"
+            "          before_complete:\n            - workflow: target\n",
+            "transition hook in the after_complete hooks of its last step 'pick'",
+        ),
+        (
+            "  - name: choose\n    steps:\n      - pick: Pick.\n        hooks:\n"
+            "          after_complete:\n            - workflow: target\n"
+            "            - handlers:\n                - note: Too late.\n",
+            "handoff workflow 'choose' must end with a workflow transition",
+        ),
+        (
+            "  - name: choose\n    hooks:\n      after_complete:\n"
+            "        - workflow: target\n    steps:\n      - pick: Pick.\n",
+            "is a workflow transition at workflow scope",
         ),
     ],
 )
@@ -1457,6 +1472,68 @@ def test_misplaced_transitions_are_rejected_when_loading(
         + "  - name: target\n    steps:\n      - work: Work.\n",
     )
     with pytest.raises(ConfigurationError, match=message):
+        load_configuration(path)
+
+
+def test_a_global_transition_hook_is_rejected(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        """hooks:
+  after_complete:
+    - workflows: [choose]
+      workflow: target
+workflows:
+  - name: choose
+    steps:
+      - pick: Pick.
+  - name: target
+    steps:
+      - work: Work.
+""",
+    )
+    with pytest.raises(ConfigurationError, match="transition at global scope"):
+        load_configuration(path)
+
+
+def test_a_global_hook_after_a_transition_step_is_rejected(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        """hooks:
+  after_complete:
+    - handlers:
+        - note: Note it.
+workflows:
+  - name: choose
+    steps:
+      - go: ~
+        workflow: target
+  - name: target
+    steps:
+      - work: Work.
+""",
+    )
+    with pytest.raises(ConfigurationError, match="must end with a workflow transition"):
+        load_configuration(path)
+
+
+def test_the_removed_handoff_key_names_its_replacement(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        """workflows:
+  - name: choose
+    handoff: true
+    steps:
+      - go: ~
+        workflow: target
+  - name: target
+    steps:
+      - work: Work.
+""",
+    )
+    with pytest.raises(
+        ConfigurationError,
+        match=r"workflows\[0\]\.handoff was removed: a workflow transition",
+    ):
         load_configuration(path)
 
 

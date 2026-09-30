@@ -1252,8 +1252,8 @@ on its own but to ask the operator, through its choice menu, whether to start
 `merge-to-dev` on the same task, and shows the `start` command to run if they
 agree. Nothing starts without that answer. An inheriting workflow keeps the
 recommendation unless it sets its own, or `recommended_next_workflow: ~` to
-clear it. A `handoff` workflow already starts its successor and cannot
-recommend one.
+clear it. A handoff workflow (one with a workflow transition) already starts
+its successor and cannot recommend one.
 
 ## Rules and checks
 
@@ -2383,15 +2383,15 @@ immediate `parent` recorded in JSON and shown in Markdown. Parent steps are
 stateful grouping boundaries: they become in-progress with their first child and
 complete when every child and parent completion hook completes.
 
-Use `handoff: true` on a workflow such as `decide-on-workflow` when its terminal
-workflow transition starts a successor and never returns. The transition is a
-step with `workflow` beside its name, usually interpolating a value an earlier
-step provided; the same key on an `after_complete` hook of the last step is
+A workflow such as `decide-on-workflow` hands off when it ends with a workflow
+transition that starts a successor and never returns. The transition itself
+makes it a handoff workflow; there is no flag to set. The transition is a step
+with `workflow` beside its name, usually interpolating a value an earlier step
+provided; the same key as the last `after_complete` hook of the last step is
 equivalent:
 
 ```yaml
 - name: decide-on-workflow
-  handoff: true
   steps:
     - classify: Decide which workflow fits this request.
       artifact: false
@@ -2401,9 +2401,13 @@ equivalent:
       workflow: "{{workflow}}"
 ```
 
-Loading the configuration rejects a transition anywhere but last, more than one
-transition, or a transition in a workflow without `handoff: true`. The plan
-marks the workflow as a handoff. Execution
+Loading the configuration rejects more than one transition and a transition
+anywhere but last: a transition step that is not the last top-level step, or
+that a completion hook would follow; a transition hook on another step, in
+another phase, or followed by another `after_complete` hook; and a transition
+hook at global or workflow scope. The removed `handoff: true` key is rejected
+with a message naming the transition as its replacement. The plan marks the
+workflow as a handoff. Execution
 completes the selection workflow's run, records
 `<original-workflow>=<next-workflow>` in authoritative task state, and starts the
 successor as the task's next numbered run — so `ww instruction <task>` lists both,

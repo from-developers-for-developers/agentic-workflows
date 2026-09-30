@@ -249,7 +249,6 @@ hooks:
       name: shared-skill
 workflows:
   - name: task
-    handoff: true
     hooks:
       before_in_progress:
         - steps: [develop]
@@ -503,7 +502,6 @@ def test_validates_interpolation_data_flow_and_supports_nested_steps(
     path.write_text(
         """workflows:
   - name: task
-    handoff: true
     steps:
       - name: setup
         hooks:
@@ -824,7 +822,7 @@ workflows:
     ]
 
 
-def test_handoff_requires_and_marks_a_terminal_transition(tmp_path: Path) -> None:
+def test_a_transition_makes_a_handoff_workflow_ending_with_it(tmp_path: Path) -> None:
     path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """handlers:
@@ -832,7 +830,6 @@ def test_handoff_requires_and_marks_a_terminal_transition(tmp_path: Path) -> Non
     prompt: true
 workflows:
   - name: decide
-    handoff: true
     hooks:
       before_complete_workflow:
         - name: finalize
@@ -856,17 +853,6 @@ workflows:
     assert plan.items[-1].kind == "workflow_transition"
     assert "**Handoff workflow:**" in render_plan(plan, False)
 
-    path.write_text(
-        """workflows:
-  - name: invalid
-    handoff: true
-    steps:
-      - name: choose
-""",
-        encoding="utf-8",
-    )
-    with pytest.raises(ConfigurationError, match="must end with a workflow transition"):
-        compile_workflow_plan(load_configuration(path), tmp_path, "invalid", "codex")
 
 
 def test_workflow_boundary_hooks_run_once_in_scope_order(tmp_path: Path) -> None:
@@ -1122,7 +1108,6 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
     path.write_text(
         """workflows:
   - name: choose
-    handoff: true
     steps:
       - decide: Decide where to go.
         artifact: false
@@ -1184,7 +1169,6 @@ def test_handoff_hook_is_not_replaced_by_a_handler_named_start_workflow(
     description: An unrelated project handler sharing the handoff name.
 workflows:
   - name: chooser
-    handoff: true
     steps:
       - name: pick
         provide:

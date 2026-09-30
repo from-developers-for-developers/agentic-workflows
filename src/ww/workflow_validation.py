@@ -24,6 +24,7 @@ from ww.workflow_config import (
     StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
+    step_tree,
 )
 
 
@@ -106,7 +107,7 @@ def validate_configuration(
             )
         _validate_steps(workflow.name, workflow.steps, top_level=True)
         _validate_item_flows(workflow.name, workflow.steps)
-        _validate_transitions(workflow)
+        _validate_transitions(workflow, normalized.global_hooks)
         _validate_hooks(
             workflow.hooks,
             {INIT_STEP_NAME, *_step_filter_references(workflow.steps)},
@@ -240,46 +241,77 @@ def _validate_steps(
         prior[step.name] = step
 
 
-def _validate_transitions(workflow: WorkflowDefinition) -> None:
-    """A transition ends a handoff workflow; it is its last step or a hook there.
+def _validate_transitions(
+    workflow: WorkflowDefinition, global_hooks: tuple[HookDefinition, ...]
+) -> None:
+    """A transition makes a handoff workflow and must be the last thing it runs.
 
     A task hands off once and a transition never returns, so anything after it
-    could not run.  Rejecting misplaced transitions here turns a run-time
-    surprise into a configuration error.
+    could not run.  The transition is either the last top-level step or the
+    last ``after_complete`` hook of that step; rejecting any other placement
+    here turns a run-time surprise into a configuration error.
     """
-    steps = workflow.steps
+    for hook in (*global_hooks, *workflow.hooks):
+        if _is_transition_hook(hook):
+            raise ConfigurationError(
+                f"{hook.path or 'hook'} is a workflow transition at "
+                f"{hook.scope} scope; a transition hook belongs on the "
+                "after_complete hooks of a workflow's last step"
+            )
+    steps = tuple(step_tree(workflow.steps))
     transitions = [
-        step
-        for step in _walk_steps(steps)
-        if isinstance(step.operation, WorkflowHandoff)
+        step for step in steps if isinstance(step.operation, WorkflowHandoff)
     ]
     hooked = [
-        hook
-        for step in _walk_steps(steps)
+        (step, hook)
+        for step in steps
         for hook in step.hooks
-        if isinstance(hook.handler.operation, WorkflowHandoff)
-    ] + [
-        hook
-        for hook in workflow.hooks
-        if isinstance(hook.handler.operation, WorkflowHandoff)
+        if _is_transition_hook(hook)
     ]
     if not transitions and not hooked:
         return
-    if not workflow.handoff:
-        raise ConfigurationError(
-            f"workflow {workflow.name!r} uses a workflow transition; a workflow "
-            "that hands off must declare handoff: true"
-        )
     if len(transitions) + len(hooked) > 1:
         raise ConfigurationError(
             f"workflow {workflow.name!r} has more than one workflow transition; "
             "a task hands off once, so choose the target dynamically instead"
         )
-    if transitions and (not steps or steps[-1] is not transitions[0]):
+    last = workflow.steps[-1]
+    if transitions and transitions[0] is not last:
         raise ConfigurationError(
             f"workflow {workflow.name!r} must place its workflow transition "
             f"step {transitions[0].name!r} last; nothing after a handoff runs"
         )
+    if hooked:
+        owner, hook = hooked[0]
+        if owner is not last or hook.phase != "after_complete":
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} must place its workflow transition "
+                f"hook in the after_complete hooks of its last step "
+                f"{last.name!r}; nothing after a handoff runs"
+            )
+        following = [
+            later
+            for later in owner.hooks[owner.hooks.index(hook) + 1 :]
+            if later.phase == "after_complete"
+        ]
+    else:
+        # Every completion hook of the transition step runs after it.
+        paths = frozenset(_logical_step_paths(workflow.steps))
+        following = [
+            later
+            for later in (*global_hooks, *workflow.hooks, *last.hooks)
+            if later.phase in {"before_complete", "after_complete"}
+            and later.applies_to(workflow.name, last.name, last.name, paths)
+        ]
+    if following:
+        raise ConfigurationError(
+            f"handoff workflow {workflow.name!r} must end with a workflow "
+            f"transition; {following[0].path or 'a hook'} would run after it"
+        )
+
+
+def _is_transition_hook(hook: HookDefinition) -> bool:
+    return isinstance(hook.handler.operation, WorkflowHandoff)
 
 
 def _item_steps(step: StepDefinition) -> tuple[StepDefinition, ...]:
@@ -462,7 +494,7 @@ def _validate_recommendations(configuration: WorkflowConfiguration) -> None:
                 f"workflow {workflow.name!r} recommends unknown workflow "
                 f"{recommended!r}"
             )
-        if workflow.handoff:
+        if workflow.hands_off:
             raise ConfigurationError(
                 f"workflow {workflow.name!r} hands off at its end and cannot "
                 "also recommend a next workflow"

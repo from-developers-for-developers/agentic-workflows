@@ -132,21 +132,35 @@ def test_a_recommendation_is_inherited_unless_cleared(tmp_path: Path) -> None:
     assert plan.to_dict()["recommended_next_workflow"] == "merge"
 
 
-@pytest.mark.parametrize(
-    ("setting", "message"),
-    [
-        ("recommended_next_workflow: nowhere", "recommends unknown workflow"),
-        (
-            "recommended_next_workflow: hotfix\n    handoff: true",
-            "cannot also recommend",
-        ),
-    ],
-)
-def test_an_invalid_recommendation_is_rejected(
-    tmp_path: Path, setting: str, message: str
-) -> None:
-    with pytest.raises(ConfigurationError, match=message):
+def test_an_unknown_recommendation_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="recommends unknown workflow"):
         _load(
             tmp_path,
-            HOTFIX.replace("    restartable: true\n", f"    {setting}\n"),
+            HOTFIX.replace(
+                "    restartable: true\n", "    recommended_next_workflow: nowhere\n"
+            ),
         )
+
+
+def test_an_heir_of_a_handoff_workflow_hands_off(tmp_path: Path) -> None:
+    text = """workflows:
+  - name: choose
+    steps:
+      - name: pick
+        provide:
+          - name: workflow
+        hooks:
+          after_complete:
+            - workflow: "{{workflow}}"
+  - target: Work.
+    steps:
+      - work: Work.
+  - name: again
+    inherit: choose
+"""
+    configuration = _load(tmp_path, text)
+    assert configuration.workflows_by_name["again"].hands_off
+    assert not configuration.workflows_by_name["target"].hands_off
+
+    with pytest.raises(ConfigurationError, match="cannot also recommend"):
+        _load(tmp_path, text + "    recommended_next_workflow: target\n")

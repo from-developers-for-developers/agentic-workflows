@@ -277,9 +277,10 @@ class WorkflowPlanCompiler:
             start_values,
             parent_hints=workflow_hints,
         )
+        # Validation leaves a handoff workflow's transition as its last item.
         transition = (
             items.pop()
-            if workflow.handoff and items and workflow_transition(items[-1]) is not None
+            if workflow.hands_off and workflow_transition(items[-1]) is not None
             else None
         )
         terminal_step = effective_steps[-1]
@@ -296,7 +297,7 @@ class WorkflowPlanCompiler:
         )
         if transition is not None:
             items.append(transition)
-        if not workflow.handoff:
+        if not workflow.hands_off:
             self._append_handler(
                 items,
                 workflow,
@@ -332,11 +333,6 @@ class WorkflowPlanCompiler:
                 ),
                 annotations=step_annotations(terminal_step),
             )
-        if workflow.handoff and (not items or workflow_transition(items[-1]) is None):
-            raise ConfigurationError(
-                f"handoff workflow {workflow.name!r} must end with a "
-                "workflow transition"
-            )
         items = self._mark_child_identity(items)
         plan = WorkflowPlan(
             workflow=workflow.name,
@@ -344,7 +340,7 @@ class WorkflowPlanCompiler:
             agent=self.agent,
             task_id=self.task_id,
             modes=selected,
-            handoff=workflow.handoff,
+            handoff=workflow.hands_off,
             items=number_step_paths(tuple(items)),
             documents=self.configuration.documents,
             recommended_next_workflow=workflow.recommended_next_workflow,

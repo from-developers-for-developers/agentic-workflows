@@ -189,11 +189,11 @@ Each item in `workflows` accepts:
 | `profile` | profile value | no | Default agent profile. |
 | `role` | `manager` or `worker` | no | The role every step inherits unless it or an enclosing step sets its own; see the step key. |
 | `subagents` | boolean | no | `false`: no step's performer spawns subagents, unless a step sets `true`; see the step key. |
-| `handoff` | boolean | no | If `true`, the workflow must end with its single workflow transition; a task hands off at most once, and a transition never returns. |
+| `handoff` | — | — | Removed; rejected with a message. A workflow transition (`workflow` on the last step) makes a handoff workflow; see the step key `workflow`. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww-agentic-workflows.json`, and the flag outranks it. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
-| `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid together with `handoff`. |
+| `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a workflow transition). |
 
 Execution settings inherit from workflow to enclosing steps to the current
 step. Hooks then apply the referenced root handler and the invocation override.
@@ -322,7 +322,7 @@ A step accepts every [handler key](#handlers), plus:
 | `artifact` | boolean | Whether agent completion requires an artifact; default `true`. |
 | `depends_on` | name | Earlier artifact-producing step whose artifact is supplied to this step: an earlier sibling, or an earlier step of an enclosing level, the nearest one first. Inside assessment outcomes the assessment itself is eligible, and inside per-item stages the `items` step; an enclosing loop or plain group is not. |
 | `items` | `null`, string, or mapping | Collects work items, then runs per-item stages for each; see [Items](#items). |
-| `workflow` | workflow name or `{{variable}}` | Ends a `handoff: true` workflow by starting that workflow as the task's next run. Valid only on the last step, with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). |
+| `workflow` | workflow name or `{{variable}}` | Makes the workflow a handoff workflow and ends it by starting that workflow as the task's next run. A workflow has at most one transition, and nothing may follow it: valid only on the last top-level step (with no completion hook applying to it), with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). |
 | `process_item` | `null` | Marks the step as updating processed item data. |
 | `resolve_item` | `null` | Marks the step as resolving an item. |
 | `report_item` | `null` | Marks the step as reporting an item. |
@@ -816,12 +816,19 @@ hooks:
 A `handlers` group cannot contain handler action keys at its own level; entries
 are mappings and the list cannot be empty. A singular hook can instead declare
 a workflow transition with `workflow` plus optional `description`, `agent`,
-`model`, and `reasoning`:
+`model`, and `reasoning`. A transition hook belongs only on the
+`after_complete` hooks of a workflow's last top-level step, as their last
+entry, since nothing runs after a handoff; at global or workflow scope it is
+rejected:
 
 ```yaml
-hooks:
-  after_complete:
-    - workflow: "{{next_workflow}}"
+steps:
+  - choose: Choose the next workflow.
+    provide:
+      - next_workflow: The workflow to run next.
+    hooks:
+      after_complete:
+        - workflow: "{{next_workflow}}"
 ```
 
 ### Workflow and step filters

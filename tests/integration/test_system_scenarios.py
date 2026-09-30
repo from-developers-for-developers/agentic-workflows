@@ -77,7 +77,6 @@ workflows:
             break: Nothing is left to polish.
 
   - name: triage
-    handoff: true
     steps:
       - choose: Choose the follow-up workflow.
         provide:

@@ -274,7 +274,6 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
                   - command:
                       argv: [touch, materialized-preparation.txt]
   - name: choose
-    handoff: true
     steps:
       - name: select
         provide:
