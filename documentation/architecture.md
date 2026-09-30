@@ -214,12 +214,19 @@ semantic validator resolves it to the nearest earlier artifact-producing step
 of that name: an earlier sibling, else an earlier step of an enclosing level.
 An enclosing container is visible to its nested steps only when its own work
 has finished before them, as an assessment's has for its outcomes and an item
-collection's for its per-item stages; a running loop and a plain group are
-not. The compiler repeats that search over the items it has already emitted
+collection's for its per-item stages; a running loop and an enclosing group
+are not. The compiler repeats that search over the items it has already emitted
 and records the dependency's plan step path in the immutable plan, and item
-materialization substitutes the item path in it like any other path. The
-instruction builder makes that artifact an explicit input, named by the same
-path as its `ww artifacts` entry, even when the step supplies its own prompt.
+materialization substitutes the item path in it like any other path. A group
+emits no item of its own, so the search finds an earlier group as an ancestor
+of an earlier item. The instruction builder makes that artifact an explicit
+input, named by the same path as its `ww artifacts` entry, even when the step
+supplies its own prompt. When the path names a group, or an assessment whose
+outcomes hold artifact-saving items and the dependent step is not inside it,
+the builder reads the run's records instead: the latest completed item under
+that path with an artifact, loop history included, is named with its file
+path, or the page says none is available. The plan stays the one authority for
+which kind of dependency it is; nothing about it is persisted beyond the path.
 Execution order remains the authored step order.
 
 Assessments add a deliberately bounded form of conditional topology. The

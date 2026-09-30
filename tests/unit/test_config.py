@@ -165,22 +165,99 @@ def test_depends_on_rejects_steps_that_have_not_run(
         load_configuration(path)
 
 
-def test_depends_on_rejects_a_group_that_saves_no_artifact(tmp_path: Path) -> None:
-    path = _write(
-        tmp_path / "ww-agentic-workflows.yaml",
-        """workflows:
-  - name: task
-    steps:
-      - name: group
+@pytest.mark.parametrize(
+    ("container", "name"),
+    [
+        pytest.param(
+            """      - name: group
         steps:
           - name: work
-      - name: consume
-        artifact_from: group
+            artifact: false
+          - name: inner
+            steps:
+              - name: note
+                artifact: false
 """,
+            "group",
+            id="group",
+        ),
+        pytest.param(
+            """      - assess:
+          question: Is it good?
+          artifact: false
+          outcomes:
+            positive:
+              steps:
+                - name: note
+                  artifact: false
+            negative:
+              stop_workflow: true
+""",
+            "assess",
+            id="assessment",
+        ),
+    ],
+)
+def test_artifact_from_rejects_a_container_where_nothing_saves_an_artifact(
+    tmp_path: Path, container: str, name: str
+) -> None:
+    path = _write(
+        tmp_path / "ww-agentic-workflows.yaml",
+        "workflows:\n  - name: task\n    steps:\n"
+        + container
+        + f"      - name: consume\n        artifact_from: {name}\n",
     )
 
     with pytest.raises(ConfigurationError, match="does not produce an artifact"):
         load_configuration(path)
+
+
+def test_artifact_from_accepts_a_group_or_assessment_with_an_artifact_inside(
+    tmp_path: Path,
+) -> None:
+    configuration = load_configuration(
+        _write(
+            tmp_path / "ww-agentic-workflows.yaml",
+            """handlers:
+  - name: analyse
+    steps:
+      - assess:
+          question: Is the cause clear?
+          artifact: false
+          outcomes:
+            positive:
+              steps:
+                - investigate: Investigate.
+            negative:
+              steps:
+                - research: Research.
+workflows:
+  - name: task
+    steps:
+      - name: analysis
+        handler: analyse
+      - name: develop
+        artifact_from: analysis
+      - name: group
+        steps:
+          - name: loop-inside
+            artifact: false
+            loop:
+              - name: round
+                break: Done.
+      - name: review
+        artifact_from: group
+""",
+        )
+    )
+
+    steps = configuration.workflows[0].steps
+    assert [step.artifact_dependency for step in steps] == [
+        None,
+        "analysis",
+        None,
+        "group",
+    ]
 
 
 def test_parses_normalized_records_and_command_forms(tmp_path: Path) -> None:

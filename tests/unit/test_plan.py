@@ -142,6 +142,42 @@ def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
     }
 
 
+def test_artifact_from_resolves_a_nested_group_to_its_path(tmp_path: Path) -> None:
+    path = tmp_path / "ww-agentic-workflows.yaml"
+    path.write_text(
+        """workflows:
+  - name: task
+    steps:
+      - name: prepare
+      - name: outer
+        steps:
+          - name: prepare
+            steps:
+              - name: draft
+          - name: build
+            artifact_from: prepare
+          - name: inner
+            steps:
+              - name: first
+              - name: fix
+                artifact_from: prepare
+""",
+        encoding="utf-8",
+    )
+
+    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
+
+    dependencies = {
+        item.step: item.artifact_dependency
+        for item in plan.items
+        if item.artifact_dependency is not None
+    }
+    assert dependencies == {
+        "outer/build": "outer/prepare",
+        "outer/inner/fix": "outer/prepare",
+    }
+
+
 def test_extension_handler_can_be_used_as_a_step(tmp_path: Path) -> None:
     path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(

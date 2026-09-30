@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- `artifact_from` may name a group, or an assessment from a step after it: the step gets the artifact of the latest
+  step that ran inside it (the chosen outcome's), or is told that none is available.
 - Shorter instruction pages: about 17% fewer tokens across the common pages (up to 42% on an operator stop), with
   every gate kept; repeated guidance is said once, and golden page tests pin the wording. `8158548`
 - Agent hooks have their own guide, [documentation/agent-hooks.md](documentation/agent-hooks.md), and agent

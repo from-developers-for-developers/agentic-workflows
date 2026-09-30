@@ -1321,13 +1321,24 @@ def _artifact_dependency_path(
     Validation has already chosen the step: an earlier sibling, else an
     earlier step of the nearest enclosing level.  The same search over the
     already-compiled items gives its path, skipping a loop that is still
-    running around the dependent step.
+    running around the dependent step.  A group emits no item of its own, so
+    it is found as the ancestor of an earlier item, never as one enclosing
+    the dependent step.
     """
     earlier = {item.step: item for item in items if item.phase == "step"}
+    groups = {
+        ancestor
+        for item in items
+        if item.phase == "step"
+        for ancestor in item.ancestors
+        if ancestor not in ancestors
+    }
     for container in (*reversed(ancestors), None):
         path = f"{container}/{name}" if container else name
         found = earlier.get(path)
         if found is not None and not (path in ancestors and found.kind == "loop"):
+            return path
+        if found is None and path in groups:
             return path
     return name
 

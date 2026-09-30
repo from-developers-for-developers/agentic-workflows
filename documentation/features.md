@@ -2025,10 +2025,41 @@ stage, may also name an earlier step of any enclosing level. The nearest match
 wins: an earlier sibling first, then an earlier step of the parent's level,
 and so on up to the workflow's top-level steps and `init`. An outcome may name
 its assessment and a per-item stage its `items` step, whose work has finished
-by then; a loop body cannot name its own running loop, and no step can name a
-plain group, which saves no artifact of its own. The instruction names the
-dependency by its step path, such as `review/check`, which is how
-`ww artifacts` lists it.
+by then, and gets that step's own artifact; a loop body cannot name its own
+running loop. The instruction names the dependency by its step path, such as
+`review/check`, which is how `ww artifacts` lists it.
+
+`artifact_from` may also name a plain group, which saves no artifact of its
+own, or an assessment from a step after it. The later step then gets the
+artifact of the latest step inside it that saved one in this run: for an
+assessment, a step of the outcome that was chosen. Loop rounds, per-item
+stages, and per-child stages inside count, so the latest round's artifact wins,
+and a loop wrapper that saves its own result counts when it completes. The
+instruction names that step and gives the artifact's file path. When nothing
+inside saved an artifact, for example an outcome with no steps of its own, the
+instruction says that no artifact is available from it and the step goes on
+without one. Validation accepts such a dependency only when some path inside
+it can save an artifact; an assessment whose outcomes cannot supplies its own
+answer, as before.
+
+```yaml
+handlers:
+  - name: analyse
+    steps:
+      - assess:
+          question: Is the cause clear?
+          outcomes:
+            positive: {handler: investigate}
+            negative: {handler: research}
+workflows:
+  - name: medium-task
+    steps:
+      - name: analysis
+        handler: analyse
+      - name: develop
+        description: Implement the change.
+        artifact_from: analysis   # investigate's or research's artifact
+```
 
 Filesystem artifact names begin with each step's one-based declaration ordinal
 among its siblings. Nested containers reset the ordinal for their children, so

@@ -146,14 +146,18 @@ def _validate_steps(
     inside_loop: bool = False,
     inside_children: bool = False,
     enclosing: Mapping[str, StepDefinition] = MappingProxyType({}),
+    finished_containers: tuple[StepDefinition, ...] = (),
 ) -> None:
     """Validate one sibling list; ``enclosing`` holds earlier upper-level steps.
 
     ``artifact_from`` resolves to the nearest earlier step of that name: an
     earlier sibling first, then an earlier step of each enclosing level.  A
     container's own step is visible to its nested steps only when its work
-    has finished before them: an assessment to its outcomes and an item
-    collection to its per-item stages, but never a running loop.
+    has finished before them (``finished_containers``): an assessment to its
+    outcomes and an item collection to its per-item stages, but never a
+    running loop.  Such a container supplies its own artifact; a group, or an
+    assessment named after its outcomes, supplies the latest artifact saved
+    inside it, so it needs a step inside that can save one.
 
     ``break`` ends the nearest enclosing loop, or the per-child stages of a
     ``children`` step (``inside_children``): the remaining children are
@@ -216,8 +220,10 @@ def _validate_steps(
                     f"step {step.artifact_dependency!r}, which is not an earlier "
                     "step at its own or an enclosing level"
                 )
-            # A plain group runs only its children and saves nothing itself.
-            if not dependency.artifact or dependency.child_steps:
+            if not _supplies_artifact(
+                dependency,
+                own=any(dependency is found for found in finished_containers),
+            ):
                 raise ConfigurationError(
                     f"step {step.name!r} in workflow {workflow_name!r} takes "
                     "artifact_from "
@@ -225,21 +231,28 @@ def _validate_steps(
                 )
         _validate_hooks(step.hooks, set(), expected_scope="step")
         visible = {**enclosing, **prior}
+        finished = (*finished_containers, step)
         _validate_steps(
             workflow_name,
             step.child_steps,
             inside_loop=inside_loop,
             inside_children=inside_children,
             enclosing=visible,
+            finished_containers=finished_containers,
         )
         _validate_steps(
-            workflow_name, step.loop_steps, inside_loop=True, enclosing=visible
+            workflow_name,
+            step.loop_steps,
+            inside_loop=True,
+            enclosing=visible,
+            finished_containers=finished_containers,
         )
         _validate_steps(
             workflow_name,
             _item_steps(step),
             inside_loop=inside_loop,
             enclosing={**visible, step.name: step},
+            finished_containers=finished,
         )
         # A ``break`` in a per-child stage ends the children; a ``continue``
         # needs a loop of its own inside the stage.
@@ -248,6 +261,7 @@ def _validate_steps(
             _child_stages(step),
             inside_children=True,
             enclosing={**visible, step.name: step},
+            finished_containers=finished,
         )
         # Outcomes are alternatives, so none is an earlier sibling of another.
         for outcome in step.assessment_outcomes:
@@ -257,6 +271,7 @@ def _validate_steps(
                 inside_loop=inside_loop,
                 inside_children=inside_children,
                 enclosing={**visible, step.name: step},
+                finished_containers=finished,
             )
         prior[step.name] = step
 
@@ -332,6 +347,40 @@ def _validate_transitions(
 
 def _is_transition_hook(hook: HookDefinition) -> bool:
     return isinstance(hook.handler.operation, WorkflowHandoff)
+
+
+def _supplies_artifact(step: StepDefinition, *, own: bool) -> bool:
+    """Whether ``artifact_from`` naming ``step`` can find an artifact.
+
+    ``own``: the dependent runs inside the step, whose own work has finished.
+    A group saves nothing itself and supplies the latest artifact saved
+    inside it.  An assessment named after its outcomes supplies the latest
+    artifact of its chosen outcome when an outcome can save one, else its
+    own.  Any other step supplies only its own artifact.
+    """
+    if own:
+        return step.artifact
+    if step.child_steps:
+        return any(_can_save_artifact(child) for child in step.child_steps)
+    return step.artifact or any(
+        _can_save_artifact(outcome) for outcome in step.assessment_outcomes
+    )
+
+
+def _can_save_artifact(step: StepDefinition) -> bool:
+    """Whether running ``step`` can save an artifact, itself or inside it."""
+    if step.stop_workflow:
+        return False
+    if step.child_steps:
+        return any(_can_save_artifact(child) for child in step.child_steps)
+    return step.artifact or any(
+        _can_save_artifact(nested)
+        for nested in (
+            *step.loop_steps,
+            *step.assessment_outcomes,
+            *_template_steps(step),
+        )
+    )
 
 
 def _item_steps(step: StepDefinition) -> tuple[StepDefinition, ...]:

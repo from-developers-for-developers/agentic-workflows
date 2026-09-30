@@ -98,7 +98,7 @@ from .policy import (
     _result_saved,
     operator_reason,
 )
-from .text import NO_SUBAGENTS, _stage, action_text
+from .text import NO_SUBAGENTS, ContainerArtifact, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
 # ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
@@ -425,6 +425,58 @@ class InstructionBuilder:
                 str(record.completed_at),
             )
             for _, _, entry, record in candidates
+        )
+
+    def _container_artifact(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> ContainerArtifact | None:
+        """What ``artifact_from`` supplies when it names a group or assessment.
+
+        A group emits no item of its own; an assessment named after its
+        outcomes has run one of them.  Either supplies the artifact of the
+        latest step inside it that saved one in this run, loop rounds
+        included, or none.  ``None`` means the dependency is a single step,
+        including an assessment named from inside its own outcomes, and one
+        whose outcomes cannot save an artifact.
+        """
+        path = item.artifact_dependency
+        if path is None:
+            return None
+        inside = {
+            entry.id: entry
+            for entry in plan.items
+            if entry.phase == "step" and entry.artifact and path in entry.ancestors
+        }
+        own = next(
+            (
+                entry
+                for entry in plan.items
+                if entry.phase == "step" and entry.step == path
+            ),
+            None,
+        )
+        if not inside or (
+            own is not None
+            and (not own.assessment_outcomes or path in item.ancestors)
+        ):
+            return None
+        latest = max(
+            (
+                record
+                for record in (*state.item_executions, *state.execution_history)
+                if record.status == "completed"
+                and record.artifact is not None
+                and record.completed_at is not None
+                and record.plan_item_id in inside
+            ),
+            key=lambda record: (str(record.completed_at), record.position),
+            default=None,
+        )
+        if latest is None or latest.artifact is None:
+            return ContainerArtifact()
+        return ContainerArtifact(
+            inside[latest.plan_item_id].step,
+            str((self.root / latest.artifact).resolve()),
         )
 
     def _conversation(
@@ -815,6 +867,7 @@ class InstructionBuilder:
                     **self.child_values(state, plan, item),
                 },
                 state.task_id,
+                self._container_artifact(state, plan, item),
             )
             + self._current_child(state, item),
             required_values=required,
