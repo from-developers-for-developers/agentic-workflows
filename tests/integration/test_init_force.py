@@ -89,7 +89,7 @@ def test_force_asks_again_and_only_adds(
         for skill in ("ww", "noww", "ww-rule"):
             assert (root / directory / "skills" / skill / "SKILL.md").is_file()
     assert "@WW_AGENT_INSTRUCTIONS.md" in (root / "AGENTS.md").read_text()
-    assert ".ww/" in (root / ".gitignore").read_text().splitlines()
+    assert ".ww/*" in (root / ".gitignore").read_text().splitlines()
     assert (root / ".claude/settings.json").is_file()
     assert "Allow ww to run without confirmation" in output
     choices = _choices(root)
@@ -127,14 +127,15 @@ def test_force_without_input_reapplies_the_defaults(
 
     assert main([*init, "--no-update-gitignore"]) == 0
     capsys.readouterr()
-    assert ".ww/" not in (root / ".gitignore").read_text().splitlines()
+    assert ".ww/*" not in (root / ".gitignore").read_text().splitlines()
     assert _choices(root)["update_gitignore"] is False
 
     assert main([*init, "--force"]) == 0
     output = capsys.readouterr().out
 
     lines = (root / ".gitignore").read_text().splitlines()
-    assert lines.count(".ww/") == 1
+    assert lines.count(".ww/*") == 1
+    assert lines.count("!.ww/team.md") == 1
     assert lines.count("node_modules/") == 1
     assert _choices(root)["update_gitignore"] is True
     # The notice was shown by the first run, and --force shows it again.

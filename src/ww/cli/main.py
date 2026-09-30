@@ -46,6 +46,7 @@ from ww.hooks import (
 from ww.hooks.notices import interruption_notice
 from ww.instructions import Instruction
 from ww.items import WorkItem
+from ww.onboarding import Onboarding, render_onboarding
 from ww.operator_ui import run_operator_page
 from ww.operator_ui.server import operator_wait_seconds
 from ww.output import (
@@ -923,6 +924,16 @@ def _metadata(context: _Context) -> _Outcome:
     return _Outcome(_json(context.service.metadata(args.task_id)), None, args.task_id)
 
 
+def _onboarding(context: _Context) -> _Outcome:
+    """Show the onboarding keys, after recording any ``--set`` ones."""
+    onboarding = Onboarding(context.storage.root, context.storage.project_metadata)
+    args = context.args
+    state = onboarding.set(args.assignments) if args.assignments else onboarding.read()
+    if args.json_output:
+        return _Outcome(_json(state.to_dict()))
+    return _Outcome(render_onboarding(state, context.storage.root))
+
+
 def _documents(context: _Context) -> _Outcome:
     task_id = context.args.task_id
     return _Outcome(_json(context.service.documents_listing(task_id)), None, task_id)
@@ -1106,6 +1117,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "instruction": _instruction,
     "metadata": _metadata,
     "documents": _documents,
+    "onboarding": _onboarding,
     "items": _items,
     "item": _item,
     "artifacts": _artifacts,
@@ -1162,7 +1174,8 @@ def main(argv: list[str] | None = None) -> int:
     workflow = cast(str | None, getattr(args, "workflow", None))
     task_id = cast(str | None, getattr(args, "task_id", None))
     logged = args.command not in _READ_ONLY_COMMANDS and not (
-        args.command == "rules" and args.rules_action is None
+        (args.command == "rules" and args.rules_action is None)
+        or (args.command == "onboarding" and not args.assignments)
     )
 
     def log(outcome: str, error: str | None, *scope: str | None) -> None:

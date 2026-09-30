@@ -119,6 +119,11 @@ Initialization is a convergent project-repair operation rather than a one-time
 state transition. It fills absent root configuration keys and recreates missing
 ww-owned files, but preserves authored values. Runtime state, including task
 documents, lives below `../.ww` so projects can exclude one directory as a unit;
+the `.gitignore` lines `init` writes (`RUNTIME_IGNORE_LINES` in
+`../src/ww/config_files.py`) ignore that directory's contents rather than the
+directory, because Git cannot re-include a file under an ignored directory, and
+then re-include the shared learning files `team.md`, `company.md` and
+`project.md`;
 `init` migrates the former top-level `../tasks` directory when there is no
 conflicting destination. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
@@ -168,6 +173,16 @@ asks only configured extensions, as it does for reserved paths. The shipped
 directory the discovery module knows about.
 Potentially project-opinionated edits such as `../.gitignore` remain explicit user
 choices.
+
+Onboarding state (`../src/ww/onboarding.py`) is split by what it describes:
+the operator's `explain` preference and when ww learned about them live in
+`state.json` in the user directory, shared by every project, and the project's
+`setup.done` and learning timestamps live in project metadata under the `ww.`
+namespace. That namespace is reserved in `SavedMetadata` itself, so no workflow
+can save into it, and the storage port stays the one writer of
+`.ww/metadata.json`. `discover` reads the state to add its onboarding guidance;
+`ww onboarding` is the only command that sets it, and records only the
+operator's stated preference, so it needs no confirmation.
 
 This separation is intentional. Configuration is an authored contract and a
 `WorkflowPlan` is its agent-specific interpretation. At `start`, ww persists

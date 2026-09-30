@@ -37,9 +37,38 @@ RULE_AUTOMATION_FILE = "ww-rule-automation.json"
 # Rule groups ``ww rules add --group`` and ``ww rules filter`` write, imported
 # by the repo file so that file is never rewritten; ww owns this one.
 RULES_IMPORT_FILE = "ww-rules.yaml"
+# What ``ww setup apply`` writes: an import file for the repo level, and one
+# for the local level, which stays out of version control.
+SETUP_IMPORT_FILE = "ww-setup.yaml"
+LOCAL_SETUP_IMPORT_FILE = "ww-setup.local.yaml"
 # The .gitignore patterns ``init`` adds; they also cover local files a local
 # configuration imports, such as ``git.ww-agentic-workflows.local.yaml``.
-LOCAL_IGNORE_PATTERNS = (f"*{LOCAL_WORKFLOWS_FILE}", f"*{LOCAL_SETTINGS_FILE}")
+LOCAL_IGNORE_PATTERNS = (
+    f"*{LOCAL_WORKFLOWS_FILE}",
+    f"*{LOCAL_SETTINGS_FILE}",
+    LOCAL_SETUP_IMPORT_FILE,
+)
+# The files under ``.ww`` a team commits: what ww learned about the team, the
+# company and the project. Everything else there is one checkout's state.
+SHARED_RUNTIME_FILES = ("team.md", "company.md", "project.md")
+# The .gitignore lines ``init`` writes for ``.ww``. Git cannot re-include a
+# file inside an ignored directory, so the directory's contents are ignored
+# rather than the directory itself, and each shared file is then re-included.
+RUNTIME_IGNORE_LINES = (
+    ".ww/*",
+    *(f"!.ww/{name}" for name in SHARED_RUNTIME_FILES),
+)
+# The line earlier ww versions wrote instead, which ``init`` replaces.
+FORMER_RUNTIME_IGNORE_LINE = ".ww/"
+
+
+def runtime_ignored(gitignore: str) -> bool:
+    """Whether a .gitignore's text already keeps ``.ww`` out, in any form."""
+    return bool(
+        {".ww", FORMER_RUNTIME_IGNORE_LINE, RUNTIME_IGNORE_LINES[0]}.intersection(
+            line.strip() for line in gitignore.splitlines()
+        )
+    )
 # Where the user level lives instead of the user's configuration directory.
 USER_DIR_VARIABLE = "WW_USER_CONFIG_DIR"
 # The variable earlier ww versions read instead; setting it alone is an error.

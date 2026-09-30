@@ -203,7 +203,11 @@ def test_the_markdown_plan_ends_with_the_files_read(
 
 # init and .gitignore
 
-_LOCAL_PATTERNS = "*ww-agentic-workflows.local.yaml\n*ww-agentic-workflows.local.json\n"
+_LOCAL_PATTERNS = (
+    "*ww-agentic-workflows.local.yaml\n*ww-agentic-workflows.local.json\n"
+    "ww-setup.local.yaml\n"
+)
+_RUNTIME_LINES = ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n"
 
 
 def _init(project: Path, capsys: pytest.CaptureFixture[str], *extra: str) -> None:
@@ -231,7 +235,70 @@ def test_init_keeps_patterns_already_listed(
 
     assert (project / ".gitignore").read_text() == (
         "*ww-agentic-workflows.local.json\n*ww-agentic-workflows.local.yaml\n"
+        "ww-setup.local.yaml\n"
     )
+
+
+def test_init_replaces_the_former_runtime_line_where_it_stands(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write(project / ".gitignore", "node_modules/\n.ww/\ndist/\n" + _LOCAL_PATTERNS)
+
+    _init(project, capsys, "--update-gitignore")
+    _init(project, capsys, "--update-gitignore")
+
+    assert (project / ".gitignore").read_text() == (
+        "node_modules/\n" + _RUNTIME_LINES + "dist/\n" + _LOCAL_PATTERNS
+    )
+
+
+def test_init_writes_the_runtime_lines_and_completes_a_partial_set(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write(project / ".gitignore", "node_modules/\n")
+    _init(project, capsys, "--update-gitignore")
+    assert (project / ".gitignore").read_text() == (
+        "node_modules/\n" + _RUNTIME_LINES + _LOCAL_PATTERNS
+    )
+
+    _write(project / ".gitignore", ".ww/*\n!.ww/team.md\n")
+    _init(project, capsys, "--update-gitignore")
+    assert (project / ".gitignore").read_text() == (
+        ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n" + _LOCAL_PATTERNS
+    )
+
+
+def test_init_leaves_an_operators_own_runtime_line_alone(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write(project / ".gitignore", ".ww\n" + _LOCAL_PATTERNS)
+
+    _init(project, capsys, "--update-gitignore")
+
+    assert (project / ".gitignore").read_text() == ".ww\n" + _LOCAL_PATTERNS
+
+
+def test_the_runtime_lines_let_git_see_only_the_shared_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    _init(tmp_path, capsys, "--update-gitignore")
+    for name in ("team.md", "company.md", "project.md", "metadata.json"):
+        _write(tmp_path / ".ww" / name, "x\n")
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all", ".ww"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    assert sorted(line.split()[-1] for line in status.splitlines()) == [
+        ".ww/company.md",
+        ".ww/project.md",
+        ".ww/team.md",
+    ]
 
 
 def test_init_creates_a_gitignore_only_in_a_git_checkout(

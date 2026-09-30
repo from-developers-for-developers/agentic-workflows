@@ -11,6 +11,14 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Onboarding state: `ww onboarding [--json]` shows, and `--set KEY=VALUE` records, `explain` and `learned.me` (in
+  `state.json` in the user directory) and `setup.done`, `learned.team|company|project` (in `.ww/metadata.json` under
+  ww's reserved `ww.` namespace, which `saves: [project_metadata.ww...]` may no longer use). Until `setup.done`,
+  `discover` tells the agent to offer the `ww-setup` skill, and until `explain` is recorded, to ask once whether to
+  narrate what ww does while it learns (`onboarding` in JSON; information only under `"on_request"`).
+- `init --update-gitignore` writes `.ww/*` with `!.ww/team.md`, `!.ww/company.md`, `!.ww/project.md`, so the shared
+  learning files can be committed; the bare `.ww/` line earlier versions wrote is replaced in place. `ww-setup.local.yaml`
+  joins the always-ignored local patterns.
 - Built-in workflows: ww ships workflows as YAML in `ww/assets/workflows/`, a level below the user level; any level's
   workflow, document or mode of the same name replaces a built-in one, and `"workflows": {"<name>": {"enabled":
   false}}` switches off any of them. `catchall` is now one of these files, unchanged in behaviour. `discover` lists

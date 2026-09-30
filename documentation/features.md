@@ -47,10 +47,27 @@ branch and then `main`, enables separate task branches, and starts with
 whether worktrees should be used. Enabled worktrees default to
 `./git-worktrees/{{ww.task.id}}`, and the directory is created immediately.
 
-The wizard offers to append exactly `../.ww` to `../.gitignore`; without consent it
-only reports that action. The patterns `*ww-agentic-workflows.local.yaml` and
-`*ww-agentic-workflows.local.json` are added without asking, since [local
-configuration](#user-repo-and-local-configuration) belongs to one checkout:
+The wizard offers to keep `../.ww` out of Git; without consent it only reports
+that action. With consent it appends these lines to `../.gitignore`:
+
+```gitignore
+.ww/*
+!.ww/team.md
+!.ww/company.md
+!.ww/project.md
+```
+
+Everything under `.ww` is one checkout's state, except the three files in
+which ww records what it learned about the team, the company, and the project:
+those are meant to be committed and shared. Git cannot re-include a file inside
+an ignored directory, which is why the directory's contents are ignored rather
+than the directory. The bare `.ww/` line earlier ww versions wrote is replaced
+by these lines where it stands, a `.ww/*` line gains the re-inclusions it
+lacks, and an operator's own `.ww` line and every other line are left alone.
+The patterns `*ww-agentic-workflows.local.yaml`,
+`*ww-agentic-workflows.local.json` and `ww-setup.local.yaml` are added without
+asking, since [local configuration](#user-repo-and-local-configuration) belongs
+to one checkout:
 they are appended to an existing `.gitignore` once, never duplicated, and a
 missing `.gitignore` is created for them only inside a Git repository. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
 references in `../AGENTS.md` and an existing `../CLAUDE.md`, and reminds the user to
@@ -93,7 +110,7 @@ written twice, and the new answers replace the remembered ones. Values the
 settings files already hold, such as `enabled` or `task_format`, are
 configuration rather than remembered answers, so they are not asked again.
 With `--no-input`, `--force` applies the defaults the same way, for example
-adding `.ww/` to `.gitignore` after an earlier `--no-update-gitignore`.
+adding the `.ww` lines to `.gitignore` after an earlier `--no-update-gitignore`.
 
 Unless it was shown before, the summary ends with what to allow so your agents
 run ww without asking for confirmation. For each agent set up in the project
@@ -214,6 +231,43 @@ values to write, explaining each; without a terminal it writes `true`.
 ```json
 {"enabled": false, "extensions": {}}
 ```
+
+## Onboarding state
+
+ww keeps a little state about how far it is set up, each part where it
+belongs:
+
+| Key | Where | Means |
+| --- | --- | --- |
+| `explain` | `state.json` in the user configuration directory | whether the operator wants the agent to narrate what ww does while it learns; absent until they answer |
+| `learned.me` | the same file | when ww last learned about the operator |
+| `setup.done` | `.ww/metadata.json`, as `ww.setup.done` | whether ww was set up in this project |
+| `learned.team`, `learned.company`, `learned.project` | `.ww/metadata.json`, under `ww.learned` | when ww last learned about each |
+
+The project keys live in ww's own `ww.` namespace of project metadata, which
+no workflow can save into, so they never collide with a workflow's values.
+
+```console
+./ww onboarding
+./ww onboarding --json
+./ww onboarding --set explain=true --set learned.team=now
+```
+
+`--set` is repeatable and takes a known key: `explain=true|false`,
+`setup.done=true|false`, `learned.<me|team|company|project>=now` or an ISO
+timestamp. An unknown key or a malformed value is an error, and nothing is
+written unless every assignment is valid. Setting records the operator's stated
+preference, so it asks for no confirmation; it appears in the audit log, while
+showing does not.
+
+While `setup.done` is not recorded, `discover` adds an "Onboarding" section
+telling the agent that this is the first use of ww in the project and to offer
+the operator the `ww-setup` skill through its choice menu, never starting it
+unasked. While `explain` is unset, it also tells the agent to ask once whether
+the operator wants to see what ww does while it learns, and to record the
+answer with `ww onboarding --set explain=…`. Its JSON carries `onboarding`
+with `setup_done`, `explain` and the `guidance` lines. Under `"enabled":
+"on_request"` the section only informs: it asks the agent to offer nothing.
 
 ## The catch-all workflow
 
@@ -1843,7 +1897,10 @@ The completion command still uses `--metadata`, with the path written as in
 `saves`: `--metadata project_metadata.environments.staging.url=<value>`. Project metadata is stored as nested JSON in
 `.ww/metadata.json` and can be inspected with
 `ww-agentic-workflows metadata --project`. Project metadata is resolved live;
-copy a value into task metadata when a task needs a stable snapshot. Metadata
+copy a value into task metadata when a task needs a stable snapshot. The `ww.`
+namespace of project metadata is ww's own, holding its [onboarding
+state](#onboarding-state); a `saves` entry under `project_metadata.ww.` is a
+configuration error. Metadata
 is plain runtime state and should not be used for secrets.
 
 Every workflow also receives ww's built-in `update-workflow-summary` handler as
@@ -2026,8 +2083,10 @@ free-format counterpart: a file a workflow builds up and returns to across
 runs, such as the test cases derived from an issue that a second run refines
 after the issue changed and a `build-test-report` workflow reads later.
 Declare documents once at the root; a task-scoped document lives under the
-task directory and a `scope: project` one under `.ww/documents`, unless `path`
-places it elsewhere in the project, for example
+task directory, a `scope: project` one under `.ww/documents`, and a `scope:
+user` one in the user configuration directory, shared by every project of the
+user (such as ww's own `me.md`), unless `path` places it elsewhere in the
+project (for a user document, elsewhere in the user directory), for example
 `documentation/issues/{{ww.task.id}}/notes.md`, which then resolves inside the
 task's worktree when the run has one:
 

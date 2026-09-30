@@ -885,6 +885,8 @@ saves:
 
 Within one action, paths must be unique, and metadata paths in the same scope
 cannot overlap (for example `metadata.jira` and `metadata.jira.issue_id`).
+`project_metadata.ww` and every path under it are reserved for ww's own state,
+such as `ww.setup.done`, and rejected.
 Only agent-owned actions can save. The former `update_metadata`,
 `update_document`, and `update_item` keys are rejected naming `saves`.
 

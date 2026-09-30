@@ -27,7 +27,9 @@ def _agent_answers(*approve: str) -> str:
 
 
 _GITIGNORE_WITH_WW = (
-    ".ww/\n*ww-agentic-workflows.local.yaml\n*ww-agentic-workflows.local.json\n"
+    ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n"
+    "*ww-agentic-workflows.local.yaml\n*ww-agentic-workflows.local.json\n"
+    "ww-setup.local.yaml\n"
 )
 
 
@@ -582,7 +584,7 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
     assert "Define the steps in ww-agentic-workflows.yaml." in output
     # init configures the standard binary, so the summary names it.
     assert "ww-agentic-workflows workflows" in output
-    assert "Optionally add exactly .ww/ to .gitignore." not in output
+    assert "Optionally keep .ww out of Git" not in output
 
 
 def test_init_targets_new_directory_and_creates_approved_agent_files(

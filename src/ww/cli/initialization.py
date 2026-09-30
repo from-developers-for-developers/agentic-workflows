@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ww.config.composition import compose_configuration
+from ww.config_files import runtime_ignored
 from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
@@ -271,11 +272,8 @@ def _initialization_options(
     # ``--force`` asks every question again, as if nothing were remembered.
     choices = {} if args.force else _init_choices(storage)
     ignore_path = storage.root / ".gitignore"
-    ignored = ignore_path.is_file() and bool(
-        {".ww", ".ww/"}.intersection(
-            line.strip()
-            for line in ignore_path.read_text(encoding="utf-8").splitlines()
-        )
+    ignored = ignore_path.is_file() and runtime_ignored(
+        ignore_path.read_text(encoding="utf-8")
     )
     if ignore_runtime is None:
         ignore_runtime = True if ignored else choices.get("update_gitignore")
@@ -746,15 +744,12 @@ def _finish_initialization(
                 except ValueError:
                     label = str(directory)
                 created.append(label)
-    ignored = False
     path = storage.root / ".gitignore"
-    if path.is_file():
-        entries = {
-            line.strip() for line in path.read_text(encoding="utf-8").splitlines()
-        }
-        ignored = ".ww/" in entries or ".ww" in entries
+    ignored = path.is_file() and runtime_ignored(path.read_text(encoding="utf-8"))
     if not ignored and (storage.root / ".git").exists():
-        actions.append("Optionally add exactly .ww/ to .gitignore.")
+        actions.append(
+            "Optionally keep .ww out of Git with `init --update-gitignore`."
+        )
     missing = [
         directory
         for directory in _agent_directories(storage)

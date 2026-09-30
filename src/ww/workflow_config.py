@@ -32,6 +32,9 @@ MetadataScope = Literal["task", "project"]
 # configuration directory, shared by every project.
 DocumentScope = Literal["task", "project", "user"]
 DOCUMENT_SCOPES = ("task", "project", "user")
+# The project metadata namespace ww keeps its own state in, such as
+# ``ww.setup.done``; no workflow may save into it.
+WW_METADATA_NAMESPACE = "ww"
 # The task ID in a task-scoped document ``path``.
 TASK_ID_TOKEN = "{{ww.task.id}}"
 
@@ -85,6 +88,14 @@ class SavedMetadata:
             raise ValueError("saved metadata description must be a string")
         if self.scope not in {"task", "project"}:
             raise ValueError(f"invalid saved metadata scope: {self.scope!r}")
+        if self.scope == "project" and (
+            self.key == WW_METADATA_NAMESPACE
+            or self.key.startswith(f"{WW_METADATA_NAMESPACE}.")
+        ):
+            raise ValueError(
+                f"project metadata under {WW_METADATA_NAMESPACE}. is ww's own "
+                "state, such as its onboarding; save under another path"
+            )
         if type(self.append) is not bool:
             raise ValueError("saved metadata append must be a bool")
 

@@ -11,7 +11,9 @@ from typing import Any
 
 from ww.config.composition import compose_configuration
 from ww.config_files import (
+    FORMER_RUNTIME_IGNORE_LINE,
     LOCAL_IGNORE_PATTERNS,
+    RUNTIME_IGNORE_LINES,
     SETTINGS_FILE,
     WORKFLOWS_FILE,
     display_path,
@@ -165,10 +167,11 @@ class Storage:
             created.append(".ww/tasks")
 
         if ignore_runtime:
-            if self._ignore_runtime_directory():
-                created.append(".gitignore entry: .ww/")
+            change = self._ignore_runtime_directory()
+            if change:
+                created.append(change)
             else:
-                preserved.append(".gitignore entry: .ww/")
+                preserved.append(".gitignore entries for .ww")
         # Local configuration belongs to one checkout, so it is always kept
         # out of version control.
         added = self._ignore_local_configuration()
@@ -271,17 +274,44 @@ class Storage:
         )
         return True
 
-    def _ignore_runtime_directory(self) -> bool:
+    def _ignore_runtime_directory(self) -> str | None:
+        """Keep ``.ww`` out of Git but for the files a team shares.
+
+        Writes :data:`RUNTIME_IGNORE_LINES`. The bare ``.ww/`` line an earlier
+        ww wrote is replaced by them where it stands; a ``.ww/*`` line gains
+        the re-inclusions it lacks; an operator's own ``.ww`` line, and every
+        other line, is left alone. Returns what changed, or ``None``.
+        """
         # Reads and rewrites .gitignore; the project scope held by
         # initialize_project keeps that pair together.
         path = self.root / ".gitignore"
         existing = path.read_text(encoding="utf-8") if path.exists() else ""
-        entries = {line.strip() for line in existing.splitlines()}
-        if ".ww/" in entries or ".ww" in entries:
-            return False
+        lines = existing.splitlines(keepends=True)
+        entries = [line.strip() for line in lines]
+        block = "".join(f"{line}\n" for line in RUNTIME_IGNORE_LINES)
+        if FORMER_RUNTIME_IGNORE_LINE in entries and RUNTIME_IGNORE_LINES[0] not in (
+            entries
+        ):
+            index = entries.index(FORMER_RUNTIME_IGNORE_LINE)
+            lines[index] = block
+            self.locks.atomic_write(path, "".join(lines))
+            return (
+                ".gitignore entries: " + ", ".join(RUNTIME_IGNORE_LINES)
+                + f" (replacing {FORMER_RUNTIME_IGNORE_LINE})"
+            )
+        if ".ww" in entries:
+            return None
+        missing = (
+            tuple(line for line in RUNTIME_IGNORE_LINES[1:] if line not in entries)
+            if RUNTIME_IGNORE_LINES[0] in entries
+            else RUNTIME_IGNORE_LINES
+        )
+        if not missing:
+            return None
         separator = "" if not existing or existing.endswith("\n") else "\n"
-        self.locks.atomic_write(path, f"{existing}{separator}.ww/\n")
-        return True
+        addition = "".join(f"{line}\n" for line in missing)
+        self.locks.atomic_write(path, f"{existing}{separator}{addition}")
+        return ".gitignore entries: " + ", ".join(missing)
 
     def _ignore_local_configuration(self) -> tuple[str, ...]:
         """Add the local-file patterns missing from .gitignore.

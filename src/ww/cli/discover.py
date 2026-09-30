@@ -21,6 +21,7 @@ from ww.hooks.notices import (
 )
 from ww.hooks.records import HookRecords
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
+from ww.onboarding import Onboarding, OnboardingState
 from ww.open_work import open_work
 from ww.project_config import FILE_NAME, ON_REQUEST
 from ww.runtimes import RUNTIME_DESCRIPTIONS
@@ -108,6 +109,25 @@ ON_REQUEST_CATCHALL_PREFIX = (
     "Only when the user has asked for ww; otherwise make the change without "
     "ww. "
 )
+SETUP_GUIDANCE = (
+    "This is the first use of ww in this project: it has not been set up here. "
+    "Offer the operator the `ww-setup` skill, which walks them through setting "
+    "ww up, by asking through your choice menu; do not start it unasked."
+)
+EXPLAIN_GUIDANCE = (
+    "The operator has not said whether they want to see what ww does while it "
+    "learns. Ask them once, through your choice menu, and record the answer "
+    "with `{command} onboarding --set explain=true` (or `explain=false`)."
+)
+ON_REQUEST_SETUP_NOTE = (
+    "For information: ww has not been set up in this project yet; when the "
+    "operator asks for ww, the `ww-setup` skill can walk them through it."
+)
+ON_REQUEST_EXPLAIN_NOTE = (
+    "For information: the operator has not said whether they want to see what "
+    "ww does while it learns; `{command} onboarding --set explain=true` (or "
+    "`explain=false`) records it once they say."
+)
 UNREADABLE_GUIDANCE = (
     "Other tasks and new work are unaffected. Commands addressing these tasks "
     "fail with the error shown; ask the operator, whose choice it is to repair, "
@@ -132,10 +152,16 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     modes = load_modes(storage.config_path, extensions)
     modes.update({mode.name: mode for mode in extensions.qualified_modes()})
     catchall = configuration.workflows_by_name.get(CATCHALL)
+    onboarding = Onboarding(storage.root, storage.project_metadata).read()
     return {
         # ``"on_request"`` still lists everything, so an explicit request can
         # proceed; the header tells an agent not to use ww unasked.
         "enabled": ON_REQUEST if config.on_request else True,
+        "onboarding": {
+            "setup_done": onboarding.setup_done,
+            "explain": onboarding.explain,
+            "guidance": _onboarding_guidance(onboarding, on_request=config.on_request),
+        },
         "projects": [
             {
                 **project.to_dict(),
@@ -289,6 +315,7 @@ def _markdown(report: dict[str, object]) -> list[str]:
         "",
         *_pointer_lines(report),
         *_unreadable_lines(report),
+        *_onboarding_lines(report),
         "## Workflows",
         "",
     ]
@@ -486,3 +513,28 @@ def _pointer_lines(report: dict[str, object]) -> list[str]:
     count = report.get("interrupted_recently")
     pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0)
     return [pointer, ""] if pointer else []
+
+
+def _onboarding_guidance(state: OnboardingState, *, on_request: bool) -> list[str]:
+    """What to offer on a first use; under ``"on_request"``, information only."""
+    command = ww_command()
+    guidance = []
+    if not state.setup_done:
+        guidance.append(ON_REQUEST_SETUP_NOTE if on_request else SETUP_GUIDANCE)
+    if state.explain is None:
+        guidance.append(
+            (ON_REQUEST_EXPLAIN_NOTE if on_request else EXPLAIN_GUIDANCE).format(
+                command=command
+            )
+        )
+    return guidance
+
+
+def _onboarding_lines(report: dict[str, object]) -> list[str]:
+    onboarding = report.get("onboarding")
+    guidance = _strings(onboarding.get("guidance")) if isinstance(
+        onboarding, dict
+    ) else []
+    if not guidance:
+        return []
+    return ["## Onboarding", "", *(f"- {line}" for line in guidance), ""]

@@ -181,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--update-gitignore",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Add exactly .ww/ to .gitignore.",
+        help="Keep .ww out of .gitignore but for the shared learning files.",
     )
     init.add_argument(
         "--skills",
@@ -582,6 +582,26 @@ def build_parser() -> argparse.ArgumentParser:
         "documents", help="List the declared documents, their files and last updates."
     )
     documents.add_argument("task_id", nargs="?")
+
+    onboarding = subparsers.add_parser(
+        "onboarding",
+        parents=[json_output],
+        help=(
+            "Show how far ww is set up for the operator and this project, or "
+            "record a key with --set."
+        ),
+    )
+    onboarding.add_argument(
+        "--set",
+        dest="assignments",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Record one key; repeatable: explain=true|false, "
+            "setup.done=true|false, learned.me|team|company|project=now|<ISO>."
+        ),
+    )
 
     run_only = _shared("run")
     items = subparsers.add_parser(
