@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Agent hooks (session-start, stop, interrupt) have their own guide,
+  [documentation/agent-hooks.md](documentation/agent-hooks.md), moved out of
+  the feature reference; agent-specific limitations, such as nested
+  subagents and per-agent hook gaps, are now collected in
+  [documentation/limitations.md](documentation/limitations.md#agent-limitations).
 - Breaking: the v1 names. YAML: `assignment` (`together` / `per_item` / `per_round` / `per_step`), `variables`, `saves`
   (`metadata.<path>`, `project_metadata.<path>`, `documents.<name>`, `item.field.<name>`), `item_phase`, `artifact_from`,
   `max_rounds`, `kind`, `interactive: page`, `handoff_to`, `before_start`, `persistent`, `assert: [empty]`; `command`
