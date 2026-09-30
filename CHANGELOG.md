@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Fewer rule stops: `"rules": {"approval": "operator" | "check" | "auto"}` lets ww approve verifier proposals; each
+  run lists its "Rules converted in this run", and `ww rules revoke <check>` undoes one. `9695d46`
 - `"enabled": "on_request"`: ww stays available, but agents use it only when the user explicitly asks; `init` now
   asks which of `true`, `"on_request"` or `false` to write. `ad03eef`
 - Modes reach the agent: every agent step page lists its modes (before, their guidance was never shown), and a mode

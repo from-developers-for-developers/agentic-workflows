@@ -60,13 +60,16 @@ from ww.output import (
 from ww.output_adapters.rule_pages import (
     render_check_preview,
     render_orphans,
+    render_revoke_preview,
+    render_revoked,
     render_rule_view,
     render_rules_listing,
 )
 from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import compose_settings, load_project_config
 from ww.rule_disputes import DisputeLog
-from ww.rule_store import UNDECIDED_RULE_STATUSES, RuleStore
+from ww.rule_store import UNDECIDED_RULE_STATUSES, RuleAutomation, RuleStore
+from ww.rule_verification import revoke_check
 from ww.rule_views import declared_hashes, orphans, prune, rules_listing
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -517,6 +520,8 @@ def _rules(context: _Context) -> _Outcome:
     )
     if args.rules_action == "prune":
         return _prune(context, configuration)
+    if args.rules_action == "revoke":
+        return _revoke(context)
     if args.rules_action is not None:
         return _rule_write(context, configuration)
     listing = rules_listing(
@@ -619,6 +624,53 @@ def _filter_option(values: list[str] | None, option: str) -> NameFilter | None:
     if ALL_NAMES in values:
         raise StateError(f"{option} takes '*' alone or names, not both")
     return NameFilter.of(values)
+
+
+def _revoke(context: _Context) -> _Outcome:
+    """Reject a store check and its rules after showing it and asking."""
+    args = context.args
+    store = RuleStore(context.storage.root)
+    name = args.check_name
+    check = store.load().checks.get(name)
+    if check is None:
+        raise StateError(f"the rule-automation store has no check {name!r}")
+    if check.status == "rejected":
+        raise StateError(f"check {name!r} is already rejected")
+    reason = (args.reason or "").strip()
+    recorded = "revoked by the operator" + (f": {reason}" if reason else "")
+    sys.stderr.write(render_revoke_preview(name, check))
+    if not confirm_operator(
+        "ww rules revoke",
+        f"reject check {name} ({check.status}) and the rules it covers, which "
+        "a verifier judges from then on",
+        "Revoke it?",
+        "Revoke",
+        assume_yes=args.yes,
+    ):
+        return _Outcome("", error="revoke cancelled", exit_code=1)
+    outcome: list[tuple[str, ...]] = []
+
+    def change(automation: RuleAutomation) -> RuleAutomation:
+        updated, rules = revoke_check(automation, name, recorded)
+        outcome.append(rules)
+        return updated
+
+    store.modify(change)
+    rules = outcome[-1]
+    if args.json_output:
+        return _Outcome(
+            _json(
+                {
+                    "revoked": {
+                        "check": name,
+                        "rules": list(rules),
+                        "reason": recorded,
+                        "config": list(check.spec.config),
+                    }
+                }
+            )
+        )
+    return _Outcome(render_revoked(name, rules, check.spec.config))
 
 
 def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:

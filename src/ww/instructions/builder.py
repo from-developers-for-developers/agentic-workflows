@@ -41,6 +41,7 @@ from ww.execution_models import (
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
+from ww.project_config import DEFAULT_RULE_APPROVAL, RuleApproval
 from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
@@ -63,6 +64,7 @@ from .commands import (
     next_command,
     recovery_commands,
 )
+from .conversions import rule_conversions, run_reference
 from .models import (
     ConversationEntry,
     DisputeView,
@@ -73,6 +75,7 @@ from .models import (
     KnownCheck,
     Proposal,
     RecoveryCommand,
+    RuleConversions,
     RuleLine,
     StepHandover,
     VerificationPage,
@@ -116,6 +119,10 @@ class _Selection:
         )
 
 
+def _operator_approval() -> RuleApproval:
+    return DEFAULT_RULE_APPROVAL
+
+
 class InstructionBuilder:
     """Build caller-facing instructions from authoritative run records."""
 
@@ -128,6 +135,7 @@ class InstructionBuilder:
         documents: DocumentStore,
         interactions: InteractionLog,
         rule_store: RuleStore | None = None,
+        rule_approval: Callable[[], RuleApproval] | None = None,
     ) -> None:
         self.tasks = tasks
         self.documents = documents
@@ -135,6 +143,8 @@ class InstructionBuilder:
         # Read for display only: the checks a verifier may extend, and the
         # proposals the operator decides at a ``check_proposed`` stop.
         self.rule_store = rule_store or RuleStore(root)
+        # The project's ``rules.approval``, read when a completed run is shown.
+        self.rule_approval = rule_approval or _operator_approval
         # Persisted paths are project-relative; instructions print them
         # absolute for the filesystem this process runs in.
         self.root = root
@@ -260,6 +270,7 @@ class InstructionBuilder:
                 _base(state, None),
                 handoff=handoff.rstrip() if handoff else None,
                 recommended_workflow=plan.recommended_next_workflow,
+                rule_conversions=self._conversions(state, plan),
             )
         if state.status == "awaiting_input":
             return self._awaiting_input(state, plan)
@@ -269,6 +280,7 @@ class InstructionBuilder:
             return replace(
                 _base(state, None, status="completed"),
                 recommended_workflow=plan.recommended_next_workflow,
+                rule_conversions=self._conversions(state, plan),
             )
         item = plan.items[state.cursor]
         record = state.item_executions[state.cursor]
@@ -284,6 +296,17 @@ class InstructionBuilder:
         return replace(
             _base(state, item, item_status="pending"),
             continuation_command=next_command(state.task_id),
+        )
+
+    def _conversions(
+        self, state: ExecutionState, plan: WorkflowPlan
+    ) -> RuleConversions:
+        """What the run converted, for its completion page."""
+        return rule_conversions(
+            self.rule_store.load(),
+            run_reference(state.task_id, state.run_id, state.workflow),
+            plan,
+            auto=self.rule_approval() == "auto",
         )
 
     def _awaiting_input(self, state: ExecutionState, plan: WorkflowPlan) -> Instruction:

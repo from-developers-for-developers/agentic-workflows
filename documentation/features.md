@@ -921,9 +921,10 @@ session does every step, uses no tokens.
 
 ### Confirmations
 
-`next --retry`, `next --force`, `next --approve`, and `rules prune` ask the
-operator to confirm, because they can repeat an external effect, skip work, or
-approve a command that will run from then on. ww asks only at a terminal. An
+`next --retry`, `next --force`, `next --approve`, `rules prune`, and `rules
+revoke` ask the operator to confirm, because they can repeat an external
+effect, skip work, approve a command that will run from then on, or change
+the shared rule-automation store. ww asks only at a terminal. An
 agent's shell has none, so there ww refuses at once and names `--yes`, and it
 never reads an answer from a pipe. The pages that show these choices print
 them with `--yes`, since the agent runs one only after the operator chose it;
@@ -1416,6 +1417,48 @@ wording no rule has any more and entries awaiting a decision; only
 `ww rules prune`, after listing them and asking the operator, deletes the
 orphans.
 
+### Fewer stops: `rules.approval`
+
+Two stops per wording is the careful default. `ww-agentic-workflows.json`
+can lower it:
+
+```json
+"rules": { "approval": "check" }
+```
+
+- `operator` (default): the operator approves both the approach and the
+  check.
+- `check`: approaches are approved automatically; the operator still
+  approves each check, reading its command, and picks the reading of an
+  ambiguous rule. One stop.
+- `auto`: approaches are approved automatically, and so is a check whose
+  verifier proved it (`proven: true`). Nothing stops the task: an unproven
+  check stays `proposed` and an ambiguous rule stays `ambiguous` for the
+  operator to decide later, and meanwhile a verifier judges their rules.
+
+ww reads the setting whenever a verification completes, so a change applies
+at once, even to a running task. Automatic approvals take the same path as
+`next --approve` and are recorded in the store as `approved_by: auto`, with
+the run that made them (`approved_in`); operator approvals say `operator`.
+
+However approvals are made, a run that converted something ends with a
+**Rules converted in this run** section, on the completion page and
+appended by ww to the workflow summary artifact: each check with the rules
+it covers, its command, its config files, whether it was proven, and who
+approved it; under `auto`, also the run's proposals left undecided. An
+automatic approval shows its undo command:
+
+```console
+./ww rules revoke deptrac --reason "too slow for every step"
+```
+
+`rules revoke` shows the check, asks (`--yes` skips the question, and
+without a terminal it refuses), and rejects the check and the rules it
+covers, so they are judged by a verifier from then on. It changes only the
+store: the YAML, the rule files, and the check's configuration files, such
+as `deptrac.yaml` and an installed dev dependency, stay for you to keep or
+remove.
+
 When the last verifier's completion records the held completion under
 `auto`, that verifier's assignment ends there: the step's automatic follow-ups
 run, and its next agent item, such as an agent-owned `after_complete` hook,
@@ -1455,6 +1498,8 @@ it, and for a rule without a command what the store knows about its wording.
 rule's ID and first sentence, and each step's own rules; `--json` gives the
 same for a program. `ww rules prune` deletes store entries no declared rule
 needs any more, after listing them and asking; `--yes` skips the question.
+`ww rules revoke <check>` rejects a converted or proposed check and its rules
+the same way.
 
 ### Writing rules with the ww-rule skill
 

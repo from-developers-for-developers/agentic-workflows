@@ -828,3 +828,221 @@ def test_yes_approves_without_the_prompt(
     assert "approach for rule" in error
     assert "Approved with --yes." in error
     assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "approach-approved"
+
+
+# rules.approval ------------------------------------------------------------------
+
+JUDGED_PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
+STAGE_B = {"id": "develop/1", "status": "approach", "check": "cli-surface"}
+
+
+def _approval(root: Path, value: str) -> None:
+    (root / "ww-agentic-workflows.json").write_text(
+        json.dumps({"rules": {"approval": value}}), encoding="utf-8"
+    )
+
+
+def _active(service: WorkflowService, page: Instruction) -> Instruction:
+    """The page of the agent item now in progress, starting it if needed."""
+    if page.item_status == "in_progress":
+        return page
+    return service.next("TASK-1")
+
+
+def _finish(service: WorkflowService, page: Instruction) -> Instruction:
+    """Complete ``check`` and the workflow summary; the completion page."""
+    page = _active(service, page)
+    assert page.item_name == "check"
+    page = _active(
+        service,
+        service.complete("TASK-1", artifact="Checked.", summary_for_next="Checked."),
+    )
+    assert page.item_name == "update-workflow-summary"
+    service.complete(
+        "TASK-1", artifact="Summary.", variables=(("summary", "Did it."),)
+    )
+    return service.instruction("TASK-1")
+
+
+def _summary_artifact(root: Path, service: WorkflowService) -> str:
+    state, snapshot = service.load("TASK-1")
+    index = next(
+        index for index, item in enumerate(snapshot.plan.items) if item.summary
+    )
+    reference = state.item_executions[index].artifact
+    assert reference is not None
+    return (root / reference).read_text(encoding="utf-8")
+
+
+def test_the_operator_path_records_the_operator_as_approver(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service, _ = _developed(root, "print(1)  # foo\n")
+    text_hash = rule_text_hash(CLI)
+    _report(service, _approach())
+    service.next("TASK-1", approve=(text_hash[:12],))
+    _report(service, STAGE_B, checks=(FOO_CHECK,))
+
+    service.next("TASK-1", approve=("cli-surface",))
+
+    check = _store(root)["checks"]["cli-surface"]
+    rule = _store(root)["rules"][text_hash]
+    run = "TASK-1/01-task"
+    assert (check["approved_by"], check["approved_in"]) == ("operator", run)
+    assert (rule["approved_by"], rule["approved_in"]) == ("operator", run)
+    assert rule["proposed_run"] == "TASK-1/01-task"
+
+
+def test_check_approval_approves_the_approach_and_stops_for_the_check(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _approval(root, "check")
+    service, _ = _developed(root, "print(1)  # foo\n")
+    text_hash = rule_text_hash(CLI)
+
+    prepare = _active(service, _report(service, _approach()))
+
+    assert prepare.item_name == "develop-verify-1"
+    assert prepare.verification is not None
+    assert prepare.verification.rules[0].state == "approach-approved"
+    entry = _store(root)["rules"][text_hash]
+    assert (entry["status"], entry["approved_by"]) == ("approach-approved", "auto")
+    stop = _report(service, STAGE_B, checks=(FOO_CHECK,))
+    assert stop.operator_reason == "check_proposed"
+    assert [(p.kind, p.key) for p in stop.proposals] == [("check", "cli-surface")]
+
+    recorded = service.next("TASK-1", approve=("cli-surface",))
+
+    assert recorded.item_name == "check"
+    assert _store(root)["checks"]["cli-surface"]["approved_by"] == "operator"
+
+
+def test_check_approval_still_stops_for_an_ambiguous_rule(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _approval(root, "check")
+    service, _ = _developed(root)
+
+    stop = _report(
+        service,
+        {"id": "develop/1", "status": "ambiguous", "candidates": ["a", "b"]},
+    )
+
+    assert stop.operator_reason == "check_proposed"
+    assert stop.proposals[0].kind == "ambiguous"
+
+
+def test_auto_approval_converts_a_proven_check_without_a_stop(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _approval(root, "auto")
+    service, _ = _developed(root, "print(1)  # foo\n")
+    text_hash = rule_text_hash(CLI)
+
+    prepare = _active(service, _report(service, _approach()))
+    assert prepare.verification is not None
+    assert prepare.verification.rules[0].state == "approach-approved"
+    recorded = _report(service, STAGE_B, checks=(FOO_CHECK,))
+
+    assert recorded.status != "failed"
+    assert "- `develop/1`: passed (check `cli-surface`)" in _artifact(root)
+    check = _store(root)["checks"]["cli-surface"]
+    assert (check["status"], check["approved_by"], check["approved_in"]) == (
+        "converted",
+        "auto",
+        "TASK-1/01-task",
+    )
+    assert _store(root)["rules"][text_hash]["status"] == "converted"
+    done = _finish(service, recorded)
+    assert done.status == "completed"
+    assert [check.name for check in done.rule_conversions.converted] == [
+        "cli-surface"
+    ]
+    converted = done.rule_conversions.converted[0]
+    assert converted.rules[0].id == "develop/1"
+    assert converted.approved_by == "auto"
+    assert converted.undo is not None and converted.undo.endswith(
+        "rules revoke cli-surface"
+    )
+    page = _markdown(done)
+    assert "### Rules converted in this run" in page
+    assert "- Check `cli-surface` (approved by auto)" in page
+    assert f"  - Rule `develop/1`: {CLI}" in page
+    assert "  - Proven: yes" in page
+    assert "rules revoke cli-surface`" in page
+    summary = _summary_artifact(root, service)
+    assert summary.startswith("Summary.")
+    assert "## Rules converted in this run" in summary
+    assert "rules revoke cli-surface" in summary
+    rendered_json = json.loads(JsonOutputAdapter().render_instruction(done))
+    assert rendered_json["rule_conversions"]["converted"][0]["name"] == "cli-surface"
+
+
+def test_auto_approval_leaves_an_unproven_check_undecided_and_judges(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _approval(root, "auto")
+    service, _ = _developed(root)
+    _active(service, _report(service, _approach()))
+
+    judged = _active(
+        service,
+        _report(service, STAGE_B, checks=({**FOO_CHECK, "proven": False},)),
+    )
+
+    assert judged.status != "failed"
+    assert judged.verification is not None
+    rule = judged.verification.rules[0]
+    assert (rule.state, rule.pending_operator) == ("judged", True)
+    assert _store(root)["checks"]["cli-surface"]["status"] == "proposed"
+    recorded = _report(service, JUDGED_PASS)
+    assert recorded.status != "failed"
+    done = _finish(service, recorded)
+    assert done.rule_conversions.converted == ()
+    assert [(p.kind, p.key, p.proven) for p in done.rule_conversions.undecided] == [
+        ("check", "cli-surface", False)
+    ]
+    page = _markdown(done)
+    assert "No check was approved in this run." in page
+    assert "- Check `cli-surface` (proposed)" in page
+    assert "## Rules converted in this run" in _summary_artifact(root, service)
+
+
+def test_auto_approval_judges_an_ambiguous_rule_without_a_stop(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _approval(root, "auto")
+    service, _ = _developed(root)
+
+    judged = _active(
+        service,
+        _report(
+            service,
+            {"id": "develop/1", "status": "ambiguous", "candidates": ["a", "b"]},
+        ),
+    )
+
+    assert judged.status != "failed"
+    assert judged.verification is not None
+    assert judged.verification.rules[0].state == "judged"
+    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "ambiguous"
+    recorded = _report(service, JUDGED_PASS)
+    assert recorded.status != "failed"
+    done = _finish(service, recorded)
+    assert [(p.kind, p.status) for p in done.rule_conversions.undecided] == [
+        ("rule", "ambiguous")
+    ]
+
+
+def test_nothing_converted_leaves_no_section(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service, _ = _developed(root)
+
+    recorded = _report(service, PASS)
+
+    done = _finish(service, recorded)
+    assert not done.rule_conversions
+    assert "Rules converted in this run" not in _markdown(done)
+    assert "Rules converted" not in _summary_artifact(root, service)

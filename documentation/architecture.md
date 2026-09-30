@@ -1480,7 +1480,18 @@ operator, whose `--retry` lets the check stand and whose `--force` waives that
 one check for the step. Waivers are kept per check on the item record, and
 disputes in a log beside the store, so a check that is disputed often shows
 up in `lint`. `rule` and `rules` are read-only views over the frozen plan and
-the store; `rules prune` deletes orphan store entries after asking.
+the store; `rules prune` deletes orphan store entries after asking, and
+`rules revoke` rejects one check and its rules the same way.
+
+`rules.approval` in `ww-agentic-workflows.json` is read live, when a
+verification completes: `automatic_decisions` turns it into the same
+`Decisions` value the operator's `next` builds, and `apply_decisions` records
+it with `approved_by: auto`, so there is one approval path. Under `auto`,
+`blocking_proposals` is empty: what stays undecided is dropped from the
+step's open proposals and judged like a proposal from elsewhere. The
+"Rules converted in this run" report (`instructions/conversions.py`) is
+derived from the store's `approved_in` / `proposed_run` and rendered on the
+completion page and appended to the workflow summary artifact by ww.
 
 Rules are written by the operator, through the `ww-rule` skill, never by a
 running task. The skill holds the judgment (atomic rules, amendments, globs,

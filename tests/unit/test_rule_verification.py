@@ -24,11 +24,14 @@ from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_verification import (
     Decisions,
     apply_decisions,
+    automatic_decisions,
+    blocking_proposals,
     effective_hints,
     parse_check_results,
     parse_rule_results,
     record_results,
     resolve_rules,
+    revoke_check,
     verification_item,
     verification_needs,
 )
@@ -518,6 +521,78 @@ def test_an_approved_revision_replaces_the_running_check() -> None:
     rejected, _, _ = apply_decisions(automation, ("lint",), Decisions(reject="no"), NOW)
     assert rejected.checks["lint"].status == "converted"
     assert rejected.checks["lint"].pending is None
+
+
+def test_approvals_record_who_approved_and_in_which_run() -> None:
+    automation, _, _ = apply_decisions(
+        _proposed(),
+        KEYS,
+        Decisions(approve=(rule_text_hash(CLI), "log-check")),
+        NOW,
+        approved_by="auto",
+        run="TASK-1/01-task",
+    )
+
+    cli = automation.rules[rule_text_hash(CLI)]
+    assert (cli.approved_by, cli.approved_in) == ("auto", "TASK-1/01-task")
+    check = automation.checks["log-check"]
+    assert (check.approved_by, check.approved_in) == ("auto", "TASK-1/01-task")
+    assert automation.rules[rule_text_hash(LOGS)].approved_by == "auto"
+    # Nothing undecided is marked approved.
+    assert automation.rules[rule_text_hash(NAMES)].approved_by is None
+
+
+def _proven(proven: bool) -> RuleAutomation:
+    check = _check((rule_text_hash(LOGS),), "proposed")
+    return _proposed().with_check(
+        "log-check", replace(check, spec=replace(check.spec, proven=proven))
+    )
+
+
+def test_operator_approval_decides_nothing_automatically() -> None:
+    assert not automatic_decisions(_proven(True), KEYS, "operator")
+    assert blocking_proposals(_proven(True), KEYS, "operator") == KEYS
+
+
+def test_check_approval_approves_only_approaches() -> None:
+    decisions = automatic_decisions(_proven(True), KEYS, "check")
+
+    assert decisions == Decisions(approve=(rule_text_hash(CLI),))
+    assert blocking_proposals(_proven(True), KEYS, "check") == KEYS
+
+
+@pytest.mark.parametrize("proven", [True, False])
+def test_auto_approval_approves_approaches_and_proven_checks(proven: bool) -> None:
+    decisions = automatic_decisions(_proven(proven), KEYS, "auto")
+
+    expected = (rule_text_hash(CLI), "log-check") if proven else (rule_text_hash(CLI),)
+    assert decisions == Decisions(approve=expected)
+    # An ambiguous rule and an unproven check never stop the task under auto.
+    assert blocking_proposals(_proven(proven), KEYS, "auto") == ()
+
+
+def test_revoking_rejects_the_check_and_the_rules_it_covers() -> None:
+    logs = rule_text_hash(LOGS)
+    automation = (
+        RuleAutomation()
+        .with_check("log-check", _check((logs, "gone")))
+        .with_rule(logs, RuleEntry(LOGS, "converted", check="log-check"))
+        .with_rule(
+            rule_text_hash(CLI), RuleEntry(CLI, "converted", check="other-check")
+        )
+    )
+
+    revoked, rules = revoke_check(automation, "log-check", "revoked: slow")
+
+    assert rules == (logs,)
+    check = revoked.checks["log-check"]
+    assert (check.status, check.reason) == ("rejected", "revoked: slow")
+    assert revoked.rules[logs].status == "rejected"
+    assert revoked.rules[rule_text_hash(CLI)].status == "converted"
+    with pytest.raises(StateError, match="already rejected"):
+        revoke_check(revoked, "log-check", "again")
+    with pytest.raises(StateError, match="has no check 'nope'"):
+        revoke_check(revoked, "nope", "x")
 
 
 @pytest.mark.parametrize(
