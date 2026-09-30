@@ -39,7 +39,7 @@ def implicit_init_step() -> StepDefinition:
 
 _HOOK_PHASES = {
     "before_start_workflow",
-    "before_in_progress",
+    "before_start",
     "before_complete",
     "after_complete",
     "before_complete_workflow",
@@ -149,7 +149,7 @@ def _validate_steps(
 ) -> None:
     """Validate one sibling list; ``enclosing`` holds earlier upper-level steps.
 
-    ``depends_on`` resolves to the nearest earlier step of that name: an
+    ``artifact_from`` resolves to the nearest earlier step of that name: an
     earlier sibling first, then an earlier step of each enclosing level.  A
     container's own step is visible to its nested steps only when its work
     has finished before them: an assessment to its outcomes and an item
@@ -185,17 +185,17 @@ def _validate_steps(
                 f"step {step.name!r} in workflow {workflow_name!r} uses "
                 f"{control} outside a loop"
             )
-        if step.loop_max_times is not None and (
-            not is_positive_int(step.loop_max_times)
+        if step.max_rounds is not None and (
+            not is_positive_int(step.max_rounds)
         ):
             raise ConfigurationError(
                 f"step {step.name!r} in workflow {workflow_name!r} has an invalid "
-                "loop_max_times; expected a positive integer"
+                "max_rounds; expected a positive integer"
             )
-        if step.loop_max_times is not None and not step.loop_steps:
+        if step.max_rounds is not None and not step.loop_steps:
             raise ConfigurationError(
                 f"step {step.name!r} in workflow {workflow_name!r} uses "
-                "loop_max_times without a loop"
+                "max_rounds without a loop"
             )
         if (step.loop_break is not None or step.loop_continue is not None) and (
             step.child_steps or step.loop_steps
@@ -211,14 +211,16 @@ def _validate_steps(
             )
             if dependency is None:
                 raise ConfigurationError(
-                    f"step {step.name!r} in workflow {workflow_name!r} depends_on "
+                    f"step {step.name!r} in workflow {workflow_name!r} takes "
+                    "artifact_from "
                     f"step {step.artifact_dependency!r}, which is not an earlier "
                     "step at its own or an enclosing level"
                 )
             # A plain group runs only its children and saves nothing itself.
             if not dependency.artifact or dependency.child_steps:
                 raise ConfigurationError(
-                    f"step {step.name!r} in workflow {workflow_name!r} depends_on "
+                    f"step {step.name!r} in workflow {workflow_name!r} takes "
+                    "artifact_from "
                     f"step {dependency.name!r}, which does not produce an artifact"
                 )
         _validate_hooks(step.hooks, set(), expected_scope="step")
@@ -272,7 +274,7 @@ def _validate_transitions(
     for hook in (*global_hooks, *workflow.hooks):
         if _is_transition_hook(hook):
             raise ConfigurationError(
-                f"{hook.path or 'hook'} is a workflow transition at "
+                f"{hook.path or 'hook'} is a handoff_to transition at "
                 f"{hook.scope} scope; a transition hook belongs on the "
                 "after_complete hooks of a workflow's last step"
             )
@@ -290,20 +292,20 @@ def _validate_transitions(
         return
     if len(transitions) + len(hooked) > 1:
         raise ConfigurationError(
-            f"workflow {workflow.name!r} has more than one workflow transition; "
+            f"workflow {workflow.name!r} has more than one handoff_to; "
             "a task hands off once, so choose the target dynamically instead"
         )
     last = workflow.steps[-1]
     if transitions and transitions[0] is not last:
         raise ConfigurationError(
-            f"workflow {workflow.name!r} must place its workflow transition "
+            f"workflow {workflow.name!r} must place its handoff_to "
             f"step {transitions[0].name!r} last; nothing after a handoff runs"
         )
     if hooked:
         owner, hook = hooked[0]
         if owner is not last or hook.phase != "after_complete":
             raise ConfigurationError(
-                f"workflow {workflow.name!r} must place its workflow transition "
+                f"workflow {workflow.name!r} must place its handoff_to "
                 f"hook in the after_complete hooks of its last step "
                 f"{last.name!r}; nothing after a handoff runs"
             )
@@ -323,8 +325,8 @@ def _validate_transitions(
         ]
     if following:
         raise ConfigurationError(
-            f"handoff workflow {workflow.name!r} must end with a workflow "
-            f"transition; {following[0].path or 'a hook'} would run after it"
+            f"handoff workflow {workflow.name!r} must end with its handoff_to; "
+            f"{following[0].path or 'a hook'} would run after it"
         )
 
 
@@ -686,7 +688,7 @@ def _validate_execution_hints(
 
 
 def _validate_document_updates(configuration: WorkflowConfiguration) -> None:
-    """Every ``update_document`` must name a document declared at the root."""
+    """Every ``saves`` document entry must name a document declared at the root."""
     declared = {document.name for document in configuration.documents}
 
     def check(handler: HandlerDefinition, where: str) -> None:

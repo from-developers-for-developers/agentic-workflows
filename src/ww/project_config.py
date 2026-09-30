@@ -12,14 +12,14 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "runtime": "single",
   "update_check": true,
   "executable": "ww-agentic-workflows-dev",
-  "loop_max_times": 3,
+  "max_rounds": 3,
   "max_fixes": 3,
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
   ],
   "extensions": {
-    "ww/git": {"base_branches": {"default": "main"}, "use_separate_branch": true}
+    "ww/git": {"base_branches": {"default": "main"}, "separate_branch": true}
   }
 }
 ```
@@ -45,7 +45,7 @@ is inside a section, because it cannot know a third party's schema. Each
 extension validates its own settings and reports its own errors.
 
 ``task_format`` is the generated task ID format: a template over the
-``{timestamp}``, ``{digit}``, and ``{uuid}`` placeholders, or ``explicit`` to
+``{{timestamp}}``, ``{{digit}}``, and ``{{uuid}}`` placeholders, or ``explicit`` to
 require an ID for every task. It is a setting of the checkout and of the
 tracker a repository uses, not of what a workflow does, so it lives here.
 
@@ -86,12 +86,13 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "init": {"model": "cheapest", "reasoning": "low"},
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
-DEFAULT_LOOP_MAX_TIMES = 3
+DEFAULT_MAX_ROUNDS = 3
 DEFAULT_MAX_FIXES = 3
 # A ``task_format`` that forbids generated IDs: every task is started with an
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
-TASK_FORMAT_PLACEHOLDERS = frozenset({"{digit}", "{timestamp}", "{uuid}"})
+TASK_FORMAT_PLACEHOLDERS = frozenset({"{{digit}}", "{{timestamp}}", "{{uuid}}"})
+_OLD_TASK_FORMAT_PLACEHOLDER = re.compile(r"(?<!\{)\{(digit|timestamp|uuid)\}(?!\})")
 # The keys ww takes from a configured project's own settings files. Anything
 # else in such a file describes the project as a ww root of its own.
 PROJECT_FILE_KEYS = ("extensions", "task_format")
@@ -219,7 +220,7 @@ class ProjectConfig:
 
     extensions: dict[str, dict[str, Any]] = field(default_factory=dict)
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
-    loop_max_times: int = DEFAULT_LOOP_MAX_TIMES
+    max_rounds: int = DEFAULT_MAX_ROUNDS
     # Rejected completions a check allows before the operator decides.
     max_fixes: int = DEFAULT_MAX_FIXES
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
@@ -240,7 +241,7 @@ class ProjectConfig:
     # means the project launcher, ``./ww``, which falls back to the standard
     # name.
     executable: str | None = None
-    # The generated task ID format; ``None`` keeps ww's ``TASK-{timestamp}``.
+    # The generated task ID format; ``None`` keeps ww's ``TASK-{{timestamp}}``.
     task_format: str | None = None
 
     @property
@@ -410,12 +411,17 @@ def _parse_extensions(raw: dict[str, Any], path: str) -> dict[str, dict[str, Any
 
 
 def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
+    if "loop_max_times" in raw:
+        raise ConfigurationError(
+            f'{path}.loop_max_times was renamed to max_rounds: "max_rounds": '
+            f"{raw['loop_max_times']}"
+        )
     unknown = set(raw) - {
         "enabled",
         "runtime",
         "extensions",
         "builtins",
-        "loop_max_times",
+        "max_rounds",
         "max_fixes",
         "projects",
         "update_check",
@@ -438,9 +444,9 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         raise ConfigurationError(
             f"{path}.runtime must be one of: " + ", ".join(RUNTIME_INSTRUCTIONS)
         )
-    loop_max_times = raw.get("loop_max_times", DEFAULT_LOOP_MAX_TIMES)
-    if not is_positive_int(loop_max_times):
-        raise ConfigurationError(f"{path}.loop_max_times must be a positive integer")
+    max_rounds = raw.get("max_rounds", DEFAULT_MAX_ROUNDS)
+    if not is_positive_int(max_rounds):
+        raise ConfigurationError(f"{path}.max_rounds must be a positive integer")
     max_fixes = raw.get("max_fixes", DEFAULT_MAX_FIXES)
     if not is_positive_int(max_fixes):
         raise ConfigurationError(f"{path}.max_fixes must be a positive integer")
@@ -472,7 +478,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     return ProjectConfig(
         extensions=extensions,
         builtins=normalized,
-        loop_max_times=loop_max_times,
+        max_rounds=max_rounds,
         max_fixes=max_fixes,
         enabled=enabled,
         projects=_parse_projects(raw.get("projects"), path),
@@ -523,8 +529,16 @@ def _parse_task_format(data: Any, path: str) -> str | None:
         raise ConfigurationError(f"{path}.task_format must be a non-empty string")
     if data == EXPLICIT_TASK_FORMAT:
         return data
-    tokens = re.findall(r"\{[^{}]*\}", data)
-    if data.count("{") != len(tokens) or data.count("}") != len(tokens):
+    old = _OLD_TASK_FORMAT_PLACEHOLDER.search(data)
+    if old is not None:
+        renamed = _OLD_TASK_FORMAT_PLACEHOLDER.sub(r"{{\1}}", data)
+        raise ConfigurationError(
+            f"{path}.task_format placeholder {old.group(0)} was renamed to "
+            f"{{{{{old.group(1)}}}}}: task_format: {renamed}"
+        )
+    tokens = re.findall(r"\{\{[^{}]*\}\}", data)
+    rest = re.sub(r"\{\{[^{}]*\}\}", "", data)
+    if "{" in rest or "}" in rest:
         raise ConfigurationError(f"{path}.task_format has invalid placeholders")
     unknown = set(tokens) - TASK_FORMAT_PLACEHOLDERS
     if unknown:

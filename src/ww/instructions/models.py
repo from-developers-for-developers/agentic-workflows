@@ -286,7 +286,7 @@ class VerificationPage:
     @property
     def prepares(self) -> bool:
         """Whether any rule asks for a prepared check, so ``--check-result``."""
-        return any(rule.state == "approach-approved" for rule in self.rules)
+        return any(rule.state == "approach_approved" for rule in self.rules)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -302,7 +302,7 @@ class VerificationPage:
 
 @dataclass(frozen=True)
 class Proposal:
-    """One verifier proposal the operator decides at a ``check_proposed`` stop.
+    """One verifier proposal the operator decides at a ``rules_proposed`` stop.
 
     ``kind`` is ``approach`` (stage A: how a rule would be checked),
     ``check`` (stage B: a prepared command, or a ``revision`` of an approved
@@ -526,7 +526,7 @@ class Instruction:
     loop_continue_prompt: str | None = None
     loop_continue_command: str | None = None
     loop_iteration: int | None = None
-    loop_max_times: int | None = None
+    max_rounds: int | None = None
     loop_limit_reached: bool = False
     # The enclosing loop of a body step, so the round can be described.
     loop_name: str | None = None
@@ -662,7 +662,7 @@ class Instruction:
     # The worker's assignment ended with this command: ww's report of it,
     # which the worker returns to the manager verbatim.
     handoff_block: HandoffBlock | None = None
-    # A verification item's rules and evidence, and, at a ``check_proposed``
+    # A verification item's rules and evidence, and, at a ``rules_proposed``
     # stop, the proposals the operator decides.
     verification: VerificationPage | None = None
     proposals: tuple[Proposal, ...] = ()
@@ -690,7 +690,7 @@ class Instruction:
             "loop_continue_prompt": self.loop_continue_prompt,
             "loop_continue_command": self.loop_continue_command,
             "loop_iteration": self.loop_iteration,
-            "loop_max_times": self.loop_max_times,
+            "max_rounds": self.max_rounds,
             "loop_limit_reached": self.loop_limit_reached,
             "loop_name": self.loop_name,
             "task_requirements": self.task_requirements,

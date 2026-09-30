@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from ww.actions import (
+    AssertionCondition,
     AssertionDefinition,
     CommandDefinition,
     CommandOutcome,
@@ -38,6 +39,9 @@ from ww.workflow_config import (
     StepDefinition,
     WorkflowConfiguration,
 )
+
+EMPTY = AssertionDefinition((AssertionCondition("empty"),))
+EQUALS_OK = AssertionDefinition((AssertionCondition("equals", "ok"),))
 
 
 def _write(path: Path, content: str) -> Path:
@@ -88,7 +92,7 @@ def test_rule_file_frontmatter_sets_paths_check_fixes_and_hints(tmp_path: Path) 
 paths: ["src/**/*.php"]
 check:
   shell: find $WW_STEP_CHANGED_FILES -name '*Service.php'
-  assert: { operator: empty }
+  assert: [empty]
 max_fixes: 5
 model: big
 ---
@@ -109,7 +113,7 @@ Controllers must not instantiate services.
     assert rule.paths == ("src/**/*.php",)
     assert rule.check is not None
     assert rule.check.commands[0].shell is not None
-    assert rule.check.assertion == AssertionDefinition("empty")
+    assert rule.check.assertion == EMPTY
     assert rule.max_fixes == 5
     assert rule.hints == RuleHints(agent="codex", model="big")
     assert rule.source == str(path)
@@ -144,7 +148,7 @@ def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
             "command is not allowed on a check",
         ),
         (
-            "---\ncheck:\n  assert: {operator: empty}\n---\nText.\n",
+            "---\ncheck:\n  assert: [empty]\n---\nText.\n",
             "require argv or shell",
         ),
         ("---\n- a list\n---\nText.\n", "must be a mapping"),
@@ -162,12 +166,12 @@ def test_rule_file_errors_name_the_file(
     assert "bad.md" in str(raised.value)
 
 
-def test_rule_check_accepts_argv_with_an_eq_assertion(tmp_path: Path) -> None:
+def test_rule_check_accepts_argv_with_an_equals_assertion(tmp_path: Path) -> None:
     rule = parse_rule_file(
         _rule(
             tmp_path,
             "rule.md",
-            "---\ncheck:\n  argv: [echo, ok]\n  assert: {operator: eq, expected: ok}\n"
+            "---\ncheck:\n  argv: [echo, ok]\n  assert: [{equals: ok}]\n"
             "---\nSay ok.\n",
         ),
         "group/rule",
@@ -175,7 +179,7 @@ def test_rule_check_accepts_argv_with_an_eq_assertion(tmp_path: Path) -> None:
 
     assert rule.check is not None
     assert rule.check.commands[0].argv == ("echo", "ok")
-    assert rule.check.assertion == AssertionDefinition("eq", "ok")
+    assert rule.check.assertion == EQUALS_OK
 
 
 @pytest.mark.parametrize(
@@ -419,7 +423,7 @@ workflows:
           - Keep the public CLI unchanged.
           - text: Include "foo" in every file you change.
             shell: grep -L foo $WW_STEP_CHANGED_FILES
-            assert: { operator: empty }
+            assert: [empty]
           - argv: [vendor/bin/phpstan, analyse]
           - rules/one-off/no-migrations.md
           - php
@@ -455,7 +459,7 @@ workflows:
         ("- {max_fixes: 2}", "requires text or a command"),
         ("- {text: Do it., when: always}", "unknown key"),
         ("- {text: ''}", "text must be a non-empty string"),
-        ("- {text: Do it., assert: {operator: empty}}", "require argv or shell"),
+        ("- {text: Do it., assert: [empty]}", "require argv or shell"),
         ("- 3", "must be a string or a mapping"),
     ],
 )
@@ -519,28 +523,29 @@ def test_assert_empty_parses_and_holds_only_on_blank_output(tmp_path: Path) -> N
     steps:
       - name: probe
         argv: [echo]
-        assert: { operator: empty }
+        assert: [empty]
 """,
     )
 
     assertion = _step(load_configuration(tmp_path / "ww-agentic-workflows.yaml")).action
     assert assertion is not None
-    assert assertion.payload.assertion == AssertionDefinition("empty")
-    assert AssertionDefinition("empty").holds(" \n")
-    assert not AssertionDefinition("empty").holds("x")
+    assert assertion.payload.assertion == EMPTY
+    assert EMPTY.holds(" \n")
+    assert not EMPTY.holds("x")
     decoded = CommandAction().decode(CommandAction().encode(assertion.payload))
-    assert decoded.assertion == AssertionDefinition("empty")
+    assert decoded.assertion == EMPTY
 
 
 @pytest.mark.parametrize(
     ("assertion", "message"),
     [
-        ("{operator: empty, expected: x}", "expected is not allowed"),
-        ("{operator: eq}", "expected"),
-        ("{operator: contains, expected: x}", "must be eq or empty"),
+        ("[]", "must be a non-empty list of conditions"),
+        ("[{equals: ''}]", "equals must be a non-empty string"),
+        ("[{contains: x}]", "unknown key"),
+        ("{operator: empty}", "was renamed to a list of conditions"),
     ],
 )
-def test_assert_operator_errors(tmp_path: Path, assertion: str, message: str) -> None:
+def test_assert_condition_errors(tmp_path: Path, assertion: str, message: str) -> None:
     _config(
         tmp_path,
         "workflows:\n  - name: task\n    steps:\n      - name: probe\n"
@@ -561,7 +566,7 @@ def test_an_empty_assertion_fails_a_handler_that_prints() -> None:
         runtime_values: dict[str, str] = {}
 
     planned = Commands(
-        (CommandDefinition(argv=("echo",)),), AssertionDefinition("empty")
+        (CommandDefinition(argv=("echo",)),), EMPTY
     )
 
     result = CommandAction().execute(planned, _Context())  # type: ignore[arg-type]
@@ -642,7 +647,7 @@ def test_on_failure_fix_is_not_valid_on_a_workflow_transition(tmp_path: Path) ->
         description: Develop.
         hooks:
           before_complete:
-            - workflow: other
+            - handoff_to: other
               on_failure: fix
 """,
     )
@@ -654,7 +659,7 @@ def test_on_failure_fix_is_not_valid_on_a_workflow_transition(tmp_path: Path) ->
 def test_a_fix_hook_must_run_a_command(tmp_path: Path) -> None:
     _hooks(
         tmp_path,
-        "      before_complete:\n        - name: think\n          prompt: true\n"
+        "      before_complete:\n        - name: think\n          kind: prompt\n"
         "          on_failure: fix\n",
     )
 
@@ -843,7 +848,7 @@ workflows:
     hooks:
       after_complete:
         - name: note
-          prompt: true
+          kind: prompt
     steps:
       - develop: Develop.
 """,
@@ -879,7 +884,7 @@ workflows:
         rules:
           - text: No TODOs.
             shell: grep -l TODO $WW_STEP_CHANGED_FILES
-            assert: { operator: empty }
+            assert: [empty]
         hooks:
           before_complete:
             - argv: [pytest, -q]
@@ -922,7 +927,7 @@ def test_a_rule_check_is_planned_like_a_cli_handler(tmp_path: Path) -> None:
         description: Develop.
         rules:
           - text: Name the task.
-            argv: [grep, "{{__task_id}}", NOTES.md]
+            argv: [grep, "{{ww.task.id}}", NOTES.md]
           - text: Use a known value.
             argv: [echo, "{{unknown}}"]
 """,
@@ -937,7 +942,7 @@ def test_rules_and_checks_round_trip_through_the_plan_codec(tmp_path: Path) -> N
         tmp_path,
         "rules/one.md",
         "---\npaths: ['*.py']\nagent: claudecode\ncheck:\n  shell: 'true'\n"
-        "  assert: {operator: empty}\n---\nOne.",
+        "  assert: [empty]\n---\nOne.",
     )
     _config(
         tmp_path,
@@ -966,10 +971,10 @@ workflows:
     # The plan freezes where each rule comes from: its file, relative to the
     # root, or nothing for a rule written in the step's YAML.
     assert [rule.source for rule in item.rules] == ["rules/one.md", None]
-    assert item.checks[0].command.assertion == AssertionDefinition("empty")
+    assert item.checks[0].command.assertion == EMPTY
     snapshot = PlanSnapshot(PLAN_SCHEMA_VERSION, "test", "digest", "now", plan)
     assert PlanSnapshot.from_dict(snapshot.to_dict()).plan.to_dict() == plan.to_dict()
-    assert PLAN_SCHEMA_VERSION == 17
+    assert PLAN_SCHEMA_VERSION == 18
 
 
 def test_a_plan_without_rules_serializes_as_before(tmp_path: Path) -> None:

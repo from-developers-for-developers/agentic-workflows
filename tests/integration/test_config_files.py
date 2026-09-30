@@ -85,7 +85,7 @@ def test_init_renames_former_files_and_keeps_their_settings(
     _write(project / "workflows.yaml", _WORKFLOW)
     _write(
         project / "agentic-workflows.json",
-        json.dumps({"loop_max_times": 7, "executable": "ww-custom"}),
+        json.dumps({"max_rounds": 7, "executable": "ww-custom"}),
     )
 
     assert main(["--root", str(project), "init", "--no-input", "--json"]) == 0
@@ -99,7 +99,7 @@ def test_init_renames_former_files_and_keeps_their_settings(
     assert not (project / "agentic-workflows.json").exists()
     assert "task: Repo task." in (project / "ww-agentic-workflows.yaml").read_text()
     settings = json.loads((project / "ww-agentic-workflows.json").read_text())
-    assert settings["loop_max_times"] == 7
+    assert settings["max_rounds"] == 7
     assert settings["executable"] == "ww-custom"
     assert main(["--root", str(project), "lint"]) == 0
 

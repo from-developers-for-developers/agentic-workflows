@@ -85,7 +85,7 @@ def rule_conversions(
         for text_hash, entry in automation.rules.items():
             if (
                 entry.proposed_run == run
-                and entry.status in {"ambiguous", "approach-proposed"}
+                and entry.status in {"ambiguous", "approach_proposed"}
             ):
                 undecided.append(
                     UndecidedProposal(

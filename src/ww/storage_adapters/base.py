@@ -19,6 +19,7 @@ from ww.execution_models import (
     WorkflowRunSummary,
 )
 from ww.items import WorkItem
+from ww.variables import METADATA_PREFIX, PROJECT_METADATA_PREFIX
 
 _METADATA_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*")
 _METADATA_FIELD = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
@@ -125,7 +126,8 @@ class TaskMetadata:
     @property
     def interpolation_values(self) -> dict[str, str]:
         return {
-            f"metadata.{key}": metadata_leaf_text(value) for key, value in self.values
+            f"{METADATA_PREFIX}{key}": metadata_leaf_text(value)
+            for key, value in self.values
         }
 
     def to_dict(self) -> dict[str, object]:
@@ -144,7 +146,7 @@ class ProjectMetadata:
     @property
     def interpolation_values(self) -> dict[str, str]:
         return {
-            f"project_metadata.{key}": metadata_leaf_text(value)
+            f"{PROJECT_METADATA_PREFIX}{key}": metadata_leaf_text(value)
             for key, value in self.values
         }
 

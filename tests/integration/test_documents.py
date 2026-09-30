@@ -23,13 +23,14 @@ workflows:
   - name: task
     steps:
       - name: derive
-        description: "Derive test cases into {{documents.test_cases}}."
-        update_document:
-          - test_cases: One checklist item per case; keep items that still hold.
+        description: "Derive test cases into {{ww.documents.test_cases}}."
+        saves:
+          - documents.test_cases: >-
+              One checklist item per case; keep items that still hold.
       - name: report
         description: >-
-          Report from {{documents.test_cases}}; conventions in
-          {{documents.conventions}}.
+          Report from {{ww.documents.test_cases}}; conventions in
+          {{ww.documents.conventions}}.
         artifact: false
 """
 
@@ -131,7 +132,7 @@ def test_a_declared_path_resolves_in_the_project_or_the_task_workspace(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """documents:
   - notes: Notes kept with the repository.
-    path: documentation/issues/{task_id}/notes.md
+    path: documentation/issues/{{ww.task.id}}/notes.md
   - glossary: Shared terms.
     scope: project
     path: docs/glossary.md
@@ -139,9 +140,9 @@ workflows:
   - name: task
     steps:
       - name: note
-        description: "Write {{documents.notes}}; terms in {{documents.glossary}}."
-        update_document:
-          - notes: Keep the notes current.
+        description: "Write {{ww.documents.notes}}; terms in {{ww.documents.glossary}}."
+        saves:
+          - documents.notes: Keep the notes current.
 """,
         encoding="utf-8",
     )

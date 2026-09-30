@@ -2,7 +2,7 @@
 """Map what a person calls a task onto the task IDs this project uses.
 
 People rarely type an ID the way ww stores it. With ``task_format:
-FORMS-{digit}`` they say "12345" or "forms-12345" and mean ``FORMS-12345``;
+FORMS-{{digit}}`` they say "12345" or "forms-12345" and mean ``FORMS-12345``;
 with tracker keys (``task_format: explicit``) "12345" usually means the one
 existing task whose key ends in it. Resolution is deterministic and read-only:
 it proposes, and the caller decides what to do with the answer.
@@ -21,12 +21,12 @@ from ww.task_ids import (
     validate_task_id,
 )
 
-_PLACEHOLDER = re.compile(r"\{(?:digit|timestamp|uuid)\}")
+_PLACEHOLDER = re.compile(r"\{\{(?:digit|timestamp|uuid)\}\}")
 # The values each placeholder generates; a reference fills a slot only with one.
 _SLOT_VALUES = {
-    "{digit}": re.compile(r"\d+"),
-    "{timestamp}": re.compile(r"\d{14}(?:-\d+)?"),
-    "{uuid}": re.compile(
+    "{{digit}}": re.compile(r"\d+"),
+    "{{timestamp}}": re.compile(r"\d{14}(?:-\d+)?"),
+    "{{uuid}}": re.compile(
         r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-\d+)?",
         re.IGNORECASE,
     ),
@@ -96,7 +96,7 @@ def _formatted(text: str, task_format: str | None) -> str | None:
     """
     if task_format == EXPLICIT_TASK_FORMAT:
         return None
-    template = task_format or GENERATED_TASK_PREFIX + "{timestamp}"
+    template = task_format or GENERATED_TASK_PREFIX + "{{timestamp}}"
     slots = _PLACEHOLDER.findall(template)
     if len(slots) != 1:
         return None

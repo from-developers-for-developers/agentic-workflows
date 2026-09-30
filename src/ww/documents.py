@@ -18,7 +18,7 @@ from pathlib import Path
 from ww.errors import StateError
 from ww.storage import Storage
 from ww.validation import expect_optional_string, expect_string
-from ww.workflow_config import DocumentDefinition
+from ww.workflow_config import TASK_ID_TOKEN, DocumentDefinition
 
 JOURNAL_FILE = "documents.json"
 DOCUMENTS_DIRECTORY = "documents"
@@ -85,7 +85,7 @@ class DocumentStore:
             if document.scope == "task" and workspace is not None
             else self.storage.root
         )
-        relative = document.path.replace("{task_id}", task_id or "")
+        relative = document.path.replace(TASK_ID_TOKEN, task_id or "")
         return (base / relative).resolve()
 
     def exists(

@@ -35,8 +35,7 @@ handlers:
   - name: lint
     argv: [printf, clean]
     assert:
-      operator: eq
-      expected: clean
+      - equals: clean
 
 hooks:
   before_start_workflow:
@@ -62,16 +61,16 @@ workflows:
       - review: Review the greeting.
         items:
           description: One item per review finding.
-          item_assignment: per_item
+          assignment: per_item
           steps:
             - analyze: Analyze this finding.
-              process_item: ~
+              item_phase: analyze
             - fix: Fix this finding.
-              resolve_item: ~
+              item_phase: resolve
             - reply: Report the outcome.
-              report_item: ~
+              item_phase: report
       - polish:
-        loop_max_times: 3
+        max_rounds: 3
         loop:
           - check: Check the greeting once more.
             break: Nothing is left to polish.
@@ -79,12 +78,12 @@ workflows:
   - name: triage
     steps:
       - choose: Choose the follow-up workflow.
-        provide:
+        variables:
           - name: workflow
             description: The workflow to run next.
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
 
   - name: docs
     steps:
@@ -102,10 +101,10 @@ workflows:
 """
 
 GIT_SETTINGS = {
-    "commit_format": "{{task_id}}: {{commit_message}}",
+    "commit_format": "{{ww.task.id}}: {{commit_message}}",
     "base_branches": {"default": "main"},
-    "use_separate_branch": True,
-    "branch_name_formats": {"default": "feature/{{task_id}}"},
+    "separate_branch": True,
+    "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
 }
 
 
@@ -467,7 +466,7 @@ def run_parent(project: Project) -> None:
 
     waiting = service.next(parent)
     assert waiting.action_kind == "child_workflow"
-    assert "./ww child start TASK-3 c1" in (waiting.action_text or "")
+    assert "./ww start-child TASK-3 c1" in (waiting.action_text or "")
 
     started = service.start_child(parent, "c1")
     assert (started.task_id, started.item_name) == (child, "implement")

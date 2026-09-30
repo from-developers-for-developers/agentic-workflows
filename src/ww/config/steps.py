@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, get_args
+from typing import Any, cast, get_args
 
 from ww.actions import (
     DefinedAction,
@@ -12,7 +12,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
-from ww.contracts import ItemAssignment, LoopAssignment, StepRole
+from ww.contracts import ItemAssignment, ItemOperation, LoopAssignment, StepRole
 from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
 from ww.operations import ChildWorkflowRun, WorkflowHandoff
@@ -27,11 +27,13 @@ from ww.workflow_config import (
 )
 
 from .actions import (
+    RENAMED_HANDLER_KEYS,
     _bare_extension_reference,
     _handler_keys,
     _optional_workdir,
     _parse_handler,
     _parse_hooks,
+    reject_removed_handler_keys,
 )
 from .rules import parse_step_rules
 from .values import (
@@ -44,6 +46,7 @@ from .values import (
     _optional_agent,
     _optional_string,
     _profile,
+    _reject_renamed,
     _role,
     _subagents,
     _unique,
@@ -53,21 +56,18 @@ STEP_ONLY_KEYS: set[str] = {
     "hooks",
     "steps",
     "loop",
-    "loop_max_times",
-    "loop_assignment",
+    "max_rounds",
+    "assignment",
     "break",
     "continue",
     "role",
     "subagents",
     "interactive",
     "choices",
-    "ui",
     "profile",
     "items",
-    "process_item",
-    "resolve_item",
-    "report_item",
-    "depends_on",
+    "item_phase",
+    "artifact_from",
     "artifact",
     "children",
     "handler",
@@ -76,21 +76,19 @@ STEP_ONLY_KEYS: set[str] = {
     "rules",
 }
 
-CHILD_FLOW_KEYS = {"description", "workflow", "steps"}
+CHILD_FLOW_KEYS = {"description", "workflow", "steps", "assignment"}
 ITEM_FLOW_KEYS = {
     "description",
     "steps",
-    "item_assignment",
-    "shared",
-    "process_item",
-    "resolve_item",
-    "report_item",
-    "update_metadata",
-    "update_document",
-    "update_item",
+    "assignment",
+    "persistent",
+    "analyze",
+    "resolve",
+    "report",
+    "variables",
+    "saves",
     "interactive",
     "choices",
-    "ui",
     "identity",
     "unique",
     "agent",
@@ -105,13 +103,46 @@ BUILTIN_ITEM_STEP_NAME = "handle-item"
 BUILTIN_ITEM_STEP_PROMPT = (
     "Handle this item end to end: analyze it, resolve it, and report the outcome."
 )
-# Under ``items``, the marker keys carry guidance for one phase of the built-in
-# stage instead of marking a configured step.
+# Under ``items``, guidance for one phase of the built-in stage.
 _ITEM_PHASE_GUIDANCE = (
-    ("process_item", "When analyzing it"),
-    ("resolve_item", "When resolving it"),
-    ("report_item", "When reporting the outcome"),
+    ("analyze", "When analyzing it"),
+    ("resolve", "When resolving it"),
+    ("report", "When reporting the outcome"),
 )
+# ``item_phase`` on a per-item stage, and the item operation it marks.
+ITEM_PHASES: dict[str, ItemOperation] = {
+    "analyze": "process_item",
+    "resolve": "resolve_item",
+    "report": "report_item",
+}
+# ``interactive`` takes true (a conversation) or ``page`` (the operator page).
+INTERACTIVE_PAGE = "page"
+# Step and ``items`` keys that were renamed, with the new name and an example.
+RENAMED_STEP_KEYS = {
+    "loop_max_times": ("max_rounds", "max_rounds: 5"),
+    "loop_assignment": ("assignment", "assignment: per_round"),
+    "depends_on": ("artifact_from", "artifact_from: <step>"),
+    "ui": ("interactive: page", "interactive: page"),
+    "process_item": ("item_phase", "item_phase: analyze"),
+    "resolve_item": ("item_phase", "item_phase: resolve"),
+    "report_item": ("item_phase", "item_phase: report"),
+}
+RENAMED_ITEM_KEYS = {
+    "item_assignment": ("assignment", "assignment: together"),
+    "shared": ("persistent", "persistent: true"),
+    "process_item": ("analyze", "analyze: <guidance>"),
+    "resolve_item": ("resolve", "resolve: <guidance>"),
+    "report_item": ("report", "report: <guidance>"),
+    "ui": ("interactive: page", "interactive: page"),
+    **{
+        key: RENAMED_HANDLER_KEYS[key]
+        for key in ("provide", "update_metadata", "update_document", "update_item")
+    },
+}
+# Assignment values that were renamed.
+_RENAMED_ASSIGNMENTS = {"all_items": "together", "per_iteration": "per_round"}
+LOOP_ASSIGNMENTS: tuple[LoopAssignment, ...] = ("per_round", "per_step")
+CHILD_ASSIGNMENTS = ("per_step",)
 
 
 def _parse_handlers(data: Any) -> tuple[HandlerDefinition, ...]:
@@ -165,9 +196,7 @@ _STEP_CONTENT_KEYS = frozenset(
     {
         "description",
         "handler",
-        "skill",
-        "slash_command",
-        "prompt",
+        "kind",
         "mcp",
         "argv",
         "shell",
@@ -175,22 +204,17 @@ _STEP_CONTENT_KEYS = frozenset(
         "env",
         "assert",
         "idempotent",
-        "command",
         "action",
-        "provide",
-        "outputs",
-        "update_metadata",
-        "update_document",
+        "variables",
+        "saves",
         "steps",
         "loop",
         "items",
         "children",
-        "workflow",
+        "handoff_to",
         "question",
         "outcomes",
-        "process_item",
-        "resolve_item",
-        "report_item",
+        "item_phase",
         "rules",
     }
 )
@@ -271,7 +295,9 @@ def _parse_step(
             f"{path}.workflow_per_child was removed; collect and run the children "
             "on one step with `children: {workflow: <name>}`"
         )
-    _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"workflow"}, path)
+    _reject_renamed(mapping, path, RENAMED_STEP_KEYS)
+    reject_removed_handler_keys(mapping, path)
+    _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}, path)
     base = (
         HandlerDefinition(
             mapping["name"], workdir=_optional_workdir(mapping, path)
@@ -326,20 +352,22 @@ def _parse_step(
     local_loop_steps = _parse_nested_steps(
         mapping, "loop", path, handlers_by_name, require_nonempty=True
     )
-    loop_max_times: int | None = mapping.get("loop_max_times")
-    if loop_max_times is not None and (not is_positive_int(loop_max_times)):
-        raise ConfigurationError(f"{path}.loop_max_times must be a positive integer")
-    if "loop_max_times" in mapping and not local_loop_steps:
-        raise ConfigurationError(f"{path}.loop_max_times requires a loop")
-    loop_assignment: LoopAssignment | None = mapping.get("loop_assignment")
-    if "loop_assignment" in mapping:
-        if loop_assignment not in get_args(LoopAssignment):
-            raise ConfigurationError(
-                f"{path}.loop_assignment must be one of: "
-                + ", ".join(get_args(LoopAssignment))
-            )
+    max_rounds: int | None = mapping.get("max_rounds")
+    if max_rounds is not None and (not is_positive_int(max_rounds)):
+        raise ConfigurationError(f"{path}.max_rounds must be a positive integer")
+    if "max_rounds" in mapping and not local_loop_steps:
+        raise ConfigurationError(f"{path}.max_rounds requires a loop")
+    loop_assignment: LoopAssignment | None = None
+    if "assignment" in mapping:
         if not local_loop_steps:
-            raise ConfigurationError(f"{path}.loop_assignment requires a loop")
+            raise ConfigurationError(
+                f"{path}.assignment on a step goes beside a loop; for items or "
+                "children, write it inside that mapping"
+            )
+        loop_assignment = cast(
+            LoopAssignment,
+            _assignment(mapping["assignment"], f"{path}.assignment", LOOP_ASSIGNMENTS),
+        )
     loop_break = mapping.get("break")
     loop_continue = mapping.get("continue")
     for control_name, control_value in (
@@ -362,14 +390,14 @@ def _parse_step(
         if "loop" in mapping or referenced_step is None
         else referenced_step.loop_steps
     )
-    loop_max_times = (
-        loop_max_times
-        if "loop_max_times" in mapping or referenced_step is None
-        else referenced_step.loop_max_times
+    max_rounds = (
+        max_rounds
+        if "max_rounds" in mapping or referenced_step is None
+        else referenced_step.max_rounds
     )
     loop_assignment = (
         loop_assignment
-        if "loop_assignment" in mapping or referenced_step is None
+        if "assignment" in mapping or referenced_step is None
         else referenced_step.loop_assignment
     )
     loop_break = (
@@ -392,24 +420,22 @@ def _parse_step(
             bool(base.update_item),
             bool(base.outputs),
             "items" in mapping,
-            any(
-                key in mapping
-                for key in ("process_item", "resolve_item", "report_item")
-            ),
+            "item_phase" in mapping,
             "children" in mapping,
-            "depends_on" in mapping,
+            "artifact_from" in mapping,
         )
     ):
         raise ConfigurationError(
             f"{path} loop wrapper cannot also declare an action or collection"
         )
-    operations = [
-        key for key in ("process_item", "resolve_item", "report_item") if key in mapping
-    ]
-    if len(operations) > 1 or (operations and mapping[operations[0]] is not None):
-        raise ConfigurationError(
-            f"{path} item operation must be exactly one null marker"
-        )
+    operations: list[ItemOperation] = []
+    if "item_phase" in mapping:
+        phase = mapping["item_phase"]
+        if not isinstance(phase, str) or phase not in ITEM_PHASES:
+            raise ConfigurationError(
+                f"{path}.item_phase must be one of: " + ", ".join(ITEM_PHASES)
+            )
+        operations.append(ITEM_PHASES[phase])
     child_flow = (
         _parse_children(mapping, path, handlers_by_name)
         if "children" in mapping
@@ -419,7 +445,7 @@ def _parse_step(
     )
     if "children" in mapping and base.operation is not None:
         raise ConfigurationError(
-            f"{path} cannot combine children with a workflow transition; "
+            f"{path} cannot combine children with handoff_to; "
             "name the child workflow under children.workflow"
         )
     artifact = mapping.get("artifact", True)
@@ -427,18 +453,19 @@ def _parse_step(
         raise ConfigurationError(f"{path}.artifact must be true or false")
     role = _role(mapping, path)
     subagents = _subagents(mapping, path)
-    interactive = mapping.get("interactive", False)
-    if not isinstance(interactive, bool):
-        raise ConfigurationError(f"{path}.interactive must be true or false")
+    raw_interactive = mapping.get("interactive", False)
+    if not isinstance(raw_interactive, bool) and raw_interactive != INTERACTIVE_PAGE:
+        raise ConfigurationError(f"{path}.interactive must be true, false, or page")
+    interactive = raw_interactive is not False
+    ui = raw_interactive == INTERACTIVE_PAGE
     choices = _parse_choices(mapping.get("choices"), path)
-    ui = mapping.get("ui", False)
-    if not isinstance(ui, bool):
-        raise ConfigurationError(f"{path}.ui must be true or false")
-    depends_on = mapping.get("depends_on")
-    if depends_on is not None and (
-        not isinstance(depends_on, str) or not _NAME.fullmatch(depends_on)
+    artifact_from = mapping.get("artifact_from")
+    if artifact_from is not None and (
+        not isinstance(artifact_from, str) or not _NAME.fullmatch(artifact_from)
     ):
-        raise ConfigurationError(f"{path}.depends_on must be a normalized step name")
+        raise ConfigurationError(
+            f"{path}.artifact_from must be a normalized step name"
+        )
     hooks = (
         _parse_hooks(mapping.get("hooks", {}), "step", f"{path}.hooks")
         if "hooks" in mapping or referenced_step is None
@@ -467,11 +494,9 @@ def _parse_step(
         if "subagents" in mapping or referenced_step is None
         else referenced_step.subagents
     )
-    interactive = (
-        interactive
-        if "interactive" in mapping or referenced_step is None
-        else referenced_step.interactive
-    )
+    if "interactive" not in mapping and referenced_step is not None:
+        interactive = referenced_step.interactive
+        ui = referenced_step.ui
     if interactive and role == "worker":
         raise ConfigurationError(
             f"{path} is interactive, so the manager holds the conversation; "
@@ -487,15 +512,10 @@ def _parse_step(
             f"{path}.choices are offered to the operator, so they require "
             "interactive: true"
         )
-    ui = ui if "ui" in mapping or referenced_step is None else referenced_step.ui
-    if ui and not interactive:
-        raise ConfigurationError(
-            f"{path}.ui serves the operator page for a conversation, so it "
-            "requires interactive: true"
-        )
     if ui and not item_stage:
         raise ConfigurationError(
-            f"{path}.ui is offered on per-item stages only; declare it under items"
+            f"{path}.interactive: page is offered on per-item stages only; "
+            "declare it under items"
         )
     items = (
         _parse_items(mapping, path, handlers_by_name, profile, role, subagents)
@@ -513,9 +533,7 @@ def _parse_step(
             f"{path} cannot combine steps, loop, items, and children"
         )
     if items is not None and operations:
-        raise ConfigurationError(
-            f"{path} cannot combine items with an item operation marker"
-        )
+        raise ConfigurationError(f"{path} cannot combine items with item_phase")
     return StepDefinition(
         name=base.name,
         description=base.description,
@@ -541,7 +559,7 @@ def _parse_step(
         rules=rules,
         child_steps=children,
         loop_steps=loop_steps,
-        loop_max_times=loop_max_times,
+        max_rounds=max_rounds,
         loop_assignment=loop_assignment,
         loop_break=loop_break,
         loop_continue=loop_continue,
@@ -560,8 +578,8 @@ def _parse_step(
         ),
         children=child_flow,
         artifact_dependency=(
-            depends_on
-            if "depends_on" in mapping or referenced_step is None
+            artifact_from
+            if "artifact_from" in mapping or referenced_step is None
             else referenced_step.artifact_dependency
         ),
         assessment_question=assessment_question,
@@ -588,6 +606,15 @@ def _parse_children(
         )
     _only(value, CHILD_FLOW_KEYS, children_path)
     description = _optional_string(value, "description", children_path)
+    if "assignment" in value:
+        if "steps" not in value:
+            raise ConfigurationError(
+                f"{children_path}.assignment splits children.steps into worker "
+                "assignments; without steps ww runs each child itself"
+            )
+        _assignment(
+            value["assignment"], f"{children_path}.assignment", CHILD_ASSIGNMENTS
+        )
     if "steps" in value:
         if "workflow" in value:
             raise ConfigurationError(
@@ -614,18 +641,24 @@ def _parse_child_stages(
 
     Exactly one top-level stage carries ``workflow:``; inside ``children`` it
     runs the child task with that workflow and waits, so it becomes the
-    stage's ``ChildWorkflowRun`` rather than a workflow transition.
+    stage's ``ChildWorkflowRun``.  A ``handoff_to`` transition cannot run
+    here.
     """
     stages_path = f"{children_path}.steps"
     if not isinstance(value["steps"], list) or not value["steps"]:
         raise ConfigurationError(f"{stages_path} must contain at least one step")
+    entries = [_child_run_entry(entry) for entry in value["steps"]]
     stages = _parse_nested_steps(
-        {"steps": [_child_run_shorthand(entry) for entry in value["steps"]]},
+        {"steps": [entry for entry, _ in entries]},
         "steps",
         children_path,
         handlers_by_name,
     )
-    runs = [stage for stage in stages if isinstance(stage.operation, WorkflowHandoff)]
+    runs = [
+        stage
+        for stage, (_, runs_child) in zip(stages, entries, strict=True)
+        if runs_child
+    ]
     if len(runs) != 1:
         raise ConfigurationError(
             f"{stages_path} needs exactly one stage with `workflow:`, the one "
@@ -656,9 +689,9 @@ def _parse_child_stages(
             for hook in stage.hooks
         ):
             raise ConfigurationError(
-                f"{stages_path}: `workflow:` runs the child task here, so only "
-                f"one top-level stage may carry it; {stage.name!r} would be a "
-                "workflow transition, which cannot run inside children.steps"
+                f"{stages_path}: {stage.name!r} carries handoff_to, a workflow "
+                "transition, which cannot run inside children.steps; the stage "
+                "with `workflow:` runs the child task"
             )
         if stage.items is not None or stage.children is not None:
             raise ConfigurationError(
@@ -668,11 +701,13 @@ def _parse_child_stages(
     return ChildFlow(workflow=target, description=description, steps=converted)
 
 
-def _child_run_shorthand(entry: Any) -> Any:
-    """Expand ``- implement: {workflow: task}`` into a named stage.
+def _child_run_entry(entry: Any) -> tuple[Any, bool]:
+    """A top-level ``children.steps`` entry, and whether it runs the child.
 
-    The stage that runs the child has nothing to say but its workflow, so
-    it may be written as its name mapped to that setting.
+    The stage that runs the child names its ``workflow``; it is parsed as a
+    transition to that workflow and then turned into the child run.  It has
+    nothing to say but its workflow, so it may be written as its name
+    mapped to that setting: ``- implement: {workflow: task}``.
     """
     if (
         isinstance(entry, dict)
@@ -682,8 +717,37 @@ def _child_run_shorthand(entry: Any) -> Any:
         and "workflow" in next(iter(entry.values()))
     ):
         name, settings = next(iter(entry.items()))
-        return {"name": name, **settings}
-    return entry
+        entry = {"name": name, **settings}
+    if not isinstance(entry, dict) or "workflow" not in entry:
+        return entry, False
+    if "handoff_to" in entry:
+        raise ConfigurationError(
+            "a children.steps stage takes workflow (run the child) or "
+            "handoff_to, not both"
+        )
+    converted = {
+        ("handoff_to" if key == "workflow" else key): value
+        for key, value in entry.items()
+    }
+    return converted, True
+
+
+def _assignment(value: Any, path: str, allowed: tuple[str, ...]) -> str:
+    """Check one ``assignment`` value against the ones its construct takes."""
+    if not isinstance(value, str):
+        raise ConfigurationError(f"{path} must be one of: " + ", ".join(allowed))
+    if value in _RENAMED_ASSIGNMENTS:
+        new = _RENAMED_ASSIGNMENTS[value]
+        raise ConfigurationError(
+            f"{path}: {value} was renamed to {new}: assignment: {new}"
+        )
+    if value == "per_child":
+        raise ConfigurationError(
+            f"{path}: per_child is reserved and not built yet; use per_step"
+        )
+    if value not in allowed:
+        raise ConfigurationError(f"{path} must be one of: " + ", ".join(allowed))
+    return value
 
 
 def _parse_items(
@@ -705,15 +769,16 @@ def _parse_items(
         raise ConfigurationError(
             f"{items_path} must be null, splitting guidance text, or a mapping"
         )
+    _reject_renamed(value, items_path, RENAMED_ITEM_KEYS)
     _only(value, ITEM_FLOW_KEYS, items_path)
     description = (
         _nonempty_string(value, "description", items_path)
         if "description" in value
         else None
     )
-    shared = value.get("shared", False)
-    if not isinstance(shared, bool):
-        raise ConfigurationError(f"{items_path}.shared must be true or false")
+    persistent = value.get("persistent", False)
+    if not isinstance(persistent, bool):
+        raise ConfigurationError(f"{items_path}.persistent must be true or false")
     identity = value.get("identity")
     if identity is not None and (
         not isinstance(identity, str) or not FIELD_NAME.fullmatch(identity)
@@ -725,12 +790,14 @@ def _parse_items(
     ):
         raise ConfigurationError(f"{items_path}.unique must be a list of field names")
     unique = tuple(dict.fromkeys(([identity] if identity else []) + unique_raw))
-    assignment = value.get("item_assignment", "all_items")
-    if assignment not in get_args(ItemAssignment):
-        raise ConfigurationError(
-            f"{items_path}.item_assignment must be one of: "
-            + ", ".join(get_args(ItemAssignment))
-        )
+    assignment = cast(
+        ItemAssignment,
+        _assignment(
+            value.get("assignment", "together"),
+            f"{items_path}.assignment",
+            get_args(ItemAssignment),
+        ),
+    )
     phase_keys = [key for key, _ in _ITEM_PHASE_GUIDANCE]
     guidance = [
         (label, _nonempty_string(value, key, items_path))
@@ -746,14 +813,7 @@ def _parse_items(
         )
     folded = [
         key
-        for key in (
-            "update_metadata",
-            "update_document",
-            "update_item",
-            "interactive",
-            "choices",
-            "ui",
-        )
+        for key in ("variables", "saves", "interactive", "choices")
         if key in value
     ]
     if folded and "steps" in value:
@@ -764,7 +824,7 @@ def _parse_items(
     collect_only = "steps" in value and value["steps"] in ([], None)
     if collect_only:
         configured = [
-            key for key in ("item_assignment", *_ITEM_FLOW_SETTINGS) if key in value
+            key for key in ("assignment", *_ITEM_FLOW_SETTINGS) if key in value
         ]
         if configured:
             raise ConfigurationError(
@@ -772,7 +832,7 @@ def _parse_items(
                 + ", ".join(configured)
                 + " has no effect"
             )
-        return ItemFlow((), description, assignment, shared, identity, unique)
+        return ItemFlow((), description, assignment, persistent, identity, unique)
     defaults = _item_flow_defaults(
         value, path, step_profile, step_role, step_subagents
     )
@@ -812,8 +872,8 @@ def _parse_items(
     pages = [step.name for step in steps if step.ui]
     if len(pages) > 1:
         raise ConfigurationError(
-            f"{items_path} may answer one stage on the operator page; found ui: "
-            "true on " + ", ".join(pages)
+            f"{items_path} may answer one stage on the operator page; found "
+            "interactive: page on " + ", ".join(pages)
         )
     return ItemFlow(
         tuple(
@@ -822,7 +882,7 @@ def _parse_items(
         ),
         description,
         assignment,
-        shared,
+        persistent,
         identity,
         unique,
     )
@@ -965,21 +1025,8 @@ def _step_handler_reference(
     inline step.  A step name always remains its own identity, while a supplied
     description or handler field overrides the copied value.
     """
-    action_keys = {
-        "skill",
-        "slash_command",
-        "mcp",
-        "argv",
-        "shell",
-        "args",
-        "env",
-        "assert",
-        "command",
-    }
-    prompt_is_action = isinstance(mapping.get("prompt"), bool)
-    replaces_action = (
-        bool(action_keys & set(mapping)) or prompt_is_action or "action" in mapping
-    )
+    action_keys = {"kind", "mcp", "argv", "shell", "args", "env", "assert", "action"}
+    replaces_action = bool(action_keys & set(mapping))
     action = local.action if replaces_action else referenced.action
     if (
         action is not None
@@ -1015,21 +1062,17 @@ def _step_handler_reference(
         ),
         action=action,
         operation=local.operation if replaces_action else referenced.operation,
-        provide=local.provide if "provide" in mapping else referenced.provide,
+        provide=local.provide if "variables" in mapping else referenced.provide,
+        outputs=local.outputs if "variables" in mapping else referenced.outputs,
         save_metadata=(
-            local.save_metadata
-            if "update_metadata" in mapping
-            else referenced.save_metadata
+            local.save_metadata if "saves" in mapping else referenced.save_metadata
         ),
         update_document=(
-            local.update_document
-            if "update_document" in mapping
-            else referenced.update_document
+            local.update_document if "saves" in mapping else referenced.update_document
         ),
         update_item=(
-            local.update_item if "update_item" in mapping else referenced.update_item
+            local.update_item if "saves" in mapping else referenced.update_item
         ),
-        outputs=local.outputs if "outputs" in mapping else referenced.outputs,
         agent=local.agent if "agent" in mapping else referenced.agent,
         model=local.model if "model" in mapping else referenced.model,
         reasoning=(local.reasoning if "reasoning" in mapping else referenced.reasoning),

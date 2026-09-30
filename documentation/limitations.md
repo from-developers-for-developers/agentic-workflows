@@ -100,9 +100,9 @@ fails loudly rather than hanging.
 - Each started run executes from its saved plan snapshot, so edits to
   `ww-agentic-workflows.yaml` cannot alter work already in progress. To pick up a
   configuration change, start a new task.
-- A loop has an iteration limit. Reaching it escalates rather than failing
-  silently, and leaving the loop requires an explicit
-  `next --force --force-reason "<reason>"`.
+- A loop has a round limit (`max_rounds`). Reaching it escalates rather than
+  failing silently, and leaving the loop requires an explicit
+  `next --force --reason "<reason>"`.
 - The operator page is a local page served only for as long as a wait is in
   progress. There is no persistent web UI, no multi-user access control, and
   no remote operator.

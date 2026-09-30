@@ -215,7 +215,7 @@ def test_the_command_line_carries_the_token(
     service = _service(tmp_path)
     token = _dispatch(service).assignment_token
     base = ["--root", str(tmp_path), "complete", TASK, "--role", "worker"]
-    body = ["--artifact", "Done.", "--summary-for-next-step", "Done."]
+    body = ["--artifact", "Done.", "--summary", "Done."]
 
     assert main([*base, *body]) == 1
     assert "needs --assignment <token>" in capsys.readouterr().err

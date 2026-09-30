@@ -27,7 +27,7 @@ STAGES = """workflows:
             - implement:
                 workflow: child
             - review: Review {{ww.child.id}}.
-              depends_on: implement
+              artifact_from: implement
               break: Nothing more is worth doing.
             - land: Land {{ww.child.id}}.
   - name: child
@@ -94,7 +94,7 @@ def test_each_child_runs_its_parent_stages_in_order(tmp_path: Path) -> None:
     assert "Current child: `A` (pending), 1 of 2." in (refine.action_text or "")
     waiting = service.complete(TASK, artifact="Refined.", summary_for_next="Done.")
     assert waiting.action_kind == "child_workflow"
-    assert "./ww child start T1 A" in (waiting.action_text or "")
+    assert "./ww start-child T1 A" in (waiting.action_text or "")
 
     _run_child(service, "A")
     review = service.next(TASK)
@@ -364,7 +364,7 @@ def test_child_fields_through_the_cli(
     service.next(TASK)
     root = ["--root", str(tmp_path)]
 
-    added = [*root, "add-child", TASK, "--id", "A", "--description", "Slice A"]
+    added = [*root, "add-child", TASK, "--id", "A", "--text", "Slice A"]
     assert main([*added, "--field", "area=parser"]) == 0
     assert json.loads(capsys.readouterr().out)["fields"] == {"area": "parser"}
     assert main([*root, "update-child", TASK, "A", "--field", "area=lexer"]) == 0

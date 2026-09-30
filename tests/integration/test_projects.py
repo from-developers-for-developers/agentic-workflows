@@ -33,11 +33,11 @@ workflows:
   - name: triage
     steps:
       - choose: Choose the follow-up workflow.
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
   - name: parent
     steps:
       - split: Split the work.
@@ -170,7 +170,7 @@ def test_a_task_started_in_a_project_works_there(tmp_path: Path) -> None:
     assert _stdout(service, "T1") == str((root / "backend").resolve())
     state = service.tasks.read_execution_state("T1", "01-feature")
     assert state is not None
-    assert dict(state.workflow_values)["__project"] == "backend"
+    assert dict(state.workflow_values)["ww.project.name"] == "backend"
     assert not (root / ".ww/tasks/T1").exists() or (root / ".ww").exists()
 
 
@@ -220,7 +220,7 @@ def test_a_handoff_successor_keeps_the_project(tmp_path: Path) -> None:
     state = service.tasks.read_execution_state("T1", "02-feature")
     assert state is not None
     assert state.working_directory == "frontend"
-    assert dict(state.workflow_values)["__project"] == "frontend"
+    assert dict(state.workflow_values)["ww.project.name"] == "frontend"
 
 
 def test_update_child_moves_a_pending_child_to_another_project(
@@ -266,7 +266,7 @@ def test_children_run_in_their_own_project(
                 "P",
                 "--id",
                 "api",
-                "--description",
+                "--text",
                 "API part",
                 "--project",
                 "backend",
@@ -324,9 +324,9 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
                 "projects": PROJECTS,
                 "extensions": {
                     "ww/git": {
-                        "use_separate_branch": True,
+                        "separate_branch": True,
                         "base_branches": {"default": "main"},
-                        "branch_name_formats": {"default": "feature/{{task_id}}"},
+                        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
                     }
                 },
             }
@@ -342,7 +342,7 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
             "extensions": {
                 "ww/git": {
                     "base_branches": {"default": "master"},
-                    "commit_format": "[{{task_id}}] {{commit_message}}",
+                    "commit_format": "[{{ww.task.id}}] {{commit_message}}",
                 }
             },
         },
@@ -412,8 +412,8 @@ def test_projects_catalog_and_variables(
     (root / "ww-agentic-workflows.yaml").write_text(
         WORKFLOWS.replace(
             "      - develop: Implement it.\n",
-            "      - develop: Implement {{__project}} in {{__project_dir}} "
-            "among {{__projects}}.\n",
+            "      - develop: Implement {{ww.project.name}} in {{ww.project.dir}} "
+            "among {{ww.project.names}}.\n",
         ),
         encoding="utf-8",
     )
@@ -445,10 +445,10 @@ def _commit_settings(repo: Path, payload: object) -> None:
 
 
 ROOT_GIT_SETTINGS = {
-    "use_separate_branch": True,
+    "separate_branch": True,
     "base_branches": {"default": "main"},
-    "branch_name_formats": {"default": "feature/{{task_id}}"},
-    "commit_format": "{{task_id}}: {{commit_message}}",
+    "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
+    "commit_format": "{{ww.task.id}}: {{commit_message}}",
 }
 
 
@@ -476,7 +476,7 @@ def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
         root / "backend" / "ww-agentic-workflows.json",
         {
             "extensions": {
-                "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+                "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
             }
         },
     )
@@ -493,9 +493,9 @@ def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
 
     start_after_init(service, "feature", "T1", agent="codex", project="backend")
     assert formats("T1") == {
-        "task": "[{{task_id}}] {{commit_message}}",
-        "project": "[{{task_id}}] {{commit_message}}",
-        "root": "{{task_id}}: {{commit_message}}",
+        "task": "[{{ww.task.id}}] {{commit_message}}",
+        "project": "[{{ww.task.id}}] {{commit_message}}",
+        "root": "{{ww.task.id}}: {{commit_message}}",
     }
     # The rest of the root's section is kept: the project stated only what differs.
     snapshot = service.tasks.read_plan_snapshot("T1", "01-feature")
@@ -505,23 +505,23 @@ def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
         for item in snapshot.plan.items
         if item.kind == "extension" and item.workdir == "task"
     )
-    assert settings["branch_name_formats"] == {"default": "feature/{{task_id}}"}
+    assert settings["branch_name_formats"] == {"default": "feature/{{ww.task.id}}"}
 
     start_after_init(service, "feature", "T2", agent="codex", project="frontend")
-    assert set(formats("T2").values()) == {"{{task_id}}: {{commit_message}}"}
+    assert set(formats("T2").values()) == {"{{ww.task.id}}: {{commit_message}}"}
     start_after_init(service, "feature", "T3", agent="codex")
-    assert set(formats("T3").values()) == {"{{task_id}}: {{commit_message}}"}
+    assert set(formats("T3").values()) == {"{{ww.task.id}}: {{commit_message}}"}
 
     # ``plan --project`` compiles the plan a task in that project would get.
     assert main(
         ["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json",
          "--project", "backend"]
     ) == 0
-    assert "[{{task_id}}] {{commit_message}}" in capsys.readouterr().out
+    assert "[{{ww.task.id}}] {{commit_message}}" in capsys.readouterr().out
     assert main(
         ["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json"]
     ) == 0
-    assert "[{{task_id}}] {{commit_message}}" not in capsys.readouterr().out
+    assert "[{{ww.task.id}}] {{commit_message}}" not in capsys.readouterr().out
 
 
 def test_a_projects_worktree_settings_open_its_worktree_beside_the_project(
@@ -579,7 +579,7 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
         root / "backend" / "ww-agentic-workflows.json",
         {
             "extensions": {
-                "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+                "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
             }
         },
     )
@@ -605,7 +605,7 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
 
     assert main(["--root", str(root), "extension", "ww/git", "settings"]) == 0
     assert json.loads(capsys.readouterr().out)["commit_format"] == (
-        "{{task_id}}: {{commit_message}}"
+        "{{ww.task.id}}: {{commit_message}}"
     )
     assert (
         main(
@@ -615,10 +615,10 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
         == 0
     )
     resolved = json.loads(capsys.readouterr().out)
-    assert resolved["commit_format"] == "[{{task_id}}] {{commit_message}}"
+    assert resolved["commit_format"] == "[{{ww.task.id}}] {{commit_message}}"
     assert resolved["worktrees"] is True
     assert resolved["worktree_dir"] == "../wt"
-    assert resolved["branch_name_formats"] == {"default": "feature/{{task_id}}"}
+    assert resolved["branch_name_formats"] == {"default": "feature/{{ww.task.id}}"}
 
     _write_json(
         root / "backend" / "ww-agentic-workflows.json",
@@ -640,10 +640,10 @@ def test_generated_ids_follow_the_projects_task_format(
     root = _workspace(tmp_path)
     _write_json(
         root / "ww-agentic-workflows.json",
-        {"projects": PROJECTS, "task_format": "ROOT-{digit}", "extensions": {}},
+        {"projects": PROJECTS, "task_format": "ROOT-{{digit}}", "extensions": {}},
     )
     _write_json(
-        root / "backend" / "ww-agentic-workflows.json", {"task_format": "BE-{digit}"}
+        root / "backend" / "ww-agentic-workflows.json", {"task_format": "BE-{{digit}}"}
     )
     service = WorkflowService(Storage(root))
 
@@ -677,14 +677,14 @@ def test_generated_ids_follow_the_projects_task_format(
     assert main(["--root", str(root), "discover", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert [(entry["name"], entry["task_format"]) for entry in report["projects"]] == [
-        ("backend", "BE-{digit}"),
+        ("backend", "BE-{{digit}}"),
         ("frontend", None),
     ]
     assert main(["--root", str(root), "discover"]) == 0
     text = capsys.readouterr().out
     expected = (
         "- `backend` at `./backend` — Python API service. Generated task IDs there "
-        "follow `BE-{digit}`."
+        "follow `BE-{{digit}}`."
     )
     assert expected in text
     assert "- `frontend` at `./frontend`\n" in text
@@ -696,7 +696,7 @@ def test_a_project_may_require_explicit_ids_while_the_root_generates_them(
     root = _workspace(tmp_path)
     _write_json(
         root / "ww-agentic-workflows.json",
-        {"projects": PROJECTS, "task_format": "ROOT-{digit}", "extensions": {}},
+        {"projects": PROJECTS, "task_format": "ROOT-{{digit}}", "extensions": {}},
     )
     _write_json(
         root / "backend" / "ww-agentic-workflows.json", {"task_format": "explicit"}

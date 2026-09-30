@@ -22,8 +22,7 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
           workflow: child
         hooks:
           after_complete:
-            - command:
-                argv: [touch, parent-finished.txt]
+            - argv: [touch, parent-finished.txt]
   - name: child
     steps:
       - name: work
@@ -36,7 +35,7 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
     start_after_init(service, "parent", "TASK1", agent="codex")
     collect = service.next("TASK1")
     assert (
-        './ww add-child TASK1 --id <child-id> --description="<child task description>"'
+        './ww add-child TASK1 --id <child-id> --text="<child task text>"'
         in (collect.action_text or "")
     )
     child = service.add_child("TASK1", "TASK1.1", "Implement child work")
@@ -192,7 +191,7 @@ def test_recovered_child_leaves_parent_waiting_for_other_children(
     assert parent.status == "in_progress"
     assert parent.error is None
     assert parent.action_text is not None
-    assert "./ww child start TASK1 1" in parent.action_text
+    assert "./ww start-child TASK1 1" in parent.action_text
 
 
 def test_child_start_retries_after_parent_binding_was_persisted(

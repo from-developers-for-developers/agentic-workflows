@@ -18,7 +18,7 @@ from ww.workflow_config import ProvidedVariable, SavedMetadata
 from .models import InteractCommands, RecoveryCommand
 
 TASK_PLACEHOLDER = "<task-id>"
-SUMMARY_FLAG = "--summary-for-next-step"
+SUMMARY_FLAG = "--summary"
 
 
 # A bare placeholder such as ``<run-id>``, or one shown already quoted such as
@@ -64,7 +64,7 @@ def next_command(
     if retry:
         parts.append("--retry")
     if force_reason is not None:
-        parts.extend(("--force", "--force-reason", _arg(force_reason)))
+        parts.extend(("--force", "--reason", _arg(force_reason)))
     if retry or force_reason is not None:
         parts.append("--yes")
     parts.extend(("--role", "manager"))
@@ -102,7 +102,7 @@ def start_command(task_id: str | None, workflow: str, agent: str) -> str:
         _arg(workflow),
         "--agent",
         _arg(agent),
-        "--init-artifact",
+        "--requirements",
         '"<the request, normalized>"',
         "--role",
         "manager",
@@ -150,8 +150,8 @@ def rules_revoke_command(check: str) -> str:
     return _command("rules", "revoke", _arg(check))
 
 
-def child_start_command(task_id: str, child_id: str) -> str:
-    return _command("child", "start", _arg(task_id), _arg(child_id))
+def start_child_command(task_id: str, child_id: str) -> str:
+    return _command("start-child", _arg(task_id), _arg(child_id))
 
 
 def update_child_command(task_id: str, child_id: str) -> str:
@@ -163,7 +163,7 @@ def update_child_command(task_id: str, child_id: str) -> str:
 def add_item_command(
     task_id: str = TASK_PLACEHOLDER, identity: str | None = None
 ) -> str:
-    parts = ["add-item", _arg(task_id), "--id", "<id>", "--item", "<text>"]
+    parts = ["add-item", _arg(task_id), "--id", "<id>", "--text", "<text>"]
     if identity:
         parts.extend(("--field", f"{identity}=<value>"))
     return _command(*parts)
@@ -187,7 +187,7 @@ def remove_item_command(task_id: str = TASK_PLACEHOLDER) -> str:
 
 
 def reword_item_command(task_id: str = TASK_PLACEHOLDER) -> str:
-    return _command("update-item", _arg(task_id), "--id", "<id>", "--item", "<text>")
+    return _command("update-item", _arg(task_id), "--id", "<id>", "--text", "<text>")
 
 
 def add_child_command(
@@ -198,7 +198,7 @@ def add_child_command(
         "add-child",
         _arg(task_id),
         *(() if identity else ("--id", "<child-id>")),
-        '--description="<child task description>"',
+        '--text="<child task text>"',
         *(("--project", "<project>") if project else ()),
     )
 
@@ -285,10 +285,10 @@ def interact_commands(
         return _command("interact", _arg(task_id), *_worker(role, assignment), *parts)
 
     return InteractCommands(
-        operator=interact('--operator="<what the operator said>"'),
-        agent=interact('--agent="<what the agent said>"'),
+        operator=interact('--operator-said="<what the operator said>"'),
+        agent=interact('--agent-said="<what the agent said>"'),
         choice=interact('--choice="<label or number>"'),
-        end=interact("--end-interaction"),
+        end=interact("--end"),
         wait=interact("--await"),
         resume=instruction_command(task_id, role=role, assignment=assignment),
     )
@@ -308,7 +308,7 @@ def recovery_commands(task_id: str) -> tuple[RecoveryCommand, ...]:
 
 
 def decision_commands(task_id: str, kind: str, key: str) -> tuple[RecoveryCommand, ...]:
-    """The operator's choices for one proposal at a ``check_proposed`` stop.
+    """The operator's choices for one proposal at a ``rules_proposed`` stop.
 
     An approach is approved or replaced by the operator's own sentence, a
     check is approved, an ambiguous rule gets one of its readings picked.

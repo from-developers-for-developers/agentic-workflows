@@ -29,7 +29,7 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
 
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
-    assert config.loop_max_times == 3
+    assert config.max_rounds == 3
     assert config.max_fixes == 3
     assert config.rule_approval == "operator"
 
@@ -50,9 +50,9 @@ def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
 
 
 def test_global_loop_limit_loads_from_project_config(tmp_path: Path) -> None:
-    path = write(tmp_path, {"loop_max_times": 7})
+    path = write(tmp_path, {"max_rounds": 7})
 
-    assert load_project_config(path).loop_max_times == 7
+    assert load_project_config(path).max_rounds == 7
 
 
 def test_extension_settings_load(tmp_path: Path) -> None:
@@ -134,9 +134,13 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"enabled": "yes"}, 'enabled must be true, false, or "on_request"'),
         ({"extensions": []}, "extensions must be an object"),
         ({"extensions": {"ww/git": 5}}, "must be an object of settings"),
-        ({"loop_max_times": 0}, "loop_max_times must be a positive integer"),
-        ({"loop_max_times": True}, "loop_max_times must be a positive integer"),
-        ({"loop_max_times": "3"}, "loop_max_times must be a positive integer"),
+        ({"max_rounds": 0}, "max_rounds must be a positive integer"),
+        ({"max_rounds": True}, "max_rounds must be a positive integer"),
+        ({"max_rounds": "3"}, "max_rounds must be a positive integer"),
+        (
+            {"loop_max_times": 3},
+            'loop_max_times was renamed to max_rounds: "max_rounds": 3',
+        ),
         ({"max_fixes": 0}, "max_fixes must be a positive integer"),
         ({"max_fixes": False}, "max_fixes must be a positive integer"),
         ({"rules": "auto"}, "rules must be an object"),
@@ -256,7 +260,7 @@ def test_only_the_extensions_section_of_a_project_file_is_read(
             "workflows": {"catchall": {"enabled": False}},
             "something_new": True,
             "extensions": {
-                "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+                "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
             },
         },
     )
@@ -265,7 +269,7 @@ def test_only_the_extensions_section_of_a_project_file_is_read(
 
     assert loaded.sources == (tmp_path / "backend" / "ww-agentic-workflows.json",)
     assert loaded.sections.sections == {
-        "ww/git": {"commit_format": "[{{task_id}}] {{commit_message}}"}
+        "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
     }
 
 
@@ -351,9 +355,9 @@ def test_project_validation_names_the_file_that_holds_the_section(
 
 def test_overlay_settings_merges_nested_objects_and_replaces_other_values() -> None:
     base = {
-        "commit_format": "{{task_id}}: {{commit_message}}",
+        "commit_format": "{{ww.task.id}}: {{commit_message}}",
         "base_branches": {"default": "dev", "hotfix": "main"},
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
         "worktrees": True,
     }
 
@@ -363,9 +367,9 @@ def test_overlay_settings_merges_nested_objects_and_replaces_other_values() -> N
     )
 
     assert merged == {
-        "commit_format": "{{task_id}}: {{commit_message}}",
+        "commit_format": "{{ww.task.id}}: {{commit_message}}",
         "base_branches": {"default": "master", "hotfix": "main"},
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
         "worktrees": False,
         "extra": [1],
     }
@@ -391,7 +395,7 @@ def test_project_settings_require_a_configured_project(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "value", ["WORK-{timestamp}-{digit}", "TASK-{uuid}", "explicit", "PLAIN"]
+    "value", ["WORK-{{timestamp}}-{{digit}}", "TASK-{{uuid}}", "explicit", "PLAIN"]
 )
 def test_task_format_loads_from_the_settings_file(tmp_path: Path, value: str) -> None:
     assert load_project_config(write(tmp_path, {"task_format": value})).task_format == (
@@ -409,7 +413,16 @@ def test_task_format_is_absent_by_default(tmp_path: Path) -> None:
     [
         ("", "task_format must be a non-empty string"),
         (7, "task_format must be a non-empty string"),
-        ("WORK-{random}", r"task_format has unknown placeholder\(s\): \{random\}"),
+        (
+            "WORK-{{random}}",
+            r"task_format has unknown placeholder\(s\): \{\{random\}\}",
+        ),
+        ("WORK-{random}", "task_format has invalid placeholders"),
+        (
+            "WORK-{digit}",
+            r"placeholder \{digit\} was renamed to \{\{digit\}\}: "
+            r"task_format: WORK-\{\{digit\}\}",
+        ),
         ("WORK-{digit", "task_format has invalid placeholders"),
         ("WORK-}digit{", "task_format has invalid placeholders"),
     ],
@@ -426,27 +439,27 @@ def test_a_lower_settings_level_replaces_task_format(
     machine.mkdir()
     monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(machine))
     (machine / "ww-agentic-workflows.machine.json").write_text(
-        json.dumps({"task_format": "M-{digit}"}), encoding="utf-8"
+        json.dumps({"task_format": "M-{{digit}}"}), encoding="utf-8"
     )
     path = write(tmp_path, {"enabled": True})
-    assert load_project_config(path).task_format == "M-{digit}"
+    assert load_project_config(path).task_format == "M-{{digit}}"
 
     (tmp_path / "ww-agentic-workflows.local.json").write_text(
-        json.dumps({"task_format": "L-{digit}"}), encoding="utf-8"
+        json.dumps({"task_format": "L-{{digit}}"}), encoding="utf-8"
     )
-    assert load_project_config(path).task_format == "L-{digit}"
+    assert load_project_config(path).task_format == "L-{{digit}}"
 
 
 def test_a_project_file_may_carry_its_own_task_format(tmp_path: Path) -> None:
     project = _workspace(
         tmp_path,
-        {"task_format": "BE-{digit}", "enabled": False},
+        {"task_format": "BE-{{digit}}", "enabled": False},
         {"task_format": "explicit"},
     )
 
     assert load_project_settings(tmp_path, project).task_format == "explicit"
     (tmp_path / "backend" / "ww-agentic-workflows.local.json").unlink()
-    assert load_project_settings(tmp_path, project).task_format == "BE-{digit}"
+    assert load_project_settings(tmp_path, project).task_format == "BE-{{digit}}"
     workspace_without_files = _workspace_without_files(tmp_path)
     assert load_project_settings(tmp_path, workspace_without_files).task_format is None
 
@@ -457,11 +470,11 @@ def _workspace_without_files(tmp_path: Path) -> ProjectDefinition:
 
 
 def test_an_invalid_project_task_format_names_the_project(tmp_path: Path) -> None:
-    project = _workspace(tmp_path, {"task_format": "BE-{nope}"})
+    project = _workspace(tmp_path, {"task_format": "BE-{{nope}}"})
 
     with pytest.raises(
         ConfigurationError,
         match=r"backend/ww-agentic-workflows.json \(project 'backend'\)\.task_format "
-        r"has unknown placeholder\(s\): \{nope\}",
+        r"has unknown placeholder\(s\): \{\{nope\}\}",
     ):
         load_project_settings(tmp_path, project)

@@ -112,7 +112,7 @@ def operator_reason(state: ExecutionState, plan: WorkflowPlan) -> OperatorReason
         # ``next`` replays a harmless handler without asking anyone.
         if item is not None and replays_harmlessly(item):
             return None
-        return "interrupted_command"
+        return "handler_interrupted"
     if state.status == "failed":
         if state.failure_kind is not None:
             return state.failure_kind

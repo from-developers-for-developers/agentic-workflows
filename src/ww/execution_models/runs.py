@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -21,12 +22,14 @@ from ww.validation import (
     is_strict_int,
     require_keys,
 )
+from ww.variables import renamed_template_name
+from ww.workflow_config import TASK_ID_TOKEN
 
-from .decoding import _from_path
+from .decoding import _from_path, _renamed_assertion
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 17
+PLAN_SCHEMA_VERSION = 18
 # Recorded on every snapshot; informational until a reader needs to branch on it.
 PLAN_COMPILER_VERSION = "plan-v9"
 
@@ -202,7 +205,105 @@ def _plan_16_to_17(data: dict[str, Any]) -> dict[str, Any]:
     return {**data, "schema_version": 17}
 
 
-PLAN_MIGRATIONS = {15: _plan_15_to_16, 16: _plan_16_to_17}
+_ASSIGNMENTS_17 = {"all_items": "together", "per_iteration": "per_round"}
+_PHASES_17 = {"before_in_progress": "before_start"}
+_TEMPLATE_TOKEN = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}")
+
+
+def _renamed_templates(value: Any) -> Any:
+    """``value`` with every old template name replaced by its ``ww.`` name.
+
+    Extension settings are left as they are: they are the extension's own,
+    and its ``upgrade_settings`` reads them.
+    """
+    if isinstance(value, str):
+        return _TEMPLATE_TOKEN.sub(
+            lambda match: "{{"
+            + (renamed_template_name(match.group(1)) or match.group(1))
+            + "}}",
+            value,
+        )
+    if isinstance(value, list):
+        return [_renamed_templates(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: item if key == "settings" else _renamed_templates(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _plan_item_17(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    upgraded = dict(item)
+    for key in ("item_assignment", "loop_assignment"):
+        if upgraded.get(key) in _ASSIGNMENTS_17:
+            upgraded[key] = _ASSIGNMENTS_17[upgraded[key]]
+    if upgraded.get("phase") in _PHASES_17:
+        upgraded["phase"] = _PHASES_17[upgraded["phase"]]
+    operation = upgraded.get("operation")
+    if (
+        isinstance(operation, dict)
+        and operation.get("identifier") == "cli"
+        and isinstance(operation.get("payload"), dict)
+        and "assert" in operation["payload"]
+    ):
+        payload = dict(operation["payload"])
+        payload["assert"] = _renamed_assertion(payload["assert"])
+        upgraded["operation"] = {**operation, "payload": payload}
+    if isinstance(upgraded.get("checks"), list):
+        upgraded["checks"] = [_check_17(check) for check in upgraded["checks"]]
+    return upgraded
+
+
+def _check_17(check: Any) -> Any:
+    """A frozen check whose command's ``assert`` is a version 17 assertion."""
+    if not isinstance(check, dict):
+        return check
+    command = check.get("command")
+    if not isinstance(command, dict) or "assert" not in command:
+        return check
+    return {
+        **check,
+        "command": {**command, "assert": _renamed_assertion(command["assert"])},
+    }
+
+
+def _plan_17(plan: Any) -> Any:
+    if not isinstance(plan, dict):
+        return plan
+    upgraded = _renamed_templates(plan)
+    if isinstance(upgraded.get("items"), list):
+        upgraded["items"] = [_plan_item_17(item) for item in upgraded["items"]]
+    documents = upgraded.get("documents")
+    if isinstance(documents, list):
+        upgraded["documents"] = [
+            {**document, "path": document["path"].replace("{task_id}", TASK_ID_TOKEN)}
+            if isinstance(document, dict) and isinstance(document.get("path"), str)
+            else document
+            for document in documents
+        ]
+    return upgraded
+
+
+def _plan_17_to_18(data: dict[str, Any]) -> dict[str, Any]:
+    """Schema 18 applies the v1 renames to what a plan froze.
+
+    Assignment values (``all_items`` is ``together``, ``per_iteration`` is
+    ``per_round``), the ``before_in_progress`` phase (``before_start``),
+    template names (every ww value under ``ww.``), a document path's
+    ``{task_id}`` (``{{ww.task.id}}``), and a command's ``assert`` (a list of
+    conditions).  Plan item IDs keep their old spelling: they are opaque, and
+    the run's records refer to them.
+    """
+    upgraded = {**data, "schema_version": 18, "plan": _plan_17(data["plan"])}
+    if "template_plan" in data:
+        upgraded["template_plan"] = _plan_17(data["template_plan"])
+    return upgraded
+
+
+PLAN_MIGRATIONS = {15: _plan_15_to_16, 16: _plan_16_to_17, 17: _plan_17_to_18}
 
 
 def _migrate_snapshot(data: dict[str, Any]) -> dict[str, Any]:

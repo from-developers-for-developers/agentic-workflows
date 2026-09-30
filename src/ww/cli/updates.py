@@ -54,7 +54,7 @@ def render_updates(storage: Storage, args: argparse.Namespace) -> str:
             "This ww was not installed from a Git checkout, so there is "
             "nothing to compare it against.\n",
         )
-    pending_notice(checkout, force=bool(args.check))
+    pending_notice(checkout, force=bool(args.now))
     notice = last_notice()
     if notice is not None:
         mark_announced(notice)

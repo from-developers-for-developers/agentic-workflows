@@ -21,16 +21,14 @@ def _write_workflow(root: Path) -> None:
     (root / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: prepare
-    command:
-      shell: printf start > started.txt
+    shell: printf start > started.txt
   - name: record
-    provide:
+    variables:
       - name: commit_message
         description: Commit summary.
-    command:
-      shell: printf "%s" "$COMMIT_MESSAGE" > committed.txt
-      env:
-        COMMIT_MESSAGE: "{{commit_message}}"
+    shell: printf "%s" "$COMMIT_MESSAGE" > committed.txt
+    env:
+      COMMIT_MESSAGE: "{{commit_message}}"
 
 hooks:
   before_start_workflow:
@@ -45,21 +43,21 @@ workflows:
       - name: group
         steps:
           - name: plan
-            prompt: true
+            kind: prompt
             description: Plan it.
           - name: fix
-            prompt: true
+            kind: prompt
             description: Fix it.
   - name: choose
     steps:
       - name: select
-        prompt: true
-        provide:
+        kind: prompt
+        variables:
           - name: workflow
             description: Target workflow.
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
 """,
         encoding="utf-8",
     )
@@ -91,7 +89,7 @@ def test_execution_snapshot_automatic_input_nested_state_and_artifacts(
     assert (
         active.continuation_command == "./ww complete TASK-1 --role worker "
         '--artifact="<whole result in Markdown>" '
-        '--summary-for-next-step="<one or two sentences for the next step>"'
+        '--summary="<one or two sentences for the next step>"'
     )
     ready = service.complete("TASK-1", artifact="# plan\n", summary_for_next="Done.")
     assert ready.item_name == "fix"
@@ -235,7 +233,7 @@ def test_a_finished_run_is_recorded_once_in_the_ledger(tmp_path: Path) -> None:
   - name: implementation
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -332,11 +330,11 @@ def test_task_can_keep_multiple_workflow_runs_and_summaries(tmp_path: Path) -> N
   - name: implementation
     steps:
       - name: work
-        prompt: true
+        kind: prompt
   - name: code-review
     steps:
       - name: review
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -445,13 +443,12 @@ def test_leading_automatic_input_is_collected_without_creating_agent_work(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: setup
-    provide:
+    variables:
       - name: token
         description: Setup token.
-    command:
-      shell: printf "%s" "$TOKEN" > token.txt
-      env:
-        TOKEN: "{{token}}"
+    shell: printf "%s" "$TOKEN" > token.txt
+    env:
+      TOKEN: "{{token}}"
 hooks:
   before_start_workflow:
     - name: setup
@@ -459,7 +456,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -486,7 +483,7 @@ def test_a_failed_handler_asks_for_its_values_again_on_retry(tmp_path: Path) -> 
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: gate
-    provide:
+    variables:
       - name: value
         description: Must be ok.
     shell: test "$VALUE" = ok
@@ -500,7 +497,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -547,15 +544,15 @@ def test_interpolated_command_values_remain_data(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: safe-write
-    provide:
+    variables:
       - name: value
-    command:
-      - argv: [printf, "%s", "{{value}}"]
-      - shell: printf '%s' "$VALUE" > result.txt
-        env:
-          VALUE: "{{value}}"
-      - shell: printf '%s' "$1" > argument.txt
-        args: ["{{value}}"]
+    shell: >-
+      printf '%s' "$VALUE" > result.txt;
+      printf '%s' "$1" > argument.txt;
+      printf '%s' "$1"
+    args: ["{{value}}"]
+    env:
+      VALUE: "{{value}}"
 hooks:
   before_start_workflow:
     - name: safe-write
@@ -563,7 +560,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -595,8 +592,7 @@ def test_full_command_output_is_kept_out_of_hot_execution_state(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: produce
-    command:
-      shell: printf '%020000d' 0
+    shell: printf '%020000d' 0
 hooks:
   before_start_workflow:
     - name: produce
@@ -604,7 +600,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -622,23 +618,22 @@ workflows:
     assert len(task_state) < 30_000
 
 
-def test_automatic_command_failure_retries_only_the_failed_segment(
+def test_automatic_command_failure_retries_only_the_failed_handler(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        """handlers:
-  - name: setup
-    command:
-      - shell: printf once >> counter.txt
-      - argv: ["false"]
-hooks:
+        """hooks:
   before_start_workflow:
-    - name: setup
+    - handlers:
+        - name: count-once
+          shell: printf once >> counter.txt
+        - name: refuse
+          argv: ["false"]
 workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -657,8 +652,7 @@ def test_automatic_command_failure_marks_hook_step_failed(tmp_path: Path) -> Non
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: setup
-    command:
-      argv: ["false"]
+    argv: ["false"]
 hooks:
   before_start_workflow:
     - name: setup
@@ -666,7 +660,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -689,8 +683,7 @@ def test_interrupted_automatic_handler_requires_explicit_recovery(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: publish
-    command:
-      shell: printf published > published.txt
+    shell: printf published > published.txt
 hooks:
   before_complete:
     - steps: [work]
@@ -699,7 +692,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -741,24 +734,23 @@ workflows:
     assert not (tmp_path / "published.txt").exists()
 
 
-def test_cli_recovery_attests_one_segment_and_continues_remaining_segments(
+def test_cli_recovery_attests_one_handler_and_continues_with_the_next(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
-        """handlers:
-  - name: publish
-    command:
-      - shell: printf second > second.txt
-      - shell: printf third > third.txt
-hooks:
+        """hooks:
   before_complete:
     - steps: [work]
-      name: publish
+      handlers:
+        - name: publish-second
+          shell: printf second > second.txt
+        - name: publish-third
+          shell: printf third > third.txt
 workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -784,9 +776,10 @@ workflows:
     assert (tmp_path / "third.txt").read_text() == "third"
     state = resumed.tasks.read_execution_state("TASK-SEGMENTS", "01-task")
     assert state is not None
-    commands = state.item_executions[2].commands
-    assert [command.status for command in commands] == ["completed", "completed"]
-    assert commands[0].stdout == "first-output"
+    attested, following = state.item_executions[2:4]
+    assert [command.status for command in attested.commands] == ["completed"]
+    assert attested.commands[0].stdout == "first-output"
+    assert [command.status for command in following.commands] == ["completed"]
 
 
 def test_interrupted_idempotent_handler_replays_without_an_operator(
@@ -805,7 +798,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -860,7 +853,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -910,10 +903,9 @@ def test_automatic_command_persists_attempt_and_operation_environment(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: inspect
-    command:
-      shell: >-
-        printf '%s|%s|%s' "$WW_OPERATION_ATTEMPT"
-        "$WW_ITEM_OPERATION_ID" "$WW_OPERATION_ID" > env.txt
+    shell: >-
+      printf '%s|%s|%s' "$WW_OPERATION_ATTEMPT"
+      "$WW_ITEM_OPERATION_ID" "$WW_OPERATION_ID" > env.txt
 hooks:
   before_start_workflow:
     - name: inspect
@@ -921,7 +913,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )

@@ -58,13 +58,12 @@ def test_every_workflow_starts_with_the_implicit_init_step(tmp_path: Path) -> No
         """hooks:
   before_complete:
     - steps: [init]
-      command:
-        argv: [printf, saved]
+      argv: [printf, saved]
 workflows:
   - name: task
     steps:
       - name: work
-        depends_on: init
+        artifact_from: init
 """,
         encoding="utf-8",
     )
@@ -95,13 +94,13 @@ def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
           - name: inner
             steps:
               - name: fix
-                depends_on: plan
+                artifact_from: plan
       - name: review
         loop:
           - name: check
-            depends_on: plan
+            artifact_from: plan
           - name: decide
-            depends_on: check
+            artifact_from: check
             break: Done
       - assess:
           question: Is it good?
@@ -109,18 +108,18 @@ def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
             positive:
               steps:
                 - name: ship
-                  depends_on: assess
+                  artifact_from: assess
             negative:
               steps:
                 - name: redo
-                  depends_on: review
+                  artifact_from: review
       - name: triage
         items:
           steps:
             - name: fix-item
-              depends_on: triage
+              artifact_from: triage
             - name: report
-              depends_on: fix-item
+              artifact_from: fix-item
 """,
         encoding="utf-8",
     )
@@ -233,12 +232,11 @@ def _configuration(tmp_path: Path):
     path.write_text(
         """handlers:
   - name: clean
-    command:
-      argv: [git, status, --porcelain]
+    argv: [git, status, --porcelain]
   - name: shared-skill
-    skill: true
+    kind: skill
   - name: shared-command
-    slash_command: true
+    kind: slash_command
 hooks:
   before_start_workflow:
     - name: clean
@@ -250,21 +248,20 @@ hooks:
 workflows:
   - name: task
     hooks:
-      before_in_progress:
+      before_start:
         - steps: [develop]
-          command:
-            argv: [echo, beginning]
+          argv: [echo, beginning]
     steps:
       - name: setup
         description: Gather constraints.
-        provide:
+        variables:
           - name: workflow
       - name: develop
         hooks:
           before_complete:
             - name: shared-command
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
 """,
         encoding="utf-8",
     )
@@ -286,7 +283,7 @@ def test_compiles_every_effective_handler_in_lifecycle_order(tmp_path: Path) -> 
         ("clean", "before_start_workflow", "global"),
         ("init", "step", "step"),
         ("setup", "step", "step"),
-        ("inline-command", "before_in_progress", "workflow"),
+        ("inline-argv", "before_start", "workflow"),
         ("develop", "step", "step"),
         ("shared-command", "before_complete", "step"),
         ("shared-skill", "after_complete", "global"),
@@ -313,12 +310,11 @@ def test_compiles_grouped_hook_handlers_in_order_with_shared_values(
     path.write_text(
         """handlers:
   - name: collect-note
-    prompt: true
-    provide:
+    kind: prompt
+    variables:
       - name: note
   - name: print-note
-    command:
-      argv: [printf, "%s", "{{note}}"]
+    argv: [printf, "%s", "{{note}}"]
 hooks:
   before_complete:
     - workflows: [task]
@@ -330,7 +326,7 @@ workflows:
   - name: task
     steps:
       - name: develop
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -362,9 +358,8 @@ def test_authoritative_task_id_updates_the_derived_input_flag(tmp_path: Path) ->
   - name: task
     steps:
       - name: initialize
-        command:
-          argv: [echo, ready]
-        provide:
+        argv: [echo, ready]
+        variables:
           - name: task_id
 """,
         encoding="utf-8",
@@ -458,9 +453,9 @@ workflows:
     profile: reviewer
     steps:
       - name: inspect
-        prompt: true
+        kind: prompt
       - name: develop
-        prompt: true
+        kind: prompt
         profile: researcher
 """,
         encoding="utf-8",
@@ -506,7 +501,7 @@ def test_validates_interpolation_data_flow_and_supports_nested_steps(
       - name: setup
         hooks:
           after_complete:
-            - workflow: "{{missing}}"
+            - handoff_to: "{{missing}}"
   - name: nested
     steps:
       - name: parent
@@ -536,8 +531,8 @@ def test_hook_provided_values_flow_to_later_hooks_and_steps(tmp_path: Path) -> N
         hooks:
           after_complete:
             - name: capture-url
-              prompt: true
-              provide:
+              kind: prompt
+              variables:
                 - name: url
       - name: announce
         description: Announce {{url}}.
@@ -559,13 +554,12 @@ def test_compilation_options_own_bootstrap_plan_interpretation(
     path.write_text(
         """hooks:
   before_start_workflow:
-    - command:
-        argv: [printf, start]
+    - argv: [printf, start]
 workflows:
   - name: task
     steps:
       - name: create-issue
-        provide:
+        variables:
           - name: task_id
       - name: develop
 """,
@@ -588,7 +582,7 @@ workflows:
     assert explicit.items[2].name == "create-issue"
     assert explicit.items[2].provide == ()
     assert [item.name for item in resumed.items[:3]] == [
-        "inline-command",
+        "inline-argv",
         "init",
         "develop",
     ]
@@ -605,16 +599,14 @@ def test_recursively_flattens_substeps_and_preserves_parent_lifecycle(
         """hooks:
   before_complete:
     - steps: [parent]
-      command:
-        argv: [printf, parent-complete]
+      argv: [printf, parent-complete]
 workflows:
   - name: task
     steps:
       - name: parent
         hooks:
-          before_in_progress:
-            - command:
-                argv: [printf, parent-start]
+          before_start:
+            - argv: [printf, parent-start]
         steps:
           - name: child
             steps:
@@ -627,9 +619,9 @@ workflows:
 
     assert [(item.name, item.step, item.parent, item.phase) for item in plan.items] == [
         ("init", "init", None, "step"),
-        ("inline-command", "parent", None, "before_in_progress"),
+        ("inline-argv", "parent", None, "before_start"),
         ("leaf", "parent/child/leaf", "parent/child", "step"),
-        ("inline-command", "parent", None, "before_complete"),
+        ("inline-argv", "parent", None, "before_complete"),
         ("update-workflow-summary", "parent", None, "before_complete_workflow"),
     ]
     assert plan.items[2].ancestors == ("parent", "parent/child")
@@ -641,14 +633,12 @@ def test_registered_construct_planner_uses_shared_lifecycle_wrapper(
     path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
-  before_in_progress:
+  before_start:
     - steps: [custom]
-      command:
-        argv: [printf, wrapper-start]
+      argv: [printf, wrapper-start]
   after_complete:
     - steps: [custom]
-      command:
-        argv: [printf, wrapper-finish]
+      argv: [printf, wrapper-finish]
 workflows:
   - name: task
     steps:
@@ -677,9 +667,9 @@ workflows:
 
     assert [(item.name, item.step, item.phase) for item in plan.items] == [
         ("init", "init", "step"),
-        ("inline-command", "custom", "before_in_progress"),
+        ("inline-argv", "custom", "before_start"),
         ("nested", "custom/nested", "step"),
-        ("inline-command", "custom", "after_complete"),
+        ("inline-argv", "custom", "after_complete"),
         ("update-workflow-summary", "custom", "before_complete_workflow"),
     ]
     assert plan.items[2].parent == "custom"
@@ -697,7 +687,7 @@ def test_items_step_hooks_wrap_the_flow_without_collect_annotations(
       - name: collect
         items: ~
         hooks:
-          before_in_progress:
+          before_start:
             - name: prepare
               description: Prepare collection.
           after_complete:
@@ -733,10 +723,9 @@ def test_hook_step_path_targets_only_the_named_substep(tmp_path: Path) -> None:
     path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
-  before_in_progress:
+  before_start:
     - steps: [plan-and-fix/fix]
-      command:
-        argv: [printf, targeted]
+      argv: [printf, targeted]
 workflows:
   - name: task
     steps:
@@ -754,7 +743,7 @@ workflows:
 
     assert [(item.name, item.step) for item in plan.items] == [
         ("init", "init"),
-        ("inline-command", "plan-and-fix/fix"),
+        ("inline-argv", "plan-and-fix/fix"),
         ("fix", "plan-and-fix/fix"),
         ("fix", "verify-and-fix/fix"),
         ("update-workflow-summary", "verify-and-fix"),
@@ -769,8 +758,7 @@ def test_exact_wrapper_path_wins_over_nested_leaf_with_the_same_name(
         """hooks:
   before_complete:
     - steps: [code-review]
-      command:
-        argv: [printf, commit]
+      argv: [printf, commit]
 workflows:
   - name: task
     steps:
@@ -785,7 +773,7 @@ workflows:
 
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
-    commits = [item for item in plan.items if item.name == "inline-command"]
+    commits = [item for item in plan.items if item.name == "inline-argv"]
     assert [(item.step, item.phase) for item in commits] == [
         ("code-review", "before_complete")
     ]
@@ -795,10 +783,9 @@ def test_hook_step_path_ignores_dynamic_item_segment(tmp_path: Path) -> None:
     path = tmp_path / "ww-agentic-workflows.yaml"
     path.write_text(
         """hooks:
-  before_in_progress:
+  before_start:
     - steps: [review/fix]
-      command:
-        argv: [printf, targeted]
+      argv: [printf, targeted]
 workflows:
   - name: task
     steps:
@@ -806,7 +793,7 @@ workflows:
         items:
           steps:
             - name: fix
-              process_item: ~
+              item_phase: analyze
 """,
         encoding="utf-8",
     )
@@ -816,7 +803,7 @@ workflows:
     assert [(item.name, item.step, item.item_template) for item in plan.items] == [
         ("init", "init", False),
         ("review", "review", False),
-        ("inline-command", "review/{item}/fix", True),
+        ("inline-argv", "review/{item}/fix", True),
         ("fix", "review/{item}/fix", True),
         ("update-workflow-summary", "review", False),
     ]
@@ -827,7 +814,7 @@ def test_a_transition_makes_a_handoff_workflow_ending_with_it(tmp_path: Path) ->
     path.write_text(
         """handlers:
   - name: finalize
-    prompt: true
+    kind: prompt
 workflows:
   - name: decide
     hooks:
@@ -835,11 +822,11 @@ workflows:
         - name: finalize
     steps:
       - name: choose
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
 """,
         encoding="utf-8",
     )
@@ -860,13 +847,13 @@ def test_workflow_boundary_hooks_run_once_in_scope_order(tmp_path: Path) -> None
     path.write_text(
         """handlers:
   - name: global-start
-    prompt: true
+    kind: prompt
   - name: workflow-start
-    prompt: true
+    kind: prompt
   - name: global-finish
-    prompt: true
+    kind: prompt
   - name: workflow-finish
-    prompt: true
+    kind: prompt
 hooks:
   before_start_workflow:
     - workflows: [task]
@@ -916,9 +903,8 @@ def test_plan_json_and_markdown_preserve_unresolved_and_bound_variables(
   - name: task
     steps:
       - name: work
-        command:
-          argv: [printf, "{{__task_id}} {{__workflows}} {{value}}"]
-        provide:
+        argv: [printf, "{{ww.task.id}} {{ww.task.workflows}} {{value}}"]
+        variables:
           - name: value
 """,
         encoding="utf-8",
@@ -930,7 +916,7 @@ def test_plan_json_and_markdown_preserve_unresolved_and_bound_variables(
         "printf",
         "TASK-1 task,catchall {{value}}",
     )
-    assert plan.items[1].dependencies == ("__task_id", "__workflows", "value")
+    assert plan.items[1].dependencies == ("ww.task.id", "ww.task.workflows", "value")
     assert '"task_id": "TASK-1"' in render_plan(plan, True)
     markdown = render_plan(plan, False)
     assert "# Workflow plan — `task`" in markdown
@@ -967,9 +953,8 @@ def test_automatic_cli_handler_can_wait_for_agent_input(tmp_path: Path) -> None:
     path.write_text(
         """handlers:
   - name: commit
-    command:
-      argv: [git, commit, -m, "{{message}}"]
-    provide:
+    argv: [git, commit, -m, "{{message}}"]
+    variables:
       - name: message
         description: Commit message.
 workflows:
@@ -995,7 +980,7 @@ workflows:
     )
 
 
-def test_multi_command_inline_handler_and_explicit_missing_action_are_checked(
+def test_several_hook_commands_and_explicit_missing_action_are_checked(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "ww-agentic-workflows.yaml"
@@ -1004,13 +989,13 @@ def test_multi_command_inline_handler_and_explicit_missing_action_are_checked(
   - name: task
     hooks:
       before_start_workflow:
-        - command:
+        - handlers:
             - argv: [printf, first]
             - argv: [printf, second]
     steps:
       - name: work
       - name: missing-skill
-        skill: true
+        kind: skill
 """,
         encoding="utf-8",
     )
@@ -1024,7 +1009,7 @@ def test_multi_command_inline_handler_and_explicit_missing_action_are_checked(
   - name: task
     hooks:
       before_start_workflow:
-        - command:
+        - handlers:
             - argv: [printf, first]
             - argv: [printf, second]
     steps:
@@ -1034,7 +1019,9 @@ def test_multi_command_inline_handler_and_explicit_missing_action_are_checked(
     )
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
     assert tuple(
-        command.argv for command in plan.items[0].payload_as(Commands).commands
+        command.argv
+        for item in plan.items[:2]
+        for command in item.payload_as(Commands).commands
     ) == (
         ("printf", "first"),
         ("printf", "second"),
@@ -1051,7 +1038,7 @@ def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> No
         loop:
           - work: Work.
       - overridden: ~
-        loop_max_times: 8
+        max_rounds: 8
         loop:
           - work: Work.
 """,
@@ -1063,7 +1050,7 @@ def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> No
         tmp_path,
         "task",
         "codex",
-        project_config=ProjectConfig(loop_max_times=5),
+        project_config=ProjectConfig(max_rounds=5),
     )
     boundaries = [item for item in plan.items if item.kind == "loop"]
 
@@ -1078,8 +1065,8 @@ def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> No
         ("overridden", 8),
     ]
     markdown = render_plan(plan, False)
-    assert "- Maximum iterations: `5`" in markdown
-    assert "- Maximum iterations: `8`" in markdown
+    assert "- Maximum rounds: `5`" in markdown
+    assert "- Maximum rounds: `8`" in markdown
 
 
 def test_loop_stop_gate_requires_an_agent_owned_body_step(tmp_path: Path) -> None:
@@ -1112,7 +1099,7 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
       - decide: Decide where to go.
         artifact: false
       - select: ~
-        workflow: target
+        handoff_to: target
   - name: target
     steps:
       - name: work
@@ -1172,11 +1159,11 @@ workflows:
   - name: chooser
     steps:
       - name: pick
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
   - name: target
     steps:
       - name: work

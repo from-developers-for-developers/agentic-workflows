@@ -454,6 +454,13 @@ class Extension:
     rules: tuple[RuleGroupContribution, ...] = ()
     # Template values under ``{{ww.<namespace>.*}}``; ``None`` for none.
     namespace: ExtensionNamespace | None = None
+    # Turns settings an earlier version froze into a run into the current
+    # shape, so a run started before a settings rename keeps running. ww
+    # applies it to frozen settings only; the live configuration is the
+    # extension's to validate, old names included.
+    upgrade_settings: Callable[[Mapping[str, object]], dict[str, object]] | None = (
+        None
+    )
 
     def __post_init__(self) -> None:
         if self.namespace is not None and not isinstance(
@@ -464,6 +471,8 @@ class Extension:
             raise TypeError("extension reserved_paths must be callable")
         if self.branch_strategies is not None and not callable(self.branch_strategies):
             raise TypeError("extension branch_strategies must be callable")
+        if self.upgrade_settings is not None and not callable(self.upgrade_settings):
+            raise TypeError("extension upgrade_settings must be callable")
         for label, value in (("vendor", self.vendor), ("name", self.name)):
             if not _SEGMENT.fullmatch(value):
                 raise ValueError(

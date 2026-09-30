@@ -346,7 +346,7 @@ class ChildCoordinator:
     ) -> str | None:
         """Save a per-child run's result, the child's summary, as its artifact.
 
-        Later stages read it like any step's artifact (``depends_on``).
+        Later stages read it like any step's artifact (``artifact_from``).
         """
         artifact, _ = write_completion_artifacts(
             self.tasks,

@@ -25,8 +25,8 @@ class SkillAction(Action[Skill, Skill]):
     def parse(
         self, source: dict[str, Any], name: str, description: str, path: str
     ) -> Skill:
-        if source.get("skill") is not True:
-            raise ConfigurationError(f"{path} skill must be true")
+        # ``kind: skill`` (or ``action: {type: skill}``) already chose this
+        # action; the skill is the handler's name.
         return Skill(name)
 
     def validate(self, definition: Skill, path: str) -> None:

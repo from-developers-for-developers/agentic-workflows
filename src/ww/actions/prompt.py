@@ -26,8 +26,6 @@ class PromptAction(Action[Prompt, Prompt]):
     def parse(
         self, source: dict[str, Any], name: str, description: str, path: str
     ) -> Prompt:
-        if "prompt" in source and source["prompt"] is not True:
-            raise ConfigurationError(f"{path} prompt must be true")
         return Prompt(description or name)
 
     def validate(self, definition: Prompt, path: str) -> None:

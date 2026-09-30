@@ -230,7 +230,7 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
                     "**Loop control**",
                     "",
                     f"- Boundary: `{item.operation.boundary}`",
-                    f"- Maximum iterations: `{item.operation.max_times}`",
+                    f"- Maximum rounds: `{item.operation.max_times}`",
                     "",
                 )
             elif isinstance(item.operation, WorkflowHandoff):
@@ -278,8 +278,7 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
             )
             lines.extend([f"**{scope_label} to preserve**", ""])
             lines.extend(
-                f"- `{value.name}` → `"
-                f"{'project_metadata' if value.scope == 'project' else 'metadata'}"
+                f"- `{'project_metadata' if value.scope == 'project' else 'metadata'}"
                 f".{value.key}`"
                 + (f" — {value.description}" if value.description else "")
                 for value in item.save_metadata
@@ -292,7 +291,7 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
 def _stage_label(phase: str) -> str:
     return {
         "before_start_workflow": "Before the workflow starts",
-        "before_in_progress": "Before this step starts",
+        "before_start": "Before this step starts",
         "step": "Perform this workflow step",
         "before_complete": "Before this step is completed",
         "after_complete": "After this step is completed",

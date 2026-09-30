@@ -45,7 +45,7 @@ def test_core_workspace_dir_resolves_to_the_canonical_project_root(
         """workflows:
   - task: ~
     steps:
-      - work: Work in {{__task_workspace_dir}}.
+      - work: Work in {{ww.task.workspace_dir}}.
 """,
         encoding="utf-8",
     )
@@ -116,7 +116,7 @@ def test_execution_selection_is_persisted_and_rendered(tmp_path: Path) -> None:
     assert "--role worker" in rendered
 
 
-def test_depends_on_is_visible_with_an_explicit_prompt(tmp_path: Path) -> None:
+def test_artifact_from_is_visible_with_an_explicit_prompt(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
@@ -124,7 +124,7 @@ def test_depends_on_is_visible_with_an_explicit_prompt(tmp_path: Path) -> None:
       - name: research
       - name: implement
         description: Implement the change.
-        depends_on: research
+        artifact_from: research
 """,
         encoding="utf-8",
     )
@@ -139,7 +139,7 @@ def test_depends_on_is_visible_with_an_explicit_prompt(tmp_path: Path) -> None:
     assert "artifact produced by the `research` step" in (instruction.action_text or "")
 
 
-def test_nested_depends_on_names_the_upper_level_step_path(tmp_path: Path) -> None:
+def test_nested_artifact_from_names_the_upper_level_step_path(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: task
@@ -150,7 +150,7 @@ def test_nested_depends_on_names_the_upper_level_step_path(tmp_path: Path) -> No
           - name: review
             loop:
               - name: fix
-                depends_on: research
+                artifact_from: research
                 break: Done
 """,
         encoding="utf-8",

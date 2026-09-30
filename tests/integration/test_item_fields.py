@@ -20,19 +20,21 @@ WORKFLOWS = """workflows:
       - name: collect
         description: Split the pull request by comment.
         items:
-          shared: true
+          persistent: true
           identity: bitbucket_comment_id
           unique: [bitbucket_reply_id]
           steps:
             - name: fix
-              description: "Fix comment {{field.bitbucket_comment_id}}: {{item.text}}"
-              resolve_item: ~
+              description: >-
+                Fix comment {{ww.item.field.bitbucket_comment_id}}: {{ww.item.text}}
+              item_phase: resolve
             - name: reply
               description: Reply in the thread.
-              report_item: ~
-              update_item:
-                - bitbucket_reply_id: The ID of the reply you posted.
-                - bitbucket_thread_resolved: Set to true once the thread is resolved.
+              item_phase: report
+              saves:
+                - item.field.bitbucket_reply_id: The ID of the reply you posted.
+                - item.field.bitbucket_thread_resolved: >-
+                    Set to true once the thread is resolved.
 """
 
 
@@ -135,7 +137,7 @@ def test_the_pool_reaches_the_shared_store_and_the_cli_takes_fields(
                 "TASK-2",
                 "--id",
                 "c1",
-                "--item",
+                "--text",
                 "Fix.",
                 "--field",
                 "bitbucket_comment_id=100",
@@ -177,7 +179,7 @@ def test_the_pool_reaches_the_shared_store_and_the_cli_takes_fields(
                 "TASK-2",
                 "--id",
                 "c2",
-                "--item",
+                "--text",
                 "Own reply.",
                 "--field",
                 "bitbucket_comment_id=200",
@@ -209,5 +211,7 @@ def test_field_declarations_are_validated(tmp_path: Path) -> None:
         load("          identity: 'bad name'\n")
     with pytest.raises(ConfigurationError, match="unique must be a list of field"):
         load("          unique: reply_id\n")
-    with pytest.raises(ConfigurationError, match="must be a non-empty normalized name"):
-        load("          update_item:\n            - 'bad name': x\n")
+    with pytest.raises(ConfigurationError, match="invalid item field name"):
+        load("          saves:\n            - 'item.field.bad name': x\n")
+    with pytest.raises(ConfigurationError, match="update_item was renamed to saves"):
+        load("          update_item:\n            - reply_id: x\n")

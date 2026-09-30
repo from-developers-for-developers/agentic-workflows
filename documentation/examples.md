@@ -10,7 +10,7 @@ Run any of them with:
 
 ```console
 ./ww discover
-./ww start TASK-1 --workflow <name> --agent codex --init-artifact "<requirements>" --role manager
+./ww start TASK-1 --workflow <name> --agent codex --requirements "<requirements>" --role manager
 ```
 
 ## 1. A linear workflow
@@ -30,10 +30,11 @@ workflows:
 
 ## 2. Hooks and reusable handlers
 
-Handlers are defined once and attached to lifecycle phases. Global hooks apply
-to every workflow, workflow hooks to one workflow, and step hooks to one step.
+Handlers are defined once and attached to lifecycle phases as workflow hooks.
+Global hooks apply to every workflow, a workflow's hooks to one workflow, and
+step hooks to one step.
 Automatic handlers, here `argv` commands, run by ww itself; the agent never
-executes them. `assert` checks the command's output. `idempotent: true` says
+executes them. `assert` lists conditions the command's output must meet. `idempotent: true` says
 that running the handler again is harmless, so when ww is interrupted while
 it runs, the next `next` replays it instead of stopping for an operator
 decision; leave it off a handler whose replay could do damage, such as a
@@ -48,8 +49,7 @@ handlers:
   - name: verify-clean
     argv: [printf, clean]
     assert:
-      operator: eq
-      expected: clean
+      - equals: clean
   - name: announce
     description: Tell the team what changed.
 
@@ -65,7 +65,7 @@ hooks:
 workflows:
   - name: task
     hooks:
-      before_in_progress:
+      before_start:
         - steps: [develop]
           handlers:
             - lint: ~
@@ -77,12 +77,13 @@ workflows:
       - review: Review the change.
 ```
 
-## 3. Shell commands with arguments, environment, and provided values
+## 3. Shell commands with arguments, environment, and variables
 
 Shell source never interpolates directly; data goes through `args` and `env`.
-`provide` asks the agent for values that later automatic steps consume, and
+`variables` asks the agent for values that later automatic steps consume, and
 `{{...}}` interpolates them. `artifact: false` skips the artifact for a step
-whose result is only its provided value.
+whose result is only its variable. Every value ww provides itself lives under
+`ww.`, such as `{{ww.task.id}}`.
 
 ```yaml
 workflows:
@@ -90,13 +91,13 @@ workflows:
     steps:
       - pick-version: Decide the next version number.
         artifact: false
-        provide:
+        variables:
           - version: The next semantic version, for example 1.4.0.
       - tag:
         shell: 'git tag -a "v$1" -m "$MESSAGE"'
         args: ["{{version}}"]
         env:
-          MESSAGE: "Release {{version}} for {{__task_id}}"
+          MESSAGE: "Release {{version}} for {{ww.task.id}}"
       - notes: Write the release notes for {{version}}.
 ```
 
@@ -133,7 +134,8 @@ workflows:
 ## 5. Skills, slash commands, and MCP actions
 
 A step can require a discovered agent skill or slash command instead of plain
-prompt text, or address an MCP connection. The examples below need a
+prompt text (`kind: skill` or `kind: slash_command`), or address an MCP
+connection. The examples below need a
 `review-code` skill and a `ship` slash command in the agent's directory.
 
 ```yaml
@@ -141,19 +143,19 @@ workflows:
   - name: ship
     steps:
       - review-code: Review the change with the project's review skill.
-        skill: true
+        kind: skill
       - create-ticket: Create the release ticket and record its key.
         mcp: jira
-        provide:
+        variables:
           - ticket: The key of the created ticket.
       - ship: Run the release command.
-        slash_command: true
+        kind: slash_command
 ```
 
 ## 6. Nested steps and artifact dependencies
 
 `steps` groups related work under a parent step that becomes in progress with
-its first child and completes with its last. `depends_on` hands an earlier
+its first child and completes with its last. `artifact_from` hands an earlier
 step's artifact to a later one: a sibling at the same nesting level, or an
 earlier step of an enclosing level, as `write-migration` does with `analyze`.
 
@@ -165,18 +167,18 @@ workflows:
       - implement:
         steps:
           - write-migration: Write the migration.
-            depends_on: analyze
+            artifact_from: analyze
           - adapt-code: Adapt the code that reads the changed tables.
-            depends_on: write-migration
+            artifact_from: write-migration
       - verify: Run the migration against a scratch database.
-        depends_on: analyze
+        artifact_from: analyze
 ```
 
 ## 7. Loops with break and continue
 
-A `loop` repeats its body until a worker breaks it or the iteration limit is
+A `loop` repeats its body until a worker breaks it or the round limit is
 reached. `break` and `continue` are natural-language conditions the worker
-evaluates after doing the step. `loop_max_times` overrides the project default.
+evaluates after doing the step. `max_rounds` overrides the project default.
 
 ```yaml
 workflows:
@@ -184,7 +186,7 @@ workflows:
     steps:
       - implement: Implement the change.
       - polish:
-        loop_max_times: 4
+        max_rounds: 4
         loop:
           - review: Review the current state of the change.
             break: There are no meaningful findings left.
@@ -230,8 +232,9 @@ workflows:
 
 An `items` step collects work items, here review findings, and then runs stages
 for each of them. The bare form gets one built-in stage per item. The string
-form gives splitting guidance. `item_assignment: per_item` keeps one worker for
-all stages of an item in the `auto` runtime.
+form gives splitting guidance. `assignment: per_item` keeps one worker for
+all stages of an item in the `auto` runtime, and `item_phase` names the
+standard item fields a stage fills.
 
 ```yaml
 workflows:
@@ -245,20 +248,20 @@ workflows:
       - collect: Review the pull request.
         items:
           description: One item per review finding.
-          item_assignment: per_item
+          assignment: per_item
           model: sonnet
           steps:
             - analyze: Analyze this finding.
-              process_item: ~
+              item_phase: analyze
             - fix: Resolve this finding.
-              resolve_item: ~
+              item_phase: resolve
             - reply: Reply in the finding's thread and resolve it.
-              report_item: ~
+              item_phase: report
 ```
 
 ## 10. A handoff workflow that chooses the next one
 
-A workflow that ends in a transition step, `workflow` beside the step name,
+A workflow that ends in a transition step, `handoff_to` beside the step name,
 hands off to another workflow, which continues as the next run of the same
 task; the transition alone makes it a handoff workflow. This is how one entry
 point routes a request to the right process.
@@ -269,10 +272,10 @@ workflows:
     steps:
       - classify: Decide whether this request is a bug fix or a feature.
         artifact: false
-        provide:
-          - workflow: One of the workflows listed in {{__workflows}}, other than route.
+        variables:
+          - workflow: One of the workflows listed in {{ww.task.workflows}}, other than route.
       - route: ~
-        workflow: "{{workflow}}"
+        handoff_to: "{{workflow}}"
 
   - name: bugfix
     steps:
@@ -328,7 +331,7 @@ workflows:
             - implement:
                 workflow: story
             - review: Check that {{ww.child.id}} delivered what it promised.
-              depends_on: implement
+              artifact_from: implement
               break: The epic is complete; no remaining story is worth building.
       - summarize: Summarize what the stories delivered.
 
@@ -340,7 +343,7 @@ workflows:
 
 ## 12. Children that bind their own Jira IDs
 
-When the child workflow's first step provides `task_id`, each child obtains its
+When the child workflow's first step declares the variable `task_id`, each child obtains its
 own external ID from that step when it starts. The parent's collection step
 tells the agent not to pass `--id`. The same first step lets the parent itself
 get its ID when started without one.
@@ -351,7 +354,7 @@ workflows:
     steps:
       - create-epic: Create the Jira epic and return its key.
         mcp: jira
-        provide:
+        variables:
           - task_id: The epic key returned by Jira.
       - split: Split the epic into stories.
         children:
@@ -361,29 +364,28 @@ workflows:
     steps:
       - create-story: Create the Jira story for this child and return its key.
         mcp: jira
-        provide:
+        variables:
           - task_id: The story key returned by Jira.
-      - implement: Implement {{__task_id}}.
+      - implement: Implement {{ww.task.id}}.
 ```
 
 ## 13. Saved metadata and project-scoped values
 
-`update_metadata` persists values an agent produces. Task scope stays with the
-task; project scope is shared by every task and read back through
-`{{project_metadata.<path>}}`.
+`saves` persists values an agent produces. A `metadata.<path>` entry stays with
+the task; a `project_metadata.<path>` entry is shared by every task and read
+back through `{{ww.project_metadata.<path>}}`. The agent passes each as
+`--metadata <path>=<value>`, a project one as
+`--metadata project_metadata.<path>=<value>`.
 
 ```yaml
 workflows:
   - name: dependency-update
     steps:
       - update: Update the dependencies and note the highest risk change.
-        update_metadata:
-          - riskiest_change: The dependency whose update is most likely to break something.
-            key: dependencies.riskiest_change
-          - last_update: Today's date in YYYY-MM-DD format.
-            key: dependencies.last_update
-            scope: project
-      - verify: Pay special attention to {{metadata.dependencies.riskiest_change}}.
+        saves:
+          - metadata.dependencies.riskiest_change: The dependency whose update is most likely to break something.
+          - project_metadata.dependencies.last_update: Today's date in YYYY-MM-DD format.
+      - verify: Pay special attention to {{ww.metadata.dependencies.riskiest_change}}.
 ```
 
 ## 14. Git branches, commits, and worktrees
@@ -414,19 +416,19 @@ workflows:
 ```json
 {
   "enabled": true,
-  "loop_max_times": 3,
+  "max_rounds": 3,
   "extensions": {
     "ww/git": {
-      "commit_format": "{{task_id}}: {{commit_message}}",
+      "commit_format": "{{ww.task.id}}: {{commit_message}}",
       "base_branches": {"default": "main", "hotfix": "release"},
-      "use_separate_branch": true,
+      "separate_branch": true,
       "branch_name_formats": {
-        "default": "feature/{{task_id}}",
-        "hotfix": "hotfix/{{task_id}}"
+        "default": "feature/{{ww.task.id}}",
+        "hotfix": "hotfix/{{ww.task.id}}"
       },
       "worktrees": true,
       "worktree_dir": "./ww-worktrees",
-      "worktree_name_format": "{{task_id}}"
+      "worktree_name_format": "{{ww.task.id}}"
     }
   }
 }
@@ -447,9 +449,9 @@ task works, and the git extension follows.
   ],
   "extensions": {
     "ww/git": {
-      "use_separate_branch": true,
+      "separate_branch": true,
       "base_branches": {"default": "main"},
-      "branch_name_formats": {"default": "feature/{{task_id}}"}
+      "branch_name_formats": {"default": "feature/{{ww.task.id}}"}
     }
   }
 }
@@ -465,7 +467,7 @@ but what differs:
   "extensions": {
     "ww/git": {
       "base_branches": {"default": "master"},
-      "commit_format": "[{{task_id}}] {{commit_message}}"
+      "commit_format": "[{{ww.task.id}}] {{commit_message}}"
     }
   }
 }
@@ -494,14 +496,14 @@ workflows:
 
   - name: feature
     steps:
-      - develop: Implement this part in {{__project_dir}}.
+      - develop: Implement this part in {{ww.project.dir}}.
       - test: Run this repository's tests.
 ```
 
 ```console
-./ww start CHANGE-1 --workflow change --agent codex --init-artifact "..." --role manager
-./ww add-child CHANGE-1 --id api --description "API part" --project backend
-./ww add-child CHANGE-1 --id web --description "Web part" --project frontend
+./ww start CHANGE-1 --workflow change --agent codex --requirements "..." --role manager
+./ww add-child CHANGE-1 --id api --text "API part" --project backend
+./ww add-child CHANGE-1 --id web --text "Web part" --project frontend
 ```
 
 ## 16. A copied workflow, an early stop, and a recommended successor
@@ -515,12 +517,12 @@ workflow outright when nothing needs a second look.
 {
   "extensions": {
     "ww/git": {
-      "use_separate_branch": true,
+      "separate_branch": true,
       "base_branches": {"default": "main", "bugfix": "dev"},
       "branch_name_formats": {
-        "default": "feature/{{task_id}}",
-        "hotfix": "hotfix/{{task_id}}",
-        "bugfix": "bugfix/{{task_id}}"
+        "default": "feature/{{ww.task.id}}",
+        "hotfix": "hotfix/{{ww.task.id}}",
+        "bugfix": "bugfix/{{ww.task.id}}"
       }
     }
   }
@@ -575,7 +577,7 @@ rule file is Markdown; its first sentence is shown on the step page.
 paths: ["src/**/*.py"]
 check:
   shell: grep -l 'print(' $WW_STEP_CHANGED_FILES || true
-  assert: { operator: empty }
+  assert: [empty]
 ---
 Log through the `logging` module; never call `print` in library code.
 
@@ -603,7 +605,7 @@ workflows:
           - Keep the public CLI unchanged.
           - text: Leave no TODO in the files you change.
             shell: grep -l TODO $WW_STEP_CHANGED_FILES || true
-            assert: { operator: empty }
+            assert: [empty]
         hooks:
           before_complete:
             - argv: [pytest, -q]
@@ -620,7 +622,7 @@ workflows:
 When a check fails, `complete` exits non-zero and shows which checks failed
 and what they printed; the step stays with its worker. After three rejected
 completions ww stops with `operator_reason: fix_limit`: `next --retry` gives
-the worker another round, `next --force --force-reason` waives the checks.
+the worker another round, `next --force --reason` waives the checks.
 
 The rules without a command, "Keep the public CLI unchanged." and the
 engineering rules, go to a verifier once develop's checks pass. The first time

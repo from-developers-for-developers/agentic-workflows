@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from ww.errors import ConfigurationError
 
 _TOKEN = re.compile(
-    # Matches {{task_id}} and dotted references such as {{metadata.github.owner}}.
+    # Matches {{name}} and dotted references such as {{ww.metadata.github.owner}}.
     r"\{\{\s*([A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*)\s*\}\}"
 )
 _BRACES = re.compile(r"\{\{.*?\}\}")

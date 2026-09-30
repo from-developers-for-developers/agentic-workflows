@@ -29,7 +29,7 @@ from ww.storage import Storage
 def _assert_readonly(
     context: ExecutionContext | PreflightContext | RecoveryContext,
 ) -> None:
-    assert context.runtime_values["__task_id"] == context.task_id
+    assert context.runtime_values["ww.task.id"] == context.task_id
     with pytest.raises(FrozenInstanceError):
         context.task_id = "changed"  # type: ignore[misc]
     with pytest.raises(TypeError):
@@ -100,9 +100,9 @@ def test_recovery_values_and_workspace_do_not_require_a_checker(
         action:
           type: {action.identifier}
           checks: [issue token]
-        outputs: [token]
+        variables: [token]
       - name: consume
-        prompt: true
+        kind: prompt
         description: "Token {{{{token}}}}"
 """,
             encoding="utf-8",

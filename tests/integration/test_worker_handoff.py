@@ -25,8 +25,7 @@ def _service(root: Path, runtime: str = "single") -> WorkflowService:
   - name: finish-agent
     description: Document the result.
   - name: record-auto
-    command:
-      argv: [touch, completed-hook.txt]
+    argv: [touch, completed-hook.txt]
 workflows:
   - name: task
     steps:
@@ -35,7 +34,7 @@ workflows:
         reasoning: high
         description: Implement it.
         hooks:
-          before_in_progress:
+          before_start:
             - name: prepare-agent
           before_complete:
             - name: record-auto
@@ -44,9 +43,8 @@ workflows:
       - name: verify
         description: Verify it.
         hooks:
-          before_in_progress:
-            - command:
-                argv: [touch, next-preparation.txt]
+          before_start:
+            - argv: [touch, next-preparation.txt]
 """,
         encoding="utf-8",
     )
@@ -102,7 +100,7 @@ def test_worker_completes_full_assignment_then_hands_back(
         caller_role="worker", assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
-    assert handoff.item_name == "inline-command"
+    assert handoff.item_name == "inline-argv"
     assert handoff.item_status == "pending"
     assert handoff.control == "handoff_manager"
     assert handoff.next_role == "manager"
@@ -219,8 +217,7 @@ def test_automatic_failure_reports_that_worker_result_was_saved(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: reject
-    command:
-      argv: ["false"]
+    argv: ["false"]
 workflows:
   - name: task
     steps:
@@ -268,19 +265,18 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
         items:
           steps:
             - name: process
-              process_item: ~
+              item_phase: analyze
               hooks:
-                before_in_progress:
-                  - command:
-                      argv: [touch, materialized-preparation.txt]
+                before_start:
+                  - argv: [touch, materialized-preparation.txt]
   - name: choose
     steps:
       - name: select
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
   - name: target
     steps:
       - name: target-work
@@ -300,7 +296,7 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
         summary_for_next="Done.",
     )
     assert boundary.control == "handoff_manager"
-    assert boundary.item_name == "inline-command"
+    assert boundary.item_name == "inline-argv"
     assert not (tmp_path / "materialized-preparation.txt").exists()
     process = service.next("TASK-I", caller_role="manager")
     assert (tmp_path / "materialized-preparation.txt").exists()
@@ -333,8 +329,7 @@ def test_interrupted_worker_assignment_recovers_through_manager(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: publish
-    command:
-      argv: [touch, published.txt]
+    argv: [touch, published.txt]
 workflows:
   - name: task
     steps:
@@ -375,7 +370,7 @@ workflows:
     assert interrupted_state.status == "interrupted"
     assert interrupted_state.control == "awaiting_operator"
     assert interrupted_state.next_role == "operator"
-    assert interrupted_state.operator_reason == "interrupted_command"
+    assert interrupted_state.operator_reason == "handler_interrupted"
     summary = resumed.recover("TASK-1", mark_succeeded=True, caller_role="manager")
     assert summary.item_name == "update-workflow-summary"
     assert summary.item_status == "in_progress"
@@ -389,18 +384,17 @@ def test_declared_preparation_input_remains_worker_assignment_work(
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: prepare
-    provide:
+    variables:
       - name: note
-    command:
-      shell: printf "%s" "$NOTE" > note.txt
-      env:
-        NOTE: "{{note}}"
+    shell: printf "%s" "$NOTE" > note.txt
+    env:
+      NOTE: "{{note}}"
 workflows:
   - name: task
     steps:
       - name: work
         hooks:
-          before_in_progress:
+          before_start:
             - name: prepare
 """,
         encoding="utf-8",
@@ -471,12 +465,11 @@ def test_input_only_assignment_stays_with_the_manager(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: commit
-    provide:
+    variables:
       - name: commit_message
-    command:
-      shell: printf "%s" "$MESSAGE" > commit.txt
-      env:
-        MESSAGE: "{{commit_message}}"
+    shell: printf "%s" "$MESSAGE" > commit.txt
+    env:
+      MESSAGE: "{{commit_message}}"
 workflows:
   - name: task
     steps:
@@ -564,7 +557,7 @@ def test_each_step_sees_the_previous_step_result_but_never_a_hook(
         """handlers:
   - name: note
     description: Leave a note.
-    prompt: true
+    kind: prompt
 workflows:
   - name: task
     steps:
@@ -634,7 +627,7 @@ def test_a_step_must_hand_over_a_summary_but_hooks_need_not(tmp_path: Path) -> N
         """handlers:
   - name: note
     description: Leave a note.
-    prompt: true
+    kind: prompt
 workflows:
   - name: task
     steps:
@@ -652,14 +645,14 @@ workflows:
     research = service.next("TASK-1")
     assert research.summary_required is True
     rendered = MarkdownOutputAdapter().render_instruction(research)
-    assert '--summary-for-next-step="<one or two sentences for the next step>"' in (
+    assert '--summary="<one or two sentences for the next step>"' in (
         research.continuation_command or ""
     )
     assert "Replace `<one or two sentences for the next step>`" in rendered
 
-    with pytest.raises(StateError, match="needs --summary-for-next-step"):
+    with pytest.raises(StateError, match="needs --summary"):
         service.complete("TASK-1", artifact="Found three call sites.")
-    with pytest.raises(StateError, match="needs --summary-for-next-step"):
+    with pytest.raises(StateError, match="needs --summary"):
         service.complete(
             "TASK-1", artifact="Found three call sites.", summary_for_next="  "
         )
@@ -671,7 +664,7 @@ workflows:
     )
     assert hook.item_name == "note"
     assert hook.summary_required is False
-    assert "--summary-for-next-step" not in (hook.continuation_command or "")
+    assert "--summary" not in (hook.continuation_command or "")
     if hook.item_status != "in_progress":
         service.next("TASK-1")
     service.complete("TASK-1", artifact="Noted.", summary_for_next="Done.")
@@ -701,9 +694,9 @@ def test_delegate_page_describes_the_step_not_its_preparation_hook(
 handlers:
   - name: jira-in-progress
     description: Move the ticket to In development.
-    prompt: true
+    kind: prompt
 hooks:
-  before_in_progress:
+  before_start:
     - steps: [develop]
       handlers:
         - name: jira-in-progress
@@ -774,15 +767,14 @@ def test_delegated_pending_input_page_has_a_delegate_heading(tmp_path: Path) -> 
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """handlers:
   - name: commit
-    provide:
+    variables:
       - name: commit_message
-    command:
-      shell: printf "%s" "$MESSAGE" > commit.txt
-      env:
-        MESSAGE: "{{commit_message}}"
+    shell: printf "%s" "$MESSAGE" > commit.txt
+    env:
+      MESSAGE: "{{commit_message}}"
   - name: notify
     description: Comment on the ticket.
-    prompt: true
+    kind: prompt
 workflows:
   - name: task
     steps:

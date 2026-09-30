@@ -13,16 +13,16 @@ settings from the ``ww/git`` section of ``ww-agentic-workflows.json``:
 ```json
 "extensions": {
   "ww/git": {
-    "commit_message": "{{task_id}}: {{commit_message}}",
+    "commit_format": "{{ww.task.id}}: {{commit_message}}",
     "base_branches": {
       "default": "main",
       "bugfix": "develop",
-      "task": {"argv": ["./scripts/base-branch", "{{workflow}}"]}
+      "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
     },
-    "use_separate_branch": true,
+    "separate_branch": true,
     "branch_name_formats": {
-      "default": "feature/{{task_id}}",
-      "bugfix": "hotfix/{{task_id}}"
+      "default": "feature/{{ww.task.id}}",
+      "bugfix": "hotfix/{{ww.task.id}}"
     },
     "worktrees": false
   }
@@ -52,6 +52,7 @@ changed and staged path resolves beneath it.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -73,20 +74,36 @@ from ww.extensions.api import (
     ProvidedVariable,
 )
 from ww.interpolation import dependencies, interpolate
-from ww.variables import BRANCH_NAMING_STRATEGY
+from ww.variables import BRANCH_NAMING_STRATEGY, TASK_ID, TASK_WORKSPACE_DIR
 
 COMMITS_FILE = "commits.jsonl"
 BRANCHES_FILE = "branches.jsonl"
 # ``git status --porcelain`` prefixes each path with two status letters and a space.
 _PORCELAIN_STATUS_WIDTH = 3
 
-DEFAULT_COMMIT_FORMAT = "{{task_id}}: {{commit_message}}"
-DEFAULT_BRANCH_FORMAT = "{{task_id}}"
+# The tokens a format reads: the task's ID, its workflow, and its run.
+WORKFLOW_TOKEN = "ww.task.workflow"
+RUN_TOKEN = "ww.task.run"
+FORMAT_TOKENS = (TASK_ID, WORKFLOW_TOKEN, RUN_TOKEN)
+DEFAULT_COMMIT_FORMAT = "{{ww.task.id}}: {{commit_message}}"
+DEFAULT_BRANCH_FORMAT = "{{ww.task.id}}"
+# Settings and format tokens that were renamed; an old one is an error in the
+# live settings and upgraded in settings a run froze before the rename.
+_RENAMED_SETTINGS = {
+    "commit_message": "commit_format",
+    "use_separate_branch": "separate_branch",
+}
+_RENAMED_TOKENS = {
+    "task_id": TASK_ID,
+    "workflow": WORKFLOW_TOKEN,
+    "run_id": RUN_TOKEN,
+}
+# A renamed token as a run froze it, spaces inside the braces allowed.
+_OLD_TOKEN = re.compile(r"\{\{\s*(task_id|workflow|run_id)\s*\}\}")
 _SETTING_KEYS = {
-    "commit_message",
     "commit_format",
     "base_branches",
-    "use_separate_branch",
+    "separate_branch",
     "branch_name_formats",
     "worktrees",
     "worktree_dir",
@@ -115,7 +132,7 @@ class Settings:
     # repository with its own conventions states them in its own
     # ``ww-agentic-workflows.json``, which ww applies for tasks working there.
     base_branches: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
-    use_separate_branch: bool = False
+    separate_branch: bool = False
     branch_name_formats: dict[str, str] = field(
         default_factory=lambda: {"default": DEFAULT_BRANCH_FORMAT}
     )
@@ -147,7 +164,7 @@ class Settings:
                 workflow: _base_branch_dict(definition)
                 for workflow, definition in self.base_branches.items()
             },
-            "use_separate_branch": self.use_separate_branch,
+            "separate_branch": self.separate_branch,
             "branch_name_formats": dict(self.branch_name_formats),
             "worktrees": self.worktrees,
             "worktree_dir": self.worktree_dir,
@@ -172,6 +189,13 @@ def settings_from(config: Any) -> Settings:
             'ww/git base_branch is now the "default" entry of base_branches: '
             'use "base_branches": {"default": ...}'
         )
+    for old, new in _RENAMED_SETTINGS.items():
+        if old in config:
+            raise ConfigurationError(
+                f'ww/git {old} was renamed to {new}: "{new}": '
+                + json.dumps(config[old])
+            )
+    _reject_renamed_tokens(config)
     unknown = set(config) - _SETTING_KEYS
     if unknown:
         raise ConfigurationError(
@@ -188,10 +212,6 @@ def settings_from(config: Any) -> Settings:
         raise ConfigurationError(
             "ww/git branch_name_formats must map workflow names to formats"
         )
-    if "commit_message" in config and "commit_format" in config:
-        raise ConfigurationError(
-            "ww/git settings cannot define both commit_message and commit_format"
-        )
     base_branches = config.get("base_branches", {})
     if not isinstance(base_branches, dict) or not all(
         isinstance(workflow, str) and workflow.strip() for workflow in base_branches
@@ -201,16 +221,12 @@ def settings_from(config: Any) -> Settings:
             "branches"
         )
     settings = Settings(
-        commit_format=_string(
-            config,
-            "commit_message" if "commit_message" in config else "commit_format",
-            DEFAULT_COMMIT_FORMAT,
-        ),
+        commit_format=_string(config, "commit_format", DEFAULT_COMMIT_FORMAT),
         base_branches={
             workflow: _required_base_branch(definition, f"base_branches[{workflow!r}]")
             for workflow, definition in base_branches.items()
         },
-        use_separate_branch=_bool(config, "use_separate_branch"),
+        separate_branch=_bool(config, "separate_branch"),
         branch_name_formats=dict(formats),
         worktrees=_bool(config, "worktrees"),
         worktree_dir=_optional_string(config, "worktree_dir"),
@@ -238,7 +254,7 @@ def settings_from(config: Any) -> Settings:
 def _validate_commit_format(value: str) -> None:
     """Ensure the format can produce one complete commit subject."""
     names = dependencies(value)
-    unknown = set(names) - {"task_id", "workflow", "run_id", "commit_message"}
+    unknown = set(names) - {*FORMAT_TOKENS, "commit_message"}
     if unknown:
         raise ConfigurationError(
             "ww/git commit_format has unknown placeholder(s): "
@@ -249,6 +265,63 @@ def _validate_commit_format(value: str) -> None:
             "ww/git commit_format must contain exactly one "
             "{{commit_message}} placeholder"
         )
+
+
+def _format_strings(config: Mapping[str, Any]) -> list[str]:
+    """Every string in the settings that ww/git renders as a format."""
+    found: list[str] = []
+    for key in ("commit_format", "worktree_name_format"):
+        if isinstance(config.get(key), str):
+            found.append(config[key])
+    formats = config.get("branch_name_formats")
+    if isinstance(formats, dict):
+        found.extend(value for value in formats.values() if isinstance(value, str))
+    branches = config.get("base_branches")
+    if isinstance(branches, dict):
+        for definition in branches.values():
+            argv = definition.get("argv") if isinstance(definition, dict) else None
+            if isinstance(argv, list):
+                found.extend(arg for arg in argv if isinstance(arg, str))
+    return found
+
+
+def _reject_renamed_tokens(config: Mapping[str, Any]) -> None:
+    for value in _format_strings(config):
+        for name in dependencies(value):
+            if name in _RENAMED_TOKENS:
+                raise ConfigurationError(
+                    f"ww/git format token {{{{{name}}}}} was renamed to "
+                    f"{{{{{_RENAMED_TOKENS[name]}}}}}"
+                )
+
+
+def upgrade_settings(config: Mapping[str, object]) -> dict[str, object]:
+    """Settings frozen by ww/git before the renames, in the current shape.
+
+    ``commit_message`` becomes ``commit_format``, ``use_separate_branch``
+    becomes ``separate_branch``, and the format tokens ``{{task_id}}``,
+    ``{{workflow}}`` and ``{{run_id}}`` become ``{{ww.task.id}}``,
+    ``{{ww.task.workflow}}`` and ``{{ww.task.run}}``.
+    """
+
+    def tokens(value: object) -> object:
+        if isinstance(value, str):
+            return _OLD_TOKEN.sub(
+                lambda match: f"{{{{{_RENAMED_TOKENS[match.group(1)]}}}}}", value
+            )
+        if isinstance(value, dict):
+            return {key: tokens(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [tokens(item) for item in value]
+        return value
+
+    upgraded: dict[str, object] = {}
+    for key, value in config.items():
+        new_key = _RENAMED_SETTINGS.get(key, key)
+        if new_key in config and new_key != key:
+            continue
+        upgraded[new_key] = tokens(value)
+    return upgraded
 
 
 def _string(config: dict[str, Any], key: str, default: str) -> str:
@@ -426,9 +499,9 @@ def _validate_staged_paths(context: ExtensionContext) -> str | None:
 
 def _tokens(context: ExtensionContext) -> dict[str, str]:
     return {
-        "task_id": context.task_id or "",
-        "workflow": context.workflow or "",
-        "run_id": context.run_id or "",
+        TASK_ID: context.task_id or "",
+        WORKFLOW_TOKEN: context.workflow or "",
+        RUN_TOKEN: context.run_id or "",
     }
 
 
@@ -806,7 +879,7 @@ def _is_clean(context: ExtensionContext) -> ExtensionResult:
 def _start_branch(context: ExtensionContext) -> ExtensionResult:
     settings = settings_from(context.config)
     repository = _repository(context)
-    if not settings.use_separate_branch and not settings.worktrees:
+    if not settings.separate_branch and not settings.worktrees:
         return ExtensionResult(True, output="configured to work on the current branch")
     branch, base, error = _task_branch(context, settings)
     if error:
@@ -1044,7 +1117,7 @@ def _return_to_base(context: ExtensionContext) -> ExtensionResult:
     settings = settings_from(context.config)
     if settings.worktrees:
         return ExtensionResult(True, output="worktrees leave the main checkout alone")
-    if not settings.use_separate_branch:
+    if not settings.separate_branch:
         return ExtensionResult(True, output="no task branch was created")
     record = _recorded_branch(context, context.task_id or "") or {}
     base = record.get("base")
@@ -1122,7 +1195,8 @@ EXTENSION = Extension(
     name="git",
     version="0.2.0",
     description="Commit and branch through ww, and keep a record of both.",
-    variables=(ExtensionVariable("__task_workspace_dir", _task_workspace_dir),),
+    variables=(ExtensionVariable(TASK_WORKSPACE_DIR, _task_workspace_dir),),
+    upgrade_settings=upgrade_settings,
     namespace=ExtensionNamespace(
         "git",
         (

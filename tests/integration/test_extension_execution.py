@@ -166,14 +166,14 @@ def _workspace(context):
     return str(context.root / "alternate-workspace")
 
 def _record(context):
-    context.store.write_text("workspace", context.values["__task_workspace_dir"])
+    context.store.write_text("workspace", context.values["ww.task.workspace_dir"])
     return ExtensionResult(True)
 
 EXTENSION = Extension(
     vendor="acme",
     name="binding",
     handlers=(ExtensionHandler("record", _record),),
-    variables=(ExtensionVariable("__task_workspace_dir", _workspace),),
+    variables=(ExtensionVariable("ww.task.workspace_dir", _workspace),),
 )
 """
 
@@ -206,7 +206,7 @@ def _project(root: Path, handler: str = "record") -> None:
       - ext/acme/notes/modes:terse
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
           after_complete:
             - name: ext/acme/notes/handlers:{handler}
@@ -228,7 +228,7 @@ def _checking_service(root: Path) -> WorkflowService:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
           after_complete:
             - name: ext/acme/checking/handlers:publish
@@ -247,7 +247,7 @@ def _validating_service(root: Path) -> WorkflowService:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
           after_complete:
             - name: ext/acme/checked/handlers:publish
@@ -464,7 +464,7 @@ workflows:
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
           after_complete:
             - name: record-binding
@@ -493,7 +493,7 @@ def test_cli_state_commands_ignore_an_unused_broken_extension(
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -512,7 +512,7 @@ def test_cli_state_commands_ignore_an_unused_broken_extension(
                 "task",
                 "--agent",
                 "codex",
-                "--init-artifact",
+                "--requirements",
                 "requirements",
             ]
         )
@@ -574,7 +574,7 @@ def test_a_later_step_can_use_a_declared_extension_output(tmp_path: Path) -> Non
   - name: task
     steps:
       - name: create
-        prompt: true
+        kind: prompt
         artifact: false
         hooks:
           after_complete:
@@ -661,7 +661,7 @@ def test_an_extension_mode_can_be_selected_without_loading_other_extensions(
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -695,7 +695,7 @@ def test_compiling_with_no_registry_at_all_reports_the_reference(
   - name: task
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
           after_complete:
             - name: ext/acme/notes/handlers:record
@@ -789,7 +789,7 @@ def test_the_git_extension_commits_and_records_what_it_committed(
         - name: ext/ww/git/handlers:is-git-clean
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
           after_complete:
             - name: ext/ww/git/handlers:git-commit
@@ -853,8 +853,8 @@ def test_git_start_branch_hook_keeps_first_declared_step_filter(
                 "extensions": {
                     "ww/git": {
                         "base_branches": {"default": "main"},
-                        "use_separate_branch": True,
-                        "branch_name_formats": {"default": "feature/{{task_id}}"},
+                        "separate_branch": True,
+                        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
                     }
                 }
             }
@@ -869,7 +869,7 @@ workflows:
   - name: task
     steps:
       - name: develop
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -893,8 +893,8 @@ workflows:
     )
     assert hook.payload_as(Extension).settings == {
         "base_branches": {"default": "main"},
-        "use_separate_branch": True,
-        "branch_name_formats": {"default": "feature/{{task_id}}"},
+        "separate_branch": True,
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
     }
     assert (hook.phase, hook.step) == ("before_start_workflow", "init")
     assert init.name == "init"
@@ -918,10 +918,10 @@ def test_start_branch_strategy_is_persisted_for_extension_hooks(
                 "extensions": {
                     "ww/git": {
                         "base_branches": {"default": "main"},
-                        "use_separate_branch": True,
+                        "separate_branch": True,
                         "branch_name_formats": {
-                            "default": "feature/{{task_id}}",
-                            "experiment": "experiment/{{task_id}}",
+                            "default": "feature/{{ww.task.id}}",
+                            "experiment": "experiment/{{ww.task.id}}",
                         },
                     }
                 }
@@ -937,7 +937,7 @@ workflows:
   - name: task
     steps:
       - name: develop
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -980,8 +980,8 @@ def test_develop_preparation_hooks_select_worktree_after_earlier_steps(
                         "base_branches": {"default": "main"},
                         "worktrees": True,
                         "worktree_dir": str(tmp_path / "trees"),
-                        "worktree_name_format": "{{task_id}}",
-                        "branch_name_formats": {"default": "feature/{{task_id}}"},
+                        "worktree_name_format": "{{ww.task.id}}",
+                        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
                     }
                 }
             }
@@ -990,7 +990,7 @@ def test_develop_preparation_hooks_select_worktree_after_earlier_steps(
     )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """hooks:
-  before_in_progress:
+  before_start:
     - steps: [develop]
       handlers:
         - ext/ww/git/handlers:start-task-branch: ~
@@ -1002,11 +1002,11 @@ workflows:
   - name: task
     steps:
       - name: fetch
-        prompt: true
+        kind: prompt
       - name: develop
-        prompt: true
+        kind: prompt
       - name: code-review
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )
@@ -1092,7 +1092,7 @@ def test_the_git_extension_refuses_a_dirty_tree(tmp_path: Path) -> None:
         - name: ext/ww/git/handlers:is-git-clean
     steps:
       - name: work
-        prompt: true
+        kind: prompt
 """,
         encoding="utf-8",
     )

@@ -35,7 +35,7 @@ def test_init_named_preparation_hook_runs_before_implicit_init(tmp_path: Path) -
 workflows:
   - name: task
     hooks:
-      before_in_progress:
+      before_start:
         - steps: [init]
           name: init
     steps:
@@ -70,7 +70,7 @@ def test_init_named_preparation_hook_keeps_manager_worker_handoff(
 workflows:
   - name: task
     hooks:
-      before_in_progress:
+      before_start:
         - steps: [init]
           name: init
     steps:
@@ -113,10 +113,8 @@ def test_invalid_project_metadata_shape_does_not_complete_source_item(
     steps:
       - name: capture
         artifact: false
-        update_metadata:
-          - name: value
-            key: {output}
-            scope: project
+        saves:
+          - project_metadata.{output}:
 """,
     )
     service.project_metadata_store.write_project_metadata(
@@ -128,7 +126,7 @@ def test_invalid_project_metadata_shape_does_not_complete_source_item(
     with pytest.raises(StateError, match="conflicting project metadata key"):
         service.complete(
             "TASK-METADATA",
-            metadata_values=(("value", "new"),),
+            metadata_values=((f"project_metadata.{output}", "new"),),
             summary_for_next="Done.",
         )
 
@@ -148,10 +146,8 @@ def test_concurrent_project_metadata_shape_conflict_can_be_resolved(
     steps:
       - name: capture
         artifact: false
-        update_metadata:
-          - name: value
-            key: result
-            scope: project
+        saves:
+          - project_metadata.result:
 """,
     )
     service.start("task", "TASK-CONCURRENT", init_artifact="requirements")
@@ -170,7 +166,7 @@ def test_concurrent_project_metadata_shape_conflict_can_be_resolved(
     with pytest.raises(StateError, match="incompatible metadata shape"):
         service.complete(
             "TASK-CONCURRENT",
-            metadata_values=(("value", "new"),),
+            metadata_values=(("project_metadata.result", "new"),),
             summary_for_next="Done.",
         )
 
@@ -197,10 +193,9 @@ def test_continue_and_retry_preserve_command_output_history(
           - name: review
             continue: Again.
             hooks:
-              before_in_progress:
+              before_start:
                 - name: evidence
-                  command:
-                    shell: 'printf %s "$WW_OPERATION_ATTEMPT"; exit 1'
+                  shell: 'printf %s "$WW_OPERATION_ATTEMPT"; exit 1'
 """
     (tmp_path / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(
@@ -246,10 +241,9 @@ def test_continue_preserves_command_output_history(
           - name: review
             continue: Again.
             hooks:
-              before_in_progress:
+              before_start:
                 - name: evidence
-                  command:
-                    argv: [printf, evidence]
+                  argv: [printf, evidence]
 """
     (tmp_path / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(
@@ -303,11 +297,11 @@ def test_parent_follows_child_handoff_until_successor_finishes(
   - name: choose
     steps:
       - name: select
-        provide:
+        variables:
           - name: workflow
         hooks:
           after_complete:
-            - workflow: "{{workflow}}"
+            - handoff_to: "{{workflow}}"
   - name: work
     steps:
       - name: implement
@@ -581,8 +575,7 @@ def test_parent_refresh_does_not_retry_a_hook_that_just_failed(
           workflow: child
         hooks:
           after_complete:
-            - command:
-                argv: ["false"]
+            - argv: ["false"]
   - name: child
     steps:
       - name: work
@@ -610,7 +603,7 @@ def test_parent_refresh_does_not_retry_a_hook_that_just_failed(
 
 def test_numeric_task_generation_continues_past_fifty(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.json").write_text(
-        '{"task_format": "TASK-{digit}"}', encoding="utf-8"
+        '{"task_format": "TASK-{{digit}}"}', encoding="utf-8"
     )
     service = _service(
         tmp_path,
@@ -648,7 +641,7 @@ def test_status_uses_one_aggregate_revision(tmp_path: Path) -> None:
         items:
           steps:
             - name: process
-              process_item: ~
+              item_phase: analyze
 """,
     )
     start_after_init(writer, "task", "T", agent="codex")
@@ -678,8 +671,7 @@ def test_process_creation_failure_is_a_retryable_cli_error(
   - name: task
     hooks:
       before_start_workflow:
-        - command:
-            argv: [/nonexistent-ww-review-command]
+        - argv: [/nonexistent-ww-review-command]
     steps:
       - name: work
 """,
@@ -695,7 +687,7 @@ def test_process_creation_failure_is_a_retryable_cli_error(
             "task",
             "--agent",
             "codex",
-            "--init-artifact",
+            "--requirements",
             "requirements",
         ]
     )
@@ -722,8 +714,7 @@ def test_error_after_process_creation_keeps_the_outcome_unknown(
   - name: task
     hooks:
       before_start_workflow:
-        - command:
-            argv: [touch, effect.txt]
+        - argv: [touch, effect.txt]
     steps:
       - name: work
 """,
@@ -760,20 +751,19 @@ def test_start_retains_requirements_through_init_preparation_and_stops_before_wo
   - name: approve
     description: Approve requirements.
   - name: prepare
-    provide:
+    variables:
       - name: note
-    command:
-      argv: [printf, "{{note}}"]
+    argv: [printf, "{{note}}"]
 workflows:
   - name: task
     hooks:
-      before_in_progress:
+      before_start:
         - steps: [init]
           name: approve
     steps:
       - name: work
         hooks:
-          before_in_progress:
+          before_start:
             - name: prepare
 """,
     )
@@ -796,13 +786,12 @@ def test_continue_runs_completion_hook_then_blocks_at_loop_limit(
         tmp_path,
         """handlers:
   - name: audit
-    command:
-      argv: [touch, audit.txt]
+    argv: [touch, audit.txt]
 workflows:
   - name: task
     steps:
       - name: cycle
-        loop_max_times: 1
+        max_rounds: 1
         loop:
           - name: review
             continue: Review again.

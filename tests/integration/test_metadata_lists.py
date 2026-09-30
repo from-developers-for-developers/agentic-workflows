@@ -19,18 +19,16 @@ WORKFLOWS = """workflows:
   - name: review
     steps:
       - name: fetch
-        description: "Already handled: {{metadata.pull_request.handled}}."
+        description: "Already handled: {{ww.metadata.pull_request.handled}}."
         artifact: false
       - name: process
         description: Split by thread.
         items:
-          report_item: Resolve the thread.
-          update_metadata:
-            - handled: The root comment id of the resolved thread.
-              key: pull_request.handled
+          report: Resolve the thread.
+          saves:
+            - metadata.pull_request.handled: The root comment id of the resolved thread.
               append: true
-            - url: The pull request URL.
-              key: pull_request.url
+            - metadata.pull_request.url: The pull request URL.
 """
 
 
@@ -73,8 +71,8 @@ def _run_review(service: WorkflowService, task: str, handled: tuple[str, ...]) -
         artifact="handled",
         summary_for_next="Handled.",
         metadata_values=(
-            ("url", "https://example.test/pr/1"),
-            *(("handled", value) for value in handled),
+            ("pull_request.url", "https://example.test/pr/1"),
+            *(("pull_request.handled", value) for value in handled),
         ),
     )
     _finish_run(service, task)
@@ -90,7 +88,7 @@ def test_an_append_key_grows_across_completions_and_reads_as_a_list(
     # Nothing saved yet: the placeholder resolves to nothing, not to itself.
     assert fetch.action_text == "Already handled: ."
     rendered = MarkdownOutputAdapter().render_instruction(fetch)
-    assert "{{metadata" not in rendered
+    assert "{{ww.metadata" not in rendered
     service.complete("TASK-1", summary_for_next="Fetched.")
 
     collect = service.next("TASK-1")
@@ -100,17 +98,22 @@ def test_an_append_key_grows_across_completions_and_reads_as_a_list(
     service.next("TASK-1")
     handle = service.status("TASK-1")
     rendered = MarkdownOutputAdapter().render_instruction(handle)
-    assert "(a list: repeat `--metadata handled=<value>` once per value" in rendered
+    assert (
+        "(a list: repeat `--metadata pull_request.handled=<value>` once per value"
+        in rendered
+    )
 
     # A scalar key is still required exactly once; the list key is optional.
-    with pytest.raises(StateError, match="missing required task metadata.*url"):
+    with pytest.raises(
+        StateError, match="missing required task metadata.*pull_request.url"
+    ):
         service.complete("TASK-1", artifact="x", summary_for_next="x")
-    with pytest.raises(StateError, match="supplied more than once: url"):
+    with pytest.raises(StateError, match="supplied more than once: pull_request.url"):
         service.complete(
             "TASK-1",
             artifact="x",
             summary_for_next="x",
-            metadata_values=(("url", "a"), ("url", "b")),
+            metadata_values=(("pull_request.url", "a"), ("pull_request.url", "b")),
         )
 
     _resolve_item(service, "TASK-1")
@@ -119,10 +122,10 @@ def test_an_append_key_grows_across_completions_and_reads_as_a_list(
         artifact="handled",
         summary_for_next="Handled two threads.",
         metadata_values=(
-            ("url", "https://example.test/pr/1"),
-            ("handled", "4711"),
-            ("handled", "4718"),
-            ("handled", "4711"),
+            ("pull_request.url", "https://example.test/pr/1"),
+            ("pull_request.handled", "4711"),
+            ("pull_request.handled", "4718"),
+            ("pull_request.handled", "4711"),
         ),
     )
 
@@ -157,12 +160,10 @@ def test_a_project_scoped_append_key_merges_values_from_several_tasks(
   - name: task
     steps:
       - name: note
-        description: "Seen so far: {{project_metadata.seen}}."
+        description: "Seen so far: {{ww.project_metadata.seen}}."
         artifact: false
-        update_metadata:
-          - seen: Something seen.
-            key: seen
-            scope: project
+        saves:
+          - project_metadata.seen: Something seen.
             append: true
 """,
         encoding="utf-8",
@@ -174,7 +175,9 @@ def test_a_project_scoped_append_key_merges_values_from_several_tasks(
         service.complete(
             task,
             summary_for_next="Noted.",
-            metadata_values=tuple(("seen", value) for value in values),
+            metadata_values=tuple(
+                ("project_metadata.seen", value) for value in values
+            ),
         )
         assert note.item_name == "note"
 

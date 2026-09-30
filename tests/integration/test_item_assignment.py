@@ -27,12 +27,12 @@ def _service(tmp_path: Path, assignment: str, stage_hook: str = "") -> WorkflowS
       - review: Review the pull request.
         items:
           description: Split based on the review comments.
-          item_assignment: {assignment}
+          assignment: {assignment}
           steps:
             - analyze: Analyze this comment.
-              process_item: ~
+              item_phase: analyze
             - fix: Fix this comment.
-              resolve_item: ~
+              item_phase: resolve
 {stage_hook}""",
         encoding="utf-8",
     )
@@ -107,8 +107,8 @@ def test_per_item_keeps_one_worker_for_all_stages_of_an_item(tmp_path: Path) -> 
     ]
 
 
-def test_all_items_keeps_one_worker_for_every_item(tmp_path: Path) -> None:
-    service = _service(tmp_path, "all_items")
+def test_together_keeps_one_worker_for_every_item(tmp_path: Path) -> None:
+    service = _service(tmp_path, "together")
     _collect(service)
 
     assert _boundaries(service) == [
@@ -120,7 +120,7 @@ def test_all_items_keeps_one_worker_for_every_item(tmp_path: Path) -> None:
 
 
 def test_single_runtime_keeps_per_step_boundaries(tmp_path: Path) -> None:
-    service = _service(tmp_path, "all_items")
+    service = _service(tmp_path, "together")
     _collect(service, runtime="single")
     service.next(TASK, caller_role="manager")
 
@@ -159,9 +159,8 @@ def test_interrupted_stage_hook_recovers_inside_the_span(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook = """              hooks:
-                before_in_progress:
-                  - command:
-                      argv: [touch, prepared.txt]
+                before_start:
+                  - argv: [touch, prepared.txt]
 """
     # The hook belongs to ``fix``, the last stage in the configuration.
     service = _service(tmp_path, "per_item", stage_hook=hook)
@@ -256,8 +255,8 @@ def test_span_instructions_describe_scope_then_stay_compact(tmp_path: Path) -> N
     assert "You are the worker for this assignment" in full
 
 
-def test_all_items_scope_names_every_item(tmp_path: Path) -> None:
-    service = _service(tmp_path, "all_items")
+def test_together_scope_names_every_item(tmp_path: Path) -> None:
+    service = _service(tmp_path, "together")
     _collect(service)
     service.next(TASK, caller_role="manager")
 
@@ -266,7 +265,7 @@ def test_all_items_scope_names_every_item(tmp_path: Path) -> None:
     )
 
     assert first.assignment_scope == {
-        "item_assignment": "all_items",
+        "item_assignment": "together",
         "item_ids": ["c1", "c2"],
         "stages": ["analyze", "fix"],
     }
@@ -371,7 +370,7 @@ def _spans(service: WorkflowService) -> list[list[str]]:
     ("assignment", "expected"),
     [
         (
-            "all_items",
+            "together",
             [
                 ["c1/analyze"],
                 ["c1/fix"],
@@ -402,15 +401,15 @@ def test_a_stage_with_other_worker_settings_starts_a_new_assignment(
     steps:
       - review: Review the pull request.
         items:
-          item_assignment: {assignment}
+          assignment: {assignment}
           steps:
             - analyze: Analyze this comment.
-              process_item: ~
+              item_phase: analyze
             - fix: Fix this comment.
-              resolve_item: ~
+              item_phase: resolve
               model: opus
             - reply: Reply.
-              report_item: ~
+              item_phase: report
 """,
         encoding="utf-8",
     )
@@ -420,7 +419,7 @@ def test_a_stage_with_other_worker_settings_starts_a_new_assignment(
     assert _spans(service) == expected
 
 
-def test_bare_items_default_to_one_worker_for_all_items(tmp_path: Path) -> None:
+def test_bare_items_default_to_one_worker_together(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: review

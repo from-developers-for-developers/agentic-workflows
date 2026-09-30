@@ -5,7 +5,7 @@ workflows with coding agents. It compiles `ww-agentic-workflows.yaml` into an ex
 separates work performed by the agent from automation performed by `ww`, and
 saves task state so work can be inspected and resumed.
 
-Use it when a development process needs more structure than a prompt: lifecycle
+Use it when a development process needs more structure than a prompt: workflow
 hooks, reusable handlers, worker-stoppable review/fix loops, MCP-backed
 actions, saved artifacts, and a durable record of what ran.
 
@@ -31,7 +31,7 @@ one with the next:
 
 ```console
 $ ./ww start TASK-1 --workflow task --agent claudecode \
-    --init-artifact "Add retry handling to the upload client." --role manager
+    --requirements "Add retry handling to the upload client." --role manager
 
 # TASK-1 · task
 ## Manager and worker: dispatch the `develop` assignment
@@ -51,11 +51,11 @@ Implement the requested change.
 - document
 ### Worker completion command
     ./ww complete TASK-1 --role worker --artifact="<whole result in Markdown>" \
-        --summary-for-next-step="<one or two sentences for the next step>"
+        --summary="<one or two sentences for the next step>"
 
 $ ./ww complete TASK-1 --role worker \
     --artifact "Added exponential backoff to UploadClient.send." \
-    --summary-for-next-step "Retries land in UploadClient.send; document the backoff settings."
+    --summary "Retries land in UploadClient.send; document the backoff settings."
 
 # TASK-1 · task
 > Completion recorded successfully by `ww`.
@@ -222,7 +222,7 @@ task:
 
 ```console
 ./ww start TASK-123 --workflow task --agent claudecode \
-  --init-artifact "Add retry handling to the upload client." --role manager
+  --requirements "Add retry handling to the upload client." --role manager
 ```
 
 That command is the agent's, not yours — but it is worth being able to read
@@ -233,7 +233,7 @@ one:
   format chosen during `init`.
 - `--agent` is the agent integration in use: `codex`, `claudecode`, `gemini`,
   `antigravity`, `deepseek`, `kimi`, `cursor`, `grok`, or `custom:<name>`.
-- `--init-artifact` is your request, normalized into the task's requirements.
+- `--requirements` is your request, normalized into the task's requirements.
 - `--role manager` is the role driving the task; a worker performing a single
   assignment uses `--role worker`.
 
@@ -259,7 +259,7 @@ opens a step and prints its instructions, the agent does that step, and
 ```console
 ./ww next TASK-123 --role manager
 ./ww complete TASK-123 --role worker --artifact "What this step produced." \
-  --summary-for-next-step "The short handover the next step needs."
+  --summary "The short handover the next step needs."
 ```
 
 One completion rarely finishes a task; the agent keeps going until ww reports
@@ -299,7 +299,7 @@ than leaving the task open:
 `ww` runs CLI handlers itself. The agent performs prompts, skills, slash
 commands, and MCP actions, then reports their results with the exact `complete`
 command shown by the CLI. One manager `next` dispatches a step lifecycle; the
-worker completes its main action and associated agent hooks until ww explicitly
+worker completes its main action and its agent-owned workflow hooks until ww explicitly
 hands control back. Each started workflow uses a saved plan, so later
 configuration edits cannot alter work already in progress.
 
@@ -372,7 +372,7 @@ and each notice appears once:
 
 ```console
 ./ww updates            # print the last notice again
-./ww updates --check    # look now
+./ww updates --now      # look now
 ```
 
 Set `"update_check": false` in `ww-agentic-workflows.json` to switch it off for a
@@ -388,9 +388,11 @@ you have already written. Frequent updates do not mean frequent breakage.
 What there is not, yet, is a *formal* guarantee: no versions to pin, no
 deprecation cycle, and no promise that an incompatible change could not land.
 When one does, it is deliberate, it is called out in
-[CHANGELOG.md](CHANGELOG.md), and it is rare — `save_metadata` becoming
-`update_metadata` is the kind of thing, and the sort of change that happens
-occasionally rather than routinely.
+[CHANGELOG.md](CHANGELOG.md), and it is rare — the v1 renames (`provide`
+becoming `variables`, every ww value moving under `{{ww.*}}`) are the kind of
+thing, and the sort of change that happens occasionally rather than
+routinely. A removed name is rejected with a message naming its replacement,
+and saved task state is migrated.
 
 | Surface | Where it stands |
 | --- | --- |
@@ -461,7 +463,7 @@ names the branch:
       "base_branches": {
         "default": "main",
         "bugfix": "develop",
-        "task": {"argv": ["./scripts/base-branch", "{{workflow}}"]}
+        "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
       }
     }
   }
@@ -469,13 +471,13 @@ names the branch:
 ```
 
 An entry named after the workflow wins over `default`. Commands run directly,
-without a shell, from the project root and may interpolate `{{task_id}}`,
-`{{workflow}}`, and `{{run_id}}`. Child tasks still branch from their recorded
+without a shell, from the project root and may interpolate `{{ww.task.id}}`,
+`{{ww.task.workflow}}`, and `{{ww.task.run}}`. Child tasks still branch from their recorded
 parent branch.
 
 ## A larger workflow
 
-This example combines reusable handlers, lifecycle hooks, a Jira MCP step,
+This example combines reusable handlers, workflow hooks, a Jira MCP step,
 agent instructions, structured CLI automation, and values passed between steps:
 
 ```yaml
@@ -487,10 +489,10 @@ handlers:
     argv: [git, add, .]
 
   - name: commit
-    provide:
+    variables:
       - name: commit_message
         description: A concise commit message.
-    argv: [git, commit, -m, "{{__task_id}}: {{commit_message}}"]
+    argv: [git, commit, -m, "{{ww.task.id}}: {{commit_message}}"]
 
 hooks:
   before_complete:
@@ -507,7 +509,7 @@ workflows:
       - name: create-jira-issue
         mcp: jira
         description: Create a Jira issue for the requested work and return its key.
-        provide:
+        variables:
           - name: jira_key
             description: The created Jira issue key.
 
@@ -516,7 +518,7 @@ workflows:
 ```
 
 `init` is a reserved first step that `ww` adds to every workflow, so it is not
-listed under `steps`. The manager supplies it through `start --init-artifact`,
+listed under `steps`. The manager supplies it through `start --requirements`,
 using corrected grammar and consistent styling without analysis or a work plan.
 ww retains it durably while init preparation hooks run, then records it as the
 normal artifact-producing init step. It can be targeted by hooks without
@@ -528,7 +530,7 @@ Running it end to end looks like this:
 ww-agentic-workflows lint
 ww-agentic-workflows plan --workflow jira-task --agent codex
 ww-agentic-workflows start TASK-123 --workflow jira-task --agent codex \
-  --init-artifact="Implement and verify the requested Jira-backed change." --role manager
+  --requirements="Implement and verify the requested Jira-backed change." --role manager
 ww-agentic-workflows next TASK-123 --role manager
 ww-agentic-workflows complete TASK-123 --role worker --variable jira_key=PROJ-456 \
   --artifact="Created Jira issue PROJ-456."

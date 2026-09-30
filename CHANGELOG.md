@@ -11,6 +11,14 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Breaking: the v1 names. YAML: `assignment` (`together` / `per_item` / `per_round` / `per_step`), `variables`, `saves`
+  (`metadata.<path>`, `project_metadata.<path>`, `documents.<name>`, `item.field.<name>`), `item_phase`, `artifact_from`,
+  `max_rounds`, `kind`, `interactive: page`, `handoff_to`, `before_start`, `persistent`, `assert: [empty]`; `command`
+  is removed. Every ww template value is under `ww.` (`{{ww.task.id}}`, `{{ww.metadata.x}}`, `{{ww.item.text}}`, ...),
+  with double braces in `task_format` and document paths. CLI: `start --requirements`, `complete --summary`,
+  `next --force --reason`, `interact --operator-said/--agent-said/--end`, `--text` on item and child commands,
+  `start-child`, `updates --now`, `init --task-format`. ww/git: `separate_branch`, `commit_format` only. Old names are
+  rejected with their replacement; saved tasks and rule approvals are migrated. `5579c0a`
 - Per-child parent stages: `children: {steps: [...]}` runs the parent's own stages once per child, around one
   `workflow:` stage that runs the child; loops inside repeated stages now run once per child or item. `f3f853c`
 - `children` is one mapping on the collecting step, `children: {workflow: <name>}`; `children: ~` and

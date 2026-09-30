@@ -18,7 +18,7 @@ from ww.storage_adapters import TaskStorageAdapter
 GENERATED_TASK_PREFIX = "TASK-"
 # A task ID is ``parent`` or ``parent/child``; deeper nesting is unsupported.
 MAX_TASK_ID_SEGMENTS = 2
-# Suffixed candidates tried for a template without a ``{digit}`` counter.
+# Suffixed candidates tried for a template without a ``{{digit}}`` counter.
 ID_ATTEMPT_LIMIT = 50
 _SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
 
@@ -52,8 +52,8 @@ def generated_task_id(task_format: str | None = None) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     if task_format is None:
         return GENERATED_TASK_PREFIX + timestamp
-    return task_format.replace("{timestamp}", timestamp).replace(
-        "{uuid}", str(uuid.uuid4())
+    return task_format.replace("{{timestamp}}", timestamp).replace(
+        "{{uuid}}", str(uuid.uuid4())
     )
 
 
@@ -67,7 +67,7 @@ def candidate_task_ids(task_format: str | None) -> Iterator[str]:
     """Yield IDs to try, in order, for a generated task.
 
     Generated IDs are second-resolution, so two starts in the same second
-    would otherwise collide.  A template with ``{digit}`` counts upward
+    would otherwise collide.  A template with ``{{digit}}`` counts upward
     without limit; any other template tries the base name and then a bounded
     number of numeric suffixes.  The ``explicit`` format yields nothing.
     """
@@ -77,9 +77,9 @@ def candidate_task_ids(task_format: str | None) -> Iterator[str]:
             "pass the external key, such as the tracker issue key, to start"
         )
     base = generated_task_id(task_format)
-    if task_format is not None and "{digit}" in task_format:
+    if task_format is not None and "{{digit}}" in task_format:
         for attempt in itertools.count(1):
-            yield base.replace("{digit}", str(attempt))
+            yield base.replace("{{digit}}", str(attempt))
         return
     yield base
     for attempt in range(2, ID_ATTEMPT_LIMIT + 1):

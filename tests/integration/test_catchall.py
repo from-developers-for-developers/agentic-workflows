@@ -83,7 +83,7 @@ def test_a_new_request_on_the_same_task_starts_a_new_run(tmp_path: Path) -> None
 # --------------------------------------------------------------------------- #
 
 
-def _lookup_project(tmp_path: Path, task_format: str = "FORMS-{digit}") -> Path:
+def _lookup_project(tmp_path: Path, task_format: str = "FORMS-{{digit}}") -> Path:
     (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"task_format": task_format}), encoding="utf-8"
     )
@@ -114,7 +114,7 @@ def test_lookup_maps_a_bare_number_onto_the_task_format(
     assert report["outcome"] == "start"
     assert report["command"] == (
         "./ww start FORMS-12345 --workflow catchall --agent codex "
-        '--init-artifact "<the request, normalized>" --role manager'
+        '--requirements "<the request, normalized>" --role manager'
     )
 
 
@@ -183,7 +183,7 @@ def test_lookup_lets_the_operator_pick_between_matching_tasks(
 @pytest.mark.parametrize(
     ("task_format", "command"),
     [
-        ("FORMS-{digit}", "./ww start --workflow catchall"),
+        ("FORMS-{{digit}}", "./ww start --workflow catchall"),
         ("explicit", "./ww start <task-id> --workflow catchall"),
     ],
 )

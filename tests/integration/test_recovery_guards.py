@@ -30,8 +30,7 @@ def _interrupted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> WorkflowSer
             - name: publish
               argv: [printf, published]
               assert:
-                operator: eq
-                expected: published
+                - equals: published
 """,
         encoding="utf-8",
     )
@@ -142,7 +141,7 @@ def test_attested_output_settles_the_command_without_running_it(
     )
 
 
-def test_retry_replays_the_interrupted_command(
+def test_retry_replays_the_handler_interrupted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = _interrupted(tmp_path, monkeypatch)
@@ -176,7 +175,7 @@ def test_a_failed_handler_shows_the_operator_recovery_commands(tmp_path: Path) -
     assert "Do not retry on your own" in rendered
     assert "### Operator recovery" in rendered
     assert "./ww next TASK-1 --retry --yes --role manager" in rendered
-    assert '--force --force-reason "<reason>" --yes' in rendered
+    assert '--force --reason "<reason>" --yes' in rendered
     # Once the operator has fixed the cause and says so, retry re-runs it.
     (tmp_path / "ready.txt").write_text("", encoding="utf-8")
     retried = service.next(TASK, retry=True)
@@ -220,7 +219,7 @@ workflows:
                 "task",
                 "-a",
                 "claudecode",
-                "--init-artifact",
+                "--requirements",
                 "Add retries.",
                 "--role",
                 "manager",
@@ -239,7 +238,7 @@ workflows:
             "worker",
             "--artifact",
             "Done.",
-            "--summary-for-next-step",
+            "--summary",
             "Retries added.",
         ]
     )
@@ -253,4 +252,4 @@ workflows:
     assert "you will not pick for them" in page
     # Both routes out, with the force needing a recorded reason.
     assert "--retry --yes --role manager" in page
-    assert '--force --force-reason "<reason>" --yes' in page
+    assert '--force --reason "<reason>" --yes' in page

@@ -39,12 +39,13 @@ preserves existing content, restores `.ww/tasks`, and reports created and
 preserved parts. `--json` and `--no-input` use deterministic defaults for
 automation.
 
-The interactive wizard chooses UUID, numeric, or timestamp task IDs. When the
+The interactive wizard chooses UUID, numeric, or timestamp task IDs, written as
+`task_format: "TASK-{{uuid}}"`, `"TASK-{{digit}}"`, or `"TASK-{{timestamp}}"`. When the
 project contains `.git/`, it enables `ww/git`, prefers an existing `master`
 branch and then `main`, enables separate task branches, and starts with
-`feature/{{task_id}}`. It asks for optional workflow-specific branch formats and
+`feature/{{ww.task.id}}`. It asks for optional workflow-specific branch formats and
 whether worktrees should be used. Enabled worktrees default to
-`./git-worktrees/{{task_id}}`, and the directory is created immediately.
+`./git-worktrees/{{ww.task.id}}`, and the directory is created immediately.
 
 The wizard offers to append exactly `../.ww` to `../.gitignore`; without consent it
 only reports that action. The patterns `*ww-agentic-workflows.local.yaml` and
@@ -54,7 +55,7 @@ they are appended to an existing `.gitignore` once, never duplicated, and a
 missing `.gitignore` is created for them only inside a Git repository. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
 references in `../AGENTS.md` and an existing `../CLAUDE.md`, and reminds the user to
 define workflows when the initialized `../ww-agentic-workflows.yaml` is empty. Equivalent
-non-interactive choices are available through `--task-id-format`, `--worktrees`,
+non-interactive choices are available through `--task-format`, `--worktrees`,
 `--worktree-dir`, repeated `--branch-format WORKFLOW=FORMAT`,
 `--update-gitignore`, and `--skills`.
 
@@ -127,6 +128,14 @@ carries each `task_id` and `reason`. Other tasks and new work are unaffected;
 commands addressing that task keep failing with the same error, and whether to
 repair, reset, or delete its directory is the operator's decision.
 
+A state an earlier build wrote in a format this build still migrates is not
+unreadable: the v1 renames, for example, are applied when a task is read, so a
+run started before them continues. Plan snapshots at schema 17 are upgraded to
+18 (renamed assignment values, the `before_start` phase, `ww.` template
+names, a document path's `{{ww.task.id}}`, and `assert` lists), execution
+state at schema 10 to 11 (`rules_proposed`, the `ww.project.name` value), and
+the rule-automation store from versions 1 and 2 to 3.
+
 ```markdown
 ## Unreadable tasks
 
@@ -190,7 +199,7 @@ wrote it, and without one when there is none:
 
 `lookup` is read-only. It maps the reference onto the project's task IDs:
 the exact ID in any letter case, the ID `task_format` builds from it, so
-`12345` and `forms-12345` both mean `FORMS-12345` under `FORMS-{digit}`, and,
+`12345` and `forms-12345` both mean `FORMS-12345` under `FORMS-{{digit}}`, and,
 failing both, the existing tasks whose ID ends in it after a separator, so
 with tracker keys `12345` finds `FORMS-12345`. Then it answers with one next
 step:
@@ -247,7 +256,7 @@ artifacts, commands, or execution log records. Markdown is for people; `--json`
 returns a stable representation for tools. `--agent` is required because
 automatic resolution depends on the agent’s project-local skills and slash
 commands. `--task-id` is optional; when
-omitted, `{{__task_id}}` remains visible as an unresolved plan dependency.
+omitted, `{{ww.task.id}}` remains visible as an unresolved plan dependency.
 
 ## Split ww-agentic-workflows.yaml into several files
 
@@ -358,7 +367,7 @@ workflows:
 
 ```json
 // ww-agentic-workflows.local.json
-{"task_format": "DEV-{digit}"}
+{"task_format": "DEV-{{digit}}"}
 ```
 
 With the repo file defining its own `test` handler and its
@@ -420,7 +429,7 @@ Every mode is a mapping with a required `name` and an optional description.
 Workflows, handlers, and steps support that long form plus a shorthand whose
 first key is the name and whose string or null value is the description.
 `handlers` is the reusable global catalog. A step is also a handler, with
-optional lifecycle hooks.
+optional workflow hooks.
 
 ```yaml
 handlers:
@@ -498,10 +507,10 @@ handlers:
   - name: git-stage
     argv: [git, add, .]
   - name: git-commit
-    provide:
+    variables:
       - name: commit_message
         description: A concise commit message.
-    argv: [git, commit, -m, "{{__task_id}}: {{commit_message}}"]
+    argv: [git, commit, -m, "{{ww.task.id}}: {{commit_message}}"]
 
 hooks:
   before_complete:
@@ -540,12 +549,12 @@ workflows:
   - name: task
     steps:
       - name: develop
-        depends_on: init
+        artifact_from: init
 ```
 
 Each workflow run gets its own `init`, including handoff targets and child-task
 workflows. `ww plan` includes it in the exact execution order. `start` requires
-`--init-artifact` and stores that normalized requirements text immediately in
+`--requirements` and stores that normalized requirements text immediately in
 the built-in artifact before returning the first declared step; it never assigns
 `init` to a worker or requires a subsequent `next`/`complete` cycle.
 
@@ -564,8 +573,10 @@ env:
   MESSAGE: "{{commit_message}}"
 ```
 
-`assert` adds an `eq` output assertion to the root command action. A handler is
-one action; use a hook's ordered `handlers` list for multiple commands.
+`assert` adds a list of output conditions to the root command action, all of
+which must hold: `assert: [empty]`, or `assert: [{equals: clean}]`. A handler
+is one action; use a hook's ordered `handlers` list for multiple commands (the
+former `command` list is rejected with that advice).
 
 `idempotent: true` declares that running the handler again is harmless. It
 changes one thing: when ww is interrupted while the handler runs, the next
@@ -575,8 +586,8 @@ boundary for an operator decision. The default is `false`, which keeps the
 unknown outcome until `next --retry`, `recover --mark-succeeded`, or a checker
 settles it; see [Interrupted automatic handlers](#interrupted-automatic-handlers).
 Declare it on test runs, linters, and checks that only read; leave it off
-anything that publishes, commits, or sends. `lint` rejects it without `argv`,
-`shell`, or `command`, the saved plan carries it, and `plan` shows it under
+anything that publishes, commits, or sends. `lint` rejects it without `argv`
+or `shell`, the saved plan carries it, and `plan` shows it under
 **Recovery**:
 
 ```yaml
@@ -588,10 +599,11 @@ handlers:
 
 ### Handler types and ownership
 
-Set `skill: true`, `slash_command: true`, `mcp: <connection>`, `argv`, `shell`,
-or `prompt: true` to select a handler kind explicitly. The handler description
-is the instruction for prompt and MCP work. `prompt` accepts only `true`; use
-an `assess` step when a decision must control workflow routing.
+Set `kind: skill`, `kind: slash_command`, `mcp: <connection>`, `argv`, `shell`,
+or `kind: prompt` to select a handler kind explicitly; the registry form
+`action: {type: <action>, ...}` selects any registered action by its
+identifier. The handler description is the instruction for prompt and MCP
+work. Use an `assess` step when a decision must control workflow routing.
 Without an explicit action, resolution is deterministic:
 
 1. A matching project-local skill is an agent skill handler.
@@ -678,7 +690,8 @@ item. It also exposes an explicit execution mode:
 
 - A CLI handler is `automatic`: ww runs it. It is shown in the plan for
   information and an agent must not run its command directly.
-- A CLI handler with `provide` is still automatic, but first has
+- A CLI handler with `variables` entries of the `name: description` form is
+  still automatic, but first has
   `requires_agent_input: true`. The preceding agent completion instruction
   collects those values and then ww runs the command itself.
 - Skills, slash commands, prompts, and MCP prompts are `agent_instruction`
@@ -720,7 +733,7 @@ workflows:
 
 ```console
 ww-agentic-workflows start TASK-123 --workflow task --agent codex --role manager \
-  --init-artifact="Implement the requested change." \
+  --requirements="Implement the requested change." \
   --mode economy --runtime auto --model gpt-5 --reasoning high
 ```
 
@@ -822,7 +835,7 @@ callers, while every newly generated execution command includes a role.
 One manager `next` dispatches a structural assignment. For a leaf step, that
 assignment contains its preparation hooks, main action, and completion hooks.
 Each worker completion records one agent result, runs eligible automatic work,
-and activates the next agent hook in the same assignment. The response exposes
+and activates the next agent-owned workflow hook in the same assignment. The response exposes
 `continue_worker`, `handoff_manager`, `blocked`, or `awaiting_operator`
 together with `next_role`. `blocked` means ww is waiting on its own work, such
 as a child workflow, a loop boundary, or a running automatic handler, and the
@@ -849,14 +862,14 @@ without the manager adding commentary, and states that ww writes the artifact
 from the completion command, never the worker under `.ww`. It then shows, under
 "Previous step result", the handover of the step completed most recently
 before this one. Completing an ordinary step requires
-`--summary-for-next-step`, one or two sentences on what was done and what the
+`--summary`, one or two sentences on what was done and what the
 next step must know, at most 500 characters (a longer one is refused); ww stores it on the step record and shows it to the next
 step together with the artifact's path, so the full result stays in the
 artifact and is read only when the summary is not enough. Hooks, `init`,
 and the built-in summary do not take one. Only ordinary steps count: hook results,
 the built-in summary, and `init` are never chosen, and the history of earlier
 loop rounds is included, so the first step of a later round sees the previous
-round's last step. `depends_on` remains the way to point a step at a specific
+round's last step. `artifact_from` remains the way to point a step at a specific
 earlier artifact when the immediately previous one is not the right input.
 
 An active step's Markdown instruction also names its later sibling steps. This
@@ -895,7 +908,7 @@ worker page prints repeats it:
 
 ```console
 ./ww instruction TASK-7 --run 01-task --role worker --assignment 3f9a1c07
-./ww complete TASK-7 --role worker --assignment 3f9a1c07 --artifact="..." --summary-for-next-step="..."
+./ww complete TASK-7 --role worker --assignment 3f9a1c07 --artifact="..." --summary="..."
 ```
 
 `instruction`, `complete`, `loop`, `fail`, `interact`, and `dispute` with
@@ -961,7 +974,7 @@ of the last attempt with their status, the checks the operator waived, and the
 number of fix rounds. "Files changed" is the change set since the first step of
 the assignment with rules or checks began; without such a step, or without git,
 it reads "not tracked". A failed handler's error is shown too. The worker's
-own judgment reaches the manager only through its `--summary-for-next-step`.
+own judgment reaches the manager only through its `--summary`.
 The worker page tells the worker to return the block verbatim as its final
 message and nothing else, and prints no further command for it. The manager's
 bootstrap page names the block by the assignment's token, so the manager knows
@@ -992,10 +1005,10 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `handler_failed` | An automatic handler failed. |
 | `work_failed` | An agent step was recorded with `fail`, or the bootstrap failed. |
 | `child_failed` | A child task failed. |
-| `interrupted_command` | An automatic handler was interrupted and its outcome is unknown. |
-| `loop_limit` | A loop reached its `loop_max_times` iteration limit. |
+| `handler_interrupted` | An automatic handler was interrupted and its outcome is unknown. |
+| `loop_limit` | A loop reached its `max_rounds` round limit. |
 | `fix_limit` | A step's check failed as many times as its `max_fixes` allows; see [Rules and checks](#rules-and-checks). |
-| `check_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
+| `rules_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
 
@@ -1015,7 +1028,7 @@ fields appear in `instruction` and `status` JSON:
 Markdown heads the page with the decision, for example
 `## Operator decision: the automatic handler failed`, and tells the agent to
 stop and ask the operator. The recovery commands, `next --retry` and
-`next --force --force-reason`, are still shown, as the operator's choices; the
+`next --force --reason`, are still shown, as the operator's choices; the
 agent runs one only after the operator picks it. A delegated worker is not told
 to ask anyone: it returns to its manager as before, and the manager asks.
 
@@ -1067,12 +1080,12 @@ relative paths still resolve against the root.
 
 ```console
 ww-agentic-workflows start PROJ-123 --workflow feature --project backend ...
-ww-agentic-workflows add-child EPIC-1 --description "Web part" --project frontend
+ww-agentic-workflows add-child EPIC-1 --text "Web part" --project frontend
 ```
 
 The chosen project's directory becomes the task's working directory: commands
-and hooks run there, `{{__task_workspace_dir}}` points at it, `{{__project}}`
-holds the name, `{{__project_dir}}` the directory, and `{{__projects}}` lists
+and hooks run there, `{{ww.task.workspace_dir}}` points at it, `{{ww.project.name}}`
+holds the name, `{{ww.project.dir}}` the directory, and `{{ww.project.names}}` lists
 every configured project name, joined by commas. `ww-agentic-workflows projects` prints the list as JSON.
 Configuration, state, and artifacts stay in the root, so one
 task's requirements, plan, and reviews are kept together even when its children
@@ -1098,11 +1111,11 @@ started in that project. A project therefore states only what differs:
 
 ```json
 {
-  "task_format": "WEB-{digit}",
+  "task_format": "WEB-{{digit}}",
   "extensions": {
     "ww/git": {
       "base_branches": {"default": "master"},
-      "commit_format": "[{{task_id}}] {{commit_message}}",
+      "commit_format": "[{{ww.task.id}}] {{commit_message}}",
       "worktrees": true,
       "worktree_dir": "../frontend-worktrees"
     }
@@ -1184,7 +1197,7 @@ workflows:
   - name: feature
     steps:
       - develop: Implement the change.
-      - update-local-notes: Record the decisions in {{__task_workspace_dir}}/notes/.
+      - update-local-notes: Record the decisions in {{ww.task.workspace_dir}}/notes/.
         workdir: root
         hooks:
           after_complete:
@@ -1197,7 +1210,7 @@ workflows:
 An extension handler entry, such as `- ext/ww/git/handlers:git-commit: ~`,
 may carry `workdir` as well, and nothing else: the extension defines the rest.
 For `update-local-notes`, the instruction's working-directory `cd` names the
-root and `{{__task_workspace_dir}}` resolves to it; an `argv` or `shell` step
+root and `{{ww.task.workspace_dir}}` resolves to it; an `argv` or `shell` step
 runs its command there. Nested steps, loop bodies, and per-item stages inherit
 the value from their enclosing step and may set their own. A hook does not
 inherit its step's directory: it uses its own `workdir`, then that of the root
@@ -1211,7 +1224,7 @@ the task's commits and are left for the operator.
 
 An MCP-backed first declared step can establish the task identity without a new
 Jira-specific setting. When `start` is called without a task ID and that step
-provides exactly `task_id`, ww starts it as a short bootstrap request before the
+declares exactly the variable `task_id`, ww starts it as a short bootstrap request before the
 implicit `init`. Complete it with the ID returned by the tracker; only then does
 ww create `.ww/tasks/<external-id>/`, run normal start hooks and `init`, and continue
 the rest of the workflow.
@@ -1223,14 +1236,14 @@ workflows:
       - name: create-jira
         mcp: jira
         description: Create the Jira issue and return its key.
-        provide:
+        variables:
           - name: task_id
       - name: develop
         description: Implement {{task_id}}.
 ```
 
 The bootstrap step must be the first declared flat workflow step and cannot have
-hooks, nested work, or other provided values. Its artifact is retained with the
+hooks, nested work, or other variables. Its artifact is retained with the
 task's run artifacts. If an ID is passed explicitly to `start`, it is
 authoritative: ww supplies it as `{{task_id}}` and never accepts a replacement
 from an agent.
@@ -1239,19 +1252,19 @@ from an agent.
 
 The same step lets each child of a parent task obtain its own external ID, for
 example one Jira story per child of an epic. When the child workflow's first
-step provides `task_id`, the parent's collection step tells the agent to record
+step declares the variable `task_id`, the parent's collection step tells the agent to record
 children without `--id`; ww names each one by a temporary request ID until it
 starts:
 
 ```console
-ww-agentic-workflows add-child EPIC-1 --description "Story one" --project backend
-ww-agentic-workflows child start EPIC-1 REQUEST-20260923101500123456
+ww-agentic-workflows add-child EPIC-1 --text "Story one" --project backend
+ww-agentic-workflows start-child EPIC-1 REQUEST-20260923101500123456
 ww-agentic-workflows next REQUEST-20260923101500123456 --role manager
 ww-agentic-workflows complete REQUEST-20260923101500123456 --role worker \
   --variable task_id=PROJ-456 --artifact "Created PROJ-456."
 ```
 
-`child start` opens the identity request instead of a run, and the parent's
+`start-child` opens the identity request instead of a run, and the parent's
 instruction points at it while it is in progress. Completing the request with
 the tracker's key creates the child as `EPIC-1/PROJ-456` in its project
 directory, with the identity step already done, and renames the parent's child
@@ -1372,7 +1385,7 @@ chooses:
 
 - `next --retry` gives the worker another round: the count starts again, and
   the next `next` hands the step back.
-- `next --force --force-reason "<why>"` waives the checks: the worker completes
+- `next --force --reason "<why>"` waives the checks: the worker completes
   the step once more without them, and its artifact records the waiver.
 
 Both ask for confirmation; `next --yes` confirms for an agent that carries out
@@ -1435,12 +1448,12 @@ to commit, keyed by each rule's text hash; `checks` there are named, and one
 check may cover many rules, the usual case for an ecosystem tool such as
 deptrac, PHPStan, import-linter, ruff, or eslint, whose one configuration
 expresses several rules. Scriptizing takes two stages, each ending at an
-operator stop, `operator_reason: check_proposed`:
+operator stop, `operator_reason: rules_proposed`:
 
 1. **Approach.** For an unknown rule the verifier writes an interpretation
    and a one-line approach: the tool or command, and the check it would
    create or extend. It builds nothing. It may also report the rule
-   `not-convertible`, with a verdict, or `ambiguous`, with readings.
+   `not_convertible`, with a verdict, or `ambiguous`, with readings.
 2. **Prepare.** For an approved approach the verifier builds the check:
    installs the tool as a development dependency, writes its configuration in
    the repository, proves the command fails on a deliberate violation and
@@ -1456,7 +1469,7 @@ and it counts toward the rule's `max_fixes` like a failed check.
 At the stop the operator decides each proposal with `next`: `--approve
 <hash or check>`, `--approach <hash> "<text>"` to replace the verifier's
 approach, `--pick <hash>=<number>` for an ambiguous rule, or `--force
---force-reason` to reject everything undecided, after which those rules are
+--reason` to reject everything undecided, after which those rules are
 judged. The CLI prints an approved command in full and asks before
 recording it: there is no allowlist of executables, the operator's reading is
 the safety. Once nothing is undecided, ww runs the step's checks again,
@@ -1530,7 +1543,7 @@ the check, its last output, and the worker's argument. The operator decides:
 
 - `next --retry`: the check stands. The rejection still counts toward
   `max_fixes`, and the step goes back to its worker with the fix page.
-- `next --force --force-reason "<why>"`: the check is waived for this step
+- `next --force --reason "<why>"`: the check is waived for this step
   only; the worker completes again without it, and the artifact records the
   waiver.
 
@@ -1635,16 +1648,18 @@ a group name also declared in the YAML is an error.
 `ww lint` ends with `Rules: N groups, M rules` when the configuration declares
 any, after a notice for each absolute rule path.
 
-## Hooks, variables, and transitions
+## Workflow hooks, variables, and transitions
 
-### Hook scopes and ordering
+### Workflow hook scopes and ordering
 
-Hooks share the same handler syntax. Global hooks can filter with `workflows`
+These are workflow hooks, the lifecycle phases of `ww-agentic-workflows.yaml`;
+the agent's own hooks, installed with `ww hook`, are
+[agent hooks](#agent-hooks). Workflow hooks share the same handler syntax. Global hooks can filter with `workflows`
 and, for step lifecycle phases, `steps`; workflow hooks can filter step lifecycle
 phases with `steps`; step hooks cannot use either filter. The workflow boundary
 positions are `before_start_workflow` and `before_complete_workflow`. They run
 once in global → workflow order, cannot use `steps`, and cannot be declared at
-step scope. Step lifecycle positions are `before_in_progress`,
+step scope. Step lifecycle positions are `before_start`,
 `before_complete`, and `after_complete`, and run in global → workflow → step
 order for every matching step.
 Step filters accept bare names at any nesting level or slash-separated logical
@@ -1661,68 +1676,76 @@ A singular hook is written directly as the normal handler shape; there is no
 action keys define an inline handler. Use `handlers` only to run multiple
 ordered handlers under shared `workflows` and `steps` filters. Each grouped
 entry uses that same handler shape, including the named-entry shorthand, and may
-carry its own action selection. Put `workflow: "{{workflow}}"` directly on a
+carry its own action selection. Put `handoff_to: "{{workflow}}"` directly on a
 hook to declare a transition.
 
 ### Variables and metadata
 
-Interpolations use `{{name}}`. Reserved built-ins are `{{__task_id}}` and
-`{{__workflows}}`; the latter is the ordered workflow-name list, joined by commas.
-The core `{{__task_workspace_dir}}` variable is always the canonical directory for
+Interpolations use `{{name}}`, with double braces everywhere. Every value ww
+provides lives under `ww.`, so a name without it is always a variable a step
+handed back: `{{ww.task.id}}` is the task's ID and `{{ww.task.workflows}}` the
+ordered workflow-name list, joined by commas. A name from before the `ww.`
+namespace, such as `{{__task_id}}`, `{{metadata.<path>}}`, `{{item.text}}` or
+`{{field.<name>}}`, is an interpolation error that names its replacement.
+The core `{{ww.task.workspace_dir}}` variable is always the canonical directory for
 the task: the project root by default, the configured project directory when a
 task was started with `--project`, or the selected task checkout when an
 extension such as `ww/git` supplies one. A step or handler with a
 [`workdir`](#choosing-where-a-step-works) other than `task` reads the directory
-it chose instead. `{{__project}}` is that project's name
-and `{{__project_dir}}` its directory, both empty for a task in the root;
-`{{__project_dir}}` keeps pointing at the project even after a worktree moves
-the task workspace. `{{__projects}}` lists every configured project name, joined
+it chose instead. `{{ww.project.name}}` is that project's name
+and `{{ww.project.dir}}` its directory, both empty for a task in the root;
+`{{ww.project.dir}}` keeps pointing at the project even after a worktree moves
+the task workspace. `{{ww.project.names}}` lists every configured project name, joined
 by commas.
 Values under `{{ww.<namespace>.*}}` come from a configured extension, such
-as [`ww/git`'s branch](#template-values-from-wwgit); a provided value may not
-be named `ww` or start with `ww.`.
-Values in a handler’s `provide` list are declared inputs for that handler. Each
-entry supports either `name` plus an optional `description`, or the same compact
-`name: description` shorthand as handlers and steps. A step’s values are
+as [`ww/git`'s branch](#template-values-from-wwgit); a variable may not be
+named `ww` or start with `ww.` (or `__`).
+A handler's `variables` list declares what the step hands back, read later as
+`{{name}}`. Each entry supports either `name` plus an optional `description`,
+or the same compact `name: description` shorthand as handlers and steps, and
+the performer passes it with `complete --variable name=<value>`. A bare string,
+`- name`, is a value an automatic action returns itself. A step's values are
 available to its completion hooks and later plan items.
 
 ```yaml
-provide:
-  - workflow: The workflow name corresponding to one of {{__workflows}}.
+variables:
+  - workflow: The workflow name corresponding to one of {{ww.task.workflows}}.
 ```
 
-Use `update_metadata` on an agent-owned handler or step to retain values. Each
-entry gives the agent-facing completion name, its dotted storage path, an
-optional instruction, and an optional `scope`. The default `task` scope retains
-values across workflow runs of one task:
+Use `saves` on an agent-owned handler or step to retain values. Each entry is a
+prefixed path with an instruction: `metadata.<path>` keeps a value across
+workflow runs of one task, `project_metadata.<path>` shares it with every task
+in the project, `documents.<name>` updates a [document](#documents), and
+`item.field.<name>` sets a [custom item field](#custom-item-fields). The path
+after the prefix is the storage path, and the prefix is the scope:
 
 ```yaml
 steps:
   - name: create-jira
     mcp: jira
     description: Create the issue and retain its ID.
-    update_metadata:
-      - jira_id: The ID of the created Jira issue.
-        key: integrations.jira.issue_id
+    saves:
+      - metadata.integrations.jira.issue_id: The ID of the created Jira issue.
   - name: inspect-jira
-    description: Inspect {{metadata.integrations.jira.issue_id}}.
+    description: Inspect {{ww.metadata.integrations.jira.issue_id}}.
 ```
 
-The completion instruction includes every required value as a named argument:
+The completion instruction includes every required value as a named argument,
+its path written as in `saves` without the `metadata.` prefix:
 
 ```console
 ww-agentic-workflows complete TASK-123 --role worker \
-  --metadata jira_id="PROJ-456" --artifact="<result>"
+  --metadata integrations.jira.issue_id="PROJ-456" --artifact="<result>"
 ```
 
 Metadata is task-scoped rather than workflow-scoped. `ww` stores it as a nested
 object under `metadata` in `.ww/tasks/<task-id>/metadata.json`; a later run can use the
-same `{{metadata.<path>}}` reference. Metadata leaves are strings. A new value
+same `{{ww.metadata.<path>}}` reference. Metadata leaves are strings. A new value
 may replace the same path, while a leaf/object path collision is rejected.
 Inspect the complete object as JSON with `ww-agentic-workflows metadata TASK-123`.
 
 A leaf declared with `append: true` is a list that grows across completions and
-runs. Each completion passes the name once per value, or not at all, and ww
+runs. Each completion passes the path once per value, or not at all, and ww
 appends the values to what is stored, dropping repeats, without touching other
 keys. The leaf interpolates as a comma-separated list, and as an empty string
 before anything was saved, so a prompt never shows a raw placeholder. This is
@@ -1732,43 +1755,41 @@ several review passes:
 ```yaml
 - process_pull_request: Create one work item per unresolved reviewer thread.
   items:
-    report_item: Reply in the thread and resolve it.
-    update_metadata:
-      - handled_comments: The root comment id of the thread you just resolved.
-        key: pull_request.handled_comments
+    report: Reply in the thread and resolve it.
+    saves:
+      - metadata.pull_request.handled_comments: The root comment id of the thread you just resolved.
         append: true
 - get_pull_request_comments: >-
-    Threads whose root comment id is in {{metadata.pull_request.handled_comments}}
+    Threads whose root comment id is in {{ww.metadata.pull_request.handled_comments}}
     are already handled; list them as needing no work.
 ```
 
 ```console
 ww-agentic-workflows complete TASK-123 --role worker \
-  --metadata handled_comments=4711 --metadata handled_comments=4718 \
-  --artifact="<result>" --summary-for-next-step="<handover>"
+  --metadata pull_request.handled_comments=4711 \
+  --metadata pull_request.handled_comments=4718 \
+  --artifact="<result>" --summary="<handover>"
 ```
 
-Under `items`, `update_metadata` belongs to the built-in `handle-item` stage; with
+Under `items`, `saves` belongs to the built-in `handle-item` stage; with
 configured stages, declare it on the stage that produces the value.
 
-Use `scope: project` for values shared by every task in the project. Project
-metadata has an explicit interpolation namespace so the ownership of a value is
-visible where it is consumed:
+Use a `project_metadata.<path>` entry for values shared by every task in the
+project. Project metadata has an explicit interpolation namespace so the
+ownership of a value is visible where it is consumed:
 
 ```yaml
 steps:
   - name: discover-environment
     description: Determine the shared staging URL.
-    update_metadata:
-      - staging_url: The staging environment URL.
-        key: environments.staging.url
-        scope: project
+    saves:
+      - project_metadata.environments.staging.url: The staging environment URL.
   - name: deploy
-    description: Deploy to {{project_metadata.environments.staging.url}}.
+    description: Deploy to {{ww.project_metadata.environments.staging.url}}.
 ```
 
-The completion command still uses `--metadata`; the saved plan determines the
-declared destination. Project metadata is stored as nested JSON in
+The completion command still uses `--metadata`, with the path written as in
+`saves`: `--metadata project_metadata.environments.staging.url=<value>`. Project metadata is stored as nested JSON in
 `.ww/metadata.json` and can be inspected with
 `ww-agentic-workflows metadata --project`. Project metadata is resolved live;
 copy a value into task metadata when a task needs a stable snapshot. Metadata
@@ -1804,9 +1825,9 @@ adds is the record and the gate. The step's page carries the contract and the
 commands; the agent records both sides as the conversation goes, verbatim:
 
 ```console
-ww-agentic-workflows interact TASK-123 --role manager --operator "Resize through the queue; upload never waits."
-ww-agentic-workflows interact TASK-123 --role manager --agent "Proposed: a listener dispatches a queued job per upload."
-ww-agentic-workflows interact TASK-123 --role manager --end-interaction
+ww-agentic-workflows interact TASK-123 --role manager --operator-said "Resize through the queue; upload never waits."
+ww-agentic-workflows interact TASK-123 --role manager --agent-said "Proposed: a listener dispatches a queued job per upload."
+ww-agentic-workflows interact TASK-123 --role manager --end
 ```
 
 Every entry is appended to one file per task,
@@ -1824,7 +1845,7 @@ and ww turns them into a real pick rather than free text:
 
 ```yaml
 items:
-  process_item: Show the test case to the operator.
+  analyze: Show the test case to the operator.
   interactive: true
   choices:
     - pass: The test case passed.
@@ -1845,7 +1866,7 @@ straight away. The tool names come from the
 [askmux](https://github.com/iShaldam/askmux) question-tool matrix (MIT,
 Copyright (c) 2026 iShaldam) and the Gemini CLI documentation. The pick is recorded with
 `interact --choice "<label or number>"`, a comment the operator adds goes in as
-`--operator` text, and ending the interaction is refused until a choice was
+`--operator-said` text, and ending the interaction is refused until a choice was
 recorded. The chosen label is kept on the step record and in the interactions
 file.
 
@@ -1859,24 +1880,22 @@ result, records it, ends the interaction, and completes the item.
 
 ### The operator page
 
-A per-item stage declared with `ui: true` is answered in the browser, on an
-answer sheet over every item of the run, and ww applies the answers itself.
-The key requires `interactive: true` and is valid on one per-item stage per
-`items` step, because the page is shaped for items: other structures would
+A per-item stage declared with `interactive: page` is answered in the
+browser, on an answer sheet over every item of the run, and ww applies the
+answers itself. It is valid on one per-item stage per `items` step, because the page is shaped for items: other structures would
 need a page of their own, and none exists yet.
 
 ```yaml
 items:
-  process_item: Show the test case to the operator.
-  interactive: true
-  ui: true
+  analyze: Show the test case to the operator.
+  interactive: page
   choices:
     - pass: The test case passed.
     - fail: The test case failed; the operator explains why.
 ```
 
-The page is an extra on top of the engine. The core knows it by the `ui`
-flag alone: the stage's page tells the agent to run one command, and
+The page is an extra on top of the engine. The core knows it by
+`interactive: page` alone: the stage's page tells the agent to run one command, and
 everything else lives in the `operator_ui` package, which drives the task
 only through the public commands an agent uses.
 
@@ -1921,20 +1940,20 @@ Drafts survive a reload. The sheet remembers when its task was created, so a
 sheet left behind by a reset task is discarded rather than applied to the
 task that reuses the ID.
 
-Applying walks the plan in order from the current stage. For every `ui`
-stage whose item has an answer on the sheet, ww records the pick and the
+Applying walks the plan in order from the current stage. For every
+`interactive: page` stage whose item has an answer on the sheet, ww records the pick and the
 comment and ends the interaction with `interact`, writes the answer onto
 the item with `update-item` as its `actual_solution` (the pick, then the
 comment after a colon) and marks it resolved for a `handle-item` or
-`resolve_item` stage and reported for a `handle-item` or `report_item`
-stage, completes the stage with `complete` and an artifact written from the
+`item_phase: resolve` stage and reported for a `handle-item` or
+`item_phase: report` stage, completes the stage with `complete` and an artifact written from the
 answer, and only then takes the answer off the sheet, so a wait that is
 killed mid-way leaves at most a stale entry that the next wait drops. A
 document the stage promised to update is the one thing ww cannot write: the
 printed result names such documents and tells the agent to record the
 answers of the applied items in them first. When the operator closes the
 page, the result tells the agent not to open it again on its own. The walk stops at the first stage whose item has no answer, at any
-stage that is not a `ui` stage, and wherever ww needs the agent. Items are
+stage that is not an `interactive: page` stage, and wherever ww needs the agent. Items are
 therefore completed one by one in plan order whatever order the operator
 answered in; an answer for a later item waits on the sheet. The applied
 answer is what an agent would have recorded: the stage's chosen label, the
@@ -1946,8 +1965,8 @@ recorded by the agent with `interact --pause`. It is kept on the task, and
 the page's pause is recorded after the answers given before it were applied.
 The step's page then tells the agent to stop, without waiting again, and to
 show the step with `instruction` when the operator returns. Only the
-operator's own words lift a pause: an answer on the page or an `--operator`
-or `--choice` entry, not the agent's words and not the ending of a step.
+operator's own words lift a pause: an answer on the page or an
+`--operator-said` or `--choice` entry, not the agent's words and not the ending of a step.
 
 ## Documents
 
@@ -1958,7 +1977,7 @@ after the issue changed and a `build-test-report` workflow reads later.
 Declare documents once at the root; a task-scoped document lives under the
 task directory and a `scope: project` one under `.ww/documents`, unless `path`
 places it elsewhere in the project, for example
-`documentation/issues/{task_id}/notes.md`, which then resolves inside the
+`documentation/issues/{{ww.task.id}}/notes.md`, which then resolves inside the
 task's worktree when the run has one:
 
 ```yaml
@@ -1968,19 +1987,19 @@ workflows:
   - name: derive-tests
     steps:
       - derive: Analyze the issue and derive test cases.
-        update_document:
-          - test_cases: One checklist item per case; keep items that still hold.
+        saves:
+          - documents.test_cases: One checklist item per case; keep items that still hold.
   - name: build-test-report
     steps:
-      - report: Build the report from {{documents.test_cases}}.
+      - report: Build the report from {{ww.documents.test_cases}}.
 ```
 
-A step that declares `update_document` sees a "Documents to update" section
+A step whose `saves` names a `documents.<name>` entry sees a "Documents to update" section
 naming each document, its absolute path, whether it exists yet, and the
 instruction. Its worker edits the file in place, the one exception to the rule
 against writing under `.ww`. On completion ww checks that each promised file
 exists and journals who updated it, run, step, time, and content hash, in the
-task's `documents.json` or the project's. `{{documents.<name>}}` resolves to the
+task's `documents.json` or the project's. `{{ww.documents.<name>}}` resolves to the
 absolute path for the current filesystem, like the worktree path does, so a
 task started on the host reads correctly inside a container. `reset` removes a
 task's journal and the documents kept under its `.ww` directory, as it removes
@@ -1997,7 +2016,7 @@ Agent-owned steps save their full Markdown result as an artifact by default.
 Use `artifact: false` for work that has no durable output. A loop wrapper also
 saves the final result supplied by its successful stop command as its main
 artifact; `artifact: false` on the wrapper disables that file independently of
-its body-step artifacts. `depends_on` names an earlier artifact-producing step
+its body-step artifacts. `artifact_from` names an earlier artifact-producing step
 and adds that artifact to the later step's instruction; execution still
 follows the written step order.
 
@@ -2051,12 +2070,12 @@ workflows:
         description: Investigate the change and record the findings.
       - name: implement
         description: Implement the change.
-        depends_on: research
+        artifact_from: research
       - name: review-and-fix
         loop:
           - name: fix
             description: Fix what the review found.
-            depends_on: research
+            artifact_from: research
             break: Nothing is left to fix.
       - name: notify
         description: Report that implementation is complete.
@@ -2082,7 +2101,7 @@ The string is splitting guidance shown to the collecting agent. Use `items: ~`
 when no guidance is needed.
 
 The built-in stage can take guidance for each of its phases without declaring
-stages. Under `items`, `process_item`, `resolve_item`, and `report_item` are
+stages. Under `items`, `analyze`, `resolve`, and `report` are
 strings appended to the `handle-item` prompt as "When analyzing it", "When
 resolving it", and "When reporting the outcome"; the item is still handled in
 one pass with one artifact:
@@ -2090,13 +2109,13 @@ one pass with one artifact:
 ```yaml
 - process_pull_request: Split the work by comment and sub-comment.
   items:
-    item_assignment: all_items
-    report_item: Reply in the same Bitbucket comment thread, then resolve the thread.
+    assignment: together
+    report: Reply in the same Bitbucket comment thread, then resolve the thread.
 ```
 
 To control the stages, list them under `items.steps`. Mark stages with
-`process_item: ~`, `resolve_item: ~`, or `report_item: ~` when they update those
-standard item fields. `steps: []` collects items without processing them, for
+`item_phase: analyze`, `item_phase: resolve`, or `item_phase: report` when they
+update those standard item fields. `steps: []` collects items without processing them, for
 example when a later step reads them.
 
 ```yaml
@@ -2108,12 +2127,12 @@ workflows:
           description: Split by pull request comment.
           steps:
             - analyze: Analyze this comment.
-              process_item: ~
+              item_phase: analyze
             - fix: Resolve this comment.
-              resolve_item: ~
+              item_phase: resolve
               model: opus
             - reply: Report the outcome.
-              report_item: ~
+              item_phase: report
 ```
 
 Worker settings cascade from the `items` step, to `items`, to each stage. The
@@ -2123,25 +2142,25 @@ only to the stages, and a stage's own value wins.
 
 ### One worker per item or for all items
 
-In the `auto` runtime, `item_assignment` decides how many manager-dispatched
+In the `auto` runtime, `assignment` decides how many manager-dispatched
 assignments the per-item stages become. By default one worker keeps going
 through every stage of every item:
 
 ```yaml
 - review: Review the change and record each finding as an item.
   items:
-    item_assignment: per_item   # or all_items
+    assignment: per_item   # or together
     model: sonnet
     steps:
       - analyze: Analyze this finding.
-        process_item: ~
+        item_phase: analyze
       - fix: Resolve this finding.
-        resolve_item: ~
+        item_phase: resolve
       - reply: Report the outcome.
-        report_item: ~
+        item_phase: report
 ```
 
-- `all_items`, the default, keeps one worker for every stage of every item.
+- `together`, the default, keeps one worker for every stage of every item.
 - `per_item` keeps one worker for all stages of one item; the next item is a
   new assignment.
 - `per_step` hands every stage back to the manager.
@@ -2162,11 +2181,11 @@ A workflow may contain at most one `items` step. This is intentional: collected
 items belong to the workflow run, and ww expands every per-item stage in one
 place when collection completes.
 
-### Items shared across runs
+### Items that persist across runs
 
 Some item lists are the task's, not one run's: the test cases of a manual
-test plan are the same in round one and round two. Declare the flow `shared`
-and the items outlive the run:
+test plan are the same in round one and round two. Declare the flow
+`persistent` and the items outlive the run:
 
 ```yaml
 - collect: >-
@@ -2175,9 +2194,8 @@ and the items outlive the run:
     are gone, reword cases that changed. Keep the item ID equal to the
     case's heading.
   items:
-    shared: true
-    interactive: true
-    ui: true
+    persistent: true
+    interactive: page
     choices:
       - pass: The test case passed.
       - fail: The test case failed; the operator explains why.
@@ -2194,7 +2212,7 @@ fresh round over the same cases.
 The collection step then reconciles instead of splitting. Its page lists
 the stored items and carries the commands to make the list match the
 source: `add-item` for new cases, `remove-item` for cases that are gone,
-and `update-item --item` to reword one. Both are allowed only while the
+and `update-item --text` to reword one. Both are allowed only while the
 collection step is in progress, and an item that other items refer to
 cannot be removed. Stable IDs matter: an item that changed is reworded under
 its ID, not replaced, so its history lines up across rounds. When nothing
@@ -2203,7 +2221,7 @@ same page reads as a plain split.
 
 ```console
 ww-agentic-workflows remove-item TASK-123 --id case-7
-ww-agentic-workflows update-item TASK-123 --id case-3 --item "Upload a 25 MB image."
+ww-agentic-workflows update-item TASK-123 --id case-3 --text "Upload a 25 MB image."
 ```
 
 To start over from the source, `start --fresh-items` forgets the stored
@@ -2218,39 +2236,39 @@ posted for it, a flag. Values are strings. They are set with the item
 commands, several in one call, and read back with `item` or `items`:
 
 ```console
-ww-agentic-workflows add-item TASK-123 --id c1 --item "Rename it." --field bitbucket_comment_id=100
+ww-agentic-workflows add-item TASK-123 --id c1 --text "Rename it." --field bitbucket_comment_id=100
 ww-agentic-workflows update-item TASK-123 --id c1 --field bitbucket_reply_id=200 --field bitbucket_thread_resolved=true
 ww-agentic-workflows item TASK-123 --by bitbucket_reply_id=200
 ```
 
-A step declares the fields it sets with `update_item`, beside
-`update_metadata` and `update_document`, and ww refuses to complete the step
+A step declares the fields it sets as `item.field.<name>` entries of `saves`,
+beside its metadata and document entries, and ww refuses to complete the step
 while any of them is empty on the step's item, or on every item when the
 step is the collection:
 
 ```yaml
 - reply: Reply in the Bitbucket thread, then resolve it.
-  report_item: ~
-  update_item:
-    - bitbucket_reply_id: The ID of the reply you posted.
-    - bitbucket_thread_resolved: Set to true once the thread is resolved.
+  item_phase: report
+  saves:
+    - item.field.bitbucket_reply_id: The ID of the reply you posted.
+    - item.field.bitbucket_thread_resolved: Set to true once the thread is resolved.
 ```
 
-Per-item stage prompts can read the stage's own item: `{{item.id}}`,
-`{{item.text}}`, and `{{field.<name>}}`.
+Per-item stage prompts can read the stage's own item: `{{ww.item.id}}`,
+`{{ww.item.text}}`, and `{{ww.item.field.<name>}}`.
 
 Two flow-level rules make deduplication a refusal rather than a hope:
 
 ```yaml
 items:
-  shared: true
+  persistent: true
   identity: bitbucket_comment_id
   unique: [bitbucket_comment_id, bitbucket_reply_id]
 ```
 
 `identity` names the field every new item must carry. `unique` is one pool
 of values across the listed fields: a value may appear once over all items,
-in the run and, when the flow is shared, in the task's stored items, so a
+in the run and, when the flow is persistent, in the task's stored items, so a
 reply posted in round one cannot become an item in round two, and no two
 items can claim the same comment. `add-item` and `update-item` refuse a
 duplicate and name the item that holds it. The collection page states both
@@ -2262,7 +2280,7 @@ structured records:
 
 ```console
 ww-agentic-workflows add-item TASK-123 --id comment-1 \
-  --item="The error path is not tested."
+  --text="The error path is not tested."
 ww-agentic-workflows items TASK-123
 ww-agentic-workflows item TASK-123 --id comment-1
 ww-agentic-workflows update-item TASK-123 --id comment-1 \
@@ -2288,7 +2306,7 @@ workflows:
   - task: ~
     steps:
       - review-and-fix: ~
-        loop_max_times: 5
+        max_rounds: 5
         loop:
           - review: Review the implementation and report meaningful findings.
             break: The review has no meaningful findings.
@@ -2316,16 +2334,16 @@ ww-agentic-workflows loop TASK-123 --continue --role worker \
 ```
 
 If no worker breaks or continues, the body repeats automatically. Each repetition gives
-automatic actions fresh operation IDs, while retries within one iteration
+automatic actions fresh operation IDs, while retries within one round
 retain their existing idempotency identity.
 
 ### One worker per loop round
 
-In the `auto` runtime, `loop_assignment` decides how the body of one round is
-split into worker assignments, like `item_assignment` does for per-item
+In the `auto` runtime, `assignment` decides how the body of one round is
+split into worker assignments, like `assignment` does for per-item
 stages:
 
-- `per_iteration`, the default, keeps consecutive body steps in one assignment
+- `per_round`, the default, keeps consecutive body steps in one assignment
   while they resolve to the same agent, model, reasoning, and profile. The
   worker completes each step with its own command and receives the next step
   straight away. The repeat boundary always ends the assignment, so the
@@ -2333,7 +2351,7 @@ stages:
 - `per_step` hands every body step back to the manager.
 
 Body steps keep their own `profile`, `agent`, `model`, and `reasoning`
-overrides under `per_iteration`; a step whose settings differ from the
+overrides under `per_round`; a step whose settings differ from the
 worker's simply starts a new assignment. That is deliberate: a `code-reviewer`
 review followed by a `developer` fix stays two workers, so the reviewer never
 fixes its own findings, while a fix-until-green loop under one profile runs as
@@ -2341,7 +2359,7 @@ one worker per round.
 
 ```yaml
 - run-tests: ~
-  loop_assignment: per_iteration
+  assignment: per_round
   profile: quick-developer
   loop:
     - test: Run the test suite.
@@ -2356,31 +2374,31 @@ loop, not on the whole task, and shows the `artifacts` command that lists the
 earlier iteration directories. The setting has no effect in the `single`
 runtime.
 
-ww limits loops to three iterations by default. Set a different project-wide
+ww limits loops to three rounds by default (`max_rounds`). Set a different project-wide
 positive integer in `../ww-agentic-workflows.json`, or override one wrapper in
 `../ww-agentic-workflows.yaml`:
 
 ```json
-{"loop_max_times": 4, "extensions": {}}
+{"max_rounds": 4, "extensions": {}}
 ```
 
 ```yaml
 - review-and-fix: ~
-  loop_max_times: 7
+  max_rounds: 7
   loop:
     - review: Review the implementation.
     - fix: Fix the findings.
 ```
 
-The effective limit is saved in the compiled plan. When the completed iteration
+The effective limit is saved in the compiled plan. When the completed round
 count reaches it, ww does not begin another round or provide a continuation
 command. The response reports `awaiting_operator` with `operator_reason:
 loop_limit` and explicitly tells the manager to escalate the saved results and warning to the user for manual
 resolution. It also shows the operator's one way past the limit: once the user
-has resolved or accepted the remaining findings, `next --force --force-reason`
+has resolved or accepted the remaining findings, `next --force --reason`
 leaves the loop, records the reason on the repeat boundary, and continues with
-the steps after the loop wrapper. Nothing else starts another iteration; a
-further round needs a higher `loop_max_times`.
+the steps after the loop wrapper. Nothing else starts another round; a
+further round needs a higher `max_rounds`.
 
 ## Parent and child tasks
 
@@ -2408,15 +2426,16 @@ workflows:
 While the step collects, record each child:
 
 ```console
-ww-agentic-workflows add-child TASK-123 --description "Implement the API"
+ww-agentic-workflows add-child TASK-123 --text "Implement the API"
 ```
 
 Without `--id`, ww uses the configured `task_format`, the child's project's
 own when `--project` names one that sets it, else the root's, or the usual
-generated `TASK-<timestamp>` ID when no format is configured. `{timestamp}`,
-`{digit}`, and `{uuid}` are the supported placeholders. Supply `--id TASK-123.1` when you
+generated `TASK-<timestamp>` ID when no format is configured. `{{timestamp}}`,
+`{{digit}}`, and `{{uuid}}` are the supported placeholders (the former
+single-brace `{digit}` form is rejected, naming the double-brace one). Supply `--id TASK-123.1` when you
 want a stable, human-chosen child label instead. When the child workflow's first
-step provides `task_id`, omit `--id` and the child obtains its own ID from that
+step declares the variable `task_id`, omit `--id` and the child obtains its own ID from that
 step; see [children that bind their own IDs](#children-that-bind-their-own-ids).
 `--project <name>` runs the child in a configured project directory.
 
@@ -2424,7 +2443,7 @@ Once the step completes, the parent waits at `split-work/children`, the
 item that runs the children; start a chosen child:
 
 ```console
-ww-agentic-workflows child start TASK-123 TASK-123.1
+ww-agentic-workflows start-child TASK-123 TASK-123.1
 ```
 
 A child that has not started yet can still change its text or project (and,
@@ -2455,7 +2474,10 @@ next slice to what earlier ones landed, reviewing the child's branch, and
 merging it, give `children` a list of `steps` instead of a `workflow`. The
 parent then runs those stages once per child, strictly one child at a time.
 Exactly one stage carries `workflow:`; inside `children` that stage starts the
-current child with that workflow and waits for it, it does not hand off.
+current child with that workflow and waits for it, it does not hand off (a
+handoff is `handoff_to`, which cannot run inside `children.steps`). The stages
+are assigned one per step (`children.assignment: per_step`, the only value
+built; `per_child` is reserved).
 
 ```yaml
 workflows:
@@ -2469,7 +2491,7 @@ workflows:
             - implement:
                 workflow: task
             - review: Review {{ww.child.git.branch}} against the slice.
-              depends_on: implement
+              artifact_from: implement
               role: manager
               break: The roadmap is done; nothing else is worth building.
             - land: Merge {{ww.child.git.branch}} into {{ww.git.branch}}.
@@ -2477,7 +2499,7 @@ workflows:
 
   - name: task
     steps:
-      - develop: Implement {{__task_id}}.
+      - develop: Implement {{ww.task.id}}.
 ```
 
 With two children `A` and `B`, the parent runs `refine`, `implement` (child `A`
@@ -2501,9 +2523,9 @@ runs its `task` workflow), `review`, and `land` for `A`, then the same four for
   as its requirements.
 - Children carry custom fields like items: `add-child ... --field area=parser`,
   and `update-child ... --field area=lexer` at any time.
-- The `implement` stage shows `child start TASK-123 A` for its own child only;
+- The `implement` stage shows `start-child TASK-123 A` for its own child only;
   its artifact is the child's workflow summary, which `review` reads through
-  `depends_on: implement`.
+  `artifact_from: implement`.
 - In `auto`, the parent's manager also manages the child: starting it returns
   the child's page, the child's steps are ordinary worker assignments the same
   manager dispatches, and the completed child's page names the parent command
@@ -2525,19 +2547,21 @@ complete when every child and parent completion hook completes.
 A workflow such as `decide-on-workflow` hands off when it ends with a workflow
 transition that starts a successor and never returns. The transition itself
 makes it a handoff workflow; there is no flag to set. The transition is a step
-with `workflow` beside its name, usually interpolating a value an earlier step
-provided; the same key as the last `after_complete` hook of the last step is
-equivalent:
+with `handoff_to` beside its name, usually interpolating a variable an earlier
+step handed back; the same key as the last `after_complete` hook of the last
+step is equivalent. `workflow:` on a step is rejected naming `handoff_to`:
+`workflow` only ever means "run a child with this workflow", under
+`children`:
 
 ```yaml
 - name: decide-on-workflow
   steps:
     - classify: Decide which workflow fits this request.
       artifact: false
-      provide:
-        - workflow: One of {{__workflows}}, other than decide-on-workflow.
+      variables:
+        - workflow: One of {{ww.task.workflows}}, other than decide-on-workflow.
     - route: ~
-      workflow: "{{workflow}}"
+      handoff_to: "{{workflow}}"
 ```
 
 Loading the configuration rejects more than one transition and a transition
@@ -2580,9 +2604,9 @@ workflows:
       - ext/ww/git/modes:conventional-commits
     steps:
       - name: work
-        prompt: true
+        kind: prompt
         hooks:
-          before_in_progress:
+          before_start:
             - name: ext/ww/git/handlers:is-git-clean
           after_complete:
             - name: ext/ww/git/handlers:git-commit
@@ -2640,16 +2664,16 @@ separate from `../ww-agentic-workflows.yaml`, which describes what a workflow *d
 {
   "extensions": {
     "ww/git": {
-      "commit_message": "{{task_id}}: {{commit_message}}",
+      "commit_format": "{{ww.task.id}}: {{commit_message}}",
       "base_branches": {
         "default": "main",
         "bugfix": "develop",
-        "task": {"argv": ["./scripts/base-branch", "{{workflow}}"]}
+        "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
       },
-      "use_separate_branch": true,
+      "separate_branch": true,
       "branch_name_formats": {
-        "default": "feature/{{task_id}}",
-        "bugfix": "hotfix/{{task_id}}"
+        "default": "feature/{{ww.task.id}}",
+        "bugfix": "hotfix/{{ww.task.id}}"
       },
       "worktrees": false
     }
@@ -2664,13 +2688,20 @@ party's schema. A section naming no installed extension is an error rather than
 ignored, because a block that silently applies to nothing looks configured and
 is not.
 
+The formats read `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.run}}`,
+and, in `commit_format`, `{{commit_message}}`. The former setting names
+`commit_message` (an alias of `commit_format`) and `use_separate_branch`, and
+the former format tokens `{{task_id}}`, `{{workflow}}`, and `{{run_id}}`, are
+rejected with a message naming the replacement. Settings a run froze before
+the renames keep working: ww/git's `upgrade_settings` converts them.
+
 For `ww/git`, `ww-agentic-workflows extension ww/git settings` prints what actually resolved,
 which is the first thing to run after editing the file; `--project <name>`
 prints what a task in that configured project receives.
 
 When `worktrees` is enabled, generated task IDs reserve any existing path
 rendered by `worktree_dir` and `worktree_name_format`. For example, an existing
-`worktrees/TASK-1` makes the next `{digit}`-formatted task use `TASK-2`, rather
+`worktrees/TASK-1` makes the next `{{digit}}`-formatted task use `TASK-2`, rather
 than adopting that checkout for a new task.
 
 `base_branches` maps exact workflow names to base branches, and its `default`
@@ -2681,7 +2712,7 @@ Each value may be either a literal branch name or an
 object with a non-empty `argv` array. A top-level `base_branch` is refused
 with a message pointing at `base_branches.default`, which replaced it. An argv command runs directly without a shell in
 the project root; its single non-empty stdout line becomes the base branch.
-Arguments may interpolate `{{task_id}}`, `{{workflow}}`, and `{{run_id}}`.
+Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, and `{{ww.task.run}}`.
 The resolved base is recorded with the task branch so retries, worktree creation,
 and return-to-base use one stable value. A child task always uses its recorded
 parent task branch instead.
@@ -2693,7 +2724,7 @@ single run by name:
 
 ```console
 ww-agentic-workflows start TASK-123 --workflow task --agent codex \
-  --init-artifact="Fix the requested bug." --branch-strategy bugfix
+  --requirements="Fix the requested bug." --branch-strategy bugfix
 ```
 
 The selection is persisted with the run, so later or retried branch and
@@ -2717,8 +2748,8 @@ as the machine or local settings file:
 | Handler | Settings it acts on |
 | --- | --- |
 | `git-commit` | `commit_format`, `on_signing_failure` |
-| `start-task-branch` | `base_branches`, `use_separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
-| `return-to-base-branch` | `base_branches`, `use_separate_branch` |
+| `start-task-branch` | `base_branches`, `separate_branch`, `branch_name_formats`, `worktrees`, `worktree_dir`, `worktree_name_format` |
+| `return-to-base-branch` | `base_branches`, `separate_branch` |
 | `remove-task-worktree` | `worktrees` |
 | `is-git-clean` | — |
 
@@ -2820,11 +2851,13 @@ qualified references isolate names, not side effects or process access.
 
 The context identifies the current plan item, work item, attempt, and stable
 operation. Human-readable `output` is kept on the execution record; structured
-`values` must exactly match `outputs` declared by the handler and become
+`values` must exactly match the `outputs` the handler declares (in YAML, a
+handler returning values lists them as bare `variables` entries) and become
 available to later workflow actions as `{{greeting}}`. Invalid return types,
 undeclared values, and missing declared values fail the handler consistently.
 
-A handler that declares `provide` may also declare `validate`, a callable that
+A handler that declares `provide` (its agent-supplied inputs, the Python
+counterpart of `variables`) may also declare `validate`, a callable that
 receives the handler's own declared values as a mapping and returns an error
 message to refuse them or `None` to accept. ww calls it when the agent
 supplies the values, before the completion is saved, so a refused value comes
@@ -2858,7 +2891,14 @@ owned by ww core. It cannot introduce arbitrary global variables or replace
 values declared by workflow steps. Only extensions already referenced by the
 saved plan participate, preserving lazy discovery. Conflicting overrides are
 configuration errors. The Git extension uses this contract to resolve
-`__task_workspace_dir` from the primary checkout or its recorded worktree.
+`{{ww.task.workspace_dir}}` from the primary checkout or its recorded worktree.
+
+An extension that renames one of its settings keeps runs started before the
+rename working with `upgrade_settings`, a callable on `Extension` that turns
+the settings a plan froze into the current shape. ww applies it to frozen
+settings only; the live configuration is the extension's to validate, old
+names included. `ww/git` uses it for `commit_message`, `use_separate_branch`,
+and its old format tokens.
 
 New values go in the extension's one `namespace`, an `ExtensionNamespace`
 whose `ExtensionVariable` entries templates read as
@@ -2894,13 +2934,13 @@ handlers that tolerate that.
 
 ```console
 ww-agentic-workflows start TASK-123 --workflow task --agent codex --runtime single \
-  --init-artifact="Implement the requested change." \
+  --requirements="Implement the requested change." \
   --model gpt-5 --reasoning high --role manager
 ww-agentic-workflows next TASK-123 --model gpt-5 --reasoning high --role manager
 # perform the displayed prompt, skill, or slash command
 ww-agentic-workflows complete TASK-123 --role worker \
   --artifact "<whole result in Markdown>" \
-  --summary-for-next-step "<one or two sentences for the next step>"
+  --summary "<one or two sentences for the next step>"
 ww-agentic-workflows instruction TASK-123 --role worker
 ww-agentic-workflows metadata TASK-123
 ww-agentic-workflows metadata --project
@@ -2925,14 +2965,14 @@ the completion prints the pending page that says so. The `auto` runtime
 keeps the manager's `next`, because that is where a worker is chosen.
 
 When an outside-of-ww issue has been resolved by an operator, a failed item
-can be skipped with `next --force --force-reason "<reason>"`. This is an exceptional operator command:
+can be skipped with `next --force --reason "<reason>"`. This is an exceptional operator command:
 ww asks for an interactive confirmation and explains that agents must obtain
 permission before using it. Answer `no` (or provide no answer) to leave the
 failed item in place; answer `yes` only after the operator has approved the
 forceful transition.
 
 ```console
-ww-agentic-workflows next TASK-123 --force --force-reason "Resolved manually" --role manager
+ww-agentic-workflows next TASK-123 --force --reason "Resolved manually" --role manager
 # confirmation: Proceed with force? [y/N]
 ```
 
@@ -2955,11 +2995,21 @@ normal `next` and `complete` responses stay focused on the immediate action.
 
 Successful commands return exit code `0`. Handled `ww` errors and rendered
 failed or interrupted workflow states return `1`. Invalid command-line syntax
-is still reported by `argparse` with exit code `2`.
+is still reported by `argparse` with exit code `2`. A flag that was renamed
+fails the same way, with one more line naming its replacement, so an old
+command shows its fix: `start --init-artifact` is `--requirements`,
+`complete`/`loop --summary-for-next-step` is `--summary`, `next
+--force-reason` is `--reason`, `interact --operator`/`--agent`/`--end-interaction`
+are `--operator-said`/`--agent-said`/`--end`, `add-item`/`update-item --item`
+and `add-child --description` are `--text`, `add-item --reference-to-id` is
+`--refers-to`, `start --branch-naming-strategy` is `--branch-strategy`, `init
+--task-id-format` is `--task-format`, `updates --check` is `--now`, and `child
+start` is `start-child`. Abbreviated flags are not accepted, so an old flag
+that prefixes its new name is refused too.
 
 The task ID may be omitted from `start`. `task_format` in
-`../ww-agentic-workflows.json` then controls generation with `{timestamp}`,
-`{digit}`, and/or `{uuid}`; without it, ww uses `TASK-{timestamp}`. It is a
+`../ww-agentic-workflows.json` then controls generation with `{{timestamp}}`,
+`{{digit}}`, and/or `{{uuid}}`; without it, ww uses `TASK-{{timestamp}}`. It is a
 setting of the checkout and of the tracker a repository uses, not of what a
 workflow does, so it lives in the JSON settings, at any of their
 [levels](#machine-repo-and-local-configuration), and a configured project may
@@ -2967,13 +3017,13 @@ carry [its own](#a-projects-own-extension-settings). A `task_format` key in
 any YAML file is an error that names the file and points here.
 
 ```json
-{"task_format": "TASK-{digit}"}
+{"task_format": "TASK-{{digit}}"}
 ```
 
 Prefer an explicit ID whenever the request names an external ticket, so the
 task matches the issue it works on; `discover` and the embedded agent
 instructions say so. Avoid a generated format that imitates your tracker's keys,
-such as `FORMS-{digit}` next to Jira's `FORMS-10859`. To rule generated IDs out,
+such as `FORMS-{{digit}}` next to Jira's `FORMS-10859`. To rule generated IDs out,
 set `"task_format": "explicit"`: `start` and `add-child` then require an ID, and the
 only exception is a workflow that obtains its own ID in its first step.
 
@@ -3001,7 +3051,7 @@ and reports the failure to the manager. The response reports
 reports it to the ww operator for manual intervention; its instruction lists
 the two operator
 options, `next --retry` to run the handler again once the cause is fixed and
-`next --force --force-reason` to skip it, so the agent can run the one the
+`next --force --reason` to skip it, so the agent can run the one the
 operator chooses without guessing. A retried handler that takes provided
 values does not replay the values it failed with: it asks for them again
 through the ordinary input request, which shows what it was given last time,
@@ -3066,7 +3116,7 @@ After checking the external system, use
 `ww-agentic-workflows next TASK-123 --role manager --retry` to replay the
 unfinished operation. It requires operator confirmation because the external
 effect may have already occurred. To advance without replaying it, use `next
---force` with a specific `--force-reason`; this also requires confirmation and
+--force` with a specific `--reason`; this also requires confirmation and
 retains the reason with the item record. Agents must ask an operator before
 using either exceptional option. Completed command segments remain recorded and
 are not replayed.
@@ -3141,13 +3191,13 @@ Two routes lead out, and the agent runs whichever the operator picks:
 
 ```console
 ./ww next <task-id> --retry --role manager
-./ww next <task-id> --force --force-reason "<reason>" --role manager
+./ww next <task-id> --force --reason "<reason>" --role manager
 ```
 
 `--retry` runs the same handler again, for when the cause has been fixed.
 `--force` skips it and records the operator's reason in the task, so a skipped
 check is visible afterwards rather than forgotten. A loop that hits its
-iteration limit escalates the same way, and the force there leaves the loop.
+round limit escalates the same way, and the force there leaves the loop.
 
 ## Installing the ww skills during init
 
@@ -3196,7 +3246,9 @@ documentation links are always shown.
 ## Agent hooks
 
 ww's instructions to agents are static, so they cannot say which task is
-half done. Agent hooks carry that state into a session. They are gentle by
+half done. Agent hooks, the agent's own hooks installed with `ww hook` (not
+the workflow hooks of `ww-agentic-workflows.yaml`), carry that state into a
+session. They are gentle by
 design: they add a few lines of context or remind once, and nothing is ever
 blocked.
 
@@ -3230,7 +3282,7 @@ authoritative." Every unfinished task is listed, whichever agent started it,
 with that agent after the workflow, since other sessions' open work is useful
 context. A task waiting for the operator stays listed and says so, for
 example `awaiting the operator: the work failed`. Work attached to a step as a
-hook is named by itself and its step, for example
+workflow hook is named by itself and its step, for example
 `update-documentation (a hook of run-tests)`, never by the step alone. Only the main session gets
 this context: no hook is registered for a subagent's start, since a worker
 receives its bootstrap command from the manager.
@@ -3489,7 +3541,7 @@ update in one project does not raise it again in the next.
 
 ```console
 ww-agentic-workflows updates            # print the last notice again
-ww-agentic-workflows updates --check    # look now, before the next check is due
+ww-agentic-workflows updates --now    # look now, before the next check is due
 ```
 
 For a command whose output is consumed by a program — the JSON catalogs,

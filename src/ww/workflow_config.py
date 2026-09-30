@@ -28,6 +28,8 @@ from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
+# The task ID in a task-scoped document ``path``.
+TASK_ID_TOKEN = "{{ww.task.id}}"
 
 INIT_STEP_NAME = "init"
 INIT_STEP_PROMPT = (
@@ -106,8 +108,8 @@ class DocumentDefinition:
     description: str = ""
     scope: MetadataScope = "task"
     # An explicit file, relative to the project (or, for a task document, to
-    # the task's working directory when the run has one).  ``{task_id}`` is
-    # replaced in a task-scoped path.  Omitted, the document lives under
+    # the task's working directory when the run has one).  ``{{ww.task.id}}``
+    # is replaced in a task-scoped path.  Omitted, the document lives under
     # ``.ww``.
     path: str | None = None
 
@@ -128,8 +130,14 @@ class DocumentDefinition:
                 raise ValueError(
                     f"document path must stay inside the project: {self.path!r}"
                 )
-            if self.scope == "project" and "{task_id}" in self.path:
-                raise ValueError("a project document path cannot use {task_id}")
+            if "{task_id}" in self.path:
+                raise ValueError(
+                    "{task_id} in a document path was renamed to {{ww.task.id}}"
+                )
+            if self.scope == "project" and TASK_ID_TOKEN in self.path:
+                raise ValueError(
+                    "a project document path cannot use {{ww.task.id}}"
+                )
 
     def to_dict(self) -> dict[str, str]:
         data = {"name": self.name, "description": self.description, "scope": self.scope}
@@ -521,7 +529,7 @@ class StepDefinition(HandlerDefinition):
     # The compiler flattens nested steps while preserving their parent identity.
     child_steps: tuple[StepDefinition, ...] = ()
     loop_steps: tuple[StepDefinition, ...] = ()
-    loop_max_times: int | None = None
+    max_rounds: int | None = None
     loop_assignment: LoopAssignment | None = None
     loop_break: str | None = None
     loop_continue: str | None = None
@@ -573,10 +581,10 @@ class ItemFlow:
 
     steps: tuple[StepDefinition, ...] = ()
     description: str | None = None
-    assignment: ItemAssignment = "all_items"
+    assignment: ItemAssignment = "together"
     # The items outlive the run: every run of the task reuses them, and the
     # collection stage reconciles them instead of splitting anew.
-    shared: bool = False
+    persistent: bool = False
     # The custom field a new item must carry, and the fields whose values
     # form one pool in which each value may appear once across all items.
     identity: str | None = None
@@ -615,8 +623,8 @@ class WorkflowDefinition:
     def hands_off(self) -> bool:
         """Whether the workflow ends by handing the task to another workflow.
 
-        The transition itself declares it: a ``workflow:`` step, or a
-        ``workflow:`` hook on a step.  Validation places it at the end.
+        The transition itself declares it: a ``handoff_to:`` step, or a
+        ``handoff_to:`` hook on a step.  Validation places it at the end.
         """
         return any(
             isinstance(step.operation, WorkflowHandoff)

@@ -49,7 +49,7 @@ WORKFLOWS = """workflows:
             model: opus
           - text: Include foo.
             shell: grep -L foo $WW_STEP_CHANGED_FILES || true
-            assert: { operator: empty }
+            assert: [empty]
 """
 CLI, NAMES, LOGS = (
     "Keep the public CLI unchanged.",
@@ -86,8 +86,8 @@ def _rule(state: str, text: str = CLI, rule_id: str = "develop/1") -> Verificati
         text,
         rule_text_hash(text),
         state,  # type: ignore[arg-type]
-        check="cli-surface" if state == "approach-approved" else None,
-        approach="diff the help" if state == "approach-approved" else None,
+        check="cli-surface" if state == "approach_approved" else None,
+        approach="diff the help" if state == "approach_approved" else None,
     )
 
 
@@ -95,7 +95,7 @@ def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
     automation = (
         RuleAutomation()
         .with_rule(rule_text_hash(CLI), RuleEntry(CLI, "converted", check="lint"))
-        .with_rule(rule_text_hash(NAMES), RuleEntry(NAMES, "approach-proposed"))
+        .with_rule(rule_text_hash(NAMES), RuleEntry(NAMES, "approach_proposed"))
         .with_rule(
             rule_text_hash(LOGS), RuleEntry(LOGS, "rejected", interpretation="Log.")
         )
@@ -120,10 +120,10 @@ def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
     [
         (None, None, "unresolved"),
         ("interpreted", None, "unresolved"),
-        ("approach-approved", None, "unresolved"),
+        ("approach_approved", None, "unresolved"),
         ("proposed", None, "pending_operator"),
         ("ambiguous", None, "pending_operator"),
-        ("not-convertible", None, "judged"),
+        ("not_convertible", None, "judged"),
         # Converted, but its check is not: nothing mechanical runs.
         ("converted", "proposed", "judged"),
     ],
@@ -165,7 +165,7 @@ def test_one_planned_check_per_shared_check_name(develop: PlanItem) -> None:
 
 def test_needs_skip_checked_verified_and_waiting_rules(develop: PlanItem) -> None:
     automation = RuleAutomation().with_rule(
-        rule_text_hash(NAMES), RuleEntry(NAMES, "approach-approved", check="names")
+        rule_text_hash(NAMES), RuleEntry(NAMES, "approach_approved", check="names")
     )
     _, lint = resolve_rules(
         develop,
@@ -178,7 +178,7 @@ def test_needs_skip_checked_verified_and_waiting_rules(develop: PlanItem) -> Non
     needs = verification_needs(develop, record, automation)
 
     assert [(need.id, need.state) for need in needs] == [
-        ("develop/2", "approach-approved"),
+        ("develop/2", "approach_approved"),
         ("develop/3", "unresolved"),
     ]
     verified = _record(
@@ -271,7 +271,7 @@ def test_a_stage_a_result_needs_an_approach_and_a_check_name() -> None:
         rules,
         {
             "id": "develop/1",
-            "status": "not-convertible",
+            "status": "not_convertible",
             "reason": "taste",
             "verdict": "fail",
             "failures": [{"file": "cli.py", "line": 3, "what": "flag renamed"}],
@@ -282,7 +282,7 @@ def test_a_stage_a_result_needs_an_approach_and_a_check_name() -> None:
 
 
 def test_check_results_must_match_the_prepared_rules(develop: PlanItem) -> None:
-    rules = (_rule("approach-approved"),)
+    rules = (_rule("approach_approved"),)
     results = _results(
         rules, {"id": "develop/1", "status": "approach", "check": "cli-surface"}
     )
@@ -340,7 +340,7 @@ def test_stage_a_results_become_proposals(develop: PlanItem) -> None:
     )
 
     cli = updated.rules[rule_text_hash(CLI)]
-    assert (cli.status, cli.check, cli.extends) == ("approach-proposed", "lint", True)
+    assert (cli.status, cli.check, cli.extends) == ("approach_proposed", "lint", True)
     assert cli.interpretation == "No flags change."
     assert updated.rules[rule_text_hash(NAMES)].candidates == ("short", "long")
     assert opened == (rule_text_hash(CLI), rule_text_hash(NAMES))
@@ -368,7 +368,7 @@ def test_an_entry_that_moved_on_is_never_overwritten(develop: PlanItem) -> None:
 def test_a_prepared_extension_of_an_approved_check_is_a_pending_revision(
     develop: PlanItem,
 ) -> None:
-    rules = (_rule("approach-approved"),)
+    rules = (_rule("approach_approved"),)
     results = _results(
         rules, {"id": "develop/1", "status": "approach", "check": "cli-surface"}
     )
@@ -393,7 +393,7 @@ def test_a_prepared_extension_of_an_approved_check_is_a_pending_revision(
         RuleAutomation()
         .with_rule(
             rule_text_hash(CLI),
-            RuleEntry(CLI, "approach-approved", check="cli-surface"),
+            RuleEntry(CLI, "approach_approved", check="cli-surface"),
         )
         .with_check("cli-surface", approved)
     )
@@ -411,7 +411,7 @@ def test_a_prepared_extension_of_an_approved_check_is_a_pending_revision(
 
 
 def test_new_checks_are_proposed_never_converted(develop: PlanItem) -> None:
-    rules = (_rule("approach-approved"),)
+    rules = (_rule("approach_approved"),)
     results = _results(
         rules, {"id": "develop/1", "status": "approach", "check": "cli-surface"}
     )
@@ -421,7 +421,7 @@ def test_new_checks_are_proposed_never_converted(develop: PlanItem) -> None:
                 {
                     "name": "cli-surface",
                     "shell": "help-diff",
-                    "assert": {"operator": "empty"},
+                    "assert": ["empty"],
                     "covers": ["develop/1"],
                     "proven": False,
                 }
@@ -432,7 +432,7 @@ def test_new_checks_are_proposed_never_converted(develop: PlanItem) -> None:
         develop,
     )
     automation = RuleAutomation().with_rule(
-        rule_text_hash(CLI), RuleEntry(CLI, "approach-approved", check="cli-surface")
+        rule_text_hash(CLI), RuleEntry(CLI, "approach_approved", check="cli-surface")
     )
 
     updated, _, _ = record_results(
@@ -447,7 +447,7 @@ def _proposed() -> RuleAutomation:
     cli, names = rule_text_hash(CLI), rule_text_hash(NAMES)
     return (
         RuleAutomation()
-        .with_rule(cli, RuleEntry(CLI, "approach-proposed", approach="a", check="c"))
+        .with_rule(cli, RuleEntry(CLI, "approach_proposed", approach="a", check="c"))
         .with_rule(names, RuleEntry(NAMES, "ambiguous", candidates=("x", "y")))
         .with_rule(
             rule_text_hash(LOGS), RuleEntry(LOGS, "proposed", check="log-check")
@@ -467,7 +467,7 @@ def test_approving_decides_approaches_and_converts_checks() -> None:
         NOW,
     )
 
-    assert automation.rules[rule_text_hash(CLI)].status == "approach-approved"
+    assert automation.rules[rule_text_hash(CLI)].status == "approach_approved"
     assert automation.checks["log-check"].status == "converted"
     assert automation.checks["log-check"].approved_at == NOW
     assert automation.rules[rule_text_hash(LOGS)].status == "converted"
@@ -487,7 +487,7 @@ def test_an_approach_and_a_pick_are_the_operators_own() -> None:
     )
 
     cli = automation.rules[rule_text_hash(CLI)]
-    assert (cli.status, cli.approach) == ("approach-approved", "Diff `--help` output.")
+    assert (cli.status, cli.approach) == ("approach_approved", "Diff `--help` output.")
     names = automation.rules[rule_text_hash(NAMES)]
     assert (names.status, names.interpretation) == ("interpreted", "y")
     assert remaining == ("log-check",)

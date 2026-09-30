@@ -139,7 +139,7 @@ class _Session:
         if item.id != state.active_item_id or not item.ui:
             raise StateError(
                 f"{item.name!r} is not answered on the operator page; the page "
-                "serves per-item stages declared with ui: true"
+                "serves per-item stages declared with interactive: page"
             )
         if record.interaction_ended:
             raise StateError(

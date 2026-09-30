@@ -14,7 +14,6 @@ from ww.validation import (
     expect_bool,
     expect_mapping,
     expect_nonempty_string,
-    expect_normalized_name,
     expect_string,
     reject_unknown_keys,
 )
@@ -22,6 +21,7 @@ from ww.validation import (
 from .contracts import (
     ActionResult,
     ActionTraits,
+    AssertionCondition,
     AssertionDefinition,
     AutomaticAction,
     CommandDefinition,
@@ -108,10 +108,9 @@ class CommandAction(AutomaticAction[Commands, Commands]):
             outputs.append(outcome.stdout)
         output = "\n".join(part for part in outputs if part).strip()
         if planned.assertion and not planned.assertion.holds(output):
-            expected = (
-                "no output"
-                if planned.assertion.expected is None
-                else repr(planned.assertion.expected)
+            expected = " and ".join(
+                "no output" if condition.value is None else repr(condition.value)
+                for condition in planned.assertion.conditions
             )
             return ActionResult.failed(
                 f"automatic handler assertion failed: expected {expected}, "
@@ -233,7 +232,7 @@ class CommandAction(AutomaticAction[Commands, Commands]):
     def encode(self, planned: Commands) -> dict[str, object]:
         data: dict[str, object] = {
             "commands": [command.to_dict() for command in planned.commands],
-            "assert": planned.assertion.to_dict() if planned.assertion else None,
+            "assert": planned.assertion.to_data() if planned.assertion else None,
         }
         # The default is left out so plans saved before the key existed still
         # decode, and a plan that relies on it is refused by a ww without it.
@@ -286,22 +285,24 @@ def _command_from_dict(data: Any) -> CommandDefinition:
 
 
 def _assertion_from_dict(value: Any, item_path: str) -> AssertionDefinition | None:
-    if value is not None and not isinstance(value, dict):
-        raise ValueError(f"{item_path}.assert must be an object or null")
+    """Decode a saved ``assert`` list: ``"empty"`` or ``{"equals": <value>}``."""
     if value is None:
         return None
-    if value.get("operator") == "empty":
-        if set(value) != {"operator"}:
-            raise ValueError(f"{item_path}.assert has invalid fields")
-        return AssertionDefinition(operator="empty")
-    if not {"operator", "expected"} <= set(value):
-        raise ValueError(f"{item_path}.assert has invalid fields")
-    if value["operator"] != "eq":
-        raise ValueError("invalid assertion operator")
-    return AssertionDefinition(
-        operator="eq",
-        expected=expect_string(value["expected"], "assertion expected value"),
-    )
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{item_path}.assert must be a non-empty list or null")
+    conditions = []
+    for entry in value:
+        if entry == "empty":
+            conditions.append(AssertionCondition("empty"))
+        elif isinstance(entry, dict) and set(entry) == {"equals"}:
+            conditions.append(
+                AssertionCondition(
+                    "equals", expect_string(entry["equals"], "assertion value")
+                )
+            )
+        else:
+            raise ValueError(f"{item_path}.assert has an invalid condition")
+    return AssertionDefinition(tuple(conditions))
 
 
 def _commands_from_list(value: Any, item_path: str) -> tuple[CommandDefinition, ...]:
@@ -317,55 +318,59 @@ def _commands_from_list(value: Any, item_path: str) -> tuple[CommandDefinition, 
 
 
 def _parse_assertion(raw: object, path: str) -> AssertionDefinition:
+    """Parse ``assert``: a list of conditions that must all hold.
+
+    A condition is ``empty`` or ``{equals: <value>}``.
+    """
     context = f"{path}.assert"
-    assertion = expect_mapping(raw, context, error=ConfigurationError)
-    reject_unknown_keys(
-        assertion, {"operator", "expected"}, context, error=ConfigurationError
-    )
-    operator = expect_normalized_name(
-        assertion.get("operator"), f"{context}.operator", error=ConfigurationError
-    )
-    if operator == "empty":
-        if "expected" in assertion:
-            raise ConfigurationError(
-                f"{context}.expected is not allowed with operator empty"
+    if isinstance(raw, dict) and "operator" in raw:
+        example = (
+            "[empty]"
+            if raw.get("operator") == "empty"
+            else f"[{{equals: {raw.get('expected')}}}]"
+        )
+        raise ConfigurationError(
+            f"{context} {{operator: ...}} was renamed to a list of conditions: "
+            f"assert: {example}"
+        )
+    if not isinstance(raw, list) or not raw:
+        raise ConfigurationError(
+            f"{context} must be a non-empty list of conditions, such as "
+            "[empty] or [{equals: clean}]"
+        )
+    conditions = []
+    for index, entry in enumerate(raw):
+        entry_path = f"{context}[{index}]"
+        if entry == "empty":
+            conditions.append(AssertionCondition("empty"))
+            continue
+        condition = expect_mapping(entry, entry_path, error=ConfigurationError)
+        reject_unknown_keys(
+            condition, {"equals"}, entry_path, error=ConfigurationError
+        )
+        if "equals" not in condition:
+            raise ConfigurationError(f"{entry_path} must be empty or {{equals: ...}}")
+        conditions.append(
+            AssertionCondition(
+                "equals",
+                expect_nonempty_string(
+                    condition["equals"],
+                    f"{entry_path}.equals",
+                    error=ConfigurationError,
+                ),
             )
-        return AssertionDefinition("empty")
-    if operator != "eq":
-        raise ConfigurationError(f"{context}.operator must be eq or empty")
-    expected = expect_nonempty_string(
-        assertion.get("expected"), f"{context}.expected", error=ConfigurationError
-    )
-    return AssertionDefinition("eq", expected)
+        )
+    return AssertionDefinition(tuple(conditions))
 
 
 def _parse_command(
     mapping: dict[str, Any], path: str
 ) -> tuple[tuple[CommandDefinition, ...], AssertionDefinition | None]:
     if "command" in mapping:
-        if {"argv", "shell", "args", "env", "assert"} & set(mapping):
-            raise ConfigurationError(
-                f"{path} cannot combine command with root command fields"
-            )
-        value = mapping["command"]
-        assertion = None
-        if isinstance(value, dict) and not ({"argv", "shell"} & set(value)):
-            reject_unknown_keys(
-                value, {"command", "assert"}, path, error=ConfigurationError
-            )
-            if "command" not in value:
-                raise ConfigurationError(f"{path} command mapping requires command")
-            raw_commands = value["command"]
-            if value.get("assert") is not None:
-                assertion = _parse_assertion(value["assert"], path)
-        else:
-            raw_commands = value
-        values = raw_commands if isinstance(raw_commands, list) else [raw_commands]
-        if not values or not all(isinstance(item, dict) for item in values):
-            raise ConfigurationError(
-                f"{path} command must contain action mappings with argv or shell"
-            )
-        return tuple(_parse_command_action(item, path) for item in values), assertion
+        raise ConfigurationError(
+            f"{path}.command was removed: run several commands as a hook's "
+            "handlers list, one argv or shell each"
+        )
     action_keys = {"argv", "shell"} & set(mapping)
     if not action_keys:
         if {"args", "env", "assert", "idempotent"} & set(mapping):

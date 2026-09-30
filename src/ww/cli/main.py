@@ -394,7 +394,7 @@ def _start(context: _Context) -> _Outcome:
             args.model,
             args.reasoning,
             args.workflow_runtime,
-            args.init_artifact,
+            args.requirements,
             caller_role=args.role,
             branch_naming_strategy=args.branch_naming_strategy,
             project=args.project,
@@ -457,7 +457,7 @@ def _loop(context: _Context) -> _Outcome:
             selected_model=args.selected_model,
             selected_reasoning=args.selected_reasoning,
             continue_loop=args.continue_loop,
-            summary_for_next=args.summary_for_next_step,
+            summary_for_next=args.summary,
             caller_role=args.role,
             assignment=args.assignment,
         ),
@@ -581,7 +581,7 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             check=rule_writes.check_mapping(
                 args.check_shell,
                 tuple(args.check_argv) if args.check_argv else None,
-                args.assertion,
+                tuple(args.assertion) if args.assertion else None,
             ),
             stem=args.stem,
         )
@@ -723,7 +723,7 @@ def _complete(context: _Context) -> _Outcome:
             selected_agent=args.selected_agent,
             selected_model=args.selected_model,
             selected_reasoning=args.selected_reasoning,
-            summary_for_next=args.summary_for_next_step,
+            summary_for_next=args.summary,
             caller_role=args.role,
             rule_results=tuple(args.rule_result),
             check_results=tuple(args.check_result),
@@ -953,8 +953,8 @@ def _add_item(context: _Context) -> _Outcome:
         context.task_id,
         WorkItem(
             args.id,
-            args.item,
-            reference_to_id=args.reference_to_id,
+            args.text,
+            reference_to_id=args.refers_to,
             fields=_named_values(args.field, "--field"),
         ),
     )
@@ -966,7 +966,7 @@ def _update_item(context: _Context) -> _Outcome:
     changes = {
         name: value
         for name, value in (
-            ("item", args.item),
+            ("item", args.text),
             ("processed_item", args.processed_item),
             ("proposed_solution", args.proposed_solution),
             ("actual_solution", args.actual_solution),
@@ -996,7 +996,7 @@ def _add_child(context: _Context) -> _Outcome:
     child = context.service.add_child(
         context.task_id,
         args.id,
-        args.description,
+        args.text,
         project=args.project,
         fields=_named_values(args.field, "--field"),
     )
@@ -1015,7 +1015,7 @@ def _update_child(context: _Context) -> _Outcome:
     return _Outcome(_json(child.to_dict()))
 
 
-def _child(context: _Context) -> _Outcome:
+def _start_child(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
         context.service.start_child(args.parent_task_id, args.child_id),
@@ -1111,7 +1111,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "remove-item": _remove_item,
     "add-child": _add_child,
     "update-child": _update_child,
-    "child": _child,
+    "start-child": _start_child,
     "reset": _reset,
     "cleanup": _cleanup,
     "updates": lambda c: _Outcome(render_updates(c.storage, c.args)),
@@ -1134,7 +1134,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.command == "next":
         if args.force and not args.force_reason:
-            print("ww error: next --force requires --force-reason", file=sys.stderr)
+            print("ww error: next --force requires --reason", file=sys.stderr)
             return 1
         if args.retry and not confirm_interrupted_retry(assume_yes=args.yes):
             return 1

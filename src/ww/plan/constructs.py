@@ -108,7 +108,7 @@ class PlanningContext(Protocol):
     """Small set of compiler-owned primitives exposed to construct planners."""
 
     scope: PlanningScope
-    default_loop_max_times: int
+    default_max_rounds: int
 
     def derive_scope(
         self,
@@ -292,7 +292,7 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
                 annotations=ItemAnnotations(
                     item_operation="collect",
                     split_instruction=flow.description,
-                    shared_items=flow.shared,
+                    shared_items=flow.persistent,
                     item_identity=flow.identity,
                     item_unique=flow.unique,
                 ),
@@ -319,7 +319,7 @@ class LoopPlanner(ConstructPlanner[LoopDefinition]):
         max_times = (
             definition.max_times
             if definition.max_times is not None
-            else context.default_loop_max_times
+            else context.default_max_rounds
         )
         context.emit_loop_boundary(
             LoopBoundaryRequest("enter", max_times, definition.step.artifact)
@@ -425,7 +425,7 @@ def normalize_construct(step: StepDefinition) -> object:
         return ItemFlowDefinition(step, step.items)
     if step.loop_steps:
         return LoopDefinition(
-            step, step.loop_steps, step.loop_max_times, step.loop_assignment
+            step, step.loop_steps, step.max_rounds, step.loop_assignment
         )
     if step.child_steps:
         return SequenceDefinition(step, step.child_steps)

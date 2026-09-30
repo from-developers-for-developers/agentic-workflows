@@ -81,13 +81,13 @@ def test_a_referenced_extension_can_override_a_core_variable(tmp_path: Path) -> 
         vendor="acme",
         name="demo",
         variables=(
-            ExtensionVariable("__task_workspace_dir", lambda context: "/chosen/path"),
+            ExtensionVariable("ww.task.workspace_dir", lambda context: "/chosen/path"),
         ),
     )
     registry = ExtensionRegistry(tmp_path, (extension,))
 
     values = registry.apply_variable_overrides(
-        {"__task_workspace_dir": str(tmp_path.resolve())},
+        {"ww.task.workspace_dir": str(tmp_path.resolve())},
         (("acme/demo", None),),
         task_id="TASK-1",
         run_id="01-task",
@@ -96,7 +96,7 @@ def test_a_referenced_extension_can_override_a_core_variable(tmp_path: Path) -> 
         workspace=None,
     )
 
-    assert values["__task_workspace_dir"] == "/chosen/path"
+    assert values["ww.task.workspace_dir"] == "/chosen/path"
 
 
 def test_an_extension_cannot_introduce_a_core_variable(tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ def test_an_extension_cannot_introduce_a_core_variable(tmp_path: Path) -> None:
         ConfigurationError, match="cannot override core variable 'new_global'"
     ):
         registry.apply_variable_overrides(
-            {"__task_workspace_dir": str(tmp_path.resolve())},
+            {"ww.task.workspace_dir": str(tmp_path.resolve())},
             (("acme/demo", None),),
             task_id="TASK-1",
             run_id="01-task",
@@ -592,7 +592,7 @@ def test_the_bundled_git_extension_declares_its_contributions() -> None:
     ]
     assert sorted(git.modes_by_name) == ["conventional-commits"]
     assert sorted(git.commands_by_name) == ["branches", "commits", "settings"]
-    assert [variable.name for variable in git.variables] == ["__task_workspace_dir"]
+    assert [variable.name for variable in git.variables] == ["ww.task.workspace_dir"]
     assert git.handlers_by_name["git-commit"].provide[0].name == "commit_message"
     assert isinstance(git.modes_by_name["conventional-commits"], ModeDefinition)
     assert isinstance(git.commands_by_name["commits"], ExtensionCommand)
@@ -732,14 +732,14 @@ def test_task_format_follows_the_project_when_it_sets_one(tmp_path: Path) -> Non
     registry = _project_registry(tmp_path, root_settings={})
     registry._config = ProjectConfig(
         projects=(ProjectDefinition("backend", "./backend"),),
-        task_format="ROOT-{digit}",
+        task_format="ROOT-{{digit}}",
     )
 
-    assert registry.task_format() == "ROOT-{digit}"
-    assert registry.task_format("backend") == "ROOT-{digit}"
-    _write_project_settings(tmp_path, {"task_format": "BE-{digit}"})
+    assert registry.task_format() == "ROOT-{{digit}}"
+    assert registry.task_format("backend") == "ROOT-{{digit}}"
+    _write_project_settings(tmp_path, {"task_format": "BE-{{digit}}"})
     registry = ExtensionRegistry(tmp_path, (), registry.config)
-    assert registry.task_format("backend") == "BE-{digit}"
-    assert registry.task_format() == "ROOT-{digit}"
+    assert registry.task_format("backend") == "BE-{{digit}}"
+    assert registry.task_format() == "ROOT-{{digit}}"
     with pytest.raises(ConfigurationError, match="unknown project 'web'"):
         registry.task_format("web")

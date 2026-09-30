@@ -17,8 +17,7 @@ from ww.storage import Storage
 
 REJECTING = """handlers:
   - name: reject
-    command:
-      argv: ["false"]
+    argv: ["false"]
 workflows:
   - name: task
     steps:

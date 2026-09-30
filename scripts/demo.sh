@@ -57,12 +57,10 @@ git commit -q --allow-empty -m "Initial commit"
 
 say "A fresh project. Initialize ww in it."
 run ww-agentic-workflows init --no-input --no-worktrees --no-skills \
-  --no-link-instructions --task-id-format digit
+  --no-link-instructions --task-format digit
 
 say "Describe the process as steps. This one is two steps and a test handler."
 cat > ww-agentic-workflows.yaml <<'YAML'
-task_format: TASK-{digit}
-
 handlers:
   - name: tests
     argv: [python3, -c, "print('3 passed')"]
@@ -91,7 +89,7 @@ run ./ww plan --workflow task --agent claudecode
 
 say "Your agent would start here. It opens the task with your request."
 run ./ww start TASK-1 --workflow task --agent claudecode \
-  --init-artifact "Add retry handling to the upload client." --role manager
+  --requirements "Add retry handling to the upload client." --role manager
 
 say "ww printed the next command. The agent runs it, and gets its instruction."
 run ./ww next TASK-1 --role manager
@@ -99,12 +97,12 @@ run ./ww next TASK-1 --role manager
 say "The agent does the work, then reports the result back to ww."
 run ./ww complete TASK-1 --role worker \
   --artifact "Added exponential backoff to \`UploadClient.send\`." \
-  --summary-for-next-step "Retries land in UploadClient.send; document the new backoff settings."
+  --summary "Retries land in UploadClient.send; document the new backoff settings."
 
 say "The test handler ran inside that completion, and step two is open."
 run ./ww complete TASK-1 --role worker \
   --artifact "Documented the backoff settings." \
-  --summary-for-next-step "Docs updated."
+  --summary "Docs updated."
 
 say "Last step: the built-in run summary."
 run ./ww complete TASK-1 --role worker \
