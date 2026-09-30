@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ww.config_files import WORKFLOWS_FILE
-from ww.open_work import OpenTask, open_work, tasks_for_session
+from ww.open_work import OpenTask, OpenWork, open_work, tasks_for_session
 from ww.storage import Storage
 
 from .agents import HookAgent, HookEvent, HookPayload
@@ -48,12 +48,14 @@ def answer_hook(
     """ww's answer to one hook call; the caller contains every error."""
     payload = agent.parse(event, _payload(raw_payload))
     records = HookRecords(storage, storage.task_persistence)
-    tasks = open_work(storage.task_persistence, storage.root)
+    work = open_work(storage.task_persistence, storage.root)
     if event == "session-start":
-        return _session_start(storage, agent, payload, records, tasks)
+        return _session_start(storage, agent, payload, records, work)
+    # An unreadable task has no step anyone can close, so stop and interrupt
+    # consider only the tasks that could be read.
     if event == "stop" and not payload.interrupted:
-        return _stop(agent, payload, records, tasks)
-    return _interrupt(agent, payload, records, tasks)
+        return _stop(agent, payload, records, work.tasks)
+    return _interrupt(agent, payload, records, work.tasks)
 
 
 def _session_start(
@@ -61,17 +63,22 @@ def _session_start(
     agent: HookAgent,
     payload: HookPayload,
     records: HookRecords,
-    tasks: tuple[OpenTask, ...],
+    work: OpenWork,
 ) -> HookAnswer:
     if not payload.wants_context:
         return HookAnswer("", "no context needed")
+    tasks = work.tasks
     interruptions = {
         task.task_id: record
         for task in tasks
         if (record := records.interruption(task.task_id)) is not None
     }
     text = session_context(
-        tasks, interruptions, storage.root, compacted=payload.source == "compact"
+        tasks,
+        interruptions,
+        storage.root,
+        compacted=payload.source == "compact",
+        unreadable=work.unreadable,
     )
     return HookAnswer(
         agent.context_reply(text.rstrip("\n")) + "\n",

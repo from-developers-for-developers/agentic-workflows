@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ww.errors import StateError
 from ww.storage import Storage
 from ww.storage_adapters import TaskStorageAdapter
 
@@ -98,7 +99,11 @@ class HookRecords:
         found = []
         for path in root.rglob(INTERRUPTED_FILE):
             task_id = path.parent.relative_to(root).as_posix()
-            record = self.interruption(task_id)
+            try:
+                record = self.interruption(task_id)
+            except StateError:
+                # open_work() reports the unreadable task; skip it here.
+                continue
             if record is not None:
                 found.append((task_id, record))
         return tuple(sorted(found, key=lambda entry: entry[1].at, reverse=True))

@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ww.executable import ww_command
-from ww.open_work import OpenTask
+from ww.open_work import OpenTask, UnreadableTask
 
 from .records import Interruption
 
@@ -38,6 +38,7 @@ def session_context(
     root: Path,
     *,
     compacted: bool,
+    unreadable: tuple[UnreadableTask, ...] = (),
 ) -> str:
     """What a session learns about ww when it starts, resumes, or compacts."""
     ww = ww_command()
@@ -60,7 +61,19 @@ def session_context(
                 f"… and {len(open_tasks) - SESSION_TASK_LIMIT} more; "
                 f"`{ww} status <task-id>` shows one."
             )
+    if unreadable:
+        lines.append(unreadable_notice(unreadable))
     return "\n".join(lines) + "\n"
+
+
+def unreadable_notice(unreadable: tuple[UnreadableTask, ...]) -> str:
+    """One line naming the tasks ww cannot read, without their errors."""
+    names = ", ".join(task.task_id for task in unreadable)
+    return (
+        f"ww cannot read the state of {names}; other tasks and new work are "
+        f"unaffected. `{ww_command()} discover` shows why; ask the operator "
+        "before touching them."
+    )
 
 
 def _task_line(task: OpenTask, root: Path, ww: str) -> str:

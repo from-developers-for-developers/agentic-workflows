@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- One task whose state ww cannot read no longer breaks `discover`, the agent hooks, `lookup` or `interrupted`;
+  `discover` lists it under "Unreadable tasks". `a85b2a2`
 - Owned assignments: in the `auto` runtime each assignment carries a token that the worker's commands must present
   (`--assignment`), so a worker whose assignment ended can no longer act; `next --reassign` issues a new one. `role:
   manager | worker` says who performs a step and is inherited like `profile`; `subagents: false` now means the
