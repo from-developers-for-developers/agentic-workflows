@@ -16,7 +16,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   manager | worker` replaces `subagents` (refused, write `role: manager`) and is inherited like `profile`. ww asks for
   confirmation only at a terminal and otherwise names `--yes`, which the pages now print on recovery commands and the
   audit record notes. `ww/git` gains `on_signing_failure: unsigned` to commit unsigned when signing fails.
-  Incompatible: plan schema 15 and execution state 10, so finish or reset open tasks before updating.
+  Incompatible: plan schema 15 and execution state 10, so finish or reset open tasks before updating. `25c130a`
 - Writing rules: a new bundled skill, `ww-rule`, which `init` offers once, turns the operator's words into rules
   (atomic rules, amendments, globs with their match counts, placement by real workflow and step names, one
   confirmation) and writes them only through new validated commands: `ww rules add <group> --text`, `rules add
