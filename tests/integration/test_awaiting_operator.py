@@ -112,7 +112,8 @@ def test_a_delegated_worker_returns_the_operator_wait_to_its_manager(
     rendered = MarkdownOutputAdapter().render_instruction(failed)
 
     assert failed.control == "awaiting_operator"
-    assert "Return this `ww` response to the manager" in rendered
+    assert 'Return the "Handoff to manager" block below to the manager' in rendered
+    assert "### Handoff to manager" in rendered
     assert "`ww` is waiting for the operator" not in rendered
 
 

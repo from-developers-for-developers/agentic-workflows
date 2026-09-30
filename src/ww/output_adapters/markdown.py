@@ -31,7 +31,13 @@ from ww.instructions.commands import (
     start_command,
 )
 from ww.instructions.conversions import conversions_markdown
-from ww.instructions.models import FixFailure, Proposal, VerificationPage
+from ww.instructions.handoff import HANDOFF_TITLE, handoff_markdown
+from ww.instructions.models import (
+    FixFailure,
+    HandoffBlock,
+    Proposal,
+    VerificationPage,
+)
 from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
 from ww.output_adapters.base import OutputAdapter
@@ -44,6 +50,13 @@ Lines = list[str]
 
 class MarkdownOutputAdapter(OutputAdapter):
     def render_instruction(self, instruction: Instruction) -> str:
+        page = self._page(instruction)
+        if instruction.handoff_block is None:
+            return page
+        return _document([page.rstrip("\n"), *_handoff(instruction.handoff_block)])
+
+    def _page(self, instruction: Instruction) -> str:
+        """The instruction page itself, before any handoff block."""
         if instruction.status == "task_summary":
             return _document(_task_summary(instruction))
         lines = _header(instruction)
@@ -278,6 +291,25 @@ def _initialization_shortcut(name: str) -> Lines:
             ]
         )
     lines.extend(["", "     Then run: ww workflows", ""])
+    return lines
+
+
+def _handoff(block: HandoffBlock) -> Lines:
+    """ww's report of the ended assignment, which the worker returns verbatim."""
+    lines: Lines = []
+    _append_section(lines, HANDOFF_TITLE)
+    lines.extend(
+        [
+            "Your assignment has ended. Return the block below verbatim as your "
+            "final message, nothing else, and run no further `ww` command. `ww` "
+            "wrote it from the saved state; add your judgment only through "
+            "the summary you already gave.",
+            "",
+            "```text",
+            handoff_markdown(block),
+            "```",
+        ]
+    )
     return lines
 
 
@@ -610,6 +642,11 @@ def _worker_bootstrap(lines: Lines, instruction: Instruction) -> None:
             "",
             "The worker runs it to receive the complete, role-specific "
             "assignment. Do not add task details or commentary.",
+            "",
+            f"When the assignment ends, the worker's final message is `ww`'s "
+            f"\"{HANDOFF_TITLE}\" block for assignment "
+            f"`{instruction.assignment_token or '<token>'}`: read the outcome "
+            "there. Anything else a worker says is not a `ww` result.",
         ]
     )
 
@@ -1045,8 +1082,8 @@ def _check_proposed(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             [
                 "",
-                "Stop here. Return this `ww` response to the manager: the "
-                "operator decides each proposal.",
+                f"Stop here. {_return_phrase(instruction)}: the operator "
+                "decides each proposal.",
             ]
         )
         return
@@ -1665,8 +1702,8 @@ def _fix_limit(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             [
                 "",
-                "Stop here. Return this `ww` response to the manager: the "
-                "operator decides how the step continues.",
+                f"Stop here. {_return_phrase(instruction)}: the operator "
+                "decides how the step continues.",
             ]
         )
         return
@@ -1712,8 +1749,8 @@ def _check_disputed(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             [
                 "",
-                "Stop here. Return this `ww` response to the manager: the "
-                "operator decides whether the check stands.",
+                f"Stop here. {_return_phrase(instruction)}: the operator "
+                "decides whether the check stands.",
             ]
         )
         return
@@ -1782,6 +1819,9 @@ def _interrupted(lines: Lines, instruction: Instruction) -> None:
 def _continuation(lines: Lines, instruction: Instruction) -> None:
     if not instruction.continuation_command or instruction.status == "failed":
         return
+    if instruction.handoff_block is not None:
+        # The worker's turn ended: its block names the manager's command.
+        return
     if instruction.choosing_outcome_of is not None:
         _outcome_commands(lines, instruction)
         return
@@ -1790,6 +1830,8 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
         title = "Recover"
     elif instruction.item_status == "pending" or instruction.manager_input:
         title = "Manager command"
+    elif instruction.workflow_runtime == "auto" and instruction.role == "manager":
+        title = "Manager completion command"
     else:
         title = "Worker completion command"
     _append_section(lines, title)
@@ -1925,8 +1967,8 @@ def _manager_intro() -> Lines:
 def _failed_handler_guidance(instruction: Instruction) -> Lines:
     if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
         return [
-            "Stop here. Return this `ww` response to the manager for resolution. "
-            "Do not fix, rerun, or work around the failed automatic handler.",
+            f"Stop here. {_return_phrase(instruction)} for resolution. Do not "
+            "fix, rerun, or work around the failed automatic handler.",
         ]
     return [
         "This requires manual intervention from the `ww` operator. Do not retry "
@@ -2014,9 +2056,21 @@ def _action_heading(instruction: Instruction) -> str:
 
 _ASSIGNMENT_COMPLETE = (
     "This assignment is complete. Stop here: do not run a manager command "
-    "or any further `ww` command. Return this `ww` response, a concise "
-    "outcome, and artifact references to the manager."
+    "or any further `ww` command."
 )
+
+
+def _return_phrase(instruction: Instruction) -> str:
+    """What a worker whose turn ended hands back: ww's block when it has one."""
+    if instruction.handoff_block is not None:
+        return f"Return the \"{HANDOFF_TITLE}\" block below to the manager"
+    return "Return this `ww` response to the manager"
+
+
+def _assignment_complete(instruction: Instruction) -> Lines:
+    return [f"{_ASSIGNMENT_COMPLETE} {_return_phrase(instruction)}.", ""]
+
+
 _RUN_MANAGER_COMMAND = (
     "You are the manager. Run the displayed manager command yourself."
 )
@@ -2046,10 +2100,15 @@ def _role_instruction(instruction: Instruction) -> Lines:
             and instruction.caller_role == "worker"
         )
         if worker_caller:
+            returned = (
+                _return_phrase(instruction)
+                if instruction.handoff_block is not None
+                else "Return this response and the saved iteration results to "
+                "the manager"
+            )
             return [
                 "This loop has reached its configured limit. Do not start another "
-                "iteration. Return this response and the saved iteration results "
-                "to the manager for user escalation.",
+                f"iteration. {returned} for user escalation.",
                 "",
             ]
         return [
@@ -2059,7 +2118,7 @@ def _role_instruction(instruction: Instruction) -> Lines:
         ]
     if instruction.is_loop_control:
         if reader is Audience.WORKER_RETURNING:
-            return [_ASSIGNMENT_COMPLETE, ""]
+            return _assignment_complete(instruction)
         return [_RUN_MANAGER_COMMAND, ""]
     if instruction.manager_input:
         return [
@@ -2078,12 +2137,13 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 "",
             ]
         case Audience.WORKER_RETURNING:
-            return [_ASSIGNMENT_COMPLETE, ""]
+            return _assignment_complete(instruction)
         case Audience.MANAGER_DELEGATING if instruction.role == "manager":
             return [
                 "You are the manager. This step is yours (`role: manager`): perform "
                 "it yourself in this session, not through a worker, and run the "
-                "displayed worker completion command.",
+                "displayed manager completion command; a worker's completion of "
+                "it is refused.",
                 "",
                 *_assignment_coverage(instruction),
             ]

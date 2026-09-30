@@ -56,7 +56,7 @@ def test_the_session_that_got_the_prompt_does_the_work(tmp_path: Path) -> None:
     service.complete(
         TASK,
         artifact="Fixed the typo.",
-        caller_role="worker", assignment=assignment_token(service, TASK),
+        caller_role="manager",
         summary_for_next="Fixed the typo.",
     )
     done = service.complete(
