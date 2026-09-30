@@ -188,8 +188,9 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Install the ww, noww and ww-rule skills into every agent "
-            "directory found in the project."
+            "Install the bundled ww skills (ww, noww, ww-rule, ww-setup and "
+            "the skills it guides through) into every agent directory found "
+            "in the project."
         ),
     )
 

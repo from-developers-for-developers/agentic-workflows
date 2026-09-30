@@ -96,8 +96,18 @@ def builtin_workflow(name: str) -> WorkflowDefinition:
 
 
 def is_builtin(workflow: WorkflowDefinition) -> bool:
-    """Whether ``workflow`` is a built-in one, not a configured replacement."""
-    return any(workflow == builtin for builtin in builtin_workflows())
+    """Whether ``workflow`` is a built-in one, not a configured replacement.
+
+    A built-in whose recommended workflow is switched off loses the
+    recommendation and is still the built-in.
+    """
+    return any(
+        replace(
+            workflow, recommended_next_workflow=builtin.recommended_next_workflow
+        )
+        == builtin
+        for builtin in builtin_workflows()
+    )
 
 
 def with_builtin_workflows(
@@ -107,7 +117,8 @@ def with_builtin_workflows(
 
     The built-in workflows follow the configured ones. A built-in file's
     documents and modes come along while any of its workflows is enabled,
-    unless the configuration declares one of the same name.
+    unless the configuration declares one of the same name. A built-in's
+    ``recommended_next_workflow`` is dropped while that workflow is off.
     """
     workflows = {workflow.name for workflow in configuration.workflows}
     documents = {document.name for document in configuration.documents}
@@ -136,6 +147,14 @@ def with_builtin_workflows(
                 added_modes.append(mode)
     if not (added_workflows or added_documents or added_modes):
         return configuration
+    # A built-in recommending one that is switched off recommends nothing.
+    present = workflows | {workflow.name for workflow in added_workflows}
+    added_workflows = [
+        workflow
+        if workflow.recommended_next_workflow in (None, *present)
+        else replace(workflow, recommended_next_workflow=None)
+        for workflow in added_workflows
+    ]
     return replace(
         configuration,
         workflows=(*configuration.workflows, *added_workflows),

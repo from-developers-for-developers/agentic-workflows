@@ -89,10 +89,12 @@ def test_the_shipped_catchall_is_one_manager_step_that_can_restart() -> None:
     assert "Carry out the request exactly as you would" in work.description
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 def test_every_shipped_file_parses_with_unique_names() -> None:
     names = [workflow.name for item in builtin_files() for workflow in item.workflows]
 
     assert CATCHALL in names
+    assert "ww-learn" in names
     assert len(names) == len(set(names))
 
 

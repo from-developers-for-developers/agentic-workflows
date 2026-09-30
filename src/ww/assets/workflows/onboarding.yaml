@@ -1,0 +1,503 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ww's learning and setup workflows. They learn who uses ww and how the
+# project works, into four files ww keeps for its own use, and propose a
+# gentle starting setup from them, which ww places with `setup apply`. The
+# `ww-*` skills start them; `ww-setup` guides through them on a first use.
+#
+# Every step that writes a learning file starts it with the same remark, so an
+# agent that is not doing ww work leaves the file alone. The steps always
+# update an existing file in place, so running a workflow again refreshes it.
+# None of them commits: the shared files are left for the operator to review
+# and commit.
+documents:
+  - me: >-
+      Who the operator is, how they work, and what they expect from agents and
+      ww. Personal: kept in the user configuration directory.
+    scope: user
+  - team: >-
+      The operator's team: what it does, how it works, its pain points and
+      expectations. Shared with the team through the repository.
+    scope: project
+    path: .ww/team.md
+  - company: >-
+      The company in short: its domain, size and constraints. Shared with the
+      team through the repository.
+    scope: project
+    path: .ww/company.md
+  - project: >-
+      How this project's work is organised: tooling, trackers, infrastructure,
+      stack, conventions and recurring pitfalls. Shared with the team.
+    scope: project
+    path: .ww/project.md
+  - setup_proposal: >-
+      The configuration fragment a ww setup workflow proposes, which ww places
+      with `setup apply`.
+    path: .ww/tasks/{{ww.task.id}}/setup-proposal.yaml
+
+modes:
+  - ww-narrate: >-
+      The operator asked to see what ww does while it learns. Before each step,
+      tell them in one or two plain sentences what the step does and why; after
+      it, say what it found or changed and where.
+
+workflows:
+  - name: ww-learn
+    description: >-
+      Interviews you about yourself, your team and your company into me.md,
+      team.md and company.md.
+    runtime: single
+    restartable: true
+    role: manager
+    recommended_next_workflow: ww-learn-project
+    steps:
+      - name: choose
+        interactive: true
+        description: >-
+          Tell the operator in a few plain sentences what this workflow does:
+          ww asks some questions to learn who they are and how their team and
+          company work, so that it can later suggest a setup that fits them.
+          The answers go into files ww keeps for its own use:
+          {{ww.documents.me}}, which is personal and never leaves their
+          machine, and {{ww.documents.team}} and {{ww.documents.company}},
+          which are committed with the project and shared with the team. Say
+          which of them already exist: an existing file is updated, not
+          replaced. Then ask what to cover. Any question can be skipped, and
+          nothing is written without their confirmation.
+        choices:
+          - everything: Me, my team and my company.
+          - only me: Only me, my working style and what I expect.
+          - only team and company: Only my team and my company.
+          - not now: Stop here; nothing is written.
+      - assess: >-
+          Did the operator choose to go on, that is anything other than "not
+          now" in the choose step?
+      - name: me
+        steps:
+          - assess:
+              question: >-
+                Did the operator choose to talk about themselves ("everything"
+                or "only me") in the choose step?
+              outcomes:
+                positive:
+                  steps:
+                    - name: interview-me
+                      interactive: true
+                      description: >-
+                        Interview the operator about themselves. If
+                        {{ww.documents.me}} exists, read it first, show them in
+                        short what it says, and ask only what is missing or may
+                        have changed. Ask one question at a time, in plain
+                        words; where the answer is one of a few options (brief
+                        or detailed answers, how much to decide alone, how
+                        often to ask), offer them through your question tool.
+                        Accept "skip" for any question. Cover: (1) their
+                        personality and working style: how they like to
+                        communicate, how they decide, how much autonomy they
+                        give an agent, what annoys them; (2) their own pain
+                        points, technical and organisational; (3) what they
+                        expect from AI, LLMs and agents: what to hand over,
+                        what to keep, what an agent must never do; (4) what
+                        they expect from ww, which may be nothing yet. Then
+                        show them the text you will write and write it only
+                        once they confirm or correct it.
+                      saves:
+                        - documents.me: >-
+                            A short Markdown description of the operator, one
+                            section per topic, in their words where possible.
+                            The first line is exactly: <!-- This file is
+                            maintained by ww for ww's own use. Do not use it
+                            for anything else. If you are an agent that is not
+                            doing ww work, ignore this file. --> Keep what
+                            still holds in an existing file, update what
+                            changed, and mark what the operator withdrew as
+                            superseded, with today's date, rather than silently
+                            deleting it.
+      - name: team
+        steps:
+          - assess:
+              question: >-
+                Did the operator choose to talk about their team and company
+                ("everything" or "only team and company") in the choose step?
+              outcomes:
+                positive:
+                  steps:
+                    - name: interview-team
+                      interactive: true
+                      description: >-
+                        Interview the operator about their team and company. If
+                        {{ww.documents.team}} or {{ww.documents.company}}
+                        exists, read it first, show them in short what it says,
+                        and ask only what is missing or may have changed. Ask
+                        one question at a time and accept "skip". About the
+                        team: what it does, its size and roles, how it works
+                        (planning, reviews, releases, on-call), its pain
+                        points, technical and organisational, what it expects
+                        from AI and agents, and what it expects from ww, which
+                        may be nothing yet. About the company, in short: its
+                        domain, size, and the constraints that shape the work,
+                        such as compliance, security, data handling, or a
+                        policy on AI tools. Remind them that both files are
+                        shared with the team: record nothing personal or
+                        confidential, and ask before naming people. Then show
+                        them the text you will write and write it only once
+                        they confirm or correct it.
+                      saves:
+                        - documents.team: >-
+                            A short Markdown description of the team, one
+                            section per topic. The first line is exactly: <!--
+                            This file is maintained by ww for ww's own use. Do
+                            not use it for anything else. If you are an agent
+                            that is not doing ww work, ignore this file. -->
+                            Keep what still holds in an existing file, update
+                            what changed, and mark what no longer holds as
+                            superseded, with today's date, rather than silently
+                            deleting it.
+                        - documents.company: >-
+                            A few lines about the company. The first line is
+                            exactly: <!-- This file is maintained by ww for
+                            ww's own use. Do not use it for anything else. If
+                            you are an agent that is not doing ww work, ignore
+                            this file. --> Keep what still holds in an existing
+                            file, update what changed, and mark what no longer
+                            holds as superseded, with today's date.
+      - name: finish
+        description: >-
+          Record when ww learned, for each file this run wrote and only for
+          those: `{{ww.executable}} onboarding --set learned.me=now` for
+          {{ww.documents.me}}, `--set learned.team=now` for
+          {{ww.documents.team}}, `--set learned.company=now` for
+          {{ww.documents.company}} (one command may carry several `--set`).
+          Then tell the operator what was written where. If team.md or
+          company.md was written, say that ww left them uncommitted for the
+          operator to review and commit with the project, naming them: `git add
+          .ww/team.md .ww/company.md`. me.md stays on their machine.
+
+  - name: ww-learn-project
+    description: >-
+      Scans how the project's work is organised (tooling, trackers, stack,
+      conventions, pitfalls) into project.md.
+    runtime: single
+    restartable: true
+    role: manager
+    recommended_next_workflow: ww-suggest
+    steps:
+      - name: scan
+        description: >-
+          Scan the project in {{ww.task.workspace_dir}} for how its work is
+          organised; ignore what the software does. Read only; change no file.
+          Look for: (1) agent tooling: MCP servers and agent settings
+          (.mcp.json, .claude/, .codex/, .cursor/, .gemini/, AGENTS.md,
+          CLAUDE.md, skills and commands); (2) issue trackers the codebase
+          mentions (Jira keys, GitHub or GitLab issue links, Linear, and so on)
+          and how issues are referenced; (3) infrastructure and tech stack:
+          languages, frameworks, package managers, containers, deployment and
+          cloud configuration; (4) organisational conventions: branching,
+          commit message format, CI pipelines, code review (PR templates,
+          CODEOWNERS), release and versioning, the test, lint and build
+          commands. Name the file or command that shows each finding; say "not
+          found" rather than guess. If {{ww.documents.project}} exists, note
+          what it says that no longer matches. The artifact is the findings.
+      - name: history
+        description: >-
+          Skim the history for recurring pitfalls. Read only. Look at the
+          recent commits (for example `git log --oneline -n 300`, and the full
+          message of commits that fix, revert, or follow up on others) and,
+          where the project's review tool is configured and signed in (`gh`,
+          `glab`, or an MCP server of the tracker), the review comments of
+          recent merged pull requests and what was fixed in response. Skip what
+          is not available and say so. Find mistakes that come back: the same
+          kind of fix, the same review remark, the same revert. For each, give
+          the evidence (commits or reviews) and phrase it as a simple candidate
+          rule a future agent could follow. The artifact is the list; an empty
+          one is a fine result.
+      - name: review
+        interactive: true
+        description: >-
+          Show the operator a short summary of what the scan and the history
+          found, and the candidate rules, and ask whether it is right; take
+          their corrections. Then write {{ww.documents.project}}. It is shared
+          with the team through the repository, so record nothing secret, such
+          as tokens, hostnames or credentials.
+        choices:
+          - looks right: Write project.md as shown.
+          - corrected: Write it with the corrections I gave.
+        saves:
+          - documents.project: >-
+              A Markdown description of how the project's work is organised,
+              with sections for agent tooling, issue tracking, infrastructure
+              and stack, conventions, and recurring pitfalls with their
+              candidate rules. The first line is exactly: <!-- This file is
+              maintained by ww for ww's own use. Do not use it for anything
+              else. If you are an agent that is not doing ww work, ignore this
+              file. --> Keep what still holds in an existing file, update what
+              changed, and mark what no longer holds as superseded, with
+              today's date, rather than silently deleting it.
+      - name: finish
+        description: >-
+          Record when ww learned about the project: `{{ww.executable}}
+          onboarding --set learned.project=now`. Then tell the operator that
+          {{ww.documents.project}} was left uncommitted for them to review and
+          commit with the project: `git add .ww/project.md`.
+
+  - name: ww-suggest
+    description: >-
+      Proposes a gentle starting setup from what ww learned and places it for
+      you or the team.
+    runtime: single
+    restartable: true
+    role: manager
+    steps:
+      - name: gather
+        description: >-
+          Read what ww knows, skipping a file that does not exist:
+          {{ww.documents.me}}, {{ww.documents.team}}, {{ww.documents.company}},
+          {{ww.documents.project}}. Read the current setup: `{{ww.executable}}
+          discover` and `{{ww.executable}} rules --json`. The artifact
+          summarises what the setup should serve (how the operator and team
+          work, their pain points, the project's conventions and pitfalls) and
+          what is already configured. If none of the four files exists, tell
+          the operator that suggestions would be generic and that the
+          `ww-learn` and `ww-learn-project` workflows learn first.
+      - name: for-whom
+        interactive: true
+        description: >-
+          Ask the operator whether to set ww up for themselves now. If an
+          earlier run set it up for them only (ww-setup.local.yaml exists
+          beside ww-agentic-workflows.yaml), say so: this run can share that
+          setup with the team, or refine it.
+        choices:
+          - "yes": Set ww up for how I work.
+          - not now: Stop here; nothing changes. I can come back later.
+      - assess: Did the operator answer "yes" in the for-whom step?
+      - name: setup
+        steps:
+          - name: share
+            interactive: true
+            description: >-
+              Ask whether to share the setup with the team. Shared, it goes
+              into files committed with the project (ww-setup.yaml, imported by
+              ww-agentic-workflows.yaml, and ww-agentic-workflows.json). Kept
+              to themselves, it goes into their local files, which stay out of
+              version control, and they can share it later by running
+              ww-suggest again.
+            choices:
+              - share: Share it with the team.
+              - just me: Keep it to myself for now.
+          - name: propose
+            interactive: true
+            description: >-
+              Draft a small starting setup that fits what you gathered, and no
+              more: one to three workflows of a few steps each that match how
+              the team already works; modes only where the operator would pick
+              them; at most five rules, each one simple sentence, from the
+              pitfalls and conventions found (gentle, easy to follow, no check
+              unless it is an obvious one-line command); hooks only where an
+              existing project command plainly fits, such as running the tests
+              before a develop step completes; and settings such as `runtime`,
+              `task_format` matching the issue tracker, or `max_rounds`. Never
+              redefine a workflow ww ships (`catchall`, `ww-*`) or duplicate
+              what is already configured. Write it as a setup fragment to
+              {{ww.documents.setup_proposal}}: the root keys `workflows`,
+              `modes`, `documents`, `handlers`, `hooks`, and `rules` in ww's
+              YAML notation, plus `settings` for ww-agentic-workflows.json
+              keys; put rules as literal sentences in the `rules` lists of the
+              steps they govern. Never edit ww's configuration files yourself.
+              Run `{{ww.executable}} setup apply
+              {{ww.documents.setup_proposal}} --for <team or me, as chosen in
+              share> --dry-run` and fix the fragment until it passes. Then show
+              the operator, in plain words and item by item, what each proposed
+              piece does and why, followed by the dry run's list of files and
+              changes, and ask whether to apply it. Change the proposal as they
+              ask and show it again.
+            choices:
+              - apply: Apply it as shown.
+              - cancel: Do not apply anything.
+            saves:
+              - documents.setup_proposal: >-
+                  The setup fragment as the operator last saw it.
+          - assess: Did the operator choose "apply" in the propose step?
+          - name: apply
+            description: >-
+              Place the setup the operator agreed to: `{{ww.executable}} setup
+              apply {{ww.documents.setup_proposal}} --for <team or me, as
+              chosen in share> --yes`. Then run `{{ww.executable}} lint` and
+              show its result. Tell the operator which files changed. For the
+              team, they are left uncommitted for the operator to review and
+              commit (ww-setup.yaml, ww-agentic-workflows.yaml,
+              ww-agentic-workflows.json as the output lists them); for
+              themselves, nothing is committed, and running ww-suggest again
+              and choosing to share offers the same setup to the team. If
+              `setup apply` refuses, show its message and stop; never place the
+              configuration another way.
+
+  - name: ww-solve
+    description: >-
+      Turns a problem you describe into proposed workflows, modes, rules or
+      hooks.
+    runtime: single
+    restartable: true
+    role: manager
+    steps:
+      - name: listen
+        interactive: true
+        description: >-
+          Ask the operator to describe the problem: what goes wrong, how often,
+          and what it costs them. Ask a few clarifying questions, one at a
+          time, then restate the problem in two or three sentences and ask
+          whether that is it.
+      - name: propose
+        interactive: true
+        description: >-
+          Read what ww knows, skipping a file that does not exist:
+          {{ww.documents.me}}, {{ww.documents.team}}, {{ww.documents.company}},
+          {{ww.documents.project}}; and the current setup: `{{ww.executable}}
+          discover` and `{{ww.executable}} rules --json`. Propose the smallest
+          change that addresses the problem: a workflow or a step, a mode, a
+          rule, a hook, or a setting. Write it as a setup fragment to
+          {{ww.documents.setup_proposal}} (the root keys `workflows`, `modes`,
+          `documents`, `handlers`, `hooks`, `rules` and `settings`; rules as
+          literal sentences in the `rules` lists of the steps they govern). A
+          fragment cannot change a workflow that ww-agentic-workflows.yaml
+          defines itself: for such a change propose a hook filtered to its
+          steps, or show the operator the exact YAML to change by hand. Never
+          edit ww's configuration files yourself. Check the fragment with
+          `{{ww.executable}} setup apply {{ww.documents.setup_proposal}} --for
+          me --dry-run` until it passes. Show the operator what each piece does
+          and why, with the dry run's list of changes, and ask where to apply
+          it.
+        choices:
+          - for me: Apply it to my local setup.
+          - for the team: Apply it to the shared setup.
+          - cancel: Do not apply anything.
+        saves:
+          - documents.setup_proposal: >-
+              The setup fragment as the operator last saw it.
+      - assess: >-
+          Did the operator choose "for me" or "for the team" in the propose
+          step?
+      - name: apply
+        description: >-
+          Place the change: `{{ww.executable}} setup apply
+          {{ww.documents.setup_proposal}} --for <me or team, as chosen> --yes`,
+          then run `{{ww.executable}} lint` and show its result. Tell the
+          operator which files changed; shared ones are left uncommitted for
+          them to review and commit. If `setup apply` refuses, show its message
+          and stop; never place the configuration another way.
+
+  - name: ww-rules-from-artifacts
+    description: >-
+      Proposes rules from the lessons that recur in chosen steps' past results.
+    runtime: single
+    restartable: true
+    role: manager
+    steps:
+      - name: choose
+        interactive: true
+        description: >-
+          Run `{{ww.executable}} discover` and list the workflows and their
+          steps. Ask the operator which steps' results to learn from (review
+          and fix steps are good sources) and how many recent tasks to read;
+          ten is a sensible default. Offer the step names through your question
+          tool.
+      - name: read
+        description: >-
+          Find the recent tasks that ran the chosen steps: the task directories
+          under `.ww/tasks/` at the project root, newest first, and for each
+          `{{ww.executable}} artifacts <task-id>` (add `--run <run-id>` for an
+          earlier run). Read only the artifacts of the chosen steps. Collect
+          the lessons that recur in more than one task, such as the same review
+          finding or the same fix, and skip one-off defects. Read
+          `{{ww.executable}} rules --json` and drop lessons an existing rule
+          already covers. The artifact lists each lesson with the tasks that
+          show it.
+      - name: propose
+        interactive: true
+        description: >-
+          Turn each lesson into a candidate rule: one imperative sentence, with
+          a `paths` glob only when it is about a kind of file, and a check only
+          when it is an obvious one-line command. Choose the rule group it
+          belongs to from `{{ww.executable}} rules --json`, or a new group with
+          the workflows and steps it concerns. Show the operator all candidates
+          in one block, each with its group, the steps it will reach, and the
+          evidence, and ask which to add. Keep them few and gentle.
+        choices:
+          - add all: Add every rule shown.
+          - add some: Add the ones I named.
+          - none: Add nothing.
+      - assess: Did the operator choose to add any rule in the propose step?
+      - name: add
+        description: >-
+          Add the rules the operator accepted, only through ww's rule commands,
+          each checked with `--dry-run` first: a new group with
+          `{{ww.executable}} rules add --group <name> --dir <path> [--workflows
+          <name>...] [--steps <name>...]`, then each rule with
+          `{{ww.executable}} rules add <group> --text "<sentence>" [--paths
+          <glob>...]`. Never edit a rule file or ww's configuration files
+          yourself; report a refusal instead of working around it. Run
+          `{{ww.executable}} lint`, show where each rule now applies, and tell
+          the operator that the new rule files and ww-rules.yaml are left
+          uncommitted for them to review and commit.
+
+  - name: ww-automate
+    description: >-
+      Proposes a script for a step's mechanical work, and the handler that runs
+      it.
+    runtime: single
+    restartable: true
+    role: manager
+    steps:
+      - name: choose
+        interactive: true
+        description: >-
+          Run `{{ww.executable}} discover` and list the workflows and their
+          steps. Ask the operator which step to look at, offering the step
+          names through your question tool.
+      - name: analyse
+        description: >-
+          Read the chosen step's instruction (`{{ww.executable}} plan
+          --workflow <workflow> --agent <your agent>`) and what it produced in
+          recent tasks (`{{ww.executable}} artifacts <task-id>` for the task
+          directories under `.ww/tasks/` at the project root). Decide which
+          parts of its work are mechanical, the same every time and needing no
+          judgement: running commands, collecting or reformatting data, filling
+          a template, checking a condition. The artifact says what could be a
+          script, what must stay with an agent, and whether the script would
+          replace the step or run as a hook before or after it. If nothing is
+          mechanical, say so; that is a fine result.
+      - name: propose
+        interactive: true
+        description: >-
+          If the analysis found nothing to automate, tell the operator and
+          offer only "cancel". Otherwise draft the script (shell or the
+          project's own language, small, with a clear exit status) and the
+          handler change as a setup fragment in
+          {{ww.documents.setup_proposal}}: a hook that runs it, filtered to the
+          workflow and step with `workflows` and `steps`, or, for a workflow
+          ww-setup.yaml defines, that workflow with the step turned into an
+          `argv` or `shell` step. A fragment cannot change a workflow that
+          ww-agentic-workflows.yaml defines itself; for that, show the operator
+          the exact YAML to change by hand. Never edit ww's configuration files
+          yourself. Check the fragment with `{{ww.executable}} setup apply
+          {{ww.documents.setup_proposal}} --for me --dry-run`. Show the
+          operator the script, where it would live, and the dry run's list of
+          changes, and ask where to apply it.
+        choices:
+          - for me: Apply it to my local setup.
+          - for the team: Apply it to the shared setup.
+          - cancel: Do not apply anything.
+        saves:
+          - documents.setup_proposal: >-
+              The setup fragment as the operator last saw it.
+      - assess: >-
+          Did the operator choose "for me" or "for the team" in the propose
+          step?
+      - name: apply
+        description: >-
+          Write the script where the operator agreed, make it executable, and
+          run it once on a harmless input if it has one. Then place the handler
+          change: `{{ww.executable}} setup apply
+          {{ww.documents.setup_proposal}} --for <me or team, as chosen> --yes`,
+          and run `{{ww.executable}} lint`. Tell the operator which files
+          changed and that they are left uncommitted for them to review and
+          commit. If `setup apply` refuses, show its message and stop.

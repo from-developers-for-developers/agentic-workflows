@@ -312,7 +312,7 @@ def test_init_installs_the_skill_into_existing_agent_directories(
     # A directory set up before noww existed gains it; its ww skill is kept.
     assert (tmp_path / ".codex/skills/noww/SKILL.md").is_file()
     assert ".claude/skills/ww/SKILL.md" in output
-    assert "install the ww, noww and ww-rule skills" not in output
+    assert "install the ww skills" not in output
 
 
 def test_init_without_skills_suggests_installing_them(
@@ -325,9 +325,8 @@ def test_init_without_skills_suggests_installing_them(
 
     assert not (tmp_path / ".claude/skills").exists()
     assert (
-        "Optionally install the ww, noww and ww-rule skills with `init --skills` "
-        "for: "
-        ".claude." in output
+        f"Optionally install the ww skills ({', '.join(SKILLS)}) with "
+        "`init --skills` for: .claude." in output
     )
     config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     assert config["enabled"] is True
@@ -394,9 +393,12 @@ def test_init_asks_before_installing_each_skill(
 
     paths = _skill_installs(Storage(tmp_path), None, interactive=True)
 
-    assert paths == ((".claude", "ww"), (".claude", "noww"), (".claude", "ww-rule"))
+    assert paths == tuple((".claude", name) for name in SKILLS)
     # A directory that exists is asked about on its own...
-    question = "Install the ww, noww and ww-rule skills into {}/skills? [Y/n]: "
+    question = (
+        f"Install the ww skills ({', '.join(SKILLS)}) into "
+        "{}/skills? [Y/n]: "
+    )
     assert question.format(".claude") in prompts
     assert question.format(".cursor") in prompts
     # ...and every agent without one shares a single question.
@@ -423,13 +425,8 @@ def test_init_offers_the_absent_agent_directories_in_one_question(
     # One question, not one per agent ww knows about.
     assert len(prompts) == 1
     assert len(_known_agent_directories()) > 1
-    assert paths == (
-        (".codex", "ww"),
-        (".codex", "noww"),
-        (".codex", "ww-rule"),
-        (".claude", "ww"),
-        (".claude", "noww"),
-        (".claude", "ww-rule"),
+    assert paths == tuple(
+        (directory, name) for directory in (".codex", ".claude") for name in SKILLS
     )
 
 
@@ -772,7 +769,12 @@ def test_init_offers_the_ww_rule_skill_once_to_a_project_set_up_before_it(
     choices.parent.mkdir()
     agents = {name: name == ".claude" for name in _known_agent_directories()}
     choices.write_text(
-        json.dumps({"agents": agents, "skills": {"ww": True, "noww": True}}),
+        json.dumps(
+            {
+                "agents": agents,
+                "skills": {name: True for name in SKILLS if name != "ww-rule"},
+            }
+        ),
         encoding="utf-8",
     )
     prompts = _answers(monkeypatch, "")

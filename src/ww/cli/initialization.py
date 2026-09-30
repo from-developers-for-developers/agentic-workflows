@@ -379,13 +379,8 @@ def _skill_location(directory: str) -> str:
     return skill_location(directory, WW_SKILL_NAME)
 
 
-def _joined(names: tuple[str, ...]) -> str:
-    """``a, b and c``: names as a sentence lists them."""
-    *rest, last = names
-    return f"{', '.join(rest)} and {last}" if rest else last
-
-
-_SKILL_NAMES = _joined(tuple(SKILLS))
+# "ww skills (ww, noww, ...)": every bundled skill, named in one phrase.
+_SKILL_NAMES = f"ww skills ({', '.join(SKILLS)})"
 
 
 def _agent_directories(storage: Storage) -> tuple[str, ...]:
@@ -562,7 +557,7 @@ def _choose_agent_directories(
     if _interactive_terminal():
         return set(
             _ask_checklist(
-                f"\nInstall the {_SKILL_NAMES} skills into which agent directories?",
+                f"\nInstall the {_SKILL_NAMES} into which agent directories?",
                 tuple(
                     (directory, "already present" if exists else "", exists)
                     for directory, exists in undecided
@@ -577,7 +572,7 @@ def _choose_agent_directories(
             _progress(
                 progress,
                 55,
-                f"Install the {_SKILL_NAMES} skills into {directory}/skills? [Y/n]: ",
+                f"Install the {_SKILL_NAMES} into {directory}/skills? [Y/n]: ",
             ),
             True,
         )
@@ -757,7 +752,7 @@ def _finish_initialization(
     ]
     if missing:
         actions.append(
-            f"Optionally install the {_SKILL_NAMES} skills with `init --skills` "
+            f"Optionally install the {_SKILL_NAMES} with `init --skills` "
             "for: " + ", ".join(missing) + "."
         )
     # The permission notice matters once: show it the first time the summary

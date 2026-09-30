@@ -56,3 +56,43 @@ def isolated_user_configuration(
         # must not fail the suite.
         os.environ.pop("WW_MACHINE_CONFIG_DIR", None)
         yield
+
+
+# The built-in files every test sees unless it asks for all of them.
+DEFAULT_TEST_BUILTINS = ("catchall.yaml",)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def catchall_only_builtins(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """Compose only the catch-all below the tests' configurations.
+
+    ww's learning workflows are built-ins too; most tests describe a
+    project's own workflows and would otherwise list them everywhere. Tests
+    of the shipped set use the ``shipped_builtins`` fixture.
+    """
+    from ww import builtin_workflows
+
+    directory = tmp_path_factory.mktemp("ww-builtins")
+    shipped = builtin_workflows.BUILTIN_DIRECTORY
+    for name in DEFAULT_TEST_BUILTINS:
+        (directory / name).write_text(
+            shipped.joinpath(name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    with patch.object(builtin_workflows, "BUILTIN_DIRECTORY", directory):
+        yield
+
+
+@pytest.fixture
+def shipped_builtins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every built-in file ww ships, as a project outside the suite sees them."""
+    from importlib.resources import files
+
+    from ww import builtin_workflows
+
+    monkeypatch.setattr(
+        builtin_workflows,
+        "BUILTIN_DIRECTORY",
+        files("ww.assets").joinpath("workflows"),
+    )
