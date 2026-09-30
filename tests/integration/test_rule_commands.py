@@ -133,9 +133,8 @@ def test_the_step_page_names_check_and_rule(tmp_path: Path) -> None:
     rendered = _markdown(service.next("TASK-1"))
 
     assert (
-        "ww checks them when you complete; run `./ww check TASK-1` at any time "
-        "to see the result without completing. Read a full rule with "
-        "`./ww rule TASK-1 <id>`." in rendered
+        "ww checks them when you complete. Preview with `./ww check TASK-1`; "
+        "read a full rule with `./ww rule TASK-1 <id>`." in rendered
     )
 
 
@@ -146,7 +145,7 @@ def test_the_fix_page_offers_check_and_dispute(tmp_path: Path) -> None:
 
     rendered = _markdown(_complete(service))
 
-    assert "Run `./ww check TASK-1` to see the checks' result" in rendered
+    assert "`./ww check TASK-1` previews the checks" in rendered
     assert (
         "./ww dispute TASK-1 --role worker --rule <id> "
         '--reason "<why the check is wrong here>"'

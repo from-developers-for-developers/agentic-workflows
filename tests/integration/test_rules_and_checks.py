@@ -195,7 +195,7 @@ def test_a_violation_rejects_the_completion_and_keeps_the_step(
     assert "### `develop/sh` (hook)" in rendered
     assert 'Include "foo" in every Markdown file you change.' in rendered
     assert "    notes.md" in rendered
-    assert "Your previous artifact is kept as a draft." in rendered
+    assert "your previous artifact is kept as a draft" in rendered
     assert "./ww complete TASK-1" in rendered
     assert "Completion recorded successfully" not in rendered
     assert service.status("TASK-1").fix_required is not None

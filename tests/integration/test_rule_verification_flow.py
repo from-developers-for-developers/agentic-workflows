@@ -172,7 +172,7 @@ def test_completing_holds_the_step_and_opens_a_verification(tmp_path: Path) -> N
     rendered = _markdown(held)
     assert "Completion accepted by `ww` and held" in rendered
     assert "### Verification" in rendered
-    assert "in the `single` runtime this session also did" in rendered
+    assert "This session also did that step's work" in rendered
     assert "Prefer the ecosystem's own tools" in rendered
     assert "--rule-result='<JSON result for develop/1>'" in rendered
     state, snapshot = service.load("TASK-1")
@@ -791,7 +791,7 @@ def test_a_replayed_completion_ends_the_verifiers_assignment(tmp_path: Path) -> 
 
     assert done.control == "handoff_manager"
     assert done.next_role == "manager"
-    assert "This assignment is complete. Stop here" in _markdown(done)
+    assert "This assignment is complete." in _markdown(done)
     state, snapshot = service.load("TASK-1")
     assert state.assignment_item_id is None
     assert state.active_item_id is None
