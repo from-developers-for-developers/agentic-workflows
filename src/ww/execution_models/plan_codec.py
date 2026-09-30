@@ -43,6 +43,7 @@ from ww.validation import (
 from ww.workflow_config import (
     ChoiceDefinition,
     DocumentDefinition,
+    DocumentScope,
     DocumentUpdate,
     ItemFieldUpdate,
     MetadataScope,
@@ -388,7 +389,12 @@ def _documents_from_list(value: Any) -> tuple[DocumentDefinition, ...]:
             expect_string(item.get("name"), "document name"),
             expect_optional_string(item.get("description", ""), "document description")
             or "",
-            _metadata_scope(item.get("scope", "task")),
+            cast(
+                DocumentScope,
+                expect_literal(
+                    item.get("scope", "task"), DocumentScope, "document scope"
+                ),
+            ),
             path=expect_optional_string(item.get("path"), "document path"),
         )
         for item in value

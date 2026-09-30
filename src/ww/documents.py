@@ -2,9 +2,12 @@
 """Durable documents: free-format files workflows read and update across runs.
 
 A document is declared once at the root of ``ww-agentic-workflows.yaml`` and lives in
-the task directory, or under ``.ww`` for the project scope.  Agents edit the
-file in place; ww only resolves its path, checks that a step which promised
-an update left the file behind, and journals who updated it last.
+the task directory, under ``.ww`` for the project scope, or in the user
+configuration directory for the user scope, where every project of the user
+shares it.  Agents edit the file in place; ww only resolves its path, checks
+that a step which promised an update left the file behind, and journals who
+updated it last.  The journal of a user document is the project's: it records
+what this project's runs did to the shared file.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from ww.config_files import user_directory
 from ww.errors import StateError
 from ww.storage import Storage
 from ww.validation import expect_optional_string, expect_string
@@ -69,8 +73,11 @@ class DocumentStore:
 
         A declared ``path`` is relative to the project root, or to the task's
         working directory for a task document when the run has one, so a file
-        kept in the repository lands on the task's branch.
+        kept in the repository lands on the task's branch. A user document
+        lives in the user configuration directory, which is created for it.
         """
+        if document.scope == "user":
+            return self._user_path(document)
         if document.path is None:
             directory = (
                 self.storage.runtime_path / DOCUMENTS_DIRECTORY
@@ -87,6 +94,18 @@ class DocumentStore:
         )
         relative = document.path.replace(TASK_ID_TOKEN, task_id or "")
         return (base / relative).resolve()
+
+    @staticmethod
+    def _user_path(document: DocumentDefinition) -> Path:
+        directory = user_directory().resolve()
+        path = (directory / (document.path or f"{document.name}.md")).resolve()
+        if not path.is_relative_to(directory):
+            raise StateError(
+                f"document {document.name!r} resolves outside the user "
+                f"configuration directory: {path}"
+            )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
     def exists(
         self,
@@ -176,7 +195,7 @@ class DocumentStore:
             shutil.rmtree(documents)
 
     def _journal_path(self, document: DocumentDefinition, task_id: str | None) -> Path:
-        if document.scope == "project":
+        if document.scope != "task":
             return self.storage.runtime_path / JOURNAL_FILE
         return self._task_directory(task_id) / JOURNAL_FILE
 

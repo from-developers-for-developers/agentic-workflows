@@ -28,6 +28,10 @@ from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
+# A document also has the user scope: one file per user, in the user
+# configuration directory, shared by every project.
+DocumentScope = Literal["task", "project", "user"]
+DOCUMENT_SCOPES = ("task", "project", "user")
 # The task ID in a task-scoped document ``path``.
 TASK_ID_TOKEN = "{{ww.task.id}}"
 
@@ -106,11 +110,12 @@ class DocumentDefinition:
 
     name: str
     description: str = ""
-    scope: MetadataScope = "task"
+    scope: DocumentScope = "task"
     # An explicit file, relative to the project (or, for a task document, to
-    # the task's working directory when the run has one).  ``{{ww.task.id}}``
-    # is replaced in a task-scoped path.  Omitted, the document lives under
-    # ``.ww``.
+    # the task's working directory when the run has one; for a user document,
+    # to the user configuration directory).  ``{{ww.task.id}}`` is replaced in
+    # a task-scoped path.  Omitted, the document lives under ``.ww``, or in
+    # the user configuration directory for the user scope.
     path: str | None = None
 
     def __post_init__(self) -> None:
@@ -120,23 +125,28 @@ class DocumentDefinition:
             raise ValueError(f"invalid document name: {self.name!r}")
         if not isinstance(self.description, str):
             raise ValueError("document description must be a string")
-        if self.scope not in {"task", "project"}:
+        if self.scope not in DOCUMENT_SCOPES:
             raise ValueError(f"invalid document scope: {self.scope!r}")
         if self.path is not None:
             if not isinstance(self.path, str) or not self.path.strip():
                 raise ValueError("document path must be a non-empty string")
             parts = self.path.replace("\\", "/").split("/")
             if self.path.startswith(("/", "\\")) or ".." in parts:
+                inside = (
+                    "the user configuration directory"
+                    if self.scope == "user"
+                    else "the project"
+                )
                 raise ValueError(
-                    f"document path must stay inside the project: {self.path!r}"
+                    f"document path must stay inside {inside}: {self.path!r}"
                 )
             if "{task_id}" in self.path:
                 raise ValueError(
                     "{task_id} in a document path was renamed to {{ww.task.id}}"
                 )
-            if self.scope == "project" and TASK_ID_TOKEN in self.path:
+            if self.scope != "task" and TASK_ID_TOKEN in self.path:
                 raise ValueError(
-                    "a project document path cannot use {{ww.task.id}}"
+                    f"a {self.scope} document path cannot use {{{{ww.task.id}}}}"
                 )
 
     def to_dict(self) -> dict[str, str]:

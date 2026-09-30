@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from ww.builtin_workflows import CATCHALL, builtin_workflow
 from ww.cli import build_parser, main
-from ww.core_workflows import CATCHALL_WORKFLOW
 from ww.storage import Storage
 from ww.variables import BRANCH_NAMING_STRATEGY
 
@@ -276,7 +276,7 @@ workflows:
         {"name": "task", "description": "", "modes": ["economy"], "runtime": None},
         {
             "name": "catchall",
-            "description": CATCHALL_WORKFLOW.description,
+            "description": builtin_workflow(CATCHALL).description,
             "modes": [],
             "runtime": "auto",
         },

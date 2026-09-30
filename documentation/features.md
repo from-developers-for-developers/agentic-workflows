@@ -270,8 +270,9 @@ request on the same task replaces one that was never finished, and it is not
 interactive: a follow-up that changes more starts another `catchall` run on the
 same task. Every run ends with the usual workflow summary.
 
-A project replaces the catch-all by defining its own workflow named
-`catchall` in `ww-agentic-workflows.yaml`, or switches it off in
+The catch-all is one of ww's [built-in workflows](specification.md#built-in-workflows),
+shipped as YAML with ww. A project replaces it by defining its own workflow
+named `catchall` in `ww-agentic-workflows.yaml`, or switches it off in
 `../ww-agentic-workflows.json`:
 
 ```json

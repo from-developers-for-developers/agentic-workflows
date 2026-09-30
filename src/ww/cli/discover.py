@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 
+from ww.builtin_workflows import CATCHALL, is_builtin
 from ww.config import load_configuration, load_modes
 from ww.contracts import CALLER_ROLES
-from ww.core_workflows import CATCHALL
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
@@ -98,6 +98,11 @@ CATCHALL_GUIDANCE = (
     "the task it found, or ask the operator, through your choice menu, before "
     "a task ww has never seen is created."
 )
+BUILTIN_GUIDANCE = (
+    "ww ships these to learn about the operator and the project and to set "
+    "ww up; start one like any workflow when the operator asks for what it "
+    "does, or when a ww skill says to."
+)
 # Under ``"on_request"`` an unasked change never reaches the catch-all.
 ON_REQUEST_CATCHALL_PREFIX = (
     "Only when the user has asked for ww; otherwise make the change without "
@@ -151,7 +156,14 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 "delegation_requests": list(delegation_requests(workflow)),
             }
             for workflow in configuration.workflows
-            if workflow is not catchall
+            if workflow is not catchall and not is_builtin(workflow)
+        ],
+        # ww's own workflows, such as its learning ones; the catch-all is
+        # listed apart below.
+        "builtin_workflows": [
+            {"name": workflow.name, "description": workflow.description}
+            for workflow in configuration.workflows
+            if workflow is not catchall and is_builtin(workflow)
         ],
         "catchall": (
             {
@@ -305,7 +317,7 @@ def _markdown(report: dict[str, object]) -> list[str]:
             )
         lines.append(text)
     catchall = report["catchall"]
-    if not workflows and not catchall:
+    if not workflows and not catchall and not report["builtin_workflows"]:
         lines.append("No workflows are configured; ww cannot start a task.")
     if isinstance(catchall, dict):
         lines.extend(
@@ -322,6 +334,14 @@ def _markdown(report: dict[str, object]) -> list[str]:
                 "```",
             ]
         )
+    builtins = _entries(report["builtin_workflows"])
+    if builtins:
+        lines.extend(["", "## ww's own workflows", ""])
+        lines.extend(
+            f"- `{workflow['name']}` — {workflow['description']}"
+            for workflow in builtins
+        )
+        lines.extend(["", BUILTIN_GUIDANCE])
     projects = _entries(report["projects"])
     if projects:
         lines.extend(["", "## Projects", ""])

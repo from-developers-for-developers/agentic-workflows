@@ -15,10 +15,11 @@ from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 from ww.workflow_config import (
     ALL,
+    DOCUMENT_SCOPES,
     DocumentDefinition,
+    DocumentScope,
     HandlerDefinition,
     HookDefinition,
-    MetadataScope,
     ModeDefinition,
     NameFilter,
     ProfileDefinition,
@@ -218,14 +219,16 @@ def _parse_documents(data: Any) -> tuple[DocumentDefinition, ...]:
         mapping = _named_entry(_mapping(item, path), path)
         _only(mapping, {"name", "description", "scope", "path"}, path)
         scope = mapping.get("scope", "task")
-        if scope not in {"task", "project"}:
-            raise ConfigurationError(f"{path}.scope must be 'task' or 'project'")
+        if scope not in DOCUMENT_SCOPES:
+            raise ConfigurationError(
+                f"{path}.scope must be 'task', 'project', or 'user'"
+            )
         try:
             result.append(
                 DocumentDefinition(
                     _name(mapping, path),
                     _description(mapping.get("description"), path),
-                    cast(MetadataScope, scope),
+                    cast(DocumentScope, scope),
                     path=_optional_string(mapping, "path", path),
                 )
             )

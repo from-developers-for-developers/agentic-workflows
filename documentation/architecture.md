@@ -28,11 +28,14 @@ immutable definitions in `../src/ww/workflow_config.py`; another notation can
 produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
 parsers do not acquire different workflow semantics. Validation is also where
-the workflows ww provides to every project, `catchall` in
-`../src/ww/core_workflows.py`, join the configured ones, unless the project
-defines a workflow of the same name or switches it off in
-`../ww-agentic-workflows.json`; every loader passes through it, so no frontend can
-miss them. `lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
+the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
+parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall` among
+them) with the same frontend, once per process, and adds each workflow the
+configuration does not define itself and `../ww-agentic-workflows.json` does not
+switch off, with the documents and modes its file declares; every loader passes
+through validation, so no frontend can miss them. The module imports the
+frontend only when it first reads a file, since the frontend validates through
+it. `lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
 point: `../src/ww/task_references.py` maps what the operator called a task onto
 the task format and the IDs the storage port lists, and the command answers
 with one next step, asking the operator through the agent's choice menu
@@ -40,7 +43,7 @@ with one next step, asking the operator through the agent's choice menu
 the YAML frontend itself, once every workflow is parsed: the heir becomes a
 complete copy with its own settings on top, and global hooks filtered to a
 workflow are extended to its heirs, so validation, the compiler, `plan`, and
-`discover` only ever see complete definitions. Core workflows join only at
+`discover` only ever see complete definitions. Built-in workflows join only at
 validation, after that, so they cannot be inherited. The service receives its
 configuration loader at its composition boundary and does not know which
 notation produced the model. The `WorkflowPlanCompiler` in `../src/ww/plan/`

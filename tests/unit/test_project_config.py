@@ -193,7 +193,7 @@ def test_enabled_takes_three_values_read_through_properties(
     assert config.on_request is on_request
 
 
-def test_core_workflows_are_enabled_unless_switched_off(tmp_path: Path) -> None:
+def test_builtin_workflows_are_enabled_unless_switched_off(tmp_path: Path) -> None:
     assert load_project_config(tmp_path / "absent.json").workflow_enabled("catchall")
     config = load_project_config(
         write(tmp_path, {"workflows": {"catchall": {"enabled": False}}})
@@ -206,13 +206,13 @@ def test_core_workflows_are_enabled_unless_switched_off(tmp_path: Path) -> None:
     ("workflows", "message"),
     [
         ([], "workflows must be an object"),
-        ({"task": {"enabled": False}}, "unknown name.*core workflows: catchall"),
+        ({"task": {"enabled": False}}, "unknown name.*built-in workflows: catchall"),
         ({"catchall": False}, "workflows.catchall must be an object"),
         ({"catchall": {"model": "x"}}, "unknown key"),
         ({"catchall": {"enabled": "no"}}, "enabled must be true or false"),
     ],
 )
-def test_the_core_workflow_switches_are_validated(
+def test_the_builtin_workflow_switches_are_validated(
     tmp_path: Path, workflows: object, message: str
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):

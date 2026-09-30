@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from ww.actions import DefinedAction, Prompt
+from ww.builtin_workflows import CATCHALL, builtin_workflow, with_builtin_workflows
 from ww.config import load_configuration
-from ww.core_workflows import CATCHALL_WORKFLOW, with_core_workflows
 from ww.errors import ConfigurationError
 from ww.plan import compile_workflow_plan
 from ww.project_config import ProjectConfig
@@ -147,19 +147,19 @@ def test_rejects_step_local_before_start_hook() -> None:
         validate_configuration(configuration)
 
 
-def test_the_core_catchall_follows_the_configured_workflows() -> None:
+def test_the_builtin_catchall_follows_the_configured_workflows() -> None:
     validated = validate_configuration(_configuration())
 
     assert [workflow.name for workflow in validated.workflows] == ["task", "catchall"]
-    assert validated.workflows[-1] == CATCHALL_WORKFLOW
+    assert validated.workflows[-1] == builtin_workflow(CATCHALL)
     # With the catch-all, a project that configures no workflow can still
     # record its changes.
     assert validate_configuration(_configuration(workflows=())).workflows == (
-        CATCHALL_WORKFLOW,
+        builtin_workflow(CATCHALL),
     )
 
 
-def test_a_configured_catchall_replaces_the_core_one() -> None:
+def test_a_configured_catchall_replaces_the_builtin_one() -> None:
     own = WorkflowDefinition("catchall", steps=(StepDefinition("record"),))
 
     validated = validate_configuration(_configuration(workflows=(own,)))
@@ -167,11 +167,11 @@ def test_a_configured_catchall_replaces_the_core_one() -> None:
     assert validated.workflows == (own,)
 
 
-def test_a_switched_off_core_workflow_is_not_added() -> None:
+def test_a_switched_off_builtin_workflow_is_not_added() -> None:
     configuration = _configuration()
     config = ProjectConfig(disabled_workflows=frozenset({"catchall"}))
 
-    assert with_core_workflows(configuration, config) == configuration
+    assert with_builtin_workflows(configuration, config) == configuration
 
 
 LOOPING_HANDLER = """handlers:

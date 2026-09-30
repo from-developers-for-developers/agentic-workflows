@@ -66,6 +66,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from ww.builtin_workflows import builtin_workflow_names
 from ww.config_files import (
     SETTINGS_FILE,
     ConfigurationLevel,
@@ -73,7 +74,6 @@ from ww.config_files import (
     project_settings_levels,
     settings_levels,
 )
-from ww.core_workflows import CORE_WORKFLOW_NAMES
 from ww.errors import ConfigurationError
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
 from ww.validation import expect_normalized_name, is_positive_int
@@ -235,7 +235,7 @@ class ProjectConfig:
     runtime: str = DEFAULT_RUNTIME
     # ``false`` silences the notice that the ww checkout is behind its remote.
     update_check: bool = True
-    # Core workflows switched off for this project.
+    # Built-in workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
     # The ww binary this project runs: a command on PATH or a path. ``None``
     # means the project launcher, ``./ww``, which falls back to the standard
@@ -259,7 +259,7 @@ class ProjectConfig:
         return self.enabled == ON_REQUEST
 
     def workflow_enabled(self, name: str) -> bool:
-        """Whether a core workflow is offered in this project."""
+        """Whether a built-in workflow is offered in this project."""
         return name not in self.disabled_workflows
 
     def builtin_settings(self, name: str) -> dict[str, str]:
@@ -560,16 +560,17 @@ def _parse_executable(data: Any, path: str) -> str | None:
 
 
 def _parse_workflows(data: Any, path: str) -> frozenset[str]:
-    """The core workflows switched off, from ``{"<name>": {"enabled": false}}``."""
+    """The built-in workflows switched off, from ``{"<name>": {"enabled": false}}``."""
     if data is None:
         return frozenset()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.workflows must be an object")
-    unknown = set(data) - CORE_WORKFLOW_NAMES
+    known = builtin_workflow_names()
+    unknown = set(data) - known
     if unknown:
         raise ConfigurationError(
             f"{path}.workflows has unknown name(s): {', '.join(sorted(unknown))}; "
-            "core workflows: " + ", ".join(sorted(CORE_WORKFLOW_NAMES))
+            "built-in workflows: " + ", ".join(sorted(known))
         )
     disabled: set[str] = set()
     for name, value in data.items():

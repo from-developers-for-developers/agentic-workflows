@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from ww.builtin_workflows import CATCHALL
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import user_directory
-from ww.core_workflows import CATCHALL
 from ww.errors import ConfigurationError
 from ww.project_config import compose_settings, load_project_config
 

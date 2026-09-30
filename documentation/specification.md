@@ -232,9 +232,10 @@ explicitly asks for it; `discover` says so before its full catalog and reports
 `loop_max_times` is rejected with a message naming it. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
-off the workflows ww provides to every project, currently only `catchall`; each
-entry is an object whose only key, `enabled`, defaults to `true`. A workflow of
-the same name in `ww-agentic-workflows.yaml` replaces the provided one instead.
+off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
+entry is an object whose only key, `enabled`, defaults to `true`, and a name ww
+does not ship is an error listing the built-in ones. A workflow of the same
+name in any `ww-agentic-workflows.yaml` level replaces the built-in one instead.
 `executable` names the ww binary the project runs, a command on `PATH` or a
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
@@ -250,6 +251,28 @@ missing. Missing fields retain their individual defaults:
   "extensions": {}
 }
 ```
+
+### Built-in workflows
+
+ww ships workflows of its own as YAML files inside the package
+(`ww/assets/workflows/*.yaml`), written in this notation. `catchall`, which
+records a change no configured workflow covers, is one of them; ww's learning
+and setup workflows are others. Together they form a built-in level below the
+user level:
+
+- A workflow, document, or mode that any configuration level defines under the
+  same name replaces the built-in one. A project that declares a document of a
+  built-in's name keeps its own, and the built-in workflow uses it.
+- A built-in file may declare, besides `workflows`, the root `documents` and
+  `modes` that belong to them, and nothing else. They come along while any of
+  the file's workflows is enabled; when `workflows` in
+  `ww-agentic-workflows.json` switches all of them off, the file contributes
+  nothing.
+- Built-in workflows follow the configured ones. They are added after the
+  levels are composed, so `extends: false` never removes them.
+- `discover` lists `catchall` under its own heading, as before, and the other
+  built-in workflows under "ww's own workflows" (`builtin_workflows` in JSON),
+  apart from the project's.
 
 Workflows cannot be nested. A profile value is either a name or a mapping with
 `name` and/or `description`:
@@ -271,7 +294,9 @@ workflow's business; ww knows only the name, a description, the scope, and
 which step last updated the file. A task-scoped document lives in the task
 directory, `.ww/tasks/<task-id>/documents/<name>.md`, and persists across every
 run of that task; `scope: project` puts it in `.ww/documents/<name>.md`, shared
-by all tasks:
+by all tasks; `scope: user` puts it in the user configuration directory (see
+[Configuration levels](#configuration-levels)) as `<name>.md`, shared by every
+project of the user, and ww creates that directory when it resolves the path:
 
 ```yaml
 documents:
@@ -280,6 +305,8 @@ documents:
     scope: project
   - issue_notes: Notes kept with the repository, on the task's branch.
     path: documentation/issues/{{ww.task.id}}/notes.md
+  - me: Who the operator is and how they like to work.
+    scope: user
 ```
 
 `path` places a document outside `.ww`. It is relative to the project root and
@@ -287,8 +314,11 @@ must stay inside it; a task-scoped path may use `{{ww.task.id}}` (the former
 single-brace `{task_id}` is rejected). When a run has a
 working directory, such as a Git worktree, a task-scoped `path` resolves inside
 that directory, so a document kept in the repository lands on the task's
-branch; a project-scoped `path` always resolves against the project root. The
-update journal stays under `.ww` in every case.
+branch; a project-scoped `path` always resolves against the project root. A
+user-scoped `path` is relative to the user configuration directory and must stay
+inside it; neither a project nor a user path may use `{{ww.task.id}}`. The
+update journal stays under `.ww` in every case: for a user document it records
+what this project's runs did to the shared file.
 
 A step or handler that maintains a document lists it in `saves` as
 `documents.<name>`, with the text instructing the update. Its worker may create

@@ -8,7 +8,7 @@ from dataclasses import replace
 from types import MappingProxyType
 
 from ww.actions import DefinedAction, Prompt
-from ww.core_workflows import with_core_workflows
+from ww.builtin_workflows import with_builtin_workflows
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.operations import WorkflowHandoff
@@ -58,7 +58,7 @@ def validate_configuration(
     Extension modes are also resolved here because they are part of the
     normalized configuration consumed by catalogs and the compiler.
     """
-    configuration = with_core_workflows(
+    configuration = with_builtin_workflows(
         configuration,
         extensions.config if extensions is not None else ProjectConfig(),
     )

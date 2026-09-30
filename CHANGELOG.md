@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Built-in workflows: ww ships workflows as YAML in `ww/assets/workflows/`, a level below the user level; any level's
+  workflow, document or mode of the same name replaces a built-in one, and `"workflows": {"<name>": {"enabled":
+  false}}` switches off any of them. `catchall` is now one of these files, unchanged in behaviour. `discover` lists
+  the others under "ww's own workflows" (`builtin_workflows` in JSON). Documents take `scope: user`: a file in the user
+  configuration directory (`<name>.md`, or a `path` inside it), shared by every project.
 - `init --force` asks every question again, ignoring `.ww/init-choices.json`, so agents, skills and hooks can be added
   later; it only adds, never removing or duplicating skills, links, hooks, `.gitignore` lines or settings keys. The
   permission notice now names, per agent, the exact file and entries (Claude Code: `permissions.allow` in

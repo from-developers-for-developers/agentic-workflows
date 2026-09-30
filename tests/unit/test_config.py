@@ -1704,7 +1704,7 @@ workflows:
     [
         (
             "documents:\n  - notes: Notes.\n    scope: global\n",
-            "documents\\[0\\].scope must be 'task' or 'project'",
+            "documents\\[0\\].scope must be 'task', 'project', or 'user'",
         ),
         (
             "documents:\n  - notes: Notes.\n  - notes: Again.\n",

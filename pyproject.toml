@@ -49,7 +49,7 @@ ww-agentic-workflows = "ww.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ww"]
-include = ["src/ww/assets/*.md", "src/ww/operator_ui/*.html"]
+include = ["src/ww/assets/*.md", "src/ww/assets/workflows/*.yaml", "src/ww/operator_ui/*.html"]
 force-include = { "ext/ww/git/extension.py" = "ww/_bundled_extensions/ww/git/extension.py" }
 
 [tool.pytest.ini_options]

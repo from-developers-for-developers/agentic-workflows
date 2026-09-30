@@ -10,7 +10,7 @@ import pytest
 
 from tests.workflow_helpers import start_after_init
 from ww.cli import main
-from ww.errors import StateError
+from ww.errors import ConfigurationError, StateError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -198,3 +198,72 @@ def test_reset_forgets_the_task_documents_and_interactions(tmp_path: Path) -> No
     (test_cases, _conventions) = service.documents_listing("TASK-1")
     assert (test_cases["exists"], test_cases["last_update"]) == (False, None)
     assert service.interactions.entries("TASK-1") == ()
+
+
+USER_DOCUMENTS = """documents:
+  - me: Who the operator is.
+    scope: user
+  - notes: Notes kept in a folder of the user directory.
+    scope: user
+    path: notes/project-notes.md
+workflows:
+  - name: learn
+    steps:
+      - name: interview
+        description: "Write {{ww.documents.me}} and {{ww.documents.notes}}."
+        saves:
+          - documents.me: What the operator said about themselves.
+"""
+
+
+def test_a_user_document_lives_in_the_user_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = tmp_path / "user"
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "ww-agentic-workflows.yaml").write_text(USER_DOCUMENTS, encoding="utf-8")
+    service = WorkflowService(Storage(root))
+    start_after_init(service, "learn", "TASK-1", agent="codex")
+    me = (user / "me.md").resolve()
+    notes = (user / "notes/project-notes.md").resolve()
+
+    interview = service.next("TASK-1")
+
+    assert interview.action_text == f"Write {me} and {notes}."
+    # The directories exist for the agent to write into.
+    assert notes.parent.is_dir()
+    listing = service.documents_listing(None)
+    assert [(entry["name"], entry["scope"]) for entry in listing] == [
+        ("me", "user"),
+        ("notes", "user"),
+    ]
+    assert listing[0]["path"] == str(me)
+    me.write_text("# Me\n", encoding="utf-8")
+    service.complete("TASK-1", artifact="interviewed", summary_for_next="Done.")
+    # The project journals what its runs did to the shared file.
+    journal = json.loads((root / ".ww/documents.json").read_text(encoding="utf-8"))
+    assert journal["me"]["step"] == "interview"
+
+
+@pytest.mark.parametrize(
+    ("declaration", "message"),
+    [
+        ("    path: ../me.md\n", "must stay inside the user configuration directory"),
+        ("    path: /tmp/me.md\n", "must stay inside the user configuration directory"),
+        ("    path: me-{{ww.task.id}}.md\n", "user document path cannot use"),
+    ],
+)
+def test_a_user_document_path_stays_in_the_user_directory(
+    tmp_path: Path, declaration: str, message: str
+) -> None:
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        "documents:\n  - me: Me.\n    scope: user\n"
+        + declaration
+        + "workflows:\n  - task:\n    steps:\n      - work: Work.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match=message):
+        WorkflowService(Storage(tmp_path)).documents_listing(None)

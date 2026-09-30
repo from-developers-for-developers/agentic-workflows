@@ -17,8 +17,8 @@ import json
 from dataclasses import dataclass
 
 from ww.agents import choice_mechanism
+from ww.builtin_workflows import CATCHALL
 from ww.config import load_configuration
-from ww.core_workflows import CATCHALL
 from ww.discovery import normalize_agent
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
