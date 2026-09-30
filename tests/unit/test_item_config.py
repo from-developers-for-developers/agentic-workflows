@@ -195,7 +195,7 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
         (
             "      - review: Review.\n        items: ~\n"
             "        steps:\n          - fix: Fix.\n",
-            "cannot combine steps, loop, and items",
+            "cannot combine steps, loop, items, and children",
         ),
         (
             "      - review: Review.\n        items: ~\n        process_item: ~\n",

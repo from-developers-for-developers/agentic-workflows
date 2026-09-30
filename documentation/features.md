@@ -2384,19 +2384,20 @@ further round needs a higher `loop_max_times`.
 
 ## Parent and child tasks
 
-Use `children: ~` to collect a parent task's child descriptions and
-`workflow_per_child` to run one selected workflow for each child. Child tasks
-live under the parent task directory and are intentionally limited to one level
-for now.
+A step with `children` splits a parent task into child tasks, then runs every
+child with one workflow; the parent continues after the last child completes.
+Child tasks live under the parent task directory and are intentionally limited
+to one level for now.
 
 ```yaml
 workflows:
   - name: feature
     steps:
       - name: split-work
-        children: ~
-      - name: implement-children
-        workflow_per_child: implementation
+        description: Split the feature into stories.
+        children:
+          description: One child per story.   # optional splitting guidance
+          workflow: implementation
 
   - name: implementation
     steps:
@@ -2404,7 +2405,7 @@ workflows:
         description: Implement this child task.
 ```
 
-While the collection step is active, record each child:
+While the step collects, record each child:
 
 ```console
 ww-agentic-workflows add-child TASK-123 --description "Implement the API"
@@ -2419,16 +2420,32 @@ step provides `task_id`, omit `--id` and the child obtains its own ID from that
 step; see [children that bind their own IDs](#children-that-bind-their-own-ids).
 `--project <name>` runs the child in a configured project directory.
 
-After the parent reaches its coordinator step, start a chosen child:
+Once the step completes, the parent waits at `split-work/children`, the
+item that runs the children; start a chosen child:
 
 ```console
 ww-agentic-workflows child start TASK-123 TASK-123.1
 ```
 
+A child that has not started yet can still change its text or project:
+
+```console
+ww-agentic-workflows update-child TASK-123 TASK-123.1 --text "Implement the API and its client"
+```
+
+`update-child` works while the child is `pending`, during the collecting step
+and while the parent waits, and refuses a child that has started, naming its
+status. The child's first step records the text it has when it starts as its
+requirements.
+
 The child runs as `TASK-123/TASK-123.1`, with its own hooks, items, and run
 history. The parent waits while a child is active. Completing the final child
-automatically resumes and completes the parent's normal lifecycle; parent
-`after_complete` hooks still run.
+automatically resumes and completes the parent's normal lifecycle; the
+collecting step's completion hooks run after its children, and the parent's
+later steps follow.
+
+The earlier spelling, `children: ~` on one step and `workflow_per_child` on a
+later one, is rejected with this replacement named.
 
 Steps may contain recursive `steps` without a depth limit. The plan remains
 flat: each leaf action uses a hierarchical ID such as `parent/child`, with its

@@ -17,6 +17,7 @@ from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
 from ww.validation import is_positive_int
 from ww.workflow_config import (
+    ChildFlow,
     ChoiceDefinition,
     HandlerDefinition,
     ItemFlow,
@@ -67,13 +68,13 @@ STEP_ONLY_KEYS: set[str] = {
     "depends_on",
     "artifact",
     "children",
-    "workflow_per_child",
     "handler",
     "question",
     "outcomes",
     "rules",
 }
 
+CHILD_FLOW_KEYS = {"description", "workflow"}
 ITEM_FLOW_KEYS = {
     "description",
     "steps",
@@ -182,7 +183,6 @@ _STEP_CONTENT_KEYS = frozenset(
         "loop",
         "items",
         "children",
-        "workflow_per_child",
         "workflow",
         "question",
         "outcomes",
@@ -264,6 +264,11 @@ def _parse_step(
         mapping = {**mapping, "handler": mapping["name"]}
     if "stop" in mapping:
         raise ConfigurationError(f"{path}.stop is obsolete; use break")
+    if "workflow_per_child" in mapping:
+        raise ConfigurationError(
+            f"{path}.workflow_per_child was removed; collect and run the children "
+            "on one step with `children: {workflow: <name>}`"
+        )
     _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"workflow"}, path)
     base = (
         HandlerDefinition(
@@ -390,7 +395,6 @@ def _parse_step(
                 for key in ("process_item", "resolve_item", "report_item")
             ),
             "children" in mapping,
-            "workflow_per_child" in mapping,
             "depends_on" in mapping,
         )
     ):
@@ -404,15 +408,18 @@ def _parse_step(
         raise ConfigurationError(
             f"{path} item operation must be exactly one null marker"
         )
-    if "children" in mapping and mapping["children"] is not None:
-        raise ConfigurationError(f"{path}.children must be null")
-    child_workflow = mapping.get("workflow_per_child")
-    if child_workflow is not None and (
-        not isinstance(child_workflow, str) or not _NAME.fullmatch(child_workflow)
-    ):
-        raise ConfigurationError(f"{path}.workflow_per_child must be a workflow name")
-    if "children" in mapping and child_workflow is not None:
-        raise ConfigurationError(f"{path} cannot collect children and run them")
+    child_flow = (
+        _parse_children(mapping, path)
+        if "children" in mapping
+        else referenced_step.children
+        if referenced_step is not None
+        else None
+    )
+    if "children" in mapping and base.operation is not None:
+        raise ConfigurationError(
+            f"{path} cannot combine children with a workflow transition; "
+            "name the child workflow under children.workflow"
+        )
     artifact = mapping.get("artifact", True)
     if not isinstance(artifact, bool):
         raise ConfigurationError(f"{path}.artifact must be true or false")
@@ -495,9 +502,14 @@ def _parse_step(
         if referenced_step is not None
         else None
     )
-    containers = sum(bool(value) for value in (children, loop_steps, items is not None))
+    containers = sum(
+        bool(value)
+        for value in (children, loop_steps, items is not None, child_flow is not None)
+    )
     if containers > 1:
-        raise ConfigurationError(f"{path} cannot combine steps, loop, and items")
+        raise ConfigurationError(
+            f"{path} cannot combine steps, loop, items, and children"
+        )
     if items is not None and operations:
         raise ConfigurationError(
             f"{path} cannot combine items with an item operation marker"
@@ -544,16 +556,7 @@ def _parse_step(
             if "artifact" in mapping or referenced_step is None
             else referenced_step.artifact
         ),
-        collect_children=(
-            "children" in mapping
-            if "children" in mapping or referenced_step is None
-            else referenced_step.collect_children
-        ),
-        child_workflow=(
-            child_workflow
-            if "workflow_per_child" in mapping or referenced_step is None
-            else referenced_step.child_workflow
-        ),
+        children=child_flow,
         artifact_dependency=(
             depends_on
             if "depends_on" in mapping or referenced_step is None
@@ -561,6 +564,29 @@ def _parse_step(
         ),
         assessment_question=assessment_question,
         assessment_outcomes=outcomes,
+    )
+
+
+def _parse_children(mapping: dict[str, Any], path: str) -> ChildFlow:
+    """Parse ``children``: a mapping with the child ``workflow``."""
+    value = mapping["children"]
+    children_path = f"{path}.children"
+    if value is None:
+        raise ConfigurationError(
+            f"{children_path}: `children: ~` was replaced by a mapping; write "
+            "`children: {workflow: <name>}` and drop the workflow_per_child step"
+        )
+    if not isinstance(value, dict):
+        raise ConfigurationError(
+            f"{children_path} must be a mapping with the child workflow"
+        )
+    _only(value, CHILD_FLOW_KEYS, children_path)
+    workflow = value.get("workflow")
+    if not isinstance(workflow, str) or not _NAME.fullmatch(workflow):
+        raise ConfigurationError(f"{children_path}.workflow must be a workflow name")
+    return ChildFlow(
+        workflow=workflow,
+        description=_optional_string(value, "description", children_path),
     )
 
 

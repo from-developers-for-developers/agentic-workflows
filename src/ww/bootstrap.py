@@ -117,11 +117,11 @@ class BootstrapCoordinator:
             or step.child_steps
             or step.loop_steps
             or step.items is not None
-            or step.child_workflow
+            or step.children is not None
         ):
             raise ConfigurationError(
                 "the bootstrap task_id step cannot have hooks, nested steps, "
-                "or a child workflow"
+                "or children"
             )
         plan = compile_workflow_plan(
             configuration,

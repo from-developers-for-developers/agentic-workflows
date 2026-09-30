@@ -568,9 +568,8 @@ def test_explicit_task_format_requires_an_id(
   - name: parent
     steps:
       - split: Split.
-        children: ~
-      - execute:
-        workflow_per_child: task
+        children:
+          workflow: task
 """,
         encoding="utf-8",
     )

@@ -334,11 +334,10 @@ A step accepts every [handler key](#handlers), plus:
 | `process_item` | `null` | Marks the step as updating processed item data. |
 | `resolve_item` | `null` | Marks the step as resolving an item. |
 | `report_item` | `null` | Marks the step as reporting an item. |
-| `children` | `null` | Marks a child-task collection step. |
-| `workflow_per_child` | workflow name | Runs that workflow for every collected child. |
+| `children` | mapping | Collects child tasks with the step's own action, then runs every child with one workflow; see [Children](#children). |
 | `handler` | handler name | Copies a root handler definition into this step; the step keeps its own name and any explicit step fields override the copied values. A step with no content of its own, `- fetch_requirements: ~`, and a root handler of the same name copies that handler implicitly. |
 
-`steps`, `loop`, and `items` are alternatives. A loop wrapper cannot
+`steps`, `loop`, `items`, and `children` are alternatives. A loop wrapper cannot
 also declare an action or collection; its `loop` entries are ordinary steps and
 may use hooks, profiles, item collection, nested steps, and the other step
 features. A step may have at most one of
@@ -387,9 +386,38 @@ rejected; use `break` for a worker-controlled loop exit.
       items: ~
 ```
 
-A workflow may contain at most one `children` step and one
-`workflow_per_child` step. The latter requires the former and must name an
-existing workflow. Child workflows cannot create further child tasks.
+### Children
+
+A `children` step splits the task into child tasks and runs them. Its own
+action collects them: the agent records each child with `add-child`, and the
+step cannot complete without one. ww then runs every child with
+`children.workflow`, one at a time, and the parent continues after the last
+child completes.
+
+```yaml
+- split-work: Split the feature into stories.
+  children:
+    description: One child per story.   # optional splitting guidance
+    workflow: implementation
+```
+
+| Key | Value | Meaning |
+| --- | --- | --- |
+| `workflow` | workflow name | Required. The workflow every child runs. |
+| `description` | non-empty string | Splitting guidance shown to the collecting agent, as `items.description`. |
+
+The run is compiled as a ww-owned item nested under the collecting step,
+`<step>/children`, so the step's completion hooks run after every child has
+finished. A workflow may contain at most one `children` step; the named
+workflow must exist and cannot itself use `children` (child tasks are one
+level deep). `children` cannot be combined with the step's own `workflow`
+transition. The former `children: ~` marker and the `workflow_per_child` key
+are rejected with the replacement named.
+
+`update-child <task> <child> [--text TEXT] [--project NAME]` changes a child
+that has not started yet (status `pending`): during the collecting step and
+while the parent waits for its children. A started child is refused with its
+status.
 
 Steps also accept the [named-entry shorthand](#named-entry-shorthand). For
 example, `- develop: Implement and test the change.` is equivalent to a step

@@ -84,7 +84,7 @@ class ChildCoordinator:
                 raise StateError("parent workflow is already completed")
             coordinator = child_workflow(snapshot.plan.items[parent.cursor])
             if coordinator is None:
-                raise StateError("parent workflow has no workflow_per_child step")
+                raise StateError("parent workflow is not running its children")
             children = list(self.tasks.read_children(parent_task_id, parent.run_id))
             by_id = {child.id: child for child in children}
             child = by_id.get(child_id)

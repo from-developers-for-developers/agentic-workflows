@@ -18,9 +18,8 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
         hooks:
           after_complete:
             - command:
@@ -47,7 +46,8 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
         artifact="children collected",
         summary_for_next="Done.",
     )
-    assert ready.item_name == "execute"
+    assert ready.item_name == "children"
+    assert not (tmp_path / "parent-finished.txt").exists()
 
     waiting = service.next("TASK1")
     assert waiting.action_kind == "child_workflow"
@@ -81,9 +81,8 @@ def test_child_failure_marks_the_parent_coordinator_failed(tmp_path: Path) -> No
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -112,9 +111,8 @@ def test_resumed_child_completion_recovers_its_failed_parent(tmp_path: Path) -> 
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -157,9 +155,8 @@ def test_recovered_child_leaves_parent_waiting_for_other_children(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -206,9 +203,8 @@ def test_child_start_retries_after_parent_binding_was_persisted(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -247,9 +243,8 @@ def test_child_start_does_not_overwrite_terminal_child_binding(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -302,9 +297,8 @@ def test_child_start_reconciles_published_child_after_parent_relink_failure(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -351,15 +345,13 @@ def test_child_workflows_are_limited_to_one_level(tmp_path: Path) -> None:
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: split-again
-        children: ~
-      - name: execute-again
-        workflow_per_child: grandchild
+        children:
+          workflow: grandchild
   - name: grandchild
     steps:
       - name: work
@@ -378,9 +370,8 @@ def test_children_step_requires_at_least_one_child(tmp_path: Path) -> None:
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -404,9 +395,8 @@ def test_child_ids_default_to_the_standard_generation_strategy(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -427,3 +417,68 @@ def test_child_ids_default_to_the_standard_generation_strategy(
     assert first.id == "TASK-20000101000000"
     assert first.task_id == "TASK1/TASK-20000101000000"
     assert second.id == "TASK-20000101000000-2"
+
+
+_PARENT_AND_CHILD = """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: child
+  - name: child
+    steps:
+      - name: work
+        description: Do child work.
+"""
+
+
+def test_update_child_edits_a_pending_child_until_it_starts(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        _PARENT_AND_CHILD, encoding="utf-8"
+    )
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(service, "parent", "TASK1", agent="codex")
+    service.next("TASK1")
+    service.add_child("TASK1", "1", "First draft")
+    service.add_child("TASK1", "2", "Second child")
+
+    # While the children step collects.
+    updated = service.update_child("TASK1", "1", text="First, refined")
+    assert updated.description == "First, refined"
+    service.complete("TASK1", artifact="split", summary_for_next="Done.")
+
+    # While the parent waits at the run leaf.
+    waiting = service.next("TASK1")
+    assert "./ww update-child TASK1 1" in (waiting.action_text or "")
+    service.update_child("TASK1", "1", text="First, final")
+    started = service.start_child("TASK1", "1")
+    assert started.task_id == "TASK1/1"
+    # The refined text became the child's recorded init requirements.
+    assert service.next("TASK1/1").task_requirements == (
+        "Requirements for child task 1: First, final"
+    )
+
+    with pytest.raises(StateError, match="child '1' is in_progress; only a pending"):
+        service.update_child("TASK1", "1", text="Too late")
+    assert service.update_child("TASK1", "2", text="Still pending").status == (
+        "pending"
+    )
+
+
+def test_update_child_rejects_bad_requests(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        _PARENT_AND_CHILD, encoding="utf-8"
+    )
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(service, "parent", "TASK1", agent="codex")
+    service.next("TASK1")
+    service.add_child("TASK1", "1", "First child")
+
+    with pytest.raises(StateError, match="needs --text, --project, or both"):
+        service.update_child("TASK1", "1")
+    with pytest.raises(StateError, match="child text must be non-empty"):
+        service.update_child("TASK1", "1", text="  ")
+    with pytest.raises(StateError, match="child 'nope' was not found"):
+        service.update_child("TASK1", "nope", text="Text")
+    with pytest.raises(StateError, match="unknown project"):
+        service.update_child("TASK1", "1", project="nowhere")

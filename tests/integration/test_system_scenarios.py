@@ -93,9 +93,8 @@ workflows:
   - name: parent
     steps:
       - split: Split the work into child tasks.
-        children: ~
-      - execute:
-        workflow_per_child: child
+        children:
+          workflow: child
 
   - name: child
     steps:

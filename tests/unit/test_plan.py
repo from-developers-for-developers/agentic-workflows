@@ -1119,9 +1119,8 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
   - name: parent
     steps:
       - name: collect
-        children: ~
-      - name: dispatch
-        workflow_per_child: target
+        children:
+          workflow: target
 """,
         encoding="utf-8",
     )
@@ -1136,7 +1135,9 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
     assert transition.operation.target == "target"
 
     parent = compile_workflow_plan(configuration, tmp_path, "parent", "codex")
-    dispatch = next(item for item in parent.items if item.name == "dispatch")
+    dispatch = next(item for item in parent.items if item.name == "children")
+    assert dispatch.step == "collect/children"
+    assert dispatch.parent == "collect"
     assert dispatch.kind == "child_workflow"
     assert (dispatch.owner, dispatch.execution) == ("ww", "agent_instruction")
     assert isinstance(dispatch.operation, ChildWorkflowRun)

@@ -298,9 +298,8 @@ def test_parent_follows_child_handoff_until_successor_finishes(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: choose
+        children:
+          workflow: choose
   - name: choose
     steps:
       - name: select
@@ -457,9 +456,8 @@ def test_parent_status_repairs_a_missed_terminal_child_notification(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -500,9 +498,8 @@ def test_child_recover_repeats_a_missed_terminal_parent_notification(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -537,9 +534,8 @@ def test_parent_refresh_ignores_a_child_run_from_an_older_parent_execution(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - name: work
@@ -581,9 +577,8 @@ def test_parent_refresh_does_not_retry_a_hook_that_just_failed(
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
         hooks:
           after_complete:
             - command:
@@ -627,7 +622,8 @@ def test_numeric_task_generation_continues_past_fifty(tmp_path: Path) -> None:
   - name: parent
     steps:
       - name: split
-        children: ~
+        children:
+          workflow: task
 """,
     )
 

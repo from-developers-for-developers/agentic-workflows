@@ -63,6 +63,7 @@ from .commands import (
     interact_commands,
     next_command,
     recovery_commands,
+    update_child_command,
 )
 from .conversions import rule_conversions, run_reference
 from .models import (
@@ -667,7 +668,9 @@ class InstructionBuilder:
         elif pending is not None:
             text = (
                 f"Start pending child `{pending.id}` with:\n\n```console\n"
-                f"{child_start_command(state.task_id, pending.id)}\n```"
+                f"{child_start_command(state.task_id, pending.id)}\n```\n\n"
+                "Until a child starts, its text or project can still change "
+                f"with `{update_child_command(state.task_id, pending.id)}`."
             )
         else:
             text = "No child task is currently available to start."

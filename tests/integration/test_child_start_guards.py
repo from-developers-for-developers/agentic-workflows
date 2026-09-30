@@ -17,15 +17,14 @@ PARENT = "P"
 
 
 def _parent(tmp_path: Path, *children: str) -> WorkflowService:
-    """A parent waiting at its workflow_per_child step with pending children."""
+    """A parent waiting for its pending children to run."""
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:
   - name: parent
     steps:
       - name: split
-        children: ~
-      - name: execute
-        workflow_per_child: child
+        children:
+          workflow: child
   - name: child
     steps:
       - work: Do child work.
@@ -49,7 +48,7 @@ def _parent(tmp_path: Path, *children: str) -> WorkflowService:
 def test_start_child_requires_the_coordinator_step(tmp_path: Path) -> None:
     service = _parent(tmp_path)
 
-    with pytest.raises(StateError, match="parent workflow has no workflow_per_child"):
+    with pytest.raises(StateError, match="parent workflow is not running its children"):
         service.start_child(PARENT, "c1")
 
 

@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- `children` is one mapping on the collecting step, `children: {workflow: <name>}`; `children: ~` and
+  `workflow_per_child` are removed, and `update-child` edits a child before it starts. `f432434`
 - Templates can read the task's branch: `{{ww.git.branch}}`, `{{ww.git.base_branch}}` and `{{ww.git.branch_strategy}}`;
   a step reading one before it exists stops for the operator (`value_unavailable`). `fceddfa`
 - Worker handoffs are written by ww: a delegated worker's last page ends with a "Handoff to manager" block to return
