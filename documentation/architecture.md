@@ -817,7 +817,10 @@ as the profile: workflow, enclosing steps, the step. For a `role: manager`
 action the compiler clears profile and execution-selection hints, so
 orchestration cannot accidentally treat inherited or step-level agent, model,
 or reasoning values as a delegation request. The role is persisted with the
-compiled item to keep resumed instructions equally local.
+compiled item to keep resumed instructions equally local. `subagents` follows
+the same chain and is a separate question: not who performs a step, but
+whether its performer may spawn helpers of its own; the compiler keeps it on a
+manager's step when it clears the worker shape, and the page states it.
 
 Ownership of an assignment is enforced, not only described. The manager's
 `next` mints a token for each assignment it opens and stores it beside the

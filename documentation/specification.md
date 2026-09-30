@@ -170,6 +170,7 @@ Each item in `workflows` accepts:
 | `reasoning` | non-empty string | no | Default reasoning guidance. |
 | `profile` | profile value | no | Default agent profile. |
 | `role` | `manager` or `worker` | no | The role every step inherits unless it or an enclosing step sets its own; see the step key. |
+| `subagents` | boolean | no | `false`: no step's performer spawns subagents, unless a step sets `true`; see the step key. |
 | `handoff` | boolean | no | If `true`, the workflow must end with its single workflow transition; a task hands off at most once, and a transition never returns. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww-agentic-workflows.json`, and the flag outranks it. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
@@ -283,7 +284,8 @@ A step accepts every [handler key](#handlers), plus:
 | `hooks` | hooks mapping | Hooks local to this step. |
 | `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
-| `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. `subagents` is no longer accepted; write `role: manager` for what `subagents: false` meant. |
+| `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
+| `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
 | `interactive` | boolean | The step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. Defaults to `false`. |
 | `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `ui` | boolean | The operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends. Valid on one per-item stage per `items` step and requires `interactive: true`. Defaults to `false`. |
@@ -452,6 +454,7 @@ The mapping form accepts these keys, all optional:
 | `reasoning` | non-empty string | Reasoning for the per-item stages. |
 | `profile` | profile value | Profile for the per-item stages. |
 | `role` | `manager` or `worker` | `manager` performs the per-item stages in the managing session. |
+| `subagents` | boolean | `false`: the stages' performers spawn no subagents. |
 
 ```yaml
 - review: Review the pull request.
@@ -472,7 +475,7 @@ The mapping form accepts these keys, all optional:
 
 Worker settings cascade from the `items` step, to `items`, to each stage, and
 the most specific value wins. The step's own `agent`, `model`, `reasoning`,
-`profile`, and `role` apply to collection and are inherited by the stages;
+`profile`, `role`, and `subagents` apply to collection and are inherited by the stages;
 the same keys under `items` apply only to the stages. The cascade reaches each
 configured stage directly; stages nested deeper inherit like ordinary nested
 steps.

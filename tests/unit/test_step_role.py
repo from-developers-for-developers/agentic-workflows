@@ -10,7 +10,7 @@ import pytest
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.errors import ConfigurationError
-from ww.plan import WorkflowPlanCompiler
+from ww.plan import PlanItem, WorkflowPlanCompiler
 
 
 def _roles(tmp_path: Path, workflows: str) -> dict[str, str]:
@@ -146,3 +146,77 @@ def test_lint_notes_worker_settings_on_a_managers_step(tmp_path: Path) -> None:
         "effect on it" in notice
         for notice in notices
     )
+
+
+def _items(tmp_path: Path, workflows: str) -> dict[str, PlanItem]:
+    path = tmp_path / "ww-agentic-workflows.yaml"
+    path.write_text(workflows, encoding="utf-8")
+    plan = WorkflowPlanCompiler(
+        load_configuration(path), tmp_path, "codex", "TASK-1"
+    ).compile("task")
+    return {item.name: item for item in plan.items if item.owner == "agent"}
+
+
+def test_subagents_false_reaches_every_step_of_a_group_and_keeps_their_models(
+    tmp_path: Path,
+) -> None:
+    items = _items(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: develop
+        model: opus
+        subagents: false
+        steps:
+          - research: Research.
+          - implement: Implement.
+            model: sonnet
+          - review: Review.
+            subagents: true
+      - document: Document.
+""",
+    )
+
+    assert not items["research"].subagents
+    assert not items["implement"].subagents
+    assert items["review"].subagents
+    assert items["document"].subagents
+    # Delegation is untouched: the steps stay workers, with their own models.
+    assert items["research"].role == items["implement"].role == "worker"
+    assert items["research"].requested_model == "opus"
+    assert items["implement"].requested_model == "sonnet"
+
+
+def test_a_managers_step_keeps_its_subagents_rule(tmp_path: Path) -> None:
+    items = _items(
+        tmp_path,
+        """workflows:
+  - name: task
+    subagents: false
+    steps:
+      - review: Review.
+        role: manager
+""",
+    )
+
+    assert items["review"].role == "manager"
+    assert not items["review"].subagents
+
+
+def test_items_subagents_reaches_the_stages(tmp_path: Path) -> None:
+    items = _items(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - triage: Triage.
+        items:
+          subagents: false
+          steps:
+            - analyze: Analyze.
+""",
+    )
+
+    assert items["triage"].subagents
+    assert not items["analyze"].subagents

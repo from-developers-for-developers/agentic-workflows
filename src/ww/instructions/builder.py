@@ -89,7 +89,7 @@ from .policy import (
     _result_saved,
     operator_reason,
 )
-from .text import _stage, action_text
+from .text import NO_SUBAGENTS, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
 
@@ -206,6 +206,7 @@ class InstructionBuilder:
             requested_reasoning=shape.requested_reasoning if shape else None,
             requested_profile=shape.profile if shape else None,
             role=shape.role if shape else "worker",
+            subagents=shape.subagents if shape else True,
             assignment_token=worker_token(state),
             profile_instruction=(
                 built.profile_instruction
@@ -1179,6 +1180,8 @@ def _guidance(
 ) -> tuple[str, ...]:
     """Runtime guidance plus notes about worker selection."""
     guidance = runtime_instruction(state.workflow_runtime, next_role)
+    if item is not None and not item.subagents:
+        guidance = (*guidance, NO_SUBAGENTS)
     if state.workflow_runtime != "auto" or item is None:
         return guidance
     requested = (item.requested_agent, item.requested_model, item.requested_reasoning)

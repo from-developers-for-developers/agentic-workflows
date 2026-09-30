@@ -45,6 +45,7 @@ from .values import (
     _required_list,
     _role,
     _string_list,
+    _subagents,
     _unique,
 )
 
@@ -243,6 +244,7 @@ _OVERRIDES = {
     "reasoning": ("reasoning",),
     "profile": ("profile", "profile_description"),
     "role": ("role",),
+    "subagents": ("subagents",),
     "handoff": ("handoff",),
     "runtime": ("runtime",),
     "restartable": ("restartable",),
@@ -273,6 +275,7 @@ def _parse_workflow(
         "handoff",
         "profile",
         "role",
+        "subagents",
         "runtime",
         "restartable",
         "inherit",
@@ -340,6 +343,7 @@ def _parse_workflow(
         reasoning=_optional_string(mapping, "reasoning", f"workflow {name!r}"),
         **_profile(mapping, f"workflow {name!r}"),
         role=_role(mapping, f"workflow {name!r}"),
+        subagents=_subagents(mapping, f"workflow {name!r}"),
         handoff=handoff,
         runtime=runtime,
         restartable=restartable,

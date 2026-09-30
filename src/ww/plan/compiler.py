@@ -86,6 +86,8 @@ class ExecutionHints:
     workdir: Workdir = "task"
     # Who performs the steps below: inherited like the profile.
     role: StepRole = "worker"
+    # Whether their performer may spawn subagents, inherited the same way.
+    subagents: bool = True
 
     @classmethod
     def builtin(cls, agent: str, settings: dict[str, str]) -> ExecutionHints:
@@ -112,11 +114,21 @@ class ExecutionHints:
                 profile_description = value.profile_description
         if isinstance(value, StepDefinition) and value.workdir is not None:
             workdir = value.workdir
-        role = self.role
-        if isinstance(value, StepDefinition | WorkflowDefinition) and value.role:
-            role = value.role
+        role, subagents = self.role, self.subagents
+        if isinstance(value, StepDefinition | WorkflowDefinition):
+            if value.role:
+                role = value.role
+            if value.subagents is not None:
+                subagents = value.subagents
         return ExecutionHints(
-            agent, model, reasoning, profile, profile_description, workdir, role
+            agent,
+            model,
+            reasoning,
+            profile,
+            profile_description,
+            workdir,
+            role,
+            subagents,
         )
 
 
@@ -744,8 +756,9 @@ class WorkflowPlanCompiler:
         local = phase == "step" and role == "manager"
         if local:
             # An explicitly local step, or a conversation with the operator
-            # that only the talking session can hold, has no worker shape.
-            hints = ExecutionHints(self.agent)
+            # that only the talking session can hold, has no worker shape;
+            # whether its performer may spawn subagents still holds.
+            hints = ExecutionHints(self.agent, subagents=hints.subagents)
             profile, profile_instruction, profile_path = (None, None, None)
         operation = operation_override or handler.operation
         action: DefinedAction | None = None
@@ -886,6 +899,7 @@ class WorkflowPlanCompiler:
                 requested_model=hints.model if not local else None,
                 requested_reasoning=hints.reasoning if not local else None,
                 role=role,
+                subagents=hints.subagents,
                 interactive=step.interactive and phase == "step",
                 choices=step.choices if phase == "step" else (),
                 ui=step.ui and phase == "step",

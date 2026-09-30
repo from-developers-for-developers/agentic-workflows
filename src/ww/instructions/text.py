@@ -15,6 +15,12 @@ from .commands import (
     update_item_command,
 )
 
+NO_SUBAGENTS = (
+    "This step allows no subagents (`subagents: false`): whoever performs it "
+    "does all of its work alone and spawns no subagent for anything, not for "
+    "research, tests, or review."
+)
+
 
 def _stage(item: PlanItem | None) -> str | None:
     if item is None:

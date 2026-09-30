@@ -1136,22 +1136,40 @@ def test_parses_step_role(tmp_path: Path) -> None:
         )
 
 
-def test_subagents_is_refused_with_a_pointer_to_role(tmp_path: Path) -> None:
-    for step in ("subagents: false", "items:\n          subagents: false"):
-        with pytest.raises(
-            ConfigurationError, match="subagents is no longer supported: write role"
-        ):
-            load_configuration(
-                _write(
-                    tmp_path / "ww-agentic-workflows.yaml",
-                    f"""workflows:
+def test_subagents_is_a_boolean_that_steps_items_and_workflows_inherit(
+    tmp_path: Path,
+) -> None:
+    configuration = load_configuration(
+        _write(
+            tmp_path / "ww-agentic-workflows.yaml",
+            """workflows:
+  - name: task
+    subagents: false
+    steps:
+      - name: local-work
+        subagents: true
+      - name: inherits
+""",
+        )
+    )
+
+    workflow = configuration.workflows[0]
+    assert workflow.subagents is False
+    assert workflow.steps[0].subagents is True
+    assert workflow.steps[1].subagents is None
+
+    with pytest.raises(ConfigurationError, match="subagents must be true or false"):
+        load_configuration(
+            _write(
+                tmp_path / "invalid.yaml",
+                """workflows:
   - name: task
     steps:
       - name: local-work
-        {step}
+        subagents: never
 """,
-                )
             )
+        )
 
 
 def test_an_interactive_step_cannot_be_a_workers(tmp_path: Path) -> None:

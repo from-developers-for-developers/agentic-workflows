@@ -171,6 +171,8 @@ class PlanItem:
     requested_reasoning: str | None = None
     # Who performs the item: the manager in its own session, or a worker.
     role: StepRole = "worker"
+    # ``False``: its performer spawns no subagents for anything.
+    subagents: bool = True
     # A conversation with the operator; performed by the session that can
     # talk to them, so ``role`` is ``manager`` as well.
     interactive: bool = False
@@ -426,6 +428,7 @@ class PlanItem:
             "requested_model": self.requested_model,
             "requested_reasoning": self.requested_reasoning,
             "role": self.role,
+            "subagents": self.subagents,
             "interactive": self.interactive,
             "choices": [choice.to_dict() for choice in self.choices],
             "ui": self.ui,

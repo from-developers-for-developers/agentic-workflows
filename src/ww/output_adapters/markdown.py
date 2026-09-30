@@ -32,6 +32,7 @@ from ww.instructions.commands import (
 )
 from ww.instructions.models import FixFailure, Proposal, VerificationPage
 from ww.instructions.policy import Audience, audience
+from ww.instructions.text import NO_SUBAGENTS
 from ww.output_adapters.base import OutputAdapter
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
 from ww.results import NO_WORKFLOWS_ACTION, InitializationResult, ResetResult
@@ -667,6 +668,8 @@ def _work(lines: Lines, instruction: Instruction) -> None:
             ]
         )
     lines.append(instruction.action_text)
+    if not instruction.subagents and instruction.item_status == "in_progress":
+        lines.extend(["", f"> **No subagents.** {NO_SUBAGENTS}"])
     _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
 

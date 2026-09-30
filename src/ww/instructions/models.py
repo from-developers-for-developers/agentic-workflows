@@ -468,6 +468,8 @@ class Instruction:
     requested_reasoning: str | None = None
     requested_profile: str | None = None
     role: StepRole = "worker"
+    # ``False``: whoever performs the item spawns no subagents.
+    subagents: bool = True
     selected_agent: str | None = None
     selected_model: str | None = None
     selected_reasoning: str | None = None
@@ -603,6 +605,7 @@ class Instruction:
             "requested_reasoning": self.requested_reasoning,
             "requested_profile": self.requested_profile,
             "role": self.role,
+            "subagents": self.subagents,
             "selected_agent": self.selected_agent,
             "selected_model": self.selected_model,
             "selected_reasoning": self.selected_reasoning,

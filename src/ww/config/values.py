@@ -110,14 +110,18 @@ def _role(mapping: dict[str, Any], path: str) -> StepRole | None:
     return cast(StepRole, value)
 
 
-def _reject_subagents(mapping: dict[str, Any], path: str) -> None:
-    """``subagents`` was replaced by ``role``; say how to write it now."""
-    if "subagents" in mapping:
-        raise ConfigurationError(
-            f"{path}.subagents is no longer supported: write role: manager for a "
-            "step the manager performs itself (subagents: false), or leave role "
-            "out for a delegated step"
-        )
+def _subagents(mapping: dict[str, Any], path: str) -> bool | None:
+    """The declared ``subagents``, or ``None`` when the step inherits it.
+
+    ``false`` means whoever performs the step, manager or worker, spawns no
+    subagents for anything; who performs it is ``role``'s business.
+    """
+    if "subagents" not in mapping:
+        return None
+    value = mapping["subagents"]
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{path}.subagents must be true or false")
+    return value
 
 
 def _optional_name(mapping: dict[str, Any], key: str, path: str) -> str | None:

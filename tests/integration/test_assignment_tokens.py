@@ -192,3 +192,41 @@ def test_the_command_line_carries_the_token(
 
     assert main([*base, "--assignment", str(token), *body]) == 0
     assert "Completion recorded successfully" in capsys.readouterr().out
+
+
+def test_the_page_tells_the_performer_to_spawn_no_subagents(tmp_path: Path) -> None:
+    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        """workflows:
+  - name: task
+    steps:
+      - develop: Develop it.
+        subagents: false
+      - test: Test it.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    service.start(
+        "task",
+        TASK,
+        agent="claudecode",
+        workflow_runtime="auto",
+        init_artifact="Do it.",
+        caller_role="manager",
+    )
+    token = _dispatch(service).assignment_token
+    md = MarkdownOutputAdapter()
+
+    develop = service.instruction(TASK, caller_role="worker", assignment=token)
+    assert develop.subagents is False
+    assert "**No subagents.**" in md.render_instruction(develop)
+    assert "spawns no subagent for anything" in md.render_instruction(develop)
+
+    _complete(service, token)
+    test = service.instruction(
+        TASK,
+        caller_role="worker",
+        assignment=_dispatch(service).assignment_token,
+    )
+    assert test.subagents is True
+    assert "**No subagents.**" not in md.render_instruction(test)

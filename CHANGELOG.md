@@ -13,10 +13,12 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 - Owned assignments: in the `auto` runtime each assignment carries a token that the worker's commands must present
   (`--assignment`), so a worker whose assignment ended can no longer act; `next --reassign` issues a new one. `role:
-  manager | worker` replaces `subagents` (refused, write `role: manager`) and is inherited like `profile`. ww asks for
-  confirmation only at a terminal and otherwise names `--yes`, which the pages now print on recovery commands and the
-  audit record notes. `ww/git` gains `on_signing_failure: unsigned` to commit unsigned when signing fails.
-  Incompatible: plan schema 15 and execution state 10, so finish or reset open tasks before updating. `25c130a`
+  manager | worker` says who performs a step and is inherited like `profile`; `subagents: false` now means the
+  performer spawns no subagents for anything, so YAML that used it to keep a step with the manager must say `role:
+  manager`. ww asks for confirmation only at a terminal and otherwise names `--yes`, which the pages now print on
+  recovery commands and the audit record notes. `ww/git` gains `on_signing_failure: unsigned` to commit unsigned when
+  signing fails. Incompatible: plan schema 15 and execution state 10, so finish or reset open tasks before updating.
+  `25c130a`
 - Writing rules: a new bundled skill, `ww-rule`, which `init` offers once, turns the operator's words into rules
   (atomic rules, amendments, globs with their match counts, placement by real workflow and step names, one
   confirmation) and writes them only through new validated commands: `ww rules add <group> --text`, `rules add

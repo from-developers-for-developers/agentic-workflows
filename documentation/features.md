@@ -736,8 +736,28 @@ workflows:
             role: worker
 ```
 
-`subagents` is no longer accepted: `lint` refuses it and says to write
-`role: manager` for what `subagents: false` meant.
+### Steps without subagents
+
+`subagents: false` says that whoever performs a step does all of its work
+alone: no subagent for research, tests, review, or anything else. It is
+independent of `role` and of the model: a delegated step with its own model can
+forbid helpers, and so can a step the manager performs. The step's page states
+the rule in its work instruction. It is inherited like `profile`, so on a group
+it covers every step inside, and a nested step may set `subagents: true` again.
+
+```yaml
+- name: develop
+  model: opus
+  subagents: false        # nobody working on develop's steps spawns subagents
+  steps:
+    - research: Find what the change touches.
+    - implement: Implement it.
+      model: sonnet       # its own model, still no subagents
+```
+
+Before `role` existed, `subagents: false` meant that the manager performed
+the step. That meaning is `role: manager` now; YAML that used `subagents:
+false` for it must say `role: manager` instead.
 
 ## Manager and worker assignments
 

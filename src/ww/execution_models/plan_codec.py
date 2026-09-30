@@ -154,6 +154,7 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             StepRole,
             expect_literal(raw.get("role", "worker"), StepRole, f"{item_path}.role"),
         ),
+        subagents=expect_bool(raw.get("subagents", True), f"{item_path}.subagents"),
         interactive=expect_bool(
             raw.get("interactive", False), f"{item_path}.interactive"
         ),
