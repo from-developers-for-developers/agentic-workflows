@@ -96,6 +96,14 @@ from .policy import (
 from .text import NO_SUBAGENTS, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
+# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
+ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
+
+
+def _no_child_values(
+    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+) -> dict[str, str]:
+    return {}
 
 
 @dataclass(frozen=True)
@@ -137,8 +145,10 @@ class InstructionBuilder:
         interactions: InteractionLog,
         rule_store: RuleStore | None = None,
         rule_approval: Callable[[], RuleApproval] | None = None,
+        child_values: ChildValues = _no_child_values,
     ) -> None:
         self.tasks = tasks
+        self.child_values = child_values
         self.documents = documents
         self.interactions = interactions
         # Read for display only: the checks a verifier may extend, and the
@@ -272,6 +282,7 @@ class InstructionBuilder:
                 handoff=handoff.rstrip() if handoff else None,
                 recommended_workflow=plan.recommended_next_workflow,
                 rule_conversions=self._conversions(state, plan),
+                parent_task_id=state.parent_task_id,
             )
         if state.status == "awaiting_input":
             return self._awaiting_input(state, plan)
@@ -282,6 +293,7 @@ class InstructionBuilder:
                 _base(state, None, status="completed"),
                 recommended_workflow=plan.recommended_next_workflow,
                 rule_conversions=self._conversions(state, plan),
+                parent_task_id=state.parent_task_id,
             )
         item = plan.items[state.cursor]
         record = state.item_executions[state.cursor]
@@ -440,6 +452,25 @@ class InstructionBuilder:
             "item.text": work.item,
             **{f"field.{name}": value for name, value in work.fields},
         }
+
+    def _current_child(self, state: ExecutionState, item: PlanItem) -> str:
+        """Name a per-child stage's child, and how to refine it before it runs."""
+        if item.child_number is None:
+            return ""
+        children = self.tasks.read_children(state.task_id, state.run_id)
+        if item.child_number > len(children):
+            return ""
+        child = children[item.child_number - 1]
+        text = (
+            f"\n\nCurrent child: `{child.id}` ({child.status}), "
+            f"{item.child_number} of {len(children)}."
+        )
+        if child.status == "pending":
+            text += (
+                " Until it starts, change its text, project, or fields with "
+                f"`{update_child_command(state.task_id, child.id)}`."
+            )
+        return text
 
     def _document_tasks(
         self, plan: WorkflowPlan, item: PlanItem, state: ExecutionState
@@ -648,15 +679,23 @@ class InstructionBuilder:
                 continuation_command=next_command(state.task_id),
                 is_child_workflow_control=True,
             )
+        # A per-child coordinator runs its own child only.
+        candidates = (
+            children[item.child_number - 1 : item.child_number]
+            if item.child_number is not None
+            else children
+        )
         active = next(
             (
                 child
-                for child in children
+                for child in candidates
                 if child.status in {"in_progress", "starting"}
             ),
             None,
         )
-        pending = next((child for child in children if child.status == "pending"), None)
+        pending = next(
+            (child for child in candidates if child.status == "pending"), None
+        )
         if active is not None and active.status == "starting":
             text = (
                 f"Child `{active.id}` is obtaining its task ID. Continue it "
@@ -748,10 +787,13 @@ class InstructionBuilder:
 
         loop_break_command = None
         if item.loop_break is not None:
-            loop_entry = plan.items[enclosing_loop_entry_index(plan, state.cursor)]
-            loop_break_command = completion(
-                item.artifact or loop_entry.artifact, "break"
+            # A break ending per-child stages has no loop wrapper to save.
+            wrapper_artifact = (
+                False
+                if item.breaks_children
+                else plan.items[enclosing_loop_entry_index(plan, state.cursor)].artifact
             )
+            loop_break_command = completion(item.artifact or wrapper_artifact, "break")
         workspace, values = item_workspace_values(
             self.root,
             item.workdir,
@@ -762,9 +804,14 @@ class InstructionBuilder:
             _base(state, item, item_status=record.status),
             action_text=action_text(
                 item,
-                {**values, **self._item_values(state, item)},
+                {
+                    **values,
+                    **self._item_values(state, item),
+                    **self.child_values(state, plan, item),
+                },
                 state.task_id,
-            ),
+            )
+            + self._current_child(state, item),
             required_values=required,
             required_metadata=item.save_metadata,
             automatic_context=context,
@@ -774,6 +821,7 @@ class InstructionBuilder:
             continuation_command=completion(item.artifact),
             loop_break_prompt=item.loop_break,
             loop_break_command=loop_break_command,
+            breaks_children=item.breaks_children,
             loop_continue_prompt=item.loop_continue,
             loop_continue_command=(
                 completion(item.artifact, "continue")

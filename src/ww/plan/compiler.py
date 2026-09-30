@@ -31,7 +31,14 @@ from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies
 from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
-from ww.variables import CORE_VARIABLE_NAMES, compile_variable_values
+from ww.variables import (
+    CHILD_FIELD_PREFIX,
+    CHILD_VALUE_NAMES,
+    CHILD_VALUE_PREFIX,
+    CORE_VARIABLE_NAMES,
+    child_value_name,
+    compile_variable_values,
+)
 from ww.workflow_config import (
     INIT_STEP_NAME,
     HandlerDefinition,
@@ -254,6 +261,68 @@ class WorkflowPlanCompiler:
         if self.extensions is None:
             return ()
         return self.extensions.namespace_variables()
+
+    @cached_property
+    def _child_variables(self) -> tuple[str, ...]:
+        """The exact ``{{ww.child.*}}`` names a per-child stage may read.
+
+        ``{{ww.child.field.<name>}}`` is open-ended and admitted by prefix.
+        Every extension namespace value is also offered for the child, as
+        ``{{ww.child.<namespace>.<name>}}``.
+        """
+        return (
+            *CHILD_VALUE_NAMES,
+            *(child_value_name(name) for name in self._namespace_variables),
+        )
+
+    def _check_child_values(
+        self,
+        handler: HandlerDefinition,
+        names: tuple[str, ...],
+        step_path: str,
+        annotations: ItemAnnotations,
+    ) -> None:
+        """Only a per-child stage reads ``{{ww.child.*}}``, and only real names.
+
+        The child's extension values (``{{ww.child.git.branch}}``) exist once
+        its task does, so a stage before the one that runs the child reads
+        only its record: ``id``, ``text``, ``project``, and ``field.*``.
+        """
+        wanted = [name for name in names if name.startswith(CHILD_VALUE_PREFIX)]
+        if not wanted:
+            return
+        child_stage = annotations.child_stage
+        if child_stage is None:
+            raise ConfigurationError(
+                f"handler {handler.name!r} reads {{{{{wanted[0]}}}}}, which only "
+                "a stage under children.steps can read"
+            )
+        unknown = [
+            name
+            for name in wanted
+            if name not in self._child_variables
+            and not name.startswith(CHILD_FIELD_PREFIX)
+        ]
+        if unknown:
+            raise ConfigurationError(
+                f"handler {handler.name!r} references unknown child value(s): "
+                + ", ".join(sorted(unknown))
+            )
+        stage = step_path.removeprefix(f"{child_stage}/{{child}}/").split("/")[0]
+        extension = [
+            name
+            for name in wanted
+            if name not in CHILD_VALUE_NAMES
+            and not name.startswith(CHILD_FIELD_PREFIX)
+        ]
+        if extension and stage in annotations.child_before_run:
+            raise ConfigurationError(
+                f"handler {handler.name!r} in per-child stage {stage!r} reads "
+                f"{{{{{extension[0]}}}}}, but that stage runs before the child "
+                "task exists; read child extension values only in the stages "
+                "after the one that runs the child (ww.child.id, text, project, "
+                "and field.* are readable in every stage)"
+            )
 
     def compile(self, workflow_name: str) -> WorkflowPlan:
         try:
@@ -539,6 +608,7 @@ class WorkflowPlanCompiler:
                 current_path: str = path,
                 current_ancestors: tuple[str, ...] = ancestors,
                 current_annotations: ItemAnnotations = annotations,
+                current_item_template: bool = item_template,
             ) -> None:
                 self._append_loop_control(
                     items,
@@ -549,6 +619,7 @@ class WorkflowPlanCompiler:
                     current_ancestors,
                     request,
                     current_annotations,
+                    current_item_template,
                 )
 
             context = _CompilerPlanningContext(
@@ -623,8 +694,13 @@ class WorkflowPlanCompiler:
         ancestors: tuple[str, ...],
         request: LoopBoundaryRequest,
         annotations: ItemAnnotations,
+        item_template: bool = False,
     ) -> None:
-        """Add a manager-owned boundary around an otherwise ordinary step tree."""
+        """Add a manager-owned boundary around an otherwise ordinary step tree.
+
+        Inside repeated stages the boundary is a template like the stages,
+        so each item or child gets its own loop.
+        """
         suffix = request.operation
         description = step.description or f"Run the {step.name!r} loop."
         items.append(
@@ -644,6 +720,8 @@ class WorkflowPlanCompiler:
                 source="step",
                 registered_handler=None,
                 artifact=request.artifact,
+                item_template=item_template,
+                child_stage=annotations.child_stage,
                 ancestors=ancestors,
                 loop_break=None,
                 loop_continue=None,
@@ -824,6 +902,7 @@ class WorkflowPlanCompiler:
                 for document in self.configuration.documents
             ),
             *self._namespace_variables,
+            *(self._child_variables if annotations.child_stage is not None else ()),
         }
         if isinstance(operation, WorkflowHandoff):
             operation = WorkflowHandoff(
@@ -861,6 +940,7 @@ class WorkflowPlanCompiler:
                 for name in dependencies(value)
             )
         )
+        self._check_child_values(handler, dependency_names, step_path, annotations)
         rules: tuple[PlannedRule, ...] = ()
         checks: tuple[PlannedCheck, ...] = ()
         modes: tuple[PlannedMode, ...] = ()
@@ -936,6 +1016,7 @@ class WorkflowPlanCompiler:
                 item_unique=annotations.item_unique,
                 artifact=step.artifact,
                 child_operation=annotations.child_operation,
+                child_stage=annotations.child_stage,
                 ancestors=ancestors,
                 artifact_dependency=(
                     _artifact_dependency_path(
@@ -1202,6 +1283,16 @@ def _merge_annotations(
             else inherited.item_assignment
         ),
         loop_id=emitted.loop_id if emitted.loop_id is not None else inherited.loop_id,
+        child_stage=(
+            emitted.child_stage
+            if emitted.child_stage is not None
+            else inherited.child_stage
+        ),
+        child_before_run=(
+            emitted.child_before_run
+            if emitted.child_stage is not None
+            else inherited.child_before_run
+        ),
         loop_assignment=(
             emitted.loop_assignment
             if emitted.loop_assignment is not None
@@ -1250,7 +1341,8 @@ def _logical_step_paths(
         path = f"{parent}/{step.name}" if parent else step.name
         paths.add(path)
         item_steps = step.items.steps if step.items is not None else ()
-        for nested in (step.child_steps, step.loop_steps, item_steps):
+        child_stages = step.children.steps if step.children is not None else ()
+        for nested in (step.child_steps, step.loop_steps, item_steps, child_stages):
             paths.update(_logical_step_paths(nested, path))
     return frozenset(paths)
 

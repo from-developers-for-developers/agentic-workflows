@@ -308,6 +308,36 @@ workflows:
       - test: Test it.
 ```
 
+When the parent has work of its own around each child, list its stages under
+`children.steps` instead of naming one workflow. The parent runs them once per
+child, one child at a time; the stage with `workflow:` runs the child and waits
+for it, and its artifact is the child's summary. Here the parent refines each
+story before it starts, reviews it afterwards, and a `break` on the review ends
+the epic early: the stories not started yet are skipped.
+
+```yaml
+workflows:
+  - name: epic
+    steps:
+      - split: Split the epic into independent stories.
+        children:
+          description: One child per story a user would notice.
+          steps:
+            - refine: Sharpen {{ww.child.text}} with what earlier stories taught.
+              role: manager
+            - implement:
+                workflow: story
+            - review: Check that {{ww.child.id}} delivered what it promised.
+              depends_on: implement
+              break: The epic is complete; no remaining story is worth building.
+      - summarize: Summarize what the stories delivered.
+
+  - name: story
+    steps:
+      - implement: Implement this story.
+      - test: Test it.
+```
+
 ## 12. Children that bind their own Jira IDs
 
 When the child workflow's first step provides `task_id`, each child obtains its

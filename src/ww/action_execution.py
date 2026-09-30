@@ -59,6 +59,14 @@ Clock = Callable[[], str]
 WriteCommandOutput = Callable[[CommandOutputAddress, str], str]
 ReadCommandOutput = Callable[[str], str]
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
+# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
+ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
+
+
+def _no_child_values(
+    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+) -> dict[str, str]:
+    return {}
 
 
 @dataclass
@@ -455,6 +463,7 @@ class ActionExecutor:
         write_command_output: WriteCommandOutput,
         read_command_output: ReadCommandOutput,
         task_values: TaskValues,
+        child_values: ChildValues = _no_child_values,
     ) -> None:
         self.root = root
         self.extensions = extensions
@@ -464,6 +473,7 @@ class ActionExecutor:
         self.write_command_output = write_command_output
         self.read_command_output = read_command_output
         self.task_values = task_values
+        self.child_values = child_values
 
     def item_settings(
         self, state: ExecutionState, item: PlanItem, planned: Extension
@@ -492,7 +502,11 @@ class ActionExecutor:
             self.root,
             item.workdir,
             state.working_directory,
-            {**dict(state.workflow_values), **self.task_values(state, plan)},
+            {
+                **dict(state.workflow_values),
+                **self.task_values(state, plan),
+                **self.child_values(state, plan, item),
+            },
         )
 
     def run(

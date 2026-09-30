@@ -15,6 +15,7 @@ from ww.actions import (
 from ww.contracts import ItemAssignment, LoopAssignment, StepRole
 from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
+from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.validation import is_positive_int
 from ww.workflow_config import (
     ChildFlow,
@@ -22,6 +23,7 @@ from ww.workflow_config import (
     HandlerDefinition,
     ItemFlow,
     StepDefinition,
+    step_tree,
 )
 
 from .actions import (
@@ -74,7 +76,7 @@ STEP_ONLY_KEYS: set[str] = {
     "rules",
 }
 
-CHILD_FLOW_KEYS = {"description", "workflow"}
+CHILD_FLOW_KEYS = {"description", "workflow", "steps"}
 ITEM_FLOW_KEYS = {
     "description",
     "steps",
@@ -409,7 +411,7 @@ def _parse_step(
             f"{path} item operation must be exactly one null marker"
         )
     child_flow = (
-        _parse_children(mapping, path)
+        _parse_children(mapping, path, handlers_by_name)
         if "children" in mapping
         else referenced_step.children
         if referenced_step is not None
@@ -567,8 +569,12 @@ def _parse_step(
     )
 
 
-def _parse_children(mapping: dict[str, Any], path: str) -> ChildFlow:
-    """Parse ``children``: a mapping with the child ``workflow``."""
+def _parse_children(
+    mapping: dict[str, Any],
+    path: str,
+    handlers_by_name: dict[str, HandlerDefinition],
+) -> ChildFlow:
+    """Parse ``children``: the child ``workflow``, or the parent's ``steps``."""
     value = mapping["children"]
     children_path = f"{path}.children"
     if value is None:
@@ -581,13 +587,103 @@ def _parse_children(mapping: dict[str, Any], path: str) -> ChildFlow:
             f"{children_path} must be a mapping with the child workflow"
         )
     _only(value, CHILD_FLOW_KEYS, children_path)
+    description = _optional_string(value, "description", children_path)
+    if "steps" in value:
+        if "workflow" in value:
+            raise ConfigurationError(
+                f"{children_path} takes workflow or steps, not both: name the "
+                "workflow every child runs, or list the parent's stages per "
+                "child with one `workflow:` stage among them"
+            )
+        return _parse_child_stages(
+            value, children_path, handlers_by_name, description
+        )
     workflow = value.get("workflow")
     if not isinstance(workflow, str) or not _NAME.fullmatch(workflow):
         raise ConfigurationError(f"{children_path}.workflow must be a workflow name")
-    return ChildFlow(
-        workflow=workflow,
-        description=_optional_string(value, "description", children_path),
+    return ChildFlow(workflow=workflow, description=description)
+
+
+def _parse_child_stages(
+    value: dict[str, Any],
+    children_path: str,
+    handlers_by_name: dict[str, HandlerDefinition],
+    description: str | None,
+) -> ChildFlow:
+    """Parse ``children.steps``: the parent's stages, run once per child.
+
+    Exactly one top-level stage carries ``workflow:``; inside ``children`` it
+    runs the child task with that workflow and waits, so it becomes the
+    stage's ``ChildWorkflowRun`` rather than a workflow transition.
+    """
+    stages_path = f"{children_path}.steps"
+    if not isinstance(value["steps"], list) or not value["steps"]:
+        raise ConfigurationError(f"{stages_path} must contain at least one step")
+    stages = _parse_nested_steps(
+        {"steps": [_child_run_shorthand(entry) for entry in value["steps"]]},
+        "steps",
+        children_path,
+        handlers_by_name,
     )
+    runs = [stage for stage in stages if isinstance(stage.operation, WorkflowHandoff)]
+    if len(runs) != 1:
+        raise ConfigurationError(
+            f"{stages_path} needs exactly one stage with `workflow:`, the one "
+            f"that runs the child task; found {len(runs)}"
+        )
+    run = runs[0]
+    assert isinstance(run.operation, WorkflowHandoff)
+    target = run.operation.target
+    if not _NAME.fullmatch(target):
+        raise ConfigurationError(
+            f"{stages_path} stage {run.name!r}: workflow must be a workflow name"
+        )
+    if run.agent or run.model or run.reasoning:
+        raise ConfigurationError(
+            f"{stages_path} stage {run.name!r} runs the child task, which ww "
+            "does; agent, model, and reasoning do not apply to it"
+        )
+    child_run = replace(
+        run,
+        description=run.description
+        or f"Run the child task with the `{target}` workflow and wait for it.",
+        operation=ChildWorkflowRun(target),
+    )
+    converted = tuple(child_run if stage is run else stage for stage in stages)
+    for stage in step_tree(converted):
+        if isinstance(stage.operation, WorkflowHandoff) or any(
+            isinstance(hook.handler.operation, WorkflowHandoff)
+            for hook in stage.hooks
+        ):
+            raise ConfigurationError(
+                f"{stages_path}: `workflow:` runs the child task here, so only "
+                f"one top-level stage may carry it; {stage.name!r} would be a "
+                "workflow transition, which cannot run inside children.steps"
+            )
+        if stage.items is not None or stage.children is not None:
+            raise ConfigurationError(
+                f"{stages_path} stage {stage.name!r} cannot use items or "
+                "children: per-child stages do not nest another collection"
+            )
+    return ChildFlow(workflow=target, description=description, steps=converted)
+
+
+def _child_run_shorthand(entry: Any) -> Any:
+    """Expand ``- implement: {workflow: task}`` into a named stage.
+
+    The stage that runs the child has nothing to say but its workflow, so
+    it may be written as its name mapped to that setting.
+    """
+    if (
+        isinstance(entry, dict)
+        and len(entry) == 1
+        and "name" not in entry
+        and isinstance(next(iter(entry.values())), dict)
+        and "workflow" in next(iter(entry.values()))
+    ):
+        name, settings = next(iter(entry.items()))
+        return {"name": name, **settings}
+    return entry
 
 
 def _parse_items(

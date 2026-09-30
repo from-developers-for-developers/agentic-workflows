@@ -112,7 +112,7 @@ def test_last_children_step_leaves_the_workflow_summary_alone(tmp_path: Path) ->
             "      - split: Split it.\n        children:\n"
             "          workflow: child\n          steps: []\n",
             CHILD,
-            "unknown key\\(s\\): steps",
+            "takes workflow or steps, not both",
         ),
         (
             "      - split: ~\n        workflow: child\n        children:\n"

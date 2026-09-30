@@ -230,7 +230,7 @@ class ResolutionContext:
             for name in dependencies(value)
             if name not in self.allowed_variables
             and not name.startswith(
-                ("metadata.", "project_metadata.", "item.", "field.")
+                ("metadata.", "project_metadata.", "item.", "field.", "ww.child.")
             )
         }
         if unknown:

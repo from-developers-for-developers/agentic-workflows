@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Per-child parent stages: `children: {steps: [...]}` lists the parent's own stages run once per child, one child at a
+  time, with one `workflow:` stage that runs the child and saves its summary as that stage's artifact; stages read
+  `{{ww.child.id}}`, `text`, `project`, `field.<name>` (set with `add-child` / `update-child --field`) and, after the
+  run stage, the child's extension values such as `{{ww.child.git.branch}}`. A `break` in a stage skips the remaining
+  children. A loop inside per-item stages now runs once per item instead of one loop shared by all items.
 - `children` is one mapping on the collecting step, `children: {workflow: <name>}`; `children: ~` and
   `workflow_per_child` are removed, and `update-child` edits a child before it starts. `f432434`
 - Templates can read the task's branch: `{{ww.git.branch}}`, `{{ww.git.base_branch}}` and `{{ww.git.branch_strategy}}`;

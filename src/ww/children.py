@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ww.contracts import ChildStatus
+from ww.items import validate_item_fields
 from ww.validation import expect_literal
 
 
@@ -22,8 +23,15 @@ class ChildTask:
     parent_task_id: str | None = None
     # The configured project the child works in; ``None`` means the root.
     project: str | None = None
+    # Custom fields, as items carry them; per-child parent stages read them
+    # as ``{{ww.child.field.<name>}}``. String values only.
+    fields: tuple[tuple[str, str], ...] = ()
 
-    def to_dict(self) -> dict[str, str | None]:
+    def with_fields(self, values: dict[str, str]) -> ChildTask:
+        merged = {**dict(self.fields), **values}
+        return replace(self, fields=tuple(merged.items()))
+
+    def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
             "description": self.description,
@@ -35,6 +43,7 @@ class ChildTask:
             "start_operation_id": self.start_operation_id,
             "parent_task_id": self.parent_task_id,
             "project": self.project,
+            "fields": dict(self.fields),
         }
 
     @classmethod
@@ -66,4 +75,13 @@ class ChildTask:
             start_operation_id=data.get("start_operation_id"),
             parent_task_id=data.get("parent_task_id"),
             project=data.get("project"),
+            fields=validate_item_fields(data.get("fields", {})),
         )
+
+
+def skip_pending(children: tuple[ChildTask, ...]) -> tuple[ChildTask, ...]:
+    """Mark every child that has not started as skipped, after a ``break``."""
+    return tuple(
+        replace(child, status="skipped") if child.status == "pending" else child
+        for child in children
+    )

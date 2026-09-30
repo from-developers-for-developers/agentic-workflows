@@ -44,6 +44,36 @@ RESERVED_NAMESPACES = (
 )
 
 
+# What a per-child parent stage reads about its child. The plan compiler
+# accepts these only under ``children.steps`` (and checks the exact names
+# there); ``{{ww.child.field.<name>}}`` is open-ended, and every extension
+# namespace value is offered for the child as ``{{ww.child.<namespace>.*}}``.
+CHILD_VALUE_PREFIX = "ww.child."
+CHILD_FIELD_PREFIX = "ww.child.field."
+CHILD_VALUE_NAMES = ("ww.child.id", "ww.child.text", "ww.child.project")
+
+
+def child_value_name(name: str) -> str:
+    """The child's counterpart of a ``ww.`` value (``ww.git.x``: ``ww.child.git.x``)."""
+    _, _, rest = name.partition(".")
+    return f"{CHILD_VALUE_PREFIX}{rest}"
+
+
+def child_values(
+    child_id: str,
+    text: str,
+    project: str | None,
+    fields: tuple[tuple[str, str], ...],
+) -> dict[str, str]:
+    """``{{ww.child.*}}`` from a child's own record."""
+    return {
+        "ww.child.id": child_id,
+        "ww.child.text": text,
+        "ww.child.project": project or "",
+        **{f"{CHILD_FIELD_PREFIX}{name}": value for name, value in fields},
+    }
+
+
 def namespaced(namespace: str, name: str) -> str:
     """The template name of ``name`` in an extension's ``namespace``."""
     return f"{WW_NAMESPACE}.{namespace}.{name}"

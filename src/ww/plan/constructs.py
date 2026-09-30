@@ -48,6 +48,11 @@ class ItemAnnotations:
     # Carried by every body step and hook of the nearest enclosing ``loop``.
     loop_id: str | None = None
     loop_assignment: LoopAssignment | None = None
+    # Carried by every per-child stage and hook: the ``children`` step path.
+    child_stage: str | None = None
+    # Carried with ``child_stage``: the per-child stages that run before the
+    # child task exists, so they cannot read its extension values.
+    child_before_run: tuple[str, ...] = ()
     # Carried only by the collection item itself.
     split_instruction: str | None = None
     shared_items: bool = False
@@ -341,6 +346,10 @@ class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
 
     The run is a ww-owned leaf nested under the collecting step, so one step
     owns the whole child lifecycle; the step's completion hooks follow it.
+    With ``children.steps`` the parent's stages are templated per child,
+    exactly as per-item stages are, and replaced by one concrete lifecycle
+    per collected child when collection completes; the stage that runs the
+    child is then a ``ChildWorkflowRun`` of that one child.
     """
 
     def expand(
@@ -355,6 +364,29 @@ class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
                 ),
             )
         )
+        if flow.steps:
+            scope = context.derive_scope(
+                parent=f"{context.scope.path}/{{child}}",
+                parent_ancestors=(*context.scope.ancestors, context.scope.path),
+                item_template=True,
+            )
+            run_index = next(
+                index
+                for index, stage in enumerate(flow.steps)
+                if isinstance(stage.operation, ChildWorkflowRun)
+            )
+            scope = replace(
+                scope,
+                annotations=replace(
+                    scope.annotations,
+                    child_stage=context.scope.path,
+                    child_before_run=tuple(
+                        stage.name for stage in flow.steps[:run_index]
+                    ),
+                ),
+            )
+            context.compile_steps(flow.steps, scope)
+            return ExpansionResult(outputs=outputs)
         run = StepDefinition(
             name=CHILDREN_RUN_STEP_NAME,
             description=(

@@ -10,6 +10,7 @@ from dataclasses import replace
 import pytest
 
 from ww.actions import Extension, PlannedAction
+from ww.children import ChildTask
 from ww.execution_models import (
     PLAN_SCHEMA_VERSION,
     CommandExecution,
@@ -232,3 +233,29 @@ def test_schema_version_must_be_a_strict_integer(version: object) -> None:
 
     with pytest.raises(ValueError, match="unsupported task state schema"):
         decode_task_document(encoded, "TASK-1")
+
+
+def test_children_round_trip_with_fields_and_skipped_status() -> None:
+    children = (
+        ChildTask("A", "Slice A", "child", "TASK-1/A", fields=(("area", "parser"),)),
+        ChildTask("B", "Slice B", "", "TASK-1/B", status="skipped"),
+    )
+    run = replace(_run(), children=children)
+
+    encoded = encode_task_document("TASK-1", (run,), None, 1, {})
+    decoded, _, _, _ = decode_task_document(encoded, "TASK-1")
+
+    assert encoded["schema_version"] == 2
+    assert "fields" not in encoded["runs"][0]["children"][1]
+    assert decoded[0].children == children
+
+
+def test_a_schema_1_document_loads_its_children_without_fields() -> None:
+    run = replace(_run(), children=(ChildTask("A", "Slice A", "child", "TASK-1/A"),))
+    encoded = encode_task_document("TASK-1", (run,), None, 1, {})
+    encoded["schema_version"] = 1
+
+    decoded, _, _, _ = decode_task_document(encoded, "TASK-1")
+
+    assert decoded[0].children[0].fields == ()
+    assert decoded[0].children[0].status == "pending"

@@ -380,7 +380,19 @@ def _completed(lines: Lines, instruction: Instruction) -> None:
     )
     if instruction.handoff:
         lines.extend(["", f"Handoff: `{instruction.handoff}`"])
-    if instruction.control == "handoff_manager":
+    if instruction.parent_task_id is not None:
+        lines.extend(
+            [
+                "",
+                f"This is a child task; its parent `{instruction.parent_task_id}` "
+                "continues with:",
+                "",
+                "```console",
+                next_command(instruction.parent_task_id),
+                "```",
+            ]
+        )
+    elif instruction.control == "handoff_manager":
         lines.extend(["", "Control is with the manager for final reporting."])
     if instruction.rule_conversions:
         lines.extend(
@@ -1552,12 +1564,19 @@ def _next_steps(lines: Lines, instruction: Instruction) -> None:
 
 def _loop_outcome(lines: Lines, instruction: Instruction) -> None:
     if instruction.loop_break_prompt and instruction.loop_break_command:
-        _append_section(lines, "Loop outcome")
+        _append_section(
+            lines, "Children outcome" if instruction.breaks_children else "Loop outcome"
+        )
         lines.extend(
             [
                 f"Break condition: {instruction.loop_break_prompt}",
                 "",
-                "Condition met — break the loop:",
+                (
+                    "Condition met — stop running children; the ones not started "
+                    "yet are skipped:"
+                    if instruction.breaks_children
+                    else "Condition met — break the loop:"
+                ),
                 "",
                 "```console",
                 instruction.loop_break_command,
