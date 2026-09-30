@@ -81,6 +81,49 @@ hooks alone. A hook installation that fails, for example because the agent's
 hooks file is not valid JSON, never fails init: the summary names the file and
 prints the snippet to add by hand.
 
+`init` also creates the [user configuration
+directory](#user-repo-and-local-configuration) when it is missing, and lists it
+under "Created or restored".
+
+`init --force` runs every question again, ignoring the answers remembered in
+`.ww/init-choices.json`, so agents, skills and hooks can be chosen anew and
+more added. It only adds: skills, instruction references, hooks, `.gitignore`
+lines and settings keys already in place are kept, never removed and never
+written twice, and the new answers replace the remembered ones. Values the
+settings files already hold, such as `enabled` or `task_format`, are
+configuration rather than remembered answers, so they are not asked again.
+With `--no-input`, `--force` applies the defaults the same way, for example
+adding `.ww/` to `.gitignore` after an earlier `--no-update-gitignore`.
+
+Unless it was shown before, the summary ends with what to allow so your agents
+run ww without asking for confirmation. For each agent set up in the project
+whose permission format ww knows, it names the file and the exact entries,
+covering the configured `executable`, `./ww` and the `ww` shortcut. For Claude
+Code:
+
+```text
+  claudecode: merge these entries into .claude/settings.json
+
+     {
+       "permissions": {
+         "allow": [
+           "Bash(ww-agentic-workflows *)",
+           "Bash(./ww *)",
+           "Bash(ww *)"
+         ]
+       }
+     }
+```
+
+Other agents get the command prefixes to allow in their own permission
+settings. The notice also says what you trust by doing so: your
+`ww-agentic-workflows.yaml` with its user and local levels. `--force` shows it
+again.
+
+Every `init` ends with the next step: run the `ww-setup` skill, which sets ww
+up for you, your team and this project (in Claude Code, `/ww-setup`).
+`--json` output lists it under `next_steps`.
+
 ### Configuration file names
 
 ww reads its configuration from two files at the project root, both named
@@ -3303,7 +3346,8 @@ Install the ww, noww and ww-rule skills into which agent directories?
 Directories that already exist start ticked, because having one is good
 evidence you use that agent. Nothing is written until you press enter, and
 the answers are remembered in `.ww/init-choices.json`, so a later `init` only
-asks about agents you have not decided on.
+asks about agents you have not decided on; `init --force` asks about every
+agent whose `ww` skill is not installed yet.
 
 Where the terminal cannot be driven that way — a pipe, `TERM=dumb`, a captured
 stdin in a test — ww falls back to plain questions: one for each directory that
@@ -3323,10 +3367,11 @@ Either answer is remembered, so it is asked once; a skill you declined is not
 installed later on its own. A project set up before this record counts a
 skill already present in a chosen directory as accepted.
 
-The rest of the summary adapts to repeat runs too. The box asking you to allow
-ww in your agent's permissions is shown the first time only, and the next
-steps for getting started only while `ww-agentic-workflows.yaml` defines no workflow. The
-documentation links are always shown.
+The rest of the summary adapts to repeat runs too. The box saying what to allow
+in your agents' permissions is shown the first time only (and again under
+`--force`), and the steps for getting started only while
+`ww-agentic-workflows.yaml` defines no workflow. The documentation links and
+the closing next step, the `ww-setup` skill, are always shown.
 
 ## Agent hooks
 

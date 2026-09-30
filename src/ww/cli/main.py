@@ -242,7 +242,10 @@ def _init(context: _Context) -> _Outcome:
         result = _link_agent_instructions(context.storage, result)
     result = install_agent_hooks(context.storage, context.args, result)
     result = _finish_initialization(
-        context.storage, result, shown=not context.args.json_output
+        context.storage,
+        result,
+        shown=not context.args.json_output,
+        force=context.args.force,
     )
     return _Outcome(render_initialization(result, context.args.json_output) + "\n")
 

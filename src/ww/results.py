@@ -17,6 +17,10 @@ class ResetResult:
 
 # Note added by init when ww-agentic-workflows.yaml defines no workflow.
 NO_WORKFLOWS_ACTION = "Define at least one workflow in ww-agentic-workflows.yaml."
+# What every init ends with: the skill that sets ww up for the people using it.
+INITIALIZATION_NEXT_STEP = (
+    "Run the ww-setup skill to set ww up for you, your team and this project."
+)
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,13 @@ class InitializationResult:
     permission_notice: bool = True
     # The ww binary the project is configured to run.
     executable: str = DEFAULT_EXECUTABLE
+    # The command prefixes an agent must allow to run ww without asking.
+    commands: tuple[str, ...] = ()
+    # For each set-up agent whose permission format ww knows: the agent, its
+    # permissions file, and the JSON to merge into that file.
+    permissions: tuple[tuple[str, str, str], ...] = ()
+    # The set-up agents whose permission format ww does not know.
+    other_agents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

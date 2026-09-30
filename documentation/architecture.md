@@ -119,6 +119,16 @@ documents, lives below `../.ww` so projects can exclude one directory as a unit;
 `init` migrates the former top-level `../tasks` directory when there is no
 conflicting destination. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
+The interactive answers are remembered in `.ww/init-choices.json` so a repeat
+run asks nothing already decided; `init --force` reads none of them back (it
+still writes the new answers), which is safe because every step of init only
+adds — skills, instruction references, hooks, `.gitignore` lines and settings
+keys are never removed or rewritten. The closing permission notice is built
+from the agent adapters in `../src/ww/hooks/agents.py`: an adapter that knows
+its agent's permission format sets `permissions_file` and returns the entries
+from `permissions()` (only Claude Code today), and every other set-up agent is
+named with the plain command prefixes, so ww never prints a format it cannot
+vouch for.
 
 Both configuration files share the `ww-agentic-workflows` stem, and their names
 are defined once in `../src/ww/config_files.py`, together with the local

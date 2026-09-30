@@ -15,7 +15,7 @@ from ww.config.composition import compose_configuration
 from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
-from ww.executable import DEFAULT_EXECUTABLE
+from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
 from ww.hooks import (
     HOOK_AGENTS,
     HookInstallError,
@@ -65,13 +65,15 @@ def install_agent_hooks(
 
     An agent counts as set up when its directory exists, which is also where
     init just installed its skills. The answer is remembered per agent, and
-    ``--hooks``/``--no-hooks`` decide for every agent without asking. A hook
-    installation that fails never fails init: the summary says how to add
-    the hooks by hand instead.
+    ``--hooks``/``--no-hooks`` decide for every agent without asking, and
+    ``--force`` asks again for every agent whose hooks are not installed. A
+    hook installation that fails never fails init: the summary says how to
+    add the hooks by hand instead.
     """
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
     saved = _init_choices(storage).get("hooks", {})
     choices = dict(saved) if isinstance(saved, dict) else {}
+    remembered = {} if args.force else choices
     created, preserved, actions = (
         list(result.created),
         list(result.preserved),
@@ -85,7 +87,7 @@ def install_agent_hooks(
             choices[name] = True
             preserved.append(f"{agent.settings_file} (ww hooks)")
             continue
-        wanted = args.hooks if args.hooks is not None else choices.get(name)
+        wanted = args.hooks if args.hooks is not None else remembered.get(name)
         if wanted is None and interactive:
             if not explained:
                 print(
@@ -181,7 +183,7 @@ def _initialization_options(
     storage: Storage, args: argparse.Namespace
 ) -> tuple[str, str, bool, tuple[tuple[str, str], ...]]:
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
-    enabled = _enabled_choice(storage, interactive)
+    enabled = _enabled_choice(storage, interactive, force=args.force)
     task_kind = args.task_id_format
     if task_kind is None and interactive and not _configured_task_format(storage):
         print(
@@ -266,7 +268,8 @@ def _initialization_options(
         }
 
     ignore_runtime = args.update_gitignore
-    choices = _init_choices(storage)
+    # ``--force`` asks every question again, as if nothing were remembered.
+    choices = {} if args.force else _init_choices(storage)
     ignore_path = storage.root / ".gitignore"
     ignored = ignore_path.is_file() and bool(
         {".ww", ".ww/"}.intersection(
@@ -315,7 +318,9 @@ def _initialization_options(
         workflows,
         json.dumps(project, indent=2) + "\n",
         bool(ignore_runtime),
-        _skill_installs(storage, args.skills, interactive, progress=True),
+        _skill_installs(
+            storage, args.skills, interactive, progress=True, force=args.force
+        ),
     )
 
 
@@ -333,17 +338,21 @@ def _enabled_value(value: object) -> Enabled | None:
     return ON_REQUEST if value == ON_REQUEST else None
 
 
-def _enabled_choice(storage: Storage, interactive: bool) -> Enabled:
+def _enabled_choice(
+    storage: Storage, interactive: bool, *, force: bool = False
+) -> Enabled:
     """Whether agents use ww here by default, only on request, or never.
 
     Asked once, and only when no settings level sets ``enabled`` yet; the
-    answer is remembered. Without a terminal init writes ``true``.
+    answer is remembered, and ``force`` ignores that remembered answer.
+    Without a terminal init writes ``true``.
     """
     try:
         raw, _ = compose_settings(storage.project_config_path)
     except ConfigurationError:
         raw = {}
-    for known in (raw.get("enabled"), _init_choices(storage).get("enabled")):
+    remembered = None if force else _init_choices(storage).get("enabled")
+    for known in (raw.get("enabled"), remembered):
         value = _enabled_value(known)
         if value is not None:
             return value
@@ -401,22 +410,32 @@ def _skill_installs(
     interactive: bool,
     *,
     progress: bool = False,
+    force: bool = False,
 ) -> tuple[tuple[str, str], ...]:
     """Pair each chosen agent directory with each skill it should hold.
 
     The directories are chosen once and remembered. The skills are the
     bundled ones the operator accepted, also remembered, so a skill that a
     later ww version bundles is offered once on its own, into the directories
-    already chosen, without choosing agents again.
+    already chosen, without choosing agents again. ``force`` asks both again,
+    offering only what is not installed yet: nothing is ever removed.
     """
     saved = _init_choices(storage).get("agents", {})
     fresh = not any(
         isinstance(saved, dict) and isinstance(saved.get(directory), bool)
         for directory in _known_agent_directories()
     )
-    directories = _skill_directories(storage, requested, interactive, progress=progress)
+    directories = _skill_directories(
+        storage, requested, interactive, progress=progress, force=force
+    )
     names = _accepted_skills(
-        storage, directories, requested, interactive, fresh=fresh, progress=progress
+        storage,
+        directories,
+        requested,
+        interactive,
+        fresh=fresh,
+        progress=progress,
+        force=force,
     )
     return tuple((directory, name) for directory in directories for name in names)
 
@@ -429,17 +448,21 @@ def _accepted_skills(
     *,
     fresh: bool,
     progress: bool,
+    force: bool = False,
 ) -> tuple[str, ...]:
     """The bundled skills to install, asking only about ones never offered.
 
     A first run offers every bundled skill through the directory question. A
     project set up before skills were remembered counts a skill found in a
     chosen directory as accepted. Either answer to a new skill is remembered,
-    so it is asked about once.
+    so it is asked about once. ``force`` forgets the answers: a skill found
+    in a chosen directory stays accepted, and the others are offered again,
+    unless none is installed anywhere, when the directory question offered
+    them all.
     """
     if requested is False or not directories:
         return ()
-    saved = _init_choices(storage).get("skills")
+    saved = None if force else _init_choices(storage).get("skills")
     decided: dict[str, bool] = (
         {name: value for name, value in saved.items() if isinstance(value, bool)}
         if isinstance(saved, dict)
@@ -452,6 +475,7 @@ def _accepted_skills(
             for directory in directories
             if (storage.root / skill_location(directory, name)).exists()
         }
+        fresh = fresh or (force and not present)
         decided = {
             name: True for name in SKILLS if fresh or requested or name in present
         }
@@ -461,12 +485,16 @@ def _accepted_skills(
         if interactive and not requested:
             label = ", ".join(f"`{name}`" for name in new)
             plural = "s" if len(new) > 1 else ""
+            offer = (
+                f"Also install the {label} skill{plural}"
+                if force
+                else f"ww now ships the {label} skill{plural}. Install"
+            )
             accept = _ask_yes_no(
                 _progress(
                     progress,
                     55,
-                    f"ww now ships the {label} skill{plural}. Install into "
-                    f"{', '.join(directories)}? [Y/n]: ",
+                    f"{offer} into {', '.join(directories)}? [Y/n]: ",
                 ),
                 True,
             )
@@ -481,12 +509,14 @@ def _skill_directories(
     interactive: bool,
     *,
     progress: bool = False,
+    force: bool = False,
 ) -> tuple[str, ...]:
     """Choose the agent directories that receive the bundled skills.
 
     Directories already holding the ``ww`` skill are included so
     initialization reports their files as preserved and adds any skill that
-    is missing; storage never overwrites them.
+    is missing; storage never overwrites them. ``force`` asks again about
+    every other directory, whatever was answered before.
     """
     saved = _init_choices(storage).get("agents", {})
     choices = dict(saved) if isinstance(saved, dict) else {}
@@ -497,7 +527,7 @@ def _skill_directories(
         location = _skill_location(directory)
         exists = (storage.root / directory).is_dir()
         installed = (storage.root / location).exists()
-        selected = choices.get(directory)
+        selected = None if force else choices.get(directory)
         if requested is False:
             selected = False
         elif installed or (requested and exists):
@@ -680,9 +710,16 @@ def _git_base_branch(root: Path) -> str:
 
 
 def _finish_initialization(
-    storage: Storage, result: InitializationResult, *, shown: bool = True
+    storage: Storage,
+    result: InitializationResult,
+    *,
+    shown: bool = True,
+    force: bool = False,
 ) -> InitializationResult:
-    """Complete the result; ``shown`` means the operator reads the summary."""
+    """Complete the result; ``shown`` means the operator reads the summary.
+
+    ``force`` shows the permission notice again even when it was shown.
+    """
     created = list(result.created)
     actions = list(result.actions)
     try:
@@ -730,13 +767,43 @@ def _finish_initialization(
         )
     # The permission notice matters once: show it the first time the summary
     # is read, and remember that it was.
-    notice = _init_choices(storage).get("permission_notice_shown") is not True
+    notice = (
+        force or _init_choices(storage).get("permission_notice_shown") is not True
+    )
     if notice and shown:
         _save_init_choice(storage, "permission_notice_shown", True)
+    commands = tuple(dict.fromkeys((executable, PROJECT_LAUNCHER_COMMAND, "ww")))
+    permissions, others = _agent_permissions(storage, commands)
     return replace(
         result,
         created=tuple(created),
         actions=tuple(actions),
         permission_notice=notice,
         executable=executable,
+        commands=commands,
+        permissions=permissions,
+        other_agents=others,
     )
+
+
+def _agent_permissions(
+    storage: Storage, commands: tuple[str, ...]
+) -> tuple[tuple[tuple[str, str, str], ...], tuple[str, ...]]:
+    """What each agent set up here needs to run ``commands`` without asking.
+
+    An agent counts as set up when its directory exists. For an agent whose
+    permission format ww knows, the answer is its permissions file and the
+    JSON to merge into it; every other agent is named for a generic line.
+    """
+    known: list[tuple[str, str, str]] = []
+    others: list[str] = []
+    for name, directory in AGENT_DIRECTORIES.items():
+        if not (storage.root / directory).is_dir():
+            continue
+        agent = HOOK_AGENTS.get(name)
+        entries = agent.permissions(commands) if agent else None
+        if agent and agent.permissions_file and entries is not None:
+            known.append((name, agent.permissions_file, json.dumps(entries, indent=2)))
+        else:
+            others.append(name)
+    return tuple(known), tuple(others)

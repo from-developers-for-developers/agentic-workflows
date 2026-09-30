@@ -328,3 +328,20 @@ def test_a_hook_is_named_by_itself_and_its_step() -> None:
     assert "T1 step `update-documentation (a hook of run-tests)` is still" in (
         stop_reminder((task,))
     )
+
+
+def test_only_claude_code_says_how_to_allow_commands() -> None:
+    commands = ("ww-agentic-workflows", "./ww", "ww")
+
+    assert HOOK_AGENTS["claudecode"].permissions_file == ".claude/settings.json"
+    assert HOOK_AGENTS["claudecode"].permissions(commands) == {
+        "permissions": {
+            "allow": [
+                "Bash(ww-agentic-workflows *)",
+                "Bash(./ww *)",
+                "Bash(ww *)",
+            ]
+        }
+    }
+    for name in ("codex", "cursor", "antigravity"):
+        assert HOOK_AGENTS[name].permissions(commands) is None

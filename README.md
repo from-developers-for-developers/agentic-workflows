@@ -152,16 +152,23 @@ The wizard asks a few questions and then sets the project up:
   work through ww by name, a `noww` skill, so you can tell it to leave ww
   out, and a `ww-rule` skill, which turns your own words into rules for ww's
   steps.
+- **Your user configuration directory**, `~/.config/ww-agentic-workflows/`,
+  where settings of your own for every project live.
 
 It finishes by printing any manual additions you still need in `AGENTS.md` or
-`CLAUDE.md`, and a reminder to define a workflow.
+`CLAUDE.md`, the exact permission entries that let your agents run ww without
+asking each time (for Claude Code, the lines to add to
+`.claude/settings.json`), a reminder to define a workflow, and the next step:
+run the `ww-setup` skill to set ww up for you, your team and this project.
 
 `init` takes flags for every prompt if you would rather not answer them
 interactively — `--no-input` accepts all defaults, and
 `ww-agentic-workflows init --help` lists the rest.
 
 Running `init` again is safe. It restores missing ww-owned files and
-directories and leaves your own content alone.
+directories and leaves your own content alone. `init --force` asks every
+question again, ignoring your saved answers, so you can add agents, skills or
+hooks later; it only ever adds.
 
 ### 3. Define a workflow
 

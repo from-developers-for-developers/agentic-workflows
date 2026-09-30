@@ -146,6 +146,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-input", action="store_true", help="Use defaults without prompting."
     )
     init.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Ask every question again, ignoring the saved answers; only adds, "
+            "never removes what is already set up."
+        ),
+    )
+    init.add_argument(
         "--link-instructions",
         action=argparse.BooleanOptionalAction,
         default=None,

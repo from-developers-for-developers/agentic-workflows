@@ -518,15 +518,15 @@ def test_a_project_set_up_before_skills_were_remembered_is_asked_once(
     assert installs == tuple((".claude", name) for name in SKILLS)
 
 
-def test_the_permission_notice_is_shown_once_and_next_steps_until_a_workflow(
+def test_the_permission_notice_is_shown_once_and_getting_started_until_a_workflow(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     init = ["--root", str(tmp_path), "init", "--no-input"]
 
     assert main(init) == 0
     first = capsys.readouterr().out
-    assert "ACTION NEEDED" in first
-    assert "Next steps" in first
+    assert "Allow ww to run without confirmation" in first
+    assert "Getting started" in first
 
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
@@ -534,11 +534,18 @@ def test_the_permission_notice_is_shown_once_and_next_steps_until_a_workflow(
     )
     assert main(init) == 0
     second = capsys.readouterr().out
-    assert "ACTION NEEDED" not in second
-    assert "Next steps" not in second
-    # The documentation links always stay.
+    assert "Allow ww to run without confirmation" not in second
+    assert "Getting started" not in second
+    # The documentation links and the next step always stay.
     assert "Documentation" in second
     assert "documentation/specification.md" in second
+    for output in (first, second):
+        assert output.rstrip().endswith(
+            "Next steps\n\n"
+            "  Run the ww-setup skill to set ww up for you, your team and this "
+            "project.\n"
+            "  In Claude Code, for example, type /ww-setup."
+        )
 
 
 def test_discover_tells_agents_to_use_the_ticket_key(

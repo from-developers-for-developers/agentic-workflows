@@ -7,7 +7,7 @@ import json
 
 from ww.instructions import Instruction
 from ww.output_adapters.base import OutputAdapter
-from ww.results import InitializationResult, ResetResult
+from ww.results import INITIALIZATION_NEXT_STEP, InitializationResult, ResetResult
 
 
 class JsonOutputAdapter(OutputAdapter):
@@ -31,6 +31,7 @@ class JsonOutputAdapter(OutputAdapter):
                 "created": list(result.created),
                 "preserved": list(result.preserved),
                 "manual_actions": list(result.actions),
+                "next_steps": [INITIALIZATION_NEXT_STEP],
             },
             indent=2,
         )

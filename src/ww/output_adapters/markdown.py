@@ -42,7 +42,12 @@ from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
 from ww.output_adapters.base import OutputAdapter
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
-from ww.results import NO_WORKFLOWS_ACTION, InitializationResult, ResetResult
+from ww.results import (
+    INITIALIZATION_NEXT_STEP,
+    NO_WORKFLOWS_ACTION,
+    InitializationResult,
+    ResetResult,
+)
 from ww.runtimes import requested_setting
 
 Lines = list[str]
@@ -156,12 +161,19 @@ class MarkdownOutputAdapter(OutputAdapter):
             )
         lines.append("")
         if result.permission_notice:
-            lines.extend(_permission_notice(result.executable))
+            lines.extend(
+                _permission_notice(
+                    result.executable,
+                    result.commands,
+                    result.permissions,
+                    result.other_agents,
+                )
+            )
         # Getting started matters only until the first workflow exists.
         if NO_WORKFLOWS_ACTION in result.actions:
             lines.extend(
                 [
-                    terminal_accent("Next steps"),
+                    terminal_accent("Getting started"),
                     "",
                     "  " + terminal_accent("1. Create your first workflow"),
                     "     Define the steps in ww-agentic-workflows.yaml.",
@@ -194,6 +206,11 @@ class MarkdownOutputAdapter(OutputAdapter):
                 "",
                 "  " + terminal_accent("All features"),
                 "    https://github.com/from-developers-for-developers/agentic-workflows/blob/main/documentation/features.md",
+                "",
+                terminal_accent("Next steps"),
+                "",
+                f"  {INITIALIZATION_NEXT_STEP}",
+                "  In Claude Code, for example, type /ww-setup.",
             ]
         )
         return _document(lines)
@@ -210,7 +227,12 @@ def _git_extension_active(root: str) -> bool:
         return False
 
 
-def _permission_notice(executable: str = DEFAULT_EXECUTABLE) -> Lines:
+def _permission_notice(
+    executable: str = DEFAULT_EXECUTABLE,
+    commands: tuple[str, ...] = (),
+    permissions: tuple[tuple[str, str, str], ...] = (),
+    other_agents: tuple[str, ...] = (),
+) -> Lines:
     """The one setup step that fails loudly later if it is skipped.
 
     Left as a trailing "tip" it was routinely missed, and the symptoms arrive
@@ -218,25 +240,24 @@ def _permission_notice(executable: str = DEFAULT_EXECUTABLE) -> Lines:
     and an interactive step whose operator page cannot open a local port at
     all. It gets a boxed heading of its own, above the next steps, for that
     reason, and wraps to the terminal so the box never breaks.
+
+    For each agent whose permission format ww knows it names the file and the
+    exact entries; every other agent gets the command prefixes to allow.
     """
     width = max(44, min(72, shutil.get_terminal_size((80, 24))[0]))
-    heading = "ACTION NEEDED — allow ww in your agent's permissions"
+    commands = commands or tuple(dict.fromkeys((executable, "./ww", "ww")))
+    heading = "Allow ww to run without confirmation"
     rule = "─" * (width - 2)
-    paragraphs = (
-        "ww runs the commands your ww-agentic-workflows.yaml configures — your tests, "
-        "linters, and commits — so an agent treats it as a command needing "
-        "confirmation and asks every single time. Allow it once:",
-        "Without this you get a prompt per step, and an interactive step's "
-        "operator page cannot open its local port from inside an agent "
-        "sandbox — it fails with a permission error rather than a busy port.",
-        "What you are trusting is your own ww-agentic-workflows.yaml, with "
-        "its local and user levels (ww-agentic-workflows.local.yaml here, "
-        "ww-agentic-workflows.yaml in your user configuration directory): "
-        "review changes to them like a CI config, since whoever "
-        "edits them can run commands here.",
-    )
-    body = textwrap.wrap(paragraphs[0], width - 2, initial_indent="  ",
-                         subsequent_indent="  ")
+
+    def wrapped(paragraph: str) -> Lines:
+        return textwrap.wrap(
+            paragraph,
+            width - 2,
+            initial_indent="  ",
+            subsequent_indent="  ",
+            break_on_hyphens=False,
+        )
+
     lines: Lines = [
         terminal_accent(f"┌{rule}┐"),
         *(
@@ -247,18 +268,42 @@ def _permission_notice(executable: str = DEFAULT_EXECUTABLE) -> Lines:
         ),
         terminal_accent(f"└{rule}┘"),
         "",
-        *body,
-        "",
-        f"     {executable}",
-        "     ww   (when the shortcut exists)",
-        "     ./ww",
+        *wrapped(
+            "ww runs the commands your ww-agentic-workflows.yaml configures — "
+            "your tests, linters, and commits — so an agent treats it as a "
+            "command needing confirmation and asks every single time. Allow "
+            "it once:"
+        ),
         "",
     ]
-    for paragraph in paragraphs[1:]:
-        lines.extend(
-            textwrap.wrap(paragraph, width - 2, initial_indent="  ",
-                          subsequent_indent="  ")
+    for agent, file, entries in permissions:
+        lines.extend(wrapped(f"{agent}: merge these entries into {file}"))
+        lines.extend(["", *(f"     {row}" for row in entries.splitlines()), ""])
+    if other_agents or not permissions:
+        who = (
+            f"{', '.join(other_agents)}: allow"
+            if other_agents
+            else "In your agent, allow"
         )
+        lines.extend(wrapped(f"{who} every command starting with:"))
+        lines.append("")
+        shortcut = "   (when the shortcut exists)"
+        lines.extend(
+            f"     {command}{shortcut if command == 'ww' else ''}"
+            for command in commands
+        )
+        lines.append("")
+    for paragraph in (
+        "Without this you get a prompt per step, and an interactive step's "
+        "operator page cannot open its local port from inside an agent "
+        "sandbox — it fails with a permission error rather than a busy port.",
+        "What you are trusting is your own ww-agentic-workflows.yaml, with "
+        "its local and user levels (ww-agentic-workflows.local.yaml here, "
+        "ww-agentic-workflows.yaml in your user configuration directory): "
+        "review changes to them like a CI config, since whoever "
+        "edits them can run commands here.",
+    ):
+        lines.extend(wrapped(paragraph))
         lines.append("")
     return lines
 

@@ -69,6 +69,16 @@ class HookAgent:
     # Where the agent reads hooks for every project, for agents without one.
     user_settings_file: str | None = None
     registrations: tuple[Registration, ...]
+    # The project file the agent reads command permissions from, for agents
+    # whose permission format ww knows; see :meth:`permissions`.
+    permissions_file: str | None = None
+
+    def permissions(self, commands: tuple[str, ...]) -> dict[str, Any] | None:
+        """The ``permissions_file`` content that allows ``commands`` unasked.
+
+        ``None`` for an agent whose permission format ww does not know.
+        """
+        return None
 
     def command(self, event: HookEvent) -> str:
         """The command the agent runs; it must work from task worktrees too."""
@@ -162,6 +172,7 @@ class ClaudeCode(HookAgent):
     name = "claudecode"
     settings_file = ".claude/settings.json"
     local_settings_file = ".claude/settings.local.json"
+    permissions_file = ".claude/settings.json"
     # No matcher on SessionStart, so it fires for every source, compaction
     # included. SubagentStart is left alone: workers get only their bootstrap.
     registrations = (
@@ -174,6 +185,12 @@ class ClaudeCode(HookAgent):
 
     def command(self, event: HookEvent) -> str:
         return f'"$CLAUDE_PROJECT_DIR"/ww hook {event} --agent {self.name}'
+
+    def permissions(self, commands: tuple[str, ...]) -> dict[str, Any] | None:
+        # A trailing " *" allows the command with any arguments and alone
+        # (https://code.claude.com/docs/en/permissions, "Wildcard patterns").
+        allowed = [f"Bash({command} *)" for command in commands]
+        return {"permissions": {"allow": allowed}}
 
     def parse(self, event: HookEvent, payload: dict[str, Any]) -> HookPayload:
         return HookPayload(

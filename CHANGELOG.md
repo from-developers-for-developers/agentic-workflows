@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- `init --force` asks every question again, ignoring `.ww/init-choices.json`, so agents, skills and hooks can be added
+  later; it only adds, never removing or duplicating skills, links, hooks, `.gitignore` lines or settings keys. The
+  permission notice now names, per agent, the exact file and entries (Claude Code: `permissions.allow` in
+  `.claude/settings.json` with `Bash(./ww *)`-style patterns), and init ends by pointing to the `ww-setup` skill.
 - Breaking: the machine configuration level is now the user level. Its files are `ww-agentic-workflows.yaml` and
   `ww-agentic-workflows.json` in `~/.config/ww-agentic-workflows/` (or `$XDG_CONFIG_HOME`), named by
   `WW_USER_CONFIG_DIR`; a leftover `.machine.yaml`/`.machine.json` or a lone `WW_MACHINE_CONFIG_DIR` is an error naming

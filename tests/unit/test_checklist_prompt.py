@@ -90,7 +90,7 @@ def test_the_permission_notice_fits_the_terminal(columns: int) -> None:
     lines = _notice(columns)
 
     assert max(len(line) for line in lines) <= columns
-    assert any("ACTION NEEDED" in line for line in lines)
+    assert any("Allow ww to run without confirmation" in line for line in lines)
 
 
 @pytest.mark.parametrize("columns", [44, 60, 80, 120])
