@@ -14,6 +14,8 @@ from ww.config_files import (
     LOCAL_IGNORE_PATTERNS,
     SETTINGS_FILE,
     WORKFLOWS_FILE,
+    display_path,
+    user_directory,
     workflow_levels,
 )
 from ww.defaults import GENERATED_LAUNCHERS
@@ -146,6 +148,14 @@ class Storage:
 
         if launcher_path.is_file():
             launcher_path.chmod(launcher_path.stat().st_mode | 0o111)
+        # Nothing else creates the user level's directory, and a user file is
+        # easier to add once the place for it exists.
+        user = user_directory()
+        if not user.is_dir():
+            user.mkdir(parents=True)
+            created.append(
+                f"{display_path(user, self.root)} (user configuration directory)"
+            )
         self.runtime_path.mkdir(parents=True, exist_ok=True)
         tasks = self.runtime_path / "tasks"
         if tasks.exists():

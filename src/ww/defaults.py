@@ -6,9 +6,8 @@ from importlib.resources import files
 from ww.config_files import (
     FILE_STEM,
     LOCAL_SETTINGS_FILE,
-    MACHINE_DIR_VARIABLE,
-    MACHINE_SETTINGS_FILE,
     SETTINGS_FILE,
+    USER_DIR_VARIABLE,
 )
 from ww.executable import DEFAULT_EXECUTABLE
 
@@ -29,11 +28,14 @@ DEFAULT_PROJECT_CONFIG_JSON = f"""{{
 """
 
 
-# ``./ww`` runs the binary the settings levels name in ``executable``, read on
-# every run so a project switches installs by editing one line; the local file
-# wins over the repo one, which wins over the machine's. Without python3 or the
-# key it runs the standard name.
-PROJECT_LAUNCHER = f"""#!/bin/sh
+def _layered_launcher(variable: str, name: str, user_file: str) -> str:
+    """A launcher reading ``executable`` from the user, repo and local files.
+
+    ``variable`` names the user directory's override and ``name`` the Python
+    variable holding it; both are parameters only so the launcher an earlier
+    ww wrote, with the former machine level, is still recognised.
+    """
+    return f"""#!/bin/sh
 set -eu
 project_root=$(CDPATH= cd "$(dirname "$0")" && pwd)
 cd "$project_root"
@@ -41,13 +43,13 @@ executable={DEFAULT_EXECUTABLE}
 if command -v python3 >/dev/null 2>&1; then
   configured=$(python3 -c '
 import json, os
-machine = os.environ.get("{MACHINE_DIR_VARIABLE}") or os.path.join(
+{name} = os.environ.get("{variable}") or os.path.join(
     os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
     "{FILE_STEM}",
 )
 value = None
 for path in (
-    os.path.join(machine, "{MACHINE_SETTINGS_FILE}"),
+    os.path.join({name}, "{user_file}"),
     "{SETTINGS_FILE}",
     "{LOCAL_SETTINGS_FILE}",
 ):
@@ -65,6 +67,13 @@ print(value or "")
 fi
 exec "$executable" "$@"
 """
+
+
+# ``./ww`` runs the binary the settings levels name in ``executable``, read on
+# every run so a project switches installs by editing one line; the local file
+# wins over the repo one, which wins over the user's. Without python3 or the
+# key it runs the standard name.
+PROJECT_LAUNCHER = _layered_launcher(USER_DIR_VARIABLE, "user", SETTINGS_FILE)
 
 
 def _single_file_launcher(settings_file: str) -> str:
@@ -93,6 +102,9 @@ exec "$executable" "$@"
 
 # Launchers earlier ww versions wrote; init replaces one left as written.
 GENERATED_LAUNCHERS = (
+    _layered_launcher(
+        "WW_MACHINE_CONFIG_DIR", "machine", f"{FILE_STEM}.machine.json"
+    ),
     _single_file_launcher(SETTINGS_FILE),
     _single_file_launcher("agentic-workflows.json"),
     """#!/bin/sh

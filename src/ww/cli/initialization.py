@@ -609,7 +609,7 @@ def _progress(progress: bool, percent: int, question: str) -> str:
 
 
 def _configured_task_format(storage: Storage) -> bool:
-    """Whether a settings level, machine to local, already sets ``task_format``."""
+    """Whether a settings level, user to local, already sets ``task_format``."""
     try:
         raw, _ = compose_settings(storage.project_config_path)
     except ConfigurationError:

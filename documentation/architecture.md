@@ -49,13 +49,13 @@ implicit action names, filters hooks, evaluates interpolation availability, and 
 deterministic execution order.
 
 Before the YAML frontend parses anything, `../src/ww/config/composition.py`
-composes the configuration levels — the machine's
-`ww-agentic-workflows.machine.yaml`, the required repo
+composes the configuration levels — the user's
+`ww-agentic-workflows.yaml` in the user configuration directory, the required repo
 `../ww-agentic-workflows.yaml`, and the checkout's
 `ww-agentic-workflows.local.yaml` — each with the files its leading `imports`
 list names, into one mapping and dumps it back to YAML text. The parser
 receives that text exactly as it would a single file, so composition adds no
-parsing rules of its own: it only folds files in order, machine to local and
+parsing rules of its own: it only folds files in order, user to local and
 each level's imports before its root, replacing same-named catalog and profile
 entries in place, appending hooks per phase, and letting later scalar keys
 win. Levels and imports share one fold on purpose, so there is a single set of
@@ -64,7 +64,7 @@ level restarts the fold at that level; composition consumes the key, so the
 parser never sees it. Imports resolve next to the file that lists them, while
 every other relative path is left as authored and so keeps resolving against
 the repo root; files are labelled from the repo root, or from `~` for the
-machine level. Composition keeps a record of each override and each file an
+user level. Composition keeps a record of each override and each file an
 `extends: false` left out, which `lint` prints as notices, and the list of files
 it folded, which `lint` and `plan` print; it leaves a name repeated within one
 file untouched so validation still reports it. A lone repo file without
@@ -107,7 +107,7 @@ tells agents not to use ww and `start` refuses, while commands for existing
 tasks keep working so in-flight work can still be inspected or finished.
 `../src/ww/project_config.py` reads it through the same three levels, but
 always deep-merges them — objects key by key, every other value replaced — and
-has no `extends`: settings are machine-specific values to adjust, not
+has no `extends`: settings are per-user and per-checkout values to adjust, not
 definitions to replace. The `./ww` launcher written by `init` repeats that
 lookup for its one key, `executable`, in a few lines of Python, because it must
 choose the binary before any ww code runs.
@@ -121,13 +121,18 @@ conflicting destination. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
 
 Both configuration files share the `ww-agentic-workflows` stem, and their names
-are defined once in `../src/ww/config_files.py`, together with the local and
-machine names derived from the same stem and the level order. The machine
-directory follows `WW_MACHINE_CONFIG_DIR`, then `XDG_CONFIG_HOME`, then
-`~/.config`; the override exists so tests, which set it in a session-wide
-fixture in `../tests/conftest.py`, never read a developer's real machine files.
-Only the repo YAML file marks a project root, so a machine file cannot turn an
-arbitrary directory into a ww project. `init` writes only repo-level files,
+are defined once in `../src/ww/config_files.py`, together with the local
+names derived from the same stem and the level order; the user level reuses
+the repo names in its own directory. The user directory follows
+`WW_USER_CONFIG_DIR`, then `XDG_CONFIG_HOME`, then `~/.config`; the override
+exists so tests, which set it in a session-wide fixture in
+`../tests/conftest.py`, never read a developer's real user files.
+`user_directory()` refuses the former machine level outright — its
+`.machine.{yaml,json}` names and the `WW_MACHINE_CONFIG_DIR` variable — rather
+than silently ignoring an old setup, and a user directory that is the project
+root contributes no separate level. `init` creates the directory, since
+nothing else does. Only the repo YAML file marks a project root, so a user
+file cannot turn an arbitrary directory into a ww project. `init` writes only repo-level files,
 but runs its checks on the composed result, and adds the local-file patterns to
 `.gitignore` unconditionally, creating the file only in a Git checkout. There is no compatibility
 layer for the former names `workflows.yaml` and `agentic-workflows.json`: the

@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-09-30
 
+- Breaking: the machine configuration level is now the user level. Its files are `ww-agentic-workflows.yaml` and
+  `ww-agentic-workflows.json` in `~/.config/ww-agentic-workflows/` (or `$XDG_CONFIG_HOME`), named by
+  `WW_USER_CONFIG_DIR`; a leftover `.machine.yaml`/`.machine.json` or a lone `WW_MACHINE_CONFIG_DIR` is an error naming
+  the replacement. `init` creates the user directory and updates a `./ww` launcher written for the machine level.
 - `limitations.md` notes that some agents' safety layers (Claude Code's auto mode) refuse edits to the workflow files
   the agent runs under; the agent prepares a script or patch for the operator instead.
 - ww/git `merge-branch` lands a branch with `git merge --no-ff`: refuses a dirty workspace, aborts a conflict and

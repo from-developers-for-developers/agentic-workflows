@@ -435,10 +435,10 @@ def test_task_format_is_validated(tmp_path: Path, value: object, message: str) -
 def test_a_lower_settings_level_replaces_task_format(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    machine = tmp_path / "machine"
-    machine.mkdir()
-    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(machine))
-    (machine / "ww-agentic-workflows.machine.json").write_text(
+    user = tmp_path / "user"
+    user.mkdir()
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
+    (user / "ww-agentic-workflows.json").write_text(
         json.dumps({"task_format": "M-{{digit}}"}), encoding="utf-8"
     )
     path = write(tmp_path, {"enabled": True})

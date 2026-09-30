@@ -184,11 +184,11 @@ requirements for the whole task.
 As the configuration grows, `ww-agentic-workflows.yaml` can split its definitions across
 other YAML files it lists under `imports`; see
 [the features guide](documentation/features.md#split-ww-agentic-workflowsyaml-into-several-files).
-Both files can also be extended per machine, in
-`~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml` and `.json`,
-and per checkout, in `ww-agentic-workflows.local.yaml` and `.json` next to the
-repo files; see [machine, repo, and local
-configuration](documentation/features.md#machine-repo-and-local-configuration).
+Both files can also be extended for you alone, across all your projects, in
+`~/.config/ww-agentic-workflows/ww-agentic-workflows.yaml` and `.json` (a
+directory `init` creates), and per checkout, in `ww-agentic-workflows.local.yaml`
+and `.json` next to the repo files; see [user, repo, and local
+configuration](documentation/features.md#user-repo-and-local-configuration).
 
 Check it before you run anything:
 

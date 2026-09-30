@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Compose the workflow configuration levels and their imports into one document.
 
-Workflows come from up to three levels, applied top to bottom: the machine's
-``ww-agentic-workflows.machine.yaml``, the repo's ``ww-agentic-workflows.yaml``
-(required), and the checkout's ``ww-agentic-workflows.local.yaml``. A level is
-its root file plus the files that root lists under ``imports``, which come
-before any other key but ``extends``. An import may define anything a root can,
-except further imports, and resolves next to the file that lists it.
+Workflows come from up to three levels, applied top to bottom: the user's
+``ww-agentic-workflows.yaml`` in the user configuration directory, the repo's
+``ww-agentic-workflows.yaml`` (required), and the checkout's
+``ww-agentic-workflows.local.yaml``. A level is its root file plus the files
+that root lists under ``imports``, which come before any other key but
+``extends``. An import may define anything a root can, except further imports,
+and resolves next to the file that lists it.
 
 Files fold in order, each level's imports before its root, so a later file
 overrides an earlier one and a lower level overrides the ones above it:

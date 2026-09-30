@@ -105,15 +105,19 @@ Workflows come from up to three levels, applied top to bottom:
 
 | Level | Root file | Required |
 | --- | --- | --- |
-| machine | `ww-agentic-workflows.machine.yaml` in `$WW_MACHINE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ww-agentic-workflows/`, else `~/.config/ww-agentic-workflows/` | no |
+| user | `ww-agentic-workflows.yaml` in `$WW_USER_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ww-agentic-workflows/`, else `~/.config/ww-agentic-workflows/` | no |
 | repo | `../ww-agentic-workflows.yaml` | yes |
 | local | `../ww-agentic-workflows.local.yaml`, next to the repo file | no |
 
-The repo file is what makes a directory a ww project; a machine file alone
+The repo file is what makes a directory a ww project; a user file alone
 never does. A level is its root file plus the files that root imports, and
-each level may use `imports` as described above.
+each level may use `imports` as described above. `init` creates the user
+directory when it is missing. A user directory that still holds
+`ww-agentic-workflows.machine.yaml` or `.machine.json`, the names of an earlier
+ww, is an error naming the new file, and so is `WW_MACHINE_CONFIG_DIR` set
+without `WW_USER_CONFIG_DIR`.
 
-- Levels fold in order, machine first, each level's imports before its root
+- Levels fold in order, user first, each level's imports before its root
   file, with the same rules as imports: a lower level overrides the levels
   above it, named entries are replaced one by one, `hooks` entries of each phase
   are added after those from above, and any other key takes the lower level's
@@ -126,7 +130,7 @@ each level may use `imports` as described above.
   list; `lint` notices name the file of the level that overrode a definition.
 
 ```yaml
-# ~/.config/ww-agentic-workflows/ww-agentic-workflows.machine.yaml
+# ~/.config/ww-agentic-workflows/ww-agentic-workflows.yaml
 handlers:
   - name: test
     argv: [pytest]
@@ -138,8 +142,8 @@ modes:
   - economy: Keep answers short.
 ```
 
-`ww-agentic-workflows.json` has matching `.machine.json` and `.local.json`
-levels, which are always deep-merged and take no `extends` key; `task_format`
+`ww-agentic-workflows.json` has matching user (`ww-agentic-workflows.json` in
+the user directory) and `.local.json` levels, which are always deep-merged and take no `extends` key; `task_format`
 is one of its keys, so a lower JSON level replaces it. See the features guide.
 
 Projects, the directories a task may work in, are configured in

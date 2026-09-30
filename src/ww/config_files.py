@@ -5,15 +5,17 @@
 ``ww-agentic-workflows.json`` how the tools around them behave. Each comes in
 three levels, applied top to bottom so a lower level wins:
 
-1. machine: ``ww-agentic-workflows.machine.{yaml,json}`` in the user's
-   configuration directory, shared by every project on the machine;
+1. user: ``ww-agentic-workflows.{yaml,json}`` in the user's configuration
+   directory, shared by every project of the user;
 2. repo: ``ww-agentic-workflows.{yaml,json}`` in the project root;
 3. local: ``ww-agentic-workflows.local.{yaml,json}`` next to the repo files,
    kept out of version control.
 
 Earlier ww versions called the repo files ``workflows.yaml`` and
 ``agentic-workflows.json``; ww no longer reads those names, stops when it finds
-one, and ``init`` renames them.
+one, and ``init`` renames them. The user level was once the machine level,
+with ``.machine`` in its file names and ``WW_MACHINE_CONFIG_DIR`` naming its
+directory; ww stops on either and names the replacement.
 """
 
 from __future__ import annotations
@@ -29,8 +31,6 @@ WORKFLOWS_FILE = f"{FILE_STEM}.yaml"
 SETTINGS_FILE = f"{FILE_STEM}.json"
 LOCAL_WORKFLOWS_FILE = f"{FILE_STEM}.local.yaml"
 LOCAL_SETTINGS_FILE = f"{FILE_STEM}.local.json"
-MACHINE_WORKFLOWS_FILE = f"{FILE_STEM}.machine.yaml"
-MACHINE_SETTINGS_FILE = f"{FILE_STEM}.machine.json"
 # The rule-automation store: ww-owned derived knowledge at the project root,
 # committed so every checkout shares it, never part of a step's change set.
 RULE_AUTOMATION_FILE = "ww-rule-automation.json"
@@ -40,8 +40,15 @@ RULES_IMPORT_FILE = "ww-rules.yaml"
 # The .gitignore patterns ``init`` adds; they also cover local files a local
 # configuration imports, such as ``git.ww-agentic-workflows.local.yaml``.
 LOCAL_IGNORE_PATTERNS = (f"*{LOCAL_WORKFLOWS_FILE}", f"*{LOCAL_SETTINGS_FILE}")
-# Where the machine level lives instead of the user's configuration directory.
-MACHINE_DIR_VARIABLE = "WW_MACHINE_CONFIG_DIR"
+# Where the user level lives instead of the user's configuration directory.
+USER_DIR_VARIABLE = "WW_USER_CONFIG_DIR"
+# The variable earlier ww versions read instead; setting it alone is an error.
+FORMER_USER_DIR_VARIABLE = "WW_MACHINE_CONFIG_DIR"
+# The user-level files earlier ww versions read, by the name that replaced them.
+FORMER_USER_FILES = {
+    f"{FILE_STEM}.machine.yaml": WORKFLOWS_FILE,
+    f"{FILE_STEM}.machine.json": SETTINGS_FILE,
+}
 
 
 @dataclass(frozen=True)
@@ -52,13 +59,31 @@ class ConfigurationLevel:
     path: Path
 
 
-def machine_directory() -> Path:
-    """The machine level's directory, following XDG when it is configured."""
-    configured = os.environ.get(MACHINE_DIR_VARIABLE)
+def user_directory() -> Path:
+    """The user level's directory, following XDG when it is configured.
+
+    Stops when only the former variable is set, or when the directory still
+    holds a file under its former name, so an old setup is never silently
+    ignored.
+    """
+    configured = os.environ.get(USER_DIR_VARIABLE)
+    if not configured and os.environ.get(FORMER_USER_DIR_VARIABLE):
+        raise ConfigurationError(
+            f"{FORMER_USER_DIR_VARIABLE} is no longer read; set "
+            f"{USER_DIR_VARIABLE} instead"
+        )
     if configured:
-        return Path(configured)
-    base = os.environ.get("XDG_CONFIG_HOME")
-    return (Path(base) if base else Path.home() / ".config") / FILE_STEM
+        directory = Path(configured)
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME")
+        directory = (Path(base) if base else Path.home() / ".config") / FILE_STEM
+    for former, current in FORMER_USER_FILES.items():
+        if (directory / former).is_file():
+            raise ConfigurationError(
+                f"found {directory / former}; the user level now reads "
+                f"{directory / current}, so rename it"
+            )
+    return directory
 
 
 def display_path(file: Path, base: Path) -> str:
@@ -71,29 +96,41 @@ def display_path(file: Path, base: Path) -> str:
     return str(file)
 
 
-def workflow_levels(repo_file: Path) -> tuple[ConfigurationLevel, ...]:
-    """The YAML levels around ``repo_file``, from machine to local."""
+def _levels(
+    repo_file: Path, user_name: str, local_name: str
+) -> tuple[ConfigurationLevel, ...]:
+    """The user, repo, and local levels around ``repo_file``.
+
+    The user file shares the repo file's name, so a user directory that is
+    the project root itself contributes no separate level.
+    """
+    user = user_directory() / user_name
     return (
-        ConfigurationLevel("machine", machine_directory() / MACHINE_WORKFLOWS_FILE),
+        *(
+            (ConfigurationLevel("user", user),)
+            if user.resolve() != repo_file.resolve()
+            else ()
+        ),
         ConfigurationLevel("repo", repo_file),
-        ConfigurationLevel("local", repo_file.with_name(LOCAL_WORKFLOWS_FILE)),
+        ConfigurationLevel("local", repo_file.with_name(local_name)),
     )
+
+
+def workflow_levels(repo_file: Path) -> tuple[ConfigurationLevel, ...]:
+    """The YAML levels around ``repo_file``, from user to local."""
+    return _levels(repo_file, WORKFLOWS_FILE, LOCAL_WORKFLOWS_FILE)
 
 
 def settings_levels(repo_file: Path) -> tuple[ConfigurationLevel, ...]:
-    """The JSON levels around ``repo_file``, from machine to local."""
-    return (
-        ConfigurationLevel("machine", machine_directory() / MACHINE_SETTINGS_FILE),
-        ConfigurationLevel("repo", repo_file),
-        ConfigurationLevel("local", repo_file.with_name(LOCAL_SETTINGS_FILE)),
-    )
+    """The JSON levels around ``repo_file``, from user to local."""
+    return _levels(repo_file, SETTINGS_FILE, LOCAL_SETTINGS_FILE)
 
 
 def project_settings_levels(directory: Path) -> tuple[ConfigurationLevel, ...]:
     """The JSON levels a configured project carries in its own directory.
 
-    A project has a repo and a local level, like the root; the machine level
-    is shared by every project on the machine and is read once, at the root.
+    A project has a repo and a local level, like the root; the user level is
+    shared by every project of the user and is read once, at the root.
     """
     return (
         ConfigurationLevel("repo", directory / SETTINGS_FILE),
@@ -103,7 +140,7 @@ def project_settings_levels(directory: Path) -> tuple[ConfigurationLevel, ...]:
 def task_format_moved(label: str) -> str:
     """The error for a ``task_format`` key still written in a YAML file."""
     return (
-        f"task_format in {label} now lives in {SETTINGS_FILE} (or its machine or "
+        f"task_format in {label} now lives in {SETTINGS_FILE} (or its user or "
         "local file); move it there and remove it from the YAML"
     )
 

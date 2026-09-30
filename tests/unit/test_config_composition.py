@@ -8,7 +8,7 @@ import pytest
 
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
-from ww.config_files import machine_directory
+from ww.config_files import user_directory
 from ww.core_workflows import CATCHALL
 from ww.errors import ConfigurationError
 from ww.project_config import compose_settings, load_project_config
@@ -27,10 +27,10 @@ def _write(path: Path, content: str) -> Path:
 
 
 @pytest.fixture
-def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    directory = tmp_path / "machine"
+def user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    directory = tmp_path / "user"
     directory.mkdir()
-    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(directory))
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(directory))
     return directory
 
 
@@ -74,14 +74,14 @@ def test_the_root_overrides_the_last_import_which_overrides_the_first(
     ]
 
 
-@pytest.mark.parametrize("where", ["root", "import", "machine", "local"])
+@pytest.mark.parametrize("where", ["root", "import", "user", "local"])
 def test_task_format_in_any_yaml_file_points_at_the_settings_file(
-    machine: Path, repo: Path, where: str
+    user: Path, repo: Path, where: str
 ) -> None:
     files = {
         "root": repo / "ww-agentic-workflows.yaml",
         "import": repo / "ids.yaml",
-        "machine": machine / "ww-agentic-workflows.machine.yaml",
+        "user": user / "ww-agentic-workflows.yaml",
         "local": repo / "ww-agentic-workflows.local.yaml",
     }
     _write(files[where], "task_format: X-{digit}\n")
@@ -271,34 +271,79 @@ def test_invalid_imports_are_reported_by_file(
 # Configuration levels
 
 
-def test_the_machine_directory_follows_the_variable_then_xdg_then_home(
+def test_the_user_directory_follows_the_variable_then_xdg_then_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(tmp_path / "explicit"))
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(tmp_path / "explicit"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    assert machine_directory() == tmp_path / "explicit"
+    assert user_directory() == tmp_path / "explicit"
 
-    monkeypatch.delenv("WW_MACHINE_CONFIG_DIR")
-    assert machine_directory() == tmp_path / "xdg" / "ww-agentic-workflows"
+    monkeypatch.delenv("WW_USER_CONFIG_DIR")
+    assert user_directory() == tmp_path / "xdg" / "ww-agentic-workflows"
 
     monkeypatch.delenv("XDG_CONFIG_HOME")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    assert machine_directory() == (
+    assert user_directory() == (
         tmp_path / "home" / ".config" / "ww-agentic-workflows"
     )
 
 
-def test_levels_fold_from_machine_to_local_with_imports_first(
-    machine: Path, repo: Path
+def test_the_former_directory_variable_alone_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _write(machine / "lib" / "modes.yaml", "modes:\n  - economy: Machine economy.\n")
+    monkeypatch.delenv("WW_USER_CONFIG_DIR")
+    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(tmp_path))
+
+    with pytest.raises(ConfigurationError, match="set WW_USER_CONFIG_DIR instead"):
+        user_directory()
+
+    # Set next to the new variable, the former one is simply not read.
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(tmp_path / "user"))
+    assert user_directory() == tmp_path / "user"
+
+
+@pytest.mark.parametrize(
+    ("former", "current"),
+    [
+        ("ww-agentic-workflows.machine.yaml", "ww-agentic-workflows.yaml"),
+        ("ww-agentic-workflows.machine.json", "ww-agentic-workflows.json"),
+    ],
+)
+def test_a_former_user_level_file_is_an_error_naming_its_new_name(
+    user: Path, repo: Path, former: str, current: str
+) -> None:
+    _write(user / former, "{}\n")
+    path = _write(repo / "ww-agentic-workflows.yaml", _WORKFLOW)
+
+    with pytest.raises(ConfigurationError) as raised:
+        compose_configuration(path)
+
+    assert str(raised.value) == (
+        f"found {user / former}; the user level now reads {user / current}, "
+        "so rename it"
+    )
+
+
+def test_a_user_directory_that_is_the_project_root_adds_no_level(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(repo))
+    path = _write(repo / "ww-agentic-workflows.yaml", _WORKFLOW)
+
+    assert compose_configuration(path).sources == ("ww-agentic-workflows.yaml",)
+
+
+def test_levels_fold_from_user_to_local_with_imports_first(
+    user: Path, repo: Path
+) -> None:
+    _write(user / "lib" / "modes.yaml", "modes:\n  - economy: User economy.\n")
     _write(
-        machine / "ww-agentic-workflows.machine.yaml",
+        user / "ww-agentic-workflows.yaml",
         """imports: [lib/modes.yaml]
 workflows:
-  - machine-only: From the machine.
+  - user-only: From the user.
     steps:
-      - work: Machine work.
+      - work: User work.
 """,
     )
     root = _write(repo / "ww-agentic-workflows.yaml", _WORKFLOW)
@@ -308,20 +353,20 @@ workflows:
     composed = compose_configuration(root)
 
     assert composed.sources == (
-        str(machine / "lib" / "modes.yaml"),
-        str(machine / "ww-agentic-workflows.machine.yaml"),
+        str(user / "lib" / "modes.yaml"),
+        str(user / "ww-agentic-workflows.yaml"),
         "ww-agentic-workflows.yaml",
         "mine.yaml",
         "ww-agentic-workflows.local.yaml",
     )
     assert composed.raw["modes"] == [{"economy": "Local economy."}]
     assert [next(iter(entry)) for entry in composed.raw["workflows"]] == [
-        "machine-only",
+        "user-only",
         "task",
     ]
     configuration = load_configuration(root)
     assert [workflow.name for workflow in configuration.workflows] == [
-        "machine-only",
+        "user-only",
         "task",
         CATCHALL,
     ]
@@ -329,9 +374,9 @@ workflows:
 
 @pytest.mark.parametrize("where", ["root", "import"])
 def test_extends_false_leaves_out_the_levels_above(
-    machine: Path, repo: Path, where: str
+    user: Path, repo: Path, where: str
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", "banner: machine\n")
+    _write(user / "ww-agentic-workflows.yaml", "banner: user\n")
     if where == "root":
         root = _write(
             repo / "ww-agentic-workflows.yaml",
@@ -348,20 +393,20 @@ def test_extends_false_leaves_out_the_levels_above(
 
     assert "banner" not in composed.raw
     assert "extends" not in composed.raw
-    assert composed.ignored == (str(machine / "ww-agentic-workflows.machine.yaml"),)
+    assert composed.ignored == (str(user / "ww-agentic-workflows.yaml"),)
     assert composed.notices[0] == (
-        f"{machine / 'ww-agentic-workflows.machine.yaml'} is not applied: "
+        f"{user / 'ww-agentic-workflows.yaml'} is not applied: "
         "a lower level sets extends: false."
     )
 
 
-def test_extends_true_changes_nothing(machine: Path, repo: Path) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", "banner: machine\n")
+def test_extends_true_changes_nothing(user: Path, repo: Path) -> None:
+    _write(user / "ww-agentic-workflows.yaml", "banner: user\n")
     root = _write(repo / "ww-agentic-workflows.yaml", "extends: true\n" + _WORKFLOW)
 
     composed = compose_configuration(root)
 
-    assert composed.raw["banner"] == "machine"
+    assert composed.raw["banner"] == "user"
     assert composed.ignored == ()
 
 
@@ -381,17 +426,17 @@ def test_extends_must_be_a_boolean(repo: Path) -> None:
         compose_configuration(root)
 
 
-def test_the_repo_file_stays_required(machine: Path, repo: Path) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", _WORKFLOW)
+def test_the_repo_file_stays_required(user: Path, repo: Path) -> None:
+    _write(user / "ww-agentic-workflows.yaml", _WORKFLOW)
     _write(repo / "ww-agentic-workflows.local.yaml", _WORKFLOW)
 
     with pytest.raises(ConfigurationError, match="workflow configuration not found"):
         load_configuration(repo / "ww-agentic-workflows.yaml")
 
 
-def test_a_file_cannot_be_imported_by_two_levels(machine: Path, repo: Path) -> None:
+def test_a_file_cannot_be_imported_by_two_levels(user: Path, repo: Path) -> None:
     shared = _write(repo / "shared.yaml", "modes: []\n")
-    _write(machine / "ww-agentic-workflows.machine.yaml", f"imports: [{shared}]\n")
+    _write(user / "ww-agentic-workflows.yaml", f"imports: [{shared}]\n")
     root = _write(
         repo / "ww-agentic-workflows.yaml",
         "imports: [shared.yaml]\n" + _WORKFLOW,
@@ -401,9 +446,9 @@ def test_a_file_cannot_be_imported_by_two_levels(machine: Path, repo: Path) -> N
         compose_configuration(root)
 
 
-def test_settings_deep_merge_across_levels(machine: Path, repo: Path) -> None:
+def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
     _write(
-        machine / "ww-agentic-workflows.machine.json",
+        user / "ww-agentic-workflows.json",
         '{"max_rounds": 5, "extensions": {"ww/git": '
         '{"worktrees": true, "base_branches": {"default": "main"}}}, '
         '"projects": [{"name": "a", "path": "./a"}]}',
@@ -427,7 +472,7 @@ def test_settings_deep_merge_across_levels(machine: Path, repo: Path) -> None:
         "projects": [{"name": "b", "path": "./b"}],
     }
     assert sources == (
-        machine / "ww-agentic-workflows.machine.json",
+        user / "ww-agentic-workflows.json",
         repo_file,
         repo / "ww-agentic-workflows.local.json",
     )
@@ -436,30 +481,30 @@ def test_settings_deep_merge_across_levels(machine: Path, repo: Path) -> None:
     assert [project.name for project in settings.projects] == ["b"]
 
 
-def test_settings_apply_from_the_machine_without_a_repo_file(
-    machine: Path, repo: Path
+def test_settings_apply_from_the_user_level_without_a_repo_file(
+    user: Path, repo: Path
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.json", '{"max_rounds": 7}')
+    _write(user / "ww-agentic-workflows.json", '{"max_rounds": 7}')
 
     assert load_project_config(repo / "ww-agentic-workflows.json").max_rounds == 7
 
 
-def test_settings_errors_name_the_files_read(machine: Path, repo: Path) -> None:
-    _write(machine / "ww-agentic-workflows.machine.json", '{"max_rounds": 0}')
+def test_settings_errors_name_the_files_read(user: Path, repo: Path) -> None:
+    _write(user / "ww-agentic-workflows.json", '{"max_rounds": 0}')
     repo_file = _write(repo / "ww-agentic-workflows.json", "{}")
 
     with pytest.raises(ConfigurationError) as error:
         load_project_config(repo_file)
 
     message = str(error.value)
-    assert "ww-agentic-workflows.machine.json + " in message
+    assert "ww-agentic-workflows.json + " in message
     assert "max_rounds must be a positive integer" in message
 
 
 def test_an_invalid_settings_level_is_reported_by_path(
-    machine: Path, repo: Path
+    user: Path, repo: Path
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.json", "[]")
+    _write(user / "ww-agentic-workflows.json", "[]")
 
     with pytest.raises(ConfigurationError, match="must contain a JSON object"):
         load_project_config(repo / "ww-agentic-workflows.json")

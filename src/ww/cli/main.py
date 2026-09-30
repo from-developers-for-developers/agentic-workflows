@@ -360,7 +360,7 @@ def _rules_summary(configuration: WorkflowConfiguration) -> str:
 
 
 def _configuration_files(storage: Storage, extensions: ExtensionRegistry) -> str:
-    """The configuration files this project reads, from machine to local.
+    """The configuration files this project reads, from user to local.
 
     A configured project's own settings files follow on their own line, so an
     extension setting that applies only there is visible where it was read.

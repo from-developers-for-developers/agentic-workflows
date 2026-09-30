@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Test-suite isolation from machine-level configuration."""
+"""Test-suite isolation from the operator's own configuration."""
 
 from __future__ import annotations
 
@@ -44,12 +44,15 @@ def isolated_update_check(
 
 
 @pytest.fixture(scope="session", autouse=True)
-def isolated_machine_configuration(
+def isolated_user_configuration(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[None]:
-    """Keep the operator's machine-level configuration out of every test."""
+    """Keep the operator's user-level configuration out of every test."""
     environment = {
-        "WW_MACHINE_CONFIG_DIR": str(tmp_path_factory.mktemp("ww-machine")),
+        "WW_USER_CONFIG_DIR": str(tmp_path_factory.mktemp("ww-user")),
     }
     with patch.dict(os.environ, environment):
+        # The former variable is an error, so an operator who still sets it
+        # must not fail the suite.
+        os.environ.pop("WW_MACHINE_CONFIG_DIR", None)
         yield

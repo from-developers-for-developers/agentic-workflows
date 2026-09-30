@@ -27,10 +27,10 @@ def _write(path: Path, content: str) -> Path:
 
 
 @pytest.fixture
-def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    directory = tmp_path / "machine"
+def user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    directory = tmp_path / "user"
     directory.mkdir()
-    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(directory))
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(directory))
     return directory
 
 
@@ -116,6 +116,12 @@ def test_init_upgrades_a_launcher_an_earlier_ww_wrote(
     assert (project / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
 
 
+def test_the_launcher_written_for_the_former_machine_level_is_upgraded() -> None:
+    assert any("WW_MACHINE_CONFIG_DIR" in launcher for launcher in GENERATED_LAUNCHERS)
+    assert "WW_USER_CONFIG_DIR" in PROJECT_LAUNCHER
+    assert ".machine." not in PROJECT_LAUNCHER
+
+
 def test_an_edited_launcher_is_preserved(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -146,13 +152,13 @@ def test_the_project_root_is_found_by_either_workflow_file_name(
 
 
 def test_lint_lists_the_files_read_and_the_overrides(
-    machine: Path, project: Path, capsys: pytest.CaptureFixture[str]
+    user: Path, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write(
-        machine / "ww-agentic-workflows.machine.yaml",
+        user / "ww-agentic-workflows.yaml",
         "handlers:\n  - name: test\n    argv: [pytest]\n",
     )
-    _write(machine / "ww-agentic-workflows.machine.json", "{}")
+    _write(user / "ww-agentic-workflows.json", "{}")
     _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
     _write(project / "ww-agentic-workflows.json", "{}")
     _write(
@@ -160,17 +166,17 @@ def test_lint_lists_the_files_read_and_the_overrides(
         "handlers:\n  - name: test\n    argv: [pytest, -q]\n",
     )
     _write(project / "ww-agentic-workflows.local.json", "{}")
-    machine_yaml = machine / "ww-agentic-workflows.machine.yaml"
-    machine_json = machine / "ww-agentic-workflows.machine.json"
+    user_yaml = user / "ww-agentic-workflows.yaml"
+    user_json = user / "ww-agentic-workflows.json"
 
     assert main(["--root", str(project), "lint"]) == 0
 
     assert capsys.readouterr().out == (
         "ww-agentic-workflows.yaml is valid.\n"
-        f"Configuration files: {machine_yaml}, ww-agentic-workflows.yaml, "
-        f"ww-agentic-workflows.local.yaml, {machine_json}, "
+        f"Configuration files: {user_yaml}, ww-agentic-workflows.yaml, "
+        f"ww-agentic-workflows.local.yaml, {user_json}, "
         "ww-agentic-workflows.json, ww-agentic-workflows.local.json\n"
-        f"Notice: handler 'test' from {machine_yaml} is overridden by "
+        f"Notice: handler 'test' from {user_yaml} is overridden by "
         "ww-agentic-workflows.local.yaml.\n"
     )
 
@@ -245,19 +251,52 @@ def test_init_creates_a_gitignore_only_in_a_git_checkout(
 
 
 def test_init_writes_only_repo_level_files(
-    machine: Path, project: Path, capsys: pytest.CaptureFixture[str]
+    user: Path, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(machine / "ww-agentic-workflows.machine.yaml", _WORKFLOW)
+    _write(user / "ww-agentic-workflows.yaml", _WORKFLOW)
     local = _write(project / "ww-agentic-workflows.local.yaml", "modes: []\n")
 
     _init(project, capsys)
 
-    assert (machine / "ww-agentic-workflows.machine.yaml").read_text() == _WORKFLOW
+    assert (user / "ww-agentic-workflows.yaml").read_text() == _WORKFLOW
     assert local.read_text() == "modes: []\n"
-    assert not (machine / "ww-agentic-workflows.machine.json").exists()
+    assert not (user / "ww-agentic-workflows.json").exists()
     assert not (project / "ww-agentic-workflows.local.json").exists()
-    # The machine level already defines workflows, so init adds no empty list.
+    # The user level already defines workflows, so init adds no empty list.
     assert "workflows:" not in (project / "ww-agentic-workflows.yaml").read_text()
+
+
+def test_init_creates_the_user_configuration_directory(
+    tmp_path: Path,
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    directory = tmp_path / "config" / "ww-agentic-workflows"
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(directory))
+
+    assert main(["--root", str(project), "init", "--no-input"]) == 0
+    first = capsys.readouterr().out
+
+    assert directory.is_dir()
+    assert f"- {directory} (user configuration directory)" in first
+
+    # Once it exists, a later init leaves it alone and says nothing about it.
+    assert main(["--root", str(project), "init", "--no-input"]) == 0
+    assert "user configuration directory" not in capsys.readouterr().out
+
+
+def test_a_former_user_level_file_stops_every_command(
+    user: Path, project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(project, capsys)
+    _write(user / "ww-agentic-workflows.machine.yaml", _WORKFLOW)
+
+    assert main(["--root", str(project), "lint"]) != 0
+
+    error = capsys.readouterr().err
+    assert "ww-agentic-workflows.machine.yaml" in error
+    assert str(user / "ww-agentic-workflows.yaml") in error
 
 
 # The ./ww launcher
@@ -269,10 +308,10 @@ def _fake_binary(directory: Path, name: str) -> Path:
     return path
 
 
-def _run_launcher(project: Path, machine: Path) -> str:
+def _run_launcher(project: Path, user: Path) -> str:
     launcher = _write(project / "ww", PROJECT_LAUNCHER)
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
-    environment = {**os.environ, "WW_MACHINE_CONFIG_DIR": str(machine)}
+    environment = {**os.environ, "WW_USER_CONFIG_DIR": str(user)}
     result = subprocess.run(
         [str(launcher)], env=environment, capture_output=True, text=True, check=True
     )
@@ -280,26 +319,26 @@ def _run_launcher(project: Path, machine: Path) -> str:
 
 
 def test_the_launcher_runs_the_lowest_level_executable(
-    tmp_path: Path, machine: Path, project: Path
+    tmp_path: Path, user: Path, project: Path
 ) -> None:
     bin_dir = tmp_path / "bin"
-    for level in ("machine", "repo", "local"):
+    for level in ("user", "repo", "local"):
         _fake_binary(bin_dir, f"ww-{level}")
 
     def settings(path: Path, level: str) -> None:
         _write(path, json.dumps({"executable": str(bin_dir / f"ww-{level}")}))
 
-    settings(machine / "ww-agentic-workflows.machine.json", "machine")
-    assert _run_launcher(project, machine) == "ww-machine"
+    settings(user / "ww-agentic-workflows.json", "user")
+    assert _run_launcher(project, user) == "ww-user"
 
     settings(project / "ww-agentic-workflows.json", "repo")
-    assert _run_launcher(project, machine) == "ww-repo"
+    assert _run_launcher(project, user) == "ww-repo"
 
     settings(project / "ww-agentic-workflows.local.json", "local")
-    assert _run_launcher(project, machine) == "ww-local"
+    assert _run_launcher(project, user) == "ww-local"
 
     # An unreadable or keyless level is skipped, not fatal.
     _write(project / "ww-agentic-workflows.local.json", "{not json")
-    assert _run_launcher(project, machine) == "ww-repo"
+    assert _run_launcher(project, user) == "ww-repo"
     _write(project / "ww-agentic-workflows.local.json", '{"executable": "  "}')
-    assert _run_launcher(project, machine) == "ww-repo"
+    assert _run_launcher(project, user) == "ww-repo"

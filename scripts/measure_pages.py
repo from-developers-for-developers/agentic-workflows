@@ -63,18 +63,19 @@ def main() -> int:
 
 
 def _isolate(base: Path) -> None:
-    """Keep the operator's Git, update, and machine settings out of the pages."""
+    """Keep the operator's Git, update, and user-level settings out of the pages."""
     git_config = base / "gitconfig"
     git_config.write_text("[commit]\n\tgpgsign = false\n", encoding="utf-8")
     (base / "state").mkdir()
-    (base / "machine").mkdir()
+    (base / "user").mkdir()
+    os.environ.pop("WW_MACHINE_CONFIG_DIR", None)
     os.environ.update(
         {
             "GIT_CONFIG_GLOBAL": str(git_config),
             "GIT_CONFIG_NOSYSTEM": "1",
             "WW_UPDATE_CHECK": "0",
             "WW_STATE_HOME": str(base / "state"),
-            "WW_MACHINE_CONFIG_DIR": str(base / "machine"),
+            "WW_USER_CONFIG_DIR": str(base / "user"),
         }
     )
 

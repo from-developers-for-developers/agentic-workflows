@@ -298,7 +298,7 @@ class ProjectConfig:
 def load_project_config(path: Path) -> ProjectConfig:
     """Load the settings levels around the repo file ``path``, deep-merged.
 
-    The machine, repo, and local files apply in that order, each optional;
+    The user, repo, and local files apply in that order, each optional;
     without any of them the defaults apply.
     """
     raw, sources = compose_settings(path)
