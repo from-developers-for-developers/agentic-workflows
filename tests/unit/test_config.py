@@ -1689,11 +1689,11 @@ def test_a_bare_step_named_like_a_root_handler_copies_it(tmp_path: Path) -> None
             tmp_path / "ww.yaml",
             """handlers:
   - fetch_requirements: Fetch the issue and its comments.
-    mcp: atlassian
+    mcp: tracker
     variables:
       - issue_key: The issue key.
   - skim: Skim the issue.
-    mcp: atlassian
+    mcp: tracker
 workflows:
   - task: ~
     steps:

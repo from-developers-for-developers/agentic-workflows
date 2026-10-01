@@ -11,16 +11,16 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-01
 
-- Development: `scripts/test` creates or reuses `.venv` and runs ruff, mypy and pytest; the tests run in parallel
-  through pytest-xdist (`-n 0` runs them serially).
 - Breaking: persisted formats restart at schema 1 and ww reads no earlier one; the migrations, old-name hints
   (configuration keys, template names, CLI flags, `workflows.yaml`/`agentic-workflows.json`, the machine level) and the
   extension `upgrade_settings` hook are removed. Finish or reset in-flight tasks and re-run `init` before using this
   build.
 - Breaking: `max_rounds` and `max_fixes` in the settings file are `"limits": {"rounds": N, "fixes": N}`.
-- `init` writes every root-level setting with its default to `ww.json`, and adds the missing ones to an existing file.
 - Breaking: the configuration files are `ww.yaml`, `ww.json`, `ww.local.yaml` and `ww.local.json`, and the user
   configuration directory is `~/.config/ww/` (or `$XDG_CONFIG_HOME/ww`). Rename yours.
+- `init` writes every root-level setting with its default to `ww.json`, and adds the missing ones to an existing file.
+- Development: `scripts/test` creates or reuses `.venv` and runs ruff, mypy and pytest; the tests run in parallel
+  through pytest-xdist (`-n 0` runs them serially).
 
 ## 2026-09-30
 

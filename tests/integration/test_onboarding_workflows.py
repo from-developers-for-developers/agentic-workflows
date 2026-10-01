@@ -142,12 +142,12 @@ def test_steps_name_ww_commands_with_the_configured_executable(
     root = _project(tmp_path / "project")
     service = WorkflowService(Storage(root))
 
-    with printed_executable("wwdev"):
+    with printed_executable("ww-next"):
         start_after_init(service, "ww-suggest", "T-1", agent="codex")
         gather = service.next("T-1")
 
     assert gather.item_name == "gather"
-    assert "`wwdev discover`" in gather.action_text
+    assert "`ww-next discover`" in gather.action_text
     assert "{{" not in gather.action_text
     with printed_executable(None):
         values = runtime_variable_values(root, "T-1")

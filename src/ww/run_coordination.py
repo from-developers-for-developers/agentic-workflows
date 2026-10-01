@@ -75,7 +75,7 @@ class RunCoordinator:
         runs, existing_handoff, revision = self.tasks.read_task_record(state.task_id)
         current = next((run for run in runs if run.run_id == state.run_id), None)
         aggregate = TaskRunAggregate(
-            run_id=state.run_id or "legacy",
+            run_id=state.run_id,
             workflow=state.workflow,
             snapshot=snapshot,
             state=state,

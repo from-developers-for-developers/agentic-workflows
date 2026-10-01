@@ -3032,7 +3032,7 @@ class WorkflowService:
             (run for run in runs if run.run_id == state.run_id), None
         )
         source = TaskRunAggregate(
-            run_id=finished.run_id or "legacy",
+            run_id=finished.run_id,
             workflow=finished.workflow,
             snapshot=snapshot,
             state=finished,

@@ -21,7 +21,7 @@ def initial_state(
     snapshot: PlanSnapshot,
     modes: tuple[str, ...],
     now: str,
-    run_id: str | None = None,
+    run_id: str,
     execution_instance_id: str | None = None,
     parent_task_id: str | None = None,
     start_operation_id: str | None = None,
@@ -30,7 +30,7 @@ def initial_state(
     reasoning: str = "auto",
 ) -> ExecutionState:
     plan = snapshot.plan
-    operation_scope = _operation_scope(run_id or plan.workflow, execution_instance_id)
+    operation_scope = _operation_scope(run_id, execution_instance_id)
     records = tuple(
         new_item_execution(plan.task_id or "", operation_scope, item)
         for item in plan.items

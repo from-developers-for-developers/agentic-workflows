@@ -929,6 +929,7 @@ class ProjectMetadataPublication:
 @dataclass(frozen=True)
 class ExecutionState:
     task_id: str
+    run_id: str
     workflow: str
     agent: str
     modes: tuple[str, ...]
@@ -946,7 +947,6 @@ class ExecutionState:
     workflow_values: tuple[tuple[str, str], ...] = ()
     pending_input_request: InputRequest | None = None
     last_error: str | None = None
-    run_id: str | None = None
     execution_instance_id: str | None = None
     working_directory: str | None = None
     plan_revision: int = 1
@@ -1043,6 +1043,7 @@ class ExecutionState:
         required = {
             "schema_version",
             "task_id",
+            "run_id",
             "workflow",
             "agent",
             "modes",
@@ -1068,7 +1069,7 @@ class ExecutionState:
         ):
             raise ValueError("execution records and steps must be lists")
         task_id = expect_string(data["task_id"], "task ID")
-        run_id = expect_optional_string(data.get("run_id"), "run ID")
+        run_id = expect_string(data["run_id"], "run ID")
         raw_items = data["item_executions"]
         item_executions = tuple(PlanItemExecution.from_dict(item) for item in raw_items)
         raw_history = data.get("execution_history", [])
