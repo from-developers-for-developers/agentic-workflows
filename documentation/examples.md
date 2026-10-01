@@ -632,3 +632,110 @@ it sees a wording it proposes how to check it; the operator approves with
 approval ww runs it for that wording in every later step. Until then, and for
 a rule no command can check, the verifier gives a verdict, and a failing one
 sends develop back like a failed check.
+
+## 18. What ww-suggest proposes for a Node project with dev/main and a Jira-like tracker
+
+The shape to expect from `ww-suggest` for a project that integrates on `dev`,
+releases from `main`, references `PROJ-123` keys in its commits, and verifies
+a change with `npm run lint`, `npm run typecheck` and `npm test`. The commands
+are handlers whose `before_complete` check runs the exact `argv`, so ww, not
+the agent, decides that they pass. `bugfix` is `hotfix` on another base
+branch, `hotfix` recommends the merge back into `dev`, and the operator keeps
+the review of a feature. The operator's wish for short updates is a mode, not
+a rule; no rule is needed, since every convention here is a command or a
+setting. Applied for the team, the fragment becomes `ww-setup.yaml`:
+
+```yaml
+handlers:
+  - check-code-quality:
+    loop:
+      - lint: Run `npm run lint` and `npm run typecheck`, and fix what they report.
+        break: Neither command reports a finding.
+        hooks:
+          before_complete:
+            - argv: [npm, run, lint]
+              on_failure: fix
+            - argv: [npm, run, typecheck]
+              on_failure: fix
+
+  - run-tests:
+    loop:
+      - test: Run `npm test` and fix every failing test.
+        break: All tests pass.
+        hooks:
+          before_complete:
+            - argv: [npm, test]
+              on_failure: fix
+
+hooks:
+  before_start_workflow:
+    - workflows: [feature, hotfix, bugfix]
+      handlers:
+        - ext/ww/git/handlers:is-git-clean: ~
+        - ext/ww/git/handlers:start-task-branch: ~
+  before_complete_workflow:
+    - workflows: [feature, hotfix, bugfix]
+      handlers:
+        - ext/ww/git/handlers:git-commit: ~
+
+modes:
+  - brief: Keep updates to the operator to a few plain sentences.
+
+workflows:
+  - feature: Implement a ticket from the tracker, up to a tested commit.
+    steps:
+      - investigate: Read the ticket and the code it touches; say what changes and what could break.
+      - implement: Implement the change with its tests.
+        artifact_from: investigate
+      - check-code-quality: ~
+      - run-tests: ~
+      - review: Walk the operator through the change and take their review.
+        interactive: true
+
+  - hotfix: Fix a production bug on main for an urgent release.
+    recommended_next_workflow: merge-to-dev
+    steps:
+      - investigate: Find why the bug happens and reproduce it with a failing test.
+      - fix: Fix the bug at its cause.
+        artifact_from: investigate
+      - check-code-quality: ~
+      - run-tests: ~
+
+  - bugfix: Fix a bug on dev, released with the next regular release.
+    inherit: hotfix
+    recommended_next_workflow: ~
+
+  - merge-to-dev: Merge a hotfix branch back into dev and leave dev passing.
+    steps:
+      - merge: >-
+          Merge the branch the requirements name into dev with `git merge
+          --no-ff` in the primary checkout, resolving every conflict so that
+          both sides' intent survives. Do not push.
+        role: manager
+      - check-code-quality: ~
+      - run-tests: ~
+```
+
+and its `settings` go into `ww.json`:
+
+```json
+{
+  "task_format": "PROJ-{{digit}}",
+  "extensions": {
+    "ww/git": {
+      "commit_format": "{{ww.task.id}}: {{commit_message}}",
+      "separate_branch": true,
+      "base_branches": {"default": "dev", "hotfix": "main"},
+      "branch_name_formats": {
+        "default": "feature/{{ww.task.id}}",
+        "hotfix": "hotfix/{{ww.task.id}}",
+        "bugfix": "bugfix/{{ww.task.id}}"
+      }
+    }
+  }
+}
+```
+
+A smaller project, one `test` script on a single `main` branch, gets one
+lane, the `run-tests` handler and the git settings; worktrees appear only when
+the operator asks for tasks in parallel.

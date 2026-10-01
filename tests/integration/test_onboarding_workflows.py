@@ -294,3 +294,84 @@ def test_the_refresh_skill_offers_each_subject() -> None:
     for subject in ('"me"', '"my role in this project"', '"my team and company"'):
         assert subject in text
     assert '"only my role"' in text
+
+
+def test_ww_learn_recommends_the_choice_covering_the_missing_files() -> None:
+    description = _step("ww-learn", "choose").description
+
+    assert "which are missing" in description
+    for choice in ('"only me"', '"only my role"', '"only team and company"'):
+        assert choice in description
+
+
+def test_ww_learn_project_records_the_setup_facts_first() -> None:
+    scan = _step("ww-learn-project", "scan").description
+    for fact in ("integration branch", "exact argument list", "`task_format`"):
+        assert fact in scan, fact
+    assert "`commit_format`" in scan
+
+    review = _step("ww-learn-project", "review")
+    assert "setup facts first" in review.description
+    (project,) = review.update_document
+    assert 'first section is "Setup facts"' in project.instruction
+
+
+def test_ww_suggest_designs_with_the_operator_before_proposing() -> None:
+    workflow = builtin_workflow("ww-suggest")
+    names = [step.name for step in _steps(workflow.steps)]
+
+    assert [name for name in names if name != "assess"] == [
+        "gather",
+        "design",
+        "setup",
+        "propose",
+        "apply",
+    ]
+    design = _step("ww-suggest", "design")
+    assert design.interactive
+    # Whom the setup is for is the design's last question, not a step of its own.
+    assert [choice.label for choice in design.choices] == [
+        "for me",
+        "for the team",
+        "learn first",
+        "not now",
+    ]
+    assert "in one message, numbered" in design.description
+    assert "ww-setup.local.yaml" in design.description
+
+    gather = _step("ww-suggest", "gather").description
+    assert "proposal will be weaker" in gather
+    assert "read only" in gather
+
+
+def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
+    propose = _step("ww-suggest", "propose")
+    description = propose.description
+
+    assert propose.interactive
+    assert [choice.label for choice in propose.choices] == ["apply", "cancel"]
+    assert "documentation's examples" in description
+    for piece in (
+        "`base_branches`",
+        "`branch_name_formats`",
+        "`commit_format`",
+        "`on_failure: fix`",
+        "`inherit`",
+        "`recommended_next_workflow`",
+        "ext/ww/git/handlers:is-git-clean",
+        "--dry-run",
+        "at most three rounds",
+    ):
+        assert piece in description, piece
+    assert "--for <me or team, as chosen in design> --yes" in (
+        _step("ww-suggest", "apply").description
+    )
+
+
+def test_the_setup_skill_recommends_what_was_not_learned_yet() -> None:
+    text = SKILLS["ww-setup"]
+
+    assert '"not learned yet"' in text
+    assert "also when `project.setup.done` is already" in text
+    for choice in ('"only me"', '"only my role"', '"only team and company"'):
+        assert choice in text

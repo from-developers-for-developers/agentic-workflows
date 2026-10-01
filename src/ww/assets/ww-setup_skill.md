@@ -1,6 +1,6 @@
 ---
 name: ww-setup
-description: Guide the operator through setting ww up in this project, step by step, each step optional - ww learns about them, their role in the project, their team and company (ww-learn), learns how the project works (ww-learn-project), then suggests a gentle starting setup (ww-suggest). Use the first time ww is used in a project (`./ww discover` offers it while setup is not done), or when the operator asks to set up, onboard, or configure ww; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
+description: Guide the operator through setting ww up in this project, step by step, each step optional - ww learns about them, their role in the project, their team and company (ww-learn), learns how the project works (ww-learn-project), then designs a setup with the operator and proposes it (ww-suggest). Use the first time ww is used in a project (`./ww discover` offers it while setup is not done), or when the operator asks to set up, onboard, or configure ww; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
 ---
 
 # Set ww up with the operator
@@ -26,24 +26,32 @@ edit ww's configuration files yourself: ww's workflows place changes with
    answer: `./ww onboarding --set explain=true` (or `explain=false`). When it
    is `true`, add `--mode ww-narrate` to every `start` below and, between
    workflows, say in a sentence what comes next and why.
-3. **Offer the steps.** When `project.setup.done` is `false`, explain the
-   path in a few sentences, then ask which to do now (several may be picked;
-   all three, in order, is the usual first choice):
+3. **Offer the steps.** List the subjects whose `learned.*` is `null`
+   (`me`, `myrole`, `team`, `company`, `project`) as "not learned yet" and
+   recommend learning them first, also when `project.setup.done` is already
+   `true`, naming what covers them: `ww-learn` with "only me" for me,
+   "only my role" for myrole, "only team and company" for team or company,
+   and "everything" when they fall under more than one of these;
+   `ww-learn-project` for project. When `project.setup.done` is `false`,
+   explain the path in a few sentences, then ask which to do now (several
+   may be picked; all three, in order, is the usual first choice):
    - `ww-learn`: a short interview about you, your role in this project,
      your team and your company. `me.md` stays on your machine, and
      `.ww/myrole.md` stays in this checkout, out of version control;
      `team.md` and `company.md` go in `.ww/` and are shared with the team
      once committed.
-   - `ww-learn-project`: reads how the project's work is organised (tooling,
-     trackers, stack, conventions, recurring pitfalls) into `.ww/project.md`.
-   - `ww-suggest`: proposes a small starting setup from all that, for you
-     first, shared with the team only if you want.
+   - `ww-learn-project`: reads how the project's work is organised (the
+     setup facts: branching, verify commands, tracker, commit convention;
+     then tooling, stack, recurring pitfalls) into `.ww/project.md`.
+   - `ww-suggest`: designs the setup with you (branching, the commands that
+     verify a change, who reviews, your preferences as modes) and proposes
+     it in full, for you alone or shared with the team.
    - None for now.
 
-   When setup is already done, offer instead: refresh what ww learned (the
-   `ww-refresh` skill), `ww-suggest` again (for example to share your setup
-   with the team), `ww-solve` for a problem, `ww-rules-from-artifacts`, or
-   `ww-automate`.
+   When setup is already done, offer, after any subject not learned yet:
+   refresh what ww learned (the `ww-refresh` skill), `ww-suggest` again (for
+   example to share your setup with the team), `ww-solve` for a problem,
+   `ww-rules-from-artifacts`, or `ww-automate`.
 4. **Run each chosen workflow**, in the order above, with the start command
    `discover` shows:
 

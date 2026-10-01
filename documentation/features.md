@@ -15,8 +15,8 @@ and persistence invariants, see [architecture.md](architecture.md).
 - Onboarding state, and setup fragments that ww validates and places in the
   shared or local configuration after asking.
 - Built-in learning and setup workflows, started by the `ww-setup` skills:
-  ww learns about the operator, team, company and project and proposes a
-  gentle starting setup.
+  ww learns about the operator, team, company and project, designs a setup
+  with the operator, and proposes it in full.
 - An implicit, reserved `init` step that preserves task requirements.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
@@ -316,7 +316,7 @@ with `setup_done`, `explain` and the `guidance` lines. Under `"enabled":
 ## Apply a proposed setup
 
 The setup skills propose configuration from what ww learned: workflows, modes,
-gentle rules, hooks, and settings. They never edit ww's configuration files
+handlers, hooks, rules, and settings. They never edit ww's configuration files
 themselves; they write the proposal to a scratch file and hand it to ww:
 
 ```console
@@ -359,8 +359,8 @@ is committed.
 
 ## Setting ww up: learning and suggestions
 
-ww can learn who uses it and how the project works, and propose a gentle
-starting setup from that. The `ww-setup` skill guides the operator through it;
+ww can learn who uses it and how the project works, and design a setup for the
+project with the operator from that. The `ww-setup` skill guides the operator through it;
 `discover` offers the skill on the first use of ww in a project, while
 `setup.done` is not recorded (see [Onboarding state](#onboarding-state)). The
 work itself is done by ww's own [built-in workflows](specification.md#built-in-workflows),
@@ -371,20 +371,42 @@ for one of them.
 | --- | --- | --- |
 | `ww-setup` | — | The guide. Asks once whether the operator wants to see what ww does as it learns (`explain`), then offers learn → learn-project → suggest, each optional, and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
 | `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their role in this project (what they own, who they work with and hand over to, what they are measured on, which decisions they keep), their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
-| `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does: agent tooling and MCP servers, issue trackers the code mentions, infrastructure and stack, conventions (branching, commit format, CI, reviews), and recurring pitfalls from the commit history and review comments. Changes no project file. |
-| `ww-suggest` | `ww-suggest` | From the learning files, proposes one to three workflows, modes, at most five simple rules, hooks where a project command plainly fits, and settings, weighed by the operator's role: what they own gets rules and checks, what they hand over gets handoffs, and decisions they keep become operator stops or interactive steps. Asks "set it up for yourself?" and then "share it with the team?", shows the proposal with `setup apply --dry-run`'s list of changes, and places it on confirmation. |
+| `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls from the commit history and review comments. Changes no project file. |
+| `ww-suggest` | `ww-suggest` | Gathers the setup facts, looking up in the checkout what `project.md` lacks, designs the setup with the operator in one set of questions, proposes it in full, shows it with `setup apply --dry-run`'s list of changes, and places it on confirmation; see below. |
 | `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
-The questions are interactive steps with `choices`, asked through the agent's
-own question tool, one at a time; every question can be skipped, and every
-file is shown before it is written. These workflows declare `runtime: single`
+The questions are interactive steps: an interview puts its questions in one
+numbered message with at most one follow-up each, and a pick between a few
+answers goes through the agent's own question tool. Every question can be
+skipped, and every file is shown before it is written. These workflows declare `runtime: single`
 and give every step to the session that talks to the operator (`role:
 manager`), so they work in agents without subagents. When `explain` is `true`,
 the skills start them with the built-in `ww-narrate` mode, whose steps tell
 the operator what each one does and why.
+
+**What `ww-suggest` proposes.** Its `design` step asks, in one message with
+a default for each answer taken from the facts, what the setup turns on: the
+integration branch and the lanes to model (feature work, a hotfix from the
+release branch, a bugfix, a merge back), the commands that verify a change and
+their order, whether agents commit (following the project's convention) and
+push (never by default), worktrees for parallel tasks, the task ID format, who
+reviews, which of the operator's preferences become modes or operator stops,
+and whether the setup is for the operator alone or the team. The proposal then
+follows the project: `ww/git` settings for the branching and commit format and
+its handlers as hooks, one handler per verify command that loops until the
+command passes and lets the command, run as `argv`, decide; one workflow per
+lane reusing those handlers, with `inherit` where lanes differ only in their
+base branch; modes for preferences; and rules only for conventions no command
+can check. A small project gets one lane and a handler or two. [Example
+18](examples.md#18-what-ww-suggest-proposes-for-a-node-project-with-devmain-and-a-jira-like-tracker)
+shows the shape to expect. It is presented section by section, changed as the
+operator asks for up to three rounds, and placed only on "apply". When
+`myrole.md` or `project.md` is missing, `ww-suggest` says the proposal will be
+weaker and offers to learn first, and a later `ww-setup` run recommends every
+subject not learned yet before anything else.
 
 What ww learns goes into five files it keeps for its own use:
 

@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-01
 
+- `ww-suggest` designs the setup with the operator (lanes, verify commands, review, modes) and proposes a complete
+  one — ww/git branching, handlers with the project's commands, workflows per lane, modes, rules only for what a
+  command cannot check; `ww-learn-project` records the setup facts it needs. A later `ww-setup` run offers what was
+  not learned yet.
 - Breaking: the task document (schema 2) stores an expanded plan item as what differs from its template item; the
   step texts stay once per run in `template_plan`. Finish or reset tasks before upgrading.
 - Breaking: persisted formats restart at schema 1 and ww reads no earlier one; the migrations, old-name hints

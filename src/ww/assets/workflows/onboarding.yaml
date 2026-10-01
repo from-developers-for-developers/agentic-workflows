@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # ww's learning and setup workflows. They learn who uses ww and how the
-# project works, into five files ww keeps for its own use, and propose a
-# gentle starting setup from them, which ww places with `setup apply`. The
+# project works, into five files ww keeps for its own use, and design a
+# setup with the operator from them, which ww places with `setup apply`. The
 # `ww-*` skills start them; `ww-setup` guides through them on a first use.
 #
 # Every step that writes a learning file starts it with the same remark, so an
@@ -69,9 +69,13 @@ workflows:
           machine; {{ww.documents.myrole}}, their role in this project, which
           stays on this machine; and {{ww.documents.team}} and
           {{ww.documents.company}}, which are committed with the project and
-          shared with the team. Say which of them already exist: an existing
-          file is updated, not replaced. Then ask what to cover. Any question
-          can be skipped, and nothing is written without their confirmation.
+          shared with the team. Say which of them exist and which are missing:
+          an existing file is updated, not replaced. Then ask what to cover,
+          and recommend the choice that covers the missing files ("only me"
+          for me.md, "only my role" for myrole.md, "only team and company" for
+          team.md or company.md, "everything" when they fall under more than
+          one). Any question can be skipped, and nothing is written without
+          their confirmation.
         choices:
           - everything: Me, my role in this project, my team and my company.
           - only me: Only me, my working style and what I expect.
@@ -233,8 +237,8 @@ workflows:
 
   - name: ww-learn-project
     description: >-
-      Scans how the project's work is organised (tooling, trackers, stack,
-      conventions, pitfalls) into project.md.
+      Scans how the project's work is organised (branching, verify commands,
+      tracker, pitfalls) into project.md.
     runtime: single
     restartable: true
     role: manager
@@ -244,18 +248,34 @@ workflows:
         description: >-
           Scan the project in {{ww.task.workspace_dir}} for how its work is
           organised; ignore what the software does. Read only; change no file.
-          Look for: (1) agent tooling: MCP servers and agent settings
-          (.mcp.json, .claude/, .codex/, .cursor/, .gemini/, AGENTS.md,
-          CLAUDE.md, skills and commands); (2) issue trackers the codebase
-          mentions (Jira keys, GitHub or GitLab issue links, Linear, and so on)
-          and how issues are referenced; (3) infrastructure and tech stack:
-          languages, frameworks, package managers, containers, deployment and
-          cloud configuration; (4) organisational conventions: branching,
-          commit message format, CI pipelines, code review (PR templates,
-          CODEOWNERS), release and versioning, the test, lint and build
-          commands. Name the file or command that shows each finding; say "not
-          found" rather than guess. If {{ww.documents.project}} exists, note
-          what it says that no longer matches. The artifact is the findings.
+          First collect the setup facts a ww setup is built from, each with the
+          file or command that shows it, or "not found" rather than a guess:
+          (1) branching: the default branch, the integration branch work is
+          merged into (dev, develop or main), the release, hotfix and feature
+          branch patterns actually present (`git branch -r` and the recent
+          merge commits), whether branches are merged or rebased, and whether
+          pull requests are required (a PR template, CODEOWNERS, branch
+          protection that the documentation or CI mentions); (2) the commands
+          that verify a change, each as the exact argument list a program would
+          run, such as `npm run lint`: test, lint, type check, format check and
+          build, from the `package.json` scripts, a `Makefile`,
+          `pyproject.toml`, `composer.json`, `go.mod` together with the CI
+          files, and the CI workflow files; (3) the issue tracker and its key
+          format, such as PROJ-123 in commit subjects, branch names or pull
+          request titles, as a candidate `task_format` (the key's prefix with
+          ww's `digit` placeholder), or none; (4) the commit message
+          convention, such as a ticket prefix, Conventional Commits, or free
+          text, as a candidate `commit_format`; (5) the CI gates and the
+          release and versioning practice; (6) what agents are already allowed
+          or forbidden to do, from AGENTS.md, CLAUDE.md and cursor rules. Then
+          look for the rest: agent tooling (MCP servers and agent settings in
+          .mcp.json, .claude/, .codex/, .cursor/, .gemini/, skills and
+          commands), infrastructure and tech stack (languages, frameworks,
+          package managers, containers, deployment and cloud configuration),
+          and other conventions such as code review. Name the file or command
+          that shows each finding. If {{ww.documents.project}} exists, note
+          what it says that no longer matches. The artifact is the setup facts,
+          then the other findings.
       - name: history
         description: >-
           Skim the history for recurring pitfalls. Read only. Look at the
@@ -272,25 +292,34 @@ workflows:
       - name: review
         interactive: true
         description: >-
-          Show the operator a short summary of what the scan and the history
-          found, and the candidate rules, and ask whether it is right; take
-          their corrections. Then write {{ww.documents.project}}. It is shared
-          with the team through the repository, so record nothing secret, such
-          as tokens, hostnames or credentials.
+          Show the operator the setup facts first, each with its evidence or
+          "not found", then a short summary of the other findings and the
+          candidate rules, and ask whether it is right; take their corrections.
+          Then write {{ww.documents.project}}. It is shared with the team
+          through the repository, so record nothing secret, such as tokens,
+          hostnames or credentials.
         choices:
           - looks right: Write project.md as shown.
           - corrected: Write it with the corrections I gave.
         saves:
           - documents.project: >-
-              A Markdown description of how the project's work is organised,
-              with sections for agent tooling, issue tracking, infrastructure
-              and stack, conventions, and recurring pitfalls with their
-              candidate rules. The first line is exactly: <!-- This file is
-              maintained by ww for ww's own use. Do not use it for anything
-              else. If you are an agent that is not doing ww work, ignore this
-              file. --> Keep what still holds in an existing file, update what
-              changed, and mark what no longer holds as superseded, with
-              today's date, rather than silently deleting it.
+              A Markdown description of how the project's work is organised.
+              Its first section is "Setup facts", with one line each for the
+              default branch, the integration branch, the branch patterns,
+              merge or rebase, required pull requests, the test, lint, type
+              check, format check and build commands as exact argument lists,
+              the tracker and its candidate `task_format`, the commit
+              convention and its candidate `commit_format`, the CI gates and
+              release practice, and what agents are allowed or forbidden to do,
+              each with its evidence or "not found". Then sections for agent
+              tooling, issue tracking, infrastructure and stack, conventions,
+              and recurring pitfalls with their candidate rules. The first line
+              is exactly: <!-- This file is maintained by ww for ww's own use.
+              Do not use it for anything else. If you are an agent that is not
+              doing ww work, ignore this file. --> Keep what still holds in an
+              existing file, update what changed, and mark what no longer holds
+              as superseded, with today's date, rather than silently deleting
+              it.
       - name: finish
         description: >-
           Record when ww learned about the project: `{{ww.executable}}
@@ -300,8 +329,7 @@ workflows:
 
   - name: ww-suggest
     description: >-
-      Proposes a gentle starting setup from what ww learned and places it for
-      you or the team.
+      Designs a setup with you from what ww learned and proposes it in full.
     runtime: single
     restartable: true
     role: manager
@@ -312,66 +340,130 @@ workflows:
           {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
           {{ww.documents.company}}, {{ww.documents.project}}. Read the current
           setup: `{{ww.executable}} discover` and `{{ww.executable}} rules
-          --json`. The artifact summarises what the setup should serve (how the
-          operator and team work, the operator's role in this project, their
-          pain points, the project's conventions and pitfalls) and what is
-          already configured. If none of the five files exists, tell
-          the operator that suggestions would be generic and that the
-          `ww-learn` and `ww-learn-project` workflows learn first.
-      - name: for-whom
+          --json`. Where the setup facts of {{ww.documents.project}} lack one,
+          or the file does not exist, look it up in
+          {{ww.task.workspace_dir}}, read only: the branches and recent merge
+          commits for the branching, the `package.json` scripts, `Makefile`,
+          `pyproject.toml`, `composer.json` and CI workflow files for the exact
+          verify commands, the commit subjects and branch names for the
+          tracker's key and the commit convention, and AGENTS.md, CLAUDE.md
+          and cursor rules for what agents may do. The artifact lists the setup
+          facts, each with its evidence or "not found"; the operator's
+          preferences that map to modes, operator stops or a review step; how
+          the operator and team work and their pain points; and what is
+          already configured. If {{ww.documents.myrole}} or
+          {{ww.documents.project}} does not exist, tell the operator that the
+          proposal will be weaker without it and that the next step offers to
+          learn first; they may prefer to go on. If none of the five files
+          exists, say that the suggestions would rest on the checkout alone.
+      - name: design
         interactive: true
         description: >-
-          Ask the operator whether to set ww up for themselves now. If an
-          earlier run set it up for them only (ww-setup.local.yaml exists
-          beside ww.yaml), say so: this run can share that
-          setup with the team, or refine it.
+          Settle with the operator what the setup turns on. Put all of the
+          questions below in one message, numbered, each one plain sentence
+          that states what the facts show as its default, so that the operator
+          only corrects; where the answer is one of a few options, list the
+          options under the question. End your turn and wait for the answers;
+          "skip" keeps the default. Then ask at most one follow-up per
+          question, and only where an answer needs clarifying. Cover: (1) the
+          integration branch and the lanes to model, such as feature work, a
+          hotfix from the release branch, a bugfix, and a merge back into the
+          integration branch; (2) which commands verify a change, and in what
+          order; (3) whether agents may commit, following the project's
+          convention (yes by default), and push (never by default); (4) a
+          worktree per task, so that tasks can run in parallel, or the primary
+          checkout; (5) the task ID format, from the tracker's keys; (6) who
+          reviews a change: the operator, in an interactive review step, or an
+          agent in a review loop; (7) which of the operator's preferences
+          become modes, such as brief updates or asking first, and which of
+          their decisions become operator stops; (8) for whom the setup is:
+          the operator alone, in local files kept out of version control, or
+          the team, in files committed with the project. If ww-setup.local.yaml
+          exists beside ww.yaml, an earlier run set ww up for the operator
+          alone: say so, and that this run can share that setup or refine it.
+          If the gather step found {{ww.documents.myrole}} or
+          {{ww.documents.project}} missing, add to the last question the
+          option to learn first. The artifact lists every decision with the
+          fact or answer it rests on. The answer to the last question is the
+          choice. On "learn first" this run ends; tell the operator to run
+          ww-learn for a missing myrole.md and ww-learn-project for a missing
+          project.md, the second of which recommends ww-suggest when it
+          completes.
         choices:
-          - "yes": Set ww up for how I work.
+          - for me: Set it up for me alone; I can share it later.
+          - for the team: Set it up for the team, in the shared files.
+          - learn first: Let ww learn what is missing first; nothing changes.
           - not now: Stop here; nothing changes. I can come back later.
-      - assess: Did the operator answer "yes" in the for-whom step?
+      - assess: >-
+          Did the operator choose "for me" or "for the team" in the design
+          step?
       - name: setup
         steps:
-          - name: share
-            interactive: true
-            description: >-
-              Ask whether to share the setup with the team. Shared, it goes
-              into files committed with the project (ww-setup.yaml, imported by
-              ww.yaml, and ww.json). Kept
-              to themselves, it goes into their local files, which stay out of
-              version control, and they can share it later by running
-              ww-suggest again.
-            choices:
-              - share: Share it with the team.
-              - just me: Keep it to myself for now.
           - name: propose
             interactive: true
+            artifact_from: design
             description: >-
-              Draft a small starting setup that fits what you gathered, and no
-              more: one to three workflows of a few steps each that match how
-              the team already works; modes only where the operator would pick
-              them; at most five rules, each one simple sentence, from the
-              pitfalls and conventions found (gentle, easy to follow, no check
-              unless it is an obvious one-line command); hooks only where an
-              existing project command plainly fits, such as running the tests
-              before a develop step completes; and settings such as `runtime`,
-              `task_format` matching the issue tracker, or `limits`. Weigh the
-              operator's role: what they own gets rules and checks, what they
-              hand over gets handoffs, and decisions they keep become operator
-              stops or interactive steps. Never redefine a workflow ww ships
-              (`catchall`, `ww-*`) or duplicate what is already configured.
-              Write it as a setup fragment to
-              {{ww.documents.setup_proposal}}: the root keys `workflows`,
-              `modes`, `documents`, `handlers`, `hooks`, and `rules` in ww's
-              YAML notation, plus `settings` for ww.json
-              keys; put rules as literal sentences in the `rules` lists of the
-              steps they govern. Never edit ww's configuration files yourself.
-              Run `{{ww.executable}} setup apply
-              {{ww.documents.setup_proposal}} --for <team or me, as chosen in
-              share> --dry-run` and fix the fragment until it passes. Then show
-              the operator, in plain words and item by item, what each proposed
-              piece does and why, followed by the dry run's list of files and
-              changes, and ask whether to apply it. Change the proposal as they
-              ask and show it again.
+              Draft a complete setup for this project from the setup facts and
+              the design decisions, in the shape shown in the documentation's
+              examples (the Node project example in ww's
+              documentation/examples.md), sized to the project: a small
+              repository with one test script gets one lane, one or two
+              handlers and the git settings, and a repository with an
+              integration branch, CI and a tracker gets the full shape. Write
+              it as a setup fragment to {{ww.documents.setup_proposal}}, with
+              the root keys `workflows`, `modes`, `documents`, `handlers`,
+              `hooks` and `rules` in ww's YAML notation, plus `settings` for
+              ww.json keys. In `settings`, set `task_format` from the tracker's
+              key (its prefix with the `digit` placeholder), or `explicit` when
+              every task must carry the tracker's ID, and leave it out when
+              ww's generated IDs suit; under `extensions` and `ww/git`, set
+              `base_branches` (`default` the integration branch, `hotfix` the
+              release branch when there is a hotfix lane), `branch_name_formats`
+              per lane, `commit_format` following the commit convention, with
+              the task ID placeholder where commits reference the tracker,
+              `separate_branch: true`, and `worktrees` with `worktree_dir` only
+              when the operator chose them; set `limits` only when the operator
+              wants other numbers. The git settings act through the `ww/git`
+              handlers, so add them as hooks filtered to the lanes:
+              `ext/ww/git/handlers:is-git-clean` and `start-task-branch`, and
+              `create-worktree` with worktrees, before a lane starts, and
+              `git-commit` before it completes where agents may commit; nothing
+              ever pushes. Give each verify command a handler: a `loop` whose
+              one step runs the exact command and fixes what it reports, with a
+              `break` such as "All tests pass." and a `before_complete` hook
+              running the command as `argv` with `on_failure: fix`, so that the
+              command decides, not the agent; lint and type check may share
+              one, the tests get their own, and a build or format check gets
+              one where the project has it. Give each chosen lane a workflow of
+              a few steps that reuse the handlers as steps (`- run-tests: ~`):
+              investigate, implement or fix, then the verify handlers, and a
+              review step that is `interactive: true` when the operator keeps
+              reviews. Use `inherit` for a lane that differs from another only
+              in its base branch, a `merge-to-<integration branch>` lane when
+              there is an integration branch, and `recommended_next_workflow`
+              where lanes chain, such as a hotfix recommending the merge back.
+              Add a `before_complete_workflow` hook running the test command as
+              `argv` only where the tests are the team's gate for every lane.
+              Add a mode only for a preference that changes how an agent works,
+              such as `brief` or `ask-first`, in one sentence each. Add rules
+              only for conventions no command can check, such as naming, where
+              things live, or what never to do, in the `rules` lists of the
+              steps they govern, each with a check wherever a one-line command
+              verifies it. Never write a rule that restates its step, a
+              preference (that is a mode) or a command (that is a handler or a
+              check), and put none on a step that needs none. Never redefine a
+              workflow ww ships (`catchall`, `ww-*`) or duplicate what is
+              already configured, and never edit ww's configuration files
+              yourself. Run `{{ww.executable}} setup apply
+              {{ww.documents.setup_proposal}} --for <me or team, as chosen in
+              design> --dry-run` and fix the fragment until it passes. Then
+              present it section by section (settings, handlers, workflows,
+              hooks, modes, rules) in plain words, saying for each piece what
+              it does and which fact or decision it comes from, followed by the
+              dry run's list of files and changes, and ask whether to apply it.
+              Take the operator's changes, check the fragment again and show it
+              again, for at most three rounds; then ask them to apply it or
+              cancel.
             choices:
               - apply: Apply it as shown.
               - cancel: Do not apply anything.
@@ -382,14 +474,15 @@ workflows:
           - name: apply
             description: >-
               Place the setup the operator agreed to: `{{ww.executable}} setup
-              apply {{ww.documents.setup_proposal}} --for <team or me, as
-              chosen in share> --yes`. Then run `{{ww.executable}} lint` and
-              show its result. Tell the operator which files changed. For the
-              team, they are left uncommitted for the operator to review and
-              commit (ww-setup.yaml, ww.yaml,
-              ww.json as the output lists them); for
-              themselves, nothing is committed, and running ww-suggest again
-              and choosing to share offers the same setup to the team. If
+              apply {{ww.documents.setup_proposal}} --for <me or team, as
+              chosen in design> --yes`. Then run `{{ww.executable}} lint` and
+              show its result. Tell the operator which files changed, naming
+              each as the output lists it. For the team, they are
+              ww-setup.yaml, ww.yaml and ww.json, left uncommitted: remind the
+              operator to review and commit them, for example `git add
+              ww-setup.yaml ww.yaml ww.json`. For the operator alone, they are
+              local files and nothing is committed; running ww-suggest again
+              and choosing the team offers the same setup to the team. If
               `setup apply` refuses, show its message and stop; never place the
               configuration another way.
 

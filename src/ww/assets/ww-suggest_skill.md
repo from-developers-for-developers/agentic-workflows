@@ -1,14 +1,14 @@
 ---
 name: ww-suggest
-description: Propose a small, gentle ww setup (workflows, modes, a few simple rules, hooks, settings) from what ww learned about the operator, their role, team, company and project, and place it for the operator alone or shared with the team. Use when the operator invokes /ww-suggest, asks what ww setup would suit them, or wants to share their own ww setup with the team.
+description: Design a ww setup with the operator from what ww learned about them, their role, team, company and project, and propose it in full (git branching, handlers with the project's verify commands, workflows per lane, modes, rules only for what a command cannot check), placed for the operator alone or shared with the team. Use when the operator invokes /ww-suggest, asks what ww setup would suit them, or wants to share their own ww setup with the team.
 ---
 
 # Suggest a ww setup
 
 The `ww-suggest` workflow reads `me.md`, `myrole.md`, `team.md`,
-`company.md` and `project.md`, asks whether to set ww up for the operator and whether to share
-it, shows the proposal, and places it with `./ww setup apply`; this skill
-starts it. Running it again later can share a setup tried alone with the team.
+`company.md` and `project.md`, settles with the operator in one set of
+questions what the setup turns on and for whom, shows the proposal section by
+section, and places it with `./ww setup apply`; this skill starts it. Running it again later can share a setup tried alone with the team.
 
 1. Run `./ww onboarding --json`. If `user.explain` is `true`, add
    `--mode ww-narrate` below. If nothing was learned yet (no `learned.*`
@@ -18,7 +18,7 @@ starts it. Running it again later can share a setup tried alone with the team.
    ID unless discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-suggest --agent <agent> --requirements "Suggest a starting ww setup." --role manager
+   ./ww start --workflow ww-suggest --agent <agent> --requirements "Design and propose a ww setup for this project." --role manager
    ```
 
 3. Follow every page until the run completes. Never edit ww's configuration
