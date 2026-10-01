@@ -15,14 +15,18 @@ mode). Either way, end your turn right after asking: do nothing else until
 the operator has answered. Where the only question tool is an asynchronous one
 (Codex outside plan mode offers `request_user_input_async`), do not use it:
 its form disappears when your turn ends. Ask in the chat instead, as a
-numbered list of the options, and end your turn. Nothing changes without the operator seeing it first, and you never
-edit ww's configuration files yourself: ww's workflows place changes with
+numbered list of the options, and end your turn. The operator sees every
+file ww writes, the setup before it is placed, and you never edit ww's
+configuration files yourself: ww's workflows place changes with
 `./ww setup apply`.
 
 1. **Read the state.** Run `./ww discover` and `./ww onboarding --json`. If
    discover says ww is disabled, tell the operator and stop.
-2. **Narration.** If `user.explain` is `null`, ask: "While ww learns, do you
-   want me to explain what happens at each step?" (Yes / No), and record the
+2. **Ask once.** Put the narration question and the offer of step 3 in one
+   message (both questions at once in your question tool where it takes
+   several, as `AskUserQuestion` does), and end your turn. Ask about
+   narration only while `user.explain` is `null`: "While ww learns, do you
+   want me to explain what happens at each step?" (Yes / No). Record the
    answer: `./ww onboarding --set explain=true` (or `explain=false`). When it
    is `true`, add `--mode ww-narrate` to every `start` below and, between
    workflows, say in a sentence what comes next and why.
@@ -34,18 +38,20 @@ edit ww's configuration files yourself: ww's workflows place changes with
    and "everything" when they fall under more than one of these;
    `ww-learn-project` for project. When `project.setup.done` is `false`,
    explain the path in a few sentences, then ask which to do now (several
-   may be picked; all three, in order, is the usual first choice):
+   may be picked; all three, in order, is the default):
    - `ww-learn`: a short interview about you, your role in this project,
      your team and your company. `me.md` stays on your machine, and
      `.ww/myrole.md` stays in this checkout, out of version control;
      `team.md` and `company.md` go in `.ww/` and are shared with the team
      once committed.
-   - `ww-learn-project`: reads how the project's work is organised (the
-     setup facts: branching, verify commands, tracker, commit convention;
-     then tooling, stack, recurring pitfalls) into `.ww/project.md`.
-   - `ww-suggest`: designs the setup with you (branching, the commands that
-     verify a change, who reviews, your preferences as modes) and proposes
-     it in full, for you alone or shared with the team.
+   - `ww-learn-project`: profiles how the project's work is organised with
+     `./ww inspect` (branching, activity, fixes, verify commands, tracker,
+     commit convention), adds what only its documents say (tooling, stack,
+     recurring pitfalls) and writes it into `.ww/project.md`.
+   - `ww-suggest`: designs the setup with you, each default taken from the
+     profile (lanes, the commands that verify a change, who reviews, your
+     preferences as modes), and proposes it in full with the evidence for
+     each piece, for you alone or shared with the team.
    - None for now.
 
    When setup is already done, offer, after any subject not learned yet:
@@ -59,8 +65,11 @@ edit ww's configuration files yourself: ww's workflows place changes with
    ./ww start --workflow <name> --agent <agent> --requirements "<what the operator wants from it, in one line>" --role manager
    ```
 
-   Omit the task ID unless `discover` says this project needs one; then ask
-   the operator for it. Omit `--runtime`: each of these workflows chooses
+   For `ww-learn`, the requirements name what to cover, such as "Cover
+   everything." or "Cover only my role.", the choice step 3 recommended
+   unless the operator said otherwise, so that its `choose` step does not ask
+   again. Omit the task ID unless `discover` says this project needs one;
+   then ask the operator for it. Omit `--runtime`: each of these workflows chooses
    its own. Follow every page until the run completes. When a run offers the
    next workflow, start it only if the operator picked it in step 3 or says
    yes now.

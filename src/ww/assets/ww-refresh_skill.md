@@ -17,7 +17,8 @@ existing files first and update them in place.
    "my team and company", "the project". The first three are the `ww-learn`
    workflow: start it once and answer its `choose` step to match ("only me",
    "only my role", "only team and company", or "everything" when all three
-   are picked). "The project" is `ww-learn-project`.
+   are picked). "The project" is `ww-learn-project`, which reruns `./ww
+   inspect` and rebuilds the profile in `.ww/project.md` from it.
 3. If `user.explain` is `true`, add `--mode ww-narrate`. Start each chosen
    workflow with the start command `./ww discover` shows, omitting the task
    ID unless discover says this project needs one:

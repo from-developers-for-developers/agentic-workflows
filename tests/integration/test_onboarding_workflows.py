@@ -287,8 +287,21 @@ def test_the_setup_skill_guides_and_records_the_state() -> None:
     assert "myrole.md" in text
 
 
+def test_a_first_setup_asks_each_thing_once() -> None:
+    setup = SKILLS["ww-setup"]
+    assert "Put the narration question and the offer of step 3 in one" in setup
+    assert "so that its `choose` step does not ask" in setup
+    choose = _step("ww-learn", "choose").description
+    assert "When the requirements already say what to cover" in choose
+    for interview in ("interview-me", "interview-role", "interview-team"):
+        assert (
+            "do not wait for a confirmation" in _step("ww-learn", interview).description
+        )
+
+
 def test_the_refresh_skill_offers_each_subject() -> None:
     text = SKILLS["ww-refresh"]
+    assert "reruns `./ww\n   inspect`" in text
 
     assert "`learned.myrole`" in text
     for subject in ('"me"', '"my role in this project"', '"my team and company"'):
@@ -304,16 +317,25 @@ def test_ww_learn_recommends_the_choice_covering_the_missing_files() -> None:
         assert choice in description
 
 
-def test_ww_learn_project_records_the_setup_facts_first() -> None:
+def test_ww_learn_project_builds_on_the_inspect_profile() -> None:
     scan = _step("ww-learn-project", "scan").description
+    executable = "{{ww.executable}}"
+    assert f"First run `{executable} inspect`" in scan
+    assert "only on what inspect cannot see" in scan
     for fact in ("integration branch", "exact argument list", "`task_format`"):
         assert fact in scan, fact
     assert "`commit_format`" in scan
 
+    history = _step("ww-learn-project", "history").description
+    assert "Start from the Fixes section" in history
+    assert "one fix is not a pattern" in history
+    assert "as its check" in history
+
     review = _step("ww-learn-project", "review")
     assert "setup facts first" in review.description
     (project,) = review.update_document
-    assert 'first section is "Setup facts"' in project.instruction
+    assert 'first section is "Profile"' in project.instruction
+    assert 'Then "Setup facts"' in project.instruction
 
 
 def test_ww_suggest_designs_with_the_operator_before_proposing() -> None:
@@ -336,10 +358,23 @@ def test_ww_suggest_designs_with_the_operator_before_proposing() -> None:
         "learn first",
         "not now",
     ]
-    assert "in one message, numbered" in design.description
-    assert "ww-setup.local.yaml" in design.description
+    description = design.description
+    assert "in one message: numbered items" in description
+    assert "stated as decided, not asked" in description
+    assert "ww-setup.local.yaml" in description
+    # Defaults follow the profile: lanes that exist, review by team shape,
+    # worktrees for parallel work, and projects only when the layout found some.
+    assert "only where such branches exist" in description
+    assert "for a solo team shape, no interactive review" in description
+    assert "self-review step" in description
+    assert "the operator keeping the review" in description
+    assert "on by default when several contributors are active" in description
+    assert "ask for the paths of the sibling repositories" in description
+    assert "only when the Fixes section shows a repeated cause" in description
 
     gather = _step("ww-suggest", "gather").description
+    assert "{{ww.executable}} inspect" in gather
+    assert 'no "Profile" section' in gather
     assert "proposal will be weaker" in gather
     assert "read only" in gather
 
@@ -361,11 +396,18 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
         "ext/ww/git/handlers:is-git-clean",
         "--dry-run",
         "at most three rounds",
+        "each piece with its evidence in one clause",
+        "`hotfix/*` branches merged this year",
+        "walk through the main lane",
+        "in ten lines or fewer",
     ):
         assert piece in description, piece
-    assert "--for <me or team, as chosen in design> --yes" in (
-        _step("ww-suggest", "apply").description
-    )
+    # The proposal reads as paragraphs, not one block.
+    assert description.count("\n\n") == 2
+    apply = _step("ww-suggest", "apply").description
+    assert "--for <me or team, as chosen in design> --yes" in apply
+    assert "plan --workflow <the main lane>" in apply
+    assert '"what an agent gets on the first task"' in apply
 
 
 def test_the_setup_skill_recommends_what_was_not_learned_yet() -> None:

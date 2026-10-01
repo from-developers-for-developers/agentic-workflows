@@ -11,13 +11,16 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-01
 
-- `ww-suggest` designs the setup with the operator (lanes, verify commands, review, modes) and proposes a complete
-  one — ww/git branching, handlers with the project's commands, workflows per lane, modes, rules only for what a
-  command cannot check; `ww-learn-project` records the setup facts it needs. A later `ww-setup` run offers what was
-  not learned yet.
-- `ww inspect [--json]` prints a read-only profile of the checkout — branches and lanes, activity and team shape, fix
-  signals and hot paths, manifests with their verify commands, monorepo signals, tracker and commit conventions — each
-  fact with its evidence.
+- `ww inspect [--json]` prints a read-only profile of the checkout — branches and lanes, activity and team shape
+  (cadence over the weeks the history spans), fix commits and hot paths, manifests with their verify commands, monorepo
+  signals, tracker and commit conventions — each fact with its evidence.
+- The setup is built from that profile: `ww-learn-project` starts from it, reads only what it cannot see, keeps it in
+  `project.md` and turns repeated fixes into candidate rules; `ww-suggest` designs the setup with the operator in one
+  message whose defaults come from the profile (lanes that exist, review by team shape, `projects` when the layout
+  finds some) and proposes a complete one — ww/git branching, handlers with the project's commands, workflows per
+  lane, modes, rules only for what a command cannot check — each piece with its evidence, a walkthrough of the main
+  lane, and the first plan page once applied. A first setup takes about seven replies; a later `ww-setup` run offers
+  what was not learned yet.
 - Breaking: the task document (schema 2) stores an expanded plan item as what differs from its template item; the
   step texts stay once per run in `template_plan`. Finish or reset tasks before upgrading.
 - Breaking: persisted formats restart at schema 1 and ww reads no earlier one; the migrations, old-name hints

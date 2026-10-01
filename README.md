@@ -168,10 +168,10 @@ asking each time (for Claude Code, the lines to add to
 run the `ww-setup` skill to set ww up for you, your team and this project.
 That skill interviews you briefly about how you and your team work, reads how
 the project is organised (its tooling, tracker, conventions and recurring
-pitfalls, not its features), and proposes a small starting set of workflows,
-modes and gentle rules, which you try alone first and share with the team if
-you like. Each part is optional and shows you every change before ww places it;
-see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
+pitfalls, not its features), and proposes a complete setup shaped by the
+project's own branches, commands and history, each piece with the evidence
+for it, which you try alone first and share with the team if you like. Each
+part is optional and shows you every change before ww places it; see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
 
 `init` takes flags for every prompt if you would rather not answer them
 interactively — `--no-input` accepts all defaults, and

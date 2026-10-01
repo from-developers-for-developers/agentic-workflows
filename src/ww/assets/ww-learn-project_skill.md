@@ -5,8 +5,9 @@ description: Let ww learn how this project's work is organised - the setup facts
 
 # Let ww learn how the project works
 
-The `ww-learn-project` workflow scans the project, shows the operator what it
-found, and writes `.ww/project.md`; this skill starts it.
+The `ww-learn-project` workflow starts from `./ww inspect`'s read-only
+profile of the checkout, reads only what the profile cannot see, shows the
+operator what it found, and writes `.ww/project.md`; this skill starts it.
 
 1. Run `./ww onboarding --json`. If `user.explain` is `true`, add
    `--mode ww-narrate` below.

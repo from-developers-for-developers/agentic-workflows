@@ -7,8 +7,10 @@ description: Design a ww setup with the operator from what ww learned about them
 
 The `ww-suggest` workflow reads `me.md`, `myrole.md`, `team.md`,
 `company.md` and `project.md`, settles with the operator in one set of
-questions what the setup turns on and for whom, shows the proposal section by
-section, and places it with `./ww setup apply`; this skill starts it. Running it again later can share a setup tried alone with the team.
+questions whose defaults come from the project's profile what the setup
+turns on and for whom, shows the proposal section by section with the
+evidence for each piece and a walkthrough of the main lane, and places it
+with `./ww setup apply`; this skill starts it. Running it again later can share a setup tried alone with the team.
 
 1. Run `./ww onboarding --json`. If `user.explain` is `true`, add
    `--mode ww-narrate` below. If nothing was learned yet (no `learned.*`
