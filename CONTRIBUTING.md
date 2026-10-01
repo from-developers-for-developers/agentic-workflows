@@ -107,6 +107,10 @@ the same paths are formatted:
 .venv/bin/python -m ruff format src tests scripts ext/ww/git
 ```
 
+The commit that applied it to the whole codebase is listed in
+`.git-blame-ignore-revs`; `git config blame.ignoreRevsFile
+.git-blame-ignore-revs` hides it from `git blame`.
+
 Run the configured static type checks:
 
 ```console

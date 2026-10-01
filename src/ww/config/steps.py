@@ -21,8 +21,10 @@ from ww.workflow_config import (
     ChildFlow,
     ChoiceDefinition,
     HandlerDefinition,
+    HookDefinition,
     ItemFlow,
     StepDefinition,
+    StepRule,
     step_tree,
 )
 
@@ -229,6 +231,105 @@ def _parse_step(
     *,
     item_stage: bool = False,
 ) -> StepDefinition:
+    """Parse one step entry, its nested steps included."""
+    mapping = _step_mapping(data, path, handlers_by_name)
+    base = (
+        extension_reference(mapping, path)
+        if _bare_extension_reference(mapping)
+        else _parse_handler(
+            mapping, path, transition=True, allowed_extra=STEP_ONLY_KEYS
+        )
+    )
+    question, outcomes, base = _parse_assessment(mapping, path, base, handlers_by_name)
+    base, referenced = _resolve_handler(mapping, path, base, handlers_by_name)
+    children = _parse_nested_steps(mapping, "steps", path, handlers_by_name)
+    if "steps" not in mapping and referenced is not None:
+        children = referenced.child_steps
+    loop_steps, max_rounds, loop_assignment = _parse_loop(
+        mapping, path, handlers_by_name, referenced
+    )
+    loop_break, loop_continue = _parse_loop_controls(mapping, path, referenced)
+    _check_loop_wrapper(mapping, path, base, loop_steps)
+    item_operation = _parse_item_phase(mapping, path)
+    child_flow = _parse_child_flow(mapping, path, handlers_by_name, referenced)
+    if "children" in mapping and base.operation is not None:
+        raise ConfigurationError(
+            f"{path} cannot combine children with handoff_to; "
+            "name the child workflow under children.workflow"
+        )
+    artifact, artifact_from = _parse_artifact(mapping, path, referenced)
+    role, subagents, profile = _parse_performer(mapping, path, referenced)
+    interactive, ui, choices = _parse_interactive(mapping, path, referenced, item_stage)
+    if interactive and role == "worker":
+        raise ConfigurationError(
+            f"{path} is interactive, so the manager holds the conversation; "
+            "role: worker contradicts it"
+        )
+    hooks = _parse_step_hooks(mapping, path, referenced)
+    rules = _parse_rules(mapping, path, base.name, referenced)
+    items = (
+        _parse_items(mapping, path, handlers_by_name, profile, role, subagents)
+        if "items" in mapping
+        else referenced.items
+        if referenced is not None
+        else None
+    )
+    containers = sum(
+        bool(value)
+        for value in (children, loop_steps, items is not None, child_flow is not None)
+    )
+    if containers > 1:
+        raise ConfigurationError(
+            f"{path} cannot combine steps, loop, items, and children"
+        )
+    if items is not None and item_operation is not None:
+        raise ConfigurationError(f"{path} cannot combine items with item_phase")
+    if item_operation is None and referenced is not None:
+        item_operation = referenced.item_operation
+    return StepDefinition(
+        name=base.name,
+        description=base.description,
+        action=base.action,
+        operation=base.operation,
+        provide=base.provide,
+        save_metadata=base.save_metadata,
+        update_document=base.update_document,
+        update_item=base.update_item,
+        outputs=base.outputs,
+        agent=base.agent,
+        model=base.model,
+        reasoning=base.reasoning,
+        workdir=base.workdir,
+        extension_arguments=base.extension_arguments,
+        role=role,
+        subagents=subagents,
+        interactive=interactive,
+        choices=choices,
+        ui=ui,
+        profile=profile["profile"],
+        profile_description=profile["profile_description"],
+        hooks=hooks,
+        rules=rules,
+        child_steps=children,
+        loop_steps=loop_steps,
+        max_rounds=max_rounds,
+        loop_assignment=loop_assignment,
+        loop_break=loop_break,
+        loop_continue=loop_continue,
+        items=items,
+        item_operation=item_operation,
+        artifact=artifact,
+        children=child_flow,
+        artifact_dependency=artifact_from,
+        assessment_question=question,
+        assessment_outcomes=outcomes,
+    )
+
+
+def _step_mapping(
+    data: Any, path: str, handlers_by_name: dict[str, HandlerDefinition]
+) -> dict[str, Any]:
+    """Normalize a step entry to one mapping of its declared keys."""
     raw = _mapping(data, path)
     # ``assess`` is deliberately a construct rather than a conventional step
     # name: its compact spelling is a question and its long spelling owns
@@ -262,74 +363,109 @@ def _parse_step(
         # ``profile`` or ``model`` on the step still override the copy.
         mapping = {**mapping, "handler": mapping["name"]}
     _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}, path)
-    base = (
-        extension_reference(mapping, path)
-        if _bare_extension_reference(mapping)
-        else _parse_handler(
-            mapping, path, transition=True, allowed_extra=STEP_ONLY_KEYS
-        )
-    )
-    assessment_question = (
+    return mapping
+
+
+def _parse_assessment(
+    mapping: dict[str, Any],
+    path: str,
+    base: HandlerDefinition,
+    handlers_by_name: dict[str, HandlerDefinition],
+) -> tuple[str | None, tuple[StepDefinition, ...], HandlerDefinition]:
+    """Parse an assess step's question and outcomes, and its prompt handler."""
+    question = (
         _nonempty_string(mapping, "question", path) if "question" in mapping else None
     )
-    if assessment_question is not None and mapping["name"] != "assess":
+    if question is not None and mapping["name"] != "assess":
         raise ConfigurationError(f"{path}.question is only valid for an assess step")
-    if "outcomes" in mapping and assessment_question is None:
+    if "outcomes" in mapping and question is None:
         raise ConfigurationError(f"{path}.outcomes requires an assess question")
     outcomes = _parse_assessment_outcomes(mapping, path, handlers_by_name)
-    if assessment_question is not None:
-        if any(
-            (
-                base.action is not None,
-                base.operation is not None,
-                "handler" in mapping,
-                "steps" in mapping,
-                "loop" in mapping,
-            )
-        ):
-            raise ConfigurationError(
-                f"{path} assess cannot also declare an action or ordinary nested steps"
-            )
-        base = HandlerDefinition(
-            name="assess",
-            description=assessment_question,
-            action=DefinedAction("prompt", Prompt(assessment_question)),
-            workdir=base.workdir,
+    if question is None:
+        return None, outcomes, base
+    if any(
+        (
+            base.action is not None,
+            base.operation is not None,
+            "handler" in mapping,
+            "steps" in mapping,
+            "loop" in mapping,
         )
-    referenced_step: StepDefinition | None = None
-    if "handler" in mapping:
-        handler_name = mapping["handler"]
-        if not isinstance(handler_name, str) or not _NAME.fullmatch(handler_name):
-            raise ConfigurationError(f"{path}.handler must be a handler name")
-        try:
-            referenced_handler = handlers_by_name[handler_name]
-        except KeyError as error:
-            raise ConfigurationError(
-                f"{path}.handler references unknown handler {handler_name!r}"
-            ) from error
-        base = _step_handler_reference(mapping, base, referenced_handler)
-        if isinstance(referenced_handler, StepDefinition):
-            referenced_step = referenced_handler
-    local_children = _parse_nested_steps(mapping, "steps", path, handlers_by_name)
-    local_loop_steps = _parse_nested_steps(
+    ):
+        raise ConfigurationError(
+            f"{path} assess cannot also declare an action or ordinary nested steps"
+        )
+    prompt = HandlerDefinition(
+        name="assess",
+        description=question,
+        action=DefinedAction("prompt", Prompt(question)),
+        workdir=base.workdir,
+    )
+    return question, outcomes, prompt
+
+
+def _resolve_handler(
+    mapping: dict[str, Any],
+    path: str,
+    base: HandlerDefinition,
+    handlers_by_name: dict[str, HandlerDefinition],
+) -> tuple[HandlerDefinition, StepDefinition | None]:
+    """Apply ``handler``, and return the step it names when it names one."""
+    if "handler" not in mapping:
+        return base, None
+    handler_name = mapping["handler"]
+    if not isinstance(handler_name, str) or not _NAME.fullmatch(handler_name):
+        raise ConfigurationError(f"{path}.handler must be a handler name")
+    try:
+        referenced = handlers_by_name[handler_name]
+    except KeyError as error:
+        raise ConfigurationError(
+            f"{path}.handler references unknown handler {handler_name!r}"
+        ) from error
+    base = _step_handler_reference(mapping, base, referenced)
+    return base, referenced if isinstance(referenced, StepDefinition) else None
+
+
+def _parse_loop(
+    mapping: dict[str, Any],
+    path: str,
+    handlers_by_name: dict[str, HandlerDefinition],
+    referenced: StepDefinition | None,
+) -> tuple[tuple[StepDefinition, ...], int | None, LoopAssignment | None]:
+    """Parse ``loop`` with its ``max_rounds`` and ``assignment``."""
+    loop_steps = _parse_nested_steps(
         mapping, "loop", path, handlers_by_name, require_nonempty=True
     )
     max_rounds: int | None = mapping.get("max_rounds")
     if max_rounds is not None and (not is_positive_int(max_rounds)):
         raise ConfigurationError(f"{path}.max_rounds must be a positive integer")
-    if "max_rounds" in mapping and not local_loop_steps:
+    if "max_rounds" in mapping and not loop_steps:
         raise ConfigurationError(f"{path}.max_rounds requires a loop")
-    loop_assignment: LoopAssignment | None = None
+    assignment: LoopAssignment | None = None
     if "assignment" in mapping:
-        if not local_loop_steps:
+        if not loop_steps:
             raise ConfigurationError(
                 f"{path}.assignment on a step goes beside a loop; for items or "
                 "children, write it inside that mapping"
             )
-        loop_assignment = cast(
+        assignment = cast(
             LoopAssignment,
             _assignment(mapping["assignment"], f"{path}.assignment", LOOP_ASSIGNMENTS),
         )
+    if referenced is not None:
+        if "loop" not in mapping:
+            loop_steps = referenced.loop_steps
+        if "max_rounds" not in mapping:
+            max_rounds = referenced.max_rounds
+        if "assignment" not in mapping:
+            assignment = referenced.loop_assignment
+    return loop_steps, max_rounds, assignment
+
+
+def _parse_loop_controls(
+    mapping: dict[str, Any], path: str, referenced: StepDefinition | None
+) -> tuple[str | None, str | None]:
+    """Parse the loop's ``break`` and ``continue`` conditions."""
     loop_break = mapping.get("break")
     loop_continue = mapping.get("continue")
     for control_name, control_value in (
@@ -342,36 +478,21 @@ def _parse_step(
             raise ConfigurationError(
                 f"{path}.{control_name} must be a non-empty string"
             )
-    children = (
-        local_children
-        if "steps" in mapping or referenced_step is None
-        else referenced_step.child_steps
-    )
-    loop_steps = (
-        local_loop_steps
-        if "loop" in mapping or referenced_step is None
-        else referenced_step.loop_steps
-    )
-    max_rounds = (
-        max_rounds
-        if "max_rounds" in mapping or referenced_step is None
-        else referenced_step.max_rounds
-    )
-    loop_assignment = (
-        loop_assignment
-        if "assignment" in mapping or referenced_step is None
-        else referenced_step.loop_assignment
-    )
-    loop_break = (
-        loop_break
-        if "break" in mapping or referenced_step is None
-        else referenced_step.loop_break
-    )
-    loop_continue = (
-        loop_continue
-        if "continue" in mapping or referenced_step is None
-        else referenced_step.loop_continue
-    )
+    if referenced is not None:
+        if "break" not in mapping:
+            loop_break = referenced.loop_break
+        if "continue" not in mapping:
+            loop_continue = referenced.loop_continue
+    return loop_break, loop_continue
+
+
+def _check_loop_wrapper(
+    mapping: dict[str, Any],
+    path: str,
+    base: HandlerDefinition,
+    loop_steps: tuple[StepDefinition, ...],
+) -> None:
+    """Reject a loop step that also acts or collects."""
     if loop_steps and any(
         (
             base.action is not None,
@@ -390,83 +511,91 @@ def _parse_step(
         raise ConfigurationError(
             f"{path} loop wrapper cannot also declare an action or collection"
         )
-    operations: list[ItemOperation] = []
-    if "item_phase" in mapping:
-        phase = mapping["item_phase"]
-        if not isinstance(phase, str) or phase not in ITEM_PHASES:
-            raise ConfigurationError(
-                f"{path}.item_phase must be one of: " + ", ".join(ITEM_PHASES)
-            )
-        operations.append(ITEM_PHASES[phase])
-    child_flow = (
-        _parse_children(mapping, path, handlers_by_name)
-        if "children" in mapping
-        else referenced_step.children
-        if referenced_step is not None
-        else None
-    )
-    if "children" in mapping and base.operation is not None:
+
+
+def _parse_item_phase(mapping: dict[str, Any], path: str) -> ItemOperation | None:
+    """Parse ``item_phase`` into the item operation it marks."""
+    if "item_phase" not in mapping:
+        return None
+    phase = mapping["item_phase"]
+    if not isinstance(phase, str) or phase not in ITEM_PHASES:
         raise ConfigurationError(
-            f"{path} cannot combine children with handoff_to; "
-            "name the child workflow under children.workflow"
+            f"{path}.item_phase must be one of: " + ", ".join(ITEM_PHASES)
         )
+    return ITEM_PHASES[phase]
+
+
+def _parse_child_flow(
+    mapping: dict[str, Any],
+    path: str,
+    handlers_by_name: dict[str, HandlerDefinition],
+    referenced: StepDefinition | None,
+) -> ChildFlow | None:
+    """Parse ``children``, or take the referenced step's."""
+    if "children" in mapping:
+        return _parse_children(mapping, path, handlers_by_name)
+    return referenced.children if referenced is not None else None
+
+
+def _parse_artifact(
+    mapping: dict[str, Any], path: str, referenced: StepDefinition | None
+) -> tuple[bool, str | None]:
+    """Parse ``artifact`` and ``artifact_from``."""
     artifact = mapping.get("artifact", True)
     if not isinstance(artifact, bool):
         raise ConfigurationError(f"{path}.artifact must be true or false")
-    role = _role(mapping, path)
-    subagents = _subagents(mapping, path)
-    raw_interactive = mapping.get("interactive", False)
-    if not isinstance(raw_interactive, bool) and raw_interactive != INTERACTIVE_PAGE:
-        raise ConfigurationError(f"{path}.interactive must be true, false, or page")
-    interactive = raw_interactive is not False
-    ui = raw_interactive == INTERACTIVE_PAGE
-    choices = _parse_choices(mapping.get("choices"), path)
     artifact_from = mapping.get("artifact_from")
     if artifact_from is not None and (
         not isinstance(artifact_from, str) or not _NAME.fullmatch(artifact_from)
     ):
         raise ConfigurationError(f"{path}.artifact_from must be a normalized step name")
-    hooks = (
-        _parse_hooks(mapping.get("hooks", {}), "step", f"{path}.hooks")
-        if "hooks" in mapping or referenced_step is None
-        else referenced_step.hooks
-    )
-    rules = (
-        parse_step_rules(mapping["rules"], base.name, path)
-        if "rules" in mapping
-        else referenced_step.rules
-        if referenced_step is not None
-        else ()
-    )
-    profile = (
-        _profile(mapping, path)
-        if "profile" in mapping or referenced_step is None
-        else {
-            "profile": referenced_step.profile,
-            "profile_description": referenced_step.profile_description,
-        }
-    )
-    role = (
-        role if "role" in mapping or referenced_step is None else referenced_step.role
-    )
-    subagents = (
-        subagents
-        if "subagents" in mapping or referenced_step is None
-        else referenced_step.subagents
-    )
-    if "interactive" not in mapping and referenced_step is not None:
-        interactive = referenced_step.interactive
-        ui = referenced_step.ui
-    if interactive and role == "worker":
-        raise ConfigurationError(
-            f"{path} is interactive, so the manager holds the conversation; "
-            "role: worker contradicts it"
-        )
-    choices = (
-        choices
-        if "choices" in mapping or referenced_step is None
-        else referenced_step.choices
-    )
+    if referenced is not None:
+        if "artifact" not in mapping:
+            artifact = referenced.artifact
+        if "artifact_from" not in mapping:
+            artifact_from = referenced.artifact_dependency
+    return artifact, artifact_from
+
+
+def _parse_performer(
+    mapping: dict[str, Any], path: str, referenced: StepDefinition | None
+) -> tuple[StepRole | None, bool | None, dict[str, str | None]]:
+    """Parse who performs the step: ``role``, ``subagents`` and ``profile``."""
+    role = _role(mapping, path)
+    subagents = _subagents(mapping, path)
+    profile = _profile(mapping, path)
+    if referenced is not None:
+        if "role" not in mapping:
+            role = referenced.role
+        if "subagents" not in mapping:
+            subagents = referenced.subagents
+        if "profile" not in mapping:
+            profile = {
+                "profile": referenced.profile,
+                "profile_description": referenced.profile_description,
+            }
+    return role, subagents, profile
+
+
+def _parse_interactive(
+    mapping: dict[str, Any],
+    path: str,
+    referenced: StepDefinition | None,
+    item_stage: bool,
+) -> tuple[bool, bool, tuple[ChoiceDefinition, ...]]:
+    """Parse ``interactive`` and its ``choices``: whether, page, and choices."""
+    raw = mapping.get("interactive", False)
+    if not isinstance(raw, bool) and raw != INTERACTIVE_PAGE:
+        raise ConfigurationError(f"{path}.interactive must be true, false, or page")
+    interactive = raw is not False
+    ui = raw == INTERACTIVE_PAGE
+    choices = _parse_choices(mapping.get("choices"), path)
+    if referenced is not None:
+        if "interactive" not in mapping:
+            interactive = referenced.interactive
+            ui = referenced.ui
+        if "choices" not in mapping:
+            choices = referenced.choices
     if choices and not interactive:
         raise ConfigurationError(
             f"{path}.choices are offered to the operator, so they require "
@@ -477,75 +606,25 @@ def _parse_step(
             f"{path}.interactive: page is offered on per-item stages only; "
             "declare it under items"
         )
-    items = (
-        _parse_items(mapping, path, handlers_by_name, profile, role, subagents)
-        if "items" in mapping
-        else referenced_step.items
-        if referenced_step is not None
-        else None
-    )
-    containers = sum(
-        bool(value)
-        for value in (children, loop_steps, items is not None, child_flow is not None)
-    )
-    if containers > 1:
-        raise ConfigurationError(
-            f"{path} cannot combine steps, loop, items, and children"
-        )
-    if items is not None and operations:
-        raise ConfigurationError(f"{path} cannot combine items with item_phase")
-    return StepDefinition(
-        name=base.name,
-        description=base.description,
-        action=base.action,
-        operation=base.operation,
-        provide=base.provide,
-        save_metadata=base.save_metadata,
-        update_document=base.update_document,
-        update_item=base.update_item,
-        outputs=base.outputs,
-        agent=base.agent,
-        model=base.model,
-        reasoning=base.reasoning,
-        workdir=base.workdir,
-        extension_arguments=base.extension_arguments,
-        role=role,
-        subagents=subagents,
-        interactive=interactive,
-        choices=choices,
-        ui=ui,
-        profile=profile["profile"],
-        profile_description=profile["profile_description"],
-        hooks=hooks,
-        rules=rules,
-        child_steps=children,
-        loop_steps=loop_steps,
-        max_rounds=max_rounds,
-        loop_assignment=loop_assignment,
-        loop_break=loop_break,
-        loop_continue=loop_continue,
-        items=items,
-        item_operation=(
-            operations[0]
-            if operations
-            else (
-                referenced_step.item_operation if referenced_step is not None else None
-            )
-        ),
-        artifact=(
-            artifact
-            if "artifact" in mapping or referenced_step is None
-            else referenced_step.artifact
-        ),
-        children=child_flow,
-        artifact_dependency=(
-            artifact_from
-            if "artifact_from" in mapping or referenced_step is None
-            else referenced_step.artifact_dependency
-        ),
-        assessment_question=assessment_question,
-        assessment_outcomes=outcomes,
-    )
+    return interactive, ui, choices
+
+
+def _parse_step_hooks(
+    mapping: dict[str, Any], path: str, referenced: StepDefinition | None
+) -> tuple[HookDefinition, ...]:
+    """Parse the step's ``hooks``, or take the referenced step's."""
+    if "hooks" in mapping or referenced is None:
+        return _parse_hooks(mapping.get("hooks", {}), "step", f"{path}.hooks")
+    return referenced.hooks
+
+
+def _parse_rules(
+    mapping: dict[str, Any], path: str, name: str, referenced: StepDefinition | None
+) -> tuple[StepRule, ...]:
+    """Parse the step's ``rules``, or take the referenced step's."""
+    if "rules" in mapping:
+        return parse_step_rules(mapping["rules"], name, path)
+    return referenced.rules if referenced is not None else ()
 
 
 def _parse_children(
