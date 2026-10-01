@@ -13,7 +13,12 @@ from ww.config_files import (
     USER_DIR_VARIABLE,
 )
 from ww.executable import DEFAULT_EXECUTABLE
-from ww.project_config import BUILTIN_DEFAULTS, DEFAULT_RULE_APPROVAL, Limits
+from ww.project_config import (
+    BUILTIN_DEFAULTS,
+    DEFAULT_RULE_APPROVAL,
+    AgentHooks,
+    Limits,
+)
 from ww.runtimes import DEFAULT_RUNTIME
 
 DEFAULT_WORKFLOWS_YAML = """modes: []
@@ -36,6 +41,7 @@ def default_settings() -> dict[str, Any]:
         "executable": DEFAULT_EXECUTABLE,
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
+        "agent_hooks": AgentHooks().to_dict(),
         "rules": {"approval": DEFAULT_RULE_APPROVAL},
         "builtins": deepcopy(BUILTIN_DEFAULTS),
         "workflows": {},

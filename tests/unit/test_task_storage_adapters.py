@@ -43,6 +43,7 @@ def test_public_storage_adapter_requires_every_executor_write_capability() -> No
     assert TaskStorageAdapter.__abstractmethods__ == {
         "commit_task_aggregate",
         "read_task_record",
+        "task_written_at",
         "write_execution_artifact",
         "read_execution_artifact",
         "write_command_output",

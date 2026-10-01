@@ -598,6 +598,7 @@ def test_init_writes_every_setting_with_its_default(tmp_path: Path, capsys) -> N
         "executable",
         "task_format",
         "limits",
+        "agent_hooks",
         "rules",
         "builtins",
         "workflows",

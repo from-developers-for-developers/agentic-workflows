@@ -5,7 +5,8 @@ The hooks are gentle by design: they add a few lines of context or remind
 once, and nothing is ever blocked.
 
 - ``session-start`` prints a reminder that ww coordinates work here, and the
-  unfinished tasks with the commands that resume them.
+  recently updated unfinished tasks with the commands that resume them,
+  unless ``agent_hooks.check_unfinished`` switches that scan off.
 - ``stop`` asks the agent, once per step attempt, to record an agent-owned
   step that is still in progress; the next stop is always allowed.
 - ``interrupt`` records, without answering, that a session ended while such
@@ -19,11 +20,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ww.config_files import WORKFLOWS_FILE
-from ww.open_work import OpenTask, OpenWork, open_work, tasks_for_session
+from ww.open_work import OpenTask, open_work, tasks_for_session
+from ww.project_config import AgentHooks
 from ww.storage import Storage
 
 from .agents import HookAgent, HookEvent, HookPayload
@@ -48,26 +50,28 @@ def answer_hook(
     event: HookEvent,
     raw_payload: str,
     *,
+    settings: AgentHooks,
     on_request: bool = False,
 ) -> HookAnswer:
     """ww's answer to one hook call; the caller contains every error.
 
     ``on_request`` is the project's ``"enabled": "on_request"``: the session
     is told that ww is used only when the user asks for it. Stop reminders
-    are unchanged, since they concern tasks already open.
+    are unchanged, since they concern tasks already open. ``settings`` is
+    the project's ``agent_hooks``, which only ``session-start`` reads.
     """
     payload = agent.parse(event, _payload(raw_payload))
     records = HookRecords(storage, storage.task_persistence)
-    work = open_work(storage.task_persistence, storage.root)
     if event == "session-start":
         return _session_start(
-            storage, agent, payload, records, work, on_request=on_request
+            storage, agent, payload, records, settings, on_request=on_request
         )
     # An unreadable task has no step anyone can close, so stop and interrupt
     # consider only the tasks that could be read.
+    tasks = open_work(storage.task_persistence, storage.root).tasks
     if event == "stop" and not payload.interrupted:
-        return _stop(agent, payload, records, work.tasks)
-    return _interrupt(agent, payload, records, work.tasks)
+        return _stop(agent, payload, records, tasks)
+    return _interrupt(agent, payload, records, tasks)
 
 
 def _session_start(
@@ -75,29 +79,40 @@ def _session_start(
     agent: HookAgent,
     payload: HookPayload,
     records: HookRecords,
-    work: OpenWork,
+    settings: AgentHooks,
     *,
     on_request: bool,
 ) -> HookAnswer:
     if not payload.wants_context:
         return HookAnswer("", "no context needed")
-    tasks = work.tasks
+    compacted = payload.source == "compact"
+    if not settings.check_unfinished:
+        text = session_context(
+            (), {}, storage.root, compacted=compacted, on_request=on_request
+        )
+        return HookAnswer(
+            agent.context_reply(text.rstrip("\n")) + "\n",
+            "context without the unfinished-task scan",
+        )
+    horizon = datetime.now(timezone.utc) - timedelta(days=settings.recent_days)
+    work = open_work(storage.task_persistence, storage.root, since=horizon)
     interruptions = {
         task.task_id: record
-        for task in tasks
+        for task in work.tasks
         if (record := records.interruption(task.task_id)) is not None
     }
     text = session_context(
-        tasks,
+        work.tasks,
         interruptions,
         storage.root,
-        compacted=payload.source == "compact",
+        compacted=compacted,
         unreadable=work.unreadable,
         on_request=on_request,
+        skipped=work.skipped,
     )
     return HookAnswer(
         agent.context_reply(text.rstrip("\n")) + "\n",
-        f"context with {len(tasks)} unfinished task(s)",
+        f"context with {len(work.tasks)} unfinished task(s)",
     )
 
 

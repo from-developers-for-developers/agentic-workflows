@@ -8,6 +8,7 @@ import json
 import shutil
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX
@@ -62,6 +63,15 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
     ) -> tuple[tuple[TaskRunAggregate, ...], str | None, int]:
         runs, handoff, revision, _ = self._read_task_document(task_id)
         return runs, handoff, revision
+
+    def task_written_at(self, task_id: str) -> datetime | None:
+        # Every commit replaces the state file, so its modification time is
+        # the last commit's.
+        try:
+            modified = self._state_path(task_id).stat().st_mtime
+        except OSError:
+            return None
+        return datetime.fromtimestamp(modified, timezone.utc)
 
     def _read_task_document(
         self, task_id: str

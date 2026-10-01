@@ -18,6 +18,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - Breaking: `max_rounds` and `max_fixes` in the settings file are `"limits": {"rounds": N, "fixes": N}`.
 - Breaking: the configuration files are `ww.yaml`, `ww.json`, `ww.local.yaml` and `ww.local.json`, and the user
   configuration directory is `~/.config/ww/` (or `$XDG_CONFIG_HOME/ww`). Rename yours.
+- `session-start` lists only tasks updated within `agent_hooks.recent_days` (3), notes a task left in progress with no
+  recorded end as a probably closed session, and `agent_hooks.check_unfinished: false` switches the scan off.
 - `init` writes every root-level setting with its default to `ww.json`, and adds the missing ones to an existing file.
 - The `stop` hook no longer reminds about an interactive step whose conversation is still open: the session stops so
   the operator can answer. An interruption during such a conversation says to pick up the recorded conversation

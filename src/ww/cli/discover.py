@@ -16,7 +16,6 @@ from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
 from ww.hooks.notices import (
-    RECENT_INTERRUPTION_DAYS,
     recent_interruptions_pointer,
 )
 from ww.hooks.records import HookRecords
@@ -254,8 +253,11 @@ def render_discover(
     storage: Storage, extensions: ExtensionRegistry, json_output: bool
 ) -> str:
     report = discover(storage, extensions)
+    days = extensions.config.agent_hooks.recent_days
     if report["enabled"]:
-        report["interrupted_recently"] = _recent_interruptions(storage)
+        report["interrupted_recently"] = len(
+            HookRecords(storage, storage.task_persistence).recent(days)
+        )
         report["unreadable_tasks"] = [
             task.to_dict()
             for task in open_work(storage.task_persistence, storage.root).unreadable
@@ -272,7 +274,7 @@ def render_discover(
                 DISABLED_MESSAGE,
             ]
         )
-    return "\n".join(_markdown(report))
+    return "\n".join(_markdown(report, days))
 
 
 def _mode_line(mode: dict[str, object]) -> str:
@@ -293,7 +295,7 @@ def _mode_line(mode: dict[str, object]) -> str:
     return line
 
 
-def _markdown(report: dict[str, object]) -> list[str]:
+def _markdown(report: dict[str, object], days: int) -> list[str]:
     workflows = _entries(report["workflows"])
     modes = _entries(report["modes"])
     runtimes = _entries(report["runtimes"])
@@ -312,7 +314,7 @@ def _markdown(report: dict[str, object]) -> list[str]:
             else [ENABLED_MESSAGE]
         ),
         "",
-        *_pointer_lines(report),
+        *_pointer_lines(report, days),
         *_unreadable_lines(report),
         *_onboarding_lines(report),
         "## Workflows",
@@ -490,12 +492,6 @@ def _strings(value: object) -> list[str]:
     return [str(entry) for entry in value] if isinstance(value, list) else []
 
 
-def _recent_interruptions(storage: Storage) -> int:
-    return len(
-        HookRecords(storage, storage.task_persistence).recent(RECENT_INTERRUPTION_DAYS)
-    )
-
-
 def _unreadable_lines(report: dict[str, object]) -> list[str]:
     tasks = _entries(report.get("unreadable_tasks", []))
     if not tasks:
@@ -510,9 +506,9 @@ def _unreadable_lines(report: dict[str, object]) -> list[str]:
     ]
 
 
-def _pointer_lines(report: dict[str, object]) -> list[str]:
+def _pointer_lines(report: dict[str, object], days: int) -> list[str]:
     count = report.get("interrupted_recently")
-    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0)
+    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0, days)
     return [pointer, ""] if pointer else []
 
 

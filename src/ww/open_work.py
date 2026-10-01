@@ -14,6 +14,7 @@ raised: one broken task must not hide every other task from a scan.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from ww.contracts import OperatorReason, run_is_open
@@ -104,14 +105,29 @@ class OpenWork:
 
     tasks: tuple[OpenTask, ...]
     unreadable: tuple[UnreadableTask, ...] = ()
+    # Tasks left unread because they were last written before the scan's
+    # ``since``, finished or not.
+    skipped: int = 0
 
 
-def open_work(tasks: TaskStorageAdapter, root: Path) -> OpenWork:
-    """Every unfinished task in ``root``, children included, newest first."""
+def open_work(
+    tasks: TaskStorageAdapter, root: Path, since: datetime | None = None
+) -> OpenWork:
+    """Every unfinished task in ``root``, children included, newest first.
+
+    With ``since``, a task last written before it is skipped unread, which
+    keeps a scan of a long history cheap.
+    """
     found: list[OpenTask] = []
     unreadable: list[UnreadableTask] = []
+    skipped = 0
     for task_id in tasks.task_ids():
         for candidate in (task_id, *tasks.child_task_ids(task_id)):
+            if since is not None:
+                written = tasks.task_written_at(candidate)
+                if written is not None and written < since:
+                    skipped += 1
+                    continue
             try:
                 task = _open_task(tasks, root, candidate)
             except StateError as error:
@@ -122,6 +138,7 @@ def open_work(tasks: TaskStorageAdapter, root: Path) -> OpenWork:
     return OpenWork(
         tuple(sorted(found, key=lambda task: task.updated_at, reverse=True)),
         tuple(unreadable),
+        skipped,
     )
 
 

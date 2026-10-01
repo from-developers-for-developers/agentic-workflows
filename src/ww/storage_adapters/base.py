@@ -8,6 +8,7 @@ import re
 from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
+from datetime import datetime
 
 from ww.children import ChildTask
 from ww.contracts import RunStatus, run_is_open
@@ -259,6 +260,14 @@ class TaskRunStorage(ABC):
         """Return all runs, the handoff, and the CAS revision in one read.
 
         A missing task is ``((), None, 0)``.
+        """
+
+    @abstractmethod
+    def task_written_at(self, task_id: str) -> datetime | None:
+        """When the task's runs were last committed, or ``None`` without any.
+
+        Scans that only care about recent tasks call this first, so it must
+        not read or decode the record itself.
         """
 
     def read_task_aggregate(

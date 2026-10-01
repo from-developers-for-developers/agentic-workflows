@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from ww.cli import main
 from ww.errors import StateError
 from ww.hooks import HookRecords, answer_hook, hook_agent
 from ww.open_work import open_work
+from ww.project_config import AgentHooks
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.storage_adapters.memory import MemoryTaskStorageAdapter
@@ -151,7 +153,10 @@ def test_session_start_caps_the_listing(
     lines = _context(_hook(root, monkeypatch, capsys, "session-start")).splitlines()
 
     assert sum(line.startswith("- T") for line in lines) == 5
-    assert lines[-1] == "… and 2 more; `./ww status <task-id>` shows one."
+    assert lines[-2:] == [
+        "… and 2 more; `./ww status <task-id>` shows one.",
+        "`./ww discover` lists every unfinished task.",
+    ]
 
 
 def test_a_task_awaiting_the_operator_stays_visible_and_marked(
@@ -759,7 +764,12 @@ def test_parallel_stop_calls_remind_exactly_once(tmp_path: Path) -> None:
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         answers = list(
-            pool.map(lambda _: answer_hook(storage, agent, "stop", "{}"), range(8))
+            pool.map(
+                lambda _: answer_hook(
+                    storage, agent, "stop", "{}", settings=AgentHooks()
+                ),
+                range(8),
+            )
         )
 
     assert sum(answer.text != "" for answer in answers) == 1
@@ -949,3 +959,144 @@ def test_an_interrupt_during_a_conversation_points_at_the_recorded_conversation(
     assert "while `talk` (attempt 1) was talking with the operator" in output
     assert "pick it up at the last unanswered question" in output
     assert "git status" not in output
+
+
+# Sessions that ended without running a hook, and the scan's window
+
+
+def _age(root: Path, task_id: str, days: int) -> None:
+    """Make the task's state look last written ``days`` ago."""
+    moment = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
+    os.utime(root / ".ww/tasks" / task_id / "state.json", (moment, moment))
+
+
+def test_a_step_left_in_progress_without_a_marker_is_noted_as_a_closed_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_progress(root)
+
+    lines = _context(_hook(root, monkeypatch, capsys, "session-start")).splitlines()
+
+    assert lines[3].startswith("  Left in progress at ")
+    assert lines[3].endswith(
+        " by claudecode with no recorded end, probably a closed session: check "
+        "its page (`./ww instruction T1 --role manager`) before continuing."
+    )
+    assert lines[-1] == "`./ww discover` lists every unfinished task."
+    assert not any("Interrupted" in line for line in lines)
+
+    _hook(root, monkeypatch, capsys, "interrupt")
+    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
+    assert "  Interrupted: the previous session" in context
+    assert "Left in progress" not in context
+
+    # After a compaction the session holding the step is the one carrying on.
+    (root / ".ww/tasks/T1/interrupted.json").unlink()
+    compacted = _context(
+        _hook(root, monkeypatch, capsys, "session-start", payload={"source": "compact"})
+    )
+    assert "Left in progress" not in compacted
+
+
+def test_a_conversation_left_open_points_at_the_recorded_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_conversation(root)
+
+    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
+
+    assert (
+        "by claudecode with no recorded end, probably a closed session: the step's "
+        "page shows the conversation so far; pick it up at the last unanswered "
+        "question." in context
+    )
+    assert "check its page" not in context
+
+
+def test_session_start_skips_tasks_written_before_the_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_progress(root, "OLD")
+    _age(root, "OLD", 10)
+
+    lines = _context(_hook(root, monkeypatch, capsys, "session-start")).splitlines()
+    assert lines == [
+        "This project coordinates work through ww: `./ww discover` lists its "
+        "workflows.",
+        "`./ww discover` lists every unfinished task.",
+    ]
+
+    _in_progress(root, "T1")
+    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
+    assert "- T1 (task, claudecode)" in context
+    assert "OLD" not in context
+
+    (root / "ww.json").write_text(
+        json.dumps({"agent_hooks": {"recent_days": 30}}), encoding="utf-8"
+    )
+    assert "- OLD (task, claudecode)" in _context(
+        _hook(root, monkeypatch, capsys, "session-start")
+    )
+
+
+def test_check_unfinished_false_prints_only_the_reminder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path, {"agent_hooks": {"check_unfinished": False}})
+    _in_progress(root)
+
+    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
+    reminder = json.loads(_hook(root, monkeypatch, capsys, "stop"))
+
+    assert context == (
+        "This project coordinates work through ww: `./ww discover` lists its workflows."
+    )
+    assert "T1 step `develop` is still in progress" in reminder["reason"]
+
+
+def test_recent_days_bounds_interrupted_and_the_discover_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path, {"agent_hooks": {"recent_days": 10}})
+    _in_progress(root)
+    _hook(root, monkeypatch, capsys, "interrupt")
+    marker = root / ".ww/tasks/T1/interrupted.json"
+    record = json.loads(marker.read_text())
+    moment = datetime.now(timezone.utc) - timedelta(days=5)
+    record["at"] = moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    marker.write_text(json.dumps(record), encoding="utf-8")
+
+    assert main(["--root", str(root), "interrupted"]) == 0
+    assert capsys.readouterr().out.startswith("- T1 · develop (attempt 1) · ")
+    assert main(["--root", str(root), "interrupted", "--since", "3"]) == 0
+    assert capsys.readouterr().out == "No task was interrupted in the last 3 day(s).\n"
+    assert main(["--root", str(root), "discover"]) == 0
+    assert "1 task was interrupted in the last 10 days; " in capsys.readouterr().out
+
+    (root / "ww.json").write_text(
+        json.dumps({"agent_hooks": {"recent_days": 1}}), encoding="utf-8"
+    )
+    assert main(["--root", str(root), "lookup", "--agent", "claudecode"]) == 0
+    assert "interrupted in the last" not in capsys.readouterr().out
+
+
+def test_both_adapters_tell_when_a_task_was_last_written(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    memory = MemoryTaskStorageAdapter()
+    service = WorkflowService(Storage(root), memory)
+    start_after_init(service, "task", "T1", agent="claudecode")
+    file_service = WorkflowService(Storage(root))
+    start_after_init(file_service, "task", "T1", agent="claudecode")
+    before = datetime.now(timezone.utc) - timedelta(minutes=1)
+
+    for adapter in (memory, file_service.tasks):
+        written = adapter.task_written_at("T1")
+        assert written is not None and written > before
+        assert adapter.task_written_at("NONE") is None
+
+    memory.written_at["T1"] = before - timedelta(days=10)
+    work = open_work(memory, root, since=before - timedelta(days=3))
+    assert (work.tasks, work.skipped) == ((), 1)

@@ -16,8 +16,6 @@ from ww.open_work import OpenTask, UnreadableTask
 from .records import Interruption
 
 SESSION_TASK_LIMIT = 5
-# How far back the entry commands look for interrupted tasks.
-RECENT_INTERRUPTION_DAYS = 3
 STOP_TASK_LIMIT = 3
 
 _OPERATOR_REASONS = {
@@ -41,8 +39,16 @@ def session_context(
     compacted: bool,
     unreadable: tuple[UnreadableTask, ...] = (),
     on_request: bool = False,
+    skipped: int = 0,
 ) -> str:
-    """What a session learns about ww when it starts, resumes, or compacts."""
+    """What a session learns about ww when it starts, resumes, or compacts.
+
+    ``open_tasks`` are the recent unfinished tasks; ``skipped`` counts the
+    tasks the scan left unread as older, which ``discover`` still covers.
+    A step in progress without an interruption marker ended with no hook
+    run, so it gets a notice of its own, except after a compaction: the
+    session that holds it is the one carrying on.
+    """
     ww = ww_command()
     lines = []
     if compacted:
@@ -62,11 +68,15 @@ def session_context(
             interruption = interruptions.get(task.task_id)
             if interruption is not None:
                 lines.append("  " + interruption_notice(interruption, task.task_id))
+            elif task.agent_step_in_progress and not compacted:
+                lines.append("  " + abrupt_end_notice(task))
         if len(open_tasks) > SESSION_TASK_LIMIT:
             lines.append(
                 f"… and {len(open_tasks) - SESSION_TASK_LIMIT} more; "
                 f"`{ww} status <task-id>` shows one."
             )
+    if open_tasks or skipped:
+        lines.append(f"`{ww} discover` lists every unfinished task.")
     if unreadable:
         lines.append(unreadable_notice(unreadable))
     return "\n".join(lines) + "\n"
@@ -140,6 +150,27 @@ def interruption_notice(interruption: Interruption, task_id: str) -> str:
     )
 
 
+def abrupt_end_notice(task: OpenTask) -> str:
+    """Tell whoever picks the task up that its last session left no trace.
+
+    The ``interrupt`` hook never runs when a tab is closed, the agent crashes
+    or is killed, so the step is still in progress with no marker.
+    """
+    lead = (
+        f"Left in progress at {task.updated_at} by {task.agent} with no recorded "
+        "end, probably a closed session: "
+    )
+    if task.in_conversation:
+        return (
+            lead + "the step's page shows the conversation so far; pick it up at "
+            "the last unanswered question."
+        )
+    return (
+        lead + f"check its page (`{ww_command()} instruction {task.task_id} "
+        "--role manager`) before continuing."
+    )
+
+
 def _display(path: Path, root: Path) -> str:
     try:
         relative = path.relative_to(root.resolve())
@@ -148,7 +179,7 @@ def _display(path: Path, root: Path) -> str:
     return str(relative) if relative.parts else "the root"
 
 
-def recent_interruptions_pointer(count: int) -> str | None:
+def recent_interruptions_pointer(count: int, days: int) -> str | None:
     """One line for ``discover`` and ``lookup``, only when there is news.
 
     Those entry commands are what an agent without hooks runs first, so the
@@ -158,7 +189,8 @@ def recent_interruptions_pointer(count: int) -> str | None:
     if not count:
         return None
     tasks = "task was" if count == 1 else "tasks were"
+    window = "day" if days == 1 else f"{days} days"
     return (
-        f"{count} {tasks} interrupted in the last {RECENT_INTERRUPTION_DAYS} days; "
+        f"{count} {tasks} interrupted in the last {window}; "
         f"run `{ww_command()} interrupted` before starting new work."
     )

@@ -11,7 +11,6 @@ from ww import STAGE, __version__
 from ww.contracts import CALLER_ROLES
 from ww.errors import StateError
 from ww.hooks import HOOK_AGENTS, HOOK_EVENTS
-from ww.hooks.notices import RECENT_INTERRUPTION_DAYS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 
 HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
@@ -701,11 +700,10 @@ def build_parser() -> argparse.ArgumentParser:
     interrupted.add_argument(
         "--since",
         type=int,
-        default=RECENT_INTERRUPTION_DAYS,
         metavar="DAYS",
         help=(
-            f"Only interruptions of the last DAYS days "
-            f"(default {RECENT_INTERRUPTION_DAYS})."
+            "Only interruptions of the last DAYS days "
+            "(default: the agent_hooks.recent_days setting, 3)."
         ),
     )
     interrupted.add_argument(

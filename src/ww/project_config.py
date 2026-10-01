@@ -13,6 +13,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "update_check": true,
   "executable": "ww-agentic-workflows-dev",
   "limits": {"rounds": 3, "fixes": 3},
+  "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
@@ -31,6 +32,12 @@ the user explicitly asks for it).
 step ``loop`` that sets no ``max_rounds`` of its own. ``fixes`` is how many
 times a step's completion may be rejected for a failed check before ww stops
 for the operator, unless a rule sets its own ``max_fixes``.
+
+``agent_hooks`` tunes what the ``session-start`` hook reports.
+``check_unfinished`` (default ``true``) is whether it scans for unfinished
+tasks at all; ``recent_days`` (default 3) is how many days back a task's last
+update or an interruption counts as recent, for that hook, ``discover``,
+``lookup``, and ``ww interrupted``.
 
 ``workflows`` switches off the workflows ww provides to every project, such
 as ``catchall``; each is on unless its entry says ``"enabled": false``.
@@ -91,6 +98,7 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
 }
 DEFAULT_ROUNDS = 3
 DEFAULT_FIXES = 3
+DEFAULT_RECENT_DAYS = 3
 # A ``task_format`` that forbids generated IDs: every task is started with an
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
@@ -232,12 +240,29 @@ class Limits:
 
 
 @dataclass(frozen=True)
+class AgentHooks:
+    """The ``agent_hooks`` setting: what the session-start hook reports."""
+
+    # Whether session-start scans for unfinished tasks at all.
+    check_unfinished: bool = True
+    # How many days back a task's last update, or an interruption, is recent.
+    recent_days: int = DEFAULT_RECENT_DAYS
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "check_unfinished": self.check_unfinished,
+            "recent_days": self.recent_days,
+        }
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     """Settings that apply to a project rather than to one workflow."""
 
     extensions: dict[str, dict[str, Any]] = field(default_factory=dict)
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
     limits: Limits = Limits()
+    agent_hooks: AgentHooks = AgentHooks()
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
@@ -432,6 +457,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "extensions",
         "builtins",
         "limits",
+        "agent_hooks",
         "projects",
         "update_check",
         "workflows",
@@ -482,6 +508,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         extensions=extensions,
         builtins=normalized,
         limits=_parse_limits(raw.get("limits"), path),
+        agent_hooks=_parse_agent_hooks(raw.get("agent_hooks"), path),
         enabled=enabled,
         projects=_parse_projects(raw.get("projects"), path),
         runtime=runtime,
@@ -508,6 +535,28 @@ def _parse_limits(data: Any, path: str) -> Limits:
         if not is_positive_int(value):
             raise ConfigurationError(f"{path}.limits.{key} must be a positive integer")
     return Limits(**data)
+
+
+def _parse_agent_hooks(data: Any, path: str) -> AgentHooks:
+    """``agent_hooks``: an optional ``check_unfinished`` and ``recent_days``."""
+    if data is None:
+        return AgentHooks()
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{path}.agent_hooks must be an object")
+    unknown = set(data) - {"check_unfinished", "recent_days"}
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.agent_hooks has unknown key(s): {', '.join(sorted(unknown))}"
+        )
+    if not isinstance(data.get("check_unfinished", True), bool):
+        raise ConfigurationError(
+            f"{path}.agent_hooks.check_unfinished must be true or false"
+        )
+    if not is_positive_int(data.get("recent_days", DEFAULT_RECENT_DAYS)):
+        raise ConfigurationError(
+            f"{path}.agent_hooks.recent_days must be a positive integer"
+        )
+    return AgentHooks(**data)
 
 
 def _parse_rules(data: Any, path: str) -> RuleApproval:

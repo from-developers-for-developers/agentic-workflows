@@ -8,6 +8,10 @@
     "rounds": 3,
     "fixes": 3
   },
+  "agent_hooks": {
+    "check_unfinished": true,
+    "recent_days": 3
+  },
   "rules": {
     "approval": "operator"
   },

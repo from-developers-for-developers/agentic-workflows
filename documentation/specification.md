@@ -261,7 +261,12 @@ explicitly asks for it; `discover` says so before its full catalog and reports
 `limits` holds two positive integers, each defaulting to `3`: `rounds`, the
 round limit of a step `loop` without its own `max_rounds`, and `fixes`, the
 rejected completions a check allows when its rule sets no `max_fixes`; any
-other key in it is an error. The file may
+other key in it is an error. `agent_hooks` holds `check_unfinished`, a
+boolean defaulting to `true` that decides whether the `session-start` hook
+lists unfinished tasks, and `recent_days`, a positive integer defaulting to
+`3`: the window of that hook's scan, of `ww interrupted`, and of the
+interruption pointer in `discover` and `lookup`; any other key in it is an
+error. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
@@ -289,6 +294,7 @@ with its default, as `init` writes it:
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3},
+  "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "rules": {"approval": "operator"},
   "builtins": {
     "init": {"model": "cheapest", "reasoning": "low"},

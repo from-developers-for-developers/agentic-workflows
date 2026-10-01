@@ -23,7 +23,6 @@ from ww.discovery import normalize_agent
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
 from ww.hooks.notices import (
-    RECENT_INTERRUPTION_DAYS,
     recent_interruptions_pointer,
 )
 from ww.hooks.records import HookRecords
@@ -233,21 +232,20 @@ def render_lookup(
     json_output: bool,
 ) -> str:
     report = lookup(storage, extensions, tasks, reference, agent)
-    report["interrupted_recently"] = len(
-        HookRecords(storage, tasks).recent(RECENT_INTERRUPTION_DAYS)
-    )
+    days = extensions.config.agent_hooks.recent_days
+    report["interrupted_recently"] = len(HookRecords(storage, tasks).recent(days))
     if json_output:
         return json.dumps(report, indent=2)
-    return "\n".join(_markdown(report))
+    return "\n".join(_markdown(report, days))
 
 
-def _markdown(report: dict[str, object]) -> list[str]:
+def _markdown(report: dict[str, object], days: int) -> list[str]:
     lines = ["# ww lookup", ""]
     if report.get("on_request"):
         lines.extend([f"**{ON_REQUEST_NOTE}**", ""])
     lines.append(str(report["message"]))
     count = report.get("interrupted_recently")
-    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0)
+    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0, days)
     if pointer:
         lines.extend(["", pointer])
     command = report.get("command")

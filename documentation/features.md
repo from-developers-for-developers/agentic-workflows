@@ -68,6 +68,10 @@ defaults. Without Git, and with the uuid format:
     "rounds": 3,
     "fixes": 3
   },
+  "agent_hooks": {
+    "check_unfinished": true,
+    "recent_days": 3
+  },
   "rules": {
     "approval": "operator"
   },
@@ -89,8 +93,8 @@ defaults. Without Git, and with the uuid format:
 
 In an existing file init adds the keys that are missing, nested ones
 included, with these defaults and keeps every value already there. A key
-init does not ask about (`runtime`, `update_check`, `limits`, `rules`,
-`builtins`, `workflows`, `projects`) that the user or local settings file
+init does not ask about (`runtime`, `update_check`, `limits`, `agent_hooks`,
+`rules`, `builtins`, `workflows`, `projects`) that the user or local settings file
 already sets is not written, so a default in the repo file never hides it.
 
 The wizard offers to keep `.ww` out of Git; without consent it only reports
@@ -3586,7 +3590,10 @@ the closing next step, the `ww-setup` skill, are always shown.
 Agent hooks are the agent's own hooks (session-start, stop, interrupt),
 installed with `ww hook` and separate from the workflow hooks above. They
 carry ww's task state into a session — which task is unfinished, whether a
-step was left mid-way — without blocking the agent. See
+step was left mid-way — without blocking the agent. `agent_hooks` in
+`ww.json` sets how many days back `session-start` looks for unfinished
+tasks (`recent_days`, 3) or switches that scan off (`check_unfinished:
+false`). See
 [documentation/agent-hooks.md](agent-hooks.md) for the events, the
 per-agent table, install/uninstall/show, failure behaviour, and interrupted
 tasks.

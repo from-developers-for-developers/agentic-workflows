@@ -866,10 +866,15 @@ def _duplicate_notice(context: _Context, agent: HookAgent, local: bool) -> str:
 def _interrupted(context: _Context) -> _Outcome:
     """List the tasks whose last agent session stopped mid-step."""
     args = context.args
+    since = (
+        context.extensions.config.agent_hooks.recent_days
+        if args.since is None
+        else args.since
+    )
     entries = (
         context.service.interruptions()
         if args.all
-        else context.service.hook_records.recent(args.since)
+        else context.service.hook_records.recent(since)
     )
     if args.json_output:
         return _Outcome(
@@ -881,7 +886,7 @@ def _interrupted(context: _Context) -> _Outcome:
             )
         )
     if not entries:
-        window = "" if args.all else f" in the last {args.since} day(s)"
+        window = "" if args.all else f" in the last {since} day(s)"
         return _Outcome(f"No task was interrupted{window}.\n")
     lines = [
         f"- {task_id} · {record.step or record.item_name} (attempt "
@@ -1276,6 +1281,7 @@ def _answer_hook(arguments: list[str]) -> int:
                 args.hook_action,
                 payload,
                 on_request=config.on_request,
+                settings=config.agent_hooks,
             )
     except BaseException as error:  # noqa: BLE001 - a hook must never break the agent
         if isinstance(error, KeyboardInterrupt):

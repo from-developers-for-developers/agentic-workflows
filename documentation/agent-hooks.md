@@ -12,7 +12,7 @@ agent.
 
 | Hook | When it runs | What it does |
 | --- | --- | --- |
-| `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here (under `"enabled": "on_request"`: that ww is used only when the user asks for it) and up to five unfinished tasks, newest first, with their step, workspace, and resume commands. |
+| `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here (under `"enabled": "on_request"`: that ww is used only when the user asks for it) and up to five unfinished tasks written within `agent_hooks.recent_days`, newest first, with their step, workspace, and resume commands. |
 | `stop` | The agent ends its turn | Once per step attempt, asks the agent to record an agent-owned step it left in progress. The next stop is always allowed. |
 | `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work, or to pick up the recorded conversation when the step was talking with the operator. |
 
@@ -29,7 +29,35 @@ session, so it is short:
 This project coordinates work through ww: `./ww discover` lists its workflows.
 Unfinished ww tasks, newest first:
 - TASK-16 (task, claudecode) develop: in progress · in ww-worktrees/TASK-16 · resume: `./ww instruction TASK-16 --role manager` · worker: `./ww instruction TASK-16 --run 01-task --role worker`
+  Left in progress at 2026-09-28T18:40:00Z by claudecode with no recorded end, probably a closed session: check its page (`./ww instruction TASK-16 --role manager`) before continuing.
+`./ww discover` lists every unfinished task.
 ```
+
+The scan reads only the tasks whose state was written within the last
+`agent_hooks.recent_days` days (3 by default), judged by the state file's
+modification time before anything is parsed, so a long task history costs
+nothing; `discover`, `lookup` and `interrupted` still look at every task.
+Whenever a task was listed or skipped, a last line points at `discover`.
+
+A tab closed abruptly, a crash or a kill never runs the `interrupt` hook, so
+the task's step is still in progress with no [interruption
+marker](#interrupted-tasks). Such a task gets the "Left in progress … with no
+recorded end" line above; a step talking with the operator is told instead
+that its page shows the conversation so far, to pick up at the last
+unanswered question. A marked task gets only its interruption notice, and
+after a compaction the line is left out, since the session holding the step
+is the one carrying on.
+
+`ww.json` tunes the scan:
+
+```json
+"agent_hooks": {"check_unfinished": true, "recent_days": 3}
+```
+
+`check_unfinished: false` switches the scan off: `session-start` prints only
+its one-line reminder, while `stop` and `interrupt` work as before.
+`recent_days` is also the window of `ww interrupted` and of the `discover`
+and `lookup` pointer below.
 
 A task whose state cannot be read never silences the hooks. `session-start`
 lists the readable tasks as usual and adds one line naming the others:
@@ -42,7 +70,7 @@ ww cannot read the state of TASK-20; other tasks and new work are unaffected. `.
 `interrupted` and `lookup` skip a marked task they cannot read.
 
 After a compaction it starts with "Context was compacted; ww's task state is
-authoritative." Every unfinished task is listed, whichever agent started it,
+authoritative." Every recent unfinished task is listed, whichever agent started it,
 with that agent after the workflow, since other sessions' open work is useful
 context. A task waiting for the operator stays listed and says so, for
 example `awaiting the operator: the work failed`. Work attached to a step as a
@@ -201,9 +229,9 @@ ww-agentic-workflows interrupted --since 7
 ww-agentic-workflows interrupted --all --json
 ```
 
-`--since` defaults to three days. `discover` and `lookup`, the commands an agent
-without hooks runs first, add one line only when the last three days hold an
-interruption, and `interrupted_recently` in their JSON:
+`--since` defaults to `agent_hooks.recent_days` (3). `discover` and `lookup`,
+the commands an agent without hooks runs first, add one line only when that
+window holds an interruption, and `interrupted_recently` in their JSON:
 
 ```text
 1 task was interrupted in the last 3 days; run `./ww interrupted` before starting new work.

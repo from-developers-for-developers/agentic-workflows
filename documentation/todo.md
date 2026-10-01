@@ -23,3 +23,11 @@ replace the whole-operation lock: the coordinator fetches a fresh revision
 when it commits. ww ships no shared adapter (see
 [limitations.md](limitations.md#storage)), so this matters only to someone
 writing one.
+
+3. Task scans parse every task's state
+
+The `session-start` hook skips tasks whose state file was last written before
+`agent_hooks.recent_days`, but `discover`, `interrupted` and `lookup` still
+parse every task's state. If a repository gathers thousands of tasks inside
+that window, the fix is an index owned by the storage adapter, written on every
+commit and rebuildable from the states, not a marker the hooks maintain.

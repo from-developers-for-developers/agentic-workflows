@@ -6,6 +6,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from datetime import datetime, timezone
 
 from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
@@ -33,6 +34,8 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self.shared_items: dict[str, tuple[WorkItem, ...]] = {}
         self.aggregates: dict[str, tuple[tuple[TaskRunAggregate, ...], str | None]] = {}
         self.aggregate_revisions: dict[str, int] = {}
+        # When each task's runs were last committed.
+        self.written_at: dict[str, datetime] = {}
         self._locks: dict[str, threading.RLock] = {}
         self._locks_guard = threading.Lock()
 
@@ -98,8 +101,12 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
             ) from error
         self.aggregates[task_id] = (persisted_runs, handoff)
         self.aggregate_revisions[task_id] = revision + 1
+        self.written_at[task_id] = datetime.now(timezone.utc)
         self.metadata.setdefault(task_id, TaskMetadata(task_id))
         return revision + 1
+
+    def task_written_at(self, task_id: str) -> datetime | None:
+        return self.written_at.get(task_id)
 
     def task_ids(self) -> tuple[str, ...]:
         owners = {*self.aggregates, *self.metadata, *self._artifact_owners.values()}
@@ -131,6 +138,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self.shared_items.pop(task_id, None)
         self.aggregates.pop(task_id, None)
         self.aggregate_revisions.pop(task_id, None)
+        self.written_at.pop(task_id, None)
         for reference, owner in tuple(self._artifact_owners.items()):
             if owner == task_id:
                 del self.artifacts[reference]
