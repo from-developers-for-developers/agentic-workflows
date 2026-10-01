@@ -12,6 +12,8 @@ and persistence invariants, see [architecture.md](architecture.md).
 - A `ww.yaml` split across imported files, composed in memory.
 - User, repo, and local configuration levels, resolved automatically, above
   the workflows ww ships itself.
+- A read-only profile of the checkout (`inspect`): branches, activity, fix
+  signals, hot paths, manifests and verify commands, and conventions.
 - Onboarding state, and setup fragments that ww validates and places in the
   shared or local configuration after asking.
 - Built-in learning and setup workflows, started by the `ww-setup` skills:
@@ -356,6 +358,64 @@ after confirmation; a file that is a symbolic link is written through to its
 target and keeps its permissions. When a write fails, ww puts back every file
 it already wrote, removes its temporary file, and reports the error. Nothing
 is committed.
+
+## Inspect the project
+
+`ww inspect` prints a read-only profile of the checkout: facts about how the
+work is organised, each with the command or file it came from, or "not
+found". It reads the working tree and the local Git history and nothing
+else: no fetch, no network, nothing outside the checkout, and it writes no
+file. It needs no `init`, so the setup workflows can run it on a fresh
+project. `--json` prints the same profile as data, and `--commits N` reads
+the last `N` commits instead of 300.
+
+```console
+$ ./ww inspect
+# Profile of shop
+
+Read-only facts about this checkout; each names where it came from.
+
+## Repository
+
+- Default branch: main (git symbolic-ref origin/HEAD)
+- Integration branch: dev (merges on refs/remotes/origin/dev, git log --first-parent --merges)
+- Branch patterns: feature/ 41, hotfix/ 6, release/ 3 (git branch -r, merge subjects)
+- Merge commits: 22% (66 of 300 commits, git log -n 300)
+...
+
+## Fixes
+
+- Fix share: 18% (42 of 234 non-merge commits, fix|fixes|fixed|revert|hotfix|regression in the subject, git log -n 300)
+- Paths fixes touch: src/cart/totals.ts 9, src/cart/tax.ts 5, ... (paths the fix commits touch, git log -n 300 --numstat)
+...
+
+## Layout
+
+- Manifests: package.json [12 scripts], apps/web/package.json [6 scripts] (root and two levels down, git ls-files)
+- Verify commands: test: `pnpm run test` from package.json; lint: `pnpm run lint` from package.json (scripts and targets named test/lint/typecheck/check/format/build in the manifests)
+...
+
+## Conventions
+
+- Ticket prefixes: SHOP 188, OPS 12 (git log -n 300; git branch -r, merge subjects)
+- task_format candidate: `SHOP-{{digit}}` (the most frequent tracker key prefix)
+- commit_format candidate: `{{ww.task.id}}: {{commit_message}}` (task ID first when half the subjects start with a key)
+...
+```
+
+| Section | Facts |
+| --- | --- |
+| Repository | Default and integration branch, branch lanes (`feature/`, `hotfix/`, `release/`, …) with counts, remotes, shallow clone, share of merge commits and the merge style, pull request signals (template, `CODEOWNERS`, "Merge pull request" subjects), tags and the median days between the last ten. |
+| Activity | Commits read, contributors and those active in 90 days, commits per week over 12 weeks, median files and lines per commit, median branch lifetime. Team shape: solo (one active contributor), small (2–5) or team (6+); cadence: daily (a median of five commits a week or more), weekly (one or more) or sparse. |
+| Fixes | Share of non-merge commits whose subject says fix, fixes, fixed, revert, hotfix or regression; the five paths they touch most; the five most recent such subjects. |
+| Hot paths | The ten most-changed files. |
+| Layout | Manifests at the root and two levels down (`package.json`, `pyproject.toml`, `Makefile`, `composer.json`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`, `build.gradle`), CI files, the verify commands they name as exact argv, monorepo signals and the candidate `projects` they name. Sibling repositories a README links to are named, never read. |
+| Conventions | Tracker key prefixes in subjects and branch names, with the `task_format` candidate; the share of subjects led by a key and of conventional-commit subjects, with the `commit_format` candidate; agent instruction files present. |
+
+Outside a Git repository only the layout and the agent instruction files are
+reported, under a line saying the Git facts are unavailable. An empty
+repository, a shallow clone or one without remotes is reported as it is; a Git
+call that fails or takes too long leaves only its own fact not found.
 
 ## Setting ww up: learning and suggestions
 

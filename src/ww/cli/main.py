@@ -41,6 +41,7 @@ from ww.hooks import (
     uninstall_hooks,
 )
 from ww.hooks.notices import interruption_notice
+from ww.inspect import inspect_checkout, render_markdown
 from ww.instructions import Instruction
 from ww.items import WorkItem
 from ww.onboarding import Onboarding, render_onboarding
@@ -112,6 +113,7 @@ _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
 _READ_ONLY_COMMANDS = frozenset(
     {
         "discover",
+        "inspect",
         "lookup",
         "lint",
         "plan",
@@ -1063,6 +1065,13 @@ def _reset(context: _Context) -> _Outcome:
     )
 
 
+def _inspect(context: _Context) -> _Outcome:
+    profile = inspect_checkout(context.storage.root, context.args.commits)
+    if context.args.json_output:
+        return _Outcome(json.dumps(profile.to_dict(), indent=2) + "\n")
+    return _Outcome(render_markdown(profile))
+
+
 def _cleanup(context: _Context) -> _Outcome:
     result = context.service.cleanup()
     if context.args.json_output:
@@ -1098,6 +1107,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "discover": lambda c: _Outcome(
         render_discover(c.storage, c.extensions, c.args.json_output) + "\n"
     ),
+    "inspect": _inspect,
     "lookup": lambda c: _Outcome(
         render_lookup(
             c.storage,

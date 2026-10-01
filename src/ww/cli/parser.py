@@ -11,6 +11,7 @@ from ww import STAGE, __version__
 from ww.contracts import CALLER_ROLES
 from ww.errors import StateError
 from ww.hooks import HOOK_AGENTS, HOOK_EVENTS
+from ww.inspect import DEFAULT_COMMITS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 
 HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
@@ -49,6 +50,12 @@ def _shared(*add: str) -> _Parser:
         parent.add_argument("--selected-model", default=None)
         parent.add_argument("--selected-reasoning", default=None)
     return parent
+
+
+def _positive(value: str) -> int:
+    if not value.isdigit() or int(value) < 1:
+        raise argparse.ArgumentTypeError("choose a whole number of at least 1")
+    return int(value)
 
 
 def _true_false(value: str) -> bool:
@@ -159,6 +166,21 @@ def build_parser() -> argparse.ArgumentParser:
         "discover",
         parents=[json_output],
         help="Show the workflows, modes, options, and commands for starting a task.",
+    )
+    inspect = subparsers.add_parser(
+        "inspect",
+        parents=[json_output],
+        help=(
+            "Print a read-only profile of the checkout: branches, activity, "
+            "fixes, hot paths, layout and conventions, each with its evidence."
+        ),
+    )
+    inspect.add_argument(
+        "--commits",
+        type=_positive,
+        default=DEFAULT_COMMITS,
+        metavar="N",
+        help=f"How many recent commits to read (default {DEFAULT_COMMITS}).",
     )
     for name, help_text in (
         ("modes", "List configured modes as JSON."),
