@@ -16,15 +16,16 @@ handlers:
     reasoning: lowest
     loop:
       - run: >-
-          Run ruff and mypy in their least verbose mode that still shows every
-          finding, and fix what they report.
+          Run `.venv/bin/python -m ruff check src tests scripts ext/ww/git`
+          and `.venv/bin/python -m mypy` with no arguments (pyproject.toml
+          names its targets), and fix what they report.
         break: Neither tool reports a finding.
 
   - run-tests:
     loop:
       - test: >-
-          Run the whole pytest suite in its least verbose mode that still shows
-          failures, and fix every failing test.
+          Run the whole suite with `.venv/bin/python -m pytest -n auto` and
+          fix every failing test.
         break: All tests pass.
 
   - update-documentation: >-

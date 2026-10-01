@@ -27,7 +27,7 @@ from ww.plan.constructs import (
     builtin_construct_planners,
     normalize_construct,
 )
-from ww.project_config import ProjectConfig
+from ww.project_config import Limits, ProjectConfig
 from ww.workflow_config import INIT_STEP_PROMPT, StepDefinition
 
 
@@ -1086,7 +1086,7 @@ def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> No
         tmp_path,
         "task",
         "codex",
-        project_config=ProjectConfig(max_rounds=5),
+        project_config=ProjectConfig(limits=Limits(rounds=5)),
     )
     boundaries = [item for item in plan.items if item.kind == "loop"]
 

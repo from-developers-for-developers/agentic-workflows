@@ -178,7 +178,8 @@ workflows:
 
 A `loop` repeats its body until a worker breaks it or the round limit is
 reached. `break` and `continue` are natural-language conditions the worker
-evaluates after doing the step. `max_rounds` overrides the project default.
+evaluates after doing the step. `max_rounds` overrides the project default, `limits.rounds` in
+`ww-agentic-workflows.json`.
 
 ```yaml
 workflows:
@@ -416,7 +417,7 @@ workflows:
 ```json
 {
   "enabled": true,
-  "max_rounds": 3,
+  "limits": {"rounds": 3, "fixes": 3},
   "extensions": {
     "ww/git": {
       "commit_format": "{{ww.task.id}}: {{commit_message}}",
@@ -616,7 +617,7 @@ workflows:
 ```
 
 ```json
-{ "max_fixes": 3 }
+{ "limits": { "fixes": 3 } }
 ```
 
 When a check fails, `complete` exits non-zero and shows which checks failed

@@ -625,7 +625,7 @@ class WorkflowPlanCompiler:
 
             context = _CompilerPlanningContext(
                 scope,
-                self.project_config.max_rounds,
+                self.project_config.limits.rounds,
                 compile_nested,
                 compile_region,
                 emit_leaf,
@@ -1110,7 +1110,7 @@ class WorkflowPlanCompiler:
         unique: dict[str, RuleDefinition] = {}
         for rule in collected:
             unique.setdefault(rule.id, rule)
-        default_fixes = self.project_config.max_fixes
+        default_fixes = self.project_config.limits.fixes
         rules = tuple(
             PlannedRule(
                 id=rule.id,

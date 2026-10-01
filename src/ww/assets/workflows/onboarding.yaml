@@ -295,7 +295,7 @@ workflows:
               unless it is an obvious one-line command); hooks only where an
               existing project command plainly fits, such as running the tests
               before a develop step completes; and settings such as `runtime`,
-              `task_format` matching the issue tracker, or `max_rounds`. Never
+              `task_format` matching the issue tracker, or `limits`. Never
               redefine a workflow ww ships (`catchall`, `ww-*`) or duplicate
               what is already configured. Write it as a setup fragment to
               {{ww.documents.setup_proposal}}: the root keys `workflows`,

@@ -44,7 +44,7 @@ def root(tmp_path: Path) -> Path:
     project.mkdir()
     (project / "ww-agentic-workflows.yaml").write_text(REPO, encoding="utf-8")
     (project / "ww-agentic-workflows.json").write_text(
-        json.dumps({"max_rounds": 3}, indent=2) + "\n", encoding="utf-8"
+        json.dumps({"limits": {"rounds": 3}}, indent=2) + "\n", encoding="utf-8"
     )
     return project
 
@@ -95,7 +95,7 @@ def test_for_team_writes_the_shared_import_and_settings(
     setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
     assert set(setup) == {"workflows", "modes"}
     assert json.loads((root / "ww-agentic-workflows.json").read_text()) == {
-        "max_rounds": 3,
+        "limits": {"rounds": 3},
         "runtime": "auto",
         "extensions": {"ww/git": {"separate_branch": True}},
     }
@@ -105,7 +105,9 @@ def test_for_team_writes_the_shared_import_and_settings(
 def test_for_me_writes_local_files_and_creates_the_local_root(
     root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fragment = _fragment(tmp_path, FRAGMENT.replace("runtime: auto", "max_fixes: 5"))
+    fragment = _fragment(
+        tmp_path, FRAGMENT.replace("runtime: auto", "limits:\n    fixes: 5")
+    )
 
     assert _apply(root, str(fragment), "--for", "me", "--yes") == 0
 
@@ -115,7 +117,7 @@ def test_for_me_writes_local_files_and_creates_the_local_root(
     )
     assert "review" in (root / "ww-setup.local.yaml").read_text()
     assert json.loads((root / "ww-agentic-workflows.local.json").read_text()) == {
-        "max_fixes": 5,
+        "limits": {"fixes": 5},
         "extensions": {"ww/git": {"separate_branch": True}},
     }
     # The shared files are untouched.
@@ -192,13 +194,13 @@ def test_a_setting_with_another_value_refuses_the_whole_apply(
     root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     before = _snapshot(root)
-    fragment = _fragment(tmp_path, FRAGMENT + "  max_rounds: 5\n")
+    fragment = _fragment(tmp_path, FRAGMENT + "  limits:\n    rounds: 5\n")
 
     assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
 
     err = capsys.readouterr().err
     assert "does not overwrite them" in err
-    assert "- max_rounds is 3, the fragment proposes 5" in err
+    assert "- limits.rounds is 3, the fragment proposes 5" in err
     assert _snapshot(root) == before
 
 
@@ -281,7 +283,7 @@ def test_the_json_report_after_applying(
         ("workflows:\n  - 42\n", "workflows[0] needs a name"),
         ("settings: [1]\n", "settings must be a mapping"),
         ("[]\n", "must be a mapping of configuration keys"),
-        ("settings:\n  max_rounds: 3\n", "changes nothing"),
+        ("settings:\n  limits:\n    rounds: 3\n", "changes nothing"),
     ],
 )
 def test_a_malformed_fragment_is_refused(

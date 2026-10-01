@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ww.config.composition import compose_configuration
 from ww.config_files import runtime_ignored, settings_levels
-from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
+from ww.defaults import SKILLS, WW_SKILL_NAME, default_settings, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
 from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
@@ -208,14 +208,24 @@ def _initialization_options(
         )
     workflows = "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
 
-    project: dict[str, object] = {
-        **({"enabled": enabled} if enabled is not None else {}),
-        "executable": DEFAULT_EXECUTABLE,
-        "extensions": {},
-    }
-    # A format another level already provides is not repeated in the repo file.
+    # Every setting with its default, the answers written over them.
+    project = default_settings()
+    # The user or local level's own ``enabled`` stands, and a format another
+    # level already provides is not repeated in the repo file.
+    if enabled is None:
+        del project["enabled"]
+    else:
+        project["enabled"] = enabled
     if task_kind is not None or not _configured_task_format(storage):
         project["task_format"] = "TASK-{{" + (task_kind or "uuid") + "}}"
+    else:
+        del project["task_format"]
+    # A setting init does not ask about, which the user or local level
+    # already sets, keeps that value rather than a default over it.
+    for name, raw in _settings_by_level(storage).items():
+        if name != "repo":
+            for key in _UNASKED_SETTINGS & raw.keys():
+                project.pop(key, None)
     has_git = (storage.root / ".git").exists()
     if has_git:
         existing_git = _existing_git_settings(storage)
@@ -271,10 +281,7 @@ def _initialization_options(
                     "worktree_name_format": "{{ww.task.id}}",
                 }
             )
-        project = {
-            **project,
-            "extensions": {GIT_EXTENSION: git},
-        }
+        project["extensions"] = {GIT_EXTENSION: git}
 
     ignore_runtime = args.update_gitignore
     # ``--force`` asks every question again, as if nothing were remembered.
@@ -328,6 +335,12 @@ def _initialization_options(
             storage, args.skills, interactive, progress=True, force=force
         ),
     )
+
+
+# The settings init writes with their defaults without asking about them.
+_UNASKED_SETTINGS = frozenset(
+    {"runtime", "update_check", "limits", "rules", "builtins", "workflows", "projects"}
+)
 
 
 # The ``enabled`` values as the operator types them.

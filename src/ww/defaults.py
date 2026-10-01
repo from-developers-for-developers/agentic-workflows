@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Built-in project defaults created by ``ww-agentic-workflows init``."""
 
+import json
+from copy import deepcopy
 from importlib.resources import files
+from typing import Any
 
 from ww.config_files import (
     FILE_STEM,
@@ -10,6 +13,8 @@ from ww.config_files import (
     USER_DIR_VARIABLE,
 )
 from ww.executable import DEFAULT_EXECUTABLE
+from ww.project_config import BUILTIN_DEFAULTS, DEFAULT_RULE_APPROVAL, Limits
+from ww.runtimes import DEFAULT_RUNTIME
 
 DEFAULT_WORKFLOWS_YAML = """modes: []
 handlers: []
@@ -17,15 +22,29 @@ hooks: {}
 workflows: []
 """
 
-DEFAULT_PROJECT_CONFIG_JSON = f"""{{
-  "enabled": true,
-  "executable": "{DEFAULT_EXECUTABLE}",
-  "max_rounds": 3,
-  "max_fixes": 3,
-  "task_format": "TASK-{{{{uuid}}}}",
-  "extensions": {{}}
-}}
-"""
+
+def default_settings() -> dict[str, Any]:
+    """Every root-level setting with its default, in the order init writes them.
+
+    The settings file init creates holds all of them, so each option can be
+    found and changed in place.
+    """
+    return {
+        "enabled": True,
+        "runtime": DEFAULT_RUNTIME,
+        "update_check": True,
+        "executable": DEFAULT_EXECUTABLE,
+        "task_format": "TASK-{{uuid}}",
+        "limits": Limits().to_dict(),
+        "rules": {"approval": DEFAULT_RULE_APPROVAL},
+        "builtins": deepcopy(BUILTIN_DEFAULTS),
+        "workflows": {},
+        "projects": [],
+        "extensions": {},
+    }
+
+
+DEFAULT_PROJECT_CONFIG_JSON = json.dumps(default_settings(), indent=2) + "\n"
 
 
 # ``./ww`` runs the binary the settings levels name in ``executable``, read on

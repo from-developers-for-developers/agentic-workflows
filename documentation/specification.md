@@ -258,7 +258,10 @@ syntax. `enabled` is `true` (the default: agents use ww for project work),
 or `"on_request"` (ww stays available, but agents use it only when the user
 explicitly asks for it; `discover` says so before its full catalog and reports
 `"enabled": "on_request"` in JSON); any other value is an error naming the three.
-`max_rounds` is a positive integer and defaults to `3`. The file may
+`limits` holds two positive integers, each defaulting to `3`: `rounds`, the
+round limit of a step `loop` without its own `max_rounds`, and `fixes`, the
+rejected completions a check allows when its rule sets no `max_fixes`; any
+other key in it is an error. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
@@ -269,14 +272,30 @@ name in any `ww-agentic-workflows.yaml` level replaces the built-in one instead.
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
 `ww-agentic-workflows`; `init` writes `ww-agentic-workflows` when it is
-missing. Missing fields retain their individual defaults:
+missing. `runtime` (`single` or `auto`) is the runtime `start` uses when
+neither `--runtime` nor the workflow names one, `update_check: false` silences
+the notice that the ww checkout is behind its remote, `task_format` is the
+generated task ID format, `rules.approval` decides [who approves a rule
+verifier's proposals](#who-approves-rulesapproval), `projects` lists the
+directories a task may work in, and `extensions` holds each extension's
+settings. Missing fields retain their individual defaults; this is every key
+with its default, as `init` writes it:
 
 ```json
 {
+  "enabled": true,
+  "runtime": "single",
+  "update_check": true,
   "executable": "ww-agentic-workflows",
-  "max_rounds": 3,
-  "builtins": {"init": {"model": "fast"}},
-  "workflows": {"catchall": {"enabled": false}},
+  "task_format": "TASK-{{uuid}}",
+  "limits": {"rounds": 3, "fixes": 3},
+  "rules": {"approval": "operator"},
+  "builtins": {
+    "init": {"model": "cheapest", "reasoning": "low"},
+    "workflow_summary": {"model": "auto", "reasoning": "auto"}
+  },
+  "workflows": {},
+  "projects": [],
   "extensions": {}
 }
 ```
@@ -452,8 +471,8 @@ If a worker uses `continue`, ww records the result, runs the step's completion
 hooks, then resets the body and dispatches its first step. If no worker breaks
 or continues the loop, reaching the end resets the body and the manager
 dispatches the first step again until the effective maximum is reached. The
-effective value comes from the wrapper's `max_rounds`, or from
-`../ww-agentic-workflows.json` when the wrapper omits it, and is frozen in the saved
+effective value comes from the wrapper's `max_rounds`, or from `limits.rounds`
+in `../ww-agentic-workflows.json` when the wrapper omits it, and is frozen in the saved
 workflow plan. At the limit, ww does not expose a continuation command: it
 reports `awaiting_operator` with `operator_reason: loop_limit` and a warning
 that must be escalated to the user for manual resolution, and shows the operator's exit, `next --force --reason`,
@@ -1098,7 +1117,7 @@ Controllers must not instantiate services; inject them.
 | --- | --- | --- |
 | `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run. |
 | `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
-| `max_fixes` | positive integer | Rejections this check allows; defaults to `max_fixes` in `ww-agentic-workflows.json` (3). |
+| `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww-agentic-workflows.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
 
 A rule's identity by wording is the SHA-256 of its text with surrounding

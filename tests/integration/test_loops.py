@@ -401,7 +401,7 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
 
 def test_loop_step_limit_overrides_global_project_limit(tmp_path: Path) -> None:
     (tmp_path / "ww-agentic-workflows.json").write_text(
-        '{"max_rounds": 9, "extensions": {}}', encoding="utf-8"
+        '{"limits": {"rounds": 9}, "extensions": {}}', encoding="utf-8"
     )
     (tmp_path / "ww-agentic-workflows.yaml").write_text(
         """workflows:

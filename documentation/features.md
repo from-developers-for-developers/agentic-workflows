@@ -53,6 +53,46 @@ branch and then `main`, enables separate task branches, and starts with
 whether worktrees should be used. Enabled worktrees default to
 `./git-worktrees/{{ww.task.id}}`, and the directory is created immediately.
 
+The settings file init writes holds every root-level setting with its value,
+so each option can be found and changed in place; the answers replace the
+defaults. Without Git, and with the uuid format:
+
+```json
+{
+  "enabled": true,
+  "runtime": "single",
+  "update_check": true,
+  "executable": "ww-agentic-workflows",
+  "task_format": "TASK-{{uuid}}",
+  "limits": {
+    "rounds": 3,
+    "fixes": 3
+  },
+  "rules": {
+    "approval": "operator"
+  },
+  "builtins": {
+    "init": {
+      "model": "cheapest",
+      "reasoning": "low"
+    },
+    "workflow_summary": {
+      "model": "auto",
+      "reasoning": "auto"
+    }
+  },
+  "workflows": {},
+  "projects": [],
+  "extensions": {}
+}
+```
+
+In an existing file init adds the keys that are missing, nested ones
+included, with these defaults and keeps every value already there. A key
+init does not ask about (`runtime`, `update_check`, `limits`, `rules`,
+`builtins`, `workflows`, `projects`) that the user or local settings file
+already sets is not written, so a default in the repo file never hides it.
+
 The wizard offers to keep `../.ww` out of Git; without consent it only reports
 that action. With consent it appends these lines to `../.gitignore`:
 
@@ -1229,8 +1269,8 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `work_failed` | An agent step was recorded with `fail`, or the bootstrap failed. |
 | `child_failed` | A child task failed. |
 | `handler_interrupted` | An automatic handler was interrupted and its outcome is unknown. |
-| `loop_limit` | A loop reached its `max_rounds` round limit. |
-| `fix_limit` | A step's check failed as many times as its `max_fixes` allows; see [Rules and checks](#rules-and-checks). |
+| `loop_limit` | A loop reached its round limit: its `max_rounds`, else `limits.rounds`. |
+| `fix_limit` | A step's check failed as many times as its rule's `max_fixes`, else `limits.fixes`, allows; see [Rules and checks](#rules-and-checks). |
 | `rules_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
@@ -1601,7 +1641,7 @@ lines it printed, then the same completion command; `fix_required` in JSON.
 The worker fixes the causes and completes again with a revised artifact.
 
 A failed check always goes back to the worker, never to the operator, until
-it has failed `max_fixes` times: the rule's own value, else `max_fixes` in
+it has failed `max_fixes` times: the rule's own value, else `limits.fixes` in
 `ww-agentic-workflows.json`, default 3. Then the task stops with
 `operator_reason: fix_limit` and the last failures on the page. The operator
 chooses:
@@ -2637,12 +2677,12 @@ loop, not on the whole task, and shows the `artifacts` command that lists the
 earlier iteration directories. The setting has no effect in the `single`
 runtime.
 
-ww limits loops to three rounds by default (`max_rounds`). Set a different project-wide
-positive integer in `../ww-agentic-workflows.json`, or override one wrapper in
-`../ww-agentic-workflows.yaml`:
+ww limits loops to three rounds by default. Set a different project-wide
+positive integer as `limits.rounds` in `../ww-agentic-workflows.json`, or
+override one wrapper with `max_rounds` in `../ww-agentic-workflows.yaml`:
 
 ```json
-{"max_rounds": 4, "extensions": {}}
+{"limits": {"rounds": 4}, "extensions": {}}
 ```
 
 ```yaml

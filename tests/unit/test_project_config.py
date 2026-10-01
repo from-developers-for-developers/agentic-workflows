@@ -10,6 +10,7 @@ import pytest
 
 from ww.errors import ConfigurationError
 from ww.project_config import (
+    Limits,
     ProjectConfig,
     ProjectDefinition,
     load_project_config,
@@ -29,8 +30,7 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
 
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
-    assert config.max_rounds == 3
-    assert config.max_fixes == 3
+    assert config.limits == Limits(rounds=3, fixes=3)
     assert config.rule_approval == "operator"
 
 
@@ -44,15 +44,15 @@ def test_the_rule_approval_loads_from_project_config(
 
 
 def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
-    path = write(tmp_path, {"max_fixes": 5})
+    path = write(tmp_path, {"limits": {"fixes": 5}})
 
-    assert load_project_config(path).max_fixes == 5
+    assert load_project_config(path).limits == Limits(rounds=3, fixes=5)
 
 
 def test_global_loop_limit_loads_from_project_config(tmp_path: Path) -> None:
-    path = write(tmp_path, {"max_rounds": 7})
+    path = write(tmp_path, {"limits": {"rounds": 7}})
 
-    assert load_project_config(path).max_rounds == 7
+    assert load_project_config(path).limits == Limits(rounds=7, fixes=3)
 
 
 def test_extension_settings_load(tmp_path: Path) -> None:
@@ -134,11 +134,14 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"enabled": "yes"}, 'enabled must be true, false, or "on_request"'),
         ({"extensions": []}, "extensions must be an object"),
         ({"extensions": {"ww/git": 5}}, "must be an object of settings"),
-        ({"max_rounds": 0}, "max_rounds must be a positive integer"),
-        ({"max_rounds": True}, "max_rounds must be a positive integer"),
-        ({"max_rounds": "3"}, "max_rounds must be a positive integer"),
-        ({"max_fixes": 0}, "max_fixes must be a positive integer"),
-        ({"max_fixes": False}, "max_fixes must be a positive integer"),
+        ({"max_rounds": 3}, "unknown key(s): max_rounds"),
+        ({"limits": 3}, "limits must be an object"),
+        ({"limits": {"max_fixes": 3}}, "limits has unknown key(s): max_fixes"),
+        ({"limits": {"rounds": 0}}, "limits.rounds must be a positive integer"),
+        ({"limits": {"rounds": True}}, "limits.rounds must be a positive integer"),
+        ({"limits": {"rounds": "3"}}, "limits.rounds must be a positive integer"),
+        ({"limits": {"fixes": 0}}, "limits.fixes must be a positive integer"),
+        ({"limits": {"fixes": False}}, "limits.fixes must be a positive integer"),
         ({"rules": "auto"}, "rules must be an object"),
         ({"rules": {"approve": "auto"}}, "rules has unknown key(s): approve"),
         (

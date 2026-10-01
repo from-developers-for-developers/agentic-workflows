@@ -324,8 +324,9 @@ def _settings(tmp_path: Path, settings: dict[str, object]) -> Path:
     return path
 
 
-def test_json_max_rounds_is_read(tmp_path: Path) -> None:
-    assert load_project_config(_settings(tmp_path, {"max_rounds": 4})).max_rounds == 4
+def test_json_limits_are_read(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, {"limits": {"rounds": 4}})
+    assert load_project_config(settings).limits.rounds == 4
 
 
 def test_task_format_placeholders_take_double_braces(tmp_path: Path) -> None:

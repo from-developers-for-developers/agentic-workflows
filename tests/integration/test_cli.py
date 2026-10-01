@@ -8,6 +8,7 @@ import pytest
 
 from ww.builtin_workflows import CATCHALL, builtin_workflow
 from ww.cli import build_parser, main
+from ww.defaults import DEFAULT_PROJECT_CONFIG_JSON
 from ww.storage import Storage
 from ww.variables import BRANCH_NAMING_STRATEGY
 
@@ -585,6 +586,51 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
     # init configures the standard binary, so the summary names it.
     assert "ww-agentic-workflows workflows" in output
     assert "Optionally keep .ww out of Git" not in output
+
+
+def test_init_writes_every_setting_with_its_default(tmp_path: Path, capsys) -> None:
+    assert main(["--root", str(tmp_path), "init", "--no-input"]) == 0
+    capsys.readouterr()
+
+    text = (tmp_path / "ww-agentic-workflows.json").read_text(encoding="utf-8")
+    assert text == DEFAULT_PROJECT_CONFIG_JSON
+    assert list(json.loads(text)) == [
+        "enabled",
+        "runtime",
+        "update_check",
+        "executable",
+        "task_format",
+        "limits",
+        "rules",
+        "builtins",
+        "workflows",
+        "projects",
+        "extensions",
+    ]
+
+
+def test_init_adds_missing_settings_and_leaves_user_level_ones(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / "ww-agentic-workflows.json").write_text(
+        '{"runtime": "auto"}', encoding="utf-8"
+    )
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "ww-agentic-workflows.json").write_text(
+        '{"limits": {"rounds": 5}, "extensions": {}}', encoding="utf-8"
+    )
+
+    assert main(["--root", str(project), "init", "--no-input"]) == 0
+    capsys.readouterr()
+
+    settings = json.loads((project / "ww-agentic-workflows.json").read_text())
+    assert settings["limits"] == {"rounds": 5, "fixes": 3}
+    assert settings["rules"] == {"approval": "operator"}
+    assert "runtime" not in settings
 
 
 def test_init_targets_new_directory_and_creates_approved_agent_files(

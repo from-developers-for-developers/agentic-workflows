@@ -12,8 +12,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "runtime": "single",
   "update_check": true,
   "executable": "ww-agentic-workflows-dev",
-  "max_rounds": 3,
-  "max_fixes": 3,
+  "limits": {"rounds": 3, "fixes": 3},
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
@@ -28,8 +27,10 @@ contains ww-wide settings, built-in execution hints, and extension settings.
 never do), or ``"on_request"`` (ww is available, but agents use it only when
 the user explicitly asks for it).
 
-``max_fixes`` is how many times a step's completion may be rejected for a
-failed check before ww stops for the operator; a rule may set its own.
+``limits`` holds two positive integers. ``rounds`` is the round limit of a
+step ``loop`` that sets no ``max_rounds`` of its own. ``fixes`` is how many
+times a step's completion may be rejected for a failed check before ww stops
+for the operator, unless a rule sets its own ``max_fixes``.
 
 ``workflows`` switches off the workflows ww provides to every project, such
 as ``catchall``; each is on unless its entry says ``"enabled": false``.
@@ -88,8 +89,8 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "init": {"model": "cheapest", "reasoning": "low"},
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
-DEFAULT_MAX_ROUNDS = 3
-DEFAULT_MAX_FIXES = 3
+DEFAULT_ROUNDS = 3
+DEFAULT_FIXES = 3
 # A ``task_format`` that forbids generated IDs: every task is started with an
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
@@ -216,14 +217,25 @@ class ProjectSettings:
 
 
 @dataclass(frozen=True)
+class Limits:
+    """The ``limits`` setting: how far ww goes before the operator decides."""
+
+    # A step loop's rounds when it sets no ``max_rounds`` of its own.
+    rounds: int = DEFAULT_ROUNDS
+    # Rejected completions a check allows when its rule sets no ``max_fixes``.
+    fixes: int = DEFAULT_FIXES
+
+    def to_dict(self) -> dict[str, int]:
+        return {"rounds": self.rounds, "fixes": self.fixes}
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     """Settings that apply to a project rather than to one workflow."""
 
     extensions: dict[str, dict[str, Any]] = field(default_factory=dict)
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
-    max_rounds: int = DEFAULT_MAX_ROUNDS
-    # Rejected completions a check allows before the operator decides.
-    max_fixes: int = DEFAULT_MAX_FIXES
+    limits: Limits = Limits()
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
@@ -417,8 +429,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "runtime",
         "extensions",
         "builtins",
-        "max_rounds",
-        "max_fixes",
+        "limits",
         "projects",
         "update_check",
         "workflows",
@@ -440,12 +451,6 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         raise ConfigurationError(
             f"{path}.runtime must be one of: " + ", ".join(RUNTIME_INSTRUCTIONS)
         )
-    max_rounds = raw.get("max_rounds", DEFAULT_MAX_ROUNDS)
-    if not is_positive_int(max_rounds):
-        raise ConfigurationError(f"{path}.max_rounds must be a positive integer")
-    max_fixes = raw.get("max_fixes", DEFAULT_MAX_FIXES)
-    if not is_positive_int(max_fixes):
-        raise ConfigurationError(f"{path}.max_fixes must be a positive integer")
     builtins = raw.get("builtins", {})
     if not isinstance(builtins, dict):
         raise ConfigurationError(f"{path}.builtins must be an object")
@@ -474,8 +479,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     return ProjectConfig(
         extensions=extensions,
         builtins=normalized,
-        max_rounds=max_rounds,
-        max_fixes=max_fixes,
+        limits=_parse_limits(raw.get("limits"), path),
         enabled=enabled,
         projects=_parse_projects(raw.get("projects"), path),
         runtime=runtime,
@@ -485,6 +489,23 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         task_format=_parse_task_format(raw.get("task_format"), path),
         rule_approval=_parse_rules(raw.get("rules"), path),
     )
+
+
+def _parse_limits(data: Any, path: str) -> Limits:
+    """``limits``: an object of optional positive ``rounds`` and ``fixes``."""
+    if data is None:
+        return Limits()
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{path}.limits must be an object")
+    unknown = set(data) - {"rounds", "fixes"}
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.limits has unknown key(s): {', '.join(sorted(unknown))}"
+        )
+    for key, value in data.items():
+        if not is_positive_int(value):
+            raise ConfigurationError(f"{path}.limits.{key} must be a positive integer")
+    return Limits(**data)
 
 
 def _parse_rules(data: Any, path: str) -> RuleApproval:

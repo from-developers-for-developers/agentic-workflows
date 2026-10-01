@@ -29,7 +29,7 @@ from ww.execution_models import PLAN_SCHEMA_VERSION, PlanSnapshot
 from ww.execution_models.plan_codec import _plan_from_dict
 from ww.extensions import Extension, ExtensionRegistry, RuleGroupContribution
 from ww.plan import PlanItem, WorkflowPlan, WorkflowPlanCompiler
-from ww.project_config import ProjectConfig
+from ww.project_config import Limits, ProjectConfig
 from ww.workflow_config import (
     ALL,
     RuleDefinition,
@@ -793,7 +793,7 @@ workflows:
 """,
     )
 
-    plan = _compile(tmp_path, project_config=ProjectConfig(max_fixes=4))
+    plan = _compile(tmp_path, project_config=ProjectConfig(limits=Limits(fixes=4)))
     develop, review = _item(plan, "develop"), _item(plan, "review")
     bugfix_review = _item(_compile(tmp_path, "bugfix"), "review")
 
@@ -891,7 +891,7 @@ workflows:
 """,
     )
 
-    plan = _compile(tmp_path, project_config=ProjectConfig(max_fixes=2))
+    plan = _compile(tmp_path, project_config=ProjectConfig(limits=Limits(fixes=2)))
     develop = _item(plan, "develop")
     hooks = [
         item.name

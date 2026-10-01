@@ -10,7 +10,7 @@ from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import user_directory
 from ww.errors import ConfigurationError
-from ww.project_config import compose_settings, load_project_config
+from ww.project_config import Limits, compose_settings, load_project_config
 
 _WORKFLOW = """workflows:
   - task: Repo task.
@@ -386,13 +386,13 @@ def test_a_file_cannot_be_imported_by_two_levels(user: Path, repo: Path) -> None
 def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
     _write(
         user / "ww-agentic-workflows.json",
-        '{"max_rounds": 5, "extensions": {"ww/git": '
+        '{"limits": {"rounds": 5}, "extensions": {"ww/git": '
         '{"worktrees": true, "base_branches": {"default": "main"}}}, '
         '"projects": [{"name": "a", "path": "./a"}]}',
     )
     repo_file = _write(
         repo / "ww-agentic-workflows.json",
-        '{"extensions": {"ww/git": {"worktrees": false}}}',
+        '{"limits": {"fixes": 2}, "extensions": {"ww/git": {"worktrees": false}}}',
     )
     _write(
         repo / "ww-agentic-workflows.local.json",
@@ -402,7 +402,7 @@ def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
     raw, sources = compose_settings(repo_file)
 
     assert raw == {
-        "max_rounds": 5,
+        "limits": {"rounds": 5, "fixes": 2},
         "extensions": {
             "ww/git": {"worktrees": False, "base_branches": {"default": "main"}}
         },
@@ -414,20 +414,21 @@ def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
         repo / "ww-agentic-workflows.local.json",
     )
     settings = load_project_config(repo_file)
-    assert settings.max_rounds == 5
+    assert settings.limits == Limits(rounds=5, fixes=2)
     assert [project.name for project in settings.projects] == ["b"]
 
 
 def test_settings_apply_from_the_user_level_without_a_repo_file(
     user: Path, repo: Path
 ) -> None:
-    _write(user / "ww-agentic-workflows.json", '{"max_rounds": 7}')
+    _write(user / "ww-agentic-workflows.json", '{"limits": {"rounds": 7}}')
 
-    assert load_project_config(repo / "ww-agentic-workflows.json").max_rounds == 7
+    settings = load_project_config(repo / "ww-agentic-workflows.json")
+    assert settings.limits.rounds == 7
 
 
 def test_settings_errors_name_the_files_read(user: Path, repo: Path) -> None:
-    _write(user / "ww-agentic-workflows.json", '{"max_rounds": 0}')
+    _write(user / "ww-agentic-workflows.json", '{"limits": {"rounds": 0}}')
     repo_file = _write(repo / "ww-agentic-workflows.json", "{}")
 
     with pytest.raises(ConfigurationError) as error:
@@ -435,7 +436,7 @@ def test_settings_errors_name_the_files_read(user: Path, repo: Path) -> None:
 
     message = str(error.value)
     assert "ww-agentic-workflows.json + " in message
-    assert "max_rounds must be a positive integer" in message
+    assert "limits.rounds must be a positive integer" in message
 
 
 def test_an_invalid_settings_level_is_reported_by_path(

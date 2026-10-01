@@ -15,6 +15,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
   (configuration keys, template names, CLI flags, `workflows.yaml`/`agentic-workflows.json`, the machine level) and the
   extension `upgrade_settings` hook are removed. Finish or reset in-flight tasks and re-run `init` before using this
   build.
+- Breaking: `max_rounds` and `max_fixes` in the settings file are `"limits": {"rounds": N, "fixes": N}`.
+- `init` writes every root-level setting with its default to `ww-agentic-workflows.json`, and adds the missing ones to
+  an existing file.
 
 ## 2026-09-30
 

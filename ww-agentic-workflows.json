@@ -1,8 +1,28 @@
 {
   "enabled": true,
+  "runtime": "single",
+  "update_check": true,
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{digit}}",
-
+  "limits": {
+    "rounds": 3,
+    "fixes": 3
+  },
+  "rules": {
+    "approval": "operator"
+  },
+  "builtins": {
+    "init": {
+      "model": "cheapest",
+      "reasoning": "low"
+    },
+    "workflow_summary": {
+      "model": "auto",
+      "reasoning": "auto"
+    }
+  },
+  "workflows": {},
+  "projects": [],
   "extensions": {
     "ww/git": {
       "commit_format": "{{ww.task.id}}: {{commit_message}}",
