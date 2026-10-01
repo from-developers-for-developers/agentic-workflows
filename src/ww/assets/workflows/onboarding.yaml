@@ -90,9 +90,9 @@ workflows:
                         have changed. Ask one question at a time, in plain
                         words; where the answer is one of a few options (brief
                         or detailed answers, how much to decide alone, how
-                        often to ask), offer them through your blocking question
-                        tool and wait for the answer; never park a question
-                        and carry on. Accept "skip" for any question. Cover: (1) their
+                        often to ask), offer them through your question tool and
+                        end your turn until the answer comes. Accept "skip"
+                        for any question. Cover: (1) their
                         personality and working style: how they like to
                         communicate, how they decide, how much autonomy they
                         give an agent, what annoys them; (2) their own pain
@@ -453,7 +453,7 @@ workflows:
         description: >-
           Run `{{ww.executable}} discover` and list the workflows and their
           steps. Ask the operator which step to look at, offering the step
-          names through your blocking question tool.
+          names through your question tool.
       - name: analyse
         description: >-
           Read the chosen step's instruction (`{{ww.executable}} plan
