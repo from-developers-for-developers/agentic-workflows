@@ -268,14 +268,46 @@ def test_init_writes_the_runtime_lines_and_completes_a_partial_set(
     )
 
 
-def test_init_leaves_an_operators_own_runtime_line_alone(
+@pytest.mark.parametrize("former", [".ww", ".ww/", "/.ww", "/.ww/", "  .ww/  "])
+def test_init_replaces_every_line_that_ignores_the_runtime_directory_whole(
+    project: Path, capsys: pytest.CaptureFixture[str], former: str
+) -> None:
+    _write(
+        project / ".gitignore",
+        f"node_modules/\n{former}\ndist/\n.ww/\n" + _LOCAL_PATTERNS,
+    )
+
+    _init(project, capsys, "--update-gitignore")
+    _init(project, capsys, "--update-gitignore")
+
+    assert (project / ".gitignore").read_text() == (
+        "node_modules/\n" + _RUNTIME_LINES + "dist/\n" + _LOCAL_PATTERNS
+    )
+
+
+def test_a_re_inclusion_counts_only_after_the_runtime_line(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(project / ".gitignore", ".ww\n" + _LOCAL_PATTERNS)
+    _write(project / ".gitignore", "!.ww/team.md\n.ww/*\n!.ww/project.md\nend/\n")
 
     _init(project, capsys, "--update-gitignore")
 
-    assert (project / ".gitignore").read_text() == ".ww\n" + _LOCAL_PATTERNS
+    assert (project / ".gitignore").read_text() == (
+        "!.ww/team.md\n.ww/*\n!.ww/project.md\n!.ww/team.md\n!.ww/company.md\n"
+        "end/\n" + _LOCAL_PATTERNS
+    )
+
+
+def test_init_keeps_a_gitignores_crlf_line_endings(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (project / ".gitignore").write_bytes(b"node_modules/\r\n.ww/\r\ndist/\r\n")
+
+    _init(project, capsys, "--update-gitignore")
+
+    assert (project / ".gitignore").read_bytes() == (
+        "node_modules/\n" + _RUNTIME_LINES + "dist/\n" + _LOCAL_PATTERNS
+    ).replace("\n", "\r\n").encode()
 
 
 def test_the_runtime_lines_let_git_see_only_the_shared_files(
@@ -409,3 +441,62 @@ def test_the_launcher_runs_the_lowest_level_executable(
     assert _run_launcher(project, user) == "ww-repo"
     _write(project / "ww-agentic-workflows.local.json", '{"executable": "  "}')
     assert _run_launcher(project, user) == "ww-repo"
+
+
+@pytest.mark.parametrize(
+    ("former", "current", "value"),
+    [
+        ("commit_message", "commit_format", "{{ww.task.id}}: {{commit_message}}"),
+        ("use_separate_branch", "separate_branch", False),
+    ],
+)
+def test_init_adds_no_git_setting_next_to_its_former_name(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    former: str,
+    current: str,
+    value: object,
+) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    settings = json.dumps({"extensions": {"ww/git": {former: value}}}) + "\n"
+    _write(tmp_path / "ww-agentic-workflows.json", settings)
+
+    assert main(["--root", str(tmp_path), "init", "--no-input"]) == 1
+
+    assert (
+        f"ww/git {former} in ww-agentic-workflows.json was renamed to {current}"
+        in capsys.readouterr().err
+    )
+    assert (tmp_path / "ww-agentic-workflows.json").read_text() == settings
+
+
+@pytest.mark.parametrize("level", ["user", "local"])
+def test_init_commits_no_enabled_another_level_sets(
+    user: Path, project: Path, capsys: pytest.CaptureFixture[str], level: str
+) -> None:
+    directory = user if level == "user" else project
+    name = (
+        "ww-agentic-workflows.json"
+        if level == "user"
+        else "ww-agentic-workflows.local.json"
+    )
+    _write(directory / name, '{"enabled": false}\n')
+
+    _init(project, capsys)
+
+    assert "enabled" not in json.loads(
+        (project / "ww-agentic-workflows.json").read_text()
+    )
+
+
+def test_init_keeps_the_repo_files_own_enabled(
+    user: Path, project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write(user / "ww-agentic-workflows.json", '{"enabled": false}\n')
+    _write(project / "ww-agentic-workflows.json", '{"enabled": "on_request"}\n')
+
+    _init(project, capsys)
+
+    assert json.loads((project / "ww-agentic-workflows.json").read_text())[
+        "enabled"
+    ] == "on_request"

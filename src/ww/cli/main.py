@@ -941,7 +941,7 @@ def _setup(context: _Context) -> _Outcome:
     config_path = context.storage.config_path
     plan = setup_apply.plan_setup(root, config_path, args.fragment, args.audience)
     # Only a change that would load is shown to the operator.
-    setup_apply.apply_setup(root, config_path, plan, keep=False)
+    setup_apply.validate_setup(root, config_path, plan)
     summary = setup_apply.render_plan(plan, root)
     if args.dry_run:
         if args.json_output:
@@ -960,7 +960,7 @@ def _setup(context: _Context) -> _Outcome:
         assume_yes=args.yes,
     ):
         return _Outcome("", error="setup apply cancelled", exit_code=1)
-    setup_apply.apply_setup(root, config_path, plan, keep=True)
+    setup_apply.apply_setup(plan)
     if args.json_output:
         return _Outcome(_json(setup_apply.plan_to_dict(plan, root, applied=True)))
     return _Outcome("Applied.\n" + summary)

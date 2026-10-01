@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import yaml
 
-from ww.config_files import task_format_moved
+from ww.config_files import configuration_file_exists, task_format_moved
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
@@ -80,7 +80,7 @@ def parse_yaml_configuration(
     composed into it first, so the parser reads one document; rule paths
     resolve against ``path``'s directory, where composition rebases them.
     """
-    if not path.is_file():
+    if not configuration_file_exists(path):
         raise ConfigurationError(f"workflow configuration not found: {path}")
     return parse_yaml_text(
         compose_configuration(path).text,

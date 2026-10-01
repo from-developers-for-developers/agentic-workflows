@@ -183,7 +183,8 @@ rewrites whole, which the level's root file imports:
 Each lives next to the repo file. An existing setup file keeps what the
 fragment does not name: a workflow, mode, document, or handler of the same
 name is replaced, a profile or rule group of the same name is replaced whole,
-and hooks are appended phase by phase. `settings` merge key by key, objects
+and hooks are appended phase by phase, skipping an entry identical to one
+already in that phase. `settings` merge key by key, objects
 recursively; a key that already holds a different value is a conflict, and
 the whole apply is refused listing every one. A setup file the root file does
 not import is refused, since ww would not know why it is not applied. A

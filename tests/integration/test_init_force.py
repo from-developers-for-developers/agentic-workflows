@@ -118,32 +118,52 @@ def test_force_asks_again_and_only_adds(
     assert (root / ".codex/skills/ww/SKILL.md").is_file()
 
 
-def test_force_without_input_reapplies_the_defaults(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_force_without_input_keeps_the_remembered_answers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = _git_project(tmp_path)
+    (root / ".claude").mkdir()
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
-    init = ["--root", str(root), "init", "--no-input"]
-
-    assert main([*init, "--no-update-gitignore"]) == 0
+    _interactive(
+        monkeypatch,
+        {
+            "Use Git worktrees": "n",
+            ".gitignore": "n",
+            "@WW_AGENT_INSTRUCTIONS.md": "n",
+            ".claude/skills?": "n",
+            "Create which?": "none",
+            "Install ww hooks": "n",
+        },
+    )
+    assert main(["--root", str(root), "init"]) == 0
     capsys.readouterr()
-    assert ".ww/*" not in (root / ".gitignore").read_text().splitlines()
-    assert _choices(root)["update_gitignore"] is False
+    remembered = _choices(root)
+    monkeypatch.undo()
 
-    assert main([*init, "--force"]) == 0
+    # Nobody can be asked, so every remembered "no" stands.
+    ignored = (root / ".gitignore").read_text()
+    assert main(["--root", str(root), "init", "--no-input", "--force"]) == 0
     output = capsys.readouterr().out
 
-    lines = (root / ".gitignore").read_text().splitlines()
-    assert lines.count(".ww/*") == 1
-    assert lines.count("!.ww/team.md") == 1
-    assert lines.count("node_modules/") == 1
-    assert _choices(root)["update_gitignore"] is True
+    assert (root / ".gitignore").read_text() == ignored
+    assert ".ww/*" not in ignored.splitlines()
+    assert not (root / ".claude/skills").exists()
+    assert not (root / ".claude/settings.json").exists()
+    assert not (root / "AGENTS.md").exists()
+    assert _choices(root) == remembered
     # The notice was shown by the first run, and --force shows it again.
     assert "Allow ww to run without confirmation" in output
 
-    assert main([*init, "--force"]) == 0
+    # A flag still decides without asking.
+    assert main(
+        ["--root", str(root), "init", "--no-input", "--force", "--update-gitignore"]
+    ) == 0
     capsys.readouterr()
-    assert (root / ".gitignore").read_text().splitlines() == lines
+    lines = (root / ".gitignore").read_text().splitlines()
+    assert lines.count(".ww/*") == 1
+    assert lines.count("node_modules/") == 1
 
 
 def test_the_notice_names_each_agents_file_and_entries(

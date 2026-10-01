@@ -67,9 +67,13 @@ Everything under `.ww` is one checkout's state, except the three files in
 which ww records what it learned about the team, the company, and the project:
 those are meant to be committed and shared. Git cannot re-include a file inside
 an ignored directory, which is why the directory's contents are ignored rather
-than the directory. The bare `.ww/` line earlier ww versions wrote is replaced
-by these lines where it stands, a `.ww/*` line gains the re-inclusions it
-lacks, and an operator's own `.ww` line and every other line are left alone.
+than the directory. A line that ignores the directory whole, as `.ww/`, `.ww`,
+`/.ww` or `/.ww/` (the first is what earlier ww versions wrote), would keep the
+shared files out too, so every such line is replaced by these lines, written
+once where the first one stood. A `.ww/*` line gains the re-inclusions it
+lacks, right after it; a re-inclusion only counts after the last `.ww/*` line,
+since a later one ignores the file again. Every other line is left alone, and
+the file keeps its line endings (CRLF stays CRLF).
 The patterns `*ww-agentic-workflows.local.yaml`,
 `*ww-agentic-workflows.local.json` and `ww-setup.local.yaml` are added without
 asking, since [local configuration](#user-repo-and-local-configuration) belongs
@@ -115,8 +119,17 @@ lines and settings keys already in place are kept, never removed and never
 written twice, and the new answers replace the remembered ones. Values the
 settings files already hold, such as `enabled` or `task_format`, are
 configuration rather than remembered answers, so they are not asked again.
-With `--no-input`, `--force` applies the defaults the same way, for example
-adding the `.ww` lines to `.gitignore` after an earlier `--no-update-gitignore`.
+`--force` reopens a question only when it can ask it: with `--no-input`, or
+without a terminal, every remembered answer stands, a remembered "no"
+included, and init only adds what those answers leave missing. A flag such as
+`--update-gitignore` still decides without asking.
+
+`enabled` is written to `ww-agentic-workflows.json` only from the repo level's
+own answer: when your user or local settings file already sets it, init
+neither asks nor commits that choice for the team. A `ww/git` setting is never
+added next to its former name: when the repo file's `ww/git` section still
+uses `commit_message` or `use_separate_branch`, init stops before writing and
+names the rename to make, since ww/git refuses both names together.
 
 Unless it was shown before, the summary ends with what to allow so your agents
 run ww without asking for confirmation. For each agent set up in the project
@@ -293,11 +306,14 @@ places it in your local files, kept out of version control
 places it in the shared files (`ww-setup.yaml`, imported by
 `ww-agentic-workflows.yaml`, and `ww-agentic-workflows.json`), committed with
 the repository. Running it again refines the same setup file: definitions of
-the same name are replaced, the rest kept.
+the same name are replaced, the rest kept, and a hook identical to one already
+in its phase is skipped (the summary says so), so applying a fragment twice
+adds nothing.
 
-ww first validates the fragment by writing it, loading the configuration as
-any command would, and putting every file back, so it only ever shows a change
-that works. It then prints what it will write, file by file:
+ww first validates the fragment in memory: it loads the configuration as any
+command would, reading the planned contents in place of the files they
+change, so validating never touches the project and it only ever shows a
+change that works. It then prints what it will write, file by file:
 
 ```text
 `ww setup apply --for team` writes for the team: files shared through the repository:
@@ -310,9 +326,11 @@ and asks `Apply it? [y/N]` at a terminal. Without one, as in an agent's shell,
 it needs `--yes`, given once the operator agreed; `--dry-run` prints the same
 and writes nothing, and `--json` reports the files and changes for a program.
 A setting that already holds a different value refuses the whole apply,
-listing each conflict: ww never overwrites one. After writing, ww loads the
-configuration again and restores every file if it would not load. Nothing is
-committed.
+listing each conflict: ww never overwrites one. The files are written once,
+after confirmation; a file that is a symbolic link is written through to its
+target and keeps its permissions. When a write fails, ww puts back every file
+it already wrote, removes its temporary file, and reports the error. Nothing
+is committed.
 
 ## Setting ww up: learning and suggestions
 

@@ -2,11 +2,15 @@
 """File writes that ww makes to configuration, together or not at all.
 
 ``ww rules add`` and ``ww setup apply`` plan their changes as
-:class:`FileWrite` values, apply them in a :class:`Transaction`, and load the
-configuration as ww would; when it would not load, the transaction puts every
-file back as it was. The import file each command owns is added to a root
-file's ``imports`` with :func:`import_write`, which changes that one list and
-refuses when it cannot do so without touching anything else.
+:class:`FileWrite` values and apply them in a :class:`Transaction`, which puts
+every file back as it was when anything fails. ``ww rules add`` loads the
+configuration after writing; ``ww setup apply`` validates its plan in memory
+first and writes only once it is confirmed. The import file each command owns
+is added to a root file's ``imports`` with :func:`import_write`, which changes
+that one list and refuses when it cannot do so without touching anything else.
+
+A write goes through a symbolic link to the file it names and keeps that
+file's permissions, so a configuration file kept elsewhere stays linked.
 """
 
 from __future__ import annotations
@@ -48,20 +52,30 @@ class Transaction:
     def apply(
         self, writes: Iterable[FileWrite], directories: Iterable[Path] = ()
     ) -> None:
-        for directory in directories:
-            self._make_directory(directory)
-        for change in writes:
-            self._saved.append(
-                (
-                    change.path,
-                    change.path.read_bytes() if change.path.exists() else None,
+        """Write every change, or put back what was written and fail.
+
+        An ``OSError`` becomes a :class:`StateError` once the files are back.
+        """
+        try:
+            for directory in directories:
+                self._make_directory(directory)
+            for change in writes:
+                # A symbolic link stays one: its target is what changes.
+                path = change.path.resolve()
+                self._saved.append(
+                    (path, path.read_bytes() if path.exists() else None)
                 )
-            )
-            if change.content is None:
-                change.path.unlink()
-            else:
-                self._make_directory(change.path.parent)
-                atomic_write(change.path, change.content)
+                if change.content is None:
+                    path.unlink()
+                else:
+                    self._make_directory(path.parent)
+                    atomic_write(path, change.content)
+        except OSError as error:
+            self.roll_back()
+            raise StateError(
+                f"cannot write {error.filename or 'a file'}: {error.strerror or error}"
+                "; nothing was written"
+            ) from error
 
     def _make_directory(self, directory: Path) -> None:
         missing = [
@@ -86,9 +100,21 @@ class Transaction:
 
 
 def atomic_write(path: Path, content: str) -> None:
-    temporary = path.with_name(f".{path.name}.ww-tmp")
-    temporary.write_text(content, encoding="utf-8")
-    temporary.replace(path)
+    """Replace the file ``path`` names whole, keeping its permissions.
+
+    A symbolic link is written through to its target. The temporary file is
+    removed when the write fails.
+    """
+    target = path.resolve()
+    temporary = target.with_name(f".{target.name}.ww-tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        if target.exists():
+            temporary.chmod(target.stat().st_mode & 0o7777)
+        temporary.replace(target)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def dump_yaml(value: dict[str, Any]) -> str:

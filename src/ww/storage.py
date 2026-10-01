@@ -11,12 +11,13 @@ from typing import Any
 
 from ww.config.composition import compose_configuration
 from ww.config_files import (
-    FORMER_RUNTIME_IGNORE_LINE,
+    FORMER_RUNTIME_IGNORE_LINES,
     LOCAL_IGNORE_PATTERNS,
     RUNTIME_IGNORE_LINES,
     SETTINGS_FILE,
     WORKFLOWS_FILE,
     display_path,
+    newline_of,
     user_directory,
     workflow_levels,
 )
@@ -277,41 +278,25 @@ class Storage:
     def _ignore_runtime_directory(self) -> str | None:
         """Keep ``.ww`` out of Git but for the files a team shares.
 
-        Writes :data:`RUNTIME_IGNORE_LINES`. The bare ``.ww/`` line an earlier
-        ww wrote is replaced by them where it stands; a ``.ww/*`` line gains
-        the re-inclusions it lacks; an operator's own ``.ww`` line, and every
-        other line, is left alone. Returns what changed, or ``None``.
+        Every line that ignores ``.ww`` whole (:data:`FORMER_RUNTIME_IGNORE_LINES`)
+        gives way to :data:`RUNTIME_IGNORE_LINES`, written once where the first
+        stood; a ``.ww/*`` line gains the re-inclusions it lacks after it, and
+        every other line is left alone. Returns what changed, or ``None``.
         """
         # Reads and rewrites .gitignore; the project scope held by
         # initialize_project keeps that pair together.
         path = self.root / ".gitignore"
-        existing = path.read_text(encoding="utf-8") if path.exists() else ""
-        lines = existing.splitlines(keepends=True)
-        entries = [line.strip() for line in lines]
-        block = "".join(f"{line}\n" for line in RUNTIME_IGNORE_LINES)
-        if FORMER_RUNTIME_IGNORE_LINE in entries and RUNTIME_IGNORE_LINES[0] not in (
-            entries
-        ):
-            index = entries.index(FORMER_RUNTIME_IGNORE_LINE)
-            lines[index] = block
-            self.locks.atomic_write(path, "".join(lines))
-            return (
-                ".gitignore entries: " + ", ".join(RUNTIME_IGNORE_LINES)
-                + f" (replacing {FORMER_RUNTIME_IGNORE_LINE})"
-            )
-        if ".ww" in entries:
+        existing = _read_gitignore(path)
+        updated, added, replaced = with_runtime_ignored(existing)
+        if updated == existing:
             return None
-        missing = (
-            tuple(line for line in RUNTIME_IGNORE_LINES[1:] if line not in entries)
-            if RUNTIME_IGNORE_LINES[0] in entries
-            else RUNTIME_IGNORE_LINES
-        )
-        if not missing:
-            return None
-        separator = "" if not existing or existing.endswith("\n") else "\n"
-        addition = "".join(f"{line}\n" for line in missing)
-        self.locks.atomic_write(path, f"{existing}{separator}{addition}")
-        return ".gitignore entries: " + ", ".join(missing)
+        self.locks.atomic_write(path, updated)
+        if not added:
+            return f".gitignore: removed {', '.join(replaced)}, which hid .ww/*"
+        change = ".gitignore entries: " + ", ".join(added)
+        if replaced:
+            change += f" (replacing {', '.join(replaced)})"
+        return change
 
     def _ignore_local_configuration(self) -> tuple[str, ...]:
         """Add the local-file patterns missing from .gitignore.
@@ -322,15 +307,13 @@ class Storage:
         path = self.root / ".gitignore"
         if not path.exists() and not (self.root / ".git").exists():
             return ()
-        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        existing = _read_gitignore(path)
         entries = {line.strip() for line in existing.splitlines()}
         missing = tuple(
             pattern for pattern in LOCAL_IGNORE_PATTERNS if pattern not in entries
         )
         if missing:
-            separator = "" if not existing or existing.endswith("\n") else "\n"
-            addition = "".join(f"{pattern}\n" for pattern in missing)
-            self.locks.atomic_write(path, f"{existing}{separator}{addition}")
+            self.locks.atomic_write(path, _appended(existing, missing))
         return missing
 
     def _initialization_actions(self) -> list[str]:
@@ -407,3 +390,61 @@ class Storage:
             self.runtime_path / "bootstrap" / f"{request_id}.json",
             json.dumps(value, indent=2) + "\n",
         )
+
+
+def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    """``text`` keeping ``.ww`` out of Git but for the shared files.
+
+    Returns the new text, the lines it adds, and the former lines it replaces.
+    A re-inclusion counts only after the last ``.ww/*`` line, since a later
+    ``.ww/*`` would ignore the file again. The file's line ending is kept.
+    """
+    newline = newline_of(text)
+    star, *shared = RUNTIME_IGNORE_LINES
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith(("\n", "\r")):
+        lines[-1] += newline
+    former = [
+        line.strip() for line in lines if line.strip() in FORMER_RUNTIME_IGNORE_LINES
+    ]
+    added: list[str] = []
+    if former:
+        has_star = star in (line.strip() for line in lines)
+        kept: list[str] = []
+        for line in lines:
+            if line.strip() not in FORMER_RUNTIME_IGNORE_LINES:
+                kept.append(line)
+            elif not has_star:
+                kept.extend(f"{entry}{newline}" for entry in RUNTIME_IGNORE_LINES)
+                added.extend(RUNTIME_IGNORE_LINES)
+                has_star = True
+        lines = kept
+    entries = [line.strip() for line in lines]
+    if star not in entries:
+        lines.extend(f"{entry}{newline}" for entry in RUNTIME_IGNORE_LINES)
+        added.extend(RUNTIME_IGNORE_LINES)
+    else:
+        last = len(entries) - 1 - entries[::-1].index(star)
+        missing = [entry for entry in shared if entry not in entries[last + 1 :]]
+        # After the re-inclusions that already follow it, keeping them together.
+        position = last + 1
+        while position < len(entries) and entries[position].startswith("!.ww/"):
+            position += 1
+        lines[position:position] = [f"{entry}{newline}" for entry in missing]
+        added.extend(entry for entry in missing if entry not in added)
+    updated = "".join(lines)
+    if not former and not added:
+        return text, (), ()
+    return updated, tuple(added), tuple(dict.fromkeys(former))
+
+
+def _read_gitignore(path: Path) -> str:
+    """A .gitignore's text with its own line endings, or ``""`` when absent."""
+    return path.read_bytes().decode("utf-8") if path.exists() else ""
+
+
+def _appended(text: str, entries: tuple[str, ...]) -> str:
+    """``text`` with ``entries`` appended as lines, in its own line ending."""
+    newline = newline_of(text)
+    separator = "" if not text or text.endswith("\n") else newline
+    return text + separator + "".join(f"{entry}{newline}" for entry in entries)

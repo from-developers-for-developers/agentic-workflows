@@ -21,6 +21,9 @@ directory; ww stops on either and names the replacement.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,17 +61,26 @@ RUNTIME_IGNORE_LINES = (
     ".ww/*",
     *(f"!.ww/{name}" for name in SHARED_RUNTIME_FILES),
 )
-# The line earlier ww versions wrote instead, which ``init`` replaces.
-FORMER_RUNTIME_IGNORE_LINE = ".ww/"
+# The lines that ignore ``.ww`` whole, as earlier ww versions and operators
+# wrote them; ``init`` replaces them with :data:`RUNTIME_IGNORE_LINES`, since
+# a directory ignored whole cannot have files re-included.
+FORMER_RUNTIME_IGNORE_LINES = (".ww/", ".ww", "/.ww", "/.ww/")
 
 
 def runtime_ignored(gitignore: str) -> bool:
     """Whether a .gitignore's text already keeps ``.ww`` out, in any form."""
     return bool(
-        {".ww", FORMER_RUNTIME_IGNORE_LINE, RUNTIME_IGNORE_LINES[0]}.intersection(
+        {*FORMER_RUNTIME_IGNORE_LINES, RUNTIME_IGNORE_LINES[0]}.intersection(
             line.strip() for line in gitignore.splitlines()
         )
     )
+
+
+def newline_of(text: str) -> str:
+    """The line ending a text file uses: CRLF when it has one, else LF."""
+    return "\r\n" if "\r\n" in text else "\n"
+
+
 # Where the user level lives instead of the user's configuration directory.
 USER_DIR_VARIABLE = "WW_USER_CONFIG_DIR"
 # The variable earlier ww versions read instead; setting it alone is an error.
@@ -113,6 +125,48 @@ def user_directory() -> Path:
                 f"{directory / current}, so rename it"
             )
     return directory
+
+
+# Configuration files read as if written, by resolved path; ``None`` reads as
+# absent. ``ww setup apply`` validates its plan this way, so checking a change
+# never touches the project.
+_STAGED: ContextVar[Mapping[Path, str | None] | None] = ContextVar(
+    "ww_staged_configuration", default=None
+)
+
+
+@contextmanager
+def staged_files(contents: Mapping[Path, str | None]) -> Iterator[None]:
+    """Read configuration files as if ``contents`` were written in place.
+
+    Only reads through :func:`read_configuration_file` and
+    :func:`configuration_file_exists` see the staged contents; nothing is
+    written.
+    """
+    token = _STAGED.set({path.resolve(): text for path, text in contents.items()})
+    try:
+        yield
+    finally:
+        _STAGED.reset(token)
+
+
+def read_configuration_file(path: Path) -> str:
+    """A configuration file's text, staged or on disk."""
+    staged = _STAGED.get()
+    if staged is not None and path.resolve() in staged:
+        text = staged[path.resolve()]
+        if text is None:
+            raise FileNotFoundError(f"no such file: {path}")
+        return text
+    return path.read_text(encoding="utf-8")
+
+
+def configuration_file_exists(path: Path) -> bool:
+    """Whether a configuration file is there, staged or on disk."""
+    staged = _STAGED.get()
+    if staged is not None and path.resolve() in staged:
+        return staged[path.resolve()] is not None
+    return path.is_file()
 
 
 def display_path(file: Path, base: Path) -> str:

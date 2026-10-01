@@ -22,9 +22,11 @@ leave everything else as it was. Settings merge key by key, and a key that
 already holds a different value is a conflict: the whole apply is refused,
 listing each one.
 
-The plan is validated by writing it, loading the configuration as ww would,
-and putting every file back; only then is the operator asked. The confirmed
-write is validated the same way and restored when it would not load.
+The plan is validated in memory: the configuration is loaded as ww would,
+reading the planned files' new contents in place of the files on disk, so
+validating never touches the project. Only a plan that would load is shown,
+and the files are written once, after the operator confirms; a failed write
+puts back every file already written.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ from ww.config_files import (
     SETTINGS_FILE,
     SETUP_IMPORT_FILE,
     display_path,
+    staged_files,
 )
 from ww.config_writes import FileWrite, Transaction, dump_yaml, import_write
 from ww.errors import StateError, WwError
@@ -129,9 +132,11 @@ def plan_setup(
             f"{label(target.setup_file)} exists but {label(target.root_file)} does "
             "not import it; add it to imports or move it away first"
         )
-    if definitions:
-        existing, _ = _read_yaml(target.setup_file, label(target.setup_file))
-        merged, details = _merge(existing, definitions)
+    existing, _ = _read_yaml(target.setup_file, label(target.setup_file))
+    merged, details = _merge(existing, definitions)
+    # A fragment whose every definition is already in the imported setup file,
+    # hooks included, leaves that file as it is.
+    if definitions and not (imported and merged == existing):
         header = (
             f"# Written by `ww setup apply --for {audience}`; ww rewrites this "
             f"file whole,\n# and {target.root_file.name} imports it.\n"
@@ -170,8 +175,8 @@ def plan_setup(
             changes.append(change)
     if not writes:
         raise StateError(
-            f"{label(fragment)} changes nothing: every setting already holds "
-            "the proposed value"
+            f"{label(fragment)} changes nothing: everything it proposes is "
+            "already in place"
         )
     return SetupPlan(
         audience,
@@ -181,25 +186,22 @@ def plan_setup(
     )
 
 
-def apply_setup(
-    root: Path, config_path: Path, plan: SetupPlan, *, keep: bool
-) -> None:
-    """Write the plan and load the configuration; restore every file unless kept.
-
-    A configuration that would not load always restores them, and fails.
-    """
-    with Transaction() as transaction:
-        transaction.apply(plan.writes)
+def validate_setup(root: Path, config_path: Path, plan: SetupPlan) -> None:
+    """Load the configuration as the plan would leave it; nothing is written."""
+    with staged_files({write.path: write.content for write in plan.writes}):
         try:
             load_configuration(config_path, ExtensionRegistry.discover(root))
         except WwError as error:
-            transaction.roll_back()
             raise StateError(
                 f"refused: the configuration would not be valid ({error}); "
                 "nothing was written"
             ) from error
-        if not keep:
-            transaction.roll_back()
+
+
+def apply_setup(plan: SetupPlan) -> None:
+    """Write the validated plan, every file or none."""
+    with Transaction() as transaction:
+        transaction.apply(plan.writes)
 
 
 def render_plan(plan: SetupPlan, root: Path) -> str:
@@ -291,6 +293,7 @@ def _merge(
     added: list[str] = []
     replaced: list[str] = []
     appended: list[str] = []
+    kept: list[str] = []
     for key, value in definitions.items():
         if key in NAMED:
             current = list(merged.get(key) or [])
@@ -318,16 +321,35 @@ def _merge(
         else:
             hooks = dict(merged.get(HOOKS) or {})
             for phase, entries in value.items():
-                hooks[phase] = [*(hooks.get(phase) or []), *entries]
-                count = len(entries)
-                appended.append(f"{count} hook{'s' if count != 1 else ''} to {phase}")
+                # Hooks carry no name: an entry identical to one already in
+                # the phase is the same hook, so applying twice adds it once.
+                current = list(hooks.get(phase) or [])
+                new = []
+                for entry in entries:
+                    if entry in current or entry in new:
+                        continue
+                    new.append(entry)
+                hooks[phase] = [*current, *new]
+                if new:
+                    appended.append(_hooks_phrase(len(new), phase))
+                if len(new) < len(entries):
+                    skipped = len(entries) - len(new)
+                    kept.append(
+                        f"{skipped} hook{'s' if skipped != 1 else ''} already "
+                        f"in {phase}"
+                    )
             merged[HOOKS] = hooks
     details = [
         *(["adds " + ", ".join(added)] if added else []),
         *(["replaces " + ", ".join(replaced)] if replaced else []),
         *(["appends " + ", ".join(appended)] if appended else []),
+        *(["skips " + ", ".join(kept)] if kept else []),
     ]
     return merged, tuple(details)
+
+
+def _hooks_phrase(count: int, phase: str) -> str:
+    return f"{count} hook{'s' if count != 1 else ''} to {phase}"
 
 
 def _settings_write(

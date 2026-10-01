@@ -24,23 +24,28 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - `ww setup apply <file> --for me|team [--dry-run] [--yes] [--json]` places a proposed fragment (workflows, modes,
   profiles, documents, handlers, hooks, rules, plus `settings` for the JSON file): the YAML into `ww-setup.yaml`
   (imported by the repo file) or `ww-setup.local.yaml` (imported by the local file, created if missing), settings
-  merged key by key into the matching JSON file, refusing any conflicting value. A second apply merges by name. ww
-  shows the change, asks (or takes `--yes`), and restores every file when the configuration would not load.
+  merged key by key into the matching JSON file, refusing any conflicting value. A second apply merges by name and
+  skips a hook already in its phase. ww validates the plan in memory, without touching the project (`--dry-run` never
+  writes), shows the change, asks (or takes `--yes`), and only then writes, through symbolic links and keeping file
+  permissions; a failed write puts every file back.
 - Onboarding state: `ww onboarding [--json]` shows, and `--set KEY=VALUE` records, `explain` and `learned.me` (in
   `state.json` in the user directory) and `setup.done`, `learned.team|company|project` (in `.ww/metadata.json` under
   ww's reserved `ww.` namespace, which `saves: [project_metadata.ww...]` may no longer use). Until `setup.done`,
   `discover` tells the agent to offer the `ww-setup` skill, and until `explain` is recorded, to ask once whether to
   narrate what ww does while it learns (`onboarding` in JSON; information only under `"on_request"`).
 - `init --update-gitignore` writes `.ww/*` with `!.ww/team.md`, `!.ww/company.md`, `!.ww/project.md`, so the shared
-  learning files can be committed; the bare `.ww/` line earlier versions wrote is replaced in place. `ww-setup.local.yaml`
-  joins the always-ignored local patterns.
+  learning files can be committed; every line ignoring `.ww` whole (`.ww/`, `.ww`, `/.ww`, `/.ww/`) is replaced by
+  them once, in place, and the file keeps its line endings. `ww-setup.local.yaml` joins the always-ignored local
+  patterns. `init` no longer adds a ww/git setting next to its former name (it names the rename instead), and writes
+  `enabled` to the repo file only when no user or local file sets it.
 - Built-in workflows: ww ships workflows as YAML in `ww/assets/workflows/`, a level below the user level; any level's
   workflow, document or mode of the same name replaces a built-in one, and `"workflows": {"<name>": {"enabled":
   false}}` switches off any of them. `catchall` is now one of these files, unchanged in behaviour. `discover` lists
   the others under "ww's own workflows" (`builtin_workflows` in JSON). Documents take `scope: user`: a file in the user
   configuration directory (`<name>.md`, or a `path` inside it), shared by every project.
 - `init --force` asks every question again, ignoring `.ww/init-choices.json`, so agents, skills and hooks can be added
-  later; it only adds, never removing or duplicating skills, links, hooks, `.gitignore` lines or settings keys. The
+  later; it only adds, never removing or duplicating skills, links, hooks, `.gitignore` lines or settings keys. With
+  `--no-input` or no terminal it asks nothing, so the remembered answers stand. The
   permission notice now names, per agent, the exact file and entries (Claude Code: `permissions.allow` in
   `.claude/settings.json` with `Bash(./ww *)`-style patterns), and init ends by pointing to the `ww-setup` skill.
 - Breaking: the machine configuration level is now the user level. Its files are `ww-agentic-workflows.yaml` and

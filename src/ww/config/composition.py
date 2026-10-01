@@ -46,7 +46,9 @@ import yaml
 
 from ww.config_files import (
     ConfigurationLevel,
+    configuration_file_exists,
     display_path,
+    read_configuration_file,
     task_format_moved,
     workflow_levels,
 )
@@ -124,11 +126,11 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
     """
     base = path.parent
     label = display_path(path, base)
-    text = path.read_text(encoding="utf-8")
+    text = read_configuration_file(path)
     present = tuple(
         level
         for level in workflow_levels(path)
-        if level.name == "repo" or level.path.is_file()
+        if level.name == "repo" or configuration_file_exists(level.path)
     )
     if len(present) == 1:
         try:
@@ -214,7 +216,7 @@ def _extends(raw: dict[str, Any], label: str) -> bool | None:
 
 def _read_file(file: Path, label: str) -> dict[str, Any]:
     try:
-        raw = yaml.safe_load(file.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(read_configuration_file(file))
     except OSError as error:
         raise ConfigurationError(f"cannot read {label}: {error}") from error
     except yaml.YAMLError as error:
@@ -241,7 +243,7 @@ def _import_files(
                 f"{root_label} {IMPORTS_KEY}[{index}] must be a non-empty file path"
             )
         file = root.parent / entry
-        if not file.is_file():
+        if not configuration_file_exists(file):
             raise ConfigurationError(
                 f"imported file not found: {entry} (listed in {root_label})"
             )

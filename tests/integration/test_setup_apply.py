@@ -327,3 +327,110 @@ def test_a_definition_the_root_file_keeps_is_flagged(
         "Warning: workflow `task` is also defined in ww-agentic-workflows.yaml, "
         "which takes precedence over ww-setup.yaml"
     ) in capsys.readouterr().out
+
+
+def _identity(root: Path) -> dict[str, tuple[int, int]]:
+    """Each file's inode and modification time: what any write would change."""
+    return {
+        path.name: (path.stat().st_ino, path.stat().st_mtime_ns)
+        for path in sorted(root.iterdir())
+        if path.is_file()
+    }
+
+
+def test_validating_never_touches_the_project(
+    root: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = _identity(root)
+    fragment = _fragment(tmp_path, FRAGMENT)
+
+    assert _apply(root, str(fragment), "--for", "team", "--dry-run") == 0
+    assert _identity(root) == before
+
+    # Refused for want of a terminal: still nothing touched.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("y\n"))
+    assert _apply(root, str(fragment), "--for", "team") == 1
+    capsys.readouterr()
+    assert _identity(root) == before
+    assert not (root / "ww-setup.yaml").exists()
+
+
+def test_writes_go_through_symbolic_links_and_keep_the_mode(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    target = shared / "settings.json"
+    (root / "ww-agentic-workflows.json").replace(target)
+    target.chmod(0o640)
+    (root / "ww-agentic-workflows.json").symlink_to(target)
+
+    fragment = _fragment(tmp_path, FRAGMENT)
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 0
+
+    capsys.readouterr()
+    link = root / "ww-agentic-workflows.json"
+    assert link.is_symlink()
+    assert json.loads(target.read_text())["runtime"] == "auto"
+    assert target.stat().st_mode & 0o777 == 0o640
+
+
+def test_a_hook_already_in_place_is_not_added_again(
+    root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hooks = "hooks:\n  after_complete:\n    - argv: ['true']\n"
+    fragment = _fragment(tmp_path, "modes:\n  - gently: Kindly.\n" + hooks)
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 0
+    capsys.readouterr()
+
+    # The same fragment again changes nothing.
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
+    assert "changes nothing" in capsys.readouterr().err
+
+    mixed = _fragment(
+        tmp_path,
+        "modes:\n  - brief: Short.\n" + hooks + "    - argv: ['echo', 'done']\n",
+        "mixed.yaml",
+    )
+    assert _apply(root, str(mixed), "--for", "team", "--yes") == 0
+
+    err = capsys.readouterr().err
+    assert (
+        "ww-setup.yaml: adds mode `brief`; appends 1 hook to after_complete; "
+        "skips 1 hook already in after_complete"
+    ) in err
+    setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
+    assert setup["hooks"]["after_complete"] == [
+        {"argv": ["true"]},
+        {"argv": ["echo", "done"]},
+    ]
+
+
+def test_a_failed_write_puts_every_file_back_and_leaves_no_temporary_file(
+    root: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = _snapshot(root)
+    replace = Path.replace
+
+    def failing_replace(self: Path, target: Path) -> Path:
+        if self.name.endswith(".json.ww-tmp"):
+            raise PermissionError(13, "Permission denied", str(target))
+        return replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+
+    fragment = _fragment(tmp_path, FRAGMENT)
+    assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
+
+    err = capsys.readouterr().err
+    assert "cannot write" in err
+    assert "nothing was written" in err
+    assert "Traceback" not in err
+    assert _snapshot(root) == before
+    assert not [path.name for path in root.iterdir() if path.name.endswith(".ww-tmp")]

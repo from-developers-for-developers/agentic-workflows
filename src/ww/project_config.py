@@ -70,8 +70,10 @@ from ww.builtin_workflows import builtin_workflow_names
 from ww.config_files import (
     SETTINGS_FILE,
     ConfigurationLevel,
+    configuration_file_exists,
     display_path,
     project_settings_levels,
+    read_configuration_file,
     settings_levels,
 )
 from ww.errors import ConfigurationError
@@ -378,10 +380,10 @@ def _compose_levels(
 
 def _read_level(level: ConfigurationLevel) -> dict[str, Any] | None:
     """The JSON object one settings file holds, or ``None`` when it is absent."""
-    if not level.path.is_file():
+    if not configuration_file_exists(level.path):
         return None
     try:
-        raw = json.loads(level.path.read_text(encoding="utf-8"))
+        raw = json.loads(read_configuration_file(level.path))
     except (OSError, json.JSONDecodeError) as error:
         raise ConfigurationError(f"invalid {level.path}: {error}") from error
     if not isinstance(raw, dict):

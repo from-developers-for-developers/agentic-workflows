@@ -1637,9 +1637,14 @@ file, or `ww-setup.local.yaml`, imported by the local file (created holding
 only that import) — and merges the fragment's `settings` into the matching JSON
 level key by key, refusing rather than overwriting a different value. The setup
 file is rewritten whole with the same merge rules composition applies to
-imports (named entries replaced, rule groups whole, hooks appended), so a
-second apply refines the first. Because a level's root file folds after its
-imports, a fragment definition the root file also holds would have no effect;
-the plan warns about each one. The plan is written, validated by loading the
-configuration, and rolled back before the operator is asked, so only a change
-that loads is ever shown; the confirmed write is validated again.
+imports (named entries replaced, rule groups whole, hooks appended, an
+identical hook skipped), so a second apply refines the first. Because a
+level's root file folds after its imports, a fragment definition the root file
+also holds would have no effect; the plan warns about each one. The plan is
+validated in memory before the operator is asked: `config_files.staged_files`
+makes the configuration readers (composition and the settings levels) see the
+planned contents in place of the files on disk, so validating never touches
+the project, and only a change that loads is ever shown. The files are written
+once, after confirmation, in a `Transaction` that writes through symbolic links,
+keeps file permissions, and turns an `OSError` into a ww error after putting
+every file back.

@@ -12,11 +12,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from ww.config.composition import compose_configuration
-from ww.config_files import runtime_ignored
+from ww.config_files import SETTINGS_FILE, runtime_ignored, settings_levels
 from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
 from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
+from ww.extensions import ExtensionRegistry
 from ww.hooks import (
     HOOK_AGENTS,
     HookInstallError,
@@ -35,6 +36,9 @@ from .prompts import (
     _ask_yes_no,
     _interactive_terminal,
 )
+
+# The bundled Git extension, whose settings init writes.
+GIT_EXTENSION = "ww/git"
 
 
 def _init_choices(storage: Storage) -> dict[str, object]:
@@ -67,14 +71,15 @@ def install_agent_hooks(
     An agent counts as set up when its directory exists, which is also where
     init just installed its skills. The answer is remembered per agent, and
     ``--hooks``/``--no-hooks`` decide for every agent without asking, and
-    ``--force`` asks again for every agent whose hooks are not installed. A
+    ``--force`` asks again for every agent whose hooks are not installed,
+    when there is a terminal to ask at; without one the answers stand. A
     hook installation that fails never fails init: the summary says how to
     add the hooks by hand instead.
     """
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
     saved = _init_choices(storage).get("hooks", {})
     choices = dict(saved) if isinstance(saved, dict) else {}
-    remembered = {} if args.force else choices
+    remembered = {} if args.force and interactive else choices
     created, preserved, actions = (
         list(result.created),
         list(result.preserved),
@@ -184,7 +189,13 @@ def _initialization_options(
     storage: Storage, args: argparse.Namespace
 ) -> tuple[str, str, bool, tuple[tuple[str, str], ...]]:
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
-    enabled = _enabled_choice(storage, interactive, force=args.force)
+    if (storage.root / ".git").exists():
+        _refuse_renamed_git_settings(storage)
+    # ``--force`` reopens the remembered questions only where it can ask them
+    # again; without a terminal the remembered answers stand, and init adds
+    # only what they leave missing.
+    force = args.force and interactive
+    enabled = _enabled_choice(storage, interactive, force=force)
     task_kind = args.task_id_format
     if task_kind is None and interactive and not _configured_task_format(storage):
         print(
@@ -201,7 +212,7 @@ def _initialization_options(
     workflows = "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
 
     project: dict[str, object] = {
-        "enabled": enabled,
+        **({"enabled": enabled} if enabled is not None else {}),
         "executable": DEFAULT_EXECUTABLE,
         "extensions": {},
     }
@@ -265,12 +276,12 @@ def _initialization_options(
             )
         project = {
             **project,
-            "extensions": {"ww/git": git},
+            "extensions": {GIT_EXTENSION: git},
         }
 
     ignore_runtime = args.update_gitignore
     # ``--force`` asks every question again, as if nothing were remembered.
-    choices = {} if args.force else _init_choices(storage)
+    choices = {} if force else _init_choices(storage)
     ignore_path = storage.root / ".gitignore"
     ignored = ignore_path.is_file() and runtime_ignored(
         ignore_path.read_text(encoding="utf-8")
@@ -317,7 +328,7 @@ def _initialization_options(
         json.dumps(project, indent=2) + "\n",
         bool(ignore_runtime),
         _skill_installs(
-            storage, args.skills, interactive, progress=True, force=args.force
+            storage, args.skills, interactive, progress=True, force=force
         ),
     )
 
@@ -338,22 +349,29 @@ def _enabled_value(value: object) -> Enabled | None:
 
 def _enabled_choice(
     storage: Storage, interactive: bool, *, force: bool = False
-) -> Enabled:
+) -> Enabled | None:
     """Whether agents use ww here by default, only on request, or never.
 
-    Asked once, and only when no settings level sets ``enabled`` yet; the
-    answer is remembered, and ``force`` ignores that remembered answer.
-    Without a terminal init writes ``true``.
+    The repo file's own ``enabled`` stands. When only the user or local level
+    sets it, the repo file gets none, so a choice one person made is not
+    committed for the team, and nothing is asked: ``None``. Otherwise it is
+    asked once and the answer remembered; ``force`` ignores that remembered
+    answer. Without a terminal init writes ``true``.
     """
-    try:
-        raw, _ = compose_settings(storage.project_config_path)
-    except ConfigurationError:
-        raw = {}
+    levels = _settings_by_level(storage)
+    own = _enabled_value(levels.get("repo", {}).get("enabled"))
+    if own is not None:
+        return own
+    if any(
+        _enabled_value(raw.get("enabled")) is not None
+        for name, raw in levels.items()
+        if name != "repo"
+    ):
+        return None
     remembered = None if force else _init_choices(storage).get("enabled")
-    for known in (raw.get("enabled"), remembered):
-        value = _enabled_value(known)
-        if value is not None:
-            return value
+    value = _enabled_value(remembered)
+    if value is not None:
+        return value
     if not interactive:
         return True
     print(
@@ -631,6 +649,21 @@ def _progress(progress: bool, percent: int, question: str) -> str:
     return _init_prompt(percent, question) if progress else question
 
 
+def _settings_by_level(storage: Storage) -> dict[str, dict[str, object]]:
+    """Each settings level's own JSON object, by level name, where readable."""
+    levels: dict[str, dict[str, object]] = {}
+    for level in settings_levels(storage.project_config_path):
+        if not level.path.is_file():
+            continue
+        try:
+            raw = json.loads(level.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(raw, dict):
+            levels[level.name] = raw
+    return levels
+
+
 def _configured_task_format(storage: Storage) -> bool:
     """Whether a settings level, user to local, already sets ``task_format``."""
     try:
@@ -640,13 +673,41 @@ def _configured_task_format(storage: Storage) -> bool:
     return bool(raw.get("task_format"))
 
 
+def _refuse_renamed_git_settings(storage: Storage) -> None:
+    """Stop before init adds a ww/git setting next to its former name.
+
+    The repo file's ``ww/git`` section may still use a name ww/git has since
+    renamed; adding the new name beside it would leave both, which ww/git
+    refuses. The extension's own upgrade says which names were renamed.
+    """
+    existing = _existing_git_settings(storage)
+    if not existing:
+        return
+    upgrade = ExtensionRegistry.discover(storage.root).frozen_settings
+    renamed = [
+        (key, new)
+        for key, value in existing.items()
+        for new in upgrade(GIT_EXTENSION, {key: value})
+        if new != key
+    ]
+    if renamed:
+        raise ConfigurationError(
+            "; ".join(
+                f"{GIT_EXTENSION} {old} in {SETTINGS_FILE} was renamed to {new}"
+                for old, new in renamed
+            )
+            + "; rename it there and run init again, which adds no setting "
+            "next to its former name"
+        )
+
+
 def _existing_git_settings(storage: Storage) -> dict[str, object]:
     if not storage.project_config_path.is_file():
         return {}
     try:
         raw = json.loads(storage.project_config_path.read_text(encoding="utf-8"))
         extensions = raw.get("extensions", {})
-        settings = extensions.get("ww/git", {})
+        settings = extensions.get(GIT_EXTENSION, {})
     except (AttributeError, OSError, json.JSONDecodeError):
         return {}
     return settings if isinstance(settings, dict) else {}
@@ -717,7 +778,7 @@ def _finish_initialization(
     actions = list(result.actions)
     try:
         raw = json.loads(storage.project_config_path.read_text(encoding="utf-8"))
-        git = raw.get("extensions", {}).get("ww/git", {})
+        git = raw.get("extensions", {}).get(GIT_EXTENSION, {})
         configured = raw.get("executable")
     except (AttributeError, OSError, json.JSONDecodeError):
         git, configured = {}, None
