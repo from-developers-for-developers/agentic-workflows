@@ -64,7 +64,7 @@ def session_context(
     if open_tasks:
         lines.append("Unfinished ww tasks, newest first:")
         for task in open_tasks[:SESSION_TASK_LIMIT]:
-            lines.append(_task_line(task, root, ww))
+            lines.append(task_line(task, root, ww))
             interruption = interruptions.get(task.task_id)
             if interruption is not None:
                 lines.append("  " + interruption_notice(interruption, task.task_id))
@@ -92,7 +92,8 @@ def unreadable_notice(unreadable: tuple[UnreadableTask, ...]) -> str:
     )
 
 
-def _task_line(task: OpenTask, root: Path, ww: str) -> str:
+def task_line(task: OpenTask, root: Path, ww: str) -> str:
+    """One unfinished task with its step, state, workspace and resume commands."""
     step = task.label
     if task.operator_reason is not None:
         state = "awaiting the operator: " + _OPERATOR_REASONS.get(
@@ -101,7 +102,7 @@ def _task_line(task: OpenTask, root: Path, ww: str) -> str:
     else:
         state = (task.item_status or task.run_status).replace("_", " ")
     parts = [f"- {task.task_id} ({task.workflow}, {task.agent}) {step}: {state}"]
-    parts.append(f"in {_display(task.workspace, root)}")
+    parts.append(f"in {display_workspace(task.workspace, root)}")
     parts.append(f"resume: `{ww} instruction {task.task_id} --role manager`")
     if task.agent_step_in_progress and task.run_id:
         parts.append(
@@ -171,7 +172,8 @@ def abrupt_end_notice(task: OpenTask) -> str:
     )
 
 
-def _display(path: Path, root: Path) -> str:
+def display_workspace(path: Path, root: Path) -> str:
+    """A workspace relative to the root, or "the root" itself."""
     try:
         relative = path.relative_to(root.resolve())
     except ValueError:

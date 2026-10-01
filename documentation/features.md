@@ -226,8 +226,12 @@ the configured projects, the runtimes and roles with what each means, and the
 start options with their possible values: agents, runtimes, projects, and the
 branch strategies an extension such as `ww/git` defines. It explains when to pass `--model` and `--reasoning`, and
 it ends with the exact commands to start a task, show a task's instructions,
-check its status, and inspect a workflow's plan. `discover` is read-only and
-leaves no audit record.
+check its status, and inspect a workflow's plan. Every unfinished task is
+listed under "Unfinished tasks", newest first, in the `session-start` hook's
+format with any interruption notice, and `unfinished_tasks` in the JSON
+carries each one's `task_id`, `workflow`, `agent`, `step`, `item_status`,
+`workspace`, `updated_at`, `resume` command and whether it is `interrupted`.
+`discover` is read-only and leaves no audit record.
 
 A task whose state ww cannot read, such as one written by a build with another
 state schema, does not break `discover`. It is listed

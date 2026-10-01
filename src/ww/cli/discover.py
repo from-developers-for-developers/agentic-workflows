@@ -8,6 +8,7 @@ choices shown always come from the project's current configuration.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from ww.builtin_workflows import CATCHALL, is_builtin
 from ww.config import load_configuration, load_modes
@@ -16,12 +17,15 @@ from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
 from ww.hooks.notices import (
+    display_workspace,
+    interruption_notice,
     recent_interruptions_pointer,
+    task_line,
 )
 from ww.hooks.records import HookRecords
 from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
 from ww.onboarding import Onboarding, OnboardingState
-from ww.open_work import open_work
+from ww.open_work import OpenTask, open_work
 from ww.project_config import FILE_NAME, ON_REQUEST
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
@@ -254,14 +258,15 @@ def render_discover(
 ) -> str:
     report = discover(storage, extensions)
     days = extensions.config.agent_hooks.recent_days
+    unfinished: list[str] = []
     if report["enabled"]:
-        report["interrupted_recently"] = len(
-            HookRecords(storage, storage.task_persistence).recent(days)
+        records = HookRecords(storage, storage.task_persistence)
+        report["interrupted_recently"] = len(records.recent(days))
+        work = open_work(storage.task_persistence, storage.root)
+        report["unfinished_tasks"], unfinished = _unfinished(
+            work.tasks, records, storage.root
         )
-        report["unreadable_tasks"] = [
-            task.to_dict()
-            for task in open_work(storage.task_persistence, storage.root).unreadable
-        ]
+        report["unreadable_tasks"] = [task.to_dict() for task in work.unreadable]
     if json_output:
         return json.dumps(report, indent=2)
     if not report["enabled"]:
@@ -274,7 +279,35 @@ def render_discover(
                 DISABLED_MESSAGE,
             ]
         )
-    return "\n".join(_markdown(report, days))
+    return "\n".join(_markdown(report, days, unfinished))
+
+
+def _unfinished(
+    tasks: tuple[OpenTask, ...], records: HookRecords, root: Path
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Every unfinished task for the JSON, and its lines for the page."""
+    ww = ww_command()
+    entries: list[dict[str, object]] = []
+    lines: list[str] = []
+    for task in tasks:
+        interruption = records.interruption(task.task_id)
+        entries.append(
+            {
+                "task_id": task.task_id,
+                "workflow": task.workflow,
+                "agent": task.agent,
+                "step": task.label,
+                "item_status": task.item_status,
+                "workspace": display_workspace(task.workspace, root),
+                "updated_at": task.updated_at,
+                "resume": f"{ww} instruction {task.task_id} --role manager",
+                "interrupted": interruption is not None,
+            }
+        )
+        lines.append(task_line(task, root, ww))
+        if interruption is not None:
+            lines.append("  " + interruption_notice(interruption, task.task_id))
+    return entries, lines
 
 
 def _mode_line(mode: dict[str, object]) -> str:
@@ -295,7 +328,7 @@ def _mode_line(mode: dict[str, object]) -> str:
     return line
 
 
-def _markdown(report: dict[str, object], days: int) -> list[str]:
+def _markdown(report: dict[str, object], days: int, unfinished: list[str]) -> list[str]:
     workflows = _entries(report["workflows"])
     modes = _entries(report["modes"])
     runtimes = _entries(report["runtimes"])
@@ -316,6 +349,7 @@ def _markdown(report: dict[str, object], days: int) -> list[str]:
         "",
         *_pointer_lines(report, days),
         *_unreadable_lines(report),
+        *(["## Unfinished tasks", "", *unfinished, ""] if unfinished else []),
         *_onboarding_lines(report),
         "## Workflows",
         "",

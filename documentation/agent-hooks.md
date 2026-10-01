@@ -237,6 +237,10 @@ window holds an interruption, and `interrupted_recently` in their JSON:
 1 task was interrupted in the last 3 days; run `./ww interrupted` before starting new work.
 ```
 
+`discover` also lists every unfinished task, however old, under "Unfinished
+tasks", one line each as `session-start` prints it, with the interruption
+notice of a marked task.
+
 ## See also
 
 - [Agent limitations](limitations.md#agent-limitations): per-agent hook

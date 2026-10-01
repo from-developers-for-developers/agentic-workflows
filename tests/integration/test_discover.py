@@ -9,10 +9,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import start_after_init
 from ww.cli import main
 from ww.defaults import AGENT_INSTRUCTIONS, SKILLS
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import Extension, ExtensionRegistry
+from ww.hooks.records import Interruption
+from ww.open_work import open_work
 from ww.project_config import ProjectConfig
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -786,3 +789,65 @@ def test_init_offers_the_ww_rule_skill_once_to_a_project_set_up_before_it(
     skill = tmp_path / ".claude/skills/ww-rule/SKILL.md"
     assert skill.read_text(encoding="utf-8") == SKILLS["ww-rule"]
     assert (tmp_path / ".claude/skills/ww/SKILL.md").read_text(encoding="utf-8") == "ww"
+
+
+def test_discover_lists_the_unfinished_tasks_with_their_interruptions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    service = WorkflowService(Storage(root))
+    for task_id in ("T1", "T2"):
+        start_after_init(service, "task", task_id, agent="claudecode")
+        service.next(task_id)
+    marked = next(task for task in open_work(service.tasks, root).tasks)
+    assert marked.item_id is not None
+    service.hook_records.mark_interrupted(
+        marked.task_id,
+        Interruption(
+            at="2026-09-28T18:40:00Z",
+            run_id=marked.run_id,
+            step=marked.label,
+            item_id=marked.item_id,
+            item_name=marked.item_name,
+            attempt=marked.attempt,
+            agent="codex",
+        ),
+    )
+    other = "T1" if marked.task_id == "T2" else "T2"
+
+    assert main(["--root", str(root), "discover"]) == 0
+    page = capsys.readouterr().out
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    entries = json.loads(capsys.readouterr().out)["unfinished_tasks"]
+
+    section = page.split("## Unfinished tasks\n\n", 1)[1].split("\n\n", 1)[0]
+    lines = section.splitlines()
+    assert lines[0].startswith(f"- {marked.task_id} (task, claudecode) work: ")
+    assert lines[1].startswith("  Interrupted: the previous session (codex)")
+    assert lines[2].startswith(f"- {other} (task, claudecode) work: ")
+    assert len(lines) == 3
+    assert page.index("## Unfinished tasks") < page.index("## Workflows")
+    assert [entry["task_id"] for entry in entries] == [marked.task_id, other]
+    assert entries[1] == {
+        "task_id": other,
+        "workflow": "task",
+        "agent": "claudecode",
+        "step": "work",
+        "item_status": "in_progress",
+        "workspace": "the root",
+        "updated_at": entries[1]["updated_at"],
+        "resume": f"./ww instruction {other} --role manager",
+        "interrupted": False,
+    }
+    assert entries[0]["interrupted"] is True
+
+
+def test_discover_without_unfinished_tasks_has_no_such_section(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+
+    assert main(["--root", str(root), "discover"]) == 0
+    assert "## Unfinished tasks" not in capsys.readouterr().out
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["unfinished_tasks"] == []
