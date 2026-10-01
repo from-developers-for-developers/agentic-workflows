@@ -14,6 +14,8 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any, TypeGuard, get_args
 
+# A normalized name, dots and hyphens allowed, e.g. "code-review" or "ww.git";
+# "-review" does not match.
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 
 

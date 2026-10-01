@@ -20,6 +20,7 @@ GENERATED_TASK_PREFIX = "TASK-"
 MAX_TASK_ID_SEGMENTS = 2
 # Suffixed candidates tried for a template without a ``{{digit}}`` counter.
 ID_ATTEMPT_LIMIT = 50
+# One task ID segment, e.g. "TASK-12" or "FOOBAR_1.2"; "TASK 12" does not match.
 _SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
 
 

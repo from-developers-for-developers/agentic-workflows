@@ -68,9 +68,13 @@ STEP_RULE_KEYS = {
 }
 _CHECK_KEYS = {"argv", "shell", "args", "env", "assert"}
 _GROUP_KEYS = {"rules", "workflows", "steps", "agent", "model", "reasoning"}
-# A bare string shaped like this names a group or a file, never a sentence.
+# A bare string shaped like this names a group or a file, never a sentence:
+# "python" and "rules/python.md" match, "Write tests first" does not.
 _REFERENCE = re.compile(r"[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)?")
+# The end of a sentence: ".", "!" or "?" before a space or the end, e.g. the
+# "." in "Run tests. Then lint." but not the one in "setup.py".
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# A run of whitespace, e.g. the "  \n " between two words.
 _WHITESPACE = re.compile(r"\s+")
 
 

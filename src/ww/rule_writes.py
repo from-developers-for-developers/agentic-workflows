@@ -60,9 +60,11 @@ from ww.workflow_config import (
     every_step,
 )
 
-# A rule file's stem: lower-case kebab-case, as the derived ones are.
+# A rule file's stem: lower-case kebab-case, as the derived ones are, e.g.
+# "write-tests-first"; "write--tests" does not match.
 STEM = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 STEM_WORDS = 5
+# One lower-case word or number, e.g. "tests" in "write tests first".
 _WORD = re.compile(r"[a-z0-9]+")
 _DELIMITER = "---\n"
 _IMPORT_HEADER = (
@@ -786,6 +788,7 @@ def _set_key(frontmatter: str, key: str, value: Any, file: Path) -> str:
         raise StateError(f"the frontmatter of {file} is not a mapping")
     kept: list[str] = []
     skipping = False
+    # The key's own top-level line, e.g. "checks:" or "checks :" for "checks".
     start = re.compile(rf"{re.escape(key)}\s*:")
     for line in frontmatter.splitlines(keepends=True):
         if start.match(line):

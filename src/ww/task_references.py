@@ -21,11 +21,16 @@ from ww.task_ids import (
     validate_task_id,
 )
 
+# A task format placeholder, e.g. "{{digit}}" in "TASK-{{digit}}".
 _PLACEHOLDER = re.compile(r"\{\{(?:digit|timestamp|uuid)\}\}")
 # The values each placeholder generates; a reference fills a slot only with one.
 _SLOT_VALUES = {
+    # A counter, e.g. "42".
     "{{digit}}": re.compile(r"\d+"),
+    # A 14-digit timestamp with an optional "-N" suffix, e.g. "20261001120000-2".
     "{{timestamp}}": re.compile(r"\d{14}(?:-\d+)?"),
+    # A UUID with an optional "-N" suffix, e.g.
+    # "123e4567-e89b-12d3-a456-426614174000".
     "{{uuid}}": re.compile(
         r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-\d+)?",
         re.IGNORECASE,

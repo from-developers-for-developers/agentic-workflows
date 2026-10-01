@@ -142,7 +142,10 @@ __all__ = [
 ]
 
 EXTENSION_API_VERSION = 1
+# A lower-case name segment, e.g. "github" or "pull_request"; "GitHub" does not
+# match.
 _SEGMENT = re.compile(r"[a-z0-9][a-z0-9_-]*$")
+# A value name, dots and hyphens allowed, e.g. "pr.url" or "base-branch".
 _VALUE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*$")
 
 

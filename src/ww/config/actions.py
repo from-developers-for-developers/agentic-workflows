@@ -54,7 +54,9 @@ ACTION_KINDS: tuple[RequestedActionKind, ...] = ("skill", "slash_command", "prom
 # The prefixes of ``saves`` entries; the prefix is the kind and scope of the
 # saved value, the rest its storage path.
 _SAVE_PREFIXES = ("metadata.", "project_metadata.", "documents.", "item.field.")
+# A dotted metadata path, e.g. "github.owner"; "github..owner" does not match.
 _METADATA_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*")
+# A variable name, dots and hyphens allowed, e.g. "ww.task-id".
 _VARIABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 
 

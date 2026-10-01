@@ -20,6 +20,7 @@ AGENT_DIRECTORIES = {
     "grok": ".grok",
 }
 CUSTOM_AGENT_PREFIX = "custom:"
+# A custom agent name, e.g. "my-agent.v2"; "-agent" does not match.
 _AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 

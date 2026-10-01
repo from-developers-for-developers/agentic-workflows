@@ -164,6 +164,7 @@ def with_import(text: str, raw: dict[str, Any], entry: str) -> str:
         (
             position
             for position, line in enumerate(lines)
+            # The top-level imports key, e.g. "imports:" or "imports :".
             if re.match(r"imports\s*:", line)
         ),
         None,

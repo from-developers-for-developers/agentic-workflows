@@ -48,9 +48,13 @@ EXTENSION_DIRECTORY = "ext"
 BUNDLED_VENDOR = "ww"
 SECTIONS = ("handlers", "modes")
 
+# One lower-case vendor or extension name, e.g. "ww" or "pull_request".
 _SEGMENT = r"[a-z0-9][a-z0-9_-]*"
+# An extension identifier, e.g. "ww/git".
 _IDENTIFIER = re.compile(rf"^(?P<vendor>{_SEGMENT})/(?P<name>{_SEGMENT})$")
+# An entry point name, e.g. "ww.git".
 _ENTRY_POINT_NAME = re.compile(rf"^(?P<vendor>{_SEGMENT})\.(?P<name>{_SEGMENT})$")
+# An extension item reference, e.g. "ext/ww/git/handlers:commit".
 _REFERENCE = re.compile(
     rf"^ext/(?P<vendor>{_SEGMENT})/(?P<name>{_SEGMENT})"
     r"/(?P<section>[a-z]+):(?P<item>[A-Za-z0-9][A-Za-z0-9_.-]*)$"

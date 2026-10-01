@@ -166,6 +166,8 @@ def _compile(glob: str) -> re.Pattern[str]:
             parts.append(".*" if last else "(?:[^/]+/)*")
             continue
         parts.append(_segment(segment) + ("" if last else "/"))
+    # The glob over a whole path: "src/**/*.py" matches "src/cli.py" and
+    # "src/ww/cli.py", but not "docs/src/cli.py".
     return re.compile("".join(parts))
 
 

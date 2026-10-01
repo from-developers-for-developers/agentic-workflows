@@ -23,7 +23,9 @@ EXCLUDED_DIRECTORIES = {
     ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".venv",
     "__pycache__", "build", "dist",
 }
+# An SPDX tag comment on any line, e.g. "# SPDX-License-Identifier: MIT".
 SPDX_PATTERN = re.compile(r"^\s*#\s*SPDX-[A-Za-z0-9-]+:", re.MULTILINE)
+# A PEP 263 encoding comment, e.g. "# -*- coding: utf-8 -*-".
 PYTHON_ENCODING_PATTERN = re.compile(r"^\s*#.*coding[:=]", re.IGNORECASE)
 
 

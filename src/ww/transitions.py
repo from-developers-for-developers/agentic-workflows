@@ -1002,6 +1002,7 @@ def loop_iteration_of(record: PlanItemExecution, loop_id: str) -> int | None:
     _, marker, encoded = scope.partition(LOOP_SCOPE_MARKER)
     if not marker:
         return 1
+    # The loop's "<loop>:<iteration>" pair, e.g. "review:3" in "build:1:review:3".
     found = re.search(rf"(?:^|:){re.escape(loop_id)}:(\d+)(?=:|$)", encoded)
     return int(found.group(1)) if found else 1
 

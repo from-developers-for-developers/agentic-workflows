@@ -22,7 +22,8 @@ SUMMARY_FLAG = "--summary"
 
 
 # A bare placeholder such as ``<run-id>``, or one shown already quoted such as
-# ``"<reason>"`` so the agent keeps the quotes when it fills the value in.
+# ``"<reason>"`` so the agent keeps the quotes when it fills the value in;
+# "<Run-ID>" does not match.
 _PLACEHOLDER = re.compile(r'"?<[a-z][a-z0-9-]*>"?')
 
 

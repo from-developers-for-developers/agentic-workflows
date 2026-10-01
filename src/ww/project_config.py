@@ -95,6 +95,8 @@ DEFAULT_FIXES = 3
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
 TASK_FORMAT_PLACEHOLDERS = frozenset({"{{digit}}", "{{timestamp}}", "{{uuid}}"})
+# A placeholder in double braces, e.g. "{{digit}}" in "TASK-{{digit}}".
+_TASK_FORMAT_TOKEN = re.compile(r"\{\{[^{}]*\}\}")
 # The keys ww takes from a configured project's own settings files. Anything
 # else in such a file describes the project as a ww root of its own.
 PROJECT_FILE_KEYS = ("extensions", "task_format")
@@ -546,9 +548,8 @@ def _parse_task_format(data: Any, path: str) -> str | None:
         raise ConfigurationError(f"{path}.task_format must be a non-empty string")
     if data == EXPLICIT_TASK_FORMAT:
         return data
-    # A placeholder in double braces, e.g. "{{digit}}" in "TASK-{{digit}}".
-    tokens = re.findall(r"\{\{[^{}]*\}\}", data)
-    rest = re.sub(r"\{\{[^{}]*\}\}", "", data)
+    tokens = _TASK_FORMAT_TOKEN.findall(data)
+    rest = _TASK_FORMAT_TOKEN.sub("", data)
     if "{" in rest or "}" in rest:
         raise ConfigurationError(f"{path}.task_format has invalid placeholders")
     unknown = set(tokens) - TASK_FORMAT_PLACEHOLDERS

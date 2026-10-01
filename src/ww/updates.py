@@ -338,6 +338,7 @@ def _changelog_entries(checkout: Path, local: str, remote: str) -> list[str]:
             current = []
     if current:
         entries.append(" ".join(current))
+    # Each run of whitespace, e.g. "  \n  ", becomes one space.
     return [_shorten(re.sub(r"\s+", " ", entry).strip()) for entry in entries if entry]
 
 

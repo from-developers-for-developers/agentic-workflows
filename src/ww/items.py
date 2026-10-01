@@ -6,6 +6,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, fields, replace
 
+# An item field name, e.g. "acceptance_criteria" or "due-date"; "2nd" does not
+# match.
 FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
 

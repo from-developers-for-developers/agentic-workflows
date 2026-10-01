@@ -34,6 +34,7 @@ from .contracts import (
     ResolutionContext,
 )
 
+# An environment variable name, e.g. "WW_TASK_ID"; "2FA" does not match.
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 
 

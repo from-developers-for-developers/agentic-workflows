@@ -8,10 +8,12 @@ from collections.abc import Mapping
 
 from ww.errors import ConfigurationError
 
+# One {{name}} template token, spaces inside the braces allowed:
+# "{{ ww.task.id }}" and "{{metadata.owner}}" both match.
 _TOKEN = re.compile(
-    # Matches {{name}} and dotted references such as {{ww.metadata.github.owner}}.
     r"\{\{\s*([A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*)\s*\}\}"
 )
+# Double-braced text that is not a valid token, e.g. "{{ not a name }}".
 _BRACES = re.compile(r"\{\{.*?\}\}")
 
 

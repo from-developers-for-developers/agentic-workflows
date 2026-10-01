@@ -37,6 +37,14 @@ DOCUMENT_SCOPES = ("task", "project", "user")
 WW_METADATA_NAMESPACE = "ww"
 # The task ID in a task-scoped document ``path``.
 TASK_ID_TOKEN = "{{ww.task.id}}"
+# A saved metadata name, e.g. "pr.url" or "base-branch".
+_SAVED_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
+# A dotted saved metadata key, e.g. "github.owner"; "github..owner" does not
+# match.
+_SAVED_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*")
+# A document or item field name, e.g. "plan" or "due-date"; "2nd" does not
+# match.
+_FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
 INIT_STEP_NAME = "init"
 INIT_STEP_PROMPT = (
@@ -78,11 +86,9 @@ class SavedMetadata:
     append: bool = False
 
     def __post_init__(self) -> None:
-        name_pattern = r"[A-Za-z_][A-Za-z0-9_.-]*"
-        key_pattern = r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*"
-        if not isinstance(self.name, str) or not re.fullmatch(name_pattern, self.name):
+        if not isinstance(self.name, str) or not _SAVED_NAME.fullmatch(self.name):
             raise ValueError(f"invalid saved metadata name: {self.name!r}")
-        if not isinstance(self.key, str) or not re.fullmatch(key_pattern, self.key):
+        if not isinstance(self.key, str) or not _SAVED_KEY.fullmatch(self.key):
             raise ValueError(f"invalid saved metadata key: {self.key!r}")
         if not isinstance(self.description, str):
             raise ValueError("saved metadata description must be a string")
@@ -130,9 +136,7 @@ class DocumentDefinition:
     path: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_-]*", self.name
-        ):
+        if not isinstance(self.name, str) or not _FIELD_NAME.fullmatch(self.name):
             raise ValueError(f"invalid document name: {self.name!r}")
         if not isinstance(self.description, str):
             raise ValueError("document description must be a string")
@@ -171,9 +175,7 @@ class DocumentUpdate:
     instruction: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_-]*", self.name
-        ):
+        if not isinstance(self.name, str) or not _FIELD_NAME.fullmatch(self.name):
             raise ValueError(f"invalid document update name: {self.name!r}")
         if not isinstance(self.instruction, str):
             raise ValueError("document update instruction must be a string")
@@ -267,9 +269,7 @@ class ItemFieldUpdate:
     description: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_-]*", self.name
-        ):
+        if not isinstance(self.name, str) or not _FIELD_NAME.fullmatch(self.name):
             raise ValueError(f"invalid item field name: {self.name!r}")
         if not isinstance(self.description, str):
             raise ValueError("item field description must be a string")

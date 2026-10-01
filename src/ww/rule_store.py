@@ -51,7 +51,7 @@ STORE_FILE = RULE_AUTOMATION_FILE
 STORE_SCHEMA_VERSION = 1
 # Who approved a proposal: the operator, or ww under ``rules.approval``.
 RuleApprover = Literal["operator", "auto"]
-# A check name: short, lower-case, kebab-case.
+# A check name: lower-case words joined by single hyphens, e.g. "lint-src".
 CHECK_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CHECK_NAME_LIMIT = 40
 # Rule statuses that wait for the operator's decision.

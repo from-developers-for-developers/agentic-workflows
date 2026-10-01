@@ -21,7 +21,9 @@ from ww.execution_models import (
 from ww.items import WorkItem
 from ww.variables import METADATA_PREFIX, PROJECT_METADATA_PREFIX
 
+# A dotted metadata key, e.g. "github.owner"; "github..owner" does not match.
 _METADATA_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*")
+# One metadata field name, e.g. "owner" or "pr-url".
 _METADATA_FIELD = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 # A leaf is a string, or a list of strings for a key declared ``append: true``.
 MetadataLeaf = str | tuple[str, ...]
