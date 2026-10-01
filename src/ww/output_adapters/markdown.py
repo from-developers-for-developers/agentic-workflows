@@ -1428,7 +1428,8 @@ def _choices(lines: Lines, instruction: Instruction, choice: str) -> None:
             str(instruction.choice_mechanism),
             "",
             "Record the operator's pick before ending the interaction; it is "
-            "required, and a comment they add goes in as `--operator` text:",
+            "required. A comment they add is recorded with `--operator-said`, "
+            "in the same call or its own:",
             "",
             "```console",
             choice,

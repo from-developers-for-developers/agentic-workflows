@@ -38,7 +38,7 @@ Nothing is recorded yet.
 
 Present the matter in your reply first, then ask with the `request_user_input` tool: one short question of a line or two, never the matter itself, these options in this order with their descriptions, single select. The operator picks a number; a free-form answer is a comment, not a choice. If the tool is not available in this session, present the choices as a numbered list instead and ask the operator to answer with the number or the label.
 
-Record the operator's pick before ending the interaction; it is required, and a comment they add goes in as `--operator` text:
+Record the operator's pick before ending the interaction; it is required. A comment they add is recorded with `--operator-said`, in the same call or its own:
 
 ```console
 ./ww interact TASK-1 --role worker --choice="<label or number>"
