@@ -585,12 +585,13 @@ and wheel, inspects their bundled resources and license, and installs the wheel
 in an isolated virtual environment.
 
 ```console
+scripts/test
 .venv/bin/python scripts/check_release_gates.py
-.venv/bin/pytest -q
-.venv/bin/ruff check src/ww tests
-.venv/bin/mypy
 .venv/bin/python scripts/check_distribution.py
 ```
+
+`scripts/test` creates or reuses `.venv` and runs ruff, mypy and the test
+suite, in parallel.
 
 ## License
 

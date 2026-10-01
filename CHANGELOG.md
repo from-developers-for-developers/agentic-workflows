@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-01
 
+- Development: `scripts/test` creates or reuses `.venv` and runs ruff, mypy and pytest; the tests run in parallel
+  through pytest-xdist (`-n 0` runs them serially).
 - Breaking: persisted formats restart at schema 1 and ww reads no earlier one; the migrations, old-name hints
   (configuration keys, template names, CLI flags, `workflows.yaml`/`agentic-workflows.json`, the machine level) and the
   extension `upgrade_settings` hook are removed. Finish or reset in-flight tasks and re-run `init` before using this

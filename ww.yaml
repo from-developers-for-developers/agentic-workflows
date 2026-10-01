@@ -24,8 +24,8 @@ handlers:
   - run-tests:
     loop:
       - test: >-
-          Run the whole suite with `.venv/bin/python -m pytest -n auto` and
-          fix every failing test.
+          Run the whole suite with `scripts/test tests` (pytest alone, in
+          parallel) and fix every failing test.
         break: All tests pass.
 
   - update-documentation: >-

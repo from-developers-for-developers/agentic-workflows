@@ -58,8 +58,17 @@ alter *silently* are not.
 
 ## Set up a development environment
 
-Create a virtual environment from the repository root and install the project
-with its development dependencies:
+From the repository root, run:
+
+```console
+scripts/test
+```
+
+On the first run it creates a virtual environment in `.venv` with `python3`
+(Python 3.10 or newer) and installs the project with its development
+dependencies; later runs reuse it. It then runs ruff, mypy and the test suite. Arguments go to pytest alone, so
+`scripts/test tests/unit -k loops` runs a subset of the tests. To set the
+environment up by hand instead:
 
 ```console
 python3 -m venv .venv
@@ -74,18 +83,21 @@ Native Windows is not supported because filesystem locking relies on POSIX
 
 ## Run the checks
 
-Run the test suite:
+`scripts/test` runs the first three of these; each can also be run on its
+own. Run the test suite:
 
 ```console
 .venv/bin/python -m pytest
 ```
 
+The tests run in parallel by default (pytest-xdist with `-n auto`); add `-n 0`
+to run them serially, for example under a debugger.
+
 Run lint checks over the Python sources, tests, and scripts, as well as the
 separately bundled Git extension:
 
 ```console
-.venv/bin/python -m ruff check src tests scripts
-.venv/bin/python -m ruff check ext/ww/git
+.venv/bin/python -m ruff check src tests scripts ext/ww/git
 ```
 
 Run the configured static type checks:

@@ -1,0 +1,31 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Run the development checks from a virtual environment at the repository root.
+#
+# The first run creates .venv and installs the project with its development
+# dependencies; later runs reuse it. With no arguments it runs ruff, mypy and
+# the whole test suite; any arguments are passed to pytest alone, as in
+# `scripts/test tests/unit -k loops`.
+set -eu
+
+cd "$(dirname "$0")/.."
+
+# A failed install removes the half-made .venv, so the next run starts over
+# rather than reusing it. Editable installs of this project need a recent pip.
+if [ ! -x .venv/bin/python ]; then
+    python3 -m venv .venv
+    if ! { .venv/bin/python -m pip install -q --upgrade pip &&
+        .venv/bin/python -m pip install -q -e '.[dev]'; }; then
+        rm -rf .venv
+        exit 1
+    fi
+fi
+
+if [ "$#" -gt 0 ]; then
+    exec .venv/bin/python -m pytest "$@"
+fi
+
+.venv/bin/python -m ruff check src tests scripts ext/ww/git
+.venv/bin/python -m mypy
+exec .venv/bin/python -m pytest

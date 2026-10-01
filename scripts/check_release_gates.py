@@ -11,7 +11,7 @@ GATE_TESTS = (
     "tests/unit/test_task_storage_adapters.py",
     # Unknown outcomes and partial command recovery must remain explicit.
     "tests/integration/test_plan_execution.py::test_interrupted_automatic_handler_requires_explicit_recovery",
-    "tests/integration/test_plan_execution.py::test_cli_recovery_attests_one_segment_and_continues_remaining_segments",
+    "tests/integration/test_plan_execution.py::test_cli_recovery_attests_one_handler_and_continues_with_the_next",
     "tests/integration/test_extension_execution.py::test_default_recovery_uses_extension_checker_tri_state",
     # A repeated completion request must not publish a second completion.
     "tests/integration/test_concurrency.py::test_parallel_completes_record_one_artifact_per_step",
@@ -32,7 +32,9 @@ GATE_TESTS = (
 
 
 def main() -> int:
-    return subprocess.call((sys.executable, "-m", "pytest", *GATE_TESTS))
+    # Serially: under xdist a gate ID that no longer exists ends the run with
+    # "no tests ran" instead of naming the missing test.
+    return subprocess.call((sys.executable, "-m", "pytest", "-n", "0", *GATE_TESTS))
 
 
 if __name__ == "__main__":
