@@ -2294,16 +2294,20 @@ running loop. The instruction names the dependency by its step path, such as
 
 `artifact_from` may also name a plain group, which saves no artifact of its
 own, or an assessment from a step after it. The later step then gets the
-artifact of the latest step inside it that saved one in this run: for an
-assessment, a step of the outcome that was chosen. Loop rounds, per-item
-stages, and per-child stages inside count, so the latest round's artifact wins,
-and a loop wrapper that saves its own result counts when it completes. The
-instruction names that step and gives the artifact's file path. When nothing
-inside saved an artifact, for example an outcome with no steps of its own, the
-instruction says that no artifact is available from it and the step goes on
-without one. Validation accepts such a dependency only when some path inside
-it can save an artifact; an assessment whose outcomes cannot supplies its own
-answer, as before.
+artifact of the latest step inside it that saved one in its current round:
+for an assessment, a step of the outcome that was chosen. Loop rounds,
+per-item stages, and per-child stages inside count, so the latest round's
+artifact wins, and a loop wrapper that saves its own result counts when it
+completes. A container that is itself inside a loop counts only the current
+iteration of that loop: an artifact an earlier round saved is never handed
+over. The instruction names that step and gives the artifact's file path.
+When the chosen outcome saved nothing, for example an outcome with no steps of
+its own, an assessment supplies its own artifact if it saved one, as
+`artifact_from` naming an assessment always did. Otherwise the instruction
+says that no artifact is available and the step goes on without one.
+Validation accepts such a dependency only when some path inside it can save an
+artifact; an assessment whose outcomes cannot supplies its own answer, as
+before.
 
 ```yaml
 handlers:

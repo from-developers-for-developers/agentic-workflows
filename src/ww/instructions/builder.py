@@ -48,6 +48,7 @@ from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
     enclosing_loop_entry_index,
     fix_limits,
+    loop_iteration_of,
     loop_limit_reached,
 )
 from ww.variables import (
@@ -434,10 +435,14 @@ class InstructionBuilder:
 
         A group emits no item of its own; an assessment named after its
         outcomes has run one of them.  Either supplies the artifact of the
-        latest step inside it that saved one in this run, loop rounds
-        included, or none.  ``None`` means the dependency is a single step,
-        including an assessment named from inside its own outcomes, and one
-        whose outcomes cannot save an artifact.
+        latest step inside it that saved one in its current round: inside a
+        loop, only the records of the loop's current iteration count, while
+        the rounds of a loop inside the container all do.  An assessment
+        whose chosen outcome saved nothing supplies its own artifact, when it
+        saved one; otherwise none is available.  ``None`` means the
+        dependency is a single step, including an assessment named from
+        inside its own outcomes, and one whose outcomes cannot save an
+        artifact.
         """
         path = item.artifact_dependency
         if path is None:
@@ -460,10 +465,33 @@ class InstructionBuilder:
             and (not own.assessment_outcomes or path in item.ancestors)
         ):
             return None
+        some = next(iter(inside.values()))
+        enclosing = some.ancestors[: some.ancestors.index(path)]
+        iterations = dict(state.loop_iterations)
+        loops = {
+            loop.loop_id: iterations.get(loop.loop_id, 1)
+            for entry in plan.items
+            if (loop := loop_control(entry)) is not None
+            and loop.boundary == "enter"
+            and loop.loop_id in enclosing
+        }
+        # The live records are the current round's; the history holds earlier
+        # rounds, of loops inside the container (this round's) or around it.
+        current = (
+            *state.item_executions,
+            *(
+                record
+                for record in state.execution_history
+                if all(
+                    loop_iteration_of(record, loop_id) == iteration
+                    for loop_id, iteration in loops.items()
+                )
+            ),
+        )
         latest = max(
             (
                 record
-                for record in (*state.item_executions, *state.execution_history)
+                for record in current
                 if record.status == "completed"
                 and record.artifact is not None
                 and record.completed_at is not None
@@ -472,12 +500,29 @@ class InstructionBuilder:
             key=lambda record: (str(record.completed_at), record.position),
             default=None,
         )
-        if latest is None or latest.artifact is None:
-            return ContainerArtifact()
-        return ContainerArtifact(
-            inside[latest.plan_item_id].step,
-            str((self.root / latest.artifact).resolve()),
-        )
+        if latest is not None and latest.artifact is not None:
+            return ContainerArtifact(
+                inside[latest.plan_item_id].step,
+                str((self.root / latest.artifact).resolve()),
+            )
+        if own is not None:
+            # The outcome saved nothing: the assessment's own artifact, as
+            # ``artifact_from`` naming it supplied before outcomes counted.
+            assessed = next(
+                (
+                    record
+                    for record in state.item_executions
+                    if record.plan_item_id == own.id
+                    and record.status == "completed"
+                    and record.artifact is not None
+                ),
+                None,
+            )
+            if assessed is not None and assessed.artifact is not None:
+                return ContainerArtifact(
+                    own.step, str((self.root / assessed.artifact).resolve())
+                )
+        return ContainerArtifact()
 
     def _conversation(
         self, state: ExecutionState, item: PlanItem

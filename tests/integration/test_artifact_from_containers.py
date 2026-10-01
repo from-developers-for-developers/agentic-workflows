@@ -54,6 +54,16 @@ def _complete(service: WorkflowService, text: str) -> Instruction:
     )
 
 
+def _complete_bare(service: WorkflowService) -> Instruction:
+    """Complete a step that saves no artifact."""
+    return service.complete(
+        "TASK-1",
+        summary_for_next="Done.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+    )
+
+
 def _open(service: WorkflowService, outcome: str | None = None) -> Instruction:
     return service.next("TASK-1", outcome=outcome, caller_role="manager")
 
@@ -133,7 +143,7 @@ def test_a_plain_group_supplies_its_latest_loop_rounds_artifact(
     assert Path(artifact).read_text(encoding="utf-8").endswith("Round two.\n")
 
 
-def test_an_assessment_whose_outcome_ran_nothing_offers_no_artifact(
+def test_an_assessment_whose_outcome_saved_nothing_supplies_its_own_artifact(
     tmp_path: Path,
 ) -> None:
     service = _service(
@@ -159,9 +169,97 @@ def test_an_assessment_whose_outcome_ran_nothing_offers_no_artifact(
     ship = _open(service, "negative")
 
     assert ship.item_name == "ship"
+    text = ship.action_text or ""
+    assert (
+        "Use the artifact produced by the `assess` step as input to this work: `"
+        in text
+    )
+    artifact = text.rsplit("`", 2)[-2]
+    assert Path(artifact).read_text(encoding="utf-8").endswith("No review needed.\n")
+
+
+def test_an_assessment_without_an_artifact_whose_outcome_saved_nothing_offers_none(
+    tmp_path: Path,
+) -> None:
+    service = _service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - assess:
+          artifact: false
+          question: Does it need a review?
+          outcomes:
+            positive:
+              steps:
+                - review: Review it.
+      - name: ship
+        description: Ship it.
+        artifact_from: assess
+""",
+    )
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    _open(service)
+    _complete_bare(service)
+
+    ship = _open(service, "negative")
+
+    assert ship.item_name == "ship"
     assert "No artifact is available from `assess`: no step inside it" in (
         ship.action_text or ""
     )
+
+
+ASSESS_IN_LOOP = """
+                  artifact: false
+                  question: Investigate?
+                  outcomes:
+                    positive:
+                      steps:
+                        - investigate: Investigate it."""
+LOOPED = """workflows:
+  - name: task
+    steps:
+      - name: rounds
+        artifact: false
+        loop:
+          {container}
+          - name: report
+            description: Report.
+            artifact_from: {target}
+            break: Nothing left.
+"""
+IN_GROUP = "- name: check\n            steps:\n              - assess:" + ASSESS_IN_LOOP
+ALONE = "- assess:" + ASSESS_IN_LOOP.replace("\n    ", "\n")
+
+
+@pytest.mark.parametrize(
+    ("container", "target"),
+    [(IN_GROUP, "check"), (ALONE, "assess")],
+    ids=["group", "assessment"],
+)
+def test_a_container_in_a_loop_offers_only_its_current_rounds_artifact(
+    tmp_path: Path, container: str, target: str
+) -> None:
+    service = _service(tmp_path, LOOPED.format(container=container, target=target))
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    assert _open(service).item_name == "assess"
+    _complete_bare(service)
+    assert _open(service, "positive").item_name == "investigate"
+    _complete(service, "Investigated in round one.")
+    first = _open(service)
+    assert first.item_name == "report"
+    assert "iteration-01" in (first.action_text or "")
+    _complete(service, "Reported round one.")
+
+    assert _open(service).item_name == "assess"
+    _complete_bare(service)
+    second = _open(service, "negative")
+
+    assert second.item_name == "report"
+    text = second.action_text or ""
+    assert f"No artifact is available from `rounds/{target}`" in text
+    assert "Investigated" not in text and "iteration-01" not in text
 
 
 def test_an_outcome_naming_its_assessment_still_gets_the_assessment_artifact(

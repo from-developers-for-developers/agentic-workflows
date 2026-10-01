@@ -8,6 +8,7 @@ item, run, and step-projection invariants are changed together.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -984,7 +985,29 @@ def loop_operation_scope(
         )
         encoded_segments.append(f"{loop_id}:{value}")
     encoded = ":".join(encoded_segments)
-    return f"{operation_scope_for(state)}:loop:{encoded}"
+    return f"{operation_scope_for(state)}{LOOP_SCOPE_MARKER}{encoded}"
+
+
+# What ``loop_operation_scope`` puts between the run's scope and the loops.
+LOOP_SCOPE_MARKER = ":loop:"
+
+
+def loop_iteration_of(record: PlanItemExecution, loop_id: str) -> int | None:
+    """The iteration of ``loop_id`` an execution record was made for.
+
+    Read back from the record's operation ID, which ``loop_operation_scope``
+    encodes as ``loop:<loop>:<iteration>:...``; a record without a segment
+    for the loop belongs to its first iteration. ``None`` when the record has
+    no operation ID to read.
+    """
+    if record.operation_id is None:
+        return None
+    scope = record.operation_id.removesuffix(f":{record.plan_item_id}")
+    _, marker, encoded = scope.partition(LOOP_SCOPE_MARKER)
+    if not marker:
+        return 1
+    found = re.search(rf"(?:^|:){re.escape(loop_id)}:(\d+)(?=:|$)", encoded)
+    return int(found.group(1)) if found else 1
 
 
 def _loop_iteration(

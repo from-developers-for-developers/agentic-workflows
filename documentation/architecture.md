@@ -262,8 +262,13 @@ input, named by the same path as its `ww artifacts` entry, even when the step
 supplies its own prompt. When the path names a group, or an assessment whose
 outcomes hold artifact-saving items and the dependent step is not inside it,
 the builder reads the run's records instead: the latest completed item under
-that path with an artifact, loop history included, is named with its file
-path, or the page says none is available. The plan stays the one authority for
+that path with an artifact in the container's current round is named with its
+file path. The live records are always the current round; a history record
+counts only when, for every loop enclosing the container, the iteration its
+operation ID encodes (`transitions.loop_iteration_of`) is that loop's current
+one, so rounds of a loop inside the container count and earlier rounds around
+it do not. An assessment whose outcome saved nothing falls back to its own
+artifact; otherwise the page says none is available. The plan stays the one authority for
 which kind of dependency it is; nothing about it is persisted beyond the path.
 Execution order remains the authored step order.
 

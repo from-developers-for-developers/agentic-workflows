@@ -29,7 +29,8 @@ class ContainerArtifact:
     """The artifact ``artifact_from`` naming a group or an assessment found.
 
     ``step`` and ``artifact`` (an absolute path) name the latest step inside
-    the container that saved one in this run; both are ``None`` when none has.
+    the container that saved one in its current round, or the assessment
+    itself when its outcome saved none; both are ``None`` when none has.
     """
 
     step: str | None = None
@@ -131,6 +132,12 @@ def _with_artifact_dependency(
             + f"\n\nNo artifact is available from `{item.artifact_dependency}`: "
             "no step inside it that saves one completed in this run. Continue "
             "without it."
+        )
+    if container is not None and container.step == item.artifact_dependency:
+        return (
+            text
+            + f"\n\nUse the artifact produced by the `{container.step}` step as "
+            f"input to this work: `{container.artifact}`."
         )
     if container is not None:
         return (
