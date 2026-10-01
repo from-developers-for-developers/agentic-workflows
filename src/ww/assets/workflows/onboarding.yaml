@@ -99,9 +99,10 @@ workflows:
                         have changed. Ask one question at a time, in plain
                         words; where the answer is one of a few options (brief
                         or detailed answers, how much to decide alone, how
-                        often to ask), offer them through your question tool and
-                        end your turn until the answer comes. Accept "skip"
-                        for any question. Cover: (1) their
+                        often to ask), offer them through your blocking question
+                        tool, or as a numbered list in the chat when you have
+                        only an asynchronous one, and end your turn until the
+                        answer comes. Accept "skip" for any question. Cover: (1) their
                         personality and working style: how they like to
                         communicate, how they decide, how much autonomy they
                         give an agent, what annoys them; (2) their own pain
@@ -140,9 +141,10 @@ workflows:
                         first, show them in short what it says, and ask only
                         what is missing or may have changed. Ask one question
                         at a time, in plain words; where the answer is one of a
-                        few options, offer them through your question tool and
-                        end your turn until the answer comes. Accept "skip" for
-                        any question. Cover: (1) their role and
+                        few options, offer them through your blocking question
+                        tool, or as a numbered list in the chat when you have
+                        only an asynchronous one, and end your turn until the
+                        answer comes. Accept "skip" for any question. Cover: (1) their role and
                         responsibilities here; (2) what parts of the system or
                         process they own; (3) who they work with and hand work
                         over to; (4) what they are measured on, or what "done"
@@ -515,7 +517,8 @@ workflows:
         description: >-
           Run `{{ww.executable}} discover` and list the workflows and their
           steps. Ask the operator which step to look at, offering the step
-          names through your question tool.
+          names through your blocking question tool or as a numbered list in
+          the chat.
       - name: analyse
         description: >-
           Read the chosen step's instruction (`{{ww.executable}} plan

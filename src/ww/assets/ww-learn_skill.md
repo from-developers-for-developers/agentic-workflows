@@ -18,6 +18,6 @@ starts it.
    ```
 
 3. Follow every page until the run completes. Ask the operator through your
-   question tool wherever a page offers choices (in Codex the asynchronous
-   one when it is the only one offered) and end your turn right after asking,
-   so nothing happens until they answer.
+   blocking question tool wherever a page offers choices, or as a numbered
+   list in the chat when you have only an asynchronous one (Codex outside
+   plan mode), and end your turn right after asking.

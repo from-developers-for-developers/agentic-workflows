@@ -11,8 +11,9 @@ existing files first and update them in place.
 1. Run `./ww onboarding --json` and tell the operator when ww last learned
    about each subject (`learned.me`, `learned.myrole`, `learned.team`,
    `learned.company`, `learned.project`; `null` is never).
-2. Ask through your question tool, ending your turn until the answer comes,
-   what to refresh (several may be picked): "me", "my role in this project",
+2. Ask, through your blocking question tool or as a numbered list in the
+   chat when you have only an asynchronous one, ending your turn until the
+   answer comes, what to refresh (several may be picked): "me", "my role in this project",
    "my team and company", "the project". The first three are the `ww-learn`
    workflow: start it once and answer its `choose` step to match ("only me",
    "only my role", "only team and company", or "everything" when all three
