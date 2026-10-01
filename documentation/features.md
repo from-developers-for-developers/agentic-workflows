@@ -3084,8 +3084,9 @@ children:
       args: ["{{ww.child.git.branch}}", "Land slice {{ww.child.id}}"]
 ```
 
-It refuses a workspace with uncommitted changes and a branch that does not
-exist. On a conflict it runs `git merge --abort` and fails naming the
+It refuses a workspace with uncommitted changes, a branch that does not
+exist, a detached `HEAD` (the merge would land on no branch), and a workspace
+where a rebase, `git am`, cherry-pick or revert is in progress. On a conflict it runs `git merge --abort` and fails naming the
 conflicting files, so the task stops for the operator with the workspace as
 it was. When git cannot sign the merge commit it follows `on_signing_failure`
 exactly as `git-commit` does: it stops, or, with `unsigned`, aborts the
@@ -3098,9 +3099,15 @@ one merges nothing and succeeds with an empty `merge_commit`.
 
 Like `git-commit`, it puts ww's operation ID in a `WW-Operation` trailer, so a
 retry after an interruption finds the merge commit the earlier attempt made
-instead of merging again, and a merge that attempt left half-done (its own
-trailer in `MERGE_MSG`) is aborted and redone. Any other merge in progress is
-refused.
+instead of merging again. A merge that attempt left half-done (its own
+trailer in `MERGE_MSG`) is aborted and redone only while it is untouched:
+every conflicted file still carries its conflict markers, and nothing is
+staged or changed beyond what git's merge left (the merged branch's version
+of a file only it changed, or the clean three-way merge of one both sides
+changed). Once the operator has worked on it, by resolving or staging a file,
+the handler changes nothing and fails asking them to conclude the merge with
+`git commit` (a retry then finds that commit by its trailer) or discard it
+with `git merge --abort`. Any other merge in progress is refused.
 
 `create-worktree` reuses a worktree that already exists at the configured
 path. When none does but git reports the task branch checked out in another

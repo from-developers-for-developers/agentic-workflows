@@ -58,6 +58,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -874,6 +875,17 @@ def _merge_in_progress(context: ExtensionContext) -> bool:
     return _git(context, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0
 
 
+def _git_path(context: ExtensionContext, name: str) -> Path | None:
+    """Where git keeps ``name`` in the workspace's git directory."""
+    located = _git(context, "rev-parse", "--git-path", name)
+    if located.returncode:
+        return None
+    path = Path(located.stdout.strip())
+    if not path.is_absolute():
+        path = (context.workspace or context.root) / path
+    return path
+
+
 def _own_merge_in_progress(context: ExtensionContext) -> bool:
     """Whether the merge in progress was started by this very operation.
 
@@ -882,17 +894,134 @@ def _own_merge_in_progress(context: ExtensionContext) -> bool:
     """
     if not context.operation_id:
         return False
-    located = _git(context, "rev-parse", "--git-path", "MERGE_MSG")
-    if located.returncode:
+    path = _git_path(context, "MERGE_MSG")
+    if path is None:
         return False
-    path = Path(located.stdout.strip())
-    if not path.is_absolute():
-        path = (context.workspace or context.root) / path
     try:
         message = path.read_text(encoding="utf-8")
     except OSError:
         return False
     return _operation_marker(context) in message.splitlines()
+
+
+# What git keeps while a rebase, cherry-pick or revert stands in progress.
+_SEQUENCER_STATES = {
+    "rebase-merge": "a rebase",
+    "rebase-apply": "a rebase or `git am`",
+    "CHERRY_PICK_HEAD": "a cherry-pick",
+    "REVERT_HEAD": "a revert",
+}
+
+
+def _merge_target_error(context: ExtensionContext) -> str | None:
+    """Why the workspace cannot receive a merge: no branch, or another operation."""
+    for name, operation in _SEQUENCER_STATES.items():
+        path = _git_path(context, name)
+        if path is not None and path.exists():
+            return (
+                f"{operation} is in progress in the workspace; conclude or "
+                "abort it, then retry"
+            )
+    if _git(context, "symbolic-ref", "-q", "HEAD").returncode:
+        return (
+            "HEAD is detached, so a merge would land on no branch; check out "
+            "the branch to merge into, then retry"
+        )
+    return None
+
+
+def _lines(result: subprocess.CompletedProcess[str]) -> list[str]:
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def _blob(context: ExtensionContext, revision: str, path: str) -> str | None:
+    found = _git(context, "rev-parse", "-q", "--verify", f"{revision}:{path}")
+    return found.stdout.strip() if found.returncode == 0 else None
+
+
+def _index_blob(context: ExtensionContext, path: str) -> str | None:
+    listed = _git(context, "ls-files", "-s", "-z", "--", path)
+    for entry in _lines(listed):
+        details, _, name = entry.partition("\t")
+        # ``<mode> <blob> <stage>``: stage 0 is a merged entry.
+        _, blob, stage = (details.split() + ["", "", ""])[:3]
+        if name == path and stage == "0":
+            return blob
+    return None
+
+
+def _clean_merge_blob(
+    context: ExtensionContext, base: str, ours: str, theirs: str
+) -> str | None:
+    """The blob a clean three-way merge of three blobs gives, or ``None``."""
+    with tempfile.TemporaryDirectory(prefix="ww-merge-") as directory:
+        files = []
+        for name, blob in (("ours", ours), ("base", base), ("theirs", theirs)):
+            content = subprocess.run(
+                ["git", "cat-file", "blob", blob],
+                cwd=context.workspace or context.root,
+                capture_output=True,
+                check=False,
+            )
+            if content.returncode:
+                return None
+            file = Path(directory) / name
+            file.write_bytes(content.stdout)
+            files.append(str(file))
+        merged = _git(context, "merge-file", "-q", *files)
+        if merged.returncode:
+            return None
+        hashed = _git(context, "hash-object", "--", files[0])
+    return hashed.stdout.strip() if hashed.returncode == 0 else None
+
+
+def _merge_untouched(context: ExtensionContext) -> bool:
+    """Whether the merge in progress still holds only what git's merge left.
+
+    Every unmerged file still carries conflict markers, no other file changed
+    in the work tree, and every staged change is one the merge itself made:
+    the merged branch's version of a file only it changed, or the clean
+    three-way merge of a file both sides changed. Anything else is the
+    operator's work, which aborting would discard; a case this cannot tell
+    apart, such as a rename, counts as touched.
+    """
+    base_found = _git(context, "merge-base", "HEAD", "MERGE_HEAD")
+    if base_found.returncode:
+        return False
+    base = base_found.stdout.strip()
+    unmerged = set(
+        _lines(_git(context, "diff", "--name-only", "-z", "--diff-filter=U"))
+    )
+    root = context.workspace or context.root
+    for path in unmerged:
+        try:
+            text = (root / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        if not any(line.startswith("<<<<<<< ") for line in text.splitlines()):
+            return False
+    if set(_lines(_git(context, "diff", "--name-only", "-z"))) - unmerged:
+        return False
+    staged = _git(context, "diff", "--cached", "--name-only", "-z", "HEAD")
+    if staged.returncode:
+        return False
+    for path in set(_lines(staged)) - unmerged:
+        original = _blob(context, base, path)
+        ours = _blob(context, "HEAD", path)
+        theirs = _blob(context, "MERGE_HEAD", path)
+        index = _index_blob(context, path)
+        if theirs == original:
+            # The merged branch did not change it: only the operator could.
+            return False
+        if ours == original:
+            expected = theirs
+        elif original is None or ours is None or theirs is None:
+            return False
+        else:
+            expected = _clean_merge_blob(context, original, ours, theirs)
+        if expected is None or index != expected:
+            return False
+    return True
 
 
 def _abort_merge(context: ExtensionContext) -> str | None:
@@ -934,6 +1063,9 @@ def _merge(context: ExtensionContext) -> ExtensionResult:
     _, workspace_error = _workspace_root(context)
     if workspace_error:
         return ExtensionResult(False, error=workspace_error)
+    target_error = _merge_target_error(context)
+    if target_error:
+        return ExtensionResult(False, error=target_error)
     if _merge_in_progress(context):
         if not _own_merge_in_progress(context):
             return ExtensionResult(
@@ -943,8 +1075,20 @@ def _merge(context: ExtensionContext) -> ExtensionResult:
                     "it or run `git merge --abort`, then retry"
                 ),
             )
+        if not _merge_untouched(context):
+            # The operator has worked on it since: their resolution is kept.
+            return ExtensionResult(
+                False,
+                error=(
+                    f"this step's merge of {branch} is in progress and was "
+                    "worked on since (conflicts resolved or changes staged); "
+                    "conclude it with `git commit`, or discard it with "
+                    "`git merge --abort`, then retry"
+                ),
+            )
         # An interrupted attempt of this operation stopped mid-merge on a
-        # workspace it had found clean: undo it and merge again.
+        # workspace it had found clean, and nothing was done to it since:
+        # undo it and merge again.
         abort_error = _abort_merge(context)
         if abort_error:
             return ExtensionResult(False, error=abort_error)

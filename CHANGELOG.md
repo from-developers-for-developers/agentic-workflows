@@ -54,8 +54,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
   the replacement. `init` creates the user directory and updates a `./ww` launcher written for the machine level.
 - `limitations.md` notes that some agents' safety layers (Claude Code's auto mode) refuse edits to the workflow files
   the agent runs under; the agent prepares a script or patch for the operator instead.
-- ww/git `merge-branch` lands a branch with `git merge --no-ff`: refuses a dirty workspace, aborts a conflict and
-  fails naming the files, follows `on_signing_failure`, and records the merge commit. Extension handler references
+- ww/git `merge-branch` lands a branch with `git merge --no-ff`: refuses a dirty workspace, a detached `HEAD` and a
+  rebase, cherry-pick or revert in progress, aborts a conflict and fails naming the files, follows
+  `on_signing_failure`, and records the merge commit. A retry redoes its own interrupted merge only while untouched; a
+  resolution the operator staged is kept, and they are asked to `git commit` or abort it. Extension handler references
   take positional `args` (templates allowed). A `git-commit` retry now finds its commit behind newer ones.
 - `artifact_from` may name a group, or an assessment from a step after it: the step gets the artifact of the latest
   step that ran inside it (the chosen outcome's), or is told that none is available.

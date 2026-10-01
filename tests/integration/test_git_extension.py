@@ -688,6 +688,131 @@ def test_merge_branch_redoes_its_own_interrupted_merge_but_not_another(
     assert own.values == {"merge_commit": _head(repository)}
 
 
+def _interrupted_conflict(repository: Path) -> str:
+    """A conflicted merge this operation started and never concluded.
+
+    Beside the conflict, both sides change ``lines.txt`` in different places,
+    which git merges cleanly and stages as part of the merge's own state.
+    """
+    lines = repository / "lines.txt"
+    lines.write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    _run("git", "add", "lines.txt", cwd=repository)
+    _run("git", "commit", "-qm", "add lines", cwd=repository)
+    _run("git", "checkout", "-qb", "feature", cwd=repository)
+    lines.write_text("ONE\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    _run("git", "commit", "-qam", "feature lines", cwd=repository)
+    _run("git", "checkout", "-q", "main", cwd=repository)
+    lines.write_text("one\ntwo\nthree\nfour\nFIVE\n", encoding="utf-8")
+    _run("git", "commit", "-qam", "main lines", cwd=repository)
+    _run("git", "checkout", "-q", "feature", cwd=repository)
+    _run("git", "branch", "-q", "-m", "feature", "feature-base", cwd=repository)
+    _run("git", "checkout", "-q", "main", cwd=repository)
+    _feature_branch(repository, path="seed.txt")
+    _run("git", "checkout", "-q", "feature", cwd=repository)
+    _run("git", "merge", "-q", "--no-edit", "feature-base", cwd=repository)
+    _run("git", "checkout", "-q", "main", cwd=repository)
+    (repository / "seed.txt").write_text("main side\n", encoding="utf-8")
+    _run("git", "commit", "-qam", "change seed on main", cwd=repository)
+    conflicted = subprocess.run(
+        [
+            "git", "merge", "--no-ff", "--no-edit", "-m", "Land",
+            "-m", "WW-Operation: TASK-1:01-task:land", "feature",
+        ],
+        cwd=repository,
+        capture_output=True,
+        check=False,
+    )
+    assert conflicted.returncode and _merging(repository)
+    staged = _run("git", "diff", "--cached", "--name-only", "HEAD", cwd=repository)
+    assert "lines.txt" in staged.stdout.split()
+    return _head(repository)
+
+
+def test_merge_branch_keeps_a_resolution_staged_in_its_interrupted_merge(
+    repository: Path,
+) -> None:
+    before = _interrupted_conflict(repository)
+    (repository / "seed.txt").write_text("resolved\n", encoding="utf-8")
+    _run("git", "add", "seed.txt", cwd=repository)
+
+    result = _merge(repository, operation_id="TASK-1:01-task:land")
+
+    assert not result.ok
+    assert "was worked on since" in result.error
+    assert "`git commit`" in result.error
+    assert _merging(repository)
+    assert _head(repository) == before
+    assert (repository / "seed.txt").read_text() == "resolved\n"
+    staged = _run("git", "diff", "--cached", "--name-only", cwd=repository).stdout
+    assert "seed.txt" in staged.split()
+
+
+def test_merge_branch_keeps_an_edited_conflict_file_in_its_interrupted_merge(
+    repository: Path,
+) -> None:
+    _interrupted_conflict(repository)
+    (repository / "seed.txt").write_text("being resolved\n", encoding="utf-8")
+
+    result = _merge(repository, operation_id="TASK-1:01-task:land")
+
+    assert not result.ok
+    assert "was worked on since" in result.error
+    assert (repository / "seed.txt").read_text() == "being resolved\n"
+
+
+def test_merge_branch_redoes_its_interrupted_merge_while_the_conflict_is_untouched(
+    repository: Path,
+) -> None:
+    before = _interrupted_conflict(repository)
+
+    result = _merge(repository, operation_id="TASK-1:01-task:land")
+
+    # Merged again from scratch: the same conflict, aborted and reported.
+    assert not result.ok
+    assert "merging feature conflicts in: seed.txt;" in result.error
+    assert not _merging(repository)
+    assert _head(repository) == before
+
+
+def test_merge_branch_refuses_a_detached_head(repository: Path) -> None:
+    _feature_branch(repository)
+    _run("git", "checkout", "-q", "--detach", "main", cwd=repository)
+    before = _head(repository)
+
+    result = _merge(repository)
+
+    assert not result.ok
+    assert "HEAD is detached" in result.error
+    assert _head(repository) == before
+
+
+@pytest.mark.parametrize(
+    ("state", "operation"),
+    [
+        ("rebase-merge", "a rebase"),
+        ("rebase-apply", "a rebase"),
+        ("CHERRY_PICK_HEAD", "a cherry-pick"),
+        ("REVERT_HEAD", "a revert"),
+    ],
+)
+def test_merge_branch_refuses_while_another_operation_is_in_progress(
+    repository: Path, state: str, operation: str
+) -> None:
+    _feature_branch(repository)
+    before = _head(repository)
+    marker = repository / ".git" / state
+    if state.startswith("rebase"):
+        marker.mkdir()
+    else:
+        marker.write_text(before + "\n", encoding="utf-8")
+
+    result = _merge(repository)
+
+    assert not result.ok
+    assert f"{operation}" in result.error and "in progress" in result.error
+    assert _head(repository) == before
+
+
 def test_merge_branch_reports_a_branch_already_merged(repository: Path) -> None:
     _feature_branch(repository)
     assert _merge(repository).ok
