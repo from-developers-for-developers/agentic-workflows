@@ -385,7 +385,7 @@ Read-only facts about this checkout; each names where it came from.
 
 ## Fixes
 
-- Fix share: 18% (42 of 234 non-merge commits, fix|fixes|fixed|revert|hotfix|regression in the subject, git log -n 300)
+- Fix share: 18% (42 of 234 non-merge commits, subject starts with fix, fixes, fixed, hotfix or revert, or names a regression, git log -n 300)
 - Paths fixes touch: src/cart/totals.ts 9, src/cart/tax.ts 5, ... (paths the fix commits touch, git log -n 300 --numstat)
 ...
 
@@ -406,11 +406,11 @@ Read-only facts about this checkout; each names where it came from.
 | Section | Facts |
 | --- | --- |
 | Repository | Default and integration branch, branch lanes (`feature/`, `hotfix/`, `release/`, …) with counts, remotes, shallow clone, share of merge commits and the merge style, pull request signals (template, `CODEOWNERS`, "Merge pull request" subjects), tags and the median days between the last ten. |
-| Activity | Commits read, contributors and those active in 90 days, commits per week over 12 weeks, median files and lines per commit, median branch lifetime. Team shape: solo (one active contributor), small (2–5) or team (6+); cadence: daily (a median of five commits a week or more), weekly (one or more) or sparse. |
-| Fixes | Share of non-merge commits whose subject says fix, fixes, fixed, revert, hotfix or regression; the five paths they touch most; the five most recent such subjects. |
+| Activity | Commits read, contributors and those active in 90 days, commits per week over the weeks the history spans (one to twelve, so a young history is not read as sparse), median files and lines per commit, median branch lifetime. Team shape: solo (one active contributor), small (2–5) or team (6+); cadence: daily (a median of five commits a week or more), weekly (one or more) or sparse. |
+| Fixes | Share of non-merge commits whose subject starts with fix, fixes, fixed, hotfix or revert (after an optional tracker key, so `fix:` and `fix(scope):` count) or names a regression — "Add the fix loop" is not a fix; the five paths they touch most; the five most recent such subjects. |
 | Hot paths | The ten most-changed files. |
-| Layout | Manifests at the root and two levels down (`package.json`, `pyproject.toml`, `Makefile`, `composer.json`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`, `build.gradle`), CI files, the verify commands they name as exact argv, monorepo signals and the candidate `projects` they name. Sibling repositories a README links to are named, never read. |
-| Conventions | Tracker key prefixes in subjects and branch names, with the `task_format` candidate; the share of subjects led by a key and of conventional-commit subjects, with the `commit_format` candidate; agent instruction files present. |
+| Layout | Manifests at the root and two levels down (`package.json`, `pyproject.toml`, `Makefile`, `composer.json`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`, `build.gradle`), CI files, the verify commands as exact argv where a manifest names them (`package.json` and `composer.json` scripts, `Makefile` targets, `[tool.pytest]`, `[tool.ruff]` and `[tool.mypy]` in `pyproject.toml`), monorepo signals and the candidate `projects` they name. Sibling repositories a README links to are named, never read. |
+| Conventions | Tracker key prefixes in subjects (upper case) and branch names (any case, so `hotfix/task-3` counts as `TASK`), with the `task_format` candidate; the share of subjects led by a key and of conventional-commit subjects, with the `commit_format` candidate; agent instruction files present. |
 
 Outside a Git repository only the layout and the agent instruction files are
 reported, under a line saying the Git facts are unavailable. An empty

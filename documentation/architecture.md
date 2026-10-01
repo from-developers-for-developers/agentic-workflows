@@ -55,6 +55,10 @@ validates that model again at its public boundary, then exclusively resolves
 implicit action names, filters hooks, evaluates interpolation availability, and assigns
 deterministic execution order.
 
+`../src/ww/inspect.py` stands beside this pipeline rather than in it: `ww
+inspect` reads the working tree and the local Git history into a profile and
+prints it, with no configuration, no task state, no writes and no network.
+
 Before the YAML frontend parses anything, `../src/ww/config/composition.py`
 composes the configuration levels — the user's
 `ww.yaml` in the user configuration directory, the required repo
