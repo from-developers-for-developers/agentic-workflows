@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-01
 
+- Breaking: the task document (schema 2) stores an expanded plan item as what differs from its template item; the
+  step texts stay once per run in `template_plan`. Finish or reset tasks before upgrading.
 - Breaking: persisted formats restart at schema 1 and ww reads no earlier one; the migrations, old-name hints
   (configuration keys, template names, CLI flags, `workflows.yaml`/`agentic-workflows.json`, the machine level) and the
   extension `upgrade_settings` hook are removed. Finish or reset in-flight tasks and re-run `init` before using this

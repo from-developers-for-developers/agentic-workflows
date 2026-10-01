@@ -25,7 +25,7 @@ from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
-TASK_STATE_SCHEMA_VERSION = 1
+TASK_STATE_SCHEMA_VERSION = 2
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -179,12 +179,13 @@ def _compact_snapshot(
     snapshot: dict[str, Any], snapshots: dict[str, dict[str, object]]
 ) -> None:
     plan = snapshot["plan"]
-    template = snapshot.get("template_plan")
-    if template == plan:
+    if snapshot.get("template_plan") == plan:
         snapshot.pop("template_plan", None)
     _compact_plan(plan, snapshots)
-    if "template_plan" in snapshot:
-        _compact_plan(snapshot["template_plan"], snapshots)
+    template = snapshot.get("template_plan")
+    if template is not None:
+        _compact_plan(template, snapshots)
+        _diff_against_templates(plan, template)
 
 
 def _compact_plan(
@@ -208,6 +209,50 @@ def _compact_plan(
             snapshots[snapshot_id] = entry
             payload["snapshot"] = snapshot_id
         _omit_defaults(item, _PLAN_ITEM_DEFAULTS)
+
+
+def _diff_against_templates(plan: dict[str, Any], template: dict[str, Any]) -> None:
+    """Store each plan item as the fields that differ from its template item.
+
+    The diff runs on items already compacted, so a field equal in both is
+    omitted either way.  A field the item leaves at its default while the
+    template sets it is written out with the default, since the reader starts
+    from the template item.  An item with no template item is stored in full.
+    """
+    templates = {item["id"]: item for item in template["items"]}
+    compacted: list[dict[str, Any]] = []
+    for item in plan["items"]:
+        template_id = _template_id(item["id"], templates)
+        if template_id is None:
+            compacted.append(item)
+            continue
+        source = templates[template_id]
+        diff: dict[str, Any] = {"id": item["id"], "template": template_id}
+        for name, value in item.items():
+            if name != "id" and source.get(name, MISSING) != value:
+                diff[name] = value
+        for name in source:
+            if name not in item:
+                diff[name] = copy.deepcopy(_PLAN_ITEM_DEFAULTS[name])
+        compacted.append(diff)
+    plan["items"] = compacted
+
+
+def _template_id(item_id: str, templates: dict[str, Any]) -> str | None:
+    """Return the template item an item was expanded from, if any.
+
+    An item keeps its template item's ID, or extends it with a suffix such
+    as ``:item:<item id>`` or ``:child:<number>``; the longest such prefix
+    wins, so an expansion of an expansion finds its nearest template item.
+    """
+    if item_id in templates:
+        return item_id
+    prefixes = [
+        template_id
+        for template_id in templates
+        if item_id.startswith(template_id + ":")
+    ]
+    return max(prefixes, key=len, default=None)
 
 
 def _compact_state(state: dict[str, Any]) -> None:
@@ -255,14 +300,38 @@ def _expand_snapshot(
     plan = snapshot.get("plan")
     if not isinstance(plan, dict):
         raise ValueError("plan snapshot.plan must be a mapping")
+    template = snapshot.get("template_plan")
+    if template is not None and not isinstance(template, dict):
+        raise ValueError("plan snapshot.template_plan must be a mapping")
+    _restore_from_templates(plan, template)
     _expand_plan(plan, snapshots)
-    if "template_plan" not in snapshot:
+    if template is None:
         snapshot["template_plan"] = copy.deepcopy(plan)
     else:
-        template = snapshot["template_plan"]
-        if not isinstance(template, dict):
-            raise ValueError("plan snapshot.template_plan must be a mapping")
         _expand_plan(template, snapshots)
+
+
+def _restore_from_templates(
+    plan: dict[str, Any], template: dict[str, Any] | None
+) -> None:
+    """Rebuild each plan item stored as a diff against its template item."""
+    templates: dict[str, dict[str, Any]] = {}
+    if template is not None:
+        for item in _list(template.get("items"), "template_plan.items"):
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+                raise ValueError("template_plan.items entries must be mappings")
+            templates[item["id"]] = item
+    restored: list[Any] = []
+    for item in _list(plan.get("items"), "plan.items"):
+        if not isinstance(item, dict) or "template" not in item:
+            restored.append(item)
+            continue
+        template_id = item.pop("template")
+        source = templates.get(template_id) if isinstance(template_id, str) else None
+        if source is None:
+            raise ValueError(f"plan item names an unknown template: {template_id!r}")
+        restored.append({**copy.deepcopy(source), **item})
+    plan["items"] = restored
 
 
 def _expand_plan(plan: dict[str, Any], snapshots: dict[str, dict[str, object]]) -> None:

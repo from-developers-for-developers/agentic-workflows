@@ -733,7 +733,10 @@ and public output. It omits only versioned, record-specific defaults and moves
 repeated immutable extension identity/settings snapshots into a root
 content-addressed table. Action data stays inside its typed payload in the
 expanded plan; the compact document references extension snapshots from that
-payload. Decoding restores dense records before existing model
+payload. An item of the expanded plan is stored as its ID, the ID of the
+template-plan item it came from, and only the fields that differ from it, so
+the step texts are stored once per run, in `template_plan`. Decoding restores
+dense records before existing model
 and plan-digest validation, so compaction cannot change execution semantics.
 Stored data may come from another ww version, so decoders require the fields
 they read and leave any other field alone; they reject contradictions, not
