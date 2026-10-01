@@ -13,7 +13,7 @@ from tests.workflow_helpers import start_after_init
 from ww.builtin_workflows import builtin_workflow, is_builtin
 from ww.cli import main
 from ww.config import load_configuration
-from ww.config_files import user_directory
+from ww.config_files import SHARED_RUNTIME_FILES, user_directory
 from ww.defaults import SKILLS
 from ww.executable import printed_executable
 from ww.extensions import ExtensionRegistry
@@ -30,7 +30,7 @@ ONBOARDING = (
     "ww-rules-from-artifacts",
     "ww-automate",
 )
-LEARNING_DOCUMENTS = ("me", "team", "company", "project")
+LEARNING_DOCUMENTS = ("me", "myrole", "team", "company", "project")
 REMARK = (
     "<!-- This file is maintained by ww for ww's own use. Do not use it for "
     "anything else. If you are an agent that is not doing ww work, ignore this "
@@ -123,11 +123,61 @@ def test_learning_documents_resolve_to_the_user_directory_and_project_root(
         store.path(documents["me"], "T-1", worktree)
         == (user_directory() / "me.md").resolve()
     )
-    for name in ("team", "company", "project"):
+    for name in ("myrole", "team", "company", "project"):
         assert documents[name].scope == "project"
         expected = (root / ".ww" / f"{name}.md").resolve()
         assert store.path(documents[name], "T-1", worktree) == expected
         assert store.path(documents[name], None) == expected
+    # The operator's role is personal to the checkout: `init` re-includes
+    # only the shared files in Git, so it stays ignored with the rest.
+    assert "myrole.md" not in SHARED_RUNTIME_FILES
+
+
+def _step(workflow: str, name: str) -> StepDefinition:
+    return next(
+        step for step in _steps(builtin_workflow(workflow).steps) if step.name == name
+    )
+
+
+def test_ww_learn_asks_about_the_operators_role_in_the_project() -> None:
+    choose = _step("ww-learn", "choose")
+    assert [choice.label for choice in choose.choices] == [
+        "everything",
+        "only me",
+        "only my role",
+        "only team and company",
+        "not now",
+    ]
+    assert "{{ww.documents.myrole}}" in choose.description
+
+    role = _step("ww-learn", "role")
+    assert role.child_steps[0].assessment_question is not None
+    assert '"only my role"' in role.child_steps[0].assessment_question
+    interview = _step("ww-learn", "interview-role")
+    assert interview.interactive
+    assert [update.name for update in interview.update_document] == ["myrole"]
+    assert "{{ww.documents.myrole}}" in interview.description
+
+    finish = _step("ww-learn", "finish").description
+    assert "--set learned.myrole=now" in finish
+    assert "me.md and myrole.md stay on their machine" in finish
+
+
+@pytest.mark.parametrize(
+    ("workflow", "step"),
+    [
+        ("ww-suggest", "gather"),
+        ("ww-solve", "propose"),
+        ("ww-rules-from-artifacts", "read"),
+        ("ww-automate", "analyse"),
+    ],
+)
+def test_the_proposing_workflows_read_every_learning_file(
+    workflow: str, step: str
+) -> None:
+    description = _step(workflow, step).description
+    for document in LEARNING_DOCUMENTS:
+        assert f"{{{{ww.documents.{document}}}}}" in description, document
 
 
 def test_steps_name_ww_commands_with_the_configured_executable(
@@ -234,3 +284,13 @@ def test_the_setup_skill_guides_and_records_the_state() -> None:
         assert f"`{workflow}`" in text
     assert "onboarding --set explain=true" in text
     assert "onboarding --set setup.done=true" in text
+    assert "myrole.md" in text
+
+
+def test_the_refresh_skill_offers_each_subject() -> None:
+    text = SKILLS["ww-refresh"]
+
+    assert "`learned.myrole`" in text
+    for subject in ('"me"', '"my role in this project"', '"my team and company"'):
+        assert subject in text
+    assert '"only my role"' in text

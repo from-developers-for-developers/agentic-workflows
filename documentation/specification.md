@@ -329,15 +329,16 @@ The built-in workflows:
 | Workflow | File | Purpose |
 | --- | --- | --- |
 | `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
-| `ww-learn` | `onboarding.yaml` | Interviews the operator into the documents `me`, `team` and `company`. |
+| `ww-learn` | `onboarding.yaml` | Interviews the operator into the documents `me`, `myrole`, `team` and `company`. |
 | `ww-learn-project` | `onboarding.yaml` | Scans how the project's work is organised into `project`. |
 | `ww-suggest` | `onboarding.yaml` | Proposes a starting setup and places it with `setup apply`. |
 | `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 
-`onboarding.yaml` also declares the documents `me` (`scope: user`), `team`,
-`company` and `project` (`scope: project`, `path: .ww/<name>.md`),
+`onboarding.yaml` also declares the documents `me` (`scope: user`), `myrole`,
+`team`, `company` and `project` (`scope: project`, `path: .ww/<name>.md`;
+`myrole.md` stays git-ignored, personal to the checkout),
 `setup_proposal` (a task document at `.ww/tasks/{{ww.task.id}}/setup-proposal.yaml`),
 and the mode `ww-narrate`. See the features guide,
 [Setting ww up](features.md#setting-ww-up-learning-and-suggestions).

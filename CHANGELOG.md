@@ -22,6 +22,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - The `stop` hook no longer reminds about an interactive step whose conversation is still open: the session stops so
   the operator can answer. An interruption during such a conversation says to pick up the recorded conversation
   rather than to check `git status`.
+- `ww-learn` also learns the operator's role in this project into `.ww/myrole.md`, personal to the checkout and
+  git-ignored; `ww-suggest`, `ww-solve`, `ww-rules-from-artifacts` and `ww-automate` take every learning file into
+  account.
 - Development: `scripts/test` creates or reuses `.venv` and runs ruff, mypy and pytest; the tests run in parallel
   through pytest-xdist (`-n 0` runs them serially). The code is formatted with `ruff format`, checked by `scripts/test`
   and CI.

@@ -58,6 +58,7 @@ def test_nothing_is_set_at_first(
             "learned.team": None,
             "learned.company": None,
             "learned.project": None,
+            "learned.myrole": None,
         },
     }
     text = _run(root, capsys, "onboarding")
@@ -83,6 +84,8 @@ def test_set_records_each_key_at_its_level(
         "setup.done=true",
         "--set",
         "learned.project=now",
+        "--set",
+        "learned.myrole=2026-09-30T11:00:00Z",
     )
 
     state = _state(root, capsys)
@@ -95,6 +98,8 @@ def test_set_records_each_key_at_its_level(
     assert isinstance(project, dict)
     assert project["setup.done"] is True
     assert str(project["learned.project"]).endswith("Z")
+    # The operator's role in this project is recorded per checkout.
+    assert project["learned.myrole"] == "2026-09-30T11:00:00Z"
     assert json.loads((user / "state.json").read_text(encoding="utf-8")) == {
         "explain": False,
         "learned": {"me": "2026-09-30T10:00:00Z"},

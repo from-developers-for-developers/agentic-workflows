@@ -9,8 +9,9 @@ Two places hold it, each for what it describes:
   learned about the operator;
 - the project, in ``.ww/metadata.json`` under ww's own ``ww.`` namespace, which
   no workflow can save into: ``setup.done``, and when ww last learned about the
-  team, the company and the project (``learned.team``, ``learned.company``,
-  ``learned.project``).
+  team, the company, the project and the operator's role in it
+  (``learned.team``, ``learned.company``, ``learned.project``,
+  ``learned.myrole``). The role is per checkout, like the rest of that file.
 
 ``ww onboarding`` shows both and sets a known key; it records the operator's
 stated preference, so it asks for no confirmation. ``discover`` reads it to
@@ -37,7 +38,7 @@ SETUP_DONE = "setup.done"
 LEARNED = "learned"
 # What ww learns about, and at which level it records when it did.
 LEARNED_USER = ("me",)
-LEARNED_PROJECT = ("team", "company", "project")
+LEARNED_PROJECT = ("team", "company", "project", "myrole")
 USER_KEYS = (EXPLAIN, *(f"{LEARNED}.{name}" for name in LEARNED_USER))
 PROJECT_KEYS = (SETUP_DONE, *(f"{LEARNED}.{name}" for name in LEARNED_PROJECT))
 KEYS = (*USER_KEYS, *PROJECT_KEYS)

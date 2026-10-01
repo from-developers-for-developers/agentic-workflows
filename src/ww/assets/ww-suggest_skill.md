@@ -1,12 +1,12 @@
 ---
 name: ww-suggest
-description: Propose a small, gentle ww setup (workflows, modes, a few simple rules, hooks, settings) from what ww learned about the operator, team, company and project, and place it for the operator alone or shared with the team. Use when the operator invokes /ww-suggest, asks what ww setup would suit them, or wants to share their own ww setup with the team.
+description: Propose a small, gentle ww setup (workflows, modes, a few simple rules, hooks, settings) from what ww learned about the operator, their role, team, company and project, and place it for the operator alone or shared with the team. Use when the operator invokes /ww-suggest, asks what ww setup would suit them, or wants to share their own ww setup with the team.
 ---
 
 # Suggest a ww setup
 
-The `ww-suggest` workflow reads `me.md`, `team.md`, `company.md` and
-`project.md`, asks whether to set ww up for the operator and whether to share
+The `ww-suggest` workflow reads `me.md`, `myrole.md`, `team.md`,
+`company.md` and `project.md`, asks whether to set ww up for the operator and whether to share
 it, shows the proposal, and places it with `./ww setup apply`; this skill
 starts it. Running it again later can share a setup tried alone with the team.
 

@@ -147,7 +147,8 @@ The wizard asks a few questions and then sets the project up:
   `.ww/` out of Git (`.ww/*` in `.gitignore`), except the files where ww
   records what it learned about your team, company and project
   (`.ww/team.md`, `.ww/company.md`, `.ww/project.md`), which are meant to be
-  committed. It also keeps local configuration files
+  committed; `.ww/myrole.md`, your role in the project, stays ignored as
+  personal to the checkout. It also keeps local configuration files
   (`*ww.local.yaml`, `*ww.local.json`,
   `ww-setup.local.yaml`) out of Git.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`

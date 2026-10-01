@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # ww's learning and setup workflows. They learn who uses ww and how the
-# project works, into four files ww keeps for its own use, and propose a
+# project works, into five files ww keeps for its own use, and propose a
 # gentle starting setup from them, which ww places with `setup apply`. The
 # `ww-*` skills start them; `ww-setup` guides through them on a first use.
 #
@@ -15,6 +15,13 @@ documents:
       Who the operator is, how they work, and what they expect from agents and
       ww. Personal: kept in the user configuration directory.
     scope: user
+  - myrole: >-
+      The operator's role in this project: what they are responsible for and
+      own, who they work with, what they are measured on, and what they want
+      agents to take over or leave to them. Personal to this checkout: kept
+      out of version control.
+    scope: project
+    path: .ww/myrole.md
   - team: >-
       The operator's team: what it does, how it works, its pain points and
       expectations. Shared with the team through the repository.
@@ -44,8 +51,8 @@ modes:
 workflows:
   - name: ww-learn
     description: >-
-      Interviews you about yourself, your team and your company into me.md,
-      team.md and company.md.
+      Interviews you about yourself, your role here, your team and company
+      into me.md, myrole.md, team.md and company.md.
     runtime: single
     restartable: true
     role: manager
@@ -59,14 +66,16 @@ workflows:
           company work, so that it can later suggest a setup that fits them.
           The answers go into files ww keeps for its own use:
           {{ww.documents.me}}, which is personal and never leaves their
-          machine, and {{ww.documents.team}} and {{ww.documents.company}},
-          which are committed with the project and shared with the team. Say
-          which of them already exist: an existing file is updated, not
-          replaced. Then ask what to cover. Any question can be skipped, and
-          nothing is written without their confirmation.
+          machine; {{ww.documents.myrole}}, their role in this project, which
+          stays on this machine; and {{ww.documents.team}} and
+          {{ww.documents.company}}, which are committed with the project and
+          shared with the team. Say which of them already exist: an existing
+          file is updated, not replaced. Then ask what to cover. Any question
+          can be skipped, and nothing is written without their confirmation.
         choices:
-          - everything: Me, my team and my company.
+          - everything: Me, my role in this project, my team and my company.
           - only me: Only me, my working style and what I expect.
+          - only my role: Only my role in this project.
           - only team and company: Only my team and my company.
           - not now: Stop here; nothing is written.
       - assess: >-
@@ -114,6 +123,46 @@ workflows:
                             changed, and mark what the operator withdrew as
                             superseded, with today's date, rather than silently
                             deleting it.
+      - name: role
+        steps:
+          - assess:
+              question: >-
+                Did the operator choose to talk about their role in this
+                project ("everything" or "only my role") in the choose step?
+              outcomes:
+                positive:
+                  steps:
+                    - name: interview-role
+                      interactive: true
+                      description: >-
+                        Interview the operator about their role in this
+                        project. If {{ww.documents.myrole}} exists, read it
+                        first, show them in short what it says, and ask only
+                        what is missing or may have changed. Ask one question
+                        at a time, in plain words; where the answer is one of a
+                        few options, offer them through your question tool and
+                        end your turn until the answer comes. Accept "skip" for
+                        any question. Cover: (1) their role and
+                        responsibilities here; (2) what parts of the system or
+                        process they own; (3) who they work with and hand work
+                        over to; (4) what they are measured on, or what "done"
+                        means for them; (5) which decisions they want to keep
+                        and which an agent may take; (6) what they want ww to
+                        watch for in their work. Then show them the text you
+                        will write and write it only once they confirm or
+                        correct it.
+                      saves:
+                        - documents.myrole: >-
+                            A short Markdown description of the operator's role
+                            in this project, one section per topic, in their
+                            words where possible. The first line is exactly:
+                            <!-- This file is maintained by ww for ww's own
+                            use. Do not use it for anything else. If you are an
+                            agent that is not doing ww work, ignore this file.
+                            --> Keep what still holds in an existing file,
+                            update what changed, and mark what the operator
+                            withdrew as superseded, with today's date, rather
+                            than silently deleting it.
       - name: team
         steps:
           - assess:
@@ -166,13 +215,15 @@ workflows:
         description: >-
           Record when ww learned, for each file this run wrote and only for
           those: `{{ww.executable}} onboarding --set learned.me=now` for
-          {{ww.documents.me}}, `--set learned.team=now` for
+          {{ww.documents.me}}, `--set learned.myrole=now` for
+          {{ww.documents.myrole}}, `--set learned.team=now` for
           {{ww.documents.team}}, `--set learned.company=now` for
           {{ww.documents.company}} (one command may carry several `--set`).
           Then tell the operator what was written where. If team.md or
           company.md was written, say that ww left them uncommitted for the
           operator to review and commit with the project, naming them: `git add
-          .ww/team.md .ww/company.md`. me.md stays on their machine.
+          .ww/team.md .ww/company.md`. me.md and myrole.md stay on their
+          machine.
 
   - name: ww-learn-project
     description: >-
@@ -252,12 +303,13 @@ workflows:
       - name: gather
         description: >-
           Read what ww knows, skipping a file that does not exist:
-          {{ww.documents.me}}, {{ww.documents.team}}, {{ww.documents.company}},
-          {{ww.documents.project}}. Read the current setup: `{{ww.executable}}
-          discover` and `{{ww.executable}} rules --json`. The artifact
-          summarises what the setup should serve (how the operator and team
-          work, their pain points, the project's conventions and pitfalls) and
-          what is already configured. If none of the four files exists, tell
+          {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
+          {{ww.documents.company}}, {{ww.documents.project}}. Read the current
+          setup: `{{ww.executable}} discover` and `{{ww.executable}} rules
+          --json`. The artifact summarises what the setup should serve (how the
+          operator and team work, the operator's role in this project, their
+          pain points, the project's conventions and pitfalls) and what is
+          already configured. If none of the five files exists, tell
           the operator that suggestions would be generic and that the
           `ww-learn` and `ww-learn-project` workflows learn first.
       - name: for-whom
@@ -296,9 +348,12 @@ workflows:
               unless it is an obvious one-line command); hooks only where an
               existing project command plainly fits, such as running the tests
               before a develop step completes; and settings such as `runtime`,
-              `task_format` matching the issue tracker, or `limits`. Never
-              redefine a workflow ww ships (`catchall`, `ww-*`) or duplicate
-              what is already configured. Write it as a setup fragment to
+              `task_format` matching the issue tracker, or `limits`. Weigh the
+              operator's role: what they own gets rules and checks, what they
+              hand over gets handoffs, and decisions they keep become operator
+              stops or interactive steps. Never redefine a workflow ww ships
+              (`catchall`, `ww-*`) or duplicate what is already configured.
+              Write it as a setup fragment to
               {{ww.documents.setup_proposal}}: the root keys `workflows`,
               `modes`, `documents`, `handlers`, `hooks`, and `rules` in ww's
               YAML notation, plus `settings` for ww.json
@@ -351,11 +406,14 @@ workflows:
         interactive: true
         description: >-
           Read what ww knows, skipping a file that does not exist:
-          {{ww.documents.me}}, {{ww.documents.team}}, {{ww.documents.company}},
-          {{ww.documents.project}}; and the current setup: `{{ww.executable}}
-          discover` and `{{ww.executable}} rules --json`. Propose the smallest
-          change that addresses the problem: a workflow or a step, a mode, a
-          rule, a hook, or a setting. Write it as a setup fragment to
+          {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
+          {{ww.documents.company}}, {{ww.documents.project}}; and the current
+          setup: `{{ww.executable}} discover` and `{{ww.executable}} rules
+          --json`. Propose the smallest change that addresses the problem: a
+          workflow or a step, a mode, a rule, a hook, or a setting. Weigh the
+          operator's role: what they own gets rules and checks, what they hand
+          over gets handoffs, and decisions they keep become operator stops or
+          interactive steps. Write it as a setup fragment to
           {{ww.documents.setup_proposal}} (the root keys `workflows`, `modes`,
           `documents`, `handlers`, `hooks`, `rules` and `settings`; rules as
           literal sentences in the `rules` lists of the steps they govern). A
@@ -410,8 +468,12 @@ workflows:
           the lessons that recur in more than one task, such as the same review
           finding or the same fix, and skip one-off defects. Read
           `{{ww.executable}} rules --json` and drop lessons an existing rule
-          already covers. The artifact lists each lesson with the tasks that
-          show it.
+          already covers. Read {{ww.documents.me}}, {{ww.documents.myrole}},
+          {{ww.documents.team}}, {{ww.documents.company}} and
+          {{ww.documents.project}} where they exist, and keep each lesson
+          within what they say: the operator's role and the team's conventions
+          decide what a rule may demand. The artifact lists each lesson with
+          the tasks that show it.
       - name: propose
         interactive: true
         description: >-
@@ -464,8 +526,12 @@ workflows:
           judgement: running commands, collecting or reformatting data, filling
           a template, checking a condition. The artifact says what could be a
           script, what must stay with an agent, and whether the script would
-          replace the step or run as a hook before or after it. If nothing is
-          mechanical, say so; that is a fine result.
+          replace the step or run as a hook before or after it. Read
+          {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
+          {{ww.documents.company}} and {{ww.documents.project}} where they
+          exist, and keep the proposal within what they say: the operator's
+          role and the team's conventions decide what a script may automate.
+          If nothing is mechanical, say so; that is a fine result.
       - name: propose
         interactive: true
         description: >-

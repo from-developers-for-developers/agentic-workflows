@@ -537,7 +537,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="KEY=VALUE",
         help=(
             "Record one key; repeatable: explain=true|false, "
-            "setup.done=true|false, learned.me|team|company|project=now|<ISO>."
+            "setup.done=true|false, learned.me|team|company|project|myrole=now|<ISO>."
         ),
     )
 

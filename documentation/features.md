@@ -105,7 +105,9 @@ that action. With consent it appends these lines to `.gitignore`:
 
 Everything under `.ww` is one checkout's state, except the three files in
 which ww records what it learned about the team, the company, and the project:
-those are meant to be committed and shared. Git cannot re-include a file inside
+those are meant to be committed and shared. `myrole.md`, where ww records the
+operator's role in the project, stays ignored with the rest, since it is
+personal to the checkout. Git cannot re-include a file inside
 an ignored directory, which is why the directory's contents are ignored rather
 than the directory. A line that ignores the directory whole, as `.ww/`, `.ww`,
 `/.ww` or `/.ww/`, would keep the
@@ -276,7 +278,7 @@ belongs:
 | `explain` | `state.json` in the user configuration directory | whether the operator wants the agent to narrate what ww does while it learns; absent until they answer |
 | `learned.me` | the same file | when ww last learned about the operator |
 | `setup.done` | `.ww/metadata.json`, as `ww.setup.done` | whether ww was set up in this project |
-| `learned.team`, `learned.company`, `learned.project` | `.ww/metadata.json`, under `ww.learned` | when ww last learned about each |
+| `learned.team`, `learned.company`, `learned.project`, `learned.myrole` | `.ww/metadata.json`, under `ww.learned` | when ww last learned about each; `myrole` is the operator's role in this project, per checkout like the rest of the file |
 
 The project keys live in ww's own `ww.` namespace of project metadata, which
 no workflow can save into, so they never collide with a workflow's values.
@@ -288,7 +290,7 @@ no workflow can save into, so they never collide with a workflow's values.
 ```
 
 `--set` is repeatable and takes a known key: `explain=true|false`,
-`setup.done=true|false`, `learned.<me|team|company|project>=now` or an ISO
+`setup.done=true|false`, `learned.<me|team|company|project|myrole>=now` or an ISO
 timestamp. An unknown key or a malformed value is an error, and nothing is
 written unless every assignment is valid. Setting records the operator's stated
 preference, so it asks for no confirmation; it appears in the audit log, while
@@ -360,9 +362,9 @@ for one of them.
 | Skill | Workflow | Does |
 | --- | --- | --- |
 | `ww-setup` | — | The guide. Asks once whether the operator wants to see what ww does as it learns (`explain`), then offers learn → learn-project → suggest, each optional, and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
-| `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
+| `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their role in this project (what they own, who they work with and hand over to, what they are measured on, which decisions they keep), their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
 | `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does: agent tooling and MCP servers, issue trackers the code mentions, infrastructure and stack, conventions (branching, commit format, CI, reviews), and recurring pitfalls from the commit history and review comments. Changes no project file. |
-| `ww-suggest` | `ww-suggest` | From the learning files, proposes one to three workflows, modes, at most five simple rules, hooks where a project command plainly fits, and settings. Asks "set it up for yourself?" and then "share it with the team?", shows the proposal with `setup apply --dry-run`'s list of changes, and places it on confirmation. |
+| `ww-suggest` | `ww-suggest` | From the learning files, proposes one to three workflows, modes, at most five simple rules, hooks where a project command plainly fits, and settings, weighed by the operator's role: what they own gets rules and checks, what they hand over gets handoffs, and decisions they keep become operator stops or interactive steps. Asks "set it up for yourself?" and then "share it with the team?", shows the proposal with `setup apply --dry-run`'s list of changes, and places it on confirmation. |
 | `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
@@ -376,15 +378,17 @@ manager`), so they work in agents without subagents. When `explain` is `true`,
 the skills start them with the built-in `ww-narrate` mode, whose steps tell
 the operator what each one does and why.
 
-What ww learns goes into four files it keeps for its own use:
+What ww learns goes into five files it keeps for its own use:
 
 | File | Where | Shared | Written by |
 | --- | --- | --- | --- |
 | `me.md` | the user configuration directory (`scope: user`) | no, personal | `ww-learn` |
+| `myrole.md` | `.ww/` at the project root | no, personal to the checkout | `ww-learn` |
 | `team.md`, `company.md` | `.ww/` at the project root | yes, once committed | `ww-learn` |
 | `project.md` | `.ww/` at the project root | yes, once committed | `ww-learn-project` |
 
-They are the built-in documents `me`, `team`, `company` and `project`, so
+They are the built-in documents `me`, `myrole`, `team`, `company` and
+`project`, so
 `{{ww.documents.team}}` and the rest name them in any workflow. The project
 ones resolve against the project root even for a task working in a Git
 worktree. Every one starts with this remark, which tells any other agent to
@@ -394,10 +398,13 @@ leave it alone:
 <!-- This file is maintained by ww for ww's own use. Do not use it for anything else. If you are an agent that is not doing ww work, ignore this file. -->
 ```
 
-`init --update-gitignore` keeps `.ww/` out of Git except these three shared
-files. ww never commits them: the last step of each workflow names the files
+`init --update-gitignore` keeps `.ww/` out of Git except the three shared
+files; `myrole.md` stays ignored, since it is personal to the checkout. ww never commits them: the last step of each workflow names the files
 it left for the operator to review and commit, and records when ww learned
-with `ww onboarding --set learned.<me|team|company|project>=now`.
+with `ww onboarding --set learned.<me|team|company|project|myrole>=now`.
+`ww-suggest`, `ww-solve`, `ww-rules-from-artifacts` and `ww-automate` read
+every learning file that exists and keep their proposals within what the
+operator's role and the team's conventions allow.
 
 The proposals never touch ww's configuration files through the agent. A
 workflow writes its fragment to the task's `setup_proposal` document

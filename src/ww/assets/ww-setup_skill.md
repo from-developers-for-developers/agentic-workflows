@@ -1,6 +1,6 @@
 ---
 name: ww-setup
-description: Guide the operator through setting ww up in this project, step by step, each step optional - ww learns about them, their team and company (ww-learn), learns how the project works (ww-learn-project), then suggests a gentle starting setup (ww-suggest). Use the first time ww is used in a project (`./ww discover` offers it while setup is not done), or when the operator asks to set up, onboard, or configure ww; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
+description: Guide the operator through setting ww up in this project, step by step, each step optional - ww learns about them, their role in the project, their team and company (ww-learn), learns how the project works (ww-learn-project), then suggests a gentle starting setup (ww-suggest). Use the first time ww is used in a project (`./ww discover` offers it while setup is not done), or when the operator asks to set up, onboard, or configure ww; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
 ---
 
 # Set ww up with the operator
@@ -25,9 +25,11 @@ edit ww's configuration files yourself: ww's workflows place changes with
 3. **Offer the steps.** When `project.setup.done` is `false`, explain the
    path in a few sentences, then ask which to do now (several may be picked;
    all three, in order, is the usual first choice):
-   - `ww-learn`: a short interview about you, your team and your company.
-     `me.md` stays on your machine; `team.md` and `company.md` go in `.ww/`
-     and are shared with the team once committed.
+   - `ww-learn`: a short interview about you, your role in this project,
+     your team and your company. `me.md` stays on your machine, and
+     `.ww/myrole.md` stays in this checkout, out of version control;
+     `team.md` and `company.md` go in `.ww/` and are shared with the team
+     once committed.
    - `ww-learn-project`: reads how the project's work is organised (tooling,
      trackers, stack, conventions, recurring pitfalls) into `.ww/project.md`.
    - `ww-suggest`: proposes a small starting setup from all that, for you
