@@ -177,39 +177,12 @@ def test_saved_metadata_round_trips_through_persisted_plan() -> None:
     )
 
 
-def test_a_plan_schema_without_a_migration_is_not_loaded() -> None:
+@pytest.mark.parametrize("version", [2, 0, True, "1"])
+def test_a_plan_at_another_schema_version_is_not_loaded(version: object) -> None:
     snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
-    snapshot["schema_version"] = 14
-    with pytest.raises(ValueError, match="unsupported plan snapshot schema: 14"):
+    snapshot["schema_version"] = version
+    with pytest.raises(ValueError, match="unsupported plan snapshot schema"):
         PlanSnapshot.from_dict(snapshot)
-
-
-def test_a_schema_15_plan_loads_with_no_modes_on_its_items() -> None:
-    snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
-    snapshot["schema_version"] = 15
-    assert "modes" not in snapshot["plan"]["items"][0]
-
-    loaded = PlanSnapshot.from_dict(snapshot)
-
-    assert loaded.schema_version == PLAN_SCHEMA_VERSION == 18
-    assert loaded.plan.items[0].modes == ()
-    assert loaded.to_dict()["plan"] == snapshot["plan"]
-
-
-def test_a_schema_16_plan_loads_without_per_child_stages() -> None:
-    snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
-    snapshot["schema_version"] = 16
-    item = snapshot["plan"]["items"][0]
-    assert "child_stage" not in item and "child_number" not in item
-
-    loaded = PlanSnapshot.from_dict(snapshot)
-
-    assert loaded.schema_version == 18
-    assert (loaded.plan.items[0].child_stage, loaded.plan.items[0].child_number) == (
-        None,
-        None,
-    )
-    assert loaded.to_dict()["plan"] == snapshot["plan"]
 
 
 def test_project_metadata_scope_round_trips_through_persisted_plan() -> None:

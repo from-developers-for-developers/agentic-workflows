@@ -137,10 +137,6 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"max_rounds": 0}, "max_rounds must be a positive integer"),
         ({"max_rounds": True}, "max_rounds must be a positive integer"),
         ({"max_rounds": "3"}, "max_rounds must be a positive integer"),
-        (
-            {"loop_max_times": 3},
-            'loop_max_times was renamed to max_rounds: "max_rounds": 3',
-        ),
         ({"max_fixes": 0}, "max_fixes must be a positive integer"),
         ({"max_fixes": False}, "max_fixes must be a positive integer"),
         ({"rules": "auto"}, "rules must be an object"),
@@ -418,11 +414,6 @@ def test_task_format_is_absent_by_default(tmp_path: Path) -> None:
             r"task_format has unknown placeholder\(s\): \{\{random\}\}",
         ),
         ("WORK-{random}", "task_format has invalid placeholders"),
-        (
-            "WORK-{digit}",
-            r"placeholder \{digit\} was renamed to \{\{digit\}\}: "
-            r"task_format: WORK-\{\{digit\}\}",
-        ),
         ("WORK-{digit", "task_format has invalid placeholders"),
         ("WORK-}digit{", "task_format has invalid placeholders"),
     ],

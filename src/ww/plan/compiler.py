@@ -1305,7 +1305,7 @@ def _merge_annotations(
 
 
 def _with_annotations(item: PlanItem, annotations: ItemAnnotations) -> PlanItem:
-    """Overlay a scoped region exactly as the former region pass did."""
+    """``item`` with the assessment annotations of its scoped region."""
     return replace(
         item,
         assessment_parent=annotations.assessment_parent,

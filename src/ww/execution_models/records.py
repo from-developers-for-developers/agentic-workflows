@@ -32,80 +32,15 @@ from ww.validation import (
     expect_optional_string,
     expect_positive_int,
     expect_string,
+    is_strict_int,
     require_keys,
 )
 from ww.workflow_config import ProvidedVariable
 
-from .decoding import _positive_int_mapping, _renamed_assertion, _variables
+from .decoding import _positive_int_mapping, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 11
-PREVIOUS_EXECUTION_SCHEMA_VERSION = 10
-# Renamed persisted names, read from a version 10 state: a failure kind, and
-# the core value keys a run keeps among its workflow values.
-_FAILURE_KINDS_10 = {"check_proposed": "rules_proposed"}
-_WORKFLOW_VALUES_10 = {"__project": "ww.project.name"}
-_VERIFICATION_STATES_10 = {"approach-approved": "approach_approved"}
-
-
-def _item_execution_10(record: Any) -> Any:
-    """A version 10 item record with renamed states and ``assert`` lists."""
-    if not isinstance(record, dict):
-        return record
-    upgraded = dict(record)
-    verification = record.get("verification")
-    if isinstance(verification, list):
-        upgraded["verification"] = [
-            {**rule, "state": _VERIFICATION_STATES_10[rule["state"]]}
-            if isinstance(rule, dict) and rule.get("state") in _VERIFICATION_STATES_10
-            else rule
-            for rule in verification
-        ]
-    checks = record.get("resolved_checks")
-    if isinstance(checks, list):
-        upgraded["resolved_checks"] = [
-            {
-                **check,
-                "command": {
-                    **check["command"],
-                    "assert": _renamed_assertion(check["command"]["assert"]),
-                },
-            }
-            if isinstance(check, dict)
-            and isinstance(check.get("command"), dict)
-            and "assert" in check["command"]
-            else check
-            for check in checks
-        ]
-    return upgraded
-
-
-def _execution_10_to_11(data: dict[str, Any]) -> dict[str, Any]:
-    """Schema 11 renames ``check_proposed`` and the ``__project`` value.
-
-    Every ww value moved under ``ww.`` (``__project`` is ``ww.project.name``),
-    the failure kind of a run waiting on rule proposals is
-    ``rules_proposed``, a verification rule's ``approach-approved`` state is
-    ``approach_approved``, and a resolved check's ``assert`` is a list of
-    conditions.
-    """
-    upgraded = {**data, "schema_version": 11}
-    kind = data.get("failure_kind")
-    if isinstance(kind, str) and kind in _FAILURE_KINDS_10:
-        upgraded["failure_kind"] = _FAILURE_KINDS_10[kind]
-    values = data.get("workflow_values")
-    if isinstance(values, dict):
-        upgraded["workflow_values"] = {
-            _WORKFLOW_VALUES_10.get(key, key): value for key, value in values.items()
-        }
-    # The history holds the same records: earlier loop rounds, retried
-    # attempts and verification rounds, each upgraded alike.
-    for field_name in ("item_executions", "execution_history"):
-        records = data.get(field_name)
-        if isinstance(records, list):
-            upgraded[field_name] = [_item_execution_10(record) for record in records]
-    return upgraded
-
+EXECUTION_SCHEMA_VERSION = 1
 
 PAIR_SIZE = 2
 
@@ -622,7 +557,6 @@ class PlanItemExecution:
     # Stable across retries of this plan item.  It identifies the external
     # operation whose outcome may be checked after an interrupted process.
     operation_id: str | None = None
-    operation_id_known: bool = True
     model: str | None = None
     reasoning: str | None = None
     selected_agent: str | None = None
@@ -689,7 +623,6 @@ class PlanItemExecution:
             "interaction_ended": self.interaction_ended,
             "chosen": self.chosen,
             "operation_id": self.operation_id,
-            "operation_id_known": self.operation_id_known,
             "model": self.model,
             "reasoning": self.reasoning,
             "selected_agent": self.selected_agent,
@@ -758,9 +691,6 @@ class PlanItemExecution:
             chosen=expect_optional_string(data.get("chosen"), "chosen option"),
             operation_id=expect_optional_string(
                 data.get("operation_id"), "operation_id"
-            ),
-            operation_id_known=expect_bool(
-                data.get("operation_id_known", True), "operation_id_known"
             ),
             model=expect_optional_string(data.get("model"), "execution model"),
             reasoning=expect_optional_string(
@@ -1107,12 +1037,9 @@ class ExecutionState:
     def from_dict(cls, data: Any) -> ExecutionState:
         if not isinstance(data, dict):
             raise ValueError("execution state must be a mapping")
-        schema_version = data.get("schema_version")
-        if schema_version == PREVIOUS_EXECUTION_SCHEMA_VERSION:
-            data = _execution_10_to_11(data)
-            schema_version = data["schema_version"]
-        if schema_version != EXECUTION_SCHEMA_VERSION:
-            raise ValueError(f"unsupported execution state schema: {schema_version!r}")
+        version = data.get("schema_version")
+        if not is_strict_int(version) or version != EXECUTION_SCHEMA_VERSION:
+            raise ValueError(f"unsupported execution state schema: {version!r}")
         required = {
             "schema_version",
             "task_id",

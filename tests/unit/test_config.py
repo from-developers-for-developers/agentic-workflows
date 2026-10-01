@@ -60,20 +60,6 @@ def test_workflow_supports_named_entry_shorthand(tmp_path: Path) -> None:
     )
 
 
-def test_task_format_in_yaml_points_at_the_settings_file(tmp_path: Path) -> None:
-    with pytest.raises(
-        ConfigurationError,
-        match="task_format in ww-agentic-workflows.yaml now lives in "
-        "ww-agentic-workflows.json",
-    ):
-        load_configuration(
-            _write(
-                tmp_path / "ww-agentic-workflows.yaml",
-                "task_format: TASK-{uuid}\nworkflows:\n  - name: task\n    steps: []\n",
-            )
-        )
-
-
 def test_rejects_nested_workflows_at_yaml_boundary(tmp_path: Path) -> None:
     path = _write(
         tmp_path / "ww-agentic-workflows.yaml",
@@ -543,21 +529,7 @@ workflows:
     assert inline.handler.action.payload.commands[0].argv == ("printf", "done")
 
 
-def test_rejects_an_unknown_kind_and_the_old_kind_flags(tmp_path: Path) -> None:
-    with pytest.raises(
-        ConfigurationError, match="prompt was renamed to kind: kind: prompt"
-    ):
-        load_configuration(
-            _write(
-                tmp_path / "ww-agentic-workflows.yaml",
-                """workflows:
-  - task: ~
-    steps:
-      - name: work
-        prompt: true
-""",
-            )
-        )
+def test_rejects_an_unknown_kind(tmp_path: Path) -> None:
     with pytest.raises(
         ConfigurationError, match="kind must be one of: skill, slash_command, prompt"
     ):
@@ -1051,17 +1023,6 @@ workflows:
 @pytest.mark.parametrize(
     ("content", "message"),
     [
-        ("tasks: []\nworkflows: []\n", "legacy 'tasks'"),
-        (
-            """hooks:
-  before_in_progress:
-    - name: check
-workflows:
-  - name: task
-    steps: []
-""",
-            "hooks.before_in_progress was renamed to before_start",
-        ),
         (
             "workflows:\n  - name: task\n    steps:\n      - init: {}\n",
             "shorthand description",
@@ -1105,17 +1066,6 @@ workflows:
             "unknown key",
         ),
         (
-            """handlers:
-  - name: check
-    command: "printf ok"
-workflows:
-  - name: task
-    steps:
-      - name: work
-""",
-            "command was removed",
-        ),
-        (
             """hooks:
   before_complete:
     - handlers: []
@@ -1141,7 +1091,7 @@ workflows:
         ),
     ],
 )
-def test_rejects_legacy_and_ambiguous_schema(
+def test_rejects_ambiguous_schema(
     tmp_path: Path, content: str, message: str
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
@@ -1413,22 +1363,12 @@ workflows:
     [
         ("loop: []\n        break: Done.", "loop must contain at least one step"),
         ("break: Done.", "uses break outside a loop"),
-        ("stop: Done.", "stop is obsolete; use break"),
         ("max_rounds: 3", "max_rounds requires a loop"),
         ("assignment: per_step", "assignment on a step goes beside a loop"),
         (
             "assignment: together\n        loop:\n          - work: Do it.",
             "assignment must be one of: per_round, per_step",
         ),
-        (
-            "assignment: per_iteration\n        loop:\n          - work: Do it.",
-            "per_iteration was renamed to per_round: assignment: per_round",
-        ),
-        (
-            "loop_max_times: 3",
-            "loop_max_times was renamed to max_rounds: max_rounds: 5",
-        ),
-        ("loop_assignment: per_step", "loop_assignment was renamed to assignment"),
         (
             "max_rounds: 0\n        loop:\n          - work: Do it.",
             "max_rounds must be a positive integer",
@@ -1590,27 +1530,6 @@ workflows:
 """,
     )
     with pytest.raises(ConfigurationError, match="must end with its handoff_to"):
-        load_configuration(path)
-
-
-def test_the_removed_handoff_key_names_its_replacement(tmp_path: Path) -> None:
-    path = _write(
-        tmp_path / "ww-agentic-workflows.yaml",
-        """workflows:
-  - name: choose
-    handoff: true
-    steps:
-      - go: ~
-        handoff_to: target
-  - name: target
-    steps:
-      - work: Work.
-""",
-    )
-    with pytest.raises(
-        ConfigurationError,
-        match=r"workflows\[0\]\.handoff was removed: a workflow transition",
-    ):
         load_configuration(path)
 
 
@@ -1834,10 +1753,6 @@ workflows:
             "    scope: project\n    path: docs/{{ww.task.id}}.md\n",
             "project document path cannot use",
         ),
-        (
-            "    path: docs/{task_id}.md\n",
-            "\\{task_id\\} in a document path was renamed to",
-        ),
     ],
 )
 def test_invalid_document_paths_are_rejected(
@@ -1978,16 +1893,6 @@ def test_interactive_page_is_declared_on_per_item_stages_only(tmp_path: Path) ->
     assert collect.items is not None and collect.items.steps[0].ui is True
     assert review.items is not None
     assert [stage.ui for stage in review.items.steps] == [True, False]
-    with pytest.raises(
-        ConfigurationError, match="items.ui was renamed to interactive: page"
-    ):
-        load_configuration(
-            _write(
-                tmp_path / "ww-agentic-workflows.yaml",
-                "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
-                "        items:\n          ui: true\n",
-            )
-        )
     with pytest.raises(ConfigurationError, match="per-item stages only"):
         load_configuration(
             _write(

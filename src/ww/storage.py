@@ -11,17 +11,16 @@ from typing import Any
 
 from ww.config.composition import compose_configuration
 from ww.config_files import (
-    FORMER_RUNTIME_IGNORE_LINES,
     LOCAL_IGNORE_PATTERNS,
     RUNTIME_IGNORE_LINES,
     SETTINGS_FILE,
+    WHOLE_RUNTIME_IGNORE_LINES,
     WORKFLOWS_FILE,
     display_path,
     newline_of,
     user_directory,
     workflow_levels,
 )
-from ww.defaults import GENERATED_LAUNCHERS
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
 from ww.results import NO_WORKFLOWS_ACTION, InitializationResult
@@ -127,22 +126,12 @@ class Storage:
             self.locks.atomic_write(self.project_config_path, project_config)
             created.append(SETTINGS_FILE)
 
-        updated_launcher = (
-            launcher_path.is_file()
-            and launcher_path.read_text(encoding="utf-8") in GENERATED_LAUNCHERS
-        )
-        if updated_launcher:
-            # Written by an earlier ww and never edited: bring it up to date.
-            self.locks.atomic_write(launcher_path, launcher)
-            created.append("ww (updated launcher)")
         for path, content in (
             (instructions_path, agent_instructions),
             (launcher_path, launcher),
             *((self.root / relative, content) for relative, content in skills),
         ):
             relative = str(path.relative_to(self.root))
-            if path == launcher_path and updated_launcher:
-                continue
             if path.exists():
                 preserved.append(relative)
                 continue
@@ -278,7 +267,7 @@ class Storage:
     def _ignore_runtime_directory(self) -> str | None:
         """Keep ``.ww`` out of Git but for the files a team shares.
 
-        Every line that ignores ``.ww`` whole (:data:`FORMER_RUNTIME_IGNORE_LINES`)
+        Every line that ignores ``.ww`` whole (:data:`WHOLE_RUNTIME_IGNORE_LINES`)
         gives way to :data:`RUNTIME_IGNORE_LINES`, written once where the first
         stood; a ``.ww/*`` line gains the re-inclusions it lacks after it, and
         every other line is left alone. Returns what changed, or ``None``.
@@ -395,7 +384,8 @@ class Storage:
 def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
     """``text`` keeping ``.ww`` out of Git but for the shared files.
 
-    Returns the new text, the lines it adds, and the former lines it replaces.
+    Returns the new text, the lines it adds, and the whole-directory lines it
+    replaces.
     A re-inclusion counts only after the last ``.ww/*`` line, since a later
     ``.ww/*`` would ignore the file again. The file's line ending is kept.
     """
@@ -404,15 +394,15 @@ def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ..
     lines = text.splitlines(keepends=True)
     if lines and not lines[-1].endswith(("\n", "\r")):
         lines[-1] += newline
-    former = [
-        line.strip() for line in lines if line.strip() in FORMER_RUNTIME_IGNORE_LINES
+    whole = [
+        line.strip() for line in lines if line.strip() in WHOLE_RUNTIME_IGNORE_LINES
     ]
     added: list[str] = []
-    if former:
+    if whole:
         has_star = star in (line.strip() for line in lines)
         kept: list[str] = []
         for line in lines:
-            if line.strip() not in FORMER_RUNTIME_IGNORE_LINES:
+            if line.strip() not in WHOLE_RUNTIME_IGNORE_LINES:
                 kept.append(line)
             elif not has_star:
                 kept.extend(f"{entry}{newline}" for entry in RUNTIME_IGNORE_LINES)
@@ -433,9 +423,9 @@ def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ..
         lines[position:position] = [f"{entry}{newline}" for entry in missing]
         added.extend(entry for entry in missing if entry not in added)
     updated = "".join(lines)
-    if not former and not added:
+    if not whole and not added:
         return text, (), ()
-    return updated, tuple(added), tuple(dict.fromkeys(former))
+    return updated, tuple(added), tuple(dict.fromkeys(whole))
 
 
 def _read_gitignore(path: Path) -> str:

@@ -409,8 +409,9 @@ When one does, it is deliberate, it is called out in
 [CHANGELOG.md](CHANGELOG.md), and it is rare — the v1 renames (`provide`
 becoming `variables`, every ww value moving under `{{ww.*}}`) are the kind of
 thing, and the sort of change that happens occasionally rather than
-routinely. A removed name is rejected with a message naming its replacement,
-and saved task state is migrated.
+routinely. A changed name is then an unknown key, and saved task state from
+before the change is refused rather than guessed at: finish or reset in-flight
+tasks first.
 
 | Surface | Where it stands |
 | --- | --- |

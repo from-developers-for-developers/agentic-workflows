@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import yaml
 
-from ww.config_files import configuration_file_exists, task_format_moved
+from ww.config_files import configuration_file_exists
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
@@ -105,8 +105,6 @@ def parse_yaml_text(
     current directory.
     """
     raw = _raw_from_text(text, source)
-    if "tasks" in raw:
-        raise ConfigurationError("configuration uses legacy 'tasks'; use 'handlers'")
     base = base if base is not None else Path.cwd()
     modes = _parse_modes(raw.get("modes", []))
     profiles = _parse_profiles(raw.get("profiles", {}))
@@ -162,11 +160,8 @@ def _raw_from_text(text: str, source: str) -> dict[str, Any]:
         "handlers",
         "hooks",
         "workflows",
-        "tasks",
         "rules",
     }
-    if "task_format" in raw:
-        raise ConfigurationError(task_format_moved(source))
     unknown = set(raw) - allowed
     if unknown:
         raise ConfigurationError(
@@ -304,17 +299,11 @@ def _parse_workflow(
         _mapping(data, path),
         path,
         allowed=workflow_keys,
-        # A removed key is never a shorthand name; it is rejected below.
-        ignored={"steps", "handoff"},
+        ignored={"steps"},
     )
     if "workflows" in mapping:
         raise ConfigurationError(
             f"{path}.workflows defines nested workflows, which are not supported"
-        )
-    if "handoff" in mapping:
-        raise ConfigurationError(
-            f"{path}.handoff was removed: a workflow transition (`handoff_to:` "
-            "on the last step) makes a handoff workflow"
         )
     _only(mapping, workflow_keys, path)
     name = _name(mapping, path)

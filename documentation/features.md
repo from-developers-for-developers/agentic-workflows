@@ -68,7 +68,7 @@ which ww records what it learned about the team, the company, and the project:
 those are meant to be committed and shared. Git cannot re-include a file inside
 an ignored directory, which is why the directory's contents are ignored rather
 than the directory. A line that ignores the directory whole, as `.ww/`, `.ww`,
-`/.ww` or `/.ww/` (the first is what earlier ww versions wrote), would keep the
+`/.ww` or `/.ww/`, would keep the
 shared files out too, so every such line is replaced by these lines, written
 once where the first one stood. A `.ww/*` line gains the re-inclusions it
 lacks, right after it; a re-inclusion only counts after the last `.ww/*` line,
@@ -126,10 +126,7 @@ included, and init only adds what those answers leave missing. A flag such as
 
 `enabled` is written to `ww-agentic-workflows.json` only from the repo level's
 own answer: when your user or local settings file already sets it, init
-neither asks nor commits that choice for the team. A `ww/git` setting is never
-added next to its former name: when the repo file's `ww/git` section still
-uses `commit_message` or `use_separate_branch`, init stops before writing and
-names the rename to make, since ww/git refuses both names together.
+neither asks nor commits that choice for the team.
 
 Unless it was shown before, the summary ends with what to allow so your agents
 run ww without asking for confirmation. For each agent set up in the project
@@ -164,21 +161,7 @@ up for you, your team and this project (in Claude Code, `/ww-setup`).
 
 ww reads its configuration from two files at the project root, both named
 after the tool: `ww-agentic-workflows.yaml` for the workflows and
-`ww-agentic-workflows.json` for the project settings. Earlier versions called
-them `workflows.yaml` and `agentic-workflows.json`. ww does not read the former
-names: every command other than `init` stops when it finds one, naming the file
-to rename it to.
-
-```console
-$ ww-agentic-workflows lint
-ww error: found workflows.yaml; rename it to ww-agentic-workflows.yaml, or run init to rename it
-```
-
-`init` performs that rename for an existing project, keeping the file's
-content, and reports it among the created parts as
-`ww-agentic-workflows.yaml (renamed from workflows.yaml)`. When a file exists
-under both names, nothing is renamed and ww stops, asking you to remove the
-former one, since only the new one is read.
+`ww-agentic-workflows.json` for the project settings.
 
 ## Discover how to start a task
 
@@ -200,25 +183,17 @@ it ends with the exact commands to start a task, show a task's instructions,
 check its status, and inspect a workflow's plan. `discover` is read-only and
 leaves no audit record.
 
-A task whose state ww cannot read, such as one written by a build whose state
-schema this build no longer reads, does not break `discover`. It is listed
+A task whose state ww cannot read, such as one written by a build with another
+state schema, does not break `discover`. It is listed
 under "Unreadable tasks" with the error, and `unreadable_tasks` in the JSON
 carries each `task_id` and `reason`. Other tasks and new work are unaffected;
 commands addressing that task keep failing with the same error, and whether to
 repair, reset, or delete its directory is the operator's decision.
 
-A state an earlier build wrote in a format this build still migrates is not
-unreadable: the v1 renames, for example, are applied when a task is read, so a
-run started before them continues. Plan snapshots at schema 17 are upgraded to
-18 (renamed assignment values, the `before_start` phase, `ww.` template
-names, a document path's `{{ww.task.id}}`, and `assert` lists), execution
-state at schema 10 to 11 (`rules_proposed`, the `ww.project.name` value), and
-the rule-automation store from versions 1 and 2 to 3.
-
 ```markdown
 ## Unreadable tasks
 
-- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema_version 14
+- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 2
 
 Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
 ```
@@ -597,13 +572,6 @@ directory; the test suite points it at an empty one so a developer's own
 configuration never leaks into tests. `init` creates the user directory when
 it is missing and lists it under "Created or restored".
 
-Earlier versions called this the machine level and its files
-`ww-agentic-workflows.machine.yaml` and `.machine.json`; ww no longer reads
-those names and stops with an error naming the new one, so rename the files.
-Likewise `WW_MACHINE_CONFIG_DIR` set without `WW_USER_CONFIG_DIR` is an error
-naming the new variable. `init` brings a `./ww` launcher it wrote for the
-machine level up to date.
-
 A lower level extends the levels above it with the same rules as
 [imports](#split-ww-agentic-workflowsyaml-into-several-files), and wins: named
 workflows, modes, documents, handlers, and profiles are replaced one by one,
@@ -831,8 +799,7 @@ env:
 
 `assert` adds a list of output conditions to the root command action, all of
 which must hold: `assert: [empty]`, or `assert: [{equals: clean}]`. A handler
-is one action; use a hook's ordered `handlers` list for multiple commands (the
-former `command` list is rejected with that advice).
+is one action; use a hook's ordered `handlers` list for multiple commands.
 
 `idempotent: true` declares that running the handler again is harmless. It
 changes one thing: when ww is interrupted while the handler runs, the next
@@ -1525,7 +1492,7 @@ instruction points at it while it is in progress. Completing the request with
 the tracker's key creates the child as `EPIC-1/PROJ-456` in its project
 directory, with the identity step already done, and renames the parent's child
 record. Each story is therefore created by its own step with its own retry and
-failure handling: a crash halfway through the split can no longer leave stories
+failure handling: a crash halfway through the split cannot leave stories
 without children, and a retried request that already bound its child simply
 reports the bound task. A child added with an explicit `--id` skips the request,
 as an explicit ID does for `start`.
@@ -1940,9 +1907,7 @@ hook to declare a transition.
 Interpolations use `{{name}}`, with double braces everywhere. Every value ww
 provides lives under `ww.`, so a name without it is always a variable a step
 handed back: `{{ww.task.id}}` is the task's ID and `{{ww.task.workflows}}` the
-ordered workflow-name list, joined by commas. A name from before the `ww.`
-namespace, such as `{{__task_id}}`, `{{metadata.<path>}}`, `{{item.text}}` or
-`{{field.<name>}}`, is an interpolation error that names its replacement.
+ordered workflow-name list, joined by commas.
 The core `{{ww.task.workspace_dir}}` variable is always the canonical directory for
 the task: the project root by default, the configured project directory when a
 task was started with `--project`, or the selected task checkout when an
@@ -2730,8 +2695,7 @@ ww-agentic-workflows add-child TASK-123 --text "Implement the API"
 Without `--id`, ww uses the configured `task_format`, the child's project's
 own when `--project` names one that sets it, else the root's, or the usual
 generated `TASK-<timestamp>` ID when no format is configured. `{{timestamp}}`,
-`{{digit}}`, and `{{uuid}}` are the supported placeholders (the former
-single-brace `{digit}` form is rejected, naming the double-brace one). Supply `--id TASK-123.1` when you
+`{{digit}}`, and `{{uuid}}` are the supported placeholders. Supply `--id TASK-123.1` when you
 want a stable, human-chosen child label instead. When the child workflow's first
 step declares the variable `task_id`, omit `--id` and the child obtains its own ID from that
 step; see [children that bind their own IDs](#children-that-bind-their-own-ids).
@@ -2761,9 +2725,6 @@ history. The parent waits while a child is active. Completing the final child
 automatically resumes and completes the parent's normal lifecycle; the
 collecting step's completion hooks run after its children, and the parent's
 later steps follow.
-
-The earlier spelling, `children: ~` on one step and `workflow_per_child` on a
-later one, is rejected with this replacement named.
 
 ### Per-child parent stages
 
@@ -2987,11 +2948,7 @@ ignored, because a block that silently applies to nothing looks configured and
 is not.
 
 The formats read `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.run}}`,
-and, in `commit_format`, `{{commit_message}}`. The former setting names
-`commit_message` (an alias of `commit_format`) and `use_separate_branch`, and
-the former format tokens `{{task_id}}`, `{{workflow}}`, and `{{run_id}}`, are
-rejected with a message naming the replacement. Settings a run froze before
-the renames keep working: ww/git's `upgrade_settings` converts them.
+and, in `commit_format`, `{{commit_message}}`.
 
 For `ww/git`, `ww-agentic-workflows extension ww/git settings` prints what actually resolved,
 which is the first thing to run after editing the file; `--project <name>`
@@ -3245,13 +3202,6 @@ saved plan participate, preserving lazy discovery. Conflicting overrides are
 configuration errors. The Git extension uses this contract to resolve
 `{{ww.task.workspace_dir}}` from the primary checkout or its recorded worktree.
 
-An extension that renames one of its settings keeps runs started before the
-rename working with `upgrade_settings`, a callable on `Extension` that turns
-the settings a plan froze into the current shape. ww applies it to frozen
-settings only; the live configuration is the extension's to validate, old
-names included. `ww/git` uses it for `commit_message`, `use_separate_branch`,
-and its old format tokens.
-
 New values go in the extension's one `namespace`, an `ExtensionNamespace`
 whose `ExtensionVariable` entries templates read as
 `{{ww.<namespace>.<name>}}`. A namespace is available whenever the root
@@ -3347,17 +3297,8 @@ normal `next` and `complete` responses stay focused on the immediate action.
 
 Successful commands return exit code `0`. Handled `ww` errors and rendered
 failed or interrupted workflow states return `1`. Invalid command-line syntax
-is still reported by `argparse` with exit code `2`. A flag that was renamed
-fails the same way, with one more line naming its replacement, so an old
-command shows its fix: `start --init-artifact` is `--requirements`,
-`complete`/`loop --summary-for-next-step` is `--summary`, `next
---force-reason` is `--reason`, `interact --operator`/`--agent`/`--end-interaction`
-are `--operator-said`/`--agent-said`/`--end`, `add-item`/`update-item --item`
-and `add-child --description` are `--text`, `add-item --reference-to-id` is
-`--refers-to`, `start --branch-naming-strategy` is `--branch-strategy`, `init
---task-id-format` is `--task-format`, `updates --check` is `--now`, and `child
-start` is `start-child`. Abbreviated flags are not accepted, so an old flag
-that prefixes its new name is refused too.
+is still reported by `argparse` with exit code `2`. Abbreviated flags are not
+accepted: every flag is spelled in full.
 
 The task ID may be omitted from `start`. `task_format` in
 `../ww-agentic-workflows.json` then controls generation with `{{timestamp}}`,
@@ -3612,11 +3553,9 @@ tasks.
 
 ## Choosing a runtime
 
-`single` is the default, and an agent reading `discover` used to be told
-little more than that — so it tended to omit `--runtime` and get `single`
-every time, including for workflows written to delegate.
-
-`discover` now makes the choice explicit. Any workflow declaring an `agent`,
+`single` is the default, so an agent told little more than that would omit
+`--runtime` and get `single` every time, including for workflows written to
+delegate. `discover` therefore makes the choice explicit. Any workflow declaring an `agent`,
 `model`, `reasoning`, or `profile` is listed with the steps that declare one
 and a note to start it under `auto`:
 
@@ -3654,8 +3593,8 @@ may also come from the user or local settings file, the local one winning,
 so one checkout can use a development install without changing the shared
 file. Without the key, printed
 commands use `./ww` and the launcher runs `ww-agentic-workflows`. `init` writes
-`"executable": "ww-agentic-workflows"` when the key is missing, and brings a
-launcher an earlier ww wrote up to date; a launcher you edited is left alone.
+`"executable": "ww-agentic-workflows"` when the key is missing, and leaves an
+existing launcher alone.
 
 This is what lets two installs live side by side, for example one checkout for
 developing ww itself, switched between branches often, and another kept on

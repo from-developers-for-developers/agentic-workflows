@@ -49,7 +49,6 @@ from ww.config_files import (
     configuration_file_exists,
     display_path,
     read_configuration_file,
-    task_format_moved,
     workflow_levels,
 )
 from ww.errors import ConfigurationError
@@ -139,8 +138,6 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
             return ComposedConfiguration(text, {}, sources=(label,))
         if not isinstance(root, dict) or not {IMPORTS_KEY, EXTENDS_KEY} & set(root):
             raw = root if isinstance(root, dict) else {}
-            if "task_format" in raw:
-                raise ConfigurationError(task_format_moved(label))
             return ComposedConfiguration(
                 text,
                 raw,
@@ -223,8 +220,6 @@ def _read_file(file: Path, label: str) -> dict[str, Any]:
         raise ConfigurationError(f"invalid YAML in {label}: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{label} must contain a mapping")
-    if "task_format" in raw:
-        raise ConfigurationError(task_format_moved(label))
     return raw
 
 

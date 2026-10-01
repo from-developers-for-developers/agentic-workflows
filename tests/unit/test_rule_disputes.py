@@ -12,7 +12,7 @@ import pytest
 from ww.actions import Commands
 from ww.actions.contracts import CommandDefinition
 from ww.errors import StateError
-from ww.execution_models import EXECUTION_SCHEMA_VERSION, Dispute, PlanItemExecution
+from ww.execution_models import Dispute, PlanItemExecution
 from ww.rule_disputes import DISPUTES_FILE, DisputeEntry, DisputeLog
 from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_views import Orphans, orphans, prune
@@ -22,10 +22,6 @@ def _record(**fields: Any) -> dict[str, Any]:
     record = PlanItemExecution("task:develop", 1).to_dict()
     record.update(fields)
     return record
-
-
-def test_the_state_schema_is_ten() -> None:
-    assert EXECUTION_SCHEMA_VERSION == 11
 
 
 def test_a_dispute_and_waivers_round_trip_on_the_record() -> None:

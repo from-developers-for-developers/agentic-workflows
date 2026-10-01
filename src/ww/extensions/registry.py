@@ -212,18 +212,6 @@ class ExtensionRegistry:
             ) from error
         return settings
 
-    def frozen_settings(
-        self, identifier: str, settings: Mapping[str, object]
-    ) -> dict[str, object]:
-        """A detached copy of settings a plan froze, in the current shape.
-
-        The extension's ``upgrade_settings`` turns what an earlier version of
-        it froze into what it reads now.
-        """
-        frozen = deepcopy(dict(settings))
-        upgrade = self.get(identifier).upgrade_settings
-        return dict(upgrade(frozen)) if upgrade is not None else frozen
-
     @property
     def extensions(self) -> tuple[Extension, ...]:
         """Load all extensions for an explicit full-catalog request."""
@@ -346,7 +334,7 @@ class ExtensionRegistry:
                 root=self.root,
                 store=self.store(identifier),
                 config=(
-                    self.frozen_settings(identifier, frozen_settings)
+                    deepcopy(dict(frozen_settings))
                     if frozen_settings is not None
                     else self.settings(identifier)
                 ),

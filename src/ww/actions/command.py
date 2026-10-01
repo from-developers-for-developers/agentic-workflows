@@ -42,11 +42,10 @@ def _failure_message(
 ) -> str:
     """Say what failed and show what it printed, on whichever stream it used.
 
-    Only stderr used to be reported. Test runners, linters, and type checkers
-    overwhelmingly print their diagnostics to stdout, so the commonest failure
-    in ww produced "automatic handler failed (1):" and nothing else -- leaving
-    the operator, who has to choose between retrying and forcing past it,
-    with no basis for the decision.
+    Test runners, linters, and type checkers overwhelmingly print their
+    diagnostics to stdout, so reporting stderr alone would leave the operator,
+    who has to choose between retrying and forcing past a failure, with no
+    basis for the decision.
     """
     detail = outcome.stderr.strip() or outcome.stdout.strip()
     command = shlex.join(rendered) if rendered else ""
@@ -323,16 +322,6 @@ def _parse_assertion(raw: object, path: str) -> AssertionDefinition:
     A condition is ``empty`` or ``{equals: <value>}``.
     """
     context = f"{path}.assert"
-    if isinstance(raw, dict) and "operator" in raw:
-        example = (
-            "[empty]"
-            if raw.get("operator") == "empty"
-            else f"[{{equals: {raw.get('expected')}}}]"
-        )
-        raise ConfigurationError(
-            f"{context} {{operator: ...}} was renamed to a list of conditions: "
-            f"assert: {example}"
-        )
     if not isinstance(raw, list) or not raw:
         raise ConfigurationError(
             f"{context} must be a non-empty list of conditions, such as "
@@ -366,11 +355,6 @@ def _parse_assertion(raw: object, path: str) -> AssertionDefinition:
 def _parse_command(
     mapping: dict[str, Any], path: str
 ) -> tuple[tuple[CommandDefinition, ...], AssertionDefinition | None]:
-    if "command" in mapping:
-        raise ConfigurationError(
-            f"{path}.command was removed: run several commands as a hook's "
-            "handlers list, one argv or shell each"
-        )
     action_keys = {"argv", "shell"} & set(mapping)
     if not action_keys:
         if {"args", "env", "assert", "idempotent"} & set(mapping):

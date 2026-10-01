@@ -30,7 +30,7 @@ def test_execution_logs_are_owner_readable_even_when_an_older_log_is_not(
     storage = Storage(tmp_path)
     log = tmp_path / ".ww" / "executions.jsonl"
     log.parent.mkdir(parents=True)
-    log.write_text('{"legacy": true}\n', encoding="utf-8")
+    log.write_text('{"existing": true}\n', encoding="utf-8")
     log.chmod(0o644)
 
     storage.append_log({"invocation_id": "new"})

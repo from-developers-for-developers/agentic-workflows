@@ -87,17 +87,6 @@ def test_last_children_step_leaves_the_workflow_summary_alone(tmp_path: Path) ->
     ("steps", "extra", "message"),
     [
         (
-            "      - split: Split it.\n        children: ~\n",
-            CHILD,
-            "`children: ~` was replaced by a mapping",
-        ),
-        (
-            "      - split: Split it.\n        children:\n          workflow: child\n"
-            "      - run: ~\n        workflow_per_child: child\n",
-            CHILD,
-            "workflow_per_child was removed; collect and run the children",
-        ),
-        (
             "      - split: Split it.\n        children: child\n",
             CHILD,
             "children must be a mapping",

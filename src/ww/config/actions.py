@@ -35,7 +35,6 @@ from .values import (
     _optional_agent,
     _optional_bool,
     _optional_string,
-    _reject_renamed,
     _unique,
 )
 
@@ -52,38 +51,11 @@ HOOK_PHASES: tuple[HookPhase, ...] = (
 CORE_ACTION_TYPES = frozenset({"loop", "workflow_transition", "child_workflow"})
 # The agent action kinds ``kind`` chooses between.
 ACTION_KINDS: tuple[RequestedActionKind, ...] = ("skill", "slash_command", "prompt")
-# Handler keys that were renamed, with the new name and an example of it.
-RENAMED_HANDLER_KEYS = {
-    "skill": ("kind", "kind: skill"),
-    "slash_command": ("kind", "kind: slash_command"),
-    "prompt": ("kind", "kind: prompt"),
-    "provide": ("variables", "variables: [<name>: <description>]"),
-    "outputs": ("variables", "variables: [<name>]"),
-    "update_metadata": ("saves", "saves: [metadata.<path>: <description>]"),
-    "update_document": ("saves", "saves: [documents.<name>: <description>]"),
-    "update_item": ("saves", "saves: [item.field.<name>: <description>]"),
-    "workflow": ("handoff_to", "handoff_to: <workflow>"),
-}
-RENAMED_HOOK_PHASES = {"before_in_progress": ("before_start", "before_start: [...]")}
 # The prefixes of ``saves`` entries; the prefix is the kind and scope of the
 # saved value, the rest its storage path.
 _SAVE_PREFIXES = ("metadata.", "project_metadata.", "documents.", "item.field.")
 _METADATA_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*")
 _VARIABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
-
-
-# Removed handler keys, never read as an entry's shorthand name.
-_REMOVED_HANDLER_KEYS = frozenset({*RENAMED_HANDLER_KEYS, "command"})
-
-
-def reject_removed_handler_keys(mapping: dict[str, Any], path: str) -> None:
-    """Reject handler keys ww no longer reads, naming what replaced them."""
-    if "command" in mapping:
-        raise ConfigurationError(
-            f"{path}.command was removed: run several commands as a hook's "
-            "handlers list, one argv or shell each"
-        )
-    _reject_renamed(mapping, path, RENAMED_HANDLER_KEYS)
 
 
 def _parse_handler(
@@ -95,7 +67,6 @@ def _parse_handler(
     allowed_extra: set[str] | None = None,
 ) -> HandlerDefinition:
     """Parse one handler; ``transition`` admits the ``handoff_to`` key on a step."""
-    reject_removed_handler_keys(mapping, path)
     _only(
         mapping,
         _handler_keys()
@@ -264,7 +235,6 @@ def _parse_hooks(data: Any, scope: HookScope, path: str) -> tuple[HookDefinition
     if data is None:
         return ()
     mapping = _mapping(data, path)
-    _reject_renamed(mapping, path, RENAMED_HOOK_PHASES)
     _only(mapping, set(HOOK_PHASES), path)
     result: list[HookDefinition] = []
     for phase in HOOK_PHASES:
@@ -294,10 +264,9 @@ def _parse_hook(
     mapping = _named_entry(
         mapping,
         path,
-        allowed=allowed | _REMOVED_HANDLER_KEYS,
+        allowed=allowed,
         ignored={"workflows", "steps", "on_failure"},
     )
-    reject_removed_handler_keys(mapping, path)
     _only(mapping, allowed, path)
     on_failure = _on_failure(mapping, path, "operator")
     if "handlers" in mapping:
@@ -360,7 +329,7 @@ def _parse_hook_member(
     mapping = _named_entry(
         _mapping(data, path),
         path,
-        allowed=_handler_keys() | {"handoff_to", "on_failure"} | _REMOVED_HANDLER_KEYS,
+        allowed=_handler_keys() | {"handoff_to", "on_failure"},
         ignored={"on_failure"},
     )
     failure = _on_failure(mapping, path, group_failure)
@@ -372,7 +341,7 @@ def _parse_hook_handler(data: Any, path: str) -> HandlerDefinition:
     mapping = _named_entry(
         _mapping(data, path),
         path,
-        allowed=_handler_keys() | {"handoff_to"} | _REMOVED_HANDLER_KEYS,
+        allowed=_handler_keys() | {"handoff_to"},
     )
     if _bare_extension_reference(mapping):
         return extension_reference(mapping, path)

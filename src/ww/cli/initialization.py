@@ -12,12 +12,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from ww.config.composition import compose_configuration
-from ww.config_files import SETTINGS_FILE, runtime_ignored, settings_levels
+from ww.config_files import runtime_ignored, settings_levels
 from ww.defaults import SKILLS, WW_SKILL_NAME, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
 from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
-from ww.extensions import ExtensionRegistry
 from ww.hooks import (
     HOOK_AGENTS,
     HookInstallError,
@@ -189,8 +188,6 @@ def _initialization_options(
     storage: Storage, args: argparse.Namespace
 ) -> tuple[str, str, bool, tuple[tuple[str, str], ...]]:
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
-    if (storage.root / ".git").exists():
-        _refuse_renamed_git_settings(storage)
     # ``--force`` reopens the remembered questions only where it can ask them
     # again; without a terminal the remembered answers stand, and init adds
     # only what they leave missing.
@@ -614,9 +611,9 @@ def _choose_agent_directories(
 def _ask_directory(prompt: str) -> str | None:
     """Read a directory path, refusing an answer to the previous question.
 
-    This prompt follows a ``[y/N]`` one, and a stray ``y`` used to be accepted
-    as the directory's name: ww then created a directory called ``y`` and
-    recorded it in the project configuration without complaint.
+    This prompt follows a ``[y/N]`` one, and a stray ``y`` accepted as the
+    directory's name would create a directory called ``y`` and record it in
+    the project configuration without complaint.
     """
     while True:
         value = input(prompt).strip()
@@ -671,34 +668,6 @@ def _configured_task_format(storage: Storage) -> bool:
     except ConfigurationError:
         return False
     return bool(raw.get("task_format"))
-
-
-def _refuse_renamed_git_settings(storage: Storage) -> None:
-    """Stop before init adds a ww/git setting next to its former name.
-
-    The repo file's ``ww/git`` section may still use a name ww/git has since
-    renamed; adding the new name beside it would leave both, which ww/git
-    refuses. The extension's own upgrade says which names were renamed.
-    """
-    existing = _existing_git_settings(storage)
-    if not existing:
-        return
-    upgrade = ExtensionRegistry.discover(storage.root).frozen_settings
-    renamed = [
-        (key, new)
-        for key, value in existing.items()
-        for new in upgrade(GIT_EXTENSION, {key: value})
-        if new != key
-    ]
-    if renamed:
-        raise ConfigurationError(
-            "; ".join(
-                f"{GIT_EXTENSION} {old} in {SETTINGS_FILE} was renamed to {new}"
-                for old, new in renamed
-            )
-            + "; rename it there and run init again, which adds no setting "
-            "next to its former name"
-        )
 
 
 def _existing_git_settings(storage: Storage) -> dict[str, object]:

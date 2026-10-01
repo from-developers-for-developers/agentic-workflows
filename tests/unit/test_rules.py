@@ -542,7 +542,6 @@ def test_assert_empty_parses_and_holds_only_on_blank_output(tmp_path: Path) -> N
         ("[]", "must be a non-empty list of conditions"),
         ("[{equals: ''}]", "equals must be a non-empty string"),
         ("[{contains: x}]", "unknown key"),
-        ("{operator: empty}", "was renamed to a list of conditions"),
     ],
 )
 def test_assert_condition_errors(tmp_path: Path, assertion: str, message: str) -> None:
@@ -974,7 +973,6 @@ workflows:
     assert item.checks[0].command.assertion == EMPTY
     snapshot = PlanSnapshot(PLAN_SCHEMA_VERSION, "test", "digest", "now", plan)
     assert PlanSnapshot.from_dict(snapshot.to_dict()).plan.to_dict() == plan.to_dict()
-    assert PLAN_SCHEMA_VERSION == 18
 
 
 def test_a_plan_without_rules_serializes_as_before(tmp_path: Path) -> None:

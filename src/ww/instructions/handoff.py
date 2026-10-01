@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The "Handoff to manager" block, built by ww when an assignment ends.
 
-A delegated worker used to end its turn with free text for the manager. The
-facts of the assignment are all in the saved state, so ww reports them itself:
+The facts of a delegated worker's assignment are all in the saved state, so ww
+reports them to the manager itself rather than leaving it to the worker's text:
 the items performed and how each ended, the artifacts, the files changed,
 the checks run and waived, and the fix rounds. The worker's judgment reaches
 the manager only through its short ``--summary``, and the

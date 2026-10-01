@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
 from importlib import util
@@ -102,51 +101,6 @@ def test_defaults_apply_when_nothing_is_configured() -> None:
 @pytest.mark.parametrize(
     ("config", "message"),
     [
-        (
-            {"commit_message": "Commit {{ww.task.id}}: {{commit_message}}"},
-            "commit_message was renamed to commit_format",
-        ),
-        (
-            {"use_separate_branch": True},
-            "use_separate_branch was renamed to separate_branch",
-        ),
-        (
-            {"branch_name_formats": {"default": "feature/{{task_id}}"}},
-            "{{task_id}} was renamed to {{ww.task.id}}",
-        ),
-    ],
-)
-def test_renamed_settings_are_rejected_naming_their_replacement(
-    config: dict[str, object], message: str
-) -> None:
-    with pytest.raises(ConfigurationError, match=re.escape(message)):
-        git_extension.settings_from(config)
-
-
-def test_frozen_settings_are_upgraded_to_the_current_names() -> None:
-    upgraded = git_extension.upgrade_settings(
-        {
-            "commit_message": "{{task_id}}: {{commit_message}}",
-            "use_separate_branch": True,
-            "branch_name_formats": {"default": "feature/{{task_id}}/{{workflow}}"},
-            "worktree_name_format": "{{task_id}}-{{run_id}}",
-        }
-    )
-
-    assert upgraded == {
-        "commit_format": "{{ww.task.id}}: {{commit_message}}",
-        "separate_branch": True,
-        "branch_name_formats": {
-            "default": "feature/{{ww.task.id}}/{{ww.task.workflow}}"
-        },
-        "worktree_name_format": "{{ww.task.id}}-{{ww.task.run}}",
-    }
-    assert git_extension.settings_from(upgraded).separate_branch is True
-
-
-@pytest.mark.parametrize(
-    ("config", "message"),
-    [
         ({"commit_format": "{{unknown}}: {{commit_message}}"}, "unknown placeholder"),
         ({"commit_format": "{{ww.task.id}}: subject"}, "commit_message"),
         (
@@ -180,7 +134,6 @@ def test_an_unknown_setting_is_rejected() -> None:
         ({"base_branches": {"default": {"shell": "echo main"}}}, "containing argv"),
         ({"base_branches": {"default": {"argv": []}}}, "non-empty array"),
         ({"base_branches": []}, "map workflow names, or default, to base"),
-        ({"base_branch": "main"}, 'is now the "default" entry of base_branches'),
         (
             {"base_branches": {"task": {"argv": ["echo", ""]}}},
             "non-empty array",

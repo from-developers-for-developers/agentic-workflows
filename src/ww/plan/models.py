@@ -542,7 +542,7 @@ class PlanItem:
             "assessment_outcomes": list(self.assessment_outcomes),
             "assessment_parent": self.assessment_parent,
             "assessment_outcome": self.assessment_outcome,
-            # Written only when set, so earlier plans keep their exact form.
+            # Written only when set: a plan without stops has no such key.
             **(
                 {"assessment_stops": list(self.assessment_stops)}
                 if self.assessment_stops

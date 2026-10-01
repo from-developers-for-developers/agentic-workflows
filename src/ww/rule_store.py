@@ -26,7 +26,6 @@ the command that changes it and never the other way round.
 
 from __future__ import annotations
 
-import copy
 import json
 import re
 from collections.abc import Callable
@@ -45,19 +44,11 @@ from ww.validation import (
     expect_literal,
     expect_optional_string,
     expect_string,
+    is_strict_int,
 )
 
 STORE_FILE = RULE_AUTOMATION_FILE
-STORE_SCHEMA_VERSION = 3
-# Version 1 had no approver fields; its approvals read as "unknown approver".
-# Versions 1 and 2 spelled statuses with hyphens and ``assert`` as one
-# ``{operator, expected}`` mapping; reading them upgrades both.
-READABLE_SCHEMA_VERSIONS = frozenset({1, 2, STORE_SCHEMA_VERSION})
-_OLD_RULE_STATUSES = {
-    "approach-proposed": "approach_proposed",
-    "approach-approved": "approach_approved",
-    "not-convertible": "not_convertible",
-}
+STORE_SCHEMA_VERSION = 1
 # Who approved a proposal: the operator, or ww under ``rules.approval``.
 RuleApprover = Literal["operator", "auto"]
 # A check name: short, lower-case, kebab-case.
@@ -375,18 +366,16 @@ class RuleAutomation:
     def from_dict(cls, data: Any) -> RuleAutomation:
         if not isinstance(data, dict):
             raise ValueError("the rule automation store must be an object")
-        if data.get("schema_version") not in READABLE_SCHEMA_VERSIONS:
+        version = data.get("schema_version")
+        if not is_strict_int(version) or version != STORE_SCHEMA_VERSION:
             raise ValueError(
-                "unsupported rule automation schema: "
-                f"{data.get('schema_version')!r}"
+                f"unsupported rule automation schema: {version!r}"
             )
         unknown = set(data) - {"schema_version", "rules", "checks"}
         if unknown:
             raise ValueError(
                 "unknown rule automation keys: " + ", ".join(sorted(unknown))
             )
-        if data["schema_version"] != STORE_SCHEMA_VERSION:
-            data = _store_2_to_3(data)
         rules = data.get("rules", {})
         checks = data.get("checks", {})
         if not isinstance(rules, dict) or not isinstance(checks, dict):
@@ -406,40 +395,6 @@ class RuleAutomation:
                 for key, value in checks.items()
             },
         )
-
-
-def _store_2_to_3(data: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade a version 1 or 2 store: snake_case statuses, ``assert`` lists.
-
-    ``{operator: empty}`` becomes ``[empty]`` and ``{operator: eq, expected:
-    X}`` becomes ``[{equals: X}]``; anything else is left for the strict
-    decoders to reject.
-    """
-    upgraded = copy.deepcopy(data)
-    rules = upgraded.get("rules")
-    if isinstance(rules, dict):
-        for entry in rules.values():
-            if isinstance(entry, dict) and entry.get("status") in _OLD_RULE_STATUSES:
-                entry["status"] = _OLD_RULE_STATUSES[entry["status"]]
-    checks = upgraded.get("checks")
-    if isinstance(checks, dict):
-        for entry in checks.values():
-            if isinstance(entry, dict):
-                _upgrade_assert(entry)
-                if isinstance(entry.get("pending"), dict):
-                    _upgrade_assert(entry["pending"])
-    upgraded["schema_version"] = STORE_SCHEMA_VERSION
-    return upgraded
-
-
-def _upgrade_assert(spec: dict[str, Any]) -> None:
-    value = spec.get("assert")
-    if not isinstance(value, dict):
-        return
-    if value == {"operator": "empty"}:
-        spec["assert"] = ["empty"]
-    elif value.get("operator") == "eq" and set(value) == {"operator", "expected"}:
-        spec["assert"] = [{"equals": value["expected"]}]
 
 
 class RuleStore:

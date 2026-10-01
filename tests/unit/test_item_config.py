@@ -184,21 +184,6 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
             "items.assignment must be one of: together, per_item, per_step",
         ),
         (
-            "      - review: Review.\n"
-            "        items:\n          assignment: all_items\n",
-            "all_items was renamed to together: assignment: together",
-        ),
-        (
-            "      - review: Review.\n"
-            "        items:\n          item_assignment: per_item\n",
-            "items.item_assignment was renamed to assignment",
-        ),
-        (
-            "      - review: Review.\n"
-            "        items:\n          shared: true\n",
-            "items.shared was renamed to persistent: persistent: true",
-        ),
-        (
             "      - review: Review.\n        items:\n          unknown: 1\n",
             "unknown key\\(s\\): unknown",
         ),
@@ -215,10 +200,6 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
         (
             "      - review: Review.\n        items: ~\n        item_phase: analyze\n",
             "cannot combine items with item_phase",
-        ),
-        (
-            "      - review: Review.\n        process_item: ~\n",
-            "process_item was renamed to item_phase: item_phase: analyze",
         ),
         (
             "      - review: Review.\n        item_phase: triage\n",
@@ -399,10 +380,6 @@ def test_phase_guidance_extends_the_built_in_stage(tmp_path: Path) -> None:
         (
             "          resolve: ~\n",
             "items.resolve must be a non-empty string",
-        ),
-        (
-            "          report_item: Reply.\n",
-            "items.report_item was renamed to report: report: <guidance>",
         ),
     ],
 )

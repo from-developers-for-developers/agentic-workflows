@@ -2,8 +2,6 @@
 
 `../ww-agentic-workflows.yaml` defines what `ww` workflows do. The file is strict: unknown
 keys, invalid types, and invalid references are errors.
-The former name `workflows.yaml` is not read; ww stops when it finds that file
-and `init` renames it.
 
 ## Common types
 
@@ -22,9 +20,6 @@ and `init` renames it.
   `{{ww.metadata.<path>}}`, `{{ww.project_metadata.<path>}}`, on a per-item
   stage `{{ww.item.id}}`, `{{ww.item.text}}`, and `{{ww.item.field.<name>}}`
   for the stage's own item, and on a per-child stage `{{ww.child.*}}`. A
-  name from before the `ww.` namespace (`{{__task_id}}`, `{{metadata.x}}`,
-  `{{item.text}}`, `{{field.x}}`, ...) is an interpolation error naming its
-  replacement. A
   configured extension may add values under `{{ww.<namespace>.<name>}}`:
   with `ww/git` listed in the settings, `{{ww.git.branch}}` (the task's
   branch), `{{ww.git.base_branch}}` (the branch it was created from) and
@@ -52,10 +47,7 @@ Names must be unique within their catalog or sibling step list.
 
 The generated task ID format, `task_format`, is not a key of this file: it
 lives in `ww-agentic-workflows.json` (see the features guide), and a
-`task_format` key in any YAML file, at any level or in an import, is an error
-naming that file.
-
-The legacy root key `tasks` is rejected.
+`task_format` key in a YAML file is an unknown key.
 
 ## Imports
 
@@ -114,10 +106,7 @@ Workflows come from up to three levels, applied top to bottom:
 The repo file is what makes a directory a ww project; a user file alone
 never does. A level is its root file plus the files that root imports, and
 each level may use `imports` as described above. `init` creates the user
-directory when it is missing. A user directory that still holds
-`ww-agentic-workflows.machine.yaml` or `.machine.json`, the names of an earlier
-ww, is an error naming the new file, and so is `WW_MACHINE_CONFIG_DIR` set
-without `WW_USER_CONFIG_DIR`.
+directory when it is missing.
 
 - Levels fold in order, user first, each level's imports before its root
   file, with the same rules as imports: a lower level overrides the levels
@@ -269,8 +258,7 @@ syntax. `enabled` is `true` (the default: agents use ww for project work),
 or `"on_request"` (ww stays available, but agents use it only when the user
 explicitly asks for it; `discover` says so before its full catalog and reports
 `"enabled": "on_request"` in JSON); any other value is an error naming the three.
-`max_rounds` is a positive integer and defaults to `3`; the former
-`loop_max_times` is rejected with a message naming it. The file may
+`max_rounds` is a positive integer and defaults to `3`. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
@@ -371,8 +359,7 @@ documents:
 ```
 
 `path` places a document outside `.ww`. It is relative to the project root and
-must stay inside it; a task-scoped path may use `{{ww.task.id}}` (the former
-single-brace `{task_id}` is rejected). When a run has a
+must stay inside it; a task-scoped path may use `{{ww.task.id}}`. When a run has a
 working directory, such as a Git worktree, a task-scoped `path` resolves inside
 that directory, so a document kept in the repository lands on the task's
 branch; a project-scoped `path` always resolves against the project root. A
@@ -422,7 +409,7 @@ A step accepts every [handler key](#handlers), plus:
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
 | `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. In `auto` the manager completes a `manager` step with `complete --role manager` (or `loop --role manager`), and `complete` or `loop` with `--role worker` on it is refused. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
-| `interactive` | `true`, `false`, or `page` | `true`: the step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. `page`: the operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends; valid on one per-item stage per `items` step. Defaults to `false`. The former `ui: true` is rejected naming `interactive: page`. |
+| `interactive` | `true`, `false`, or `page` | `true`: the step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. `page`: the operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends; valid on one per-item stage per `items` step. Defaults to `false`. |
 | `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `steps` | list of steps | Nested ordered steps. |
 | `loop` | non-empty list of steps | Repeats ordinary nested steps until an authorized worker stops it. |
@@ -433,7 +420,7 @@ A step accepts every [handler key](#handlers), plus:
 | `artifact` | boolean | Whether agent completion requires an artifact; default `true`. |
 | `artifact_from` | name | Earlier artifact-producing step whose artifact is supplied to this step: an earlier sibling, or an earlier step of an enclosing level, the nearest one first. Inside assessment outcomes the assessment itself is eligible, and inside per-item stages the `items` step, each supplying its own artifact; an enclosing loop or group is not. A plain group, or an assessment named after its outcomes, supplies the artifact of the latest step inside it (inside the chosen outcome) that saved one in its current round (inside a loop, the loop's current iteration only), and needs some step inside that can save one; when none did, an assessment supplies its own artifact if it saved one, and otherwise the step is told that no artifact is available. An assessment whose outcomes cannot save an artifact supplies its own. |
 | `items` | `null`, string, or mapping | Collects work items, then runs per-item stages for each; see [Items](#items). |
-| `handoff_to` | workflow name or `{{variable}}` | Makes the workflow a handoff workflow and ends it by starting that workflow as the task's next run. A workflow has at most one transition, and nothing may follow it: valid only on the last top-level step (with no completion hook applying to it), with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). A `workflow:` key on a step is rejected naming `handoff_to`; `workflow` only runs a child, under `children`. |
+| `handoff_to` | workflow name or `{{variable}}` | Makes the workflow a handoff workflow and ends it by starting that workflow as the task's next run. A workflow has at most one transition, and nothing may follow it: valid only on the last top-level step (with no completion hook applying to it), with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). `workflow` only runs a child, under `children`. |
 | `item_phase` | `analyze`, `resolve`, or `report` | On a per-item stage: the standard item fields the stage fills, the analysis (`processed_item`), the solution and `resolved`, or `reported`. |
 | `children` | mapping | Collects child tasks with the step's own action, then runs every child with one workflow, or runs the parent's own stages once per child; see [Children](#children). |
 | `handler` | handler name | Copies a root handler definition into this step; the step keeps its own name and any explicit step fields override the copied values. A step with no content of its own, `- fetch_requirements: ~`, and a root handler of the same name copies that handler implicitly. |
@@ -472,8 +459,8 @@ reports `awaiting_operator` with `operator_reason: loop_limit` and a warning
 that must be escalated to the user for manual resolution, and shows the operator's exit, `next --force --reason`,
 which leaves the loop and continues with the steps after it.
 
-`max_rounds` is invalid without `loop`. The obsolete `stop` spelling is
-rejected; use `break` for a worker-controlled loop exit.
+`max_rounds` is invalid without `loop`; use `break` for a worker-controlled
+loop exit.
 
 ```yaml
 - code-review-in-a-loop: ~
@@ -512,9 +499,7 @@ The run is compiled as a ww-owned item nested under the collecting step,
 finished. A workflow may contain at most one `children` step, and a children
 step cannot sit inside per-item stages; the named workflow must exist and
 cannot itself use `children` (child tasks are one level deep). `children`
-cannot be combined with the step's own `handoff_to` transition. The former
-`children: ~` marker and the `workflow_per_child` key are rejected with the
-replacement named.
+cannot be combined with the step's own `handoff_to` transition.
 
 `add-child <task> [--id ID] --text TEXT [--project NAME] [--field
 NAME=VALUE]...` records a child during the collecting step; `--field` gives it
@@ -742,10 +727,7 @@ A workflow may contain at most one `items` step, at any nesting level. This is
 an intentional limitation: collected items belong to the workflow run, and ww
 expands every per-item stage in one place when collection completes. An `items`
 step cannot also declare `steps`, `loop`, `item_phase`, or child
-tasks. The former `steps_per_item` key is not accepted, and the renamed
-`item_assignment`, `shared`, `process_item`, `resolve_item`, `report_item`,
-`update_metadata`, `update_document`, `update_item`, and `ui` are rejected
-naming their replacement.
+tasks.
 
 ## Handlers
 
@@ -839,16 +821,8 @@ An action uses one form: `kind` (`skill`, `slash_command`, or `prompt`),
 `mcp`, `argv`, `shell`, or the registry form `action`. These forms cannot be
 combined. `kind: prompt` explicitly selects plain agent work. With no explicit
 action, `ww` resolves the name as a project skill,
-slash command, or ordinary agent prompt, in that order. The former boolean
-keys `skill: true`, `slash_command: true`, and `prompt: true` are rejected
-naming `kind`, and the former `command` list is rejected: run several commands
-as a hook's `handlers` list, one `argv` or `shell` each.
-
-A removed or renamed key is rejected at load with one message naming its
-replacement, in the form `<path>.<old> was renamed to <new>: <example>`, for
-example `workflows[0].steps[2].loop_max_times was renamed to max_rounds:
-max_rounds: 5`. A removed value names the new value (`assignment: all_items`
-names `together`). No old name keeps working.
+slash command, or ordinary agent prompt, in that order. To run several
+commands, use a hook's `handlers` list, one `argv` or `shell` each.
 
 ### Variables
 
@@ -867,8 +841,7 @@ variables:
 
 Names must be unique in the list and may not start with `ww` as their first
 dot-separated segment, or with `__`: those are ww's own values. Dots are
-allowed in a name. The former `provide` and `outputs` keys are rejected naming
-`variables`.
+allowed in a name.
 
 ### Assessments
 
@@ -948,8 +921,7 @@ Within one action, paths must be unique, and metadata paths in the same scope
 cannot overlap (for example `metadata.jira` and `metadata.jira.issue_id`).
 `project_metadata.ww` and every path under it are reserved for ww's own state,
 such as `ww.setup.done`, and rejected.
-Only agent-owned actions can save. The former `update_metadata`,
-`update_document`, and `update_item` keys are rejected naming `saves`.
+Only agent-owned actions can save.
 
 ## Commands
 
@@ -980,8 +952,7 @@ assert:
 
 `assert` is a non-empty list of conditions that must all hold: `empty`, which
 requires the output to be empty or whitespace, and `{equals: <value>}`, a
-non-empty string the whole output must equal. The former
-`{operator: eq, expected: ...}` mapping is rejected naming the list form:
+non-empty string the whole output must equal:
 
 ```yaml
 shell: grep -l TODO $WW_STEP_CHANGED_FILES || true
@@ -994,7 +965,7 @@ A hooks mapping (workflow hooks; the agent's own hooks are `ww hook`, see
 agent-hooks.md) accepts these lifecycle phases, each containing a list:
 
 - `before_start_workflow`
-- `before_start` (the former `before_in_progress` is rejected naming it)
+- `before_start`
 - `before_complete`
 - `after_complete`
 - `before_complete_workflow`
@@ -1318,7 +1289,7 @@ files; only the operator's `rules` write commands do.
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 1,
   "rules": {
     "9f2a…": {
       "text": "Controllers must not instantiate services; inject them.",
@@ -1362,12 +1333,8 @@ check runs. On both maps, `proposed_in` is the verification item that last
 reported on the entry and `proposed_run` its run, as `<task>/<run>`;
 `approved_by` (`operator` or `auto`) and `approved_in` (`<task>/<run>`) record
 who approved an approach, a picked reading, or a check, and in which run.
-Versions 1 and 2 of the store are still read and upgraded: version 1 has no
-approver fields, so its approvals read with an unknown approver, and both
-spell statuses with hyphens (`approach-proposed`) and `assert` as one
-`{operator, expected}` mapping, which become the snake_case statuses and the
-`assert` list; ww writes version 3. An unknown key, status, or
-`schema_version` is an error.
+ww reads and writes `schema_version` 1 of the store. An unknown key, status,
+or `schema_version` is an error.
 
 ### Rule commands
 
@@ -1379,7 +1346,7 @@ spell statuses with hyphens (`approach-proposed`) and `assert` as one
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
-| `rules add <group> --text "<text>" [--paths <glob>...] [--check-shell "<sh>" \| --check-argv <arg>...] [--assert empty\|equals:<value>]... [--id <stem>]` | Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. `--assert` is repeatable, one condition each; the former `eq:<value>` is refused naming `equals:<value>`. |
+| `rules add <group> --text "<text>" [--paths <glob>...] [--check-shell "<sh>" \| --check-argv <arg>...] [--assert empty\|equals:<value>]... [--id <stem>]` | Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. `--assert` is repeatable, one condition each. |
 | `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |
 | `rules edit <id> [--text "<text>"] [--paths <glob>...]` | Replaces a rule file's body, its `paths`, or both, keeping every other byte; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
 | `rules move <id> <group>` | Moves the rule file unchanged into the group's first directory; the rule's ID becomes `<group>/<stem>`. |

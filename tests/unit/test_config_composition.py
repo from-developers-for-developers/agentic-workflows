@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Composing ww-agentic-workflows.yaml from its imports and configuration levels."""
 
-import re
 from pathlib import Path
 
 import pytest
@@ -72,32 +71,6 @@ def test_the_root_overrides_the_last_import_which_overrides_the_first(
         "banner from first.yaml is overridden by second.yaml.",
         "banner from second.yaml is overridden by ww-agentic-workflows.yaml.",
     ]
-
-
-@pytest.mark.parametrize("where", ["root", "import", "user", "local"])
-def test_task_format_in_any_yaml_file_points_at_the_settings_file(
-    user: Path, repo: Path, where: str
-) -> None:
-    files = {
-        "root": repo / "ww-agentic-workflows.yaml",
-        "import": repo / "ids.yaml",
-        "user": user / "ww-agentic-workflows.yaml",
-        "local": repo / "ww-agentic-workflows.local.yaml",
-    }
-    _write(files[where], "task_format: X-{digit}\n")
-    if where != "root":
-        _write(
-            repo / "ww-agentic-workflows.yaml",
-            ("imports: [ids.yaml]\n" if where == "import" else "") + _WORKFLOW,
-        )
-
-    with pytest.raises(
-        ConfigurationError,
-        match=r"task_format in \S*"
-        + re.escape(files[where].name)
-        + r" now lives in ww-agentic-workflows.json",
-    ):
-        load_configuration(repo / "ww-agentic-workflows.yaml")
 
 
 def test_named_entries_are_replaced_in_place_by_name(repo: Path) -> None:
@@ -285,42 +258,6 @@ def test_the_user_directory_follows_the_variable_then_xdg_then_home(
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     assert user_directory() == (
         tmp_path / "home" / ".config" / "ww-agentic-workflows"
-    )
-
-
-def test_the_former_directory_variable_alone_is_an_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.delenv("WW_USER_CONFIG_DIR")
-    monkeypatch.setenv("WW_MACHINE_CONFIG_DIR", str(tmp_path))
-
-    with pytest.raises(ConfigurationError, match="set WW_USER_CONFIG_DIR instead"):
-        user_directory()
-
-    # Set next to the new variable, the former one is simply not read.
-    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(tmp_path / "user"))
-    assert user_directory() == tmp_path / "user"
-
-
-@pytest.mark.parametrize(
-    ("former", "current"),
-    [
-        ("ww-agentic-workflows.machine.yaml", "ww-agentic-workflows.yaml"),
-        ("ww-agentic-workflows.machine.json", "ww-agentic-workflows.json"),
-    ],
-)
-def test_a_former_user_level_file_is_an_error_naming_its_new_name(
-    user: Path, repo: Path, former: str, current: str
-) -> None:
-    _write(user / former, "{}\n")
-    path = _write(repo / "ww-agentic-workflows.yaml", _WORKFLOW)
-
-    with pytest.raises(ConfigurationError) as raised:
-        compose_configuration(path)
-
-    assert str(raised.value) == (
-        f"found {user / former}; the user level now reads {user / current}, "
-        "so rename it"
     )
 
 

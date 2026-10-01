@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -285,7 +286,6 @@ class _ExtensionService:
             work_item_id=item.item_id,
             attempt=record.attempts,
             operation_id=record.operation_id or operation_id_for(state, item),
-            operation_id_known=record.operation_id_known,
         )
 
 
@@ -297,7 +297,6 @@ class _ExecutionContext:
     task_id: str
     run_id: str | None
     operation_id: str
-    operation_id_known: bool
     attempt: int
     commands: CommandService
     extensions: ExtensionService
@@ -314,7 +313,6 @@ class _ExecutionContext:
             task_id=state.task_id,
             run_id=state.run_id,
             operation_id=record.operation_id or operation_id_for(state, item),
-            operation_id_known=record.operation_id_known,
             attempt=record.attempts,
             commands=_CommandService(dispatch),
             extensions=_ExtensionService(dispatch),
@@ -423,7 +421,6 @@ class _RecoveryExtensionService:
             operation_id=(
                 record.operation_id or operation_id_for(self._state, self._item)
             ),
-            operation_id_known=record.operation_id_known,
         )
         return handler.check(context)
 
@@ -438,7 +435,6 @@ class _RecoveryContext:
     task_id: str
     run_id: str | None
     operation_id: str
-    operation_id_known: bool
     attempt: int
     extensions: RecoveryExtensionService
 
@@ -459,7 +455,6 @@ class _RecoveryContext:
             task_id=state.task_id,
             run_id=state.run_id,
             operation_id=record.operation_id or operation_id_for(state, item),
-            operation_id_known=record.operation_id_known,
             attempt=record.attempts,
             extensions=_RecoveryExtensionService(executor, state, item, plan),
         )
@@ -502,9 +497,7 @@ class ActionExecutor:
         root's for one working in the root.
         """
         if planned.settings is not None:
-            return self.extensions.frozen_settings(
-                parse_reference(planned.reference).identifier, planned.settings
-            )
+            return deepcopy(dict(planned.settings))
         project = (
             dict(state.workflow_values).get(PROJECT) if item.workdir != "root" else None
         )

@@ -94,7 +94,6 @@ DEFAULT_MAX_FIXES = 3
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
 TASK_FORMAT_PLACEHOLDERS = frozenset({"{{digit}}", "{{timestamp}}", "{{uuid}}"})
-_OLD_TASK_FORMAT_PLACEHOLDER = re.compile(r"(?<!\{)\{(digit|timestamp|uuid)\}(?!\})")
 # The keys ww takes from a configured project's own settings files. Anything
 # else in such a file describes the project as a ww root of its own.
 PROJECT_FILE_KEYS = ("extensions", "task_format")
@@ -413,11 +412,6 @@ def _parse_extensions(raw: dict[str, Any], path: str) -> dict[str, dict[str, Any
 
 
 def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
-    if "loop_max_times" in raw:
-        raise ConfigurationError(
-            f'{path}.loop_max_times was renamed to max_rounds: "max_rounds": '
-            f"{raw['loop_max_times']}"
-        )
     unknown = set(raw) - {
         "enabled",
         "runtime",
@@ -531,13 +525,7 @@ def _parse_task_format(data: Any, path: str) -> str | None:
         raise ConfigurationError(f"{path}.task_format must be a non-empty string")
     if data == EXPLICIT_TASK_FORMAT:
         return data
-    old = _OLD_TASK_FORMAT_PLACEHOLDER.search(data)
-    if old is not None:
-        renamed = _OLD_TASK_FORMAT_PLACEHOLDER.sub(r"{{\1}}", data)
-        raise ConfigurationError(
-            f"{path}.task_format placeholder {old.group(0)} was renamed to "
-            f"{{{{{old.group(1)}}}}}: task_format: {renamed}"
-        )
+    # A placeholder in double braces, e.g. "{{digit}}" in "TASK-{{digit}}".
     tokens = re.findall(r"\{\{[^{}]*\}\}", data)
     rest = re.sub(r"\{\{[^{}]*\}\}", "", data)
     if "{" in rest or "}" in rest:

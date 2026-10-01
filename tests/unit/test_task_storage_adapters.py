@@ -320,7 +320,7 @@ def test_corrupt_task_metadata_raises_state_error(tmp_path: Path) -> None:
     task_dir.mkdir(parents=True)
     metadata_file = task_dir / "metadata.json"
     (task_dir / "task.json").write_text(
-        json.dumps({"task_id": "PROJ-1", "metadata": {"legacy": "kept"}}),
+        json.dumps({"task_id": "PROJ-1", "metadata": {"existing": "kept"}}),
         encoding="utf-8",
     )
 

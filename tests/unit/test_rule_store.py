@@ -79,7 +79,7 @@ def test_the_store_round_trips_rules_and_checks(tmp_path: Path) -> None:
 
     assert store.load() == automation
     data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
-    assert data["schema_version"] == 3
+    assert data["schema_version"] == 1
     assert data["checks"]["deptrac"]["shell"].startswith("grep -L foo")
     assert data["checks"]["deptrac"]["assert"] == ["empty"]
     assert data["checks"]["deptrac"]["covers"] == [text_hash]
@@ -103,10 +103,11 @@ def test_a_pending_revision_is_kept_beside_the_approved_check(tmp_path: Path) ->
     "content",
     [
         "not json",
-        json.dumps({"schema_version": 4, "rules": {}, "checks": {}}),
+        json.dumps({"schema_version": 2, "rules": {}, "checks": {}}),
+        json.dumps({"schema_version": True, "rules": {}, "checks": {}}),
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 1,
                 "rules": {
                     "h": {"text": "x", "status": "converted", "approved_by": "bot"}
                 },
@@ -207,7 +208,7 @@ def test_check_names_are_short_kebab_case() -> None:
     assert not is_check_name("x--y")
 
 
-def test_a_version_1_store_is_read_with_an_unknown_approver(tmp_path: Path) -> None:
+def test_a_store_entry_without_an_approver_reads_as_unknown(tmp_path: Path) -> None:
     text_hash = rule_text_hash(TEXT)
     (tmp_path / STORE_FILE).write_text(
         json.dumps(
@@ -231,7 +232,7 @@ def test_a_version_1_store_is_read_with_an_unknown_approver(tmp_path: Path) -> N
     entry = loaded.rules[text_hash]
     store.modify(lambda automation: automation.with_rule("other", entry))
     data = json.loads((tmp_path / STORE_FILE).read_text(encoding="utf-8"))
-    assert data["schema_version"] == 3
+    assert data["schema_version"] == 1
 
 
 def test_approval_provenance_round_trips(tmp_path: Path) -> None:

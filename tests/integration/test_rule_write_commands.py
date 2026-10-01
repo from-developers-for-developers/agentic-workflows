@@ -68,7 +68,7 @@ def _converted(text: str, check: str) -> dict[str, object]:
 def _check(covers: list[str], **extra: object) -> dict[str, object]:
     return {
         "shell": "grep -L foo $WW_STEP_CHANGED_FILES || true",
-        "assert": {"operator": "empty"},
+        "assert": ["empty"],
         "config": [],
         "covers": covers,
         "proven": True,
@@ -233,14 +233,6 @@ def test_add_options_are_checked(
         == 1
     )
     assert "--assert takes empty or equals:<value>" in capsys.readouterr().err
-    assert (
-        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--check-argv", "x",
-            "--assert", "eq:1")
-        == 1
-    )
-    assert "--assert eq:<value> was renamed to equals:<value>" in (
-        capsys.readouterr().err
-    )
     assert _ww(root, "rules", "add", "docs", "--steps", "develop", "--text", "A.") == 1
     assert "--dir, --workflows and --steps go with --group" in capsys.readouterr().err
     assert _ww(root, "rules", "add", "docs") == 1

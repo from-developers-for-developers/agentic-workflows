@@ -151,10 +151,6 @@ class DocumentDefinition:
                 raise ValueError(
                     f"document path must stay inside {inside}: {self.path!r}"
                 )
-            if "{task_id}" in self.path:
-                raise ValueError(
-                    "{task_id} in a document path was renamed to {{ww.task.id}}"
-                )
             if self.scope != "task" and TASK_ID_TOKEN in self.path:
                 raise ValueError(
                     f"a {self.scope} document path cannot use {{{{ww.task.id}}}}"

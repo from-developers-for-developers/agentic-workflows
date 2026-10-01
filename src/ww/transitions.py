@@ -465,7 +465,6 @@ def resume_interrupted_item(
     plan: WorkflowPlan,
     item: PlanItem,
     *,
-    retry_unknown_commands: bool,
     now: Clock,
 ) -> ExecutionState:
     """Make an interrupted action runnable after its outcome is resolved."""
@@ -475,9 +474,6 @@ def resume_interrupted_item(
         record,
         status="pending",
         error=None,
-        operation_id_known=(
-            True if retry_unknown_commands else record.operation_id_known
-        ),
         commands=tuple(
             replace(command, status="pending")
             if command.status == "interrupted"

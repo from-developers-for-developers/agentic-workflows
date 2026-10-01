@@ -9,6 +9,13 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-01
+
+- Breaking: persisted formats restart at schema 1 and ww reads no earlier one; the migrations, old-name hints
+  (configuration keys, template names, CLI flags, `workflows.yaml`/`agentic-workflows.json`, the machine level) and the
+  extension `upgrade_settings` hook are removed. Finish or reset in-flight tasks and re-run `init` before using this
+  build.
+
 ## 2026-09-30
 
 - ww learns and suggests: built-in workflows `ww-learn` (interviews the operator about themselves, their team and

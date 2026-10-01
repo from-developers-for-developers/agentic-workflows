@@ -335,15 +335,6 @@ def test_command_idempotent_is_parsed_planned_and_shown() -> None:
         ({"shell": "a", "assert": "empty"}, "must be a non-empty list of conditions"),
         ({"shell": "a", "assert": [{"ne": "x"}]}, "unknown"),
         ({"shell": "a", "assert": [{}]}, "must be empty or"),
-        (
-            {"shell": "a", "assert": {"operator": "empty"}},
-            "was renamed to a list of conditions: assert: \\[empty\\]",
-        ),
-        (
-            {"shell": "a", "assert": {"operator": "eq", "expected": "x"}},
-            "assert: \\[\\{equals: x\\}\\]",
-        ),
-        ({"command": {"argv": ["a"]}}, "p.command was removed"),
     ],
 )
 def test_command_parse_errors(source: dict[str, Any], message: str) -> None:
@@ -449,7 +440,6 @@ class _Context:
     task_id: str = "TASK-1"
     run_id: str | None = "01-task"
     operation_id: str = "op"
-    operation_id_known: bool = True
     attempt: int = 1
     extensions: Any = None
 
@@ -551,7 +541,6 @@ class _Checker:
 @dataclass
 class _RecoveryContext:
     extensions: _Checker
-    operation_id_known: bool = True
     root: Path = Path()
     workspace: Path | None = None
     runtime_values: dict[str, str] = field(default_factory=dict)
@@ -564,11 +553,11 @@ class _RecoveryContext:
 _EXTENSION = Extension("ext/ww/git/handlers:commit")
 
 
-def _check(outcome: object, *, known: bool = True):  # type: ignore[no-untyped-def]
+def _check(outcome: object):  # type: ignore[no-untyped-def]
     checker = _Checker(outcome)
     result = actions.get("extension").check_recovery(
         _EXTENSION,
-        _RecoveryContext(checker, known),  # type: ignore[arg-type]
+        _RecoveryContext(checker),  # type: ignore[arg-type]
     )
     return result, checker
 
@@ -606,14 +595,6 @@ def test_extension_checker_outcomes(outcome: object, status: str, error: str) ->
     result, _ = _check(outcome)
 
     assert (result.status, result.error) == (status, error)
-
-
-def test_extension_checker_distrusts_synthesized_operation_ids() -> None:
-    result, checker = _check(ExtensionCheckResult.not_succeeded(), known=False)
-
-    assert result.status == "unknown"
-    assert "operation ID was synthesized" in result.error
-    assert checker.validated == []
 
 
 def test_extension_definition_and_instruction() -> None:

@@ -159,8 +159,8 @@ def expect_keys(
 ) -> None:
     """Require every ``expected`` key; leave any other key alone.
 
-    Used for stored data: a field ww no longer knows, such as one a newer or
-    older version wrote, is ignored rather than refused.
+    Used for stored data: a field ww does not know, such as one a newer
+    version wrote, is ignored rather than refused.
     """
     if not set(expected) <= data.keys():
         raise error(f"{context} has invalid fields")

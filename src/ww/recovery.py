@@ -151,7 +151,6 @@ class RecoveryCoordinator:
                             state,
                             snapshot.plan,
                             target.item,
-                            retry_unknown_commands=False,
                             now=self.now,
                         ),
                         snapshot,
@@ -171,7 +170,6 @@ class RecoveryCoordinator:
                     state,
                     snapshot.plan,
                     target.item,
-                    retry_unknown_commands=True,
                     now=self.now,
                 )
             return self.lifecycle.resume(state, snapshot)
@@ -197,7 +195,6 @@ class RecoveryCoordinator:
             state,
             snapshot.plan,
             item,
-            retry_unknown_commands=True,
             now=self.now,
         )
 

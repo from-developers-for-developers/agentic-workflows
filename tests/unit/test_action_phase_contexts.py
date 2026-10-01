@@ -72,7 +72,6 @@ class CheckedOutputAction(ManualOutputAction):
         assert not hasattr(context.extensions, "handler")
         assert callable(context.extensions.check)
         assert context.attempt == 1
-        assert context.operation_id_known
         return RecoveryCheckResult.succeeded(
             ActionResult.succeeded(
                 "checked",

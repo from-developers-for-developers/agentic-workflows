@@ -138,15 +138,12 @@ def test_interrupted_automatic_item_preserves_one_recovery_boundary() -> None:
     assert state.item_executions[0].commands[0].status == "interrupted"
     assert state.item_executions[0].error == state.last_error
 
-    state = resume_interrupted_item(
-        state, plan, item, retry_unknown_commands=True, now=_now
-    )
+    state = resume_interrupted_item(state, plan, item, now=_now)
     assert state.status == "pending"
     assert state.active_item_id == item.id
     assert state.last_error is None
     assert state.item_executions[0].status == "pending"
     assert state.item_executions[0].commands[0].status == "pending"
-    assert state.item_executions[0].operation_id_known
 
 
 def _stale_automatic_run(

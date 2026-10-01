@@ -21,12 +21,9 @@ from ww import rule_writes, setup_apply
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
-    LEGACY_FILES,
     SETTINGS_FILE,
     WORKFLOWS_FILE,
-    check_legacy_files,
     display_path,
-    rename_legacy_files,
 )
 from ww.errors import StateError, WwError
 from ww.executable import printed_executable, ww_command
@@ -157,8 +154,6 @@ class _Context:
     storage: Storage
     extensions: ExtensionRegistry
     service: WorkflowService
-    # Former configuration names ``init`` renamed, as (old, new) pairs.
-    renamed: tuple[tuple[str, str], ...] = ()
 
     @property
     def task_id(self) -> str:
@@ -231,14 +226,6 @@ def _init(context: _Context) -> _Outcome:
         ignore_runtime=ignore_runtime,
         skill_installs=skill_installs,
     )
-    if context.renamed:
-        result = replace(
-            result,
-            created=(
-                *(f"{new} (renamed from {old})" for old, new in context.renamed),
-                *result.created,
-            ),
-        )
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
     result = install_agent_hooks(context.storage, context.args, result)
@@ -1220,12 +1207,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     try:
-        # ``init`` renames files still under a former name; everything else
-        # stops on one rather than silently running without it.
-        renamed = (
-            rename_legacy_files(storage.root) if args.command == "init" else ()
-        )
-        check_legacy_files(storage.root)
         extensions = ExtensionRegistry.discover(storage.root)
         service = WorkflowService(storage, extensions=extensions)
         # Check what the force would do before asking the operator to approve
@@ -1247,7 +1228,7 @@ def main(argv: list[str] | None = None) -> int:
         # Every command this invocation prints starts with the project's ww.
         with printed_executable(extensions.config.executable):
             result = _HANDLERS[args.command](
-                _Context(args, storage, extensions, service, renamed)
+                _Context(args, storage, extensions, service)
             )
     except WwError as error:
         if logged:
@@ -1370,8 +1351,6 @@ def _resolve_project_root(explicit_root: Path | None) -> Path:
         if resolved.name == ".git":
             return resolved.parent
     for candidate in (current, *current.parents):
-        if any(
-            (candidate / name).is_file() for name in (WORKFLOWS_FILE, *LEGACY_FILES)
-        ) or (candidate / ".ww").exists():
+        if (candidate / WORKFLOWS_FILE).is_file() or (candidate / ".ww").exists():
             return candidate
     return current

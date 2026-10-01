@@ -6,7 +6,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Callable
 from dataclasses import MISSING, fields
 from typing import Any
 
@@ -26,23 +25,7 @@ from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
-TASK_STATE_SCHEMA_VERSION = 2
-
-
-def _task_state_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
-    """Schema 2 lets a child be ``skipped`` and carry custom ``fields``.
-
-    A version 1 document has neither: its children read as they were, with
-    no fields, so only the version changes.
-    """
-    return {**data, "schema_version": 2}
-
-
-# Upgrades keyed by the schema version they read; a document at any other
-# version is rejected rather than guessed at.
-TASK_STATE_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    1: _task_state_1_to_2
-}
+TASK_STATE_SCHEMA_VERSION = 1
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -141,7 +124,9 @@ def decode_task_document(
         raise ValueError("task state must be a mapping")
     if data.get("format") != TASK_STATE_FORMAT:
         raise ValueError(f"unsupported task state format: {data.get('format')!r}")
-    data = _migrate(data)
+    version = data.get("schema_version")
+    if not is_strict_int(version) or version != TASK_STATE_SCHEMA_VERSION:
+        raise ValueError("unsupported task state schema")
     if data.get("task_id") != task_id:
         raise ValueError("task state task ID does not match its path")
     revision = data.get("revision")
@@ -398,19 +383,6 @@ def _expand_ledger(value: dict[object, object]) -> dict[str, list[dict[str, obje
             expanded.append(event)
         result[run_id] = expanded
     return result
-
-
-def _migrate(data: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade a document to the current schema, one recorded version at a time."""
-    version = data.get("schema_version")
-    if not is_strict_int(version):
-        raise ValueError("unsupported task state schema")
-    while version != TASK_STATE_SCHEMA_VERSION:
-        if not is_strict_int(version) or version not in TASK_STATE_MIGRATIONS:
-            raise ValueError("unsupported task state schema")
-        data = TASK_STATE_MIGRATIONS[version](copy.deepcopy(data))
-        version = data.get("schema_version")
-    return data
 
 
 def _snapshot_id(entry: dict[str, object]) -> str:

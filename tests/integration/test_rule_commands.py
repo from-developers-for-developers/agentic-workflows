@@ -555,7 +555,7 @@ def test_rule_shows_a_judged_rule_with_what_the_store_knows(tmp_path: Path) -> N
                 "rules": {
                     text_hash: {
                         "text": JUDGED,
-                        "status": "not-convertible",
+                        "status": "not_convertible",
                         "reason": "Needs a reviewer.",
                         "interpretation": "No flag changes.",
                     }
@@ -570,7 +570,6 @@ def test_rule_shows_a_judged_rule_with_what_the_store_knows(tmp_path: Path) -> N
     view = service.rule("TASK-1", "develop/1")
 
     assert (view.source, view.command) == (None, None)
-    # A version 1 store spelled it with a hyphen; reading it upgrades it.
     assert view.store_status == "not_convertible"
     assert view.interpretation == "No flag changes."
     assert view.resolution == "judged"
@@ -755,7 +754,7 @@ def _converted_store(root: Path) -> str:
     (root / STORE_FILE).write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 1,
                 "rules": {
                     live: {
                         "text": JUDGED,

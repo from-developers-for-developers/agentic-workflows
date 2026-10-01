@@ -213,5 +213,3 @@ def test_field_declarations_are_validated(tmp_path: Path) -> None:
         load("          unique: reply_id\n")
     with pytest.raises(ConfigurationError, match="invalid item field name"):
         load("          saves:\n            - 'item.field.bad name': x\n")
-    with pytest.raises(ConfigurationError, match="update_item was renamed to saves"):
-        load("          update_item:\n            - reply_id: x\n")

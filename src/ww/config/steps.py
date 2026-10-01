@@ -27,13 +27,11 @@ from ww.workflow_config import (
 )
 
 from .actions import (
-    RENAMED_HANDLER_KEYS,
     _bare_extension_reference,
     _handler_keys,
     _parse_handler,
     _parse_hooks,
     extension_reference,
-    reject_removed_handler_keys,
 )
 from .rules import parse_step_rules
 from .values import (
@@ -46,7 +44,6 @@ from .values import (
     _optional_agent,
     _optional_string,
     _profile,
-    _reject_renamed,
     _role,
     _subagents,
     _unique,
@@ -117,30 +114,6 @@ ITEM_PHASES: dict[str, ItemOperation] = {
 }
 # ``interactive`` takes true (a conversation) or ``page`` (the operator page).
 INTERACTIVE_PAGE = "page"
-# Step and ``items`` keys that were renamed, with the new name and an example.
-RENAMED_STEP_KEYS = {
-    "loop_max_times": ("max_rounds", "max_rounds: 5"),
-    "loop_assignment": ("assignment", "assignment: per_round"),
-    "depends_on": ("artifact_from", "artifact_from: <step>"),
-    "ui": ("interactive: page", "interactive: page"),
-    "process_item": ("item_phase", "item_phase: analyze"),
-    "resolve_item": ("item_phase", "item_phase: resolve"),
-    "report_item": ("item_phase", "item_phase: report"),
-}
-RENAMED_ITEM_KEYS = {
-    "item_assignment": ("assignment", "assignment: together"),
-    "shared": ("persistent", "persistent: true"),
-    "process_item": ("analyze", "analyze: <guidance>"),
-    "resolve_item": ("resolve", "resolve: <guidance>"),
-    "report_item": ("report", "report: <guidance>"),
-    "ui": ("interactive: page", "interactive: page"),
-    **{
-        key: RENAMED_HANDLER_KEYS[key]
-        for key in ("provide", "update_metadata", "update_document", "update_item")
-    },
-}
-# Assignment values that were renamed.
-_RENAMED_ASSIGNMENTS = {"all_items": "together", "per_iteration": "per_round"}
 LOOP_ASSIGNMENTS: tuple[LoopAssignment, ...] = ("per_round", "per_step")
 CHILD_ASSIGNMENTS = ("per_step",)
 
@@ -288,15 +261,6 @@ def _parse_step(
         # the handler, exactly as a bare hook entry does; settings such as
         # ``profile`` or ``model`` on the step still override the copy.
         mapping = {**mapping, "handler": mapping["name"]}
-    if "stop" in mapping:
-        raise ConfigurationError(f"{path}.stop is obsolete; use break")
-    if "workflow_per_child" in mapping:
-        raise ConfigurationError(
-            f"{path}.workflow_per_child was removed; collect and run the children "
-            "on one step with `children: {workflow: <name>}`"
-        )
-    _reject_renamed(mapping, path, RENAMED_STEP_KEYS)
-    reject_removed_handler_keys(mapping, path)
     _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}, path)
     base = (
         extension_reference(mapping, path)
@@ -594,11 +558,6 @@ def _parse_children(
     """Parse ``children``: the child ``workflow``, or the parent's ``steps``."""
     value = mapping["children"]
     children_path = f"{path}.children"
-    if value is None:
-        raise ConfigurationError(
-            f"{children_path}: `children: ~` was replaced by a mapping; write "
-            "`children: {workflow: <name>}` and drop the workflow_per_child step"
-        )
     if not isinstance(value, dict):
         raise ConfigurationError(
             f"{children_path} must be a mapping with the child workflow"
@@ -735,11 +694,6 @@ def _assignment(value: Any, path: str, allowed: tuple[str, ...]) -> str:
     """Check one ``assignment`` value against the ones its construct takes."""
     if not isinstance(value, str):
         raise ConfigurationError(f"{path} must be one of: " + ", ".join(allowed))
-    if value in _RENAMED_ASSIGNMENTS:
-        new = _RENAMED_ASSIGNMENTS[value]
-        raise ConfigurationError(
-            f"{path}: {value} was renamed to {new}: assignment: {new}"
-        )
     if value == "per_child":
         raise ConfigurationError(
             f"{path}: per_child is reserved and not built yet; use per_step"
@@ -768,7 +722,6 @@ def _parse_items(
         raise ConfigurationError(
             f"{items_path} must be null, splitting guidance text, or a mapping"
         )
-    _reject_renamed(value, items_path, RENAMED_ITEM_KEYS)
     _only(value, ITEM_FLOW_KEYS, items_path)
     description = (
         _nonempty_string(value, "description", items_path)

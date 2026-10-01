@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from ww.cli import main
-from ww.defaults import GENERATED_LAUNCHERS, PROJECT_LAUNCHER
+from ww.defaults import PROJECT_LAUNCHER
 from ww.errors import ConfigurationError
 from ww.project_config import load_project_config
 
@@ -152,18 +152,14 @@ def test_the_launcher_runs_the_configured_binary(
     assert result.stdout.strip() == f"{expected} status TASK-1"
 
 
-def test_init_records_the_standard_executable_and_updates_a_stock_launcher(
+def test_init_records_the_standard_executable_and_writes_the_launcher(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "ww").write_text(GENERATED_LAUNCHERS[0], encoding="utf-8")
-
-    output = _run(tmp_path, capsys, "init", "--no-input")
+    _run(tmp_path, capsys, "init", "--no-input")
 
     config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
     assert config["executable"] == "ww-agentic-workflows"
     assert (tmp_path / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
-    assert "ww (updated launcher)" in output
-    assert "- ww\n" not in output.split("Already present and preserved:")[-1]
 
 
 def test_init_keeps_an_edited_launcher_and_a_configured_executable(

@@ -127,9 +127,7 @@ the `.gitignore` lines `init` writes (`RUNTIME_IGNORE_LINES` in
 `../src/ww/config_files.py`) ignore that directory's contents rather than the
 directory, because Git cannot re-include a file under an ignored directory, and
 then re-include the shared learning files `team.md`, `company.md` and
-`project.md`;
-`init` migrates the former top-level `../tasks` directory when there is no
-conflicting destination. Agent instructions remain at the project root because
+`project.md`. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
 The interactive answers are remembered in `.ww/init-choices.json` so a repeat
 run asks nothing already decided; `init --force` reads none of them back (it
@@ -149,20 +147,11 @@ the repo names in its own directory. The user directory follows
 `WW_USER_CONFIG_DIR`, then `XDG_CONFIG_HOME`, then `~/.config`; the override
 exists so tests, which set it in a session-wide fixture in
 `../tests/conftest.py`, never read a developer's real user files.
-`user_directory()` refuses the former machine level outright — its
-`.machine.{yaml,json}` names and the `WW_MACHINE_CONFIG_DIR` variable — rather
-than silently ignoring an old setup, and a user directory that is the project
-root contributes no separate level. `init` creates the directory, since
+A user directory that is the project root contributes no separate level. `init` creates the directory, since
 nothing else does. Only the repo YAML file marks a project root, so a user
 file cannot turn an arbitrary directory into a ww project. `init` writes only repo-level files,
 but runs its checks on the composed result, and adds the local-file patterns to
-`.gitignore` unconditionally, creating the file only in a Git checkout. There is no compatibility
-layer for the former names `workflows.yaml` and `agentic-workflows.json`: the
-CLI checks the resolved root before dispatching any command and stops with a
-configuration error naming the new file, rather than silently running on
-defaults. `init` renames a former file first when its new name is free, which
-is the only migration path; project-root detection still recognizes the former
-names so the error is raised at the right root.
+`.gitignore` unconditionally, creating the file only in a Git checkout.
 
 That file is deliberately short. It states when to use ww and the rules for
 following its responses, and it sends agents to `discover`
@@ -512,8 +501,7 @@ safe to render before a task exists.
 Core variable names and value construction are owned by `../src/ww/variables.py`.
 Every ww-provided value lives under `ww.` (`ww.task.id`, `ww.project.dir`,
 `ww.metadata.<path>`, `ww.item.field.<name>`, ...); a user variable may not
-start with `ww`, and `renamed_template_name` maps a pre-`ww.` name to its
-replacement for the interpolation error. Stable values such as `ww.task.id`
+start with `ww`. Stable values such as `ww.task.id`
 and `ww.task.workflows` are bound during compilation; dynamic values are
 resolved from current execution state when an instruction or automatic action
 is rendered. This lets `ww.task.workspace_dir` follow a run's selected
@@ -615,8 +603,8 @@ environment variables. Full stdout and stderr streams
 live in stable, run-scoped output artifacts. Hot execution state keeps only a
 bounded preview plus the artifact reference, which prevents one noisy command
 from making every later transition rewrite its complete output. Recovery reads
-the referenced stream when it must reconstruct output from completed segments;
-legacy inline streams remain readable. The state also contains a recursive step
+the referenced stream when it must reconstruct output from completed segments.
+The state also contains a recursive step
 projection for human-readable parent/child status and a matching recursive
 artifact layout. Parent steps begin with their first child and complete only
 after their descendants and parent-scoped completion work finish.
@@ -757,23 +745,12 @@ directories exist only for artifacts and command output; their names are not an
 execution index.
 
 Reads recognize the new document by its `ww.task-state` format discriminator.
-The document carries one schema version. A document at another version is
-upgraded through the migration table in the codec when an upgrade exists, and
-rejected otherwise. Schema 2 (per-child stages) lets a child record be
-`skipped` and carry custom `fields`; a schema 1 document reads unchanged. The
-records inside it migrate on their own: the plan snapshot codec upgrades one
-version at a time through `PLAN_MIGRATIONS` in
-`../src/ww/execution_models/runs.py` (schema 18 applies the v1 renames to what
-a plan froze: assignment values, the `before_start` phase, `ww.` template
-names, a document path's `{{ww.task.id}}`, and `assert` lists; plan item IDs
-keep their old spelling because they are opaque and records refer to them),
-and `ExecutionState` reads schema 10 and upgrades it to 11
-(`rules_proposed`, the `ww.project.name` workflow value).
+The document carries one schema version, and so do the plan snapshots and
+execution states inside it; a reader rejects any version but the current one.
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
 Scoped cleanup of obsolete regular files follows. Cleanup failures are
-diagnostic because the new document has precedence. This is an upgrade boundary:
-concurrent writers from pre-consolidation ww versions are not supported.
+diagnostic because the new document has precedence.
 
 The separate CLI audit log uses one invocation ID for each `started`/terminal
 record pair. User-supplied completion values, recovery output, and failure text
@@ -783,8 +760,8 @@ limit; workflow recovery never depends on those files.
 
 The public persistence boundary reflects that source of truth. It is split into
 typed run, artifact, task-metadata, and project-metadata ports. The first three
-are composed by `TaskStorageAdapter`; legacy `TaskState` methods and
-independent plan/state write methods are not part of the contract. Run queries,
+are composed by `TaskStorageAdapter`; independent plan/state write methods are
+not part of the contract. Run queries,
 item and child reads, handoffs, and run summaries derive from the atomic
 aggregate, so a third-party storage adapter cannot satisfy the interface while omitting
 data the executor needs.
@@ -804,9 +781,8 @@ so interpolation has one unambiguous value for every path.
 
 The supported model layers are normalized authored definitions
 (`workflow_config.py`), compiled plans (`plan.py`), and persisted execution
-records (the `execution_models` package). During active development, persisted
-state uses a single current format. Older task layouts and record schemas are
-rejected unless the task-document codec has a migration for them.
+records (the `execution_models` package). Persisted state uses a single
+current format; any other task layout or record schema is rejected.
 
 ## Release guarantees and intentional limits
 
@@ -820,9 +796,8 @@ extension API contracts. Release notes must call out an incompatible change and
 the affected boundary.
 
 Persisted plans and execution records carry their current format versions. The
-reader upgrades a version its codec has a migration for and rejects every
-other version rather than guessing.
-Plan schema 9 stores each item's operation with an explicit type: registered
+reader rejects every other version rather than guessing.
+A plan stores each item's operation with an explicit type: registered
 actions keep their identifier and type-specific plain payload, and resumed work
 uses those saved payloads without resolving workflow configuration again. An unavailable action stays inspectable as saved data; instruction or
 execution requests report the missing implementation.
@@ -1012,13 +987,8 @@ or item fails at compile time — before a task exists.
 The item also freezes the public API version, extension version, provider
 source, source fingerprint, and that extension's settings. Dispatch uses the
 frozen settings and rejects a different version, API version, or provider
-source. Before an extension receives frozen settings, the registry passes
-them through the extension's `upgrade_settings` when it declares one
-(`ExtensionRegistry.frozen_settings`, used by the executor and by variable
-overrides), so an extension that renamed a setting keeps runs frozen under
-the old name working while its live settings reject the old name; `ww/git`
-uses it for `commit_message`, `use_separate_branch`, and its pre-`ww.` format
-tokens. The fingerprint is recorded for audit only: like ww's own code, an
+source; the extension receives a detached copy of the frozen settings. The
+fingerprint is recorded for audit only: like ww's own code, an
 extension may be fixed in place while a task is in flight, so a change in
 behaviour is signalled by a version bump rather than by the bytes of the file.
 Project-extension fingerprints cover `extension.py`; installed-provider
@@ -1352,8 +1322,7 @@ setting. Dispatch, preflight checks, and recovery take the frozen copy from
 one place, `ActionExecutor.item_settings`, which falls back to the same
 per-item resolution. Reserved-path and branch-strategy queries take the
 project too, so ID generation and `discover` see what a task there will see.
-`ww/git` no longer has a per-project base-branch map; the project's file is
-the one place for that.
+A project's base branch lives in that project's own file only.
 
 A plan item may work somewhere other than the task's working directory. The
 compiler freezes each item's `workdir` (`task`, `project`, or `root`) in the
@@ -1591,9 +1560,7 @@ proposes how to check it; the operator approves the approach and then the
 prepared command at a `rules_proposed` stop, and only then does the command
 run, on the held completion first. What ww learns this way lives in
 `ww-rule-automation.json` at the project root, keyed by the hash of the rule
-text, with checks that may cover several rules (store schema 3; versions 1
-and 2, with hyphenated statuses and single-mapping `assert`, are upgraded on
-read); it is derived knowledge that ww owns and commits, never configuration, so YAML and rule files are never
+text, with checks that may cover several rules; it is derived knowledge that ww owns and commits, never configuration, so YAML and rule files are never
 rewritten. A failing verdict is a rejection like a failed check and counts
 toward the same limit; when nothing is left to verify or decide, ww records
 the held completion by replaying it with the saved arguments.

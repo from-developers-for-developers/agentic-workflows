@@ -882,10 +882,10 @@ workflows:
     ):
         subprocess.run(command, cwd=tmp_path, check=True, capture_output=True)
 
-    result = _service(tmp_path).start("task", "TASK-LEGACY", agent="codex")
+    result = _service(tmp_path).start("task", "TASK-BRANCH", agent="codex")
 
     assert result.status == "pending"
-    snapshot = _service(tmp_path).tasks.read_plan_snapshot("TASK-LEGACY", "01-task")
+    snapshot = _service(tmp_path).tasks.read_plan_snapshot("TASK-BRANCH", "01-task")
     assert snapshot is not None
     hook, init = snapshot.plan.items[:2]
     assert (
@@ -905,7 +905,7 @@ workflows:
         text=True,
         check=True,
     )
-    assert branch.stdout.strip() == "feature/task-legacy"
+    assert branch.stdout.strip() == "feature/task-branch"
 
 
 def test_start_branch_strategy_is_persisted_for_extension_hooks(

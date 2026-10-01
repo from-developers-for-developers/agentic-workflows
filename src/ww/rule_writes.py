@@ -163,11 +163,6 @@ def _assertion(value: str) -> str | dict[str, str]:
     kind, separator, expected = value.partition(":")
     if kind == "equals" and separator:
         return {"equals": expected}
-    if kind == "eq" and separator:
-        raise StateError(
-            f"--assert eq:<value> was renamed to equals:<value>: "
-            f"--assert equals:{expected}"
-        )
     raise StateError(f"--assert takes empty or equals:<value>, not {value!r}")
 
 

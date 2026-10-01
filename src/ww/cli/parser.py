@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any
 
 from ww import STAGE, __version__
 from ww.contracts import CALLER_ROLES
@@ -16,75 +15,14 @@ from ww.hooks.notices import RECENT_INTERRUPTION_DAYS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 
 HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
-# Flags that were renamed, by command: argparse refuses the old one and the
-# error names the new one, so an agent's old command fails with its fix.
-RENAMED_FLAGS: dict[str, dict[str, str]] = {
-    "init": {"--task-id-format": "--task-format"},
-    "start": {
-        "--init-artifact": "--requirements",
-        "--branch-naming-strategy": "--branch-strategy",
-    },
-    "next": {"--force-reason": "--reason"},
-    "complete": {"--summary-for-next-step": "--summary"},
-    "loop": {"--summary-for-next-step": "--summary"},
-    "interact": {
-        "--operator": "--operator-said",
-        "--agent": "--agent-said",
-        "--end-interaction": "--end",
-    },
-    "add-item": {"--item": "--text", "--reference-to-id": "--refers-to"},
-    "update-item": {"--item": "--text"},
-    "add-child": {"--description": "--text"},
-    "updates": {"--check": "--now"},
-}
-# Commands that were renamed; ``child start`` became ``start-child``.
-RENAMED_COMMANDS = {"child": "start-child <parent> <child>"}
 
 
 class _Parser(argparse.ArgumentParser):
-    """An argument parser whose errors name the replacement of a renamed flag.
-
-    Abbreviated flags are off, so an old flag that prefixes its new name
-    (``--operator`` of ``--operator-said``) is refused rather than accepted.
-    """
+    """An argument parser that accepts only complete flag names."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("allow_abbrev", False)
         super().__init__(*args, **kwargs)
-        self._arguments: list[str] = []
-
-    def parse_known_args(  # type: ignore[override]
-        self, args: Sequence[str] | None = None, namespace: Any = None
-    ) -> tuple[argparse.Namespace, list[str]]:
-        if args is not None:
-            self._arguments = list(args)
-        return super().parse_known_args(args, namespace)
-
-    def error(self, message: str) -> NoReturn:
-        # A subcommand's parser is named "<prog> <command>"; unrecognized
-        # arguments are reported by the top-level parser, which finds the
-        # command among the arguments it was given.
-        command = self.prog.split()[-1] if " " in self.prog else next(
-            (
-                argument
-                for argument in self._arguments
-                if argument in RENAMED_FLAGS or argument in RENAMED_COMMANDS
-            ),
-            "",
-        )
-        hints = [
-            f"{old} was renamed to {new}"
-            for old, new in RENAMED_FLAGS.get(command, {}).items()
-            if any(
-                argument == old or argument.startswith(f"{old}=")
-                for argument in self._arguments
-            )
-        ]
-        if "invalid choice: 'child'" in message:
-            hints.append(f"child start was renamed to {RENAMED_COMMANDS['child']}")
-        if hints:
-            message = message + "\n" + "; ".join(hints)
-        super().error(message)
 
 
 def _shared(*add: str) -> _Parser:

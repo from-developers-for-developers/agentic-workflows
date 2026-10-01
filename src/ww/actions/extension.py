@@ -91,10 +91,6 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
     def check_recovery(
         self, planned: Extension, context: RecoveryContext
     ) -> RecoveryCheckResult:
-        if not context.operation_id_known:
-            return RecoveryCheckResult.unknown(
-                "operation ID was synthesized while migrating legacy state"
-            )
         context.extensions.validate_identity(planned)
         try:
             result = context.extensions.check(planned)

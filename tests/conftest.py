@@ -52,9 +52,6 @@ def isolated_user_configuration(
         "WW_USER_CONFIG_DIR": str(tmp_path_factory.mktemp("ww-user")),
     }
     with patch.dict(os.environ, environment):
-        # The former variable is an error, so an operator who still sets it
-        # must not fail the suite.
-        os.environ.pop("WW_MACHINE_CONFIG_DIR", None)
         yield
 
 

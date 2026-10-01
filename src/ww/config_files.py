@@ -10,12 +10,6 @@ three levels, applied top to bottom so a lower level wins:
 2. repo: ``ww-agentic-workflows.{yaml,json}`` in the project root;
 3. local: ``ww-agentic-workflows.local.{yaml,json}`` next to the repo files,
    kept out of version control.
-
-Earlier ww versions called the repo files ``workflows.yaml`` and
-``agentic-workflows.json``; ww no longer reads those names, stops when it finds
-one, and ``init`` renames them. The user level was once the machine level,
-with ``.machine`` in its file names and ``WW_MACHINE_CONFIG_DIR`` naming its
-directory; ww stops on either and names the replacement.
 """
 
 from __future__ import annotations
@@ -26,8 +20,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-
-from ww.errors import ConfigurationError
 
 FILE_STEM = "ww-agentic-workflows"
 WORKFLOWS_FILE = f"{FILE_STEM}.yaml"
@@ -61,16 +53,16 @@ RUNTIME_IGNORE_LINES = (
     ".ww/*",
     *(f"!.ww/{name}" for name in SHARED_RUNTIME_FILES),
 )
-# The lines that ignore ``.ww`` whole, as earlier ww versions and operators
-# wrote them; ``init`` replaces them with :data:`RUNTIME_IGNORE_LINES`, since
-# a directory ignored whole cannot have files re-included.
-FORMER_RUNTIME_IGNORE_LINES = (".ww/", ".ww", "/.ww", "/.ww/")
+# The lines that ignore ``.ww`` whole, as an operator may write them; ``init``
+# replaces them with :data:`RUNTIME_IGNORE_LINES`, since a directory ignored
+# whole cannot have files re-included.
+WHOLE_RUNTIME_IGNORE_LINES = (".ww/", ".ww", "/.ww", "/.ww/")
 
 
 def runtime_ignored(gitignore: str) -> bool:
     """Whether a .gitignore's text already keeps ``.ww`` out, in any form."""
     return bool(
-        {*FORMER_RUNTIME_IGNORE_LINES, RUNTIME_IGNORE_LINES[0]}.intersection(
+        {*WHOLE_RUNTIME_IGNORE_LINES, RUNTIME_IGNORE_LINES[0]}.intersection(
             line.strip() for line in gitignore.splitlines()
         )
     )
@@ -83,13 +75,6 @@ def newline_of(text: str) -> str:
 
 # Where the user level lives instead of the user's configuration directory.
 USER_DIR_VARIABLE = "WW_USER_CONFIG_DIR"
-# The variable earlier ww versions read instead; setting it alone is an error.
-FORMER_USER_DIR_VARIABLE = "WW_MACHINE_CONFIG_DIR"
-# The user-level files earlier ww versions read, by the name that replaced them.
-FORMER_USER_FILES = {
-    f"{FILE_STEM}.machine.yaml": WORKFLOWS_FILE,
-    f"{FILE_STEM}.machine.json": SETTINGS_FILE,
-}
 
 
 @dataclass(frozen=True)
@@ -101,29 +86,13 @@ class ConfigurationLevel:
 
 
 def user_directory() -> Path:
-    """The user level's directory, following XDG when it is configured.
-
-    Stops when only the former variable is set, or when the directory still
-    holds a file under its former name, so an old setup is never silently
-    ignored.
-    """
+    """The user level's directory, following XDG when it is configured."""
     configured = os.environ.get(USER_DIR_VARIABLE)
-    if not configured and os.environ.get(FORMER_USER_DIR_VARIABLE):
-        raise ConfigurationError(
-            f"{FORMER_USER_DIR_VARIABLE} is no longer read; set "
-            f"{USER_DIR_VARIABLE} instead"
-        )
     if configured:
         directory = Path(configured)
     else:
         base = os.environ.get("XDG_CONFIG_HOME")
         directory = (Path(base) if base else Path.home() / ".config") / FILE_STEM
-    for former, current in FORMER_USER_FILES.items():
-        if (directory / former).is_file():
-            raise ConfigurationError(
-                f"found {directory / former}; the user level now reads "
-                f"{directory / current}, so rename it"
-            )
     return directory
 
 
@@ -219,42 +188,3 @@ def project_settings_levels(directory: Path) -> tuple[ConfigurationLevel, ...]:
         ConfigurationLevel("repo", directory / SETTINGS_FILE),
         ConfigurationLevel("local", directory / LOCAL_SETTINGS_FILE),
     )
-
-def task_format_moved(label: str) -> str:
-    """The error for a ``task_format`` key still written in a YAML file."""
-    return (
-        f"task_format in {label} now lives in {SETTINGS_FILE} (or its user or "
-        "local file); move it there and remove it from the YAML"
-    )
-
-
-# Each former name and the name that replaced it.
-LEGACY_FILES = {
-    "workflows.yaml": WORKFLOWS_FILE,
-    "agentic-workflows.json": SETTINGS_FILE,
-}
-
-
-def check_legacy_files(root: Path) -> None:
-    """Stop when ``root`` still holds a configuration file under a former name."""
-    for legacy, current in LEGACY_FILES.items():
-        if not (root / legacy).is_file():
-            continue
-        if (root / current).exists():
-            raise ConfigurationError(
-                f"found {legacy} next to {current}; ww reads only {current}, "
-                f"so remove {legacy}"
-            )
-        raise ConfigurationError(
-            f"found {legacy}; rename it to {current}, or run init to rename it"
-        )
-
-
-def rename_legacy_files(root: Path) -> tuple[tuple[str, str], ...]:
-    """Rename former configuration files whose new name is still free."""
-    renamed = []
-    for legacy, current in LEGACY_FILES.items():
-        if (root / legacy).is_file() and not (root / current).exists():
-            (root / legacy).rename(root / current)
-            renamed.append((legacy, current))
-    return tuple(renamed)

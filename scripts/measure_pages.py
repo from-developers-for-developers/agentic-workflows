@@ -68,7 +68,6 @@ def _isolate(base: Path) -> None:
     git_config.write_text("[commit]\n\tgpgsign = false\n", encoding="utf-8")
     (base / "state").mkdir()
     (base / "user").mkdir()
-    os.environ.pop("WW_MACHINE_CONFIG_DIR", None)
     os.environ.update(
         {
             "GIT_CONFIG_GLOBAL": str(git_config),

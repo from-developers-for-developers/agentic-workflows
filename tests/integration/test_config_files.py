@@ -11,7 +11,7 @@ import pytest
 
 from ww.cli import main
 from ww.cli.main import _resolve_project_root
-from ww.defaults import GENERATED_LAUNCHERS, PROJECT_LAUNCHER
+from ww.defaults import PROJECT_LAUNCHER
 
 _WORKFLOW = """workflows:
   - task: Repo task.
@@ -41,91 +41,10 @@ def project(tmp_path: Path) -> Path:
     return directory
 
 
-# Former file names
-
-
-@pytest.mark.parametrize(
-    ("legacy", "current"),
-    [
-        ("workflows.yaml", "ww-agentic-workflows.yaml"),
-        ("agentic-workflows.json", "ww-agentic-workflows.json"),
-    ],
-)
-def test_a_command_stops_on_a_former_file_name(
-    project: Path, capsys: pytest.CaptureFixture[str], legacy: str, current: str
-) -> None:
-    if legacy.endswith(".json"):
-        _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
-    _write(project / legacy, _WORKFLOW if legacy.endswith(".yaml") else "{}")
-
-    assert main(["--root", str(project), "lint"]) == 1
-    assert capsys.readouterr().err == (
-        f"ww error: found {legacy}; rename it to {current}, "
-        "or run init to rename it\n"
-    )
-
-
-def test_a_former_name_next_to_the_current_one_must_be_removed(
-    project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
-    _write(project / "workflows.yaml", _WORKFLOW)
-
-    assert main(["--root", str(project), "lint"]) == 1
-    assert capsys.readouterr().err == (
-        "ww error: found workflows.yaml next to ww-agentic-workflows.yaml; "
-        "ww reads only ww-agentic-workflows.yaml, so remove workflows.yaml\n"
-    )
-    assert main(["--root", str(project), "init", "--no-input"]) == 1
-
-
-def test_init_renames_former_files_and_keeps_their_settings(
-    project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _write(project / "workflows.yaml", _WORKFLOW)
-    _write(
-        project / "agentic-workflows.json",
-        json.dumps({"max_rounds": 7, "executable": "ww-custom"}),
-    )
-
-    assert main(["--root", str(project), "init", "--no-input", "--json"]) == 0
-    created = json.loads(capsys.readouterr().out)["created"]
-
-    assert created[:2] == [
-        "ww-agentic-workflows.yaml (renamed from workflows.yaml)",
-        "ww-agentic-workflows.json (renamed from agentic-workflows.json)",
-    ]
-    assert not (project / "workflows.yaml").exists()
-    assert not (project / "agentic-workflows.json").exists()
-    assert "task: Repo task." in (project / "ww-agentic-workflows.yaml").read_text()
-    settings = json.loads((project / "ww-agentic-workflows.json").read_text())
-    assert settings["max_rounds"] == 7
-    assert settings["executable"] == "ww-custom"
-    assert main(["--root", str(project), "lint"]) == 0
-
-
-@pytest.mark.parametrize("launcher", GENERATED_LAUNCHERS)
-def test_init_upgrades_a_launcher_an_earlier_ww_wrote(
-    project: Path, capsys: pytest.CaptureFixture[str], launcher: str
-) -> None:
-    _write(project / "ww", launcher)
-
-    assert main(["--root", str(project), "init", "--no-input"]) == 0
-    capsys.readouterr()
-
-    assert (project / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
-
-
-def test_the_launcher_written_for_the_former_machine_level_is_upgraded() -> None:
-    assert any("WW_MACHINE_CONFIG_DIR" in launcher for launcher in GENERATED_LAUNCHERS)
-    assert "WW_USER_CONFIG_DIR" in PROJECT_LAUNCHER
-    assert ".machine." not in PROJECT_LAUNCHER
-
-
 def test_an_edited_launcher_is_preserved(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    edited = GENERATED_LAUNCHERS[0] + "# mine\n"
+    edited = PROJECT_LAUNCHER + "# mine\n"
     _write(project / "ww", edited)
 
     assert main(["--root", str(project), "init", "--no-input"]) == 0
@@ -134,11 +53,10 @@ def test_an_edited_launcher_is_preserved(
     assert (project / "ww").read_text(encoding="utf-8") == edited
 
 
-@pytest.mark.parametrize("marker", ["workflows.yaml", "ww-agentic-workflows.yaml"])
-def test_the_project_root_is_found_by_either_workflow_file_name(
-    project: Path, monkeypatch: pytest.MonkeyPatch, marker: str
+def test_the_project_root_is_found_by_its_workflow_file(
+    project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _write(project / marker, _WORKFLOW)
+    _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
     nested = project / "a" / "b"
     nested.mkdir(parents=True)
     monkeypatch.chdir(nested)
@@ -239,7 +157,7 @@ def test_init_keeps_patterns_already_listed(
     )
 
 
-def test_init_replaces_the_former_runtime_line_where_it_stands(
+def test_init_replaces_a_whole_directory_runtime_line_where_it_stands(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write(project / ".gitignore", "node_modules/\n.ww/\ndist/\n" + _LOCAL_PATTERNS)
@@ -268,13 +186,13 @@ def test_init_writes_the_runtime_lines_and_completes_a_partial_set(
     )
 
 
-@pytest.mark.parametrize("former", [".ww", ".ww/", "/.ww", "/.ww/", "  .ww/  "])
+@pytest.mark.parametrize("whole", [".ww", ".ww/", "/.ww", "/.ww/", "  .ww/  "])
 def test_init_replaces_every_line_that_ignores_the_runtime_directory_whole(
-    project: Path, capsys: pytest.CaptureFixture[str], former: str
+    project: Path, capsys: pytest.CaptureFixture[str], whole: str
 ) -> None:
     _write(
         project / ".gitignore",
-        f"node_modules/\n{former}\ndist/\n.ww/\n" + _LOCAL_PATTERNS,
+        f"node_modules/\n{whole}\ndist/\n.ww/\n" + _LOCAL_PATTERNS,
     )
 
     _init(project, capsys, "--update-gitignore")
@@ -385,19 +303,6 @@ def test_init_creates_the_user_configuration_directory(
     assert "user configuration directory" not in capsys.readouterr().out
 
 
-def test_a_former_user_level_file_stops_every_command(
-    user: Path, project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _init(project, capsys)
-    _write(user / "ww-agentic-workflows.machine.yaml", _WORKFLOW)
-
-    assert main(["--root", str(project), "lint"]) != 0
-
-    error = capsys.readouterr().err
-    assert "ww-agentic-workflows.machine.yaml" in error
-    assert str(user / "ww-agentic-workflows.yaml") in error
-
-
 # The ./ww launcher
 
 
@@ -441,33 +346,6 @@ def test_the_launcher_runs_the_lowest_level_executable(
     assert _run_launcher(project, user) == "ww-repo"
     _write(project / "ww-agentic-workflows.local.json", '{"executable": "  "}')
     assert _run_launcher(project, user) == "ww-repo"
-
-
-@pytest.mark.parametrize(
-    ("former", "current", "value"),
-    [
-        ("commit_message", "commit_format", "{{ww.task.id}}: {{commit_message}}"),
-        ("use_separate_branch", "separate_branch", False),
-    ],
-)
-def test_init_adds_no_git_setting_next_to_its_former_name(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    former: str,
-    current: str,
-    value: object,
-) -> None:
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    settings = json.dumps({"extensions": {"ww/git": {former: value}}}) + "\n"
-    _write(tmp_path / "ww-agentic-workflows.json", settings)
-
-    assert main(["--root", str(tmp_path), "init", "--no-input"]) == 1
-
-    assert (
-        f"ww/git {former} in ww-agentic-workflows.json was renamed to {current}"
-        in capsys.readouterr().err
-    )
-    assert (tmp_path / "ww-agentic-workflows.json").read_text() == settings
 
 
 @pytest.mark.parametrize("level", ["user", "local"])

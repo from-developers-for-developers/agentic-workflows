@@ -4,9 +4,7 @@
 A task's state may be read from another filesystem than the one that wrote
 it, for example a container that mounts the checkout elsewhere.  ww therefore
 stores a working directory relative to the project root and resolves it
-against the current root whenever a path is printed or used.  A value saved
-absolute by an earlier release still resolves, because joining an absolute
-path onto the root yields that path.
+against the current root whenever a path is printed or used.
 """
 
 from __future__ import annotations

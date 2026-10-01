@@ -50,47 +50,9 @@ CORE_VARIABLE_NAMES = (
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
 
-# Template names before every ww value moved under ``ww.``: an old name is an
-# interpolation error that names its replacement.
-_RENAMED_NAMES = {
-    "__task_id": TASK_ID,
-    "__workflows": WORKFLOWS,
-    "__task_workspace_dir": TASK_WORKSPACE_DIR,
-    "__project": PROJECT,
-    "__project_dir": PROJECT_DIR,
-    "__projects": PROJECTS,
-    "__branch_naming_strategy": "ww.git.branch_strategy",
-}
-_RENAMED_PREFIXES = (
-    ("metadata.", METADATA_PREFIX),
-    ("project_metadata.", PROJECT_METADATA_PREFIX),
-    ("documents.", DOCUMENTS_PREFIX),
-    ("item.", "ww.item."),
-    ("field.", ITEM_FIELD_PREFIX),
-)
-
-
-def renamed_template_name(name: str) -> str | None:
-    """The ``ww.`` name that replaced an old template name, if ``name`` is one."""
-    if name in _RENAMED_NAMES:
-        return _RENAMED_NAMES[name]
-    for old, new in _RENAMED_PREFIXES:
-        if name.startswith(old):
-            return new + name.removeprefix(old)
-    return None
-
-
 def unknown_template_message(names: set[str] | tuple[str, ...]) -> str:
-    """Name unavailable template values, and the replacement of any old one."""
-    renamed = [
-        f"{{{{{name}}}}} was renamed to {{{{{new}}}}}"
-        for name in sorted(names)
-        if (new := renamed_template_name(name)) is not None
-    ]
-    message = "handler references unavailable variable(s): " + ", ".join(
-        sorted(names)
-    )
-    return message + ("; " + "; ".join(renamed) if renamed else "")
+    """Name the template values a handler references that are unavailable."""
+    return "handler references unavailable variable(s): " + ", ".join(sorted(names))
 
 
 # Every ww-provided template value lives under ``ww.``; an extension's

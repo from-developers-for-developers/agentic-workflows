@@ -835,7 +835,6 @@ workflows:
     assert replayed.status == "completed"
     assert replayed.attempts == 2
     assert replayed.operation_id == stale.operation_id
-    assert state.item_executions[2].operation_id_known
 
 
 def test_a_crash_after_a_failed_exit_is_a_known_failure(

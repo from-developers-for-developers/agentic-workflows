@@ -56,7 +56,6 @@ changed and staged path resolves beneath it.
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import tempfile
 from collections.abc import Mapping
@@ -92,19 +91,6 @@ RUN_TOKEN = "ww.task.run"
 FORMAT_TOKENS = (TASK_ID, WORKFLOW_TOKEN, RUN_TOKEN)
 DEFAULT_COMMIT_FORMAT = "{{ww.task.id}}: {{commit_message}}"
 DEFAULT_BRANCH_FORMAT = "{{ww.task.id}}"
-# Settings and format tokens that were renamed; an old one is an error in the
-# live settings and upgraded in settings a run froze before the rename.
-_RENAMED_SETTINGS = {
-    "commit_message": "commit_format",
-    "use_separate_branch": "separate_branch",
-}
-_RENAMED_TOKENS = {
-    "task_id": TASK_ID,
-    "workflow": WORKFLOW_TOKEN,
-    "run_id": RUN_TOKEN,
-}
-# A renamed token as a run froze it, spaces inside the braces allowed.
-_OLD_TOKEN = re.compile(r"\{\{\s*(task_id|workflow|run_id)\s*\}\}")
 _SETTING_KEYS = {
     "commit_format",
     "base_branches",
@@ -123,7 +109,7 @@ _LOG_FIELDS = 3
 # The positional ``args`` of merge-branch.
 MERGE_ARGUMENTS = ("branch", "message")
 # What git prints when it cannot sign: its own marker, and the signing
-# programs' usual wording (gpg, ssh-keygen, 1Password's op-ssh-sign).
+# programs' usual wording (gpg, ssh-keygen, ssh-agent signers).
 _SIGNING_FAILURE_MARKERS = (
     "failed to write commit object",
     "failed to sign",
@@ -193,18 +179,6 @@ def settings_from(config: Any) -> Settings:
         return Settings()
     if not isinstance(config, dict):
         raise ConfigurationError("ww/git settings must be an object")
-    if "base_branch" in config:
-        raise ConfigurationError(
-            'ww/git base_branch is now the "default" entry of base_branches: '
-            'use "base_branches": {"default": ...}'
-        )
-    for old, new in _RENAMED_SETTINGS.items():
-        if old in config:
-            raise ConfigurationError(
-                f'ww/git {old} was renamed to {new}: "{new}": '
-                + json.dumps(config[old])
-            )
-    _reject_renamed_tokens(config)
     unknown = set(config) - _SETTING_KEYS
     if unknown:
         raise ConfigurationError(
@@ -274,63 +248,6 @@ def _validate_commit_format(value: str) -> None:
             "ww/git commit_format must contain exactly one "
             "{{commit_message}} placeholder"
         )
-
-
-def _format_strings(config: Mapping[str, Any]) -> list[str]:
-    """Every string in the settings that ww/git renders as a format."""
-    found: list[str] = []
-    for key in ("commit_format", "worktree_name_format"):
-        if isinstance(config.get(key), str):
-            found.append(config[key])
-    formats = config.get("branch_name_formats")
-    if isinstance(formats, dict):
-        found.extend(value for value in formats.values() if isinstance(value, str))
-    branches = config.get("base_branches")
-    if isinstance(branches, dict):
-        for definition in branches.values():
-            argv = definition.get("argv") if isinstance(definition, dict) else None
-            if isinstance(argv, list):
-                found.extend(arg for arg in argv if isinstance(arg, str))
-    return found
-
-
-def _reject_renamed_tokens(config: Mapping[str, Any]) -> None:
-    for value in _format_strings(config):
-        for name in dependencies(value):
-            if name in _RENAMED_TOKENS:
-                raise ConfigurationError(
-                    f"ww/git format token {{{{{name}}}}} was renamed to "
-                    f"{{{{{_RENAMED_TOKENS[name]}}}}}"
-                )
-
-
-def upgrade_settings(config: Mapping[str, object]) -> dict[str, object]:
-    """Settings frozen by ww/git before the renames, in the current shape.
-
-    ``commit_message`` becomes ``commit_format``, ``use_separate_branch``
-    becomes ``separate_branch``, and the format tokens ``{{task_id}}``,
-    ``{{workflow}}`` and ``{{run_id}}`` become ``{{ww.task.id}}``,
-    ``{{ww.task.workflow}}`` and ``{{ww.task.run}}``.
-    """
-
-    def tokens(value: object) -> object:
-        if isinstance(value, str):
-            return _OLD_TOKEN.sub(
-                lambda match: f"{{{{{_RENAMED_TOKENS[match.group(1)]}}}}}", value
-            )
-        if isinstance(value, dict):
-            return {key: tokens(item) for key, item in value.items()}
-        if isinstance(value, list):
-            return [tokens(item) for item in value]
-        return value
-
-    upgraded: dict[str, object] = {}
-    for key, value in config.items():
-        new_key = _RENAMED_SETTINGS.get(key, key)
-        if new_key in config and new_key != key:
-            continue
-        upgraded[new_key] = tokens(value)
-    return upgraded
 
 
 def _string(config: dict[str, Any], key: str, default: str) -> str:
@@ -784,8 +701,8 @@ def _commit(context: ExtensionContext) -> ExtensionResult:
         and settings.on_signing_failure == "unsigned"
         and _signing_failed(context, committed)
     ):
-        # The signing agent refused, as a locked 1Password does overnight:
-        # the operator allowed an unsigned commit rather than a stop.
+        # The signing agent refused (a locked key agent, for instance): the
+        # operator allowed an unsigned commit rather than a stop.
         committed = _git(context, "-c", "commit.gpgsign=false", *commit_args)
         signed = False
     if committed.returncode:
@@ -1238,10 +1155,6 @@ def _operation_commit(
     """
     if not context.operation_id:
         return ExtensionCheckResult.unknown("operation ID is missing")
-    if not context.operation_id_known:
-        return ExtensionCheckResult.unknown(
-            "operation ID was synthesized while migrating legacy state"
-        )
     # Each commit ends with a record separator: a body spans lines, so a
     # line break cannot tell one commit from the next.
     log = _git(context, "log", "--all", "--format=%H%x00%s%x00%B%x1e")
@@ -1601,7 +1514,6 @@ EXTENSION = Extension(
     version="0.2.0",
     description="Commit and branch through ww, and keep a record of both.",
     variables=(ExtensionVariable(TASK_WORKSPACE_DIR, _task_workspace_dir),),
-    upgrade_settings=upgrade_settings,
     namespace=ExtensionNamespace(
         "git",
         (

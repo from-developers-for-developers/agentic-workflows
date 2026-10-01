@@ -1,6 +1,6 @@
 {
   "baseline_commit": "d003959+core-operations+slice-13 renames",
-  "description": "Compiled plans at PLAN_SCHEMA_VERSION 18 (each item's role, manager or worker, and whether its performer may spawn subagents; rules, with their source file, checks, and a verification item's verifies are written only when an item has them): every item stores its operation under 'operation' with an explicit 'type' (action, loop, workflow_transition, child_workflow); only the temporary root is normalized. Regenerate only with a deliberate format change and a schema bump.",
+  "description": "Compiled plans at PLAN_SCHEMA_VERSION 1 (each item's role, manager or worker, and whether its performer may spawn subagents; rules, with their source file, checks, and a verification item's verifies are written only when an item has them): every item stores its operation under 'operation' with an explicit 'type' (action, loop, workflow_transition, child_workflow); only the temporary root is normalized. Regenerate only with a deliberate format change and a schema bump.",
   "cases": [
     {
       "name": "terminal_handoff",

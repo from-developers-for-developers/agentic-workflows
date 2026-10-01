@@ -192,7 +192,6 @@ def test_a_plain_flow_keeps_items_to_its_run(tmp_path: Path) -> None:
     ("setting", "message"),
     [
         ("persistent: yes please", "persistent must be true or false"),
-        ("shared: true", "shared was renamed to persistent"),
     ],
 )
 def test_persistent_is_a_boolean_on_the_items_mapping(
