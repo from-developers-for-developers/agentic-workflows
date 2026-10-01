@@ -128,6 +128,12 @@ collects the limitations, so it is not repeated there.
   trusted; only Claude Code keeps a hooks file out of version control. See
   the per-agent table in
   [agent-hooks.md](agent-hooks.md#agents-and-their-files).
+- Codex has two question tools. `request_user_input` blocks until the
+  operator answers; `request_user_input_async` parks the question as
+  "Queued follow-up inputs" and lets the turn continue, so an interview
+  step looks as if nothing was asked until `shift+←` (or `Alt+↑`) opens it.
+  ww's skills and pages name the blocking tool, but the choice is the
+  model's; a parked question is answered with that key.
 - Editing its own workflow files: some agents' safety layers, such as Claude
   Code's auto mode, refuse an agent's edits to the workflow files it runs
   under (`ww.yaml` and `.json`) as self-modification, even

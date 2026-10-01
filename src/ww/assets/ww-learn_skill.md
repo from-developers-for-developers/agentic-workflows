@@ -18,4 +18,5 @@ starts it.
    ```
 
 3. Follow every page until the run completes. Ask the operator through your
-   question tool wherever a page offers choices.
+   blocking question tool wherever a page offers choices, and wait for each
+   answer (in Codex `request_user_input`, not `request_user_input_async`).

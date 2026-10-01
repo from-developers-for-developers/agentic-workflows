@@ -6,9 +6,10 @@ description: Guide the operator through setting ww up in this project, step by s
 # Set ww up with the operator
 
 Talk to the operator in plain words, one question at a time, and ask every
-question through your question tool (`AskUserQuestion` in Claude Code,
-`request_user_input` in Codex, and so on), or as a numbered list where there
-is none. Nothing changes without the operator seeing it first, and you never
+question through your blocking question tool (`AskUserQuestion` in Claude
+Code; `request_user_input` in Codex, never `request_user_input_async`, which
+parks the question while you carry on), waiting for each answer before you
+continue, or as a numbered list where there is none. Nothing changes without the operator seeing it first, and you never
 edit ww's configuration files yourself: ww's workflows place changes with
 `./ww setup apply`.
 

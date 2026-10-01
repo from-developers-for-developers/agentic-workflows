@@ -11,7 +11,8 @@ existing files first and update them in place.
 1. Run `./ww onboarding --json` and tell the operator when ww last learned
    about each subject (`learned.me`, `learned.team`, `learned.company`,
    `learned.project`; `null` is never).
-2. Ask through your question tool what to refresh: "me, my team and company"
+2. Ask through your blocking question tool (in Codex `request_user_input`,
+   not `request_user_input_async`) what to refresh: "me, my team and company"
    (the `ww-learn` workflow), "the project" (`ww-learn-project`), or both.
 3. If `user.explain` is `true`, add `--mode ww-narrate`. Start each chosen
    workflow with the start command `./ww discover` shows, omitting the task
