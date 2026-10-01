@@ -110,12 +110,14 @@ def _stop(
     if payload.continued:
         return replace(ALLOW, decision="allowed: the agent already continued once")
     # A manager waiting on a worker is not the one to close the step: its own
-    # stop skips delegated steps, and the worker's stop reminds instead.
+    # stop skips delegated steps, and the worker's stop reminds instead. A
+    # step in conversation with the operator stops to hear them.
     working = tasks_for_session(
         tuple(
             task
             for task in tasks
             if task.agent_step_in_progress
+            and not task.in_conversation
             and (payload.from_worker or not task.delegated)
         ),
         records.storage.root,
@@ -168,6 +170,7 @@ def _interrupt(
                 attempt=task.attempt,
                 agent=agent.name,
                 reason=payload.reason,
+                in_conversation=task.in_conversation,
             ),
         )
     return HookAnswer(

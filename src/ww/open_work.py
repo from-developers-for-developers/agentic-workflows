@@ -51,6 +51,9 @@ class OpenTask:
     # The step is one the manager hands to a worker (``--runtime auto``), so
     # the session that started the run waits on it rather than holds it.
     delegated: bool = False
+    # The step is interactive and its conversation has not ended: the session
+    # stops to let the operator speak, so a stop is not a step left open.
+    in_conversation: bool = False
 
     @property
     def label(self) -> str:
@@ -155,6 +158,12 @@ def _open_task(tasks: TaskStorageAdapter, root: Path, task_id: str) -> OpenTask 
             state.workflow_runtime == "auto"
             and item is not None
             and item.role == "worker"
+        ),
+        in_conversation=(
+            item is not None
+            and item.interactive
+            and record is not None
+            and not record.interaction_ended
         ),
     )
 

@@ -14,7 +14,7 @@ agent.
 | --- | --- | --- |
 | `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here (under `"enabled": "on_request"`: that ww is used only when the user asks for it) and up to five unfinished tasks, newest first, with their step, workspace, and resume commands. |
 | `stop` | The agent ends its turn | Once per step attempt, asks the agent to record an agent-owned step it left in progress. The next stop is always allowed. |
-| `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work. |
+| `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work, or to pick up the recorded conversation when the step was talking with the operator. |
 
 There is no pre-spawn hook yet: ww does not intercept an agent's own
 subagent calls. `subagents: false` is enforced only through the step's
@@ -73,9 +73,14 @@ Which tasks concern a session:
   `--runtime auto`, a step that may go to a worker (`role: worker`, the
   default) is delegated: the main session's stop skips it, and the worker's
   own stop (`SubagentStop` in Claude Code and Codex, `subagentStop` in Cursor)
-  reminds instead. A step the manager performs itself, a `role: manager` or
-  interactive step, is still reminded. Antigravity reports no worker
-  stop, so its manager is simply not reminded about delegated steps.
+  reminds instead. A step the manager performs itself (`role: manager`) is
+  still reminded. Antigravity reports no worker stop, so its manager is
+  simply not reminded about delegated steps.
+- An interactive step whose conversation has not ended is not reminded: the
+  session stops so the operator can answer. Once `interact --end` was
+  recorded, the step is open work again and the next stop reminds. An
+  `interrupt` during such a conversation is still recorded, and the notice
+  points at the conversation on the step's page instead of at `git status`.
 
 ## Agents and their files
 

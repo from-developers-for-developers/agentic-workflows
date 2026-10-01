@@ -19,6 +19,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - Breaking: the configuration files are `ww.yaml`, `ww.json`, `ww.local.yaml` and `ww.local.json`, and the user
   configuration directory is `~/.config/ww/` (or `$XDG_CONFIG_HOME/ww`). Rename yours.
 - `init` writes every root-level setting with its default to `ww.json`, and adds the missing ones to an existing file.
+- The `stop` hook no longer reminds about an interactive step whose conversation is still open: the session stops so
+  the operator can answer. An interruption during such a conversation says to pick up the recorded conversation
+  rather than to check `git status`.
 - Development: `scripts/test` creates or reuses `.venv` and runs ruff, mypy and pytest; the tests run in parallel
   through pytest-xdist (`-n 0` runs them serially). The code is formatted with `ruff format`, checked by `scripts/test`
   and CI.

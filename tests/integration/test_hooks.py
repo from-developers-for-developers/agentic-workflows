@@ -890,3 +890,62 @@ def test_other_agents_tell_a_workers_stop_apart(agent: str, worker_event: str) -
 
     assert parsed.from_worker is True
     assert main_stop.from_worker is False
+
+
+# interactive steps
+
+
+INTERACTIVE_WORKFLOWS = """workflows:
+  - name: interview
+    steps:
+      - name: talk
+        description: Interview the operator.
+        interactive: true
+"""
+
+
+def _in_conversation(root: Path) -> WorkflowService:
+    (root / "ww.yaml").write_text(INTERACTIVE_WORKFLOWS, encoding="utf-8")
+    service = WorkflowService(Storage(root))
+    start_after_init(service, "interview", "T1", agent="claudecode")
+    service.next("T1")
+    return service
+
+
+def test_stop_is_silent_while_an_interactive_step_waits_for_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    service = _in_conversation(root)
+
+    # The agent stops to let the operator answer: nothing is left open.
+    assert _hook(root, monkeypatch, capsys, "stop") == ""
+    service.interact("T1", agent="Anything else?", caller_role="manager")
+    assert _hook(root, monkeypatch, capsys, "stop") == ""
+
+    # Once the conversation has ended, the step is open work like any other.
+    service.interact("T1", end=True, caller_role="manager")
+    reminder = json.loads(_hook(root, monkeypatch, capsys, "stop"))
+    assert "T1 step `talk` is still in progress" in reminder["reason"]
+
+
+def test_an_interrupt_during_a_conversation_points_at_the_recorded_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    service = _in_conversation(root)
+    service.interact(
+        "T1", agent="How much should an agent decide?", caller_role="manager"
+    )
+
+    assert (
+        _hook(root, monkeypatch, capsys, "interrupt", payload={"reason": "exit"}) == ""
+    )
+
+    marker = json.loads((root / ".ww/tasks/T1/interrupted.json").read_text())
+    assert marker["in_conversation"] is True
+    assert main(["--root", str(root), "instruction", "T1", "--role", "manager"]) == 0
+    output = capsys.readouterr().out
+    assert "while `talk` (attempt 1) was talking with the operator" in output
+    assert "pick it up at the last unanswered question" in output
+    assert "git status" not in output

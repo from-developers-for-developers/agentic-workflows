@@ -44,6 +44,8 @@ class Interruption:
     agent: str
     # The agent's own word for why the session ended, when it gives one.
     reason: str | None = None
+    # The step was talking with the operator when the session ended.
+    in_conversation: bool = False
 
     @property
     def moment(self) -> datetime | None:
@@ -197,6 +199,7 @@ def _read_interruption(path: Path) -> Interruption | None:
             attempt=int(value.get("attempt", 0)),
             agent=str(value.get("agent", "")),
             reason=value.get("reason"),
+            in_conversation=bool(value.get("in_conversation", False)),
         )
     except (KeyError, TypeError, ValueError):
         return None

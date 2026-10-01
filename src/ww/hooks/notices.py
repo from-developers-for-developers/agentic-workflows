@@ -124,6 +124,13 @@ def interruption_notice(interruption: Interruption, task_id: str) -> str:
         f", {interruption.reason}" if interruption.reason else ""
     )
     step = interruption.step or interruption.item_name or "its step"
+    if interruption.in_conversation:
+        return (
+            f"Interrupted: the previous session ({who}) stopped at {interruption.at} "
+            f"while `{step}` (attempt {interruption.attempt}) was talking with the "
+            "operator. The step's page shows the conversation recorded so far; "
+            "pick it up at the last unanswered question rather than starting over."
+        )
     return (
         f"Interrupted: the previous session ({who}) stopped at {interruption.at} "
         f"during `{step}` (attempt {interruption.attempt}). Before continuing, check "
