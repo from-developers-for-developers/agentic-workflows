@@ -96,13 +96,13 @@ workflows:
                         Interview the operator about themselves. If
                         {{ww.documents.me}} exists, read it first, show them in
                         short what it says, and ask only what is missing or may
-                        have changed. Ask one question at a time, in plain
-                        words; where the answer is one of a few options (brief
-                        or detailed answers, how much to decide alone, how
-                        often to ask), offer them through your blocking question
-                        tool, or as a numbered list in the chat when you have
-                        only an asynchronous one, and end your turn until the
-                        answer comes. Accept "skip" for any question. Cover: (1) their
+                        have changed. Put all of the questions below in one message, numbered,
+                        each one plain sentence; where the answer is one of a
+                        few options, list the options under the question. End
+                        your turn and wait for the answers; "skip" is a valid
+                        answer to any of them. Then ask at most one follow-up
+                        per question, and only where an answer needs
+                        clarifying. Cover: (1) their
                         personality and working style: how they like to
                         communicate, how they decide, how much autonomy they
                         give an agent, what annoys them; (2) their own pain
@@ -139,12 +139,13 @@ workflows:
                         Interview the operator about their role in this
                         project. If {{ww.documents.myrole}} exists, read it
                         first, show them in short what it says, and ask only
-                        what is missing or may have changed. Ask one question
-                        at a time, in plain words; where the answer is one of a
-                        few options, offer them through your blocking question
-                        tool, or as a numbered list in the chat when you have
-                        only an asynchronous one, and end your turn until the
-                        answer comes. Accept "skip" for any question. Cover: (1) their role and
+                        what is missing or may have changed. Put all of the questions below in one message, numbered,
+                        each one plain sentence; where the answer is one of a
+                        few options, list the options under the question. End
+                        your turn and wait for the answers; "skip" is a valid
+                        answer to any of them. Then ask at most one follow-up
+                        per question, and only where an answer needs
+                        clarifying. Cover: (1) their role and
                         responsibilities here; (2) what parts of the system or
                         process they own; (3) who they work with and hand work
                         over to; (4) what they are measured on, or what "done"
@@ -180,9 +181,12 @@ workflows:
                         Interview the operator about their team and company. If
                         {{ww.documents.team}} or {{ww.documents.company}}
                         exists, read it first, show them in short what it says,
-                        and ask only what is missing or may have changed. Ask
-                        one question at a time and accept "skip". About the
-                        team: what it does, its size and roles, how it works
+                        and ask only what is missing or may have changed. Put
+                        all of the questions in one message, numbered, each
+                        one plain sentence; end your turn and wait for the
+                        answers, "skip" being a valid answer to any. Then ask
+                        at most one follow-up per question, only where an
+                        answer needs clarifying. About the team: what it does, its size and roles, how it works
                         (planning, reviews, releases, on-call), its pain
                         points, technical and organisational, what it expects
                         from AI and agents, and what it expects from ww, which

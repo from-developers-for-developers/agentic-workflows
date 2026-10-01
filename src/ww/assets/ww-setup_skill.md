@@ -5,11 +5,14 @@ description: Guide the operator through setting ww up in this project, step by s
 
 # Set ww up with the operator
 
-Talk to the operator in plain words, one question at a time, and ask every
-question through your blocking question tool where you have one
+Talk to the operator in plain words. An interview puts all of a subject's
+questions in one numbered message, each a plain sentence with its options
+listed beneath where there are a few, and asks at most one follow-up per
+question, only where an answer needs clarifying. A single choice, as in the
+`choose` steps, goes through your blocking question tool where you have one
 (`AskUserQuestion` in Claude Code; `request_user_input` in Codex's plan
-mode), and end your turn right after asking: do nothing else until the
-operator has answered. Where the only question tool is an asynchronous one
+mode). Either way, end your turn right after asking: do nothing else until
+the operator has answered. Where the only question tool is an asynchronous one
 (Codex outside plan mode offers `request_user_input_async`), do not use it:
 its form disappears when your turn ends. Ask in the chat instead, as a
 numbered list of the options, and end your turn. Nothing changes without the operator seeing it first, and you never
