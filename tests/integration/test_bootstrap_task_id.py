@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Starting without a task ID: a first step obtains and binds the external ID."""
+
 from pathlib import Path
 
 import pytest

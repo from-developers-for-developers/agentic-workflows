@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Discovering agents and the skills installed for them."""
+
 from pathlib import Path
 
 import pytest

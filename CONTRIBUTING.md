@@ -181,10 +181,6 @@ Keep action identifiers stable and retain decoding support for saved payloads
 when changing an action. Missing implementations leave saved payloads readable,
 but execution requires their implementation to be registered again.
 
-[Retained plan fixtures](tests/fixtures/action_plan_compatibility.json) pin
-compiled plan ordering, identities, and the persisted `operation` format at the
-current plan schema. Regenerate them only together with a deliberate format
-change and a `PLAN_SCHEMA_VERSION` bump, never merely to make a refactor pass.
 Add capability-specific integration cases alongside the basic contract helper,
 including save/reload and interrupted-operation behavior.
 

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Rendering a step's artifact as Markdown."""
+
 from ww.artifacts import render_step_artifact
 
 

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Project storage: execution logs and their rotation."""
+
 import json
 from pathlib import Path
 from stat import S_IMODE

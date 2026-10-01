@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Agent, model, reasoning, and profile hints on steps and handlers."""
+
 from pathlib import Path
 
 import pytest

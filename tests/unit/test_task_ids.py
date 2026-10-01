@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_helpers import configured_service, start_after_init
 from ww.errors import StateError
 from ww.extensions import ExtensionRegistry
 from ww.service import WorkflowService
@@ -103,3 +104,33 @@ def test_claims_come_from_task_state(tmp_path: Path) -> None:
         for task_id in ("TASK-1", "TASK-2")
     }
     assert claimed == {"TASK-1": True, "TASK-2": False}
+
+
+def test_numeric_task_generation_continues_past_fifty(tmp_path: Path) -> None:
+    (tmp_path / "ww.json").write_text(
+        '{"task_format": "TASK-{{digit}}"}', encoding="utf-8"
+    )
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: work
+        artifact: false
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: task
+""",
+    )
+
+    for index in range(1, 52):
+        instruction = start_after_init(service, "task", None, agent="codex")
+        assert instruction.task_id == f"TASK-{index}"
+
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    for index in range(1, 52):
+        child = service.add_child("P", None, f"child {index}")
+        assert child.id == f"TASK-{index}"

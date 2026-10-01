@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""The Markdown output adapter's instruction pages."""
+
 from ww.children import ChildTask
 from ww.instructions import Instruction
 from ww.instructions.commands import recovery_commands

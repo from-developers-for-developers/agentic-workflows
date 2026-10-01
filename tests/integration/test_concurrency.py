@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Parallel ww processes working on the same tasks."""
+
 import json
 import subprocess
 import sys

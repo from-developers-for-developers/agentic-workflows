@@ -28,7 +28,7 @@ def _started_by_an_other_version(
     original = PlanItem.to_dict
 
     def with_retired_field(item: PlanItem) -> dict[str, object]:
-        return {**original(item), "retired_field": "set by an older ww"}
+        return {**original(item), "retired_field": "set by another ww"}
 
     with monkeypatch.context() as patch:
         patch.setattr(PlanItem, "to_dict", with_retired_field)
@@ -38,7 +38,7 @@ def _started_by_an_other_version(
     return WorkflowService(Storage(tmp_path))
 
 
-def test_a_plan_with_a_field_ww_no_longer_knows_still_loads(
+def test_a_plan_with_a_field_ww_does_not_know_loads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = _started_by_an_other_version(tmp_path, monkeypatch)
@@ -72,7 +72,7 @@ def test_unknown_fields_elsewhere_in_the_state_are_left_alone(
 def test_a_digest_another_version_computed_is_re_derived(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A default only the older version filled in changes the digest without
+    # A default only the other version filled in changes the digest without
     # leaving anything in the stored, compacted plan.
     _started_by_an_other_version(tmp_path, monkeypatch)
     path = tmp_path / ".ww/tasks/TASK-1/state.json"

@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import assignment_token, start_after_init
+from tests.workflow_helpers import (
+    assignment_token,
+    configured_service,
+    start_after_init,
+)
 from ww.cli import main
 from ww.errors import StateError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -822,3 +826,143 @@ def test_one_manager_next_passes_preparation_hooks_and_nested_boundaries(
     state = service.tasks.read_execution_state("TASK-ONE", "01-task")
     assert state is not None
     assert dict(state.loop_iterations) == {"run-tests": 1, "outer": 1, "outer/inner": 1}
+
+
+@pytest.mark.parametrize("memory", (False, True))
+def test_continue_and_retry_preserve_command_output_history(
+    tmp_path: Path, memory: bool
+) -> None:
+    config = """workflows:
+  - name: task
+    steps:
+      - name: cycle
+        loop:
+          - name: review
+            continue: Again.
+            hooks:
+              before_start:
+                - name: evidence
+                  shell: 'printf %s "$WW_OPERATION_ATTEMPT"; exit 1'
+"""
+    (tmp_path / "ww.yaml").write_text(config, encoding="utf-8")
+    service = WorkflowService(
+        Storage(
+            tmp_path,
+            task_persistence=MemoryTaskStorageAdapter() if memory else None,
+        )
+    )
+    service.start("task", "TASK-HISTORY", init_artifact="requirements")
+    assert service.next("TASK-HISTORY").status == "failed"
+    failed = service.tasks.read_execution_state("TASK-HISTORY", "01-task")
+    assert failed is not None
+    first_reference = next(
+        command.stdout_ref
+        for record in failed.item_executions
+        for command in record.commands
+        if command.stdout_ref is not None
+    )
+
+    assert service.next("TASK-HISTORY").status == "failed"
+    retried = service.tasks.read_execution_state("TASK-HISTORY", "01-task")
+    assert retried is not None
+    assert any(
+        command.stdout_ref == first_reference
+        for record in retried.execution_history
+        for command in record.commands
+    )
+    assert any(
+        artifact.get("command_output") == first_reference
+        for artifact in service.artifacts("TASK-HISTORY")
+    )
+
+
+@pytest.mark.parametrize("memory", (False, True))
+def test_continue_preserves_command_output_history(
+    tmp_path: Path, memory: bool
+) -> None:
+    config = """workflows:
+  - name: task
+    steps:
+      - name: cycle
+        loop:
+          - name: review
+            continue: Again.
+            hooks:
+              before_start:
+                - name: evidence
+                  argv: [printf, evidence]
+"""
+    (tmp_path / "ww.yaml").write_text(config, encoding="utf-8")
+    service = WorkflowService(
+        Storage(
+            tmp_path,
+            task_persistence=MemoryTaskStorageAdapter() if memory else None,
+        )
+    )
+    service.start("task", "TASK-CONTINUE", init_artifact="requirements")
+    service.next("TASK-CONTINUE")
+    first = service.tasks.read_execution_state("TASK-CONTINUE", "01-task")
+    assert first is not None
+    first_reference = next(
+        command.stdout_ref
+        for record in first.item_executions
+        for command in record.commands
+        if command.stdout_ref is not None
+    )
+
+    service.loop(
+        "TASK-CONTINUE",
+        artifact="again",
+        continue_loop=True,
+        summary_for_next="Done.",
+    )
+    continued = service.tasks.read_execution_state("TASK-CONTINUE", "01-task")
+    assert continued is not None
+    assert any(
+        command.stdout_ref == first_reference
+        for record in continued.execution_history
+        for command in record.commands
+    )
+    assert any(
+        artifact.get("command_output") == first_reference
+        for artifact in service.artifacts("TASK-CONTINUE")
+    )
+
+
+def test_continue_runs_completion_hook_then_blocks_at_loop_limit(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """handlers:
+  - name: audit
+    argv: [touch, audit.txt]
+workflows:
+  - name: task
+    steps:
+      - name: cycle
+        max_rounds: 1
+        loop:
+          - name: review
+            continue: Review again.
+            hooks:
+              after_complete:
+                - name: audit
+""",
+    )
+
+    service.start("task", "T", init_artifact="Requirements.")
+    service.next("T")
+    blocked = service.loop(
+        "T",
+        artifact="again",
+        continue_loop=True,
+        summary_for_next="Done.",
+    )
+    assert (tmp_path / "audit.txt").exists()
+    assert blocked.loop_limit_reached is True
+    assert blocked.control == "awaiting_operator"
+    assert blocked.operator_reason == "loop_limit"
+    state = service.tasks.read_execution_state("T", "01-task")
+    assert state is not None
+    assert dict(state.loop_iterations) == {"cycle": 1}

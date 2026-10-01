@@ -1255,16 +1255,8 @@ def test_branches_lists_what_was_opened(repository: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Projects: repository resolution and per-project base branches
+# Projects: repository resolution
 # --------------------------------------------------------------------------- #
-
-
-def test_project_base_branches_is_no_longer_a_setting() -> None:
-    """A project's base branch lives in that project's own settings file."""
-    with pytest.raises(
-        ConfigurationError, match="unknown setting.*project_base_branches"
-    ):
-        git_extension.settings_from({"project_base_branches": {"frontend": "master"}})
 
 
 def test_repository_resolves_the_task_workspace_and_its_worktrees(

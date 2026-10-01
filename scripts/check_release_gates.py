@@ -18,9 +18,18 @@ GATE_TESTS = (
     # Child creation must reconcile either side of an interrupted two-task update.
     "tests/integration/test_child_tasks.py::test_child_start_retries_after_parent_binding_was_persisted",
     "tests/integration/test_child_tasks.py::test_child_start_reconciles_published_child_after_parent_relink_failure",
-    # Follow-up regressions cover reset identities, terminal child recovery,
-    # numeric allocation, consistent reads, and process-creation failures.
-    "tests/integration/test_review_followup.py",
+    # A reset run gets new operation identities and never recovers an old effect.
+    "tests/integration/test_plan_execution.py::test_reset_creates_a_new_operation_identity_for_the_same_run_name",
+    "tests/integration/test_plan_execution.py::test_reset_does_not_recover_a_git_effect_from_the_previous_execution",
+    # A finished child whose parent missed the news is reconciled from either side.
+    "tests/integration/test_child_tasks.py::test_parent_status_repairs_a_missed_terminal_child_notification",
+    "tests/integration/test_child_tasks.py::test_child_recover_repeats_a_missed_terminal_parent_notification",
+    # Numeric task IDs keep counting, and status reads one aggregate revision.
+    "tests/unit/test_task_ids.py::test_numeric_task_generation_continues_past_fifty",
+    "tests/integration/test_workflow_service.py::test_status_uses_one_aggregate_revision",
+    # A command that cannot launch is retryable; one that launched stays unknown.
+    "tests/integration/test_plan_execution.py::test_process_creation_failure_is_a_retryable_cli_error",
+    "tests/integration/test_plan_execution.py::test_error_after_process_creation_keeps_the_outcome_unknown",
     # Dynamic expansion must publish a complete executable plan revision.
     "tests/integration/test_items.py::test_item_materialization_is_a_complete_executable_plan_revision",
     # Extension state and lock cleanup retain their interleaving guarantees.

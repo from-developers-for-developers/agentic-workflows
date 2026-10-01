@@ -1,8 +1,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Shared steps for tests that drive a workflow service."""
+
+from pathlib import Path
 from typing import Any
 
 from ww.instructions import Instruction
 from ww.service import WorkflowService
+from ww.storage import Storage
+
+
+def configured_service(root: Path, configuration: str) -> WorkflowService:
+    """A service over ``root`` once ``configuration`` is written as its ww.yaml."""
+    (root / "ww.yaml").write_text(configuration, encoding="utf-8")
+    return WorkflowService(Storage(root))
 
 
 def start_after_init(

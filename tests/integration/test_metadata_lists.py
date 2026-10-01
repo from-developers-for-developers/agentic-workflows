@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Metadata keys declared ``append: true`` grow across completions and runs."""
+"""Saved metadata: ``append: true`` lists grow, and project metadata keeps one shape."""
 
 from __future__ import annotations
 
@@ -8,12 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import start_after_init
+from tests.workflow_helpers import configured_service, start_after_init
 from ww.errors import StateError
 from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
 from ww.storage import Storage
+from ww.storage_adapters import ProjectMetadata
 
 WORKFLOWS = """workflows:
   - name: review
@@ -184,3 +185,85 @@ def test_a_project_scoped_append_key_merges_values_from_several_tasks(
     assert service.project_metadata() == {"seen": ["a", "b", "c"]}
     start_after_init(service, "task", "T-4", agent="codex")
     assert service.next("T-4").action_text == "Seen so far: a, b, c."
+
+
+@pytest.mark.parametrize(
+    "existing, output",
+    [("result.existing", "result"), ("result", "result.existing")],
+)
+def test_invalid_project_metadata_shape_does_not_complete_source_item(
+    tmp_path: Path, existing: str, output: str
+) -> None:
+    service = configured_service(
+        tmp_path,
+        f"""workflows:
+  - name: task
+    steps:
+      - name: capture
+        artifact: false
+        saves:
+          - project_metadata.{output}:
+""",
+    )
+    service.project_metadata_store.write_project_metadata(
+        ProjectMetadata(((existing, "old"),))
+    )
+    service.start("task", "TASK-METADATA", init_artifact="requirements")
+    service.next("TASK-METADATA")
+
+    with pytest.raises(StateError, match="conflicting project metadata key"):
+        service.complete(
+            "TASK-METADATA",
+            metadata_values=((f"project_metadata.{output}", "new"),),
+            summary_for_next="Done.",
+        )
+
+    state = service.tasks.read_execution_state("TASK-METADATA", "01-task")
+    assert state is not None
+    assert state.item_executions[1].status == "in_progress"
+    assert state.pending_project_metadata is None
+
+
+def test_concurrent_project_metadata_shape_conflict_can_be_resolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: capture
+        artifact: false
+        saves:
+          - project_metadata.result:
+""",
+    )
+    service.start("task", "TASK-CONCURRENT", init_artifact="requirements")
+    service.next("TASK-CONCURRENT")
+    original_commit = service.commit
+
+    def commit_with_concurrent_shape(*args: object, **kwargs: object) -> None:
+        state = args[0]
+        if getattr(state, "pending_project_metadata", None) is not None:
+            service.project_metadata_store.write_project_metadata(
+                ProjectMetadata((("result.existing", "other"),))
+            )
+        original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(service, "commit", commit_with_concurrent_shape)
+    with pytest.raises(StateError, match="incompatible metadata shape"):
+        service.complete(
+            "TASK-CONCURRENT",
+            metadata_values=(("project_metadata.result", "new"),),
+            summary_for_next="Done.",
+        )
+
+    state = service.tasks.read_execution_state("TASK-CONCURRENT", "01-task")
+    assert state is not None
+    assert state.item_executions[1].status == "completed"
+    assert state.pending_project_metadata is not None
+
+    monkeypatch.setattr(service, "commit", original_commit)
+    service.project_metadata_store.write_project_metadata(ProjectMetadata())
+    service.next("TASK-CONCURRENT")
+    assert service.project_metadata() == {"result": "new"}

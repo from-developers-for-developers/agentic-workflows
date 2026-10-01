@@ -1,16 +1,25 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Compiling a workflow configuration into an ordered plan of items."""
+
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from tests.plan_helpers import plan_item
 from ww.actions import (
+    CommandDefinition,
     Commands,
+    Extension,
     Mcp,
+    PlannedAction,
     Prompt,
+    Skill,
 )
 from ww.config import load_configuration
 from ww.errors import ConfigurationError
+from ww.execution_models import PLAN_SCHEMA_VERSION, PlanSnapshot
 from ww.extensions import ExtensionRegistry
 from ww.output import render_plan
 from ww.plan import (
@@ -18,6 +27,7 @@ from ww.plan import (
     LoopBoundary,
     PlanCompilationOptions,
     WorkflowHandoff,
+    WorkflowPlan,
     WorkflowPlanCompiler,
     compile_workflow_plan,
 )
@@ -28,7 +38,7 @@ from ww.plan.constructs import (
     normalize_construct,
 )
 from ww.project_config import Limits, ProjectConfig
-from ww.workflow_config import INIT_STEP_PROMPT, StepDefinition
+from ww.workflow_config import INIT_STEP_PROMPT, ProvidedVariable, StepDefinition
 
 
 @dataclass(frozen=True)
@@ -1213,3 +1223,111 @@ workflows:
     assert transition.registered_handler is None
     assert isinstance(transition.operation, WorkflowHandoff)
     assert transition.operation.target == "{{workflow}}"
+
+
+def test_plan_item_rejects_contradictory_automatic_action() -> None:
+    with pytest.raises(ValueError, match="conflicts with owner/execution"):
+        plan_item(execution="automatic")
+
+
+@pytest.mark.parametrize(
+    "changes, payload",
+    [
+        ({"operation": PlannedAction("prompt", Skill("unexpected"))}, "payload"),
+        (
+            {
+                "operation": PlannedAction(
+                    "prompt", Commands((CommandDefinition(argv=("true",)),))
+                )
+            },
+            "payload",
+        ),
+        (
+            {
+                "operation": PlannedAction(
+                    "prompt", Extension("ext/acme/example/handlers:run")
+                )
+            },
+            "payload",
+        ),
+    ],
+)
+def test_plan_item_rejects_payloads_for_another_action_kind(
+    changes: dict[str, object], payload: str
+) -> None:
+    with pytest.raises(ValueError, match=rf"action {payload}"):
+        plan_item(**changes)
+
+
+def test_plan_item_rejects_inconsistent_agent_input_flag() -> None:
+    with pytest.raises(ValueError, match="requires_agent_input"):
+        plan_item(
+            operation=PlannedAction(
+                "cli", Commands((CommandDefinition(argv=("true",)),))
+            ),
+            owner="ww",
+            execution="automatic",
+            provide=(ProvidedVariable("answer"),),
+        )
+
+
+@pytest.mark.parametrize(
+    "changes, message",
+    [
+        ({"phase": "later"}, "invalid plan item phase"),
+        ({"item_operation": "archive"}, "invalid item operation"),
+        ({"child_operation": "dispatch"}, "invalid child operation"),
+    ],
+)
+def test_plan_item_rejects_unknown_closed_values(
+    changes: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        plan_item(**changes)
+
+
+def test_a_compiled_plan_keeps_its_item_ids_and_operations_through_a_reload(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        """workflows:
+  - name: task
+    steps:
+      - name: cycle
+        loop:
+          - review: Review it.
+            break: Nothing is left to fix.
+      - name: split
+        children:
+          workflow: child
+      - name: choose
+        hooks:
+          after_complete:
+            - handoff_to: child
+  - name: child
+    steps:
+      - work: Work.
+""",
+        encoding="utf-8",
+    )
+
+    def compiled() -> WorkflowPlan:
+        return WorkflowPlanCompiler(
+            load_configuration(path), tmp_path, "codex", "TASK-1"
+        ).compile("task")
+
+    plan = compiled()
+    snapshot = PlanSnapshot(
+        schema_version=PLAN_SCHEMA_VERSION,
+        compiler_version="test",
+        configuration_digest="digest",
+        compiled_at="2026-01-01T00:00:00Z",
+        plan=plan,
+    )
+    loaded = PlanSnapshot.from_dict(json.loads(json.dumps(snapshot.to_dict()))).plan
+
+    assert [item.id for item in compiled().items] == [item.id for item in plan.items]
+    assert loaded == plan
+    kinds = {type(item.operation) for item in loaded.items}
+    assert {LoopBoundary, ChildWorkflowRun, WorkflowHandoff} <= kinds

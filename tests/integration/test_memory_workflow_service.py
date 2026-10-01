@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""The workflow service over in-memory task storage."""
+
 from pathlib import Path
 
 import pytest

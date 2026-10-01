@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Resolving a task reference to an existing or a new task ID."""
+
 import pytest
 
 from ww.errors import StateError

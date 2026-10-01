@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Semantic validation shared by parsed and programmatic workflows."""
+
 from pathlib import Path
 
 import pytest

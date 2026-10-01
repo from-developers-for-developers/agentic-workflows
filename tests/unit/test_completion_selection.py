@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""The agent, model, and reasoning a completion selects for the next step."""
+
 from ww.service import _normalize_completion_selection
 
 

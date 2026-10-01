@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""The workflow service: starting tasks and the pages it renders for them."""
+
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from tests.workflow_helpers import configured_service
 from ww.actions import DefinedAction, Prompt
 from ww.errors import StateError
+from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -377,3 +382,34 @@ def test_start_uses_the_workflow_runtime_unless_the_flag_says_otherwise(
         ).workflow_runtime
         == "auto"
     )
+
+
+def test_status_uses_one_aggregate_revision(tmp_path: Path) -> None:
+    writer = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: collect
+        items:
+          steps:
+            - name: process
+              item_phase: analyze
+""",
+    )
+    _start_after_init(writer, "task", "T", agent="codex")
+    writer.next("T")
+    writer.add_item("T", WorkItem("one", "one"))
+    reader = WorkflowService(Storage(tmp_path))
+    original_read = reader.tasks.read_task_record
+
+    def read_then_publish(task_id: str):  # type: ignore[no-untyped-def]
+        record = original_read(task_id)
+        writer.complete("T", summary_for_next="Done.")
+        return record
+
+    with patch.object(reader.tasks, "read_task_record", read_then_publish):
+        instruction = reader.status("T")
+
+    assert instruction.item_name == "collect"
+    assert reader.status("T").item_name == "process"

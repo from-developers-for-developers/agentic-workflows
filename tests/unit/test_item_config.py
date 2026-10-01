@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ww.config import load_configuration
+from tests.config_helpers import task_steps, task_workflow
+from ww.config import load_configuration, parse_yaml_text
 from ww.errors import ConfigurationError
 from ww.output import render_plan
 from ww.plan import compile_workflow_plan
@@ -429,4 +430,49 @@ def test_items_save_metadata_is_rejected_beside_configured_steps(
             "          steps:\n"
             "            - reply: Reply.\n"
             "              item_phase: report\n",
+        )
+
+
+def test_item_phase_marks_the_stage_and_items_take_phase_guidance() -> None:
+    (collect,) = task_steps(
+        task_workflow(
+            "      - collect:\n        items:\n          steps:\n"
+            "            - fix: Fix it.\n              item_phase: resolve\n"
+        )
+    )
+    (builtin,) = task_steps(
+        task_workflow(
+            "      - collect:\n        items:\n          analyze: Read the thread.\n"
+            "          report: Reply in the thread.\n"
+        )
+    )
+
+    assert collect.items is not None
+    assert collect.items.steps[0].item_operation == "resolve_item"
+    assert builtin.items is not None
+    description = builtin.items.steps[0].description
+    assert "When analyzing it: Read the thread." in description
+    assert "When reporting the outcome: Reply in the thread." in description
+    with pytest.raises(ConfigurationError, match="item_phase must be one of"):
+        parse_yaml_text(task_workflow("      - work: Work.\n        item_phase: fix\n"))
+
+
+def test_interactive_page_is_the_operator_page_on_item_stages_only() -> None:
+    (collect,) = task_steps(
+        task_workflow(
+            "      - collect:\n        items:\n          steps:\n"
+            "            - answer: Answer it.\n              interactive: page\n"
+        )
+    )
+
+    assert collect.items is not None
+    stage = collect.items.steps[0]
+    assert (stage.interactive, stage.ui) == (True, True)
+    with pytest.raises(ConfigurationError, match="per-item stages only"):
+        parse_yaml_text(
+            task_workflow("      - talk: Talk.\n        interactive: page\n")
+        )
+    with pytest.raises(ConfigurationError, match="true, false, or page"):
+        parse_yaml_text(
+            task_workflow("      - talk: Talk.\n        interactive: chat\n")
         )

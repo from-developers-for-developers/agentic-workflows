@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""The command-line interface: parsing, init, and the lifecycle commands."""
+
 import io
 import json
 import subprocess
@@ -1237,3 +1239,26 @@ def test_extension_discovery_error_handled_by_cli_boundary(
     err = capsys.readouterr().err
     assert "ww error:" in err
     assert "invalid extension identifier in discovery metadata" in err
+
+
+def test_the_flags_parse() -> None:
+    parser = build_parser()
+
+    start = parser.parse_args(
+        ["start", "-w", "task", "-a", "codex", "--requirements", "Do it.",
+         "--branch-strategy", "hotfix"]
+    )
+    interact = parser.parse_args(
+        ["interact", "T-1", "--operator-said", "yes", "--agent-said", "ok", "--end"]
+    )
+    child = parser.parse_args(["start-child", "T-1", "a"])
+    forced = parser.parse_args(["next", "T-1", "--force", "--reason", "Skip."])
+
+    assert (start.requirements, start.branch_naming_strategy) == ("Do it.", "hotfix")
+    assert (interact.operator, interact.agent, interact.end_interaction) == (
+        "yes",
+        "ok",
+        True,
+    )
+    assert (child.parent_task_id, child.child_id) == ("T-1", "a")
+    assert forced.force_reason == "Skip."

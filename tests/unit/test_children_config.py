@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ww.config import load_configuration
+from tests.config_helpers import task_workflow
+from ww.config import load_configuration, parse_yaml_text
 from ww.errors import ConfigurationError
 from ww.instructions.text import action_text
 from ww.operations import ChildWorkflowRun
@@ -147,3 +148,24 @@ def test_invalid_children_are_rejected(
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
         _load(tmp_path, steps, extra)
+
+
+def test_children_assignment_is_per_step_and_per_child_is_reserved() -> None:
+    children = (
+        "      - split:\n        children:\n          steps:\n"
+        "            - implement: {workflow: other}\n"
+        "          assignment: {value}\n"
+        "  - name: other\n    steps:\n      - work: Work.\n"
+    )
+
+    parse_yaml_text(task_workflow(children.replace("{value}", "per_step")))
+    with pytest.raises(ConfigurationError, match="per_child is reserved"):
+        parse_yaml_text(task_workflow(children.replace("{value}", "per_child")))
+    with pytest.raises(ConfigurationError, match="without steps"):
+        parse_yaml_text(
+            task_workflow(
+                "      - split:\n        children:\n          workflow: other\n"
+                "          assignment: per_step\n"
+                "  - name: other\n    steps:\n      - work: Work.\n"
+            )
+        )

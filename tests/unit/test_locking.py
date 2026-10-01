@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""File locks, atomic writes, and lock-file cleanup."""
+
 import errno
 import fcntl
 import os

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import assignment_token
+from tests.workflow_helpers import assignment_token, configured_service
 from ww.errors import StateError
 from ww.items import WorkItem
 from ww.output_adapters.json_adapter import JsonOutputAdapter
@@ -844,3 +844,43 @@ workflows:
     )
     assert (notify.item_name, notify.item_status) == ("notify", "in_progress")
     assert (tmp_path / "commit.txt").read_text(encoding="utf-8") == "Reviewed"
+
+
+def test_init_named_preparation_hook_keeps_manager_worker_handoff(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """handlers:
+  - name: init
+    description: Approve the requirements before initialization.
+workflows:
+  - name: task
+    hooks:
+      before_start:
+        - steps: [init]
+          name: init
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+
+    paused = service.start("task", "TASK-ROLES", caller_role="manager")
+    assert paused.next_role == "manager"
+    assigned = service.next("TASK-ROLES", caller_role="manager")
+    assert assigned.next_role == "worker"
+    handoff = service.complete(
+        "TASK-ROLES",
+        caller_role="worker", assignment=assignment_token(service, "TASK-ROLES"),
+        summary_for_next="Done.",
+    )
+    assert handoff.item_name == "work"
+
+    state = service.tasks.read_execution_state("TASK-ROLES", "01-task")
+    assert state is not None
+    assert [record.status for record in state.item_executions[:2]] == [
+        "completed",
+        "completed",
+    ]
+    assert state.pending_init_artifact is None

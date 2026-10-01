@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from tests.config_helpers import task_steps, task_workflow
 from ww.actions import (
     AssertionCondition,
     AssertionDefinition,
@@ -1031,3 +1032,32 @@ def test_the_yaml_loader_reads_extension_groups_itself(tmp_path: Path) -> None:
     )
 
     assert configuration.rule_groups[0].name == "acme-python"
+
+
+def test_assert_is_a_list_of_conditions_that_must_all_hold() -> None:
+    (step,) = task_steps(
+        task_workflow(
+            "      - check:\n        argv: [git, rev-parse, HEAD]\n"
+            "        assert: [{equals: clean}]\n"
+        )
+    )
+    assert step.action is not None
+    payload = step.action.payload
+    assert isinstance(payload, Commands)
+    assert payload.assertion == AssertionDefinition(
+        (AssertionCondition("equals", "clean"),)
+    )
+    both = AssertionDefinition(
+        (AssertionCondition("empty"), AssertionCondition("equals", ""))
+    )
+    assert both.holds("")
+    assert not both.holds("x")
+    assert both.to_data() == ["empty", {"equals": ""}]
+    assert both.describe() == "Command output must be empty and equal to ``."
+
+
+def test_assertion_rejects_unknown_condition_and_empty_lists() -> None:
+    with pytest.raises(ValueError, match="invalid assertion condition"):
+        AssertionCondition(kind="contains", value="done")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="at least one condition"):
+        AssertionDefinition(())

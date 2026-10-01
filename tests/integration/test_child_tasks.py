@@ -3,10 +3,16 @@
 
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from tests.workflow_helpers import start_after_init
+from tests.workflow_helpers import (
+    advance_init,
+    configured_service,
+    start_after_init,
+    start_child_after_init,
+)
 from ww.errors import ConfigurationError, StateError
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -483,3 +489,266 @@ def test_update_child_rejects_bad_requests(tmp_path: Path) -> None:
         service.update_child("TASK1", "nope", text="Text")
     with pytest.raises(StateError, match="unknown project"):
         service.update_child("TASK1", "1", project="nowhere")
+
+
+@pytest.mark.parametrize("outcome", ["completed", "failed"])
+def test_parent_follows_child_handoff_until_successor_finishes(
+    tmp_path: Path, outcome: str
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: choose
+  - name: choose
+    steps:
+      - name: select
+        variables:
+          - name: workflow
+        hooks:
+          after_complete:
+            - handoff_to: "{{workflow}}"
+  - name: work
+    steps:
+      - name: implement
+        artifact: false
+""",
+    )
+    start_after_init(service, "parent", "P")
+    service.next("P")
+    child = service.add_child("P", "C", "Implement the selected workflow")
+    service.complete("P", summary_for_next="Done.")
+    start_child_after_init(service, "P", "C")
+    service.next("P/C")
+    ready = advance_init(
+        service,
+        service.complete(
+            "P/C",
+            (("workflow", "work"),),
+            artifact="Selected work",
+            summary_for_next="Done.",
+        ),
+    )
+
+    assert ready.workflow == "work"
+    assert ready.item_name == "implement"
+    selection = service.tasks.read_execution_state("P/C", "01-choose")
+    successor = service.tasks.read_execution_state("P/C", "02-work")
+    assert selection is not None and successor is not None
+    assert successor.parent_task_id == "P"
+    assert successor.start_operation_id == child.start_operation_id
+    assert successor.execution_instance_id != selection.execution_instance_id
+    waiting = service.next("P")
+    assert waiting.action_kind == "child_workflow"
+    assert waiting.child_tasks[0].status == "in_progress"
+    assert waiting.child_tasks[0].run_id == "02-work"
+    assert service.recover("P/C").item_name == "implement"
+
+    service.next("P/C")
+    if outcome == "failed":
+        service.fail("P/C", "Implementation failed")
+    else:
+        service.complete("P/C", summary_for_next="Done.")
+        service.next("P/C")
+        # Exercise terminal recovery after the successor has published its result.
+        with patch.object(service.children, "reconcile_after_child"):
+            service.complete(
+                "P/C",
+                (("summary", "Implementation done"),),
+                summary_for_next="Done.",
+            )
+        service.next("P")
+        assert service.recover("P/C").status == "completed"
+
+    assert service.status("P").status == outcome
+    recorded = service.tasks.read_children("P", "01-parent")[0]
+    assert recorded.run_id == "02-work"
+    assert recorded.status == outcome
+    assert recorded.summary == (
+        "Implementation done" if outcome == "completed" else None
+    )
+
+
+def test_parent_status_repairs_a_missed_terminal_child_notification(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: child
+  - name: child
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    service.add_child("P", "C", "child")
+    service.complete("P", summary_for_next="Done.")
+    start_child_after_init(service, "P", "C")
+    service.next("P/C")
+    service.complete("P/C", summary_for_next="Done.")
+    service.next("P/C")
+
+    with patch.object(
+        service.children,
+        "reconcile_after_child",
+        side_effect=OSError("injected death after child publication"),
+    ), pytest.raises(OSError, match="injected death"):
+        service.complete("P/C", (("summary", "done"),), summary_for_next="Done.")
+
+    assert service.status("P/C").status == "completed"
+    assert service.tasks.read_children("P", "01-parent")[0].status == "in_progress"
+
+    resumed = service.status("P")
+
+    assert resumed.status == "completed"
+    assert service.tasks.read_children("P", "01-parent")[0].status == "completed"
+
+
+def test_child_recover_repeats_a_missed_terminal_parent_notification(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: child
+  - name: child
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    service.add_child("P", "C", "child")
+    service.complete("P", summary_for_next="Done.")
+    start_child_after_init(service, "P", "C")
+    service.next("P/C")
+    service.complete("P/C", summary_for_next="Done.")
+    service.next("P/C")
+    with (
+        patch.object(service.children, "reconcile_after_child", side_effect=OSError),
+        pytest.raises(OSError),
+    ):
+        service.complete("P/C", (("summary", "done"),), summary_for_next="Done.")
+
+    assert service.recover("P/C").status == "completed"
+    assert service.status("P").status == "completed"
+    assert service.recover("P/C").status == "completed"
+
+
+def test_parent_refresh_ignores_a_child_run_from_an_older_parent_execution(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: child
+  - name: child
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    service.add_child("P", "C", "first execution")
+    service.complete("P", summary_for_next="Done.")
+    start_child_after_init(service, "P", "C")
+    service.next("P/C")
+    service.complete("P/C", summary_for_next="Done.")
+    service.next("P/C")
+    service.complete("P/C", (("summary", "old result"),), summary_for_next="Done.")
+
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    service.add_child("P", "C", "second execution")
+    service.complete("P", summary_for_next="Done.")
+
+    waiting = service.next("P")
+
+    assert waiting.action_kind == "child_workflow"
+    assert service.tasks.read_children("P", "02-parent")[0].status == "pending"
+    start_child_after_init(service, "P", "C")
+    assert [run.run_id for run in service.tasks.execution_runs("P/C")] == [
+        "01-child",
+        "02-child",
+    ]
+
+
+def test_parent_refresh_does_not_retry_a_hook_that_just_failed(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: child
+        hooks:
+          after_complete:
+            - argv: ["false"]
+  - name: child
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+    start_after_init(service, "parent", "P", agent="codex")
+    service.next("P")
+    service.add_child("P", "C", "child")
+    service.complete("P", summary_for_next="Done.")
+    start_child_after_init(service, "P", "C")
+    service.next("P/C")
+    service.complete("P/C", summary_for_next="Done.")
+    service.next("P/C")
+    with patch.object(service.children, "reconcile_after_child"):
+        service.complete("P/C", (("summary", "done"),), summary_for_next="Done.")
+
+    result = service.next("P")
+
+    assert result.status == "failed"
+    state = service.tasks.read_execution_state("P", "01-parent")
+    assert state is not None
+    assert state.item_executions[state.cursor].commands[0].attempts == 1
+
+
+def test_parent_reset_rejects_existing_child_without_losing_child_artifact(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: work
+""",
+    )
+    service.start("task", "P", init_artifact="parent")
+    service.start("task", "P/C", init_artifact="child")
+    child = service.tasks.read_execution_state("P/C", "01-task")
+    assert child is not None and child.item_executions[0].artifact is not None
+
+    with pytest.raises(StateError, match="child task"):
+        service.reset("P")
+
+    assert service.tasks.read_execution_artifact(child.item_executions[0].artifact)

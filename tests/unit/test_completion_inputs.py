@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Checks on the values an agent passes when it completes a step."""
+
 import pytest
 
 from ww.completion_inputs import validate_requested_values, validate_values

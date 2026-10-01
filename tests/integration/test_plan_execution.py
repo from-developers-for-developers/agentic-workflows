@@ -7,10 +7,12 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from tests.workflow_helpers import advance_init, start_after_init
+from tests.workflow_helpers import advance_init, configured_service, start_after_init
+from ww.cli import main
 from ww.errors import StateError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
@@ -963,3 +965,231 @@ def test_dummy_runner_drives_real_automatic_handlers(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "Workflow completed: TASK-6 (task)" in result.stdout
     assert (tmp_path / "committed.txt").read_text() == "dummy-commit_message"
+
+
+def test_init_named_preparation_hook_runs_before_implicit_init(tmp_path: Path) -> None:
+    service = configured_service(
+        tmp_path,
+        """handlers:
+  - name: init
+    description: Approve the requirements before initialization.
+workflows:
+  - name: task
+    hooks:
+      before_start:
+        - steps: [init]
+          name: init
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+
+    service.start("task", "TASK-INIT", init_artifact="requirements")
+    initial = service.tasks.read_execution_state("TASK-INIT", "01-task")
+    assert initial is not None
+    assert initial.item_executions[0].status == "pending"
+    assert initial.item_executions[1].status == "pending"
+    assert initial.pending_init_artifact == "requirements"
+
+    service.next("TASK-INIT")
+    service.complete("TASK-INIT", summary_for_next="Done.")
+    completed = service.tasks.read_execution_state("TASK-INIT", "01-task")
+    assert completed is not None
+    assert completed.item_executions[1].status == "completed"
+    assert completed.pending_init_artifact is None
+
+
+def test_start_retains_requirements_through_init_preparation_and_stops_before_work(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """handlers:
+  - name: approve
+    description: Approve requirements.
+  - name: prepare
+    variables:
+      - name: note
+    argv: [printf, "{{note}}"]
+workflows:
+  - name: task
+    hooks:
+      before_start:
+        - steps: [init]
+          name: approve
+    steps:
+      - name: work
+        hooks:
+          before_start:
+            - name: prepare
+""",
+    )
+
+    approval = service.start("task", "T", init_artifact="Requirements.")
+    assert approval.item_name == "approve"
+    service.next("T")
+    ready = service.complete("T", artifact="approved", summary_for_next="Done.")
+    assert ready.item_name == "prepare"
+    state = service.tasks.read_execution_state("T", "01-task")
+    assert state is not None
+    assert state.item_executions[1].artifact is not None
+    assert state.status == "pending"
+
+
+def test_reset_creates_a_new_operation_identity_for_the_same_run_name(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: work
+        artifact: false
+""",
+    )
+
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    first = service.tasks.read_execution_state("TASK-1", "01-task")
+    assert first is not None
+
+    service.reset("TASK-1")
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    second = service.tasks.read_execution_state("TASK-1", "01-task")
+    assert second is not None
+
+    assert first.execution_instance_id
+    assert second.execution_instance_id
+    assert first.execution_instance_id != second.execution_instance_id
+    first_operation = first.item_executions[0].operation_id
+    second_operation = second.item_executions[0].operation_id
+    assert first_operation != second_operation
+
+
+def test_reset_does_not_recover_a_git_effect_from_the_previous_execution(
+    tmp_path: Path,
+) -> None:
+    def git(*arguments: str) -> str:
+        return subprocess.run(
+            ("git", *arguments),
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "ww test")
+    git("config", "user.email", "ww@example.test")
+    (tmp_path / ".gitignore").write_text(".ww/\ntasks/\n", encoding="utf-8")
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: work
+        artifact: false
+        hooks:
+          after_complete:
+            - name: ext/ww/git/handlers:git-commit
+""",
+    )
+    git("add", ".")
+    git("commit", "-qm", "seed")
+
+    start_after_init(service, "task", "T", agent="codex")
+    service.next("T")
+    (tmp_path / "work.txt").write_text("first", encoding="utf-8")
+    service.complete("T", (("commit_message", "first"),), summary_for_next="Done.")
+    first_head = git("rev-parse", "HEAD")
+
+    service.reset("T")
+    start_after_init(service, "task", "T", agent="codex")
+    service.next("T")
+    (tmp_path / "work.txt").write_text("second", encoding="utf-8")
+    service.complete("T", (("commit_message", "second"),), summary_for_next="Done.")
+
+    assert git("rev-parse", "HEAD") != first_head
+    assert git("show", "HEAD:work.txt") == "second"
+    assert git("status", "--porcelain") == ""
+
+
+def test_process_creation_failure_is_a_retryable_cli_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    hooks:
+      before_start_workflow:
+        - argv: [/nonexistent-ww-command]
+    steps:
+      - name: work
+""",
+    )
+
+    exit_code = main(
+        [
+            "--root",
+            str(tmp_path),
+            "start",
+            "T",
+            "--workflow",
+            "task",
+            "--agent",
+            "codex",
+            "--requirements",
+            "requirements",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "could not launch command 1" in capsys.readouterr().out
+    service = WorkflowService(Storage(tmp_path))
+    state = service.tasks.read_execution_state("T", "01-task")
+    assert state is not None
+    assert state.status == "failed"
+    assert state.item_executions[0].commands[0].status == "failed"
+    assert service.next("T").status == "failed"
+    retried = service.tasks.read_execution_state("T", "01-task")
+    assert retried is not None
+    assert retried.item_executions[0].commands[0].attempts == 2
+
+
+def test_error_after_process_creation_keeps_the_outcome_unknown(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    hooks:
+      before_start_workflow:
+        - argv: [touch, effect.txt]
+    steps:
+      - name: work
+""",
+    )
+    communicate = subprocess.Popen.communicate
+
+    def fail_after_communicate(
+        process: subprocess.Popen[str], *args: object, **kwargs: object
+    ) -> tuple[str, str]:
+        communicate(process, *args, **kwargs)
+        raise OSError("injected output collection failure")
+
+    with (
+        patch.object(subprocess.Popen, "communicate", fail_after_communicate),
+        pytest.raises(OSError, match="output collection failure"),
+    ):
+        start_after_init(service, "task", "T", agent="codex")
+
+    assert (tmp_path / "effect.txt").exists()
+    state = service.tasks.read_execution_state("T", "01-task")
+    assert state is not None
+    assert state.item_executions[0].commands[0].status == "in_progress"
+    recovered = service.next("T")
+    assert recovered.status == "interrupted"
+    assert recovered.operation_id == state.item_executions[0].operation_id

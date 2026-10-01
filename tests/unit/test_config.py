@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""Parsing and validating the ww.yaml workflow configuration."""
+
 from pathlib import Path
 
 import pytest
 
+from tests.config_helpers import task_steps, task_workflow
 from ww.actions import Commands, Prompt
 from ww.config import load_configuration, parse_yaml_configuration, parse_yaml_text
 from ww.errors import ConfigurationError
+from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.workflow_config import (
     HandlerDefinition,
     ProvidedVariable,
@@ -1662,7 +1666,7 @@ def test_update_document_must_name_a_declared_document(tmp_path: Path) -> None:
         )
 
 
-def test_the_old_save_metadata_key_is_rejected(tmp_path: Path) -> None:
+def test_a_save_metadata_key_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="save_metadata"):
         load_configuration(
             _write(
@@ -1989,4 +1993,128 @@ def test_idempotent_needs_a_command_and_a_boolean(
         config_path = tmp_path / "ww.yaml"
         load_configuration(
             _write(config_path, f"handlers:\n{handler}{workflows}")
+        )
+
+
+def test_assignment_takes_the_values_of_its_construct() -> None:
+    (loop,) = task_steps(
+        task_workflow(
+            "      - name: fix\n        loop: [{work: Do it.}]\n"
+            "        max_rounds: 4\n        assignment: per_step\n"
+        )
+    )
+    (collect,) = task_steps(
+        task_workflow(
+            "      - collect:\n        items:\n          assignment: per_item\n"
+        )
+    )
+
+    assert (loop.max_rounds, loop.loop_assignment) == (4, "per_step")
+    assert collect.items is not None and collect.items.assignment == "per_item"
+    with pytest.raises(ConfigurationError, match="must be one of: per_round, per_step"):
+        parse_yaml_text(
+            task_workflow(
+                "      - name: fix\n        loop: [{work: Do it.}]\n"
+                "        assignment: per_item\n"
+            )
+        )
+    with pytest.raises(ConfigurationError, match="goes beside a loop"):
+        parse_yaml_text(
+            task_workflow("      - work: Work.\n        assignment: per_step\n")
+        )
+
+
+def test_kind_chooses_the_agent_action() -> None:
+    (skill, prompt) = task_steps(
+        task_workflow(
+            "      - review-code:\n        kind: skill\n"
+            "      - name: write\n        kind: prompt\n        description: Write.\n"
+        )
+    )
+
+    assert skill.action is not None and skill.action.identifier == "skill"
+    assert prompt.action is not None and prompt.action.identifier == "prompt"
+    with pytest.raises(ConfigurationError, match="kind must be one of"):
+        parse_yaml_text(task_workflow("      - work:\n        kind: mcp\n"))
+    with pytest.raises(ConfigurationError, match="cannot combine a command and kind"):
+        parse_yaml_text(
+            task_workflow("      - work:\n        kind: skill\n        argv: [make]\n")
+        )
+
+
+def test_handoff_to_is_the_transition_and_workflow_runs_a_child() -> None:
+    configuration = parse_yaml_text(
+        task_workflow(
+            "      - split:\n        children:\n          steps:\n"
+            "            - refine: Refine it.\n"
+            "            - implement: {workflow: other}\n"
+            "      - go:\n        handoff_to: other\n"
+            "  - name: other\n    steps:\n      - work: Work.\n"
+        )
+    )
+    split, go = configuration.workflows_by_name["task"].steps
+
+    assert isinstance(go.operation, WorkflowHandoff)
+    assert go.operation.target == "other"
+    assert split.children is not None
+    assert isinstance(split.children.steps[1].operation, ChildWorkflowRun)
+    with pytest.raises(ConfigurationError, match="carries handoff_to"):
+        parse_yaml_text(
+            task_workflow(
+                "      - split:\n        children:\n          steps:\n"
+                "            - implement: {workflow: other}\n"
+                "            - go:\n              handoff_to: other\n"
+                "  - name: other\n    steps:\n      - work: Work.\n"
+            )
+        )
+
+
+def test_saves_names_prefixed_paths() -> None:
+    (step,) = task_steps(
+        "documents:\n  - plan: The plan.\n"
+        + task_workflow(
+            "      - work: Work.\n        saves:\n"
+            "          - metadata.jira.issue_id: The issue key.\n"
+            "          - project_metadata.labels: Labels.\n"
+            "            append: true\n"
+            "          - documents.plan: Keep it current.\n"
+            "          - item.field.reply_id: The reply.\n"
+        )
+    )
+
+    task, project = step.save_metadata
+    assert (task.name, task.key, task.scope, task.append) == (
+        "jira.issue_id",
+        "jira.issue_id",
+        "task",
+        False,
+    )
+    assert (project.name, project.key, project.scope, project.append) == (
+        "project_metadata.labels",
+        "labels",
+        "project",
+        True,
+    )
+    assert [(update.name, update.instruction) for update in step.update_document] == [
+        ("plan", "Keep it current.")
+    ]
+    assert [field.name for field in step.update_item] == ["reply_id"]
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ("ww.metadata.x: X.", "saves take no ww. prefix"),
+        ("x: X.", "must name metadata.<path>"),
+        ("documents.plan: P.\n            append: true", "append applies to metadata"),
+        ("metadata.a: A.\n          - metadata.a.b: B.", "cannot overlap"),
+    ],
+)
+def test_saves_rejects_what_it_cannot_save(entry: str, message: str) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        parse_yaml_text(
+            "documents:\n  - plan: The plan.\n"
+            + task_workflow(
+                f"      - work: Work.\n        saves:\n          - {entry}\n"
+            )
         )

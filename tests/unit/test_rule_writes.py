@@ -12,7 +12,7 @@ import yaml
 from ww.changes import project_files
 from ww.config_writes import with_import
 from ww.errors import StateError
-from ww.rule_writes import _set_key, _split, rule_stem
+from ww.rule_writes import _set_key, _split, check_mapping, rule_stem
 
 
 @pytest.mark.parametrize(
@@ -123,3 +123,11 @@ def test_project_files_without_git_are_every_file(tmp_path: Path) -> None:
     (tmp_path / "src/app.php").write_text("", encoding="utf-8")
 
     assert project_files(tmp_path) == ("src/app.php",)
+
+
+def test_rules_add_assert_is_repeatable() -> None:
+    mapping = check_mapping("make lint", None, ("empty", "equals:ok"))
+
+    assert mapping == {"shell": "make lint", "assert": ["empty", {"equals": "ok"}]}
+    with pytest.raises(StateError, match="takes empty or equals:<value>"):
+        check_mapping("make lint", None, ("eq:ok",))

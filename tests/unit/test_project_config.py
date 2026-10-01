@@ -472,3 +472,22 @@ def test_an_invalid_project_task_format_names_the_project(tmp_path: Path) -> Non
         r"has unknown placeholder\(s\): \{\{nope\}\}",
     ):
         load_project_settings(tmp_path, project)
+
+
+def _settings(tmp_path: Path, settings: dict[str, object]) -> Path:
+    path = tmp_path / "ww.json"
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    return path
+
+
+def test_json_limits_are_read(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, {"limits": {"rounds": 4}})
+    assert load_project_config(settings).limits.rounds == 4
+
+
+def test_task_format_placeholders_take_double_braces(tmp_path: Path) -> None:
+    config = load_project_config(_settings(tmp_path, {"task_format": "T-{{digit}}"}))
+
+    assert config.task_format == "T-{{digit}}"
+    with pytest.raises(ConfigurationError, match="has invalid placeholders"):
+        load_project_config(_settings(tmp_path, {"task_format": "T-{digit}"}))
