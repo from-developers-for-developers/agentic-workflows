@@ -242,6 +242,13 @@ def _plan_item_17(item: Any) -> Any:
             upgraded[key] = _ASSIGNMENTS_17[upgraded[key]]
     if upgraded.get("phase") in _PHASES_17:
         upgraded["phase"] = _PHASES_17[upgraded["phase"]]
+    # The template names an item reads, as the compiler listed them from its
+    # text: renamed like the tokens, so a value they name is still found.
+    if isinstance(upgraded.get("dependencies"), list):
+        upgraded["dependencies"] = [
+            renamed_template_name(name) or name if isinstance(name, str) else name
+            for name in upgraded["dependencies"]
+        ]
     operation = upgraded.get("operation")
     if (
         isinstance(operation, dict)
@@ -292,7 +299,8 @@ def _plan_17_to_18(data: dict[str, Any]) -> dict[str, Any]:
 
     Assignment values (``all_items`` is ``together``, ``per_iteration`` is
     ``per_round``), the ``before_in_progress`` phase (``before_start``),
-    template names (every ww value under ``ww.``), a document path's
+    template names (every ww value under ``ww.``, in the text and in each
+    item's ``dependencies``), a document path's
     ``{task_id}`` (``{{ww.task.id}}``), and a command's ``assert`` (a list of
     conditions).  Plan item IDs keep their old spelling: they are opaque, and
     the run's records refer to them.

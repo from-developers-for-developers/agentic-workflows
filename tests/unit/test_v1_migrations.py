@@ -69,6 +69,12 @@ _SPELLED_17 = (
         '"assert": {"operator": "eq", "expected": "main"}',
     ),
     ('"assert": ["empty"]', '"assert": {"operator": "empty"}'),
+    # The names an item's text reads, as its ``dependencies`` list them.
+    ('"ww.documents.plan"', '"documents.plan"'),
+    ('"ww.metadata.jira.key"', '"metadata.jira.key"'),
+    ('"ww.project_metadata.release"', '"project_metadata.release"'),
+    ('"ww.item.text"', '"item.text"'),
+    ('"ww.item.field.thread"', '"field.thread"'),
 )
 
 
@@ -190,6 +196,53 @@ def test_a_schema_10_execution_state_reads_with_the_renamed_values(
     assert EXECUTION_SCHEMA_VERSION == 11
     assert restored == state
     assert restored.to_dict()["schema_version"] == 11
+
+
+def test_a_schema_10_execution_history_reads_with_the_renamed_values(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    state = initial_state(snapshot, (), "2026-09-30T00:00:00Z", run_id="01-task")
+    check_item = next(
+        index for index, item in enumerate(snapshot.plan.items) if item.checks
+    )
+    earlier = replace(
+        state.item_executions[check_item],
+        status="completed",
+        resolved_checks=snapshot.plan.items[check_item].checks,
+        verification=(
+            VerificationRule(
+                id="include-foo",
+                text="Include foo.",
+                text_hash="a" * 64,
+                state="approach_approved",
+                approach="Grep for foo.",
+                check="include-foo",
+            ),
+        ),
+    )
+    current = replace(state, execution_history=(earlier,)).to_dict()
+    # An earlier round whose check compared its output with ``equals``.
+    command = current["execution_history"][0]["resolved_checks"][0]["command"]
+    command["assert"] = [{"equals": "main"}]
+    expected = ExecutionState.from_dict(current)
+    old = copy.deepcopy(current)
+    old["schema_version"] = 10
+    old_record = old["execution_history"][0]
+    old_record["verification"][0]["state"] = "approach-approved"
+    old_record["resolved_checks"][0]["command"]["assert"] = {
+        "operator": "eq",
+        "expected": "main",
+    }
+
+    restored = ExecutionState.from_dict(old)
+
+    assert restored == expected
+    history = restored.execution_history[0]
+    assert history.verification[0].state == "approach_approved"
+    assert restored.to_dict()["execution_history"][0]["resolved_checks"][0][
+        "command"
+    ]["assert"] == [{"equals": "main"}]
 
 
 def test_a_schema_2_rule_store_reads_snake_case_statuses_and_assert_lists() -> None:

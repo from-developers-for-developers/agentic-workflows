@@ -98,9 +98,12 @@ def _execution_10_to_11(data: dict[str, Any]) -> dict[str, Any]:
         upgraded["workflow_values"] = {
             _WORKFLOW_VALUES_10.get(key, key): value for key, value in values.items()
         }
-    records = data.get("item_executions")
-    if isinstance(records, list):
-        upgraded["item_executions"] = [_item_execution_10(record) for record in records]
+    # The history holds the same records: earlier loop rounds, retried
+    # attempts and verification rounds, each upgraded alike.
+    for field_name in ("item_executions", "execution_history"):
+        records = data.get(field_name)
+        if isinstance(records, list):
+            upgraded[field_name] = [_item_execution_10(record) for record in records]
     return upgraded
 
 
