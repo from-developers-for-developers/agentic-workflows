@@ -11,6 +11,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-01
 
+- Interactive steps are talk-first: the agent converses, the operator says `ww done`, and one
+  `interact --transcript - --end` records both sides; when a Claude Code or Codex session ends mid-conversation, the
+  `interrupt` hook recovers the exchange from the agent's transcript into the record.
 - `ww inspect [--json]` prints a read-only profile of the checkout — branches and lanes, activity and team shape
   (cadence over the weeks the history spans), fix commits and hot paths, manifests with their verify commands, monorepo
   signals, tracker and commit conventions — each fact with its evidence.

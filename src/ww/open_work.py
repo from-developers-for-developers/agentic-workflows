@@ -49,6 +49,10 @@ class OpenTask:
     # The directory the task works in: its worktree, project, or the root.
     workspace: Path
     updated_at: str
+    # When the attempt at the cursor's item started, if it has.
+    started_at: str | None = None
+    # The work item of a per-item stage, which its conversation is filed under.
+    work_item_id: str | None = None
     # The step is one the manager hands to a worker (``--runtime auto``), so
     # the session that started the run waits on it rather than holds it.
     delegated: bool = False
@@ -171,6 +175,8 @@ def _open_task(tasks: TaskStorageAdapter, root: Path, task_id: str) -> OpenTask 
         operator_reason=operator_reason(state, plan),
         workspace=resolve_workspace(root, state.working_directory) or root.resolve(),
         updated_at=state.updated_at,
+        started_at=record.started_at if record is not None else None,
+        work_item_id=item.item_id if item is not None else None,
         delegated=(
             state.workflow_runtime == "auto"
             and item is not None

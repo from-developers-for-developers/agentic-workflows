@@ -78,6 +78,9 @@ class DocumentTask:
 class InteractCommands:
     """The commands of an interactive step, spelled for the role that holds it."""
 
+    # Record the whole conversation and end it: a heredoc transcript, with
+    # the pick in the same call on a step with choices.
+    transcript: str
     operator: str
     agent: str
     choice: str
@@ -89,6 +92,7 @@ class InteractCommands:
 
     def to_dict(self) -> dict[str, str]:
         return {
+            "transcript": self.transcript,
             "operator": self.operator,
             "agent": self.agent,
             "choice": self.choice,

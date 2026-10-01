@@ -46,6 +46,9 @@ class Interruption:
     reason: str | None = None
     # The step was talking with the operator when the session ended.
     in_conversation: bool = False
+    # How many entries of that conversation the hook recovered from the
+    # session's transcript into the interaction record.
+    recovered_entries: int = 0
 
     @property
     def moment(self) -> datetime | None:
@@ -200,6 +203,7 @@ def _read_interruption(path: Path) -> Interruption | None:
             agent=str(value.get("agent", "")),
             reason=value.get("reason"),
             in_conversation=bool(value.get("in_conversation", False)),
+            recovered_entries=int(value.get("recovered_entries", 0)),
         )
     except (KeyError, TypeError, ValueError):
         return None

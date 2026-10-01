@@ -40,6 +40,7 @@ from ww.instructions.models import (
 )
 from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
+from ww.interactions import RECOVERED
 from ww.output_adapters.base import OutputAdapter
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
 from ww.results import (
@@ -1362,7 +1363,7 @@ def _stored_items(lines: Lines, instruction: Instruction) -> None:
 
 
 def _interaction(lines: Lines, instruction: Instruction) -> None:
-    """The contract of an interactive step: talk, record both sides, end."""
+    """The contract of an interactive step: talk first, then record it once."""
     if instruction.item_status != "in_progress" or not instruction.interactive:
         return
     commands = instruction.interact_commands
@@ -1372,6 +1373,9 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
         _operator_page(lines, instruction, commands)
         return
     _append_section(lines, "Interaction with the operator")
+    recovered = sum(
+        entry.speaker.endswith(RECOVERED) for entry in instruction.conversation
+    )
     if instruction.interaction_ended:
         state = "The operator has ended this interaction; complete the step now."
     elif instruction.operator_paused:
@@ -1381,6 +1385,11 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
             "this state; when the operator returns, show this page with "
             f"`{commands.resume}` and go on."
         )
+    elif recovered:
+        state = (
+            f"{recovered} entries recovered from the previous session's "
+            "transcript; read them and continue from the last unanswered point."
+        )
     elif instruction.interaction_entries:
         count = instruction.interaction_entries
         state = f"{count} entries recorded so far; the interaction is still open."
@@ -1388,32 +1397,29 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
         state = "Nothing is recorded yet."
     lines.extend(
         [
-            "Hold this conversation with the operator here in this session, "
+            "Hold this conversation with the operator in this session, "
             "because a delegated worker cannot talk to them: present the matter, "
-            "ask, listen, and clarify. The operator runs no `ww` command; tell "
-            "from their words when it is finished. Record both sides as you go, "
-            "each message verbatim:",
+            "ask, listen, and clarify. Record nothing while you talk. "
+            "Open by telling the operator: say `ww done` when you are finished "
+            "with this; I will then record our conversation and move on. An "
+            'unmistakable "we\'re done" counts too.',
+            "",
+            "When it ends, record both sides verbatim and end the interaction "
+            "in one command, then complete the step; completion is refused "
+            "while it is open.",
             "",
             "```console",
-            commands.operator,
-            commands.agent,
-            "```",
-            "",
-            "When it is finished, end the interaction, then complete the step; "
-            "completion is refused while it is open.",
-            "",
-            "```console",
-            commands.end,
+            commands.transcript,
             "```",
             "",
             state,
         ]
     )
-    _choices(lines, instruction, commands.choice)
+    _choices(lines, instruction)
     _conversation(lines, instruction)
 
 
-def _choices(lines: Lines, instruction: Instruction, choice: str) -> None:
+def _choices(lines: Lines, instruction: Instruction) -> None:
     if not instruction.choices:
         return
     lines.extend(["", "#### Choices", ""])
@@ -1427,13 +1433,7 @@ def _choices(lines: Lines, instruction: Instruction, choice: str) -> None:
             "",
             str(instruction.choice_mechanism),
             "",
-            "Record the operator's pick before ending the interaction; it is "
-            "required. A comment they add is recorded with `--operator-said`, "
-            "in the same call or its own:",
-            "",
-            "```console",
-            choice,
-            "```",
+            "The pick is required; it goes in `--choice` above.",
             "",
             (
                 f"Chosen so far: `{instruction.chosen}`."

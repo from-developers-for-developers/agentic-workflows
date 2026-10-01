@@ -47,6 +47,12 @@ class HookPayload:
     from_worker: bool = False
     # The agent's own word for why a session ended or was interrupted.
     reason: str | None = None
+    # The session's own transcript file, which the ``interrupt`` hook reads
+    # to recover a conversation; only agents whose format ww reads set it.
+    transcript_path: Path | None = None
+    # The agent's final reply of the turn, which a transcript written
+    # asynchronously may not hold yet.
+    last_agent_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -199,6 +205,8 @@ class ClaudeCode(HookAgent):
             continued=payload.get("stop_hook_active") is True,
             reason=_text(payload.get("reason")),
             from_worker=payload.get("hook_event_name") == "SubagentStop",
+            transcript_path=_path(payload.get("transcript_path")),
+            last_agent_message=_text(payload.get("last_assistant_message")),
         )
 
 
@@ -225,6 +233,7 @@ class Codex(HookAgent):
                 "interrupted" if native == "Interrupt" else _text(payload.get("reason"))
             ),
             from_worker=native == "SubagentStop",
+            transcript_path=_path(payload.get("transcript_path")),
         )
 
 

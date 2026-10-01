@@ -299,6 +299,31 @@ def test_a_first_setup_asks_each_thing_once() -> None:
         )
 
 
+def test_interviews_and_reviews_converse_until_ww_done_and_record_once() -> None:
+    for workflow, step in (
+        ("ww-learn", "interview-me"),
+        ("ww-learn", "interview-role"),
+        ("ww-learn", "interview-team"),
+        ("ww-learn-project", "review"),
+        ("ww-suggest", "design"),
+        ("ww-suggest", "propose"),
+    ):
+        description = _step(workflow, step).description
+        assert "until the operator says `ww done`" in description, step
+        assert "record the conversation once" in description, step
+        assert "at most one follow-up" not in description, step
+    for interview in ("interview-me", "interview-role", "interview-team"):
+        description = _step("ww-learn", interview).description
+        assert "in one message, numbered" in description
+        assert "follow up where an answer deserves it" in description
+    for skill in ("ww-setup", "ww-learn"):
+        text = SKILLS[skill]
+        assert "`ww done`" in text
+        assert "record it once" in text or "record it, once" in text
+        assert "as you go" not in text
+        assert "at most one follow-up" not in text
+
+
 def test_the_refresh_skill_offers_each_subject() -> None:
     text = SKILLS["ww-refresh"]
     assert "reruns `./ww\n   inspect`" in text
@@ -395,7 +420,7 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
         "`recommended_next_workflow`",
         "ext/ww/git/handlers:is-git-clean",
         "--dry-run",
-        "at most three rounds",
+        "until the operator says `ww done`",
         "each piece with its evidence in one clause",
         "`hotfix/*` branches merged this year",
         "walk through the main lane",

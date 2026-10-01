@@ -18,6 +18,7 @@ from tests.workflow_helpers import start_after_init
 from ww.cli import main
 from ww.errors import StateError
 from ww.hooks import HookRecords, answer_hook, hook_agent
+from ww.hooks.transcripts import recover_conversation
 from ww.open_work import open_work
 from ww.project_config import AgentHooks
 from ww.service import WorkflowService
@@ -914,12 +915,33 @@ INTERACTIVE_WORKFLOWS = """workflows:
 """
 
 
-def _in_conversation(root: Path) -> WorkflowService:
+def _in_conversation(root: Path, agent: str = "claudecode") -> WorkflowService:
     (root / "ww.yaml").write_text(INTERACTIVE_WORKFLOWS, encoding="utf-8")
     service = WorkflowService(Storage(root))
-    start_after_init(service, "interview", "T1", agent="claudecode")
+    start_after_init(service, "interview", "T1", agent=agent)
     service.next("T1")
     return service
+
+
+def _jsonl(path: Path, *lines: object) -> Path:
+    """A transcript file; a ``str`` line is written as it is, malformed or not."""
+    path.write_text(
+        "".join(
+            (line if isinstance(line, str) else json.dumps(line)) + "\n"
+            for line in lines
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+# Before the step's attempt started, and after it.
+OLD = "2020-01-01T00:00:00.000Z"
+NEW = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()
+
+
+def _claude(kind: str, content: object, at: str = NEW, **flags: object) -> dict:
+    return {"type": kind, "timestamp": at, "message": {"content": content}, **flags}
 
 
 def test_stop_is_silent_while_an_interactive_step_waits_for_the_operator(
@@ -939,26 +961,167 @@ def test_stop_is_silent_while_an_interactive_step_waits_for_the_operator(
     assert "T1 step `talk` is still in progress" in reminder["reason"]
 
 
-def test_an_interrupt_during_a_conversation_points_at_the_recorded_conversation(
+def test_an_interrupt_without_a_transcript_says_the_conversation_is_lost(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _root(tmp_path)
-    service = _in_conversation(root)
-    service.interact(
-        "T1", agent="How much should an agent decide?", caller_role="manager"
-    )
+    _in_conversation(root)
 
     assert (
         _hook(root, monkeypatch, capsys, "interrupt", payload={"reason": "exit"}) == ""
     )
 
     marker = json.loads((root / ".ww/tasks/T1/interrupted.json").read_text())
-    assert marker["in_conversation"] is True
+    assert (marker["in_conversation"], marker["recovered_entries"]) == (True, 0)
+    assert not (root / ".ww/tasks/T1/interactions.md").exists()
     assert main(["--root", str(root), "instruction", "T1", "--role", "manager"]) == 0
     output = capsys.readouterr().out
     assert "while `talk` (attempt 1) was talking with the operator" in output
-    assert "pick it up at the last unanswered question" in output
+    assert "The conversation was not recorded; ask the operator where you were" in (
+        output
+    )
     assert "git status" not in output
+
+
+def test_an_interrupt_recovers_the_conversation_from_a_claude_code_transcript(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_conversation(root)
+    transcript = _jsonl(
+        tmp_path / "session.jsonl",
+        _claude("user", "An earlier step's request.", at=OLD),
+        {"type": "file-history-snapshot", "timestamp": NEW},
+        _claude("user", "Hook output.", isMeta=True),
+        _claude("user", "<command-name>/clear</command-name>"),
+        _claude("assistant", [{"type": "text", "text": "How much may I decide?"}]),
+        "{not json",
+        _claude("user", [{"type": "text", "text": "Small things only."}]),
+        _claude(
+            "assistant",
+            [
+                {"type": "thinking", "thinking": "Hmm."},
+                {"type": "tool_use", "name": "Read", "input": {}},
+            ],
+        ),
+        _claude("user", [{"type": "tool_result", "content": "file text"}]),
+        _claude(
+            "assistant", [{"type": "text", "text": "A subagent."}], isSidechain=True
+        ),
+        _claude("assistant", [{"type": "text", "text": "Noted: small things."}]),
+        _claude("user", "And ask before deleting."),
+    )
+
+    _hook(
+        root,
+        monkeypatch,
+        capsys,
+        "interrupt",
+        payload={
+            "transcript_path": str(transcript),
+            "last_assistant_message": "Agreed, I will ask first.",
+        },
+    )
+
+    marker = json.loads((root / ".ww/tasks/T1/interrupted.json").read_text())
+    assert marker["recovered_entries"] == 5
+    entries = WorkflowService(Storage(root)).interactions.entries("T1")
+    spoken = [(entry.speaker, entry.text) for entry in entries]
+    assert spoken == [
+        ("agent (recovered)", "How much may I decide?"),
+        ("operator (recovered)", "Small things only."),
+        ("agent (recovered)", "Noted: small things."),
+        ("operator (recovered)", "And ask before deleting."),
+        ("agent (recovered)", "Agreed, I will ask first."),
+    ]
+    assert main(["--root", str(root), "instruction", "T1", "--role", "manager"]) == 0
+    output = capsys.readouterr().out
+    assert "5 entries of the conversation were recovered from the session" in output
+    assert "5 entries recovered from the previous session's transcript" in output
+    assert "**operator (recovered)** · " in output
+    assert "> And ask before deleting." in output
+
+
+def test_an_interrupt_recovers_the_conversation_from_a_codex_rollout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _in_conversation(root, agent="codex")
+
+    def line(kind: str, at: str = NEW, **payload: object) -> dict:
+        return {"timestamp": at, "type": kind, "payload": payload}
+
+    def item(role: str, text: str) -> dict:
+        kind = "output_text" if role == "assistant" else "input_text"
+        return line(
+            "response_item",
+            type="message",
+            role=role,
+            content=[{"type": kind, "text": text}],
+        )
+
+    events = _jsonl(
+        tmp_path / "rollout.jsonl",
+        line("event_msg", at=OLD, type="user_message", message="Earlier."),
+        item("user", "<environment_context>cwd</environment_context>"),
+        line("event_msg", type="agent_message", message="Which checks matter?"),
+        item("assistant", "Which checks matter?"),
+        line("response_item", type="function_call", name="shell"),
+        line("event_msg", type="exec_command_end", stdout="ok"),
+        line("event_msg", type="user_message", message="Tests and lint."),
+    )
+    _hook(
+        root,
+        monkeypatch,
+        capsys,
+        "interrupt",
+        agent="codex",
+        payload={"hook_event_name": "Interrupt", "transcript_path": str(events)},
+    )
+    entries = WorkflowService(Storage(root)).interactions.entries("T1")
+    assert [(entry.speaker, entry.text) for entry in entries] == [
+        ("agent (recovered)", "Which checks matter?"),
+        ("operator (recovered)", "Tests and lint."),
+    ]
+
+    # A rollout without event lines falls back to its message items.
+    (root / ".ww/tasks/T1/interactions.md").unlink()
+    items = _jsonl(
+        tmp_path / "items.jsonl",
+        item("developer", "Instructions."),
+        item("assistant", "Which checks matter?"),
+        item("user", "Tests."),
+    )
+    _hook(
+        root,
+        monkeypatch,
+        capsys,
+        "interrupt",
+        agent="codex",
+        payload={"transcript_path": str(items)},
+    )
+    entries = WorkflowService(Storage(root)).interactions.entries("T1")
+    assert [(entry.speaker, entry.text) for entry in entries] == [
+        ("agent (recovered)", "Which checks matter?"),
+        ("operator (recovered)", "Tests."),
+    ]
+
+
+def test_recovery_reads_only_the_formats_it_knows(tmp_path: Path) -> None:
+    transcript = _jsonl(
+        tmp_path / "session.jsonl", _claude("user", "Small things only.")
+    )
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+
+    assert recover_conversation("claudecode", transcript, since) == (
+        ("operator", "Small things only."),
+    )
+    assert recover_conversation("cursor", transcript, since) == ()
+    assert recover_conversation("claudecode", tmp_path / "missing.jsonl", since) == ()
+    parsed = hook_agent("cursor").parse(
+        "interrupt", {"transcript_path": str(transcript)}
+    )
+    assert parsed.transcript_path is None
 
 
 # Sessions that ended without running a hook, and the scan's window

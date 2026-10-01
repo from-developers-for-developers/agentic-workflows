@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import socket
 import threading
@@ -71,12 +72,13 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
     assert "### Worker bootstrap" not in rendered
     assert "because a delegated worker cannot talk to them" in rendered
     assert "### Interaction with the operator" in rendered
-    assert "The operator runs no `ww` command" in rendered
+    assert "say `ww done` when you are finished with this" in rendered
+    assert "Record nothing while you talk." in rendered
     assert (
-        "./ww interact TASK-1 --role manager "
-        '--operator-said="<what the operator said>"' in rendered
+        "./ww interact TASK-1 --role manager --transcript - --end <<'EOF'\n"
+        "Agent: <what you said, verbatim>\n" in rendered
     )
-    assert "./ww interact TASK-1 --role manager --end" in rendered
+    assert "--operator-said" not in rendered
     assert "Nothing is recorded yet." in rendered
 
     # No completion, and no ending, before anything was recorded.
@@ -85,7 +87,7 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
     with pytest.raises(StateError, match="nothing was recorded"):
         service.interact("TASK-1", end=True, caller_role="manager")
     with pytest.raises(
-        StateError, match="needs --operator-said, --agent-said, or --choice"
+        StateError, match="needs --transcript, --operator-said, --agent-said"
     ):
         service.interact("TASK-1", caller_role="manager")
 
@@ -150,6 +152,72 @@ def test_the_cli_records_and_prints_interactions(
     assert out.rstrip().endswith("The operator ended the interaction.")
 
 
+def test_a_transcript_records_both_sides_in_one_call(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.start("task", "TASK-4", agent="codex", init_artifact="Do it.")
+    service.next("TASK-4")
+
+    for wrong, match in (
+        ("Hello.\nAgent: Hi.", "the transcript starts with 'Hello.'"),
+        ("\n  \n", "the transcript has no entries"),
+        ("Operator:\n", "the transcript has no entries"),
+    ):
+        with pytest.raises(StateError, match=match):
+            service.interact("TASK-4", transcript=wrong)
+    with pytest.raises(StateError, match="leave out --operator-said"):
+        service.interact("TASK-4", transcript="Agent: Hi.", operator="Hi.")
+
+    ended = service.interact(
+        "TASK-4",
+        transcript=(
+            "\n"
+            "Agent: Shall the upload wait on resizing?\n"
+            "**Operator:** No.\n"
+            "It must never wait.\n"
+            "\n"
+            "agent: Then a queue.\n"
+            "**Agent**:\n"
+            "OPERATOR:   Agreed.\n"
+        ),
+        end=True,
+    )
+
+    assert (ended.interaction_entries, ended.interaction_ended) == (4, True)
+    entries = service.interactions.entries("TASK-4")
+    assert [(entry.speaker, entry.text) for entry in entries] == [
+        ("agent", "Shall the upload wait on resizing?"),
+        ("operator", "No.\nIt must never wait."),
+        ("agent", "Then a queue."),
+        ("operator", "Agreed."),
+        ("end", "The operator ended the interaction."),
+    ]
+    assert len({entry.at for entry in entries}) == 1
+
+
+def test_the_cli_reads_a_transcript_from_stdin_or_a_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    service = _service(tmp_path)
+    service.start("task", "TASK-5", agent="codex", init_artifact="Do it.")
+    service.next("TASK-5")
+    record = ["--root", str(tmp_path), "interact", "TASK-5", "--role", "worker"]
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("Agent: Ready?\nOperator: Go.\n"))
+    assert main([*record, "--transcript", "-"]) == 0
+    capsys.readouterr()
+    assert main([*record, "--transcript", "-", "--agent-said", "x"]) != 0
+    assert "leave out --operator-said" in capsys.readouterr().err
+    later = tmp_path / "later.txt"
+    later.write_text("Agent: Done?\nOperator: Done.\n", encoding="utf-8")
+    assert main([*record, "--transcript", str(later), "--end"]) == 0
+
+    speakers = [entry.speaker for entry in service.interactions.entries("TASK-5")]
+    assert speakers == ["agent", "operator", "agent", "operator", "end"]
+    assert main([*record, "--transcript", str(tmp_path / "missing.txt")]) != 0
+
+
 CHOICES = """workflows:
   - name: manual
     steps:
@@ -193,7 +261,10 @@ def test_choices_resolve_to_the_agent_mechanism_and_gate_the_end(
     assert "#### Choices" in rendered
     assert "3. `fail and give comment` — The test case failed" in rendered
     assert mechanism in rendered
-    assert './ww interact TASK-3 --role worker --choice="<label or number>"' in rendered
+    assert (
+        "./ww interact TASK-3 --role worker --transcript - "
+        "--choice=\"<label or number>\" --end <<'EOF'" in rendered
+    )
     assert "Nothing chosen yet." in rendered
 
     with pytest.raises(StateError, match="is not one of the choices"):
@@ -216,6 +287,27 @@ def test_choices_resolve_to_the_agent_mechanism_and_gate_the_end(
     assert "· verify · operator\n\nChoice: pass" in text
     state, _ = service.load("TASK-3")
     assert state.item_executions[state.cursor].chosen == "pass"
+
+
+def test_a_transcript_a_choice_and_the_end_go_in_one_call(tmp_path: Path) -> None:
+    (tmp_path / "ww.yaml").write_text(CHOICES, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    service.start("manual", "TASK-6", agent="codex", init_artifact="Test it.")
+    service.next("TASK-6")
+
+    ended = service.interact(
+        "TASK-6",
+        transcript="Agent: Did it pass?\nOperator: It failed: the button stays off.",
+        choice="3",
+        end=True,
+    )
+
+    assert (ended.chosen, ended.interaction_ended) == ("fail and give comment", True)
+    speakers = [entry.speaker for entry in service.interactions.entries("TASK-6")]
+    assert speakers == ["operator", "agent", "operator", "end"]
+    assert service.interactions.entries("TASK-6")[0].text == (
+        "Choice: fail and give comment"
+    )
 
 
 MANUAL_TESTS = """workflows:

@@ -2199,16 +2199,28 @@ Mark such a step `interactive: true`:
   interactive: true
 ```
 
-The operator runs no `ww` command. They talk to the agent, and the agent reads
-from their words whether the conversation continues or is finished. What ww
-adds is the record and the gate. The step's page carries the contract and the
-commands; the agent records both sides as the conversation goes, verbatim:
+The conversation comes first and is not interrupted by ww commands. The agent
+holds it in its own session: it presents, asks, listens, follows up and
+proposes, and records nothing while they talk. It opens by telling the
+operator how the conversation ends: "say `ww done` when you are finished with
+this; I will then record our conversation and move on"; an unmistakable
+"we're done" counts too. Then one command records both sides, verbatim, and
+ends the interaction:
 
 ```console
-ww-agentic-workflows interact TASK-123 --role manager --operator-said "Resize through the queue; upload never waits."
-ww-agentic-workflows interact TASK-123 --role manager --agent-said "Proposed: a listener dispatches a queued job per upload."
-ww-agentic-workflows interact TASK-123 --role manager --end
+ww-agentic-workflows interact TASK-123 --role manager --transcript - --end <<'EOF'
+Agent: Proposed: a listener dispatches a queued job per upload.
+Operator: Resize through the queue; upload never waits.
+Agent: Agreed: the upload returns before any image work starts.
+EOF
 ```
+
+`--transcript` reads a file, or stdin with `-`. A line starting with `Agent:`
+or `Operator:` (also bold, as `**Operator:**`, in any case) starts an entry,
+and the lines up to the next marker belong to it; text before the first
+marker is refused. The entries keep their order and carry one recording time.
+`--operator-said` and `--agent-said` record a single entry, and `--end` alone
+ends an interaction whose entries are already recorded.
 
 Every entry is appended to one file per task,
 `.ww/tasks/<task-id>/interactions.md`, never rewritten, each headed by the time,
@@ -2244,10 +2256,10 @@ example, so the page also says to fall back to a numbered list when the tool
 is not available; Kimi, DeepSeek, and custom agents get the numbered list
 straight away. The tool names come from the
 [askmux](https://github.com/iShaldam/askmux) question-tool matrix (MIT,
-Copyright (c) 2026 iShaldam) and the Gemini CLI documentation. The pick is recorded with
-`interact --choice "<label or number>"`, a comment the operator adds goes in as
-`--operator-said` text, and ending the interaction is refused until a choice was
-recorded. The chosen label is kept on the step record and in the interactions
+Copyright (c) 2026 iShaldam) and the Gemini CLI documentation. The pick goes in the
+same recording call, `interact --transcript - --choice "<label or number>"
+--end`, a comment the operator adds is part of the transcript, and ending the
+interaction is refused until a choice was recorded. The chosen label is kept on the step record and in the interactions
 file.
 
 The limitation to know: a delegated worker is a subagent and cannot talk to the
@@ -2257,6 +2269,17 @@ holds the conversation, the manager in the `auto` runtime: it is a
 are ignored. For a manual-testing workflow, put `interactive: true` on the
 per-item stage: the manager presents each test case, waits for the operator's
 result, records it, ends the interaction, and completes the item.
+
+When a session ends in the middle of a conversation, the `interrupt` hook
+recovers what it can (see [Agent hooks](agent-hooks.md)). For Claude Code and
+Codex it reads the session's own transcript file, keeps the operator's typed
+messages and the agent's text replies since the step's attempt started, and
+appends them to the interactions file under the speakers `operator (recovered)`
+and `agent (recovered)`. The next session's notice says how many entries were
+recovered, and the step's page shows them, so the agent continues from the
+last unanswered point. The transcript formats are the agents' internal ones,
+so recovery is best effort; for other agents the conversation is not recorded
+and the notice says to ask the operator where they were.
 
 ### The operator page
 
@@ -2346,7 +2369,8 @@ the page's pause is recorded after the answers given before it were applied.
 The step's page then tells the agent to stop, without waiting again, and to
 show the step with `instruction` when the operator returns. Only the
 operator's own words lift a pause: an answer on the page or an
-`--operator-said` or `--choice` entry, not the agent's words and not the ending of a step.
+operator entry, whether from a transcript, `--operator-said` or `--choice`, not the
+agent's words and not the ending of a step.
 
 ## Documents
 

@@ -947,7 +947,12 @@ class InstructionBuilder:
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(
-                interact_commands(state.task_id, role, worker_token(state))
+                interact_commands(
+                    state.task_id,
+                    role,
+                    worker_token(state),
+                    choices=bool(item.choices),
+                )
                 if item.interactive
                 else None
             ),

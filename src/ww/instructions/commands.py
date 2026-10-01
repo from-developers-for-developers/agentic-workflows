@@ -278,14 +278,28 @@ def complete_command(
 
 
 def interact_commands(
-    task_id: str, role: CallerRole, assignment: str | None = None
+    task_id: str,
+    role: CallerRole,
+    assignment: str | None = None,
+    *,
+    choices: bool = False,
 ) -> InteractCommands:
     """The commands of an interactive step, for the role that performs it."""
 
     def interact(*parts: str) -> str:
         return _command("interact", _arg(task_id), *_worker(role, assignment), *parts)
 
+    pick = ('--choice="<label or number>"',) if choices else ()
+    transcript = "\n".join(
+        [
+            interact("--transcript", "-", *pick, "--end") + " <<'EOF'",
+            "Agent: <what you said, verbatim>",
+            "Operator: <what the operator said, verbatim>",
+            "EOF",
+        ]
+    )
     return InteractCommands(
+        transcript=transcript,
         operator=interact('--operator-said="<what the operator said>"'),
         agent=interact('--agent-said="<what the agent said>"'),
         choice=interact('--choice="<label or number>"'),

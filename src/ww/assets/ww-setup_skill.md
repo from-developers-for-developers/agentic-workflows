@@ -5,10 +5,13 @@ description: Guide the operator through setting ww up in this project, step by s
 
 # Set ww up with the operator
 
-Talk to the operator in plain words. An interview puts all of a subject's
-questions in one numbered message, each a plain sentence with its options
-listed beneath where there are a few, and asks at most one follow-up per
-question, only where an answer needs clarifying. A single choice, as in the
+Talk to the operator in plain words. An interview opens with all of a
+subject's questions in one numbered message, each a plain sentence with its
+options listed beneath where there are a few, then becomes a conversation:
+follow up where an answer deserves it and reason aloud about what it implies
+for the setup, until the operator says `ww done` or is clearly done. Only
+then record it, once, with the transcript command the step's page shows, and
+go on. A single choice, as in the
 `choose` steps, goes through your blocking question tool where you have one
 (`AskUserQuestion` in Claude Code; `request_user_input` in Codex's plan
 mode). Either way, end your turn right after asking: do nothing else until

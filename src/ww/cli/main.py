@@ -722,7 +722,13 @@ def _complete(context: _Context) -> _Outcome:
 def _interact(context: _Context) -> _Outcome:
     args = context.args
     if args.await_operator:
-        others = (args.operator, args.agent, args.choice, args.end_interaction)
+        others = (
+            args.operator,
+            args.agent,
+            args.transcript,
+            args.choice,
+            args.end_interaction,
+        )
         if any(others) or args.pause:
             raise StateError(
                 "interact --await works the operator page on its own; record "
@@ -749,6 +755,7 @@ def _interact(context: _Context) -> _Outcome:
             context.task_id,
             operator=args.operator,
             agent=args.agent,
+            transcript=_transcript(args.transcript),
             choice=args.choice,
             end=args.end_interaction,
             pause=args.pause,
@@ -757,6 +764,18 @@ def _interact(context: _Context) -> _Outcome:
         ),
         args.json_output,
     )
+
+
+def _transcript(source: str | None) -> str | None:
+    """The transcript text from a file, or from stdin for ``-``."""
+    if source is None:
+        return None
+    if source == "-":
+        return sys.stdin.read()
+    try:
+        return Path(source).read_text(encoding="utf-8")
+    except OSError as error:
+        raise StateError(f"cannot read the transcript {source}: {error}") from error
 
 
 def _interactions(context: _Context) -> _Outcome:

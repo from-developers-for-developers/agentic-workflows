@@ -136,11 +136,19 @@ def interruption_notice(interruption: Interruption, task_id: str) -> str:
     )
     step = interruption.step or interruption.item_name or "its step"
     if interruption.in_conversation:
-        return (
+        lead = (
             f"Interrupted: the previous session ({who}) stopped at {interruption.at} "
             f"while `{step}` (attempt {interruption.attempt}) was talking with the "
-            "operator. The step's page shows the conversation recorded so far; "
-            "pick it up at the last unanswered question rather than starting over."
+            "operator. "
+        )
+        if interruption.recovered_entries:
+            return lead + (
+                f"{interruption.recovered_entries} entries of the conversation "
+                "were recovered from the session transcript; read them on the "
+                "step's page and continue from the last unanswered point."
+            )
+        return lead + (
+            "The conversation was not recorded; ask the operator where you were."
         )
     return (
         f"Interrupted: the previous session ({who}) stopped at {interruption.at} "

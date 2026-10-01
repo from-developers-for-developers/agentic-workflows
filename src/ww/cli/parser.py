@@ -430,9 +430,18 @@ def build_parser() -> argparse.ArgumentParser:
     interact = subparsers.add_parser(
         "interact",
         parents=[json_and_role],
-        help="Record one exchange of an interactive step, or end its interaction.",
+        help="Record the conversation of an interactive step, or end its interaction.",
     )
     interact.add_argument("task_id")
+    interact.add_argument(
+        "--transcript",
+        default=None,
+        metavar="PATH",
+        help=(
+            "The whole conversation, both sides: lines starting with `Agent:` "
+            "or `Operator:`, read from PATH, or from stdin with `-`."
+        ),
+    )
     interact.add_argument(
         "--operator-said", dest="operator", default=None, help="What the operator said."
     )

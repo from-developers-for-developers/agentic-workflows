@@ -17,7 +17,11 @@ starts it.
    ./ww start --workflow ww-learn --agent <agent> --requirements "Learn about the operator, their role in this project, their team and their company." --role manager
    ```
 
-3. Follow every page until the run completes. Ask the operator through your
-   blocking question tool wherever a page offers choices, or as a numbered
-   list in the chat when you have only an asynchronous one (Codex outside
-   plan mode), and end your turn right after asking.
+3. Follow every page until the run completes. Each interview opens with its
+   questions in one numbered message, then is a conversation: follow up
+   where an answer deserves it and say what it implies, until the operator
+   says `ww done` or is clearly done; then record it once with the page's
+   transcript command and go on. Ask the operator through your blocking
+   question tool wherever a page offers choices, or as a numbered list in
+   the chat when you have only an asynchronous one (Codex outside plan
+   mode), and end your turn right after asking.

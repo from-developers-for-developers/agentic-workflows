@@ -16,17 +16,15 @@ Confirm the result with the operator.
 
 ### Interaction with the operator
 
-Hold this conversation with the operator here in this session, because a delegated worker cannot talk to them: present the matter, ask, listen, and clarify. The operator runs no `ww` command; tell from their words when it is finished. Record both sides as you go, each message verbatim:
+Hold this conversation with the operator in this session, because a delegated worker cannot talk to them: present the matter, ask, listen, and clarify. Record nothing while you talk. Open by telling the operator: say `ww done` when you are finished with this; I will then record our conversation and move on. An unmistakable "we're done" counts too.
+
+When it ends, record both sides verbatim and end the interaction in one command, then complete the step; completion is refused while it is open.
 
 ```console
-./ww interact TASK-1 --role worker --operator-said="<what the operator said>"
-./ww interact TASK-1 --role worker --agent-said="<what the agent said>"
-```
-
-When it is finished, end the interaction, then complete the step; completion is refused while it is open.
-
-```console
-./ww interact TASK-1 --role worker --end
+./ww interact TASK-1 --role worker --transcript - --choice="<label or number>" --end <<'EOF'
+Agent: <what you said, verbatim>
+Operator: <what the operator said, verbatim>
+EOF
 ```
 
 Nothing is recorded yet.
@@ -38,11 +36,7 @@ Nothing is recorded yet.
 
 Present the matter in your reply first, then ask with the `request_user_input` tool: one short question of a line or two, never the matter itself, these options in this order with their descriptions, single select. The operator picks a number; a free-form answer is a comment, not a choice. If the tool is not available in this session, present the choices as a numbered list instead and ask the operator to answer with the number or the label.
 
-Record the operator's pick before ending the interaction; it is required. A comment they add is recorded with `--operator-said`, in the same call or its own:
-
-```console
-./ww interact TASK-1 --role worker --choice="<label or number>"
-```
+The pick is required; it goes in `--choice` above.
 
 Nothing chosen yet.
 

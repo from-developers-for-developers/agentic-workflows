@@ -84,11 +84,11 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
     "interactive": {
         "completion command": (COMPLETE, ARTIFACT, SUMMARY),
         "interact": (
-            "./ww interact TASK-1 --role worker --operator-said=",
-            "./ww interact TASK-1 --role worker --agent-said=",
-            "./ww interact TASK-1 --role worker --end",
-            "./ww interact TASK-1 --role worker --choice=",
+            "./ww interact TASK-1 --role worker --transcript - ",
+            '--choice="<label or number>" --end',
+            "<<'EOF'",
             "completion is refused while it is open",
+            "say `ww done` when you are finished",
         ),
     },
     "step-rules": {

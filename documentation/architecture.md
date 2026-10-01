@@ -1430,12 +1430,22 @@ reasoning wrong must be a refusal, not an instruction.
 ## Interactive steps and the operator page
 
 ww cannot hear a conversation between the agent and the operator, so an
-interactive step owns only the record and the gate: `interact` appends both
-sides to one append-only file per task, the step record counts entries and
+interactive step owns only the record and the gate: the agent talks first,
+then one `interact --transcript` appends both sides to one append-only file
+per task (`interactions.py`, which also parses the transcript), the step
+record counts entries and
 remembers whether the operator ended or paused the conversation, and
 completion is refused until it was ended. How the operator is asked is the
 agent's business; the choice mechanisms table in `agents.py` is core knowledge
 of what each integration offers, not an extension point.
+
+The `interrupt` hook is the record's safety net. For a step still in
+conversation, `hooks/transcripts.py` reads the session's own transcript
+(Claude Code's session JSONL, Codex's rollout JSONL), keeps the two sides'
+messages since the attempt started, and the hook appends them through
+`InteractionLog` under speakers marked `(recovered)`. It writes no task state
+and takes no task lock: the session that held the conversation is the one
+ending, and the step record's entry count stays the agent's.
 
 The operator page is an extra on top of that, not part of it. The core knows
 it by one flag, `interactive: page` on a per-item stage (`ui` on the

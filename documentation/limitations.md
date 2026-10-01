@@ -128,6 +128,13 @@ collects the limitations, so it is not repeated there.
   trusted; only Claude Code keeps a hooks file out of version control. See
   the per-agent table in
   [agent-hooks.md](agent-hooks.md#agents-and-their-files).
+- Recovering a conversation: an interactive step is recorded once, when the
+  conversation ends. When a session ends before that, the `interrupt` hook
+  recovers the exchange from the session's transcript for Claude Code and
+  Codex only, and depends on their internal transcript formats, which may
+  change with any release, so recovery is best effort. For other agents the
+  conversation is not recorded, and a crash or a closed tab runs no hook at
+  all.
 - Codex offers its blocking question tool, `request_user_input`, only in
   plan mode. In its default mode the model has `request_user_input_async`,
   whose parked form ("Queued follow-up inputs") belongs to the running turn

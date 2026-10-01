@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,7 +72,7 @@ from ww.instructions.conversions import (
 )
 from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview
-from ww.interactions import InteractionLog
+from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
@@ -1221,22 +1222,40 @@ class WorkflowService:
         *,
         operator: str | None = None,
         agent: str | None = None,
+        transcript: str | None = None,
         choice: str | None = None,
         end: bool = False,
         pause: bool = False,
         caller_role: CallerRole | None = None,
         assignment: str | None = None,
     ) -> Instruction:
-        """Record one exchange of an interactive step, end it, or pause it."""
+        """Record a conversation of an interactive step, end it, or pause it.
+
+        ``transcript`` is the whole conversation in the plain form
+        :func:`parse_transcript` reads; its entries are appended in order
+        under one time, before ``choice`` and ``end`` apply.
+        """
         self._validate_caller_role(caller_role)
         validate_task_id(task_id)
         operator = (operator or "").strip() or None
         agent = (agent or "").strip() or None
         choice = (choice or "").strip() or None
-        if operator is None and agent is None and choice is None and not (end or pause):
+        if transcript is not None and (operator is not None or agent is not None):
             raise StateError(
-                "interact needs --operator-said, --agent-said, or --choice text, "
-                "--end, or --pause"
+                "--transcript records both sides; leave out --operator-said "
+                "and --agent-said"
+            )
+        spoken = parse_transcript(transcript) if transcript is not None else ()
+        if (
+            not spoken
+            and operator is None
+            and agent is None
+            and choice is None
+            and not (end or pause)
+        ):
+            raise StateError(
+                "interact needs --transcript, --operator-said, --agent-said, or "
+                "--choice text, --end, or --pause"
             )
         if end and pause:
             raise StateError(
@@ -1251,6 +1270,7 @@ class WorkflowService:
                 snapshot,
                 operator=operator,
                 agent=agent,
+                transcript=spoken,
                 choice=choice,
                 end=end,
                 pause=pause,
@@ -1265,6 +1285,7 @@ class WorkflowService:
         *,
         operator: str | None = None,
         agent: str | None = None,
+        transcript: Sequence[tuple[str, str]] = (),
         choice: str | None = None,
         end: bool = False,
         pause: bool = False,
@@ -1283,6 +1304,7 @@ class WorkflowService:
         if choice is not None:
             chosen = resolve_choice(item, choice)
             spoken.append(("operator", f"Choice: {chosen}"))
+        spoken.extend(transcript)
         spoken.extend(
             (speaker, text)
             for speaker, text in (("operator", operator), ("agent", agent))
@@ -1303,16 +1325,14 @@ class WorkflowService:
             spoken.append(("end", end_text))
         if pause:
             spoken.append(("pause", "The operator is done for now."))
-        for speaker, text in spoken:
-            self.interactions.append(
-                state.task_id,
-                run_id=state.run_id,
-                step=item.name,
-                item_id=item.item_id,
-                speaker=speaker,
-                text=text,
-                at=_now(),
-            )
+        self.interactions.append_entries(
+            state.task_id,
+            spoken,
+            run_id=state.run_id,
+            step=item.name,
+            item_id=item.item_id,
+            at=_now(),
+        )
         records = list(state.item_executions)
         records[state.cursor] = replace(
             record,
@@ -1322,7 +1342,11 @@ class WorkflowService:
         )
         # A pause is lifted by the operator's own words, not by the agent's or
         # by ending; those may happen while they are away.
-        spoke = operator is not None or choice is not None
+        spoke = (
+            operator is not None
+            or choice is not None
+            or any(speaker == "operator" for speaker, _ in transcript)
+        )
         return replace(
             state,
             item_executions=tuple(records),
@@ -1611,9 +1635,9 @@ class WorkflowService:
         active_record = state.item_executions[state.cursor]
         if item.interactive and not active_record.interaction_ended:
             raise StateError(
-                f"{item.name!r} is interactive: record the conversation with "
-                "`interact` and end it with --end once the operator "
-                "says so, then complete"
+                f"{item.name!r} is interactive: once the operator says the "
+                "conversation is done, record it with `interact --transcript - "
+                "--end`, then complete"
             )
         summary_for_next = (summary_for_next or "").strip() or None
         if summary_for_next is not None and len(summary_for_next) > SUMMARY_LIMIT:

@@ -14,7 +14,7 @@ agent.
 | --- | --- | --- |
 | `session-start` | A session starts, resumes, or is compacted | Prints a reminder that ww coordinates work here (under `"enabled": "on_request"`: that ww is used only when the user asks for it) and up to five unfinished tasks written within `agent_hooks.recent_days`, newest first, with their step, workspace, and resume commands. |
 | `stop` | The agent ends its turn | Once per step attempt, asks the agent to record an agent-owned step it left in progress. The next stop is always allowed. |
-| `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work, or to pick up the recorded conversation when the step was talking with the operator. |
+| `interrupt` | The session ends or is interrupted mid-step | Records the interruption without answering, so the next session is told to check the work. When the step was talking with the operator, it first recovers the conversation from the session's transcript (Claude Code and Codex), and the notice points at it. |
 
 There is no pre-spawn hook yet: ww does not intercept an agent's own
 subagent calls. `subagents: false` is enforced only through the step's
@@ -109,6 +109,23 @@ Which tasks concern a session:
   recorded, the step is open work again and the next stop reminds. An
   `interrupt` during such a conversation is still recorded, and the notice
   points at the conversation on the step's page instead of at `git status`.
+
+The agent records an interactive step's conversation once, when it ends, so a
+session that ends mid-conversation would lose it. The `interrupt` hook is the
+safety net: Claude Code and Codex name the session's transcript file in every
+hook payload as `transcript_path`, and for a task whose step is still talking
+with the operator ww reads the last 2 MB of that file. It keeps the operator's
+typed messages and the agent's text replies newer than the start of the step's
+attempt, skipping tool calls and results, reasoning, injected context and
+subagent lines, and appends them to the task's `interactions.md` under the
+speakers `operator (recovered)` and `agent (recovered)`. Claude Code writes the
+file asynchronously, so a `last_assistant_message` in the payload fills in the
+agent's last reply. The interruption marker keeps the count, and the notice says
+"N entries of the conversation were recovered from the session transcript", or
+that the conversation was not recorded. Only the extracted entries are stored,
+never the transcript. Reading it is best effort: an unknown line is skipped, and
+any failure recovers nothing rather than failing the hook. Cursor and
+Antigravity have no transcript reader, so their conversations are not recovered.
 
 ## Agents and their files
 

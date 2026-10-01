@@ -11,6 +11,8 @@ once, and nothing is ever blocked.
   step that is still in progress; the next stop is always allowed.
 - ``interrupt`` records, without answering, that a session ended while such
   a step was in progress, so the next session is told to check the work.
+  When the step was talking with the operator, it first recovers what the
+  two sides said from the session's transcript into the interaction record.
 
 An adapter reads the agent's payload and renders the answer; everything else
 is decided here, from persisted state alone.
@@ -24,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ww.config_files import WORKFLOWS_FILE
+from ww.interactions import RECOVERED, InteractionLog
 from ww.open_work import OpenTask, open_work, tasks_for_session
 from ww.project_config import AgentHooks
 from ww.storage import Storage
@@ -31,6 +34,7 @@ from ww.storage import Storage
 from .agents import HookAgent, HookEvent, HookPayload
 from .notices import session_context, stop_reminder
 from .records import HookRecords, Interruption, reminder_key
+from .transcripts import recover_conversation
 
 
 @dataclass(frozen=True)
@@ -174,6 +178,11 @@ def _interrupt(
     )
     for task in working:
         assert task.item_id is not None
+        recovered = (
+            _recover(agent, payload, records.storage, task, at)
+            if task.in_conversation
+            else 0
+        )
         records.mark_interrupted(
             task.task_id,
             Interruption(
@@ -186,11 +195,48 @@ def _interrupt(
                 agent=agent.name,
                 reason=payload.reason,
                 in_conversation=task.in_conversation,
+                recovered_entries=recovered,
             ),
         )
     return HookAnswer(
         "", "marked interrupted: " + ", ".join(task.task_id for task in working)
     )
+
+
+def _recover(
+    agent: HookAgent,
+    payload: HookPayload,
+    storage: Storage,
+    task: OpenTask,
+    at: str,
+) -> int:
+    """Append the conversation the session's transcript holds; its size.
+
+    Only what was said since the step's attempt started is taken.  The
+    task lock is not taken: the session that held the conversation is the
+    one ending, and the hook has seconds, not minutes.  Any failure
+    recovers nothing, so the hook never fails over it.
+    """
+    if payload.transcript_path is None:
+        return 0
+    try:
+        since = datetime.fromisoformat(
+            (task.started_at or task.updated_at).replace("Z", "+00:00")
+        )
+        entries = list(recover_conversation(agent.name, payload.transcript_path, since))
+        if entries and entries[-1][0] != "agent" and payload.last_agent_message:
+            entries.append(("agent", payload.last_agent_message.strip()))
+        InteractionLog(storage).append_entries(
+            task.task_id,
+            [(speaker + RECOVERED, text) for speaker, text in entries],
+            run_id=task.run_id,
+            step=task.item_name or task.label,
+            item_id=task.work_item_id,
+            at=at,
+        )
+    except Exception:  # noqa: BLE001 - a hook must never fail over recovery
+        return 0
+    return len(entries)
 
 
 def _key(task: OpenTask) -> str:
