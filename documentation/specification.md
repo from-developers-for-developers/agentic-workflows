@@ -318,7 +318,7 @@ user level:
   nothing.
 - Built-in workflows follow the configured ones. They are added after the
   levels are composed, so `extends: false` never removes them.
-- `discover` lists `catchall` under its own heading, as before, and the other
+- `discover` lists `catchall` under its own heading, and the other
   built-in workflows under "ww's own workflows" (`builtin_workflows` in JSON),
   apart from the project's.
 - A built-in's `recommended_next_workflow` naming a workflow that is switched
@@ -627,7 +627,7 @@ handlers:
   - code-review:
       loop:
         - code-review: Perform the code review.
-      continue: There are no meaningful review remarks.
+          break: There are no meaningful review remarks.
           profile: code-reviewer
         - fix: Fix the review findings.
           profile: developer

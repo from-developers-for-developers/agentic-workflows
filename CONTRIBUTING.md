@@ -40,8 +40,8 @@ Everyone taking part is expected to follow the
    entry to a line or two: it is also what ww shows people in the terminal
    when it tells them an update is available. Update the affected documents
    under `documentation/` if behaviour or `ww.yaml` changed. A change to a
-   persisted format needs a schema bump and must be called out as
-   incompatible.
+   persisted format needs a schema bump and a changelog entry that starts
+   with "Breaking:".
 
 The pull request template asks for the same things; filling it in is the
 fastest way to a review.

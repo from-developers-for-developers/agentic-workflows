@@ -93,8 +93,8 @@ init does not ask about (`runtime`, `update_check`, `limits`, `rules`,
 `builtins`, `workflows`, `projects`) that the user or local settings file
 already sets is not written, so a default in the repo file never hides it.
 
-The wizard offers to keep `../.ww` out of Git; without consent it only reports
-that action. With consent it appends these lines to `../.gitignore`:
+The wizard offers to keep `.ww` out of Git; without consent it only reports
+that action. With consent it appends these lines to `.gitignore`:
 
 ```gitignore
 .ww/*
@@ -120,8 +120,8 @@ asking, since [local configuration](#user-repo-and-local-configuration) belongs
 to one checkout:
 they are appended to an existing `.gitignore` once, never duplicated, and a
 missing `.gitignore` is created for them only inside a Git repository. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
-references in `../AGENTS.md` and an existing `../CLAUDE.md`, and reminds the user to
-define workflows when the initialized `../ww.yaml` is empty. Equivalent
+references in `AGENTS.md` and an existing `CLAUDE.md`, and reminds the user to
+define workflows when the initialized `ww.yaml` is empty. Equivalent
 non-interactive choices are available through `--task-format`, `--worktrees`,
 `--worktree-dir`, repeated `--branch-format WORKFLOW=FORMAT`,
 `--update-gitignore`, and `--skills`.
@@ -238,7 +238,7 @@ repair, reset, or delete its directory is the operator's decision.
 Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
 ```
 
-Set `"runtime": "auto"` in `../ww.json` to make `auto` the runtime
+Set `"runtime": "auto"` in `ww.json` to make `auto` the runtime
 `start` uses when `--runtime` is omitted; `discover` then marks it as the
 default. The setting lives in the JSON file because whether delegation is
 available depends on the environment ww runs in, not on the workflows. A
@@ -247,7 +247,7 @@ whose every step is a conversation with the operator, may declare
 `runtime: single` itself; that outranks the project default, and the flag on
 the command line still wins over both.
 
-Set `"enabled": false` in `../ww.json` to switch ww off for a
+Set `"enabled": false` in `ww.json` to switch ww off for a
 project. `discover` then says only that ww is disabled and that the agent must
 not use it, and `start` refuses to create a task.
 
@@ -493,7 +493,7 @@ same task. Every run ends with the usual workflow summary.
 The catch-all is one of ww's [built-in workflows](specification.md#built-in-workflows),
 shipped as YAML with ww. A project replaces it by defining its own workflow
 named `catchall` in `ww.yaml`, or switches it off in
-`../ww.json`:
+`ww.json`:
 
 ```json
 {"workflows": {"catchall": {"enabled": false}}}
@@ -501,7 +501,7 @@ named `catchall` in `ww.yaml`, or switches it off in
 
 ## Validate configuration and plan a workflow
 
-`ww-agentic-workflows` turns `../ww.yaml` into an explicit, inspectable
+`ww-agentic-workflows` turns `ww.yaml` into an explicit, inspectable
 execution plan. Skills and slash commands are discovered only from the project's
 shared `.agents/` directory and the selected agent's directory.
 
@@ -736,7 +736,7 @@ handlers:
   - code-review:
       loop:
         - code-review: Perform the code review.
-          stop: There are no meaningful review remarks.
+          break: There are no meaningful review remarks.
           profile: code-reviewer
         - fix: Fix the review findings.
           profile: developer
@@ -1083,17 +1083,13 @@ it covers every step inside, and a nested step may set `subagents: true` again.
       model: sonnet       # its own model, still no subagents
 ```
 
-Before `role` existed, `subagents: false` meant that the manager performed
-the step. That meaning is `role: manager` now; YAML that used `subagents:
-false` for it must say `role: manager` instead.
-
 ## Manager and worker assignments
 
 Caller role describes responsibility for one command. It is explicit workflow
 coordination rather than authentication. The manager owns `start`, `next`, and
-recovery. A worker may inspect status and complete or fail active work. Omitted
-roles retain the previous command behavior for existing scripts and service
-callers, while every newly generated execution command includes a role.
+recovery. A worker may inspect status and complete or fail active work. Scripts and
+direct service callers may omit the role; every execution command ww prints
+includes one.
 
 One manager `next` dispatches a structural assignment. For a leaf step, that
 assignment contains its preparation hooks, main action, and completion hooks.
@@ -1160,8 +1156,9 @@ manager boundary.
 On a failure or an interruption, the response reports `awaiting_operator`
 and states whether a preceding worker result was already saved.
 `instruction --role worker` reconstructs the same continuation or handoff from
-persisted state after a restart. Caller roles do not add stale assignment
-tokens or change the existing concurrency guarantees.
+persisted state after a restart. Caller roles do not change the concurrency
+guarantees; a stale worker is stopped by its [assignment
+token](#assignment-tokens).
 
 ### Assignment tokens
 
@@ -1293,14 +1290,14 @@ Markdown heads the page with the decision, for example
 stop and ask the operator. The recovery commands, `next --retry` and
 `next --force --reason`, are still shown, as the operator's choices; the
 agent runs one only after the operator picks it. A delegated worker is not told
-to ask anyone: it returns to its manager as before, and the manager asks.
+to ask anyone: it returns to its manager, and the manager asks.
 
 The operator is someone ww waits for, not a caller: `--role` still accepts only
 `manager` and `worker`, and `--role operator` is rejected.
 
 ## Lock cleanup and command attempts
 
-ww keeps lock sidecar paths in `../.ww/locks`; a file there is not evidence of a
+ww keeps lock sidecar paths in `.ww/locks`; a file there is not evidence of a
 currently held lock. Remove inactive sidecars with:
 
 ```console
@@ -1308,7 +1305,7 @@ ww-agentic-workflows cleanup
 ```
 
 Cleanup waits until active and waiting ww operations have left their lock gate,
-then removes the old sidecars safely. The execution log now records `started`
+then removes the old sidecars safely. The execution log records `started`
 before a command runs and records its final `ok` or `error` result afterwards,
 so an interrupted operation is visible as a `started` entry without a terminal
 record.
@@ -1317,7 +1314,7 @@ record.
 
 Projects are optional. Without them a task works in the project root, where
 `ww.yaml` and `.ww` live. With a `projects` list in
-`../ww.json`, that root can be a workspace directory above
+`ww.json`, that root can be a workspace directory above
 several repositories, and each task or child chooses the repository it works
 in. Projects live in the JSON settings rather than in `ww.yaml` because
 their locations are machine-specific, while the workflows are shared:
@@ -1354,8 +1351,8 @@ Configuration, state, and artifacts stay in the root, so one
 task's requirements, plan, and reviews are kept together even when its children
 touch several repositories. `discover` lists the projects, and the children
 collection step lists them so the agent can pass `--project` per child. A handoff
-successor run keeps its project. Anything without `--project` behaves exactly as
-before.
+successor run keeps its project. A task without `--project` works in the
+root.
 
 The `ww/git` extension follows the working directory: branches, worktrees, and
 commits act on the repository the task works in, and a task in a worktree still
@@ -1654,7 +1651,7 @@ chooses:
 Both ask for confirmation; `next --yes` confirms for an agent that carries out
 what the operator said.
 
-A hook without `on_failure: fix` fails as before, stopping the task with
+A hook without `on_failure: fix` fails like any handler, stopping the task with
 `operator_reason: handler_failed`.
 
 ### The change set
@@ -2064,13 +2061,13 @@ is plain runtime state and should not be used for secrets.
 Every workflow also receives ww's built-in `update-workflow-summary` handler as
 its final `before_complete_workflow` action. It asks the agent for a concise
 goal/result summary, and ww writes that value to the task run ledger when the
-run completes. No `../ww.yaml` configuration is needed. Its instruction
+run completes. No `ww.yaml` configuration is needed. Its instruction
 lists every ordinary step's handover of this run in order, each with its
 artifact, and tells the agent to build the summary from those alone, so the
 summary cannot borrow counts or statuses from other runs or stale material. It
 requests the run's ordinary worker selection (`auto`), unlike `init`, which
 requests `cheapest` / `low`; `builtins.workflow_summary` in
-`../ww.json` overrides that.
+`ww.json` overrides that.
 
 ## Interactive steps
 
@@ -2307,12 +2304,11 @@ completes. A container that is itself inside a loop counts only the current
 iteration of that loop: an artifact an earlier round saved is never handed
 over. The instruction names that step and gives the artifact's file path.
 When the chosen outcome saved nothing, for example an outcome with no steps of
-its own, an assessment supplies its own artifact if it saved one, as
-`artifact_from` naming an assessment always did. Otherwise the instruction
+its own, an assessment supplies its own artifact if it saved one. Otherwise
+the instruction
 says that no artifact is available and the step goes on without one.
 Validation accepts such a dependency only when some path inside it can save an
-artifact; an assessment whose outcomes cannot supplies its own answer, as
-before.
+artifact; an assessment whose outcomes cannot supplies its own answer.
 
 ```yaml
 handlers:
@@ -2515,7 +2511,7 @@ fresh round over the same cases.
 The collection step then reconciles instead of splitting. Its page lists
 the stored items and carries the commands to make the list match the
 source: `add-item` for new cases, `remove-item` for cases that are gone,
-and `update-item --text` to reword one. Both are allowed only while the
+and `update-item --text` to reword one. Removing and rewording are allowed only while the
 collection step is in progress, and an item that other items refer to
 cannot be removed. Stable IDs matter: an item that changed is reworded under
 its ID, not replaced, so its history lines up across rounds. When nothing
@@ -2678,8 +2674,8 @@ earlier iteration directories. The setting has no effect in the `single`
 runtime.
 
 ww limits loops to three rounds by default. Set a different project-wide
-positive integer as `limits.rounds` in `../ww.json`, or
-override one wrapper with `max_rounds` in `../ww.yaml`:
+positive integer as `limits.rounds` in `ww.json`, or
+override one wrapper with `max_rounds` in `ww.yaml`:
 
 ```json
 {"limits": {"rounds": 4}, "extensions": {}}
@@ -2867,9 +2863,7 @@ Loading the configuration rejects more than one transition and a transition
 anywhere but last: a transition step that is not the last top-level step, or
 that a completion hook would follow; a transition hook on another step, in
 another phase, or followed by another `after_complete` hook; and a transition
-hook at global or workflow scope. The removed `handoff: true` key is rejected
-with a message naming the transition as its replacement. The plan marks the
-workflow as a handoff. Execution
+hook at global or workflow scope. The plan marks the workflow as a handoff. Execution
 completes the selection workflow's run, records
 `<original-workflow>=<next-workflow>` in authoritative task state, and starts the
 successor as the task's next numbered run — so `ww instruction <task>` lists both,
@@ -2888,7 +2882,7 @@ Handoffs are deliberately limited, and the limits are accepted for now:
   tree to share a phase between workflows.
 
 General nested workflow definitions remain deferred and are rejected when
-`../ww.yaml` is loaded.
+`ww.yaml` is loaded.
 
 ## Extensions
 
@@ -2956,8 +2950,8 @@ it holds one lock across the complete read–modify–write sequence.
 
 ### Configuring one
 
-Extension settings live in `../ww.json`, ww's project config file —
-separate from `../ww.yaml`, which describes what a workflow *does*:
+Extension settings live in `ww.json`, ww's project config file —
+separate from `ww.yaml`, which describes what a workflow *does*:
 
 ```json
 {
@@ -3004,8 +2998,7 @@ entry covers every other workflow, the same shape as `branch_name_formats`. A
 repository under a configured project with a base branch of its own sets
 `base_branches` in [its own settings file](#a-projects-own-extension-settings).
 Each value may be either a literal branch name or an
-object with a non-empty `argv` array. A top-level `base_branch` is refused
-with a message pointing at `base_branches.default`, which replaced it. An argv command runs directly without a shell in
+object with a non-empty `argv` array. An argv command runs directly without a shell in
 the project root; its single non-empty stdout line becomes the base branch.
 Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, and `{{ww.task.run}}`.
 The resolved base is recorded with the task branch so retries, worktree creation,
@@ -3337,11 +3330,11 @@ normal `next` and `complete` responses stay focused on the immediate action.
 
 Successful commands return exit code `0`. Handled `ww` errors and rendered
 failed or interrupted workflow states return `1`. Invalid command-line syntax
-is still reported by `argparse` with exit code `2`. Abbreviated flags are not
+is reported by `argparse` with exit code `2`. Abbreviated flags are not
 accepted: every flag is spelled in full.
 
 The task ID may be omitted from `start`. `task_format` in
-`../ww.json` then controls generation with `{{timestamp}}`,
+`ww.json` then controls generation with `{{timestamp}}`,
 `{{digit}}`, and/or `{{uuid}}`; without it, ww uses `TASK-{{timestamp}}`. It is a
 setting of the checkout and of the tracker a repository uses, not of what a
 workflow does, so it lives in the JSON settings, at any of their
@@ -3398,7 +3391,7 @@ workflow, current step and step state, runtime, and agent/model/reasoning.
 Use `instruction` when an agent needs the detailed role-specific guidance.
 
 Markdown and `--json` output are rendered directly from the normalized
-instruction record. Project-local `../.ww/templates` files are not a supported
+instruction record. Project-local `.ww/templates` files are not a supported
 customization mechanism.
 
 ### Catalogs, output, and project selection
@@ -3469,7 +3462,7 @@ mid-command, and writes are atomic, so it never sees a partial file.
 The order in which waiting processes are served is **not** guaranteed — the
 operating system may grant the lock to any waiter. Waiting is bounded by
 `WW_LOCK_TIMEOUT` (seconds, default `30`); set it to `0` to wait indefinitely.
-Lock files live in `../.ww/locks` and the kernel releases them when a process
+Lock files live in `.ww/locks` and the kernel releases them when a process
 exits, so a killed run never leaves one behind. Locks are advisory between `ww`
 processes; editing `.ww/tasks/<id>/state.json` by hand is still unsupported.
 
@@ -3572,8 +3565,8 @@ ww now ships the `ww-rule` skill. Install into .claude? [Y/n]:
 ```
 
 Either answer is remembered, so it is asked once; a skill you declined is not
-installed later on its own. A project set up before this record counts a
-skill already present in a chosen directory as accepted.
+installed later on its own. Without a recorded answer, a skill already
+present in a chosen directory counts as accepted.
 
 The rest of the summary adapts to repeat runs too. The box saying what to allow
 in your agents' permissions is shown the first time only (and again under
@@ -3619,7 +3612,7 @@ wants delegation should declare `runtime: auto` rather than rely on the reader.
 
 ## Choosing the ww binary
 
-A project names the ww it runs in `../ww.json`:
+A project names the ww it runs in `ww.json`:
 
 ```json
 {"executable": "ww-agentic-workflows-dev"}
@@ -3653,7 +3646,7 @@ Either install also runs inside the other checkout, for example the
 development install used for all work in the `dev` checkout. ww recognises a
 checkout of its own source by `src/ww/extensions/registry.py` and then uses the
 running install's bundled `ww/git`, ignoring the checkout's own `ext/ww/*`
-copy. In any other project, an `ext/ww/<name>` of its own is still refused as
+copy. In any other project, an `ext/ww/<name>` of its own is refused as
 a duplicate of the bundled extension.
 
 ## Staying current with the ww checkout
@@ -3663,7 +3656,7 @@ exists is a local question. Before running the command it was asked for, ww
 compares the checkout it runs from against the branch that checkout tracks,
 and prints a short notice when it is behind:
 
-```markdown
+````markdown
 ## A newer ww is available
 
 This checkout is 23 commits behind `origin/main`.
@@ -3673,11 +3666,14 @@ What changed:
 - `interact --pause` records that the operator is done for now.
 - Items carry custom string fields, set with `--field NAME=VALUE`.
 
-**Tell the person you are working for about this before you continue**, and
-let them decide whether to update. To update:
+**Tell the person you are working for about this before you continue**, and let them decide whether to update. To update:
 
-    git -C /Users/you/tools/agentic-workflows pull
+```console
+git -C ~/tools/agentic-workflows pull
 ```
+
+This notice is shown once. `ww updates` prints it again.
+````
 
 The notice is announced, never enforced: it is written above the command's
 own output, which then runs exactly as it would have. An agent relaying that
@@ -3692,7 +3688,8 @@ change. The branch compared against is whatever the checkout tracks, so
 someone following `dev` is told about `dev`.
 
 Each notice is shown once. The record of what was already announced is per
-user, in `$XDG_CONFIG_HOME/ww/updates.json`, because the
+user, in `~/.config/ww/updates.json` (under `$XDG_CONFIG_HOME` when that is
+set), because the
 installation is shared by every project on the machine — acknowledging an
 update in one project does not raise it again in the next.
 

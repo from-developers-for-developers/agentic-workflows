@@ -744,7 +744,7 @@ version, so a digest another version computed cannot be reproduced. Run
 directories exist only for artifacts and command output; their names are not an
 execution index.
 
-Reads recognize the new document by its `ww.task-state` format discriminator.
+Reads recognize the document by its `ww.task-state` format discriminator.
 The document carries one schema version, and so do the plan snapshots and
 execution states inside it; a reader rejects any version but the current one.
 Metadata publication intents are prepared first, state publication is the
@@ -993,8 +993,7 @@ extension may be fixed in place while a task is in flight, so a change in
 behaviour is signalled by a version bump rather than by the bytes of the file.
 Project-extension fingerprints cover `extension.py`; installed-provider
 fingerprints cover distribution name, version, and entry-point metadata. The
-current plan schema requires identity metadata; older plan snapshots are
-rejected.
+plan schema requires identity metadata.
 
 Extension settings live in `../ww.json`. Initialization merges
 missing defaults without replacing existing extension choices. The split is
@@ -1285,11 +1284,11 @@ process runs in; everything ww persists that names a location, the working
 directory and a step's profile file, is stored relative to the root and
 resolved against it when used or printed (`ww.workspace`). A checkout mounted
 at another path, such as inside a container, therefore reads the same state
-and prints paths valid there. Until now the two
-coincided unless a Git worktree moved a task. The optional `projects` list in
-`ww.json` makes the distinction explicit; it belongs to the
-machine-specific settings file because checkouts are laid out differently on
-each machine while the workflows are shared: `start --project` or
+and prints paths valid there. Without projects the two coincide unless a Git
+worktree moves a task. The optional `projects` list in
+`ww.json` makes the distinction explicit; it belongs to the JSON settings,
+which a checkout's `ww.local.json` can override, because checkouts are laid
+out differently on each machine while the workflows are shared: `start --project` or
 `add-child --project` resolves a configured directory and persists it as the
 run's working directory, records the project name in the run's workflow values,
 and a handoff successor inherits both. Core knows nothing about repositories;

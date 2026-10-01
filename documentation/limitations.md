@@ -24,27 +24,23 @@ releases to define one against: nothing is contractually promised to survive a
 pull of `main`, and there is no deprecation period before a change lands.
 
 In practice the surfaces have settled. `ww.yaml` and the command line
-have been stable for a while, and most work now is internal refactoring, new
+have been stable for a while, and most work is internal refactoring, new
 capabilities, and fixes. Incompatible changes are possible but uncommon; when
-one lands it is deliberate and called out in the changelog. Persisted task
-state written by another ww version loads as long as its state format is the
-same: fields that version knew and this one does not are left alone. A change
-of the state format itself is still refused, so finish or reset a task before
-an upgrade that changes it; the changelog says when one does.
+one lands it is deliberate and marked "Breaking:" in the changelog.
+
+Every persisted format — task state, saved plans, execution records, the rule
+stores — carries a schema version, and this build reads only its own version,
+rejecting every other one rather than guessing or migrating it. When the
+changelog says a schema changed, finish or reset in-flight tasks before
+upgrading.
 
 Once releases exist, the policy becomes the usual one. The package version
 will identify a release rather than promising that every internal
 representation is a public API. Before 1.0, a minor-version increase may
-include an intentionally documented incompatible change, and persisted formats
-may change with a schema bump and no migration of unreleased data. Patch
-releases will not intentionally change documented command-line,
-persisted-record, or public extension API contracts, and release notes will
-call out an incompatible change and the affected boundary.
-
-Persisted plans and execution records carry their current format versions, and
-the reader rejects every other version rather than guessing or migrating it.
-In practice: finish or reset in-flight tasks before upgrading ww, rather than
-expecting an older task's state to be readable afterwards.
+include an intentionally documented incompatible change. Patch releases will
+not intentionally change documented command-line, persisted-record, or public
+extension API contracts, and release notes will call out an incompatible
+change and the affected boundary.
 
 ## Private runtime data
 
@@ -86,6 +82,13 @@ Each task is guarded by one exclusive lock held across a whole `start`, `next`,
 `instruction` stay usable while a command runs. Handoff order between waiters
 is unspecified, and `WW_LOCK_TIMEOUT` bounds every wait so real contention
 fails loudly rather than hanging.
+
+## Storage
+
+ww's authoritative state is the local filesystem under `.ww/` and nothing
+else. Task state, artifacts, metadata, locks, and extension state all live
+there; there is no interchangeable external storage provider, and the CLI
+always uses the filesystem one.
 
 ## Workflow modelling
 
