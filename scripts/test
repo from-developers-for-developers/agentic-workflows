@@ -26,6 +26,7 @@ if [ "$#" -gt 0 ]; then
     exec .venv/bin/python -m pytest "$@"
 fi
 
+.venv/bin/python -m ruff format --check src tests scripts ext/ww/git
 .venv/bin/python -m ruff check src tests scripts ext/ww/git
 .venv/bin/python -m mypy
 exec .venv/bin/python -m pytest

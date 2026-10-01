@@ -36,4 +36,3 @@ def _positive_int_mapping(value: Any, context: str) -> tuple[tuple[str, int], ..
     ):
         raise ValueError(f"{context} must be a mapping of positive integers")
     return tuple(value.items())
-

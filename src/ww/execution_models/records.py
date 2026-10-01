@@ -728,9 +728,7 @@ class PlanItemExecution:
                 if data.get("held_completion") is not None
                 else None
             ),
-            open_proposals=_strings(
-                data.get("open_proposals", []), "open proposals"
-            ),
+            open_proposals=_strings(data.get("open_proposals", []), "open proposals"),
             verification=tuple(
                 VerificationRule.from_dict(entry)
                 for entry in _list(data.get("verification", []), "verification")

@@ -83,8 +83,8 @@ Native Windows is not supported because filesystem locking relies on POSIX
 
 ## Run the checks
 
-`scripts/test` runs the first three of these; each can also be run on its
-own. Run the test suite:
+`scripts/test` runs the first four of these, checking the formatting rather
+than applying it; each can also be run on its own. Run the test suite:
 
 ```console
 .venv/bin/python -m pytest
@@ -98,6 +98,13 @@ separately bundled Git extension:
 
 ```console
 .venv/bin/python -m ruff check src tests scripts ext/ww/git
+```
+
+The code is formatted with `ruff format`; `scripts/test` and CI check that
+the same paths are formatted:
+
+```console
+.venv/bin/python -m ruff format src tests scripts ext/ww/git
 ```
 
 Run the configured static type checks:

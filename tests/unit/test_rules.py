@@ -121,9 +121,7 @@ Controllers must not instantiate services.
 
 
 def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
-    rule = parse_rule_file(
-        _rule(tmp_path, "rule.md", "Keep it short.\n"), "group/rule"
-    )
+    rule = parse_rule_file(_rule(tmp_path, "rule.md", "Keep it short.\n"), "group/rule")
 
     assert rule.text == "Keep it short."
     assert rule.paths == ()
@@ -172,8 +170,7 @@ def test_rule_check_accepts_argv_with_an_equals_assertion(tmp_path: Path) -> Non
         _rule(
             tmp_path,
             "rule.md",
-            "---\ncheck:\n  argv: [echo, ok]\n  assert: [{equals: ok}]\n"
-            "---\nSay ok.\n",
+            "---\ncheck:\n  argv: [echo, ok]\n  assert: [{equals: ok}]\n---\nSay ok.\n",
         ),
         "group/rule",
     )
@@ -565,9 +562,7 @@ def test_an_empty_assertion_fails_a_handler_that_prints() -> None:
         commands = _Commands()
         runtime_values: dict[str, str] = {}
 
-    planned = Commands(
-        (CommandDefinition(argv=("echo",)),), EMPTY
-    )
+    planned = Commands((CommandDefinition(argv=("echo",)),), EMPTY)
 
     result = CommandAction().execute(planned, _Context())  # type: ignore[arg-type]
 
@@ -697,9 +692,7 @@ workflows:
         tmp_path, (RuleGroupContribution("acme-python", (shipped.parent,), steps=()),)
     )
 
-    configuration = load_configuration(
-        tmp_path / "ww.yaml", extensions
-    )
+    configuration = load_configuration(tmp_path / "ww.yaml", extensions)
 
     groups = configuration.rule_groups_by_name
     names = [group.name for group in configuration.rule_groups]
@@ -725,9 +718,7 @@ def test_an_unconfigured_extension_contributes_nothing(tmp_path: Path) -> None:
         ProjectConfig(),
     )
 
-    configuration = load_configuration(
-        tmp_path / "ww.yaml", extensions
-    )
+    configuration = load_configuration(tmp_path / "ww.yaml", extensions)
 
     assert configuration.rule_groups == ()
 
@@ -1027,9 +1018,7 @@ def test_the_yaml_loader_reads_extension_groups_itself(tmp_path: Path) -> None:
         tmp_path, (RuleGroupContribution("acme-python", (shipped,)),)
     )
 
-    configuration = parse_yaml_configuration(
-        tmp_path / "ww.yaml", extensions
-    )
+    configuration = parse_yaml_configuration(tmp_path / "ww.yaml", extensions)
 
     assert configuration.rule_groups[0].name == "acme-python"
 

@@ -625,8 +625,15 @@ def test_merge_branch_redoes_its_own_interrupted_merge_but_not_another(
 ) -> None:
     _feature_branch(repository)
     _run(
-        "git", "merge", "--no-ff", "--no-commit", "-m", "Land",
-        "-m", "WW-Operation: TASK-1:01-task:land", "feature",
+        "git",
+        "merge",
+        "--no-ff",
+        "--no-commit",
+        "-m",
+        "Land",
+        "-m",
+        "WW-Operation: TASK-1:01-task:land",
+        "feature",
         cwd=repository,
     )
 
@@ -668,8 +675,15 @@ def _interrupted_conflict(repository: Path) -> str:
     _run("git", "commit", "-qam", "change seed on main", cwd=repository)
     conflicted = subprocess.run(
         [
-            "git", "merge", "--no-ff", "--no-edit", "-m", "Land",
-            "-m", "WW-Operation: TASK-1:01-task:land", "feature",
+            "git",
+            "merge",
+            "--no-ff",
+            "--no-edit",
+            "-m",
+            "Land",
+            "-m",
+            "WW-Operation: TASK-1:01-task:land",
+            "feature",
         ],
         cwd=repository,
         capture_output=True,

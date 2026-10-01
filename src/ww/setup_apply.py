@@ -158,9 +158,7 @@ def plan_setup(
                     )
                 )
             else:
-                writes.append(
-                    FileWrite(target.root_file, f"imports:\n  - {entry}\n")
-                )
+                writes.append(FileWrite(target.root_file, f"imports:\n  - {entry}\n"))
             changes.append(
                 FileChange(
                     target.root_file,

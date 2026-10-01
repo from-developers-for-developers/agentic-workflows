@@ -84,13 +84,13 @@ def test_for_team_writes_the_shared_import_and_settings(
     captured = capsys.readouterr()
     assert "ww-setup.yaml (new): adds workflow `review`, mode `gently`" in captured.err
     assert "ww.yaml: adds ww-setup.yaml to imports" in captured.err
-    assert (
-        "ww.json: sets runtime, extensions" in captured.err
-    )
+    assert "ww.json: sets runtime, extensions" in captured.err
     assert captured.out.startswith("Applied.\n")
     repo = (root / "ww.yaml").read_text(encoding="utf-8")
-    assert repo == "# The project's own workflows.\nimports:\n  - ww-setup.yaml\n" + (
-        REPO.split("\n", 1)[1]
+    assert (
+        repo
+        == "# The project's own workflows.\nimports:\n  - ww-setup.yaml\n"
+        + (REPO.split("\n", 1)[1])
     )
     setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
     assert set(setup) == {"workflows", "modes"}
@@ -309,9 +309,7 @@ def test_an_unimported_setup_file_is_left_to_the_operator(
 
     assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
 
-    assert "exists but ww.yaml does not import it" in (
-        capsys.readouterr().err
-    )
+    assert "exists but ww.yaml does not import it" in (capsys.readouterr().err)
 
 
 def test_a_definition_the_root_file_keeps_is_flagged(

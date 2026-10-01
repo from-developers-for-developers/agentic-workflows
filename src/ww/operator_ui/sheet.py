@@ -40,9 +40,11 @@ class Answer:
         choice = data.get("choice")
         comment = data.get("comment", "")
         at = data.get("at")
-        if (choice is not None and not isinstance(choice, str)) or not isinstance(
-            comment, str
-        ) or not isinstance(at, str):
+        if (
+            (choice is not None and not isinstance(choice, str))
+            or not isinstance(comment, str)
+            or not isinstance(at, str)
+        ):
             raise ValueError("an answer has a choice or null, a comment, and a time")
         return cls(choice, comment, at)
 

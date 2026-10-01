@@ -102,9 +102,7 @@ def is_builtin(workflow: WorkflowDefinition) -> bool:
     recommendation and is still the built-in.
     """
     return any(
-        replace(
-            workflow, recommended_next_workflow=builtin.recommended_next_workflow
-        )
+        replace(workflow, recommended_next_workflow=builtin.recommended_next_workflow)
         == builtin
         for builtin in builtin_workflows()
     )

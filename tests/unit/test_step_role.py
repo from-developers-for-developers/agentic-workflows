@@ -142,8 +142,7 @@ def test_lint_notes_worker_settings_on_a_managers_step(tmp_path: Path) -> None:
     notices = compose_configuration(path).notices
 
     assert any(
-        "review in ww.yaml has role: manager, so model has no "
-        "effect on it" in notice
+        "review in ww.yaml has role: manager, so model has no effect on it" in notice
         for notice in notices
     )
 

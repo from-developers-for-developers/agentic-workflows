@@ -58,9 +58,7 @@ def _git(*arguments: str, cwd: Path) -> None:
     subprocess.run(["git", *arguments], cwd=cwd, check=True, capture_output=True)
 
 
-def _project(
-    root: Path, workflows: str = WORKFLOWS, store: dict | None = None
-) -> Path:
+def _project(root: Path, workflows: str = WORKFLOWS, store: dict | None = None) -> Path:
     (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     (root / "README.md").write_text("seed\n", encoding="utf-8")
     if store is not None:
@@ -862,9 +860,7 @@ def _finish(service: WorkflowService, page: Instruction) -> Instruction:
         service.complete("TASK-1", artifact="Checked.", summary_for_next="Checked."),
     )
     assert page.item_name == "update-workflow-summary"
-    service.complete(
-        "TASK-1", artifact="Summary.", variables=(("summary", "Did it."),)
-    )
+    service.complete("TASK-1", artifact="Summary.", variables=(("summary", "Did it."),))
     return service.instruction("TASK-1")
 
 
@@ -959,9 +955,7 @@ def test_auto_approval_converts_a_proven_check_without_a_stop(
     assert _store(root)["rules"][text_hash]["status"] == "converted"
     done = _finish(service, recorded)
     assert done.status == "completed"
-    assert [check.name for check in done.rule_conversions.converted] == [
-        "cli-surface"
-    ]
+    assert [check.name for check in done.rule_conversions.converted] == ["cli-surface"]
     converted = done.rule_conversions.converted[0]
     assert converted.rules[0].id == "develop/1"
     assert converted.approved_by == "auto"

@@ -887,7 +887,6 @@ workflows:
     assert "**Handoff workflow:**" in render_plan(plan, False)
 
 
-
 def test_workflow_boundary_hooks_run_once_in_scope_order(tmp_path: Path) -> None:
     path = tmp_path / "ww.yaml"
     path.write_text(

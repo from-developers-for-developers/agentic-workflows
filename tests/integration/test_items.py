@@ -147,9 +147,7 @@ def test_items_reads_run_and_items_from_one_snapshot(
     monkeypatch.setattr(service.tasks, "active_execution_run", unexpected_lookup)
     monkeypatch.setattr(service.tasks, "read_items", unexpected_lookup)
 
-    assert service.items("TASK-SNAPSHOT") == (
-        WorkItem("item-1", "First item"),
-    )
+    assert service.items("TASK-SNAPSHOT") == (WorkItem("item-1", "First item"),)
 
 
 def test_artifact_false_keeps_a_completed_step_out_of_artifact_storage(

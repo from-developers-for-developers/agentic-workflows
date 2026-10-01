@@ -461,8 +461,7 @@ class InstructionBuilder:
             None,
         )
         if not inside or (
-            own is not None
-            and (not own.assessment_outcomes or path in item.ancestors)
+            own is not None and (not own.assessment_outcomes or path in item.ancestors)
         ):
             return None
         some = next(iter(inside.values()))

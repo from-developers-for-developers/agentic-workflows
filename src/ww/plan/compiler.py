@@ -313,8 +313,7 @@ class WorkflowPlanCompiler:
         extension = [
             name
             for name in wanted
-            if name not in CHILD_VALUE_NAMES
-            and not name.startswith(CHILD_FIELD_PREFIX)
+            if name not in CHILD_VALUE_NAMES and not name.startswith(CHILD_FIELD_PREFIX)
         ]
         if extension and stage in annotations.child_before_run:
             raise ConfigurationError(
@@ -840,9 +839,11 @@ class WorkflowPlanCompiler:
             or "task"
         )
         # A hook of a step the manager performs is the manager's too.
-        role: StepRole = "manager" if hints.role == "manager" or (
-            phase == "step" and step.interactive
-        ) else "worker"
+        role: StepRole = (
+            "manager"
+            if hints.role == "manager" or (phase == "step" and step.interactive)
+            else "worker"
+        )
         local = phase == "step" and role == "manager"
         if local:
             # An explicitly local step, or a conversation with the operator
@@ -1146,9 +1147,7 @@ class WorkflowPlanCompiler:
                     f"{hook.path or 'hook'}: on_failure: fix requires a command "
                     "handler that asks the agent for no values"
                 )
-            check_id = _unique_check_id(
-                f"{step.name}/{_hook_label(handler)}", taken
-            )
+            check_id = _unique_check_id(f"{step.name}/{_hook_label(handler)}", taken)
             taken.add(check_id)
             assert isinstance(action.payload, Commands)
             checks.append(

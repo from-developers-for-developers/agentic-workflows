@@ -50,6 +50,7 @@ CORE_VARIABLE_NAMES = (
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
 
+
 def unknown_template_message(names: set[str] | tuple[str, ...]) -> str:
     """Name the template values a handler references that are unavailable."""
     return "handler references unavailable variable(s): " + ", ".join(sorted(names))

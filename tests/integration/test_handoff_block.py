@@ -118,9 +118,7 @@ def test_the_block_reports_every_step_of_the_assignment(tmp_path: Path) -> None:
     assert "- review: completed" in rendered
     assert "- fix: completed" in rendered
     assert "Worker summary: Both findings fixed." in rendered
-    assert f"Manager: continue with `./ww next {TASK} --role manager`" in (
-        rendered
-    )
+    assert f"Manager: continue with `./ww next {TASK} --role manager`" in (rendered)
     assert "Files changed: not tracked" in rendered
     # The worker has nothing to run; the block names the manager's command.
     assert "### Manager command" not in rendered
@@ -155,9 +153,7 @@ def test_the_block_names_a_loop_break(tmp_path: Path) -> None:
 def test_the_block_names_a_loop_continue(tmp_path: Path) -> None:
     # A continue at the loop's limit stops the task for the operator, which
     # ends the worker's assignment; below the limit the worker goes on.
-    service = _auto(
-        tmp_path, ROUND.replace("loop:", "max_rounds: 1\n        loop:", 1)
-    )
+    service = _auto(tmp_path, ROUND.replace("loop:", "max_rounds: 1\n        loop:", 1))
     service.next(TASK, caller_role="manager")
     _worker_complete(service, "Findings.")
 

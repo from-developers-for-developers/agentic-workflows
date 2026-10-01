@@ -45,8 +45,7 @@ def _tool(tool: str, picks: str) -> ChoiceMechanism:
         f"Present the matter in your reply first, then ask with the `{tool}` "
         "tool: one short question of a line or two, never the matter itself, "
         "these options in this order with their descriptions, single select. "
-        f"{picks}"
-        + _FALLBACK,
+        f"{picks}" + _FALLBACK,
     )
 
 

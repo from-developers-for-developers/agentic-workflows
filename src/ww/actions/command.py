@@ -335,9 +335,7 @@ def _parse_assertion(raw: object, path: str) -> AssertionDefinition:
             conditions.append(AssertionCondition("empty"))
             continue
         condition = expect_mapping(entry, entry_path, error=ConfigurationError)
-        reject_unknown_keys(
-            condition, {"equals"}, entry_path, error=ConfigurationError
-        )
+        reject_unknown_keys(condition, {"equals"}, entry_path, error=ConfigurationError)
         if "equals" not in condition:
             raise ConfigurationError(f"{entry_path} must be empty or {{equals: ...}}")
         conditions.append(

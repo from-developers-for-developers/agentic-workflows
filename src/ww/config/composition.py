@@ -102,8 +102,10 @@ class ComposedConfiguration:
     @property
     def notices(self) -> tuple[str, ...]:
         return (
-            *(f"{label} is not applied: a lower level sets extends: false."
-              for label in self.ignored),
+            *(
+                f"{label} is not applied: a lower level sets extends: false."
+                for label in self.ignored
+            ),
             *(override.notice for override in self.overrides),
             *self.rule_notices,
         )
@@ -180,9 +182,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
     )
 
 
-def _read_level(
-    level: ConfigurationLevel, base: Path, seen: set[Path]
-) -> _Level:
+def _read_level(level: ConfigurationLevel, base: Path, seen: set[Path]) -> _Level:
     root_label = display_path(level.path, base)
     root = _read_file(level.path, root_label)
     keys = [key for key in root if key != EXTENDS_KEY]

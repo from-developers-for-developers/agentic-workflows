@@ -143,7 +143,6 @@ def _start(
     return service, started
 
 
-
 def step_single(root: Path) -> Instruction:
     """A step in the single runtime, after the previous step's handover."""
     service, _ = _start(root, STEPS)

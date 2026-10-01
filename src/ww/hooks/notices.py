@@ -105,14 +105,12 @@ def stop_reminder(tasks: tuple[OpenTask, ...]) -> str:
     """Ask, once, that the open step be closed before the agent stops."""
     ww = ww_command()
     listed = tasks[:STOP_TASK_LIMIT]
-    names = "; ".join(
-        f"{task.task_id} step `{task.label}`" for task in listed
-    )
+    names = "; ".join(f"{task.task_id} step `{task.label}`" for task in listed)
     example = listed[0].task_id
     return (
         f"ww: {names} is still in progress. If the work is done, record it with "
         f"`{ww} complete {example} --role worker ...` as its instruction shows; if "
-        f'it cannot finish, run `{ww} fail {example} --role worker '
+        f"it cannot finish, run `{ww} fail {example} --role worker "
         f'--error "<reason>"`. '
         "A manager waiting on a worker, or a deliberate pause, may simply stop "
         "again: ww reminds only once."

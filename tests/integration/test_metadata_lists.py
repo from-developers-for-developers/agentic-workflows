@@ -176,9 +176,7 @@ def test_a_project_scoped_append_key_merges_values_from_several_tasks(
         service.complete(
             task,
             summary_for_next="Noted.",
-            metadata_values=tuple(
-                ("project_metadata.seen", value) for value in values
-            ),
+            metadata_values=tuple(("project_metadata.seen", value) for value in values),
         )
         assert note.item_name == "note"
 

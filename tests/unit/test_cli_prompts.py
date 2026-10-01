@@ -25,8 +25,10 @@ def _unread(_prompt: str) -> str:
 CONFIRMATIONS = [
     (confirm_interrupted_retry, "Retry"),
     (_confirm_force_next, "Force"),
-    (lambda **kwargs: confirm_approval("check deptrac: deptrac analyse", **kwargs),
-     "Approval"),
+    (
+        lambda **kwargs: confirm_approval("check deptrac: deptrac analyse", **kwargs),
+        "Approval",
+    ),
 ]
 
 

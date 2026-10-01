@@ -195,9 +195,7 @@ def plan_add_rule(
         frontmatter["paths"] = list(paths)
     if check is not None:
         frontmatter["check"] = check
-    content = (
-        f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
-    )
+    content = f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
     rule_id = f"{group.name}/{stem}"
     return RuleWrite(
         writes=(FileWrite(file, content),),
@@ -281,9 +279,7 @@ def plan_edit(
         if rule_text_hash(body) == rule.text_hash:
             report.append("The wording is unchanged apart from whitespace.")
         warnings.extend(_wording_warnings(automation, rule, body))
-    content = (
-        f"{opening}{frontmatter}{closing}{body}" if opening is not None else body
-    )
+    content = f"{opening}{frontmatter}{closing}{body}" if opening is not None else body
     return RuleWrite(
         writes=(FileWrite(file, content),),
         report=tuple(report),
@@ -697,8 +693,10 @@ def _declared_in(project: RuleProject, group: RuleGroup) -> str:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError):
             continue
-        if isinstance(raw, dict) and isinstance(raw.get("rules"), dict) and (
-            group.name in raw["rules"]
+        if (
+            isinstance(raw, dict)
+            and isinstance(raw.get("rules"), dict)
+            and (group.name in raw["rules"])
         ):
             return label
     return project.label(project.config_path)
@@ -738,12 +736,13 @@ def _rule_file(project: RuleProject, rule_id: str) -> tuple[RuleDefinition, Path
             f"no rule {rule_id!r} is declared; `rules` lists every rule ID"
         )
     group = project.configuration.rule_groups_by_name.get(rule_id.split("/", 1)[0])
-    if group is not None and group.origin != "configuration" and any(
-        candidate.id == rule_id for candidate in group.rules
+    if (
+        group is not None
+        and group.origin != "configuration"
+        and any(candidate.id == rule_id for candidate in group.rules)
     ):
         raise StateError(
-            f"rule `{rule_id}` is shipped by {group.origin}; "
-            "ww does not change it"
+            f"rule `{rule_id}` is shipped by {group.origin}; ww does not change it"
         )
     if rule.source is None:
         raise StateError(

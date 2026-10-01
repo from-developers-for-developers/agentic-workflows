@@ -44,7 +44,8 @@ def _complete_iteration(service: WorkflowService, task_id: str) -> None:
     ready = service.complete(
         task_id,
         artifact="findings",
-        caller_role="worker", assignment=assignment_token(service, task_id),
+        caller_role="worker",
+        assignment=assignment_token(service, task_id),
         summary_for_next="Done.",
     )
     assert ready.item_name == "fix"
@@ -52,7 +53,8 @@ def _complete_iteration(service: WorkflowService, task_id: str) -> None:
     repeat = service.complete(
         task_id,
         artifact="fixed",
-        caller_role="worker", assignment=assignment_token(service, task_id),
+        caller_role="worker",
+        assignment=assignment_token(service, task_id),
         summary_for_next="Done.",
     )
     assert repeat.action_kind == "loop"
@@ -86,7 +88,8 @@ def test_loop_repeats_automatically_until_worker_stops(tmp_path: Path) -> None:
     stopped = service.loop(
         "TASK-LOOP",
         artifact="clean review",
-        caller_role="worker", assignment=assignment_token(service, "TASK-LOOP"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-LOOP"),
         summary_for_next="Done.",
     )
     assert stopped.item_name == "update-workflow-summary"
@@ -211,7 +214,8 @@ def test_loop_wrapper_artifact_can_be_disabled(tmp_path: Path) -> None:
     service.loop(
         "TASK-NO-WRAPPER",
         artifact="accepted",
-        caller_role="worker", assignment=assignment_token(service, "TASK-NO-WRAPPER"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-NO-WRAPPER"),
         summary_for_next="Done.",
     )
 
@@ -250,7 +254,8 @@ def test_loop_stop_requires_wrapper_artifact_when_body_artifact_is_disabled(
     service.loop(
         "TASK-WRAPPER-ONLY",
         artifact="accepted",
-        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-ONLY"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-WRAPPER-ONLY"),
         summary_for_next="Done.",
     )
 
@@ -284,9 +289,7 @@ def test_loop_stops_and_escalates_when_default_limit_is_reached(
     assert limited.next_role == "operator"
     assert limited.operator_reason == "loop_limit"
     assert limited.continuation_command is None
-    assert (
-        "## Operator decision: the loop reached its iteration limit" in rendered
-    )
+    assert "## Operator decision: the loop reached its iteration limit" in rendered
     assert "(`operator_reason: loop_limit`)" in rendered
     assert "### Loop limit reached" in rendered
     assert "Report the saved loop results and this warning to the user" in rendered
@@ -442,7 +445,8 @@ def test_only_stop_enabled_active_step_may_exit_loop(tmp_path: Path) -> None:
         service.loop(
             "TASK-NOT-GATE",
             artifact="fixed",
-            caller_role="worker", assignment=assignment_token(service, "TASK-NOT-GATE"),
+            caller_role="worker",
+            assignment=assignment_token(service, "TASK-NOT-GATE"),
             summary_for_next="Done.",
         )
 
@@ -471,7 +475,8 @@ workflows:
     ready = service.complete(
         "TASK-WRAPPER-HOOK",
         artifact="finding",
-        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
     assert ready.item_name == "fix"
@@ -489,14 +494,16 @@ workflows:
     service.complete(
         "TASK-WRAPPER-HOOK",
         artifact="fixed",
-        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
     service.next("TASK-WRAPPER-HOOK")
     stopped = service.loop(
         "TASK-WRAPPER-HOOK",
         artifact="clean",
-        caller_role="worker", assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-WRAPPER-HOOK"),
         summary_for_next="Done.",
     )
     assert stopped.item_name == "inline-argv"
@@ -557,14 +564,16 @@ def test_stop_finishes_step_hooks_before_skipping_remaining_body(
     hook = service.loop(
         "TASK-HOOK",
         artifact="clean",
-        caller_role="worker", assignment=assignment_token(service, "TASK-HOOK"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-HOOK"),
         summary_for_next="Done.",
     )
     assert hook.item_name == "preserve-review"
     service.complete(
         "TASK-HOOK",
         artifact="preserved",
-        caller_role="worker", assignment=assignment_token(service, "TASK-HOOK"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-HOOK"),
         summary_for_next="Done.",
     )
 
@@ -603,7 +612,8 @@ def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
         "TASK-CONTINUE",
         artifact="findings remain",
         continue_loop=True,
-        caller_role="worker", assignment=assignment_token(service, "TASK-CONTINUE"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-CONTINUE"),
         summary_for_next="Done.",
     )
     assert repeated.item_name == "review"
@@ -614,14 +624,16 @@ def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
     service.complete(
         "TASK-CONTINUE",
         artifact="clean",
-        caller_role="worker", assignment=assignment_token(service, "TASK-CONTINUE"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-CONTINUE"),
         summary_for_next="Done.",
     )
     service.next("TASK-CONTINUE")
     stopped = service.loop(
         "TASK-CONTINUE",
         artifact="fixed",
-        caller_role="worker", assignment=assignment_token(service, "TASK-CONTINUE"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-CONTINUE"),
         summary_for_next="Done.",
     )
     assert stopped.item_name == "update-workflow-summary"

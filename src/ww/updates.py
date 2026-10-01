@@ -225,9 +225,7 @@ def pending_notice(
     if checkout is None:
         return None
     notice = _look(checkout)
-    save_state(
-        UpdateState(moment, state.announced_commit, notice), state_file
-    )
+    save_state(UpdateState(moment, state.announced_commit, notice), state_file)
     if notice is None:
         return None
     if not force and state.announced_commit == notice.commit:
@@ -235,14 +233,10 @@ def pending_notice(
     return notice
 
 
-def mark_announced(
-    notice: UpdateNotice, *, state_file: Path | None = None
-) -> None:
+def mark_announced(notice: UpdateNotice, *, state_file: Path | None = None) -> None:
     """Record that this notice was printed, so it is not repeated."""
     state = load_state(state_file)
-    save_state(
-        UpdateState(state.last_checked, notice.commit, notice), state_file
-    )
+    save_state(UpdateState(state.last_checked, notice.commit, notice), state_file)
 
 
 def last_notice(*, state_file: Path | None = None) -> UpdateNotice | None:
@@ -275,9 +269,7 @@ def _look(checkout: Path) -> UpdateNotice | None:
     if not behind or not behind.isdigit() or behind == "0":
         return None
     entries, truncated = _changes(checkout, local, remote)
-    return UpdateNotice(
-        checkout, remote_ref, remote, int(behind), entries, truncated
-    )
+    return UpdateNotice(checkout, remote_ref, remote, int(behind), entries, truncated)
 
 
 def _tracking_ref(checkout: Path) -> str | None:
@@ -360,9 +352,7 @@ def _shorten(text: str) -> str:
     return text[: MAX_ENTRY_LENGTH - 1].rstrip() + "…"
 
 
-def _git(
-    checkout: Path, *arguments: str, timeout: float = GIT_TIMEOUT_SECONDS
-) -> str:
+def _git(checkout: Path, *arguments: str, timeout: float = GIT_TIMEOUT_SECONDS) -> str:
     """Run one read-only Git command, returning "" for anything that fails.
 
     An update notice is a convenience. No failure here -- no Git, no network,

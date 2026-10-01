@@ -158,9 +158,7 @@ def parse_rule_file(
         summary=rule_summary(text),
         text_hash=rule_text_hash(text),
         paths=(
-            _paths(frontmatter.get("paths"), context)
-            if "paths" in frontmatter
-            else ()
+            _paths(frontmatter.get("paths"), context) if "paths" in frontmatter else ()
         ),
         check=(
             parse_check_command(
@@ -327,9 +325,7 @@ class _GroupResolver:
         if name in self.resolved:
             return self.resolved[name]
         if name in chain:
-            raise ConfigurationError(
-                "rule group cycle: " + " -> ".join((*chain, name))
-            )
+            raise ConfigurationError("rule group cycle: " + " -> ".join((*chain, name)))
         group = self.declared[name]
         rules: list[RuleDefinition] = []
         stems: dict[str, Path] = {}

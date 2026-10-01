@@ -167,8 +167,7 @@ def test_lint_cli_validates_configuration_without_creating_runtime_state(
 
     assert main(["--root", str(tmp_path), "lint"]) == 0
     assert capsys.readouterr().out == (
-        "ww.yaml is valid.\n"
-        "Configuration files: ww.yaml\n"
+        "ww.yaml is valid.\nConfiguration files: ww.yaml\n"
     )
     assert not (tmp_path / ".ww").exists()
 
@@ -401,9 +400,7 @@ def test_metadata_command_prints_nested_task_metadata_json(
     instruction = capsys.readouterr().out
     assert "Detect and preserve these task metadata values" in instruction
     assert "The created Jira issue ID." in instruction
-    assert (
-        '--metadata foo.bar.baz.jira_id="<foo.bar.baz.jira_id>"' in instruction
-    )
+    assert '--metadata foo.bar.baz.jira_id="<foo.bar.baz.jira_id>"' in instruction
     assert (
         main(
             [
@@ -482,8 +479,7 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
                 "--summary",
                 "Metadata saved.",
                 "--metadata",
-                "project_metadata.environments.staging.url="
-                "https://staging.example.com",
+                "project_metadata.environments.staging.url=https://staging.example.com",
             ]
         )
         == 0
@@ -580,8 +576,7 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
         "modes: []\nhandlers: []\nhooks: {}\nworkflows: []\n"
     )
     assert (
-        json.loads((tmp_path / "ww.json").read_text())["task_format"]
-        == "TASK-{{uuid}}"
+        json.loads((tmp_path / "ww.json").read_text())["task_format"] == "TASK-{{uuid}}"
     )
     assert "Create your first workflow" in output
     assert "Define the steps in ww.yaml." in output
@@ -616,9 +611,7 @@ def test_init_adds_missing_settings_and_leaves_user_level_ones(
 ) -> None:
     user = tmp_path / "user"
     user.mkdir()
-    (user / "ww.json").write_text(
-        '{"runtime": "auto"}', encoding="utf-8"
-    )
+    (user / "ww.json").write_text('{"runtime": "auto"}', encoding="utf-8")
     monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
     project = tmp_path / "project"
     project.mkdir()
@@ -793,9 +786,7 @@ def test_init_worktree_and_gitignore_choices_are_explicit(
         == 0
     )
     capsys.readouterr()
-    settings = json.loads((tmp_path / "ww.json").read_text())[
-        "extensions"
-    ]["ww/git"]
+    settings = json.loads((tmp_path / "ww.json").read_text())["extensions"]["ww/git"]
 
     assert (tmp_path / "git-worktrees").is_dir()
     assert settings["worktree_dir"] == "./git-worktrees"
@@ -845,9 +836,7 @@ def test_init_completes_an_existing_enabled_worktree_config(
 
     assert main(["--root", str(tmp_path), "init", "--no-input"]) == 0
     capsys.readouterr()
-    settings = json.loads((tmp_path / "ww.json").read_text())[
-        "extensions"
-    ]["ww/git"]
+    settings = json.loads((tmp_path / "ww.json").read_text())["extensions"]["ww/git"]
 
     assert settings["worktree_dir"] == "./git-worktrees"
     assert settings["worktree_name_format"] == "{{ww.task.id}}"
@@ -1245,8 +1234,17 @@ def test_the_flags_parse() -> None:
     parser = build_parser()
 
     start = parser.parse_args(
-        ["start", "-w", "task", "-a", "codex", "--requirements", "Do it.",
-         "--branch-strategy", "hotfix"]
+        [
+            "start",
+            "-w",
+            "task",
+            "-a",
+            "codex",
+            "--requirements",
+            "Do it.",
+            "--branch-strategy",
+            "hotfix",
+        ]
     )
     interact = parser.parse_args(
         ["interact", "T-1", "--operator-said", "yes", "--agent-said", "ok", "--end"]

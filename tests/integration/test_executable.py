@@ -24,9 +24,7 @@ WORKFLOWS = """workflows:
 
 def _project(tmp_path: Path, config: dict[str, object]) -> Path:
     (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "ww.json").write_text(
-        json.dumps(config), encoding="utf-8"
-    )
+    (tmp_path / "ww.json").write_text(json.dumps(config), encoding="utf-8")
     return tmp_path
 
 

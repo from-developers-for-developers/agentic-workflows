@@ -20,8 +20,15 @@ from pathlib import Path
 DEFAULT_LICENSE = "GPL-3.0-or-later"
 SUPPORTED_SUFFIXES = {".py", ".sh"}
 EXCLUDED_DIRECTORIES = {
-    ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".venv",
-    "__pycache__", "build", "dist",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
 }
 # An SPDX tag comment on any line, e.g. "# SPDX-License-Identifier: MIT".
 SPDX_PATTERN = re.compile(r"^\s*#\s*SPDX-[A-Za-z0-9-]+:", re.MULTILINE)
@@ -38,7 +45,8 @@ def supported_files(paths: Iterable[Path]) -> Iterable[Path]:
             candidates = [path]
         elif path.is_dir():
             candidates = (
-                child for child in path.rglob("*")
+                child
+                for child in path.rglob("*")
                 if not any(part in EXCLUDED_DIRECTORIES for part in child.parts)
             )
         else:
@@ -96,8 +104,15 @@ def add_header(contents: str, license_identifier: str) -> str | None:
 def staged_paths() -> list[Path]:
     result = subprocess.run(
         [
-            "git", "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR",
-            "--", "*.py", "*.sh",
+            "git",
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--diff-filter=ACMR",
+            "--",
+            "*.py",
+            "*.sh",
         ],
         check=True,
         stdout=subprocess.PIPE,
@@ -114,9 +129,10 @@ def ensure_staged_header(path: Path, license_identifier: str) -> bool:
     receives the header.
     """
     name = os.fspath(path)
-    working_tree_matches_index = subprocess.run(
-        ["git", "diff", "--quiet", "--", name], check=False
-    ).returncode == 0
+    working_tree_matches_index = (
+        subprocess.run(["git", "diff", "--quiet", "--", name], check=False).returncode
+        == 0
+    )
     contents_result = subprocess.run(
         ["git", "show", f":{name}"],
         check=True,

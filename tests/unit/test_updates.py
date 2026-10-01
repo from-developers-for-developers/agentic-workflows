@@ -118,9 +118,7 @@ def test_an_up_to_date_checkout_says_nothing(checkout: Path, tmp_path: Path) -> 
     assert pending_notice(checkout, state_file=_state_file(tmp_path)) is None
 
 
-def test_an_announced_notice_is_not_shown_again(
-    checkout: Path, tmp_path: Path
-) -> None:
+def test_an_announced_notice_is_not_shown_again(checkout: Path, tmp_path: Path) -> None:
     state_file = _state_file(tmp_path)
     notice = pending_notice(checkout, state_file=state_file)
     assert notice is not None

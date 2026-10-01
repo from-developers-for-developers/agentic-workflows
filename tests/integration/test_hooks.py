@@ -37,9 +37,7 @@ class _Payload(io.StringIO):
 
 def _root(tmp_path: Path, settings: dict | None = None) -> Path:
     (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "ww.json").write_text(
-        json.dumps(settings or {}), encoding="utf-8"
-    )
+    (tmp_path / "ww.json").write_text(json.dumps(settings or {}), encoding="utf-8")
     return tmp_path
 
 
@@ -71,9 +69,7 @@ def _in_progress(root: Path, task_id: str = "T1", **options: object) -> Workflow
 def _hook_log(root: Path) -> list[dict]:
     lines = (root / ".ww/executions.jsonl").read_text(encoding="utf-8").splitlines()
     return [
-        record
-        for line in lines
-        if (record := json.loads(line))["command"] == "hook"
+        record for line in lines if (record := json.loads(line))["command"] == "hook"
     ]
 
 
@@ -88,8 +84,7 @@ def test_session_start_without_tasks_prints_only_the_reminder(
     context = _context(_hook(root, monkeypatch, capsys, "session-start"))
 
     assert context == (
-        "This project coordinates work through ww: `./ww discover` lists its "
-        "workflows."
+        "This project coordinates work through ww: `./ww discover` lists its workflows."
     )
 
 
@@ -359,9 +354,7 @@ def test_an_aborted_cursor_stop_is_an_interruption_not_a_reminder(
 def test_a_session_in_a_task_workspace_marks_only_that_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = _root(
-        tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]}
-    )
+    root = _root(tmp_path, {"projects": [{"name": "backend", "path": "./backend"}]})
     (root / "backend").mkdir()
     _in_progress(root, "IN-ROOT")
     _in_progress(root, "IN-BACKEND", project="backend")
@@ -375,9 +368,7 @@ def test_a_session_in_a_task_workspace_marks_only_that_task(
     # A session nowhere in particular concerns its own agent's tasks.
     _hook(root, monkeypatch, capsys, "interrupt", payload={"cwd": "/elsewhere"})
     assert (root / ".ww/tasks/IN-ROOT/interrupted.json").exists()
-    _hook(
-        root, monkeypatch, capsys, "interrupt", "codex", {"cwd": "/elsewhere"}
-    )
+    _hook(root, monkeypatch, capsys, "interrupt", "codex", {"cwd": "/elsewhere"})
     marker = json.loads((root / ".ww/tasks/IN-ROOT/interrupted.json").read_text())
     assert marker["agent"] == "claudecode"
 
@@ -506,9 +497,7 @@ def test_a_hook_never_fails_the_agent(
         == 0
     )
     assert main(["--root", str(root), "hook", "stop", "--agent", "someone"]) == 0
-    (root / "ww.json").write_text(
-        json.dumps({"enabled": "maybe"}), encoding="utf-8"
-    )
+    (root / "ww.json").write_text(json.dumps({"enabled": "maybe"}), encoding="utf-8")
     assert _hook(root, monkeypatch, capsys, "session-start") == ""
     assert _hook_log(root)[-1]["outcome"] == "error"
     assert capsys.readouterr().err == ""
@@ -714,9 +703,7 @@ def test_init_asks_once_per_agent_and_remembers(
     (tmp_path / ".codex").mkdir()
     answers = iter(["", "n"])
     tty_type = type("Tty", (), {"isatty": lambda self: True})
-    monkeypatch.setattr(
-        "ww.cli.initialization.sys.stdin", tty_type()
-    )
+    monkeypatch.setattr("ww.cli.initialization.sys.stdin", tty_type())
     monkeypatch.setattr(sys.modules["ww.cli.main"], "_initialization_options", _options)
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
@@ -859,9 +846,7 @@ def _delegated(root: Path, own_step: bool = False) -> WorkflowService:
         encoding="utf-8",
     )
     service = WorkflowService(Storage(root))
-    start_after_init(
-        service, "task", "T1", agent="claudecode", workflow_runtime="auto"
-    )
+    start_after_init(service, "task", "T1", agent="claudecode", workflow_runtime="auto")
     service.next("T1")
     return service
 

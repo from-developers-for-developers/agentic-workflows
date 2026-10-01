@@ -38,9 +38,7 @@ workflows:
 """,
         encoding="utf-8",
     )
-    plan = compile_workflow_plan(
-        load_configuration(path), tmp_path, "task", "codex"
-    )
+    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
     by_name = {item.name: index for index, item in enumerate(plan.items)}
 
     preparation = assignment_at(plan, by_name["parent-preparation"], runtime="auto")

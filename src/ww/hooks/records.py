@@ -163,9 +163,11 @@ class HookRecords:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return []
-        return [entry for entry in value if isinstance(entry, str)] if isinstance(
-            value, list
-        ) else []
+        return (
+            [entry for entry in value if isinstance(entry, str)]
+            if isinstance(value, list)
+            else []
+        )
 
     def remove(self, task_id: str) -> None:
         """Forget both records, as part of resetting the task."""

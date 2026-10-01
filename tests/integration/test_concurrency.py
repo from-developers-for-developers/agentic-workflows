@@ -79,9 +79,7 @@ def test_parallel_next_hands_the_step_to_exactly_one_process(tmp_path: Path) -> 
     assert [result.returncode for result in results] == [0, 0, 0]
     assert all("Write the code." in result.stdout for result in results)
 
-    state = FileTaskStorageAdapter(tmp_path).read_execution_state(
-        "TASK-1", "01-task"
-    )
+    state = FileTaskStorageAdapter(tmp_path).read_execution_state("TASK-1", "01-task")
     assert state is not None and state.status == "in_progress"
     assert [record.status for record in state.item_executions].count("in_progress") == 1
 

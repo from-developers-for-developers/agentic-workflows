@@ -37,9 +37,7 @@ workflows:
 
 def _project(tmp_path: Path, config: dict[str, object] | None = None) -> Path:
     (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "ww.json").write_text(
-        json.dumps(config or {}), encoding="utf-8"
-    )
+    (tmp_path / "ww.json").write_text(json.dumps(config or {}), encoding="utf-8")
     return tmp_path
 
 
@@ -395,10 +393,7 @@ def test_init_asks_before_installing_each_skill(
 
     assert paths == tuple((".claude", name) for name in SKILLS)
     # A directory that exists is asked about on its own...
-    question = (
-        f"Install the ww skills ({', '.join(SKILLS)}) into "
-        "{}/skills? [Y/n]: "
-    )
+    question = f"Install the ww skills ({', '.join(SKILLS)}) into {{}}/skills? [Y/n]: "
     assert question.format(".claude") in prompts
     assert question.format(".cursor") in prompts
     # ...and every agent without one shares a single question.

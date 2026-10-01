@@ -314,6 +314,7 @@ def decision_commands(task_id: str, kind: str, key: str) -> tuple[RecoveryComman
     An approach is approved or replaced by the operator's own sentence, a
     check is approved, an ambiguous rule gets one of its readings picked.
     """
+
     def decide(*flags: str) -> str:
         return _command("next", _arg(task_id), *flags, "--role", "manager")
 

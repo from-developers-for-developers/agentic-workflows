@@ -97,9 +97,7 @@ def _parse_handler(
         return HandlerDefinition(
             _name(mapping, path) if "name" in mapping else "start-workflow",
             _description(mapping.get("description"), path),
-            operation=WorkflowHandoff(
-                _nonempty_string(mapping, "handoff_to", path)
-            ),
+            operation=WorkflowHandoff(_nonempty_string(mapping, "handoff_to", path)),
             agent=_optional_agent(mapping, "agent", path),
             model=_optional_string(mapping, "model", path),
             reasoning=_optional_string(mapping, "reasoning", path),

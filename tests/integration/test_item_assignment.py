@@ -47,7 +47,8 @@ def _collect(service: WorkflowService, runtime: str = "auto") -> Instruction:
     return service.complete(
         TASK,
         artifact="collected",
-        caller_role="worker", assignment=assignment_token(service, TASK),
+        caller_role="worker",
+        assignment=assignment_token(service, TASK),
         summary_for_next="Done.",
     )
 
@@ -62,7 +63,8 @@ def _finish_stage(service: WorkflowService, item_id: str, stage: str) -> Instruc
     return service.complete(
         TASK,
         artifact=f"{stage} done",
-        caller_role="worker", assignment=assignment_token(service, TASK),
+        caller_role="worker",
+        assignment=assignment_token(service, TASK),
         summary_for_next="Done.",
     )
 

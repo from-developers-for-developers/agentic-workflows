@@ -146,9 +146,12 @@ def test_lock_opens_sidecar_only_after_activity_gate(
             # A cleanup process needs an exclusive activity lock before it can
             # unlink this sidecar.  Prove that the shared gate is already held
             # at the exact point where the sidecar becomes open.
-            with original_open(
-                locks._activity_path, "a+", encoding="utf-8"
-            ) as activity_probe, pytest.raises(BlockingIOError):
+            with (
+                original_open(
+                    locks._activity_path, "a+", encoding="utf-8"
+                ) as activity_probe,
+                pytest.raises(BlockingIOError),
+            ):
                 fcntl.flock(activity_probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             opened.set()
 

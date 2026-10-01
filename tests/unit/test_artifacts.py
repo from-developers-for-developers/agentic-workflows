@@ -36,11 +36,7 @@ def test_render_step_artifact_restores_escaped_markdown_line_endings() -> None:
     )
 
     assert artifact.endswith(
-        "## Result\n\n"
-        "## Scope\n\n"
-        "Review the change.\n\n"
-        "## Decision\n\n"
-        "Proceed.\n"
+        "## Result\n\n## Scope\n\nReview the change.\n\n## Decision\n\nProceed.\n"
     )
 
 
@@ -56,7 +52,5 @@ def test_render_step_artifact_preserves_literal_escapes_in_multiline_markdown() 
     )
 
     assert artifact.endswith(
-        "## Result\n\n"
-        "## Finding\n\n"
-        "The input contained a literal `\\n` sequence.\n"
+        "## Result\n\n## Finding\n\nThe input contained a literal `\\n` sequence.\n"
     )

@@ -81,20 +81,14 @@ class RuleChecker:
         mark_b = take_mark(scope.directory) if record.change_mark else None
         files, unmarked = change_set(scope.directory, record.change_mark, mark_b)
         kept = (
-            {
-                result.id: result
-                for result in reuse.results
-                if result.status != "failed"
-            }
+            {result.id: result for result in reuse.results if result.status != "failed"}
             if reuse is not None and mark_b is not None and reuse.mark == mark_b
             else {}
         )
         results = tuple(
             kept.get(check.id)
             or self._run_check(state, item, check, index, attempt, files, scope)
-            for index, check in enumerate(
-                (*item.checks, *record.resolved_checks), 1
-            )
+            for index, check in enumerate((*item.checks, *record.resolved_checks), 1)
             if check.id not in waived
         )
         return CheckReport(
@@ -127,9 +121,7 @@ class RuleChecker:
             try:
                 argv, environment = action.render_command(command, scope.values)
             except StateError as error:
-                return CheckResult(
-                    check.id, check.source, "failed", output=str(error)
-                )
+                return CheckResult(check.id, check.source, "failed", output=str(error))
             shown.append(
                 command.shell if command.shell is not None else shlex.join(argv)
             )

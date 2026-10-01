@@ -47,8 +47,8 @@ class Storage:
         self.root = root
         self.locks = FileLocks(root)
         self.task_persistence = task_persistence or FileTaskStorageAdapter(root)
-        self.project_metadata = (
-            project_metadata or FileProjectMetadataStorageAdapter(root)
+        self.project_metadata = project_metadata or FileProjectMetadataStorageAdapter(
+            root
         )
 
     def lock_project(self) -> AbstractContextManager[None]:
@@ -168,9 +168,7 @@ class Storage:
         if added:
             created.append(".gitignore entries: " + ", ".join(added))
         elif (self.root / ".gitignore").exists():
-            preserved.append(
-                ".gitignore entries: " + ", ".join(LOCAL_IGNORE_PATTERNS)
-            )
+            preserved.append(".gitignore entries: " + ", ".join(LOCAL_IGNORE_PATTERNS))
 
         actions = self._initialization_actions()
         if (
@@ -332,9 +330,7 @@ class Storage:
             size = path.stat().st_size if path.exists() else 0
             if size and size + len(line.encode("utf-8")) > EXECUTION_LOG_MAX_BYTES:
                 self._rotate_execution_logs(path)
-            descriptor = os.open(
-                path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600
-            )
+            descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
             # Existing logs might have been created by an older release with
             # the user's umask. Repair them on every append as part of the
             # audit log's confidentiality contract.

@@ -16,9 +16,7 @@ def test_auto_selection_clears_model_and_reasoning() -> None:
 
 
 def test_agent_change_clears_inherited_model_and_reasoning() -> None:
-    selection = _normalize_completion_selection(
-        "other", None, None, "codex", "gpt-5"
-    )
+    selection = _normalize_completion_selection("other", None, None, "codex", "gpt-5")
 
     assert selection.clear_selected_model
     assert selection.clear_selected_reasoning

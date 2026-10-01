@@ -513,14 +513,28 @@ def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
     assert set(formats("T3").values()) == {"{{ww.task.id}}: {{commit_message}}"}
 
     # ``plan --project`` compiles the plan a task in that project would get.
-    assert main(
-        ["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json",
-         "--project", "backend"]
-    ) == 0
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "plan",
+                "-w",
+                "feature",
+                "-a",
+                "codex",
+                "--json",
+                "--project",
+                "backend",
+            ]
+        )
+        == 0
+    )
     assert "[{{ww.task.id}}] {{commit_message}}" in capsys.readouterr().out
-    assert main(
-        ["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json"]
-    ) == 0
+    assert (
+        main(["--root", str(root), "plan", "-w", "feature", "-a", "codex", "--json"])
+        == 0
+    )
     assert "[{{ww.task.id}}] {{commit_message}}" not in capsys.readouterr().out
 
 
@@ -609,8 +623,15 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
     )
     assert (
         main(
-            ["--root", str(root), "extension", "ww/git", "settings",
-             "--project", "backend"]
+            [
+                "--root",
+                str(root),
+                "extension",
+                "ww/git",
+                "settings",
+                "--project",
+                "backend",
+            ]
         )
         == 0
     )
@@ -626,8 +647,7 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
     )
     assert main(["--root", str(root), "lint"]) != 0
     assert (
-        "backend/ww.json (project 'backend') configures unknown "
-        "extension 'acme/nope'"
+        "backend/ww.json (project 'backend') configures unknown extension 'acme/nope'"
     ) in capsys.readouterr().err
 
 
@@ -642,9 +662,7 @@ def test_generated_ids_follow_the_projects_task_format(
         root / "ww.json",
         {"projects": PROJECTS, "task_format": "ROOT-{{digit}}", "extensions": {}},
     )
-    _write_json(
-        root / "backend" / "ww.json", {"task_format": "BE-{{digit}}"}
-    )
+    _write_json(root / "backend" / "ww.json", {"task_format": "BE-{{digit}}"})
     service = WorkflowService(Storage(root))
 
     assert start_after_init(service, "feature", None, agent="codex").task_id == "ROOT-1"
@@ -698,9 +716,7 @@ def test_a_project_may_require_explicit_ids_while_the_root_generates_them(
         root / "ww.json",
         {"projects": PROJECTS, "task_format": "ROOT-{{digit}}", "extensions": {}},
     )
-    _write_json(
-        root / "backend" / "ww.json", {"task_format": "explicit"}
-    )
+    _write_json(root / "backend" / "ww.json", {"task_format": "explicit"})
     service = WorkflowService(Storage(root))
 
     assert start_after_init(service, "feature", None, agent="codex").task_id == "ROOT-1"
@@ -717,8 +733,7 @@ def test_a_project_may_require_explicit_ids_while_the_root_generates_them(
     text = capsys.readouterr().out
     assert (
         "- `backend` at `./backend` — Python API service. Tasks there require an "
-        "explicit ID."
-        in text
+        "explicit ID." in text
     )
     # The root's guidance still describes the root: generated IDs are fine there.
     assert "ww never generates one here" not in text

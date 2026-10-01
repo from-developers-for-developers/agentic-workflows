@@ -210,9 +210,7 @@ def _validate_run(task_id: str, run: TaskRunAggregate) -> None:
     if binding is not None and not binding.startswith(BOOTSTRAP_REQUEST_PREFIX):
         raise StateError(f"task {task_id!r} aggregate has invalid bootstrap binding")
     if state.workflow != run.workflow or plan.workflow != run.workflow:
-        raise StateError(
-            f"task {task_id!r} aggregate has mismatched workflow identity"
-        )
+        raise StateError(f"task {task_id!r} aggregate has mismatched workflow identity")
     if (
         state.agent != plan.agent
         or state.snapshot_digest != run.snapshot.configuration_digest
@@ -238,8 +236,7 @@ def _validate_run(task_id: str, run: TaskRunAggregate) -> None:
         if expected is not None and expected != len(record.commands):
             raise StateError(f"task {task_id!r} aggregate has mismatched commands")
         if any(
-            command.index != index
-            for index, command in enumerate(record.commands, 1)
+            command.index != index for index, command in enumerate(record.commands, 1)
         ):
             raise StateError(f"task {task_id!r} aggregate has invalid command index")
     if state.active_item_id is not None and (

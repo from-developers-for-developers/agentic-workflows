@@ -146,8 +146,7 @@ def test_add_warns_about_a_glob_that_matches_nothing(
     root = _project(tmp_path)
 
     assert (
-        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--paths", "*.php")
-        == 0
+        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--paths", "*.php") == 0
     )
 
     out = capsys.readouterr().out
@@ -185,10 +184,7 @@ def test_add_refuses_a_write_the_configuration_would_reject(
 
     # The new file's stem is already a rule of the group, from its other folder.
     assert (
-        _ww(
-            root, "rules", "add", "docs", "--text", SERVICES, "--id", "services"
-        )
-        == 1
+        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--id", "services") == 1
     )
 
     err = capsys.readouterr().err
@@ -218,18 +214,22 @@ def test_add_options_are_checked(
     root = _project(tmp_path)
 
     assert (
+        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--assert", "empty") == 1
+    )
+    assert "--assert needs --check-shell or --check-argv" in capsys.readouterr().err
+    assert (
         _ww(
-            root, "rules", "add", "docs", "--text", SERVICES, "--assert", "empty"
+            root,
+            "rules",
+            "add",
+            "docs",
+            "--text",
+            SERVICES,
+            "--check-argv",
+            "x",
+            "--assert",
+            "ne:1",
         )
-        == 1
-    )
-    assert (
-        "--assert needs --check-shell or --check-argv"
-        in capsys.readouterr().err
-    )
-    assert (
-        _ww(root, "rules", "add", "docs", "--text", SERVICES, "--check-argv", "x",
-            "--assert", "ne:1")
         == 1
     )
     assert "--assert takes empty or equals:<value>" in capsys.readouterr().err
@@ -248,8 +248,19 @@ def test_add_group_writes_the_import_file_and_only_adds_the_import(
     root = _project(tmp_path)
 
     assert (
-        _ww(root, "rules", "add", "--group", "php", "--dir", "rules/php",
-            "--workflows", "task", "--steps", "develop")
+        _ww(
+            root,
+            "rules",
+            "add",
+            "--group",
+            "php",
+            "--dir",
+            "rules/php",
+            "--workflows",
+            "task",
+            "--steps",
+            "develop",
+        )
         == 0
     )
 
@@ -295,9 +306,7 @@ def test_add_group_extends_an_existing_imports_list(
 ) -> None:
     root = _project(tmp_path, "")
     (root / "extra.yaml").write_text("modes: []\n", encoding="utf-8")
-    (root / "ww.yaml").write_text(
-        imports + WORKFLOWS, encoding="utf-8"
-    )
+    (root / "ww.yaml").write_text(imports + WORKFLOWS, encoding="utf-8")
 
     assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/php") == 0
 
@@ -310,8 +319,17 @@ def test_add_group_refuses_bad_filters_and_leaves_everything_as_it_was(
     root = _project(tmp_path)
 
     assert (
-        _ww(root, "rules", "add", "--group", "php", "--dir", "rules/php/new",
-            "--steps", "deploy")
+        _ww(
+            root,
+            "rules",
+            "add",
+            "--group",
+            "php",
+            "--dir",
+            "rules/php/new",
+            "--steps",
+            "deploy",
+        )
         == 1
     )
 
@@ -348,7 +366,7 @@ def test_edit_replaces_the_body_and_keeps_the_frontmatter(
     _store(root, {old: _converted("Include foo.", "foo-header")}, {})
 
     assert (
-        _ww(root, "rules", "edit", "docs/header", "--text", "Include \"bar\" instead.")
+        _ww(root, "rules", "edit", "docs/header", "--text", 'Include "bar" instead.')
         == 0
     )
 
@@ -476,24 +494,43 @@ def test_filter_rewrites_a_group_of_the_import_file(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
-    assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/docs",
-               "--steps", "develop") == 0
+    assert (
+        _ww(
+            root,
+            "rules",
+            "add",
+            "--group",
+            "php",
+            "--dir",
+            "rules/docs",
+            "--steps",
+            "develop",
+        )
+        == 0
+    )
     capsys.readouterr()
 
-    assert _ww(root, "rules", "filter", "php", "--steps", "develop", "review",
-               "--workflows") == 0
+    assert (
+        _ww(
+            root,
+            "rules",
+            "filter",
+            "php",
+            "--steps",
+            "develop",
+            "review",
+            "--workflows",
+        )
+        == 0
+    )
 
     out = capsys.readouterr().out
     assert "Changed the filters of rule group `php` in ww-rules.yaml." in out
     assert "Reaches no step yet" in out
-    group = load_configuration(
-        root / "ww.yaml"
-    ).rule_groups_by_name["php"]
+    group = load_configuration(root / "ww.yaml").rule_groups_by_name["php"]
     assert (group.workflows.names, group.steps.names) == ((), ("develop", "review"))
     assert _ww(root, "rules", "filter", "php", "--all-workflows", "--all-steps") == 0
-    group = load_configuration(
-        root / "ww.yaml"
-    ).rule_groups_by_name["php"]
+    group = load_configuration(root / "ww.yaml").rule_groups_by_name["php"]
     assert group.workflows.admits_all and group.steps.admits_all
     assert "- task: develop, review" in capsys.readouterr().out
 
@@ -502,8 +539,20 @@ def test_a_star_filter_option_writes_star(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
-    assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/docs",
-               "--steps", "*") == 0
+    assert (
+        _ww(
+            root,
+            "rules",
+            "add",
+            "--group",
+            "php",
+            "--dir",
+            "rules/docs",
+            "--steps",
+            "*",
+        )
+        == 0
+    )
     assert yaml.safe_load(_text(root / "ww-rules.yaml"))["rules"]["php"] == {
         "rules": ["rules/docs/"],
         "steps": "*",
@@ -513,9 +562,7 @@ def test_a_star_filter_option_writes_star(
 
     entry = yaml.safe_load(_text(root / "ww-rules.yaml"))["rules"]["php"]
     assert (entry["workflows"], entry["steps"]) == ("*", "*")
-    group = load_configuration(
-        root / "ww.yaml"
-    ).rule_groups_by_name["php"]
+    group = load_configuration(root / "ww.yaml").rule_groups_by_name["php"]
     assert group.workflows.admits_all and group.steps.admits_all
     capsys.readouterr()
 

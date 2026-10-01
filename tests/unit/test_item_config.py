@@ -180,8 +180,7 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
             "must be null, splitting guidance text, or a mapping",
         ),
         (
-            "      - review: Review.\n"
-            "        items:\n          assignment: batch\n",
+            "      - review: Review.\n        items:\n          assignment: batch\n",
             "items.assignment must be one of: together, per_item, per_step",
         ),
         (

@@ -246,4 +246,3 @@ def test_children_round_trip_with_fields_and_skipped_status() -> None:
     assert encoded["schema_version"] == 1
     assert "fields" not in encoded["runs"][0]["children"][1]
     assert decoded[0].children == children
-

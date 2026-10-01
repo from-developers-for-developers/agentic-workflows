@@ -178,9 +178,7 @@ def test_the_manager_gets_the_same_token_back_after_losing_it(tmp_path: Path) ->
     # A compacted manager asks again: the same assignment, the same token.
     again = WorkflowService(Storage(tmp_path)).instruction(TASK, caller_role="manager")
     assert again.assignment_token == token
-    assert f"--assignment {token}" in MarkdownOutputAdapter().render_instruction(
-        again
-    )
+    assert f"--assignment {token}" in MarkdownOutputAdapter().render_instruction(again)
 
 
 def test_reassign_closes_the_old_token_and_issues_a_new_one(tmp_path: Path) -> None:

@@ -200,9 +200,11 @@ def _instruction_outcome(
 def _rejection(instruction: Instruction) -> str:
     fix = instruction.fix_required
     assert fix is not None
-    return "completion rejected: " + ", ".join(
-        failure.id for failure in fix.failures
-    ) + " failed"
+    return (
+        "completion rejected: "
+        + ", ".join(failure.id for failure in fix.failures)
+        + " failed"
+    )
 
 
 def _init(context: _Context) -> _Outcome:
@@ -217,8 +219,8 @@ def _init(context: _Context) -> _Outcome:
         sys.stdout.write(welcome)
         sys.stdout.flush()
         print(f"Setting up ww in: {context.storage.root}\n", flush=True)
-    workflows, project_config, ignore_runtime, skill_installs = (
-        _initialization_options(context.storage, context.args)
+    workflows, project_config, ignore_runtime, skill_installs = _initialization_options(
+        context.storage, context.args
     )
     result = context.service.initialize(
         workflows=workflows,
@@ -257,9 +259,7 @@ def _plan(context: _Context) -> _Outcome:
 
 
 def _lint(context: _Context) -> _Outcome:
-    configuration = load_configuration(
-        context.storage.config_path, context.extensions
-    )
+    configuration = load_configuration(context.storage.config_path, context.extensions)
     for project in context.extensions.config.projects:
         context.extensions.validate_configuration(project.name)
     notices = "".join(
@@ -332,11 +332,7 @@ def _rules_summary(configuration: WorkflowConfiguration) -> str:
     A rule counts once however many groups or steps reach it.
     """
     groups = len(configuration.rule_groups)
-    rules = {
-        rule.id
-        for group in configuration.rule_groups
-        for rule in group.rules
-    } | {
+    rules = {rule.id for group in configuration.rule_groups for rule in group.rules} | {
         entry.id
         for step in every_step(configuration)
         for entry in step.rules
@@ -496,9 +492,7 @@ def _dispute(context: _Context) -> _Outcome:
 def _rule(context: _Context) -> _Outcome:
     view = context.service.rule(context.task_id, context.args.rule_id)
     return _Outcome(
-        _json(view.to_dict())
-        if context.args.json_output
-        else render_rule_view(view),
+        _json(view.to_dict()) if context.args.json_output else render_rule_view(view),
         None,
         context.task_id,
     )
@@ -507,9 +501,7 @@ def _rule(context: _Context) -> _Outcome:
 def _rules(context: _Context) -> _Outcome:
     """List the declared rules, or prune the store's orphan entries."""
     args = context.args
-    configuration = load_configuration(
-        context.storage.config_path, context.extensions
-    )
+    configuration = load_configuration(context.storage.config_path, context.extensions)
     if args.rules_action == "prune":
         return _prune(context, configuration)
     if args.rules_action == "revoke":
@@ -523,9 +515,7 @@ def _rules(context: _Context) -> _Outcome:
         RuleStore(context.storage.root).load(),
     )
     return _Outcome(
-        _json(listing.to_dict())
-        if args.json_output
-        else render_rules_listing(listing)
+        _json(listing.to_dict()) if args.json_output else render_rules_listing(listing)
     )
 
 
@@ -560,8 +550,10 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             raise StateError(
                 "rules add takes GROUP with --text, or --group NAME with --dir"
             )
-        if args.directory is not None or args.workflows is not None or (
-            args.steps is not None
+        if (
+            args.directory is not None
+            or args.workflows is not None
+            or (args.steps is not None)
         ):
             raise StateError("--dir, --workflows and --steps go with --group")
         write = rule_writes.plan_add_rule(

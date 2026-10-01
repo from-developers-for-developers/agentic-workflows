@@ -599,9 +599,7 @@ def test_a_worker_role_wait_applies_every_answer_and_names_the_documents(
     port = _free_port()
     monkeypatch.setenv("WW_OPERATOR_PORT", str(port))
     monkeypatch.setattr(server, "_OPEN_BROWSER_AFTER", 0.1)
-    (tmp_path / "ww.yaml").write_text(
-        MANUAL_TESTS_WITH_DOCUMENT, encoding="utf-8"
-    )
+    (tmp_path / "ww.yaml").write_text(MANUAL_TESTS_WITH_DOCUMENT, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     _collect(service, "TASK-10", 3, agent="codex")
     stage = service.next("TASK-10")

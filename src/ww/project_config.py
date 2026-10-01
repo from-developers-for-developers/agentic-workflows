@@ -536,9 +536,7 @@ def _parse_enabled(data: Any, path: str) -> Enabled:
         return data
     if data == ON_REQUEST:
         return ON_REQUEST
-    raise ConfigurationError(
-        f'{path}.enabled must be true, false, or "{ON_REQUEST}"'
-    )
+    raise ConfigurationError(f'{path}.enabled must be true, false, or "{ON_REQUEST}"')
 
 
 def _parse_task_format(data: Any, path: str) -> str | None:

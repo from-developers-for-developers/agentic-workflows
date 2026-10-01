@@ -484,6 +484,7 @@ def test_a_store_update_locks_the_complete_read_modify_write(
 
     def increment(_: int) -> None:
         for _attempt in range(20):
+
             def update(current: str | None) -> str:
                 value = int(current or "0")
                 time.sleep(0.001)
@@ -547,9 +548,7 @@ def test_extension_contribution_shapes_and_names_are_validated() -> None:
         ExtensionCommand("bad", None)  # type: ignore[arg-type]
     command = ExtensionCommand("same", run)
     with pytest.raises(ValueError, match="commands names must be unique"):
-        Extension(
-            vendor="acme", name="demo", commands=(command, command)
-        )
+        Extension(vendor="acme", name="demo", commands=(command, command))
     with pytest.raises(TypeError, match="provide must be a tuple"):
         ExtensionHandler(
             "bad",
@@ -613,9 +612,7 @@ def test_reserved_paths_come_only_from_configured_extensions(tmp_path: Path) -> 
         config=ProjectConfig(extensions={"acme/claims": {"enabled": True}}),
     )
 
-    assert registry.reserved_paths("T-1", "task") == (
-        tmp_path / "claims" / "T-1-task",
-    )
+    assert registry.reserved_paths("T-1", "task") == (tmp_path / "claims" / "T-1-task",)
     with pytest.raises(TypeError, match="reserved_paths must be callable"):
         Extension(vendor="acme", name="bad", reserved_paths="not callable")  # type: ignore[arg-type]
 
@@ -638,9 +635,7 @@ def _project_registry(
 
 
 def _write_project_settings(tmp_path: Path, payload: object) -> None:
-    (tmp_path / "backend" / "ww.json").write_text(
-        json.dumps(payload), encoding="utf-8"
-    )
+    (tmp_path / "backend" / "ww.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_a_projects_settings_apply_over_the_roots(tmp_path: Path) -> None:

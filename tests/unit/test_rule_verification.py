@@ -449,9 +449,7 @@ def _proposed() -> RuleAutomation:
         RuleAutomation()
         .with_rule(cli, RuleEntry(CLI, "approach_proposed", approach="a", check="c"))
         .with_rule(names, RuleEntry(NAMES, "ambiguous", candidates=("x", "y")))
-        .with_rule(
-            rule_text_hash(LOGS), RuleEntry(LOGS, "proposed", check="log-check")
-        )
+        .with_rule(rule_text_hash(LOGS), RuleEntry(LOGS, "proposed", check="log-check"))
         .with_check("log-check", _check((rule_text_hash(LOGS),), "proposed"))
     )
 

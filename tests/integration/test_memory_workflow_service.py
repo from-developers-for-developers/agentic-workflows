@@ -43,7 +43,8 @@ workflows:
     hook = service.complete(
         "TASK-1",
         artifact="implemented",
-        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert hook.item_name == "document"

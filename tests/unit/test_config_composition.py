@@ -256,9 +256,7 @@ def test_the_user_directory_follows_the_variable_then_xdg_then_home(
 
     monkeypatch.delenv("XDG_CONFIG_HOME")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    assert user_directory() == (
-        tmp_path / "home" / ".config" / "ww"
-    )
+    assert user_directory() == (tmp_path / "home" / ".config" / "ww")
 
 
 def test_a_user_directory_that_is_the_project_root_adds_no_level(
@@ -332,8 +330,7 @@ def test_extends_false_leaves_out_the_levels_above(
     assert "extends" not in composed.raw
     assert composed.ignored == (str(user / "ww.yaml"),)
     assert composed.notices[0] == (
-        f"{user / 'ww.yaml'} is not applied: "
-        "a lower level sets extends: false."
+        f"{user / 'ww.yaml'} is not applied: a lower level sets extends: false."
     )
 
 
@@ -439,9 +436,7 @@ def test_settings_errors_name_the_files_read(user: Path, repo: Path) -> None:
     assert "limits.rounds must be a positive integer" in message
 
 
-def test_an_invalid_settings_level_is_reported_by_path(
-    user: Path, repo: Path
-) -> None:
+def test_an_invalid_settings_level_is_reported_by_path(user: Path, repo: Path) -> None:
     _write(user / "ww.json", "[]")
 
     with pytest.raises(ConfigurationError, match="must contain a JSON object"):

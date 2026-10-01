@@ -62,9 +62,7 @@ class AssertionCondition:
         if self.kind not in {"empty", "equals"}:
             raise ValueError(f"invalid assertion condition: {self.kind!r}")
         if (self.kind == "equals") != isinstance(self.value, str):
-            raise ValueError(
-                "an equals condition requires a value; empty takes none"
-            )
+            raise ValueError("an equals condition requires a value; empty takes none")
 
     def holds(self, output: str) -> bool:
         if self.kind == "empty":
@@ -162,14 +160,7 @@ class Extension:
     arguments: tuple[str, ...] = ()
 
 
-ActionPayload = (
-    Prompt
-    | Skill
-    | SlashCommand
-    | Mcp
-    | Commands
-    | Extension
-)
+ActionPayload = Prompt | Skill | SlashCommand | Mcp | Commands | Extension
 
 
 @dataclass(frozen=True)

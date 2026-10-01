@@ -20,7 +20,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
   configuration directory is `~/.config/ww/` (or `$XDG_CONFIG_HOME/ww`). Rename yours.
 - `init` writes every root-level setting with its default to `ww.json`, and adds the missing ones to an existing file.
 - Development: `scripts/test` creates or reuses `.venv` and runs ruff, mypy and pytest; the tests run in parallel
-  through pytest-xdist (`-n 0` runs them serially).
+  through pytest-xdist (`-n 0` runs them serially). The code is formatted with `ruff format`, checked by `scripts/test`
+  and CI.
 
 ## 2026-09-30
 

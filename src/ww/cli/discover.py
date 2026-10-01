@@ -106,8 +106,7 @@ BUILTIN_GUIDANCE = (
 )
 # Under ``"on_request"`` an unasked change never reaches the catch-all.
 ON_REQUEST_CATCHALL_PREFIX = (
-    "Only when the user has asked for ww; otherwise make the change without "
-    "ww. "
+    "Only when the user has asked for ww; otherwise make the change without ww. "
 )
 SETUP_GUIDANCE = (
     "This is the first use of ww in this project: it has not been set up here. "
@@ -378,9 +377,11 @@ def _markdown(report: dict[str, object]) -> list[str]:
                 line += f" — {project['description']}"
             project_strategies = _strings(project.get("branch_strategies", []))
             if project_strategies != strategies:
-                line += " Branch strategies there: " + (
-                    ", ".join(f"`{name}`" for name in project_strategies) or "none"
-                ) + "."
+                line += (
+                    " Branch strategies there: "
+                    + (", ".join(f"`{name}`" for name in project_strategies) or "none")
+                    + "."
+                )
             task_format = project.get("task_format")
             if isinstance(task_format, str):
                 line += (
@@ -532,9 +533,9 @@ def _onboarding_guidance(state: OnboardingState, *, on_request: bool) -> list[st
 
 def _onboarding_lines(report: dict[str, object]) -> list[str]:
     onboarding = report.get("onboarding")
-    guidance = _strings(onboarding.get("guidance")) if isinstance(
-        onboarding, dict
-    ) else []
+    guidance = (
+        _strings(onboarding.get("guidance")) if isinstance(onboarding, dict) else []
+    )
     if not guidance:
         return []
     return ["## Onboarding", "", *(f"- {line}" for line in guidance), ""]

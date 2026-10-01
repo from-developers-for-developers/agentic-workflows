@@ -19,6 +19,4 @@ def test_unexpected_values_are_reported_before_missing_values() -> None:
     with pytest.raises(
         StateError, match="unexpected completion variable\\(s\\): extra"
     ):
-        validate_requested_values(
-            {"extra": "value"}, (ProvidedVariable("task_id"),)
-        )
+        validate_requested_values({"extra": "value"}, (ProvidedVariable("task_id"),))

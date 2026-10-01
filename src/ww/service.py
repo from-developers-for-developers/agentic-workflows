@@ -3678,13 +3678,9 @@ class WorkflowService:
             root=self.storage.root,
             files=files,
             error=(
-                state.last_error
-                if state.status in {"failed", "interrupted"}
-                else None
+                state.last_error if state.status in {"failed", "interrupted"} else None
             ),
-            loop_outcome=(
-                (opened.active, loop) if loop and opened.active else None
-            ),
+            loop_outcome=((opened.active, loop) if loop and opened.active else None),
         )
         return replace(instruction, handoff_block=block)
 

@@ -84,9 +84,7 @@ class _Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(
-        self, port: int, state: StateProvider, act: Action, html: str
-    ) -> None:
+    def __init__(self, port: int, state: StateProvider, act: Action, html: str) -> None:
         super().__init__(("127.0.0.1", port), _Handler)
         self.state = state
         self.act = act

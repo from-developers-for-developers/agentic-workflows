@@ -65,8 +65,7 @@ def validate_metadata_values(values: MetadataValues, label: str) -> None:
         ):
             raise ValueError(f"invalid {label} entry: {key!r}")
         if key in keys or any(
-            key.startswith(f"{other}.") or other.startswith(f"{key}.")
-            for other in keys
+            key.startswith(f"{other}.") or other.startswith(f"{key}.") for other in keys
         ):
             raise ValueError(f"conflicting {label} key: {key!r}")
         keys.add(key)

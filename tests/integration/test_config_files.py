@@ -107,10 +107,7 @@ def test_the_markdown_plan_ends_with_the_files_read(
 
     assert main(["--root", str(project), "plan", "-w", "task", "-a", "codex"]) == 0
     markdown = capsys.readouterr().out
-    assert markdown.endswith(
-        "\nConfiguration files: ww.yaml, "
-        "ww.local.yaml\n"
-    )
+    assert markdown.endswith("\nConfiguration files: ww.yaml, ww.local.yaml\n")
 
     assert (
         main(["--root", str(project), "plan", "-w", "task", "-a", "codex", "--json"])
@@ -121,10 +118,7 @@ def test_the_markdown_plan_ends_with_the_files_read(
 
 # init and .gitignore
 
-_LOCAL_PATTERNS = (
-    "*ww.local.yaml\n*ww.local.json\n"
-    "ww-setup.local.yaml\n"
-)
+_LOCAL_PATTERNS = "*ww.local.yaml\n*ww.local.json\nww-setup.local.yaml\n"
 _RUNTIME_LINES = ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n"
 
 
@@ -152,8 +146,7 @@ def test_init_keeps_patterns_already_listed(
     _init(project, capsys, "--no-update-gitignore")
 
     assert (project / ".gitignore").read_text() == (
-        "*ww.local.json\n*ww.local.yaml\n"
-        "ww-setup.local.yaml\n"
+        "*ww.local.json\n*ww.local.yaml\nww-setup.local.yaml\n"
     )
 
 
@@ -353,18 +346,12 @@ def test_init_commits_no_enabled_another_level_sets(
     user: Path, project: Path, capsys: pytest.CaptureFixture[str], level: str
 ) -> None:
     directory = user if level == "user" else project
-    name = (
-        "ww.json"
-        if level == "user"
-        else "ww.local.json"
-    )
+    name = "ww.json" if level == "user" else "ww.local.json"
     _write(directory / name, '{"enabled": false}\n')
 
     _init(project, capsys)
 
-    assert "enabled" not in json.loads(
-        (project / "ww.json").read_text()
-    )
+    assert "enabled" not in json.loads((project / "ww.json").read_text())
 
 
 def test_init_keeps_the_repo_files_own_enabled(
@@ -375,6 +362,4 @@ def test_init_keeps_the_repo_files_own_enabled(
 
     _init(project, capsys)
 
-    assert json.loads((project / "ww.json").read_text())[
-        "enabled"
-    ] == "on_request"
+    assert json.loads((project / "ww.json").read_text())["enabled"] == "on_request"

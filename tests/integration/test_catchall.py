@@ -63,7 +63,8 @@ def test_the_session_that_got_the_prompt_does_the_work(tmp_path: Path) -> None:
         TASK,
         artifact="Fixed a README typo.",
         variables={"summary": "Fixed a README typo."},
-        caller_role="worker", assignment=assignment_token(service, TASK),
+        caller_role="worker",
+        assignment=assignment_token(service, TASK),
     )
     assert done.status == "completed"
 

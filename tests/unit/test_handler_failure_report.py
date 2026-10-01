@@ -32,9 +32,7 @@ def test_stderr_is_preferred_when_both_streams_spoke() -> None:
 
 
 def test_a_silent_failure_says_where_to_look() -> None:
-    message = _failure_message(
-        ("false",), 0, CommandOutcome(ok=False, exit_code=1)
-    )
+    message = _failure_message(("false",), 0, CommandOutcome(ok=False, exit_code=1))
 
     assert "printed nothing" in message
     assert "artifact" in message

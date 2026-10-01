@@ -142,9 +142,7 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
         ),
     ],
 )
-def test_depends_on_rejects_steps_that_have_not_run(
-    tmp_path: Path, steps: str
-) -> None:
+def test_depends_on_rejects_steps_that_have_not_run(tmp_path: Path, steps: str) -> None:
     path = _write(
         tmp_path / "ww.yaml",
         "handlers:\n  - name: ship\n    description: Ship it.\n    kind: prompt\n"
@@ -1095,9 +1093,7 @@ workflows:
         ),
     ],
 )
-def test_rejects_ambiguous_schema(
-    tmp_path: Path, content: str, message: str
-) -> None:
+def test_rejects_ambiguous_schema(tmp_path: Path, content: str, message: str) -> None:
     with pytest.raises(ConfigurationError, match=message):
         load_configuration(_write(tmp_path / "ww.yaml", content))
 
@@ -1991,9 +1987,7 @@ def test_idempotent_needs_a_command_and_a_boolean(
     workflows = "workflows:\n  - name: task\n    steps:\n      - work: Work.\n"
     with pytest.raises(ConfigurationError, match=message):
         config_path = tmp_path / "ww.yaml"
-        load_configuration(
-            _write(config_path, f"handlers:\n{handler}{workflows}")
-        )
+        load_configuration(_write(config_path, f"handlers:\n{handler}{workflows}"))
 
 
 def test_assignment_takes_the_values_of_its_construct() -> None:

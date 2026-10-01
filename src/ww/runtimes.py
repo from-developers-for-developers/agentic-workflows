@@ -26,7 +26,7 @@ RUNTIME_INSTRUCTIONS = {
         "report the difference. Agent hints are advisory and currently unenforced.",
         "The worker submits its own results and associated hook results with "
         "--role worker until ww explicitly hands control back. It then "
-        "returns ww's \"Handoff to manager\" block verbatim as its final "
+        'returns ww\'s "Handoff to manager" block verbatim as its final '
         "message; the manager reads the outcome there.",
         "A worker may delegate one bounded hook when its runtime permits, but "
         "that worker remains responsible for submitting the result. Nested "

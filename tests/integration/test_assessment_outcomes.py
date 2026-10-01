@@ -109,7 +109,8 @@ def test_a_working_outcome_runs_and_the_workflow_continues(tmp_path: Path) -> No
         "TASK-1",
         artifact="Reviewed.",
         summary_for_next="Reviewed.",
-        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
     )
     assert tests.item_name == "tests"
 

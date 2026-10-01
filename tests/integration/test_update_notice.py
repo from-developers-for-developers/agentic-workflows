@@ -35,10 +35,7 @@ def _commit(repository: Path, message: str) -> None:
 
 
 def _lint_output(*config_files: str) -> str:
-    return (
-        "ww.yaml is valid.\n"
-        f"Configuration files: {', '.join(config_files)}"
-    )
+    return f"ww.yaml is valid.\nConfiguration files: {', '.join(config_files)}"
 
 
 def _project(root: Path) -> None:
@@ -78,9 +75,7 @@ def test_a_command_announces_the_update_above_its_own_output(
     assert main(["--root", str(project), "lint"]) == 0
 
     output = capsys.readouterr().out
-    assert output.index("A newer ww is available") < output.index(
-        "ww.yaml is valid."
-    )
+    assert output.index("A newer ww is available") < output.index("ww.yaml is valid.")
     assert "- `interact --pause` pauses." in output
     assert "Tell the person you are working for" in output
 
@@ -156,9 +151,7 @@ def test_the_project_can_turn_the_check_off(
 
     output = capsys.readouterr().out
     assert "A newer ww is available" not in output
-    assert output.strip() == _lint_output(
-        "ww.yaml", "ww.json"
-    )
+    assert output.strip() == _lint_output("ww.yaml", "ww.json")
 
 
 def test_a_broken_update_check_never_disturbs_the_command(
@@ -174,6 +167,4 @@ def test_a_broken_update_check_never_disturbs_the_command(
     monkeypatch.setattr(cli_updates, "installation_checkout", explode)
 
     assert main(["--root", str(project), "lint"]) == 0
-    assert capsys.readouterr().out.strip() == _lint_output(
-        "ww.yaml"
-    )
+    assert capsys.readouterr().out.strip() == _lint_output("ww.yaml")

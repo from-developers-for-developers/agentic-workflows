@@ -136,9 +136,7 @@ def resolve_rules(
     return tuple(resolutions), checks
 
 
-def derived_check(
-    name: str, spec: CheckSpec, rules: list[PlannedRule]
-) -> PlannedCheck:
+def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
     """One approved store check, planned for the step rules it covers.
 
     Its globs are the union of its rules' globs, or none when any covered
@@ -373,9 +371,7 @@ def open_verification_round(
         groups.setdefault(effective_hints(rules[need.id], item), []).append(need)
     plan = snapshot.plan
     existing = [plan.items[index] for index in verification_items(plan, item.id)]
-    known = {
-        entry.verifies.hints for entry in existing if entry.verifies is not None
-    }
+    known = {entry.verifies.hints for entry in existing if entry.verifies is not None}
     added = [
         verification_item(item, len(existing) + number, hints)
         for number, hints in enumerate(
@@ -901,9 +897,7 @@ def _json_object(text: str, flag: str) -> dict[str, Any]:
     return data
 
 
-def verdicts_of(
-    results: tuple[RuleResult, ...], by: str
-) -> tuple[RuleVerdict, ...]:
+def verdicts_of(results: tuple[RuleResult, ...], by: str) -> tuple[RuleVerdict, ...]:
     return tuple(
         RuleVerdict(
             result.id,
@@ -1037,9 +1031,7 @@ def record_results(
         )
         existing = automation.checks.get(check.name)
         if existing is not None and existing.status == "converted":
-            revised = replace(
-                existing, pending=spec, proposed_in=by, proposed_run=run
-            )
+            revised = replace(existing, pending=spec, proposed_in=by, proposed_run=run)
         else:
             revised = CheckEntry(
                 spec, "proposed", proposed_at=now, proposed_in=by, proposed_run=run

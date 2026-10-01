@@ -128,21 +128,18 @@ def _with_artifact_dependency(
         return text
     if container is not None and container.artifact is None:
         return (
-            text
-            + f"\n\nNo artifact is available from `{item.artifact_dependency}`: "
+            text + f"\n\nNo artifact is available from `{item.artifact_dependency}`: "
             "no step inside it that saves one completed in this run. Continue "
             "without it."
         )
     if container is not None and container.step == item.artifact_dependency:
         return (
-            text
-            + f"\n\nUse the artifact produced by the `{container.step}` step as "
+            text + f"\n\nUse the artifact produced by the `{container.step}` step as "
             f"input to this work: `{container.artifact}`."
         )
     if container is not None:
         return (
-            text
-            + f"\n\nUse the artifact produced by the `{container.step}` step, "
+            text + f"\n\nUse the artifact produced by the `{container.step}` step, "
             f"the latest saved inside `{item.artifact_dependency}`, as input to "
             f"this work: `{container.artifact}`."
         )

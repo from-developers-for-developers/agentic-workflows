@@ -59,15 +59,11 @@ def render_initialization(result: InitializationResult, json_output: bool) -> st
 # it into unreadable halves, so a narrow one gets a compact mark instead.
 WORDMARK_COLUMNS = 101
 COMPACT_WELCOME = (
-    "  ██  ██   ██  ██\n"
-    "  ██  ██   ██  ██   ww · agentic workflows\n"
-    "  ░█████░ ░█████░\n"
+    "  ██  ██   ██  ██\n  ██  ██   ██  ██   ww · agentic workflows\n  ░█████░ ░█████░\n"
 )
 
 
-def render_initialization_welcome(
-    json_output: bool, columns: int | None = None
-) -> str:
+def render_initialization_welcome(json_output: bool, columns: int | None = None) -> str:
     """Render the interactive init welcome before collecting project choices."""
     if json_output:
         return ""

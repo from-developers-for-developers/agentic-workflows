@@ -74,14 +74,18 @@ _RULE_KEYS = {
 }
 _APPROVAL_KEYS = {"proposed_run", "approved_by", "approved_in"}
 _SPEC_KEYS = {"argv", "shell", "args", "env", "assert", "config", "covers", "proven"}
-_CHECK_KEYS = _SPEC_KEYS | {
-    "status",
-    "proposed_at",
-    "approved_at",
-    "proposed_in",
-    "pending",
-    "reason",
-} | _APPROVAL_KEYS
+_CHECK_KEYS = (
+    _SPEC_KEYS
+    | {
+        "status",
+        "proposed_at",
+        "approved_at",
+        "proposed_in",
+        "pending",
+        "reason",
+    }
+    | _APPROVAL_KEYS
+)
 
 
 @dataclass(frozen=True)
@@ -368,9 +372,7 @@ class RuleAutomation:
             raise ValueError("the rule automation store must be an object")
         version = data.get("schema_version")
         if not is_strict_int(version) or version != STORE_SCHEMA_VERSION:
-            raise ValueError(
-                f"unsupported rule automation schema: {version!r}"
-            )
+            raise ValueError(f"unsupported rule automation schema: {version!r}")
         unknown = set(data) - {"schema_version", "rules", "checks"}
         if unknown:
             raise ValueError(

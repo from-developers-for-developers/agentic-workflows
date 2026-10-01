@@ -331,9 +331,7 @@ def _initialization_options(
         workflows,
         json.dumps(project, indent=2) + "\n",
         bool(ignore_runtime),
-        _skill_installs(
-            storage, args.skills, interactive, progress=True, force=force
-        ),
+        _skill_installs(storage, args.skills, interactive, progress=True, force=force),
     )
 
 
@@ -785,9 +783,7 @@ def _finish_initialization(
     path = storage.root / ".gitignore"
     ignored = path.is_file() and runtime_ignored(path.read_text(encoding="utf-8"))
     if not ignored and (storage.root / ".git").exists():
-        actions.append(
-            "Optionally keep .ww out of Git with `init --update-gitignore`."
-        )
+        actions.append("Optionally keep .ww out of Git with `init --update-gitignore`.")
     missing = [
         directory
         for directory in _agent_directories(storage)
@@ -800,9 +796,7 @@ def _finish_initialization(
         )
     # The permission notice matters once: show it the first time the summary
     # is read, and remember that it was.
-    notice = (
-        force or _init_choices(storage).get("permission_notice_shown") is not True
-    )
+    notice = force or _init_choices(storage).get("permission_notice_shown") is not True
     if notice and shown:
         _save_init_choice(storage, "permission_notice_shown", True)
     commands = tuple(dict.fromkeys((executable, PROJECT_LAUNCHER_COMMAND, "ww")))

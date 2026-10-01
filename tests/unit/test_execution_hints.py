@@ -230,7 +230,8 @@ workflows:
         selected_agent="delegate",
         selected_model="delegate-model",
         selected_reasoning="low",
-        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     state = service.tasks.read_execution_state("TASK-1", "01-task")

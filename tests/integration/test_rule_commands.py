@@ -148,8 +148,7 @@ def test_the_fix_page_offers_check_and_dispute(tmp_path: Path) -> None:
     assert "`./ww check TASK-1` previews the checks" in rendered
     assert (
         "./ww dispute TASK-1 --role worker --rule <id> "
-        '--reason "<why the check is wrong here>"'
-        in rendered
+        '--reason "<why the check is wrong here>"' in rendered
     )
 
 
@@ -805,9 +804,7 @@ def test_revoke_shows_the_check_and_asks(
     answers = iter(["y"])
 
     assert (
-        main(
-            ["--root", str(root), "rules", "revoke", "cli-diff", "--reason", "slow"]
-        )
+        main(["--root", str(root), "rules", "revoke", "cli-diff", "--reason", "slow"])
         == 0
     )
 

@@ -166,6 +166,7 @@ class _CommandService:
             return CommandOutcome(False, stderr=detail, launch_error=detail)
         with process:
             stdout, stderr = process.communicate()
+
         def address(stream: str) -> CommandOutputAddress:
             return CommandOutputAddress(
                 self._dispatch.state.task_id,
@@ -178,14 +179,10 @@ class _CommandService:
             )
 
         stdout_ref = (
-            executor.write_command_output(address("stdout"), stdout)
-            if stdout
-            else None
+            executor.write_command_output(address("stdout"), stdout) if stdout else None
         )
         stderr_ref = (
-            executor.write_command_output(address("stderr"), stderr)
-            if stderr
-            else None
+            executor.write_command_output(address("stderr"), stderr) if stderr else None
         )
         completed_record = replace(
             started,
@@ -581,9 +578,7 @@ class ActionExecutor:
         )
         return self._commit_projected(completed, snapshot)
 
-    def validate_inputs(
-        self, item: PlanItem, values: Mapping[str, str]
-    ) -> str | None:
+    def validate_inputs(self, item: PlanItem, values: Mapping[str, str]) -> str | None:
         """Ask an automatic item's action whether it would accept these inputs.
 
         Runs before the completion that carries the values is saved; nothing

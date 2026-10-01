@@ -124,9 +124,7 @@ def _ask_names(prompt: str, names: tuple[str, ...]) -> tuple[str, ...]:
             return ()
         chosen = [part.strip().lstrip(".") for part in value.split(",")]
         if all(part in allowed for part in chosen if part):
-            return tuple(
-                dict.fromkeys(allowed[part] for part in chosen if part)
-            )
+            return tuple(dict.fromkeys(allowed[part] for part in chosen if part))
         print("Choose from: " + ", ".join(names) + ", or none.")
 
 

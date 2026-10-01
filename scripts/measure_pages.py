@@ -79,9 +79,7 @@ def _isolate(base: Path) -> None:
     )
 
 
-def _table(
-    sizes: dict[str, dict[str, int]], before: dict[str, dict[str, int]]
-) -> str:
+def _table(sizes: dict[str, dict[str, int]], before: dict[str, dict[str, int]]) -> str:
     rows = [("page", "characters", "tokens", "before", "change")]
     total = earlier = 0
     for name, size in sizes.items():
@@ -90,9 +88,7 @@ def _table(
         old = before.get(name, {}).get("tokens")
         if old is not None:
             earlier += old
-        rows.append(
-            (name, str(size["characters"]), str(tokens), *_change(old, tokens))
-        )
+        rows.append((name, str(size["characters"]), str(tokens), *_change(old, tokens)))
     rows.append(("total", "", str(total), *_change(earlier or None, total)))
     widths = [max(len(row[column]) for row in rows) for column in range(5)]
     return "\n".join(

@@ -79,7 +79,8 @@ def test_worker_completes_full_assignment_then_hands_back(
     work = service.complete(
         "TASK-1",
         artifact="prepared",
-        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert work.item_name == "work"
@@ -87,7 +88,8 @@ def test_worker_completes_full_assignment_then_hands_back(
     documented = service.complete(
         "TASK-1",
         artifact="implemented",
-        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert (tmp_path / "completed-hook.txt").exists()
@@ -97,7 +99,8 @@ def test_worker_completes_full_assignment_then_hands_back(
     handoff = service.complete(
         "TASK-1",
         artifact="documented",
-        caller_role="worker", assignment=assignment_token(service, "TASK-1"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
     assert handoff.item_name == "inline-argv"
@@ -872,7 +875,8 @@ workflows:
     assert assigned.next_role == "worker"
     handoff = service.complete(
         "TASK-ROLES",
-        caller_role="worker", assignment=assignment_token(service, "TASK-ROLES"),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-ROLES"),
         summary_for_next="Done.",
     )
     assert handoff.item_name == "work"

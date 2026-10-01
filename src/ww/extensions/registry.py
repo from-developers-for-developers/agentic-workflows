@@ -494,9 +494,7 @@ class ExtensionRegistry:
             if self.config.settings_for(identifier)
             or (
                 project is not None
-                and self.project_settings(project).sections.settings_for(
-                    identifier
-                )
+                and self.project_settings(project).sections.settings_for(identifier)
             )
         )
 

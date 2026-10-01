@@ -66,10 +66,7 @@ class OnboardingState:
             "project": {
                 "file": str(self.project_file),
                 SETUP_DONE: self.setup_done,
-                **{
-                    f"{LEARNED}.{name}": self.learned[name]
-                    for name in LEARNED_PROJECT
-                },
+                **{f"{LEARNED}.{name}": self.learned[name] for name in LEARNED_PROJECT},
             },
         }
 
@@ -77,9 +74,7 @@ class OnboardingState:
 class Onboarding:
     """Read and set the onboarding keys of one project and its user."""
 
-    def __init__(
-        self, root: Path, project_metadata: ProjectMetadataStorage
-    ) -> None:
+    def __init__(self, root: Path, project_metadata: ProjectMetadataStorage) -> None:
         self.root = root
         self.project_metadata = project_metadata
 
@@ -103,13 +98,8 @@ class Onboarding:
             explain if isinstance(explain, bool) else None,
             project.get(SETUP_DONE) == "true",
             {
-                **{
-                    name: _text(learned_user.get(name)) for name in LEARNED_USER
-                },
-                **{
-                    name: project.get(f"{LEARNED}.{name}")
-                    for name in LEARNED_PROJECT
-                },
+                **{name: _text(learned_user.get(name)) for name in LEARNED_USER},
+                **{name: project.get(f"{LEARNED}.{name}") for name in LEARNED_PROJECT},
             },
         )
 
@@ -117,9 +107,7 @@ class Onboarding:
         """Apply ``KEY=VALUE`` assignments, all checked before any is written."""
         values = dict(parse_assignment(item) for item in assignments)
         user = {key: value for key, value in values.items() if key in USER_KEYS}
-        project = {
-            key: value for key, value in values.items() if key in PROJECT_KEYS
-        }
+        project = {key: value for key, value in values.items() if key in PROJECT_KEYS}
         if user:
             self._write_user(user)
         if project:
@@ -169,9 +157,7 @@ class Onboarding:
             current = dict(metadata.values if metadata is not None else ())
             for key, value in values.items():
                 current[f"{WW_METADATA_NAMESPACE}.{key}"] = (
-                    ("true" if value else "false")
-                    if isinstance(value, bool)
-                    else value
+                    ("true" if value else "false") if isinstance(value, bool) else value
                 )
             try:
                 updated = ProjectMetadata(tuple(current.items()))
@@ -184,6 +170,7 @@ class Onboarding:
 
 def render_onboarding(state: OnboardingState, root: Path) -> str:
     """The keys of both levels as text, each file named where it lives."""
+
     def when(name: str) -> str:
         return state.learned[name] or "never"
 

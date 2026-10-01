@@ -62,9 +62,7 @@ class Transaction:
             for change in writes:
                 # A symbolic link stays one: its target is what changes.
                 path = change.path.resolve()
-                self._saved.append(
-                    (path, path.read_bytes() if path.exists() else None)
-                )
+                self._saved.append((path, path.read_bytes() if path.exists() else None))
                 if change.content is None:
                     path.unlink()
                 else:
@@ -154,8 +152,7 @@ def with_import(text: str, raw: dict[str, Any], entry: str) -> str:
             (
                 position
                 for position, line in enumerate(lines)
-                if line.strip()
-                and not line.startswith(("#", "---", "%", " ", "\t"))
+                if line.strip() and not line.startswith(("#", "---", "%", " ", "\t"))
             ),
             len(lines),
         )

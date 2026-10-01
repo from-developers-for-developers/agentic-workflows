@@ -189,9 +189,7 @@ def _validate_steps(
                 f"step {step.name!r} in workflow {workflow_name!r} uses "
                 f"{control} outside a loop"
             )
-        if step.max_rounds is not None and (
-            not is_positive_int(step.max_rounds)
-        ):
+        if step.max_rounds is not None and (not is_positive_int(step.max_rounds)):
             raise ConfigurationError(
                 f"step {step.name!r} in workflow {workflow_name!r} has an invalid "
                 "max_rounds; expected a positive integer"
@@ -576,9 +574,7 @@ def _validate_recommendations(configuration: WorkflowConfiguration) -> None:
 
 
 def _is_container(step: StepDefinition) -> bool:
-    return bool(
-        step.child_steps or step.loop_steps or step.items or step.children
-    )
+    return bool(step.child_steps or step.loop_steps or step.items or step.children)
 
 
 def _every_hook(configuration: WorkflowConfiguration) -> Iterable[HookDefinition]:

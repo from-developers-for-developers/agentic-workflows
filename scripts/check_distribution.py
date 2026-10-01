@@ -60,8 +60,8 @@ def main() -> int:
         dist = temporary_root / "dist"
         _run(sys.executable, "-m", "build", "--outdir", str(dist), cwd=ROOT)
 
-        wheel, = dist.glob("*.whl")
-        sdist, = dist.glob("*.tar.gz")
+        (wheel,) = dist.glob("*.whl")
+        (sdist,) = dist.glob("*.tar.gz")
         _require_members(wheel, REQUIRED_WHEEL_PATHS)
         _require_license(wheel)
         _require_members(sdist, REQUIRED_SDIST_PATHS)

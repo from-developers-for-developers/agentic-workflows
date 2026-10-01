@@ -874,12 +874,8 @@ def repeat_loop(
         None,
     )
     if entry is None:
-        raise StateError(
-            f"loop {loop.loop_id!r} has no entry boundary"
-        )
-    iteration = (
-        dict(state.loop_iterations).get(loop.loop_id, 1) + 1
-    )
+        raise StateError(f"loop {loop.loop_id!r} has no entry boundary")
+    iteration = dict(state.loop_iterations).get(loop.loop_id, 1) + 1
     scope = loop_operation_scope(state, plan, entry, iteration)
     history = [*state.execution_history, *records[entry + 1 : state.cursor + 1]]
     for index in range(entry + 1, state.cursor + 1):
@@ -911,9 +907,7 @@ def loop_limit_reached(state: ExecutionState, item: PlanItem) -> bool:
     loop = loop_control(item)
     if loop is None or loop.boundary != "repeat":
         return False
-    return (
-        dict(state.loop_iterations).get(loop.loop_id, 0) >= loop.max_times
-    )
+    return dict(state.loop_iterations).get(loop.loop_id, 0) >= loop.max_times
 
 
 def exit_exhausted_loop(
@@ -969,16 +963,12 @@ def loop_operation_scope(
         for item in plan.items[: entry + 1]
         if (loop := loop_control(item)) is not None
         and loop.boundary == "enter"
-        and (
-            loop.loop_id in enclosing or loop.loop_id == active.loop_id
-        )
+        and (loop.loop_id in enclosing or loop.loop_id == active.loop_id)
     ]
     iterations = dict(state.loop_iterations)
     encoded_segments = []
     for loop_id in lineage:
-        value = _loop_iteration(
-            loop_id, active.loop_id, iteration, iterations
-        )
+        value = _loop_iteration(loop_id, active.loop_id, iteration, iterations)
         encoded_segments.append(f"{loop_id}:{value}")
     encoded = ":".join(encoded_segments)
     return f"{operation_scope_for(state)}{LOOP_SCOPE_MARKER}{encoded}"

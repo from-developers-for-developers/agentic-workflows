@@ -157,9 +157,12 @@ def test_force_without_input_keeps_the_remembered_answers(
     assert "Allow ww to run without confirmation" in output
 
     # A flag still decides without asking.
-    assert main(
-        ["--root", str(root), "init", "--no-input", "--force", "--update-gitignore"]
-    ) == 0
+    assert (
+        main(
+            ["--root", str(root), "init", "--no-input", "--force", "--update-gitignore"]
+        )
+        == 0
+    )
     capsys.readouterr()
     lines = (root / ".gitignore").read_text().splitlines()
     assert lines.count(".ww/*") == 1

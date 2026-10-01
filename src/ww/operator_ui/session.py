@@ -321,8 +321,10 @@ class _Session:
         """The operator said they are done for now, on the stage now open."""
         state, snapshot = self.load()
         plan = snapshot.plan
-        if state.cursor < len(plan.items) and state.active_item_id and (
-            plan.items[state.cursor].interactive
+        if (
+            state.cursor < len(plan.items)
+            and state.active_item_id
+            and (plan.items[state.cursor].interactive)
         ):
             self.service.interact(
                 self.task_id, pause=True, caller_role=self.caller_role

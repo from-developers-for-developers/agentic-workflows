@@ -290,8 +290,7 @@ def test_a_projects_local_file_extends_its_repo_file(tmp_path: Path) -> None:
         "worktree_dir": "../elsewhere",
     }
     assert loaded.sections.source == (
-        "backend/ww.json + backend/ww.local.json"
-        " (project 'backend')"
+        "backend/ww.json + backend/ww.local.json (project 'backend')"
     )
 
 

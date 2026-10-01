@@ -84,7 +84,7 @@ class HookAgent:
         """The command the agent runs; it must work from task worktrees too."""
         return (
             f'"$(git rev-parse --show-toplevel 2>/dev/null || pwd)"/ww hook '
-            f'{event} --agent {self.name}'
+            f"{event} --agent {self.name}"
         )
 
     def owns(self, command: object) -> bool:

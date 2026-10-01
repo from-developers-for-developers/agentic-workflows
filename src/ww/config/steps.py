@@ -425,9 +425,7 @@ def _parse_step(
     if artifact_from is not None and (
         not isinstance(artifact_from, str) or not _NAME.fullmatch(artifact_from)
     ):
-        raise ConfigurationError(
-            f"{path}.artifact_from must be a normalized step name"
-        )
+        raise ConfigurationError(f"{path}.artifact_from must be a normalized step name")
     hooks = (
         _parse_hooks(mapping.get("hooks", {}), "step", f"{path}.hooks")
         if "hooks" in mapping or referenced_step is None
@@ -580,9 +578,7 @@ def _parse_children(
                 "workflow every child runs, or list the parent's stages per "
                 "child with one `workflow:` stage among them"
             )
-        return _parse_child_stages(
-            value, children_path, handlers_by_name, description
-        )
+        return _parse_child_stages(value, children_path, handlers_by_name, description)
     workflow = value.get("workflow")
     if not isinstance(workflow, str) or not _NAME.fullmatch(workflow):
         raise ConfigurationError(f"{children_path}.workflow must be a workflow name")
@@ -643,8 +639,7 @@ def _parse_child_stages(
     converted = tuple(child_run if stage is run else stage for stage in stages)
     for stage in step_tree(converted):
         if isinstance(stage.operation, WorkflowHandoff) or any(
-            isinstance(hook.handler.operation, WorkflowHandoff)
-            for hook in stage.hooks
+            isinstance(hook.handler.operation, WorkflowHandoff) for hook in stage.hooks
         ):
             raise ConfigurationError(
                 f"{stages_path}: {stage.name!r} carries handoff_to, a workflow "
@@ -764,9 +759,7 @@ def _parse_items(
             "steps directly"
         )
     folded = [
-        key
-        for key in ("variables", "saves", "interactive", "choices")
-        if key in value
+        key for key in ("variables", "saves", "interactive", "choices") if key in value
     ]
     if folded and "steps" in value:
         raise ConfigurationError(
@@ -785,9 +778,7 @@ def _parse_items(
                 + " has no effect"
             )
         return ItemFlow((), description, assignment, persistent, identity, unique)
-    defaults = _item_flow_defaults(
-        value, path, step_profile, step_role, step_subagents
-    )
+    defaults = _item_flow_defaults(value, path, step_profile, step_role, step_subagents)
     if "steps" in value:
         steps = _parse_nested_steps(
             value,

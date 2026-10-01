@@ -48,8 +48,9 @@ def test_codex_reads_its_payload_and_names_an_interrupt() -> None:
         == "interrupted"
     )
     assert (
-        agent.parse("interrupt", {"hook_event_name": "SessionEnd", "reason": "other"})
-        .reason
+        agent.parse(
+            "interrupt", {"hook_event_name": "SessionEnd", "reason": "other"}
+        ).reason
         == "other"
     )
 
@@ -77,9 +78,7 @@ def test_cursor_counts_its_follow_up_loop_as_continued() -> None:
 def test_antigravity_wants_context_only_on_the_first_invocation() -> None:
     agent = hook_agent("antigravity")
 
-    first = agent.parse(
-        "session-start", {"invocationNum": 0, "workspacePaths": ["/w"]}
-    )
+    first = agent.parse("session-start", {"invocationNum": 0, "workspacePaths": ["/w"]})
     later = agent.parse("session-start", {"invocationNum": 3})
 
     assert (first.wants_context, first.directory) == (True, Path("/w"))

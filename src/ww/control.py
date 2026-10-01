@@ -34,9 +34,7 @@ def replays_harmlessly(item: PlanItem) -> bool:
     ``idempotent: true`` is the author's statement, so an interrupted run of
     such a handler is replayed without asking the operator.
     """
-    if not isinstance(item.operation, PlannedAction) or not actions.contains(
-        item.kind
-    ):
+    if not isinstance(item.operation, PlannedAction) or not actions.contains(item.kind):
         return False
     implementation = actions.get(item.kind)
     planned = item.payload_as(implementation.planned_type)

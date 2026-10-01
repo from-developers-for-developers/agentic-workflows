@@ -141,9 +141,7 @@ class MarkdownOutputAdapter(OutputAdapter):
             (
                 "Setup notes:",
                 tuple(
-                    action
-                    for action in result.actions
-                    if action != NO_WORKFLOWS_ACTION
+                    action for action in result.actions if action != NO_WORKFLOWS_ACTION
                 ),
             ),
         ):
@@ -510,8 +508,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
 def _awaiting_operator(instruction: Instruction) -> Lines:
     """Say that ww now waits for the operator, to whoever may reach them."""
     if instruction.operator_reason is None or (
-        instruction.workflow_runtime != "single"
-        and instruction.caller_role == "worker"
+        instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
     ):
         return []
     return [
@@ -916,9 +913,11 @@ def _fix_failures(lines: Lines, failures: tuple[FixFailure, ...]) -> None:
         elif failure.judged:
             suffix = " (verifier's verdict)"
         elif failure.covers:
-            suffix = " (check covering " + ", ".join(
-                f"`{rule_id}`" for rule_id in failure.covers
-            ) + ")"
+            suffix = (
+                " (check covering "
+                + ", ".join(f"`{rule_id}`" for rule_id in failure.covers)
+                + ")"
+            )
         else:
             suffix = ""
         _append_section(lines, f"`{failure.id}`{suffix}")
@@ -959,8 +958,7 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
             lines.append(f"  Check to prepare: `{rule.check}`")
         if rule.pending_operator:
             lines.append(
-                "  A proposal for this rule waits for the operator; judge it "
-                "for now."
+                "  A proposal for this rule waits for the operator; judge it for now."
             )
     _verification_evidence(lines, page)
     _verification_duties(lines, page)
@@ -978,8 +976,7 @@ def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
     lines.extend(["", "#### Change set", ""])
     if page.all_files:
         lines.append(
-            "There is no git change set here: every file in the directory is "
-            "in scope."
+            "There is no git change set here: every file in the directory is in scope."
         )
     elif page.files:
         lines.append(f"Files the step changed ({len(page.files)}):")
@@ -1088,7 +1085,7 @@ def _verification_results(lines: Lines, page: VerificationPage) -> None:
     lines.append(
         '- a verdict: `{"id": "<rule>", "status": "judged", "verdict": "fail", '
         '"failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, '
-        "or `\"verdict\": \"pass\"` without failures"
+        'or `"verdict": "pass"` without failures'
     )
     if page.prepares:
         lines.extend(
@@ -1147,9 +1144,7 @@ def _rules_proposed(lines: Lines, instruction: Instruction) -> None:
 def _proposal(lines: Lines, proposal: Proposal, worker: bool) -> None:
     title = {
         "approach": "an approach",
-        "check": "a revision of an approved check"
-        if proposal.revision
-        else "a check",
+        "check": "a revision of an approved check" if proposal.revision else "a check",
         "ambiguous": "a reading to choose",
     }[proposal.kind]
     _append_section(lines, f"`{proposal.key}`: {title}")
@@ -1179,8 +1174,7 @@ def _proposal(lines: Lines, proposal: Proposal, worker: bool) -> None:
         )
         if proposal.revision:
             lines.append(
-                "The approved command keeps running until this revision is "
-                "approved."
+                "The approved command keeps running until this revision is approved."
             )
     if proposal.kind == "ambiguous":
         lines.append("Readings:")
@@ -1745,8 +1739,7 @@ def _fix_limit(lines: Lines, instruction: Instruction) -> None:
     )
     for command in instruction.recovery_commands:
         purpose = (
-            "to give the worker another round of fixes, after the cause is "
-            "understood"
+            "to give the worker another round of fixes, after the cause is understood"
             if command.action == "retry"
             else "to complete the step without these checks, only with the "
             "operator's explicit approval; the artifact records the reason"
@@ -1938,8 +1931,10 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
     elif instruction.manager_input:
         lines.extend(["Provide the values and run:", ""])
     lead: list[str] = []
-    if instruction.item_status != "pending" and not instruction.manager_input and (
-        instruction.next_role == "worker"
+    if (
+        instruction.item_status != "pending"
+        and not instruction.manager_input
+        and (instruction.next_role == "worker")
     ):
         lead.append("When the work is finished, run this with every `<...>` replaced.")
     if instruction.summary_required and instruction.item_status == "in_progress":
@@ -2094,8 +2089,7 @@ def _outcome_commands(lines: Lines, instruction: Instruction) -> None:
                 f"- `{outcome.label}` — {_outcome_effect(outcome)}:",
                 "",
                 "  ```console",
-                "  "
-                + next_command(instruction.task_id, outcome=outcome.label),
+                "  " + next_command(instruction.task_id, outcome=outcome.label),
                 "  ```",
             ]
         )
@@ -2134,7 +2128,7 @@ _ASSIGNMENT_COMPLETE = (
 def _return_phrase(instruction: Instruction) -> str:
     """What a worker whose turn ended hands back: ww's block when it has one."""
     if instruction.handoff_block is not None:
-        return f"Return the \"{HANDOFF_TITLE}\" block below to the manager"
+        return f'Return the "{HANDOFF_TITLE}" block below to the manager'
     return "Return this `ww` response to the manager"
 
 
@@ -2156,9 +2150,7 @@ def _assignment_coverage(instruction: Instruction) -> Lines:
     if not rest:
         return []
     names = ", ".join(f"`{name}`" for name in (first, *rest))
-    performer = (
-        "One worker performs" if instruction.role == "worker" else "You perform"
-    )
+    performer = "One worker performs" if instruction.role == "worker" else "You perform"
     return [
         f"This assignment covers, in order: {names}. {performer} them "
         "all; `ww` hands each one over after the previous completion.",

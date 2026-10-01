@@ -221,4 +221,3 @@ def _unique(values: Any, label: str) -> None:
     items = tuple(values)
     if len(set(items)) != len(items):
         raise ConfigurationError(f"duplicate {label} name")
-

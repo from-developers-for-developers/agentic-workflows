@@ -40,9 +40,8 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
 
     start_after_init(service, "parent", "TASK1", agent="codex")
     collect = service.next("TASK1")
-    assert (
-        './ww add-child TASK1 --id <child-id> --text="<child task text>"'
-        in (collect.action_text or "")
+    assert './ww add-child TASK1 --id <child-id> --text="<child task text>"' in (
+        collect.action_text or ""
     )
     child = service.add_child("TASK1", "TASK1.1", "Implement child work")
     assert child.task_id == "TASK1/TASK1.1"
@@ -438,9 +437,7 @@ _PARENT_AND_CHILD = """workflows:
 
 
 def test_update_child_edits_a_pending_child_until_it_starts(tmp_path: Path) -> None:
-    (tmp_path / "ww.yaml").write_text(
-        _PARENT_AND_CHILD, encoding="utf-8"
-    )
+    (tmp_path / "ww.yaml").write_text(_PARENT_AND_CHILD, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "parent", "TASK1", agent="codex")
     service.next("TASK1")
@@ -471,9 +468,7 @@ def test_update_child_edits_a_pending_child_until_it_starts(tmp_path: Path) -> N
 
 
 def test_update_child_rejects_bad_requests(tmp_path: Path) -> None:
-    (tmp_path / "ww.yaml").write_text(
-        _PARENT_AND_CHILD, encoding="utf-8"
-    )
+    (tmp_path / "ww.yaml").write_text(_PARENT_AND_CHILD, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "parent", "TASK1", agent="codex")
     service.next("TASK1")
@@ -598,11 +593,14 @@ def test_parent_status_repairs_a_missed_terminal_child_notification(
     service.complete("P/C", summary_for_next="Done.")
     service.next("P/C")
 
-    with patch.object(
-        service.children,
-        "reconcile_after_child",
-        side_effect=OSError("injected death after child publication"),
-    ), pytest.raises(OSError, match="injected death"):
+    with (
+        patch.object(
+            service.children,
+            "reconcile_after_child",
+            side_effect=OSError("injected death after child publication"),
+        ),
+        pytest.raises(OSError, match="injected death"),
+    ):
         service.complete("P/C", (("summary", "done"),), summary_for_next="Done.")
 
     assert service.status("P/C").status == "completed"

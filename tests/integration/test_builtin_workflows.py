@@ -67,16 +67,12 @@ def _project(
     root = tmp_path / "project"
     root.mkdir(exist_ok=True)
     (root / "ww.yaml").write_text(workflows, encoding="utf-8")
-    (root / "ww.json").write_text(
-        json.dumps(settings or {}), encoding="utf-8"
-    )
+    (root / "ww.json").write_text(json.dumps(settings or {}), encoding="utf-8")
     return root
 
 
 def _load(root: Path) -> WorkflowConfiguration:
-    return load_configuration(
-        root / "ww.yaml", ExtensionRegistry.discover(root)
-    )
+    return load_configuration(root / "ww.yaml", ExtensionRegistry.discover(root))
 
 
 def test_the_shipped_catchall_is_one_manager_step_that_can_restart() -> None:
@@ -166,9 +162,7 @@ def test_a_switched_off_built_in_brings_nothing_along(
     assert CATCHALL in configuration.workflows_by_name
 
 
-def test_the_switch_accepts_only_built_in_names(
-    builtins: Path, tmp_path: Path
-) -> None:
+def test_the_switch_accepts_only_built_in_names(builtins: Path, tmp_path: Path) -> None:
     root = _project(tmp_path, settings={"workflows": {"task": {"enabled": False}}})
 
     with pytest.raises(
@@ -181,8 +175,7 @@ def test_a_built_in_file_holds_only_workflows_documents_and_modes(
     builtins: Path, tmp_path: Path
 ) -> None:
     (builtins / "extra.yaml").write_text(
-        "handlers:\n  - lint: Lint.\nworkflows:\n  - x:\n    steps:\n"
-        "      - a: A.\n",
+        "handlers:\n  - lint: Lint.\nworkflows:\n  - x:\n    steps:\n      - a: A.\n",
         encoding="utf-8",
     )
 

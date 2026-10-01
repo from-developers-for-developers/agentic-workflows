@@ -56,16 +56,12 @@ def _project(root: Path, settings: dict[str, object] | None = None) -> Path:
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
-    (root / "ww.json").write_text(
-        json.dumps(settings or {}), encoding="utf-8"
-    )
+    (root / "ww.json").write_text(json.dumps(settings or {}), encoding="utf-8")
     return root
 
 
 def _load(root: Path) -> WorkflowConfiguration:
-    return load_configuration(
-        root / "ww.yaml", ExtensionRegistry.discover(root)
-    )
+    return load_configuration(root / "ww.yaml", ExtensionRegistry.discover(root))
 
 
 def _steps(steps: tuple[StepDefinition, ...]) -> Iterator[StepDefinition]:
@@ -84,9 +80,7 @@ def test_each_learning_workflow_plans_and_lints(
     root = _project(tmp_path / "project")
 
     assert main(["--root", str(root), "lint"]) == 0
-    assert (
-        main(["--root", str(root), "plan", "-w", workflow, "--agent", agent]) == 0
-    )
+    assert main(["--root", str(root), "plan", "-w", workflow, "--agent", agent]) == 0
 
 
 def test_the_learning_workflows_neither_branch_nor_commit() -> None:
@@ -161,9 +155,7 @@ def test_discover_lists_the_learning_workflows_briefly(
 
     assert main(["--root", str(root), "discover", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
-    assert [item["name"] for item in report["builtin_workflows"]] == list(
-        ONBOARDING
-    )
+    assert [item["name"] for item in report["builtin_workflows"]] == list(ONBOARDING)
     assert "task" in [item["name"] for item in report["workflows"]]
 
     assert main(["--root", str(root), "discover"]) == 0
@@ -179,9 +171,7 @@ def test_discover_lists_the_learning_workflows_briefly(
 def test_the_settings_switch_each_learning_workflow_off(
     tmp_path: Path, workflow: str
 ) -> None:
-    root = _project(
-        tmp_path / "project", {"workflows": {workflow: {"enabled": False}}}
-    )
+    root = _project(tmp_path / "project", {"workflows": {workflow: {"enabled": False}}})
 
     configuration = _load(root)
     names = {item.name for item in configuration.workflows}

@@ -200,8 +200,7 @@ def settings_from(config: Any) -> Settings:
         isinstance(workflow, str) and workflow.strip() for workflow in base_branches
     ):
         raise ConfigurationError(
-            "ww/git base_branches must map workflow names, or default, to base "
-            "branches"
+            "ww/git base_branches must map workflow names, or default, to base branches"
         )
     settings = Settings(
         commit_format=_string(config, "commit_format", DEFAULT_COMMIT_FORMAT),
