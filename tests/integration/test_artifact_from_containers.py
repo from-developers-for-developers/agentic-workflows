@@ -40,7 +40,7 @@ workflows:
 
 
 def _service(tmp_path: Path, workflows: str) -> WorkflowService:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(workflows, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 

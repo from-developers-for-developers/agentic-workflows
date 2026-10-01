@@ -15,8 +15,8 @@ class ResetResult:
     removed: bool
 
 
-# Note added by init when ww-agentic-workflows.yaml defines no workflow.
-NO_WORKFLOWS_ACTION = "Define at least one workflow in ww-agentic-workflows.yaml."
+# Note added by init when ww.yaml defines no workflow.
+NO_WORKFLOWS_ACTION = "Define at least one workflow in ww.yaml."
 # What every init ends with: the skill that sets ww up for the people using it.
 INITIALIZATION_NEXT_STEP = (
     "Run the ww-setup skill to set ww up for you, your team and this project."

@@ -24,7 +24,7 @@ body:
     attributes:
       label: What you would like instead
       description: >
-        If it affects `ww-agentic-workflows.yaml`, sketch the YAML you would want to
+        If it affects `ww.yaml`, sketch the YAML you would want to
         write.
     validations:
       required: true

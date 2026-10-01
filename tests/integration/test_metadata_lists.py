@@ -33,7 +33,7 @@ WORKFLOWS = """workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -155,7 +155,7 @@ def test_an_append_key_grows_across_completions_and_reads_as_a_list(
 def test_a_project_scoped_append_key_merges_values_from_several_tasks(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:

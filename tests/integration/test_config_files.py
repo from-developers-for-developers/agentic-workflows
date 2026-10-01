@@ -56,7 +56,7 @@ def test_an_edited_launcher_is_preserved(
 def test_the_project_root_is_found_by_its_workflow_file(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
+    _write(project / "ww.yaml", _WORKFLOW)
     nested = project / "a" / "b"
     nested.mkdir(parents=True)
     monkeypatch.chdir(nested)
@@ -73,43 +73,43 @@ def test_lint_lists_the_files_read_and_the_overrides(
     user: Path, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write(
-        user / "ww-agentic-workflows.yaml",
+        user / "ww.yaml",
         "handlers:\n  - name: test\n    argv: [pytest]\n",
     )
-    _write(user / "ww-agentic-workflows.json", "{}")
-    _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
-    _write(project / "ww-agentic-workflows.json", "{}")
+    _write(user / "ww.json", "{}")
+    _write(project / "ww.yaml", _WORKFLOW)
+    _write(project / "ww.json", "{}")
     _write(
-        project / "ww-agentic-workflows.local.yaml",
+        project / "ww.local.yaml",
         "handlers:\n  - name: test\n    argv: [pytest, -q]\n",
     )
-    _write(project / "ww-agentic-workflows.local.json", "{}")
-    user_yaml = user / "ww-agentic-workflows.yaml"
-    user_json = user / "ww-agentic-workflows.json"
+    _write(project / "ww.local.json", "{}")
+    user_yaml = user / "ww.yaml"
+    user_json = user / "ww.json"
 
     assert main(["--root", str(project), "lint"]) == 0
 
     assert capsys.readouterr().out == (
-        "ww-agentic-workflows.yaml is valid.\n"
-        f"Configuration files: {user_yaml}, ww-agentic-workflows.yaml, "
-        f"ww-agentic-workflows.local.yaml, {user_json}, "
-        "ww-agentic-workflows.json, ww-agentic-workflows.local.json\n"
+        "ww.yaml is valid.\n"
+        f"Configuration files: {user_yaml}, ww.yaml, "
+        f"ww.local.yaml, {user_json}, "
+        "ww.json, ww.local.json\n"
         f"Notice: handler 'test' from {user_yaml} is overridden by "
-        "ww-agentic-workflows.local.yaml.\n"
+        "ww.local.yaml.\n"
     )
 
 
 def test_the_markdown_plan_ends_with_the_files_read(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(project / "ww-agentic-workflows.yaml", _WORKFLOW)
-    _write(project / "ww-agentic-workflows.local.yaml", "modes: []\n")
+    _write(project / "ww.yaml", _WORKFLOW)
+    _write(project / "ww.local.yaml", "modes: []\n")
 
     assert main(["--root", str(project), "plan", "-w", "task", "-a", "codex"]) == 0
     markdown = capsys.readouterr().out
     assert markdown.endswith(
-        "\nConfiguration files: ww-agentic-workflows.yaml, "
-        "ww-agentic-workflows.local.yaml\n"
+        "\nConfiguration files: ww.yaml, "
+        "ww.local.yaml\n"
     )
 
     assert (
@@ -122,7 +122,7 @@ def test_the_markdown_plan_ends_with_the_files_read(
 # init and .gitignore
 
 _LOCAL_PATTERNS = (
-    "*ww-agentic-workflows.local.yaml\n*ww-agentic-workflows.local.json\n"
+    "*ww.local.yaml\n*ww.local.json\n"
     "ww-setup.local.yaml\n"
 )
 _RUNTIME_LINES = ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n"
@@ -147,12 +147,12 @@ def test_init_appends_local_patterns_to_an_existing_gitignore_once(
 def test_init_keeps_patterns_already_listed(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(project / ".gitignore", "*ww-agentic-workflows.local.json\n")
+    _write(project / ".gitignore", "*ww.local.json\n")
 
     _init(project, capsys, "--no-update-gitignore")
 
     assert (project / ".gitignore").read_text() == (
-        "*ww-agentic-workflows.local.json\n*ww-agentic-workflows.local.yaml\n"
+        "*ww.local.json\n*ww.local.yaml\n"
         "ww-setup.local.yaml\n"
     )
 
@@ -270,17 +270,17 @@ def test_init_creates_a_gitignore_only_in_a_git_checkout(
 def test_init_writes_only_repo_level_files(
     user: Path, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(user / "ww-agentic-workflows.yaml", _WORKFLOW)
-    local = _write(project / "ww-agentic-workflows.local.yaml", "modes: []\n")
+    _write(user / "ww.yaml", _WORKFLOW)
+    local = _write(project / "ww.local.yaml", "modes: []\n")
 
     _init(project, capsys)
 
-    assert (user / "ww-agentic-workflows.yaml").read_text() == _WORKFLOW
+    assert (user / "ww.yaml").read_text() == _WORKFLOW
     assert local.read_text() == "modes: []\n"
-    assert not (user / "ww-agentic-workflows.json").exists()
-    assert not (project / "ww-agentic-workflows.local.json").exists()
+    assert not (user / "ww.json").exists()
+    assert not (project / "ww.local.json").exists()
     # The user level already defines workflows, so init adds no empty list.
-    assert "workflows:" not in (project / "ww-agentic-workflows.yaml").read_text()
+    assert "workflows:" not in (project / "ww.yaml").read_text()
 
 
 def test_init_creates_the_user_configuration_directory(
@@ -289,7 +289,7 @@ def test_init_creates_the_user_configuration_directory(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    directory = tmp_path / "config" / "ww-agentic-workflows"
+    directory = tmp_path / "config" / "ww"
     monkeypatch.setenv("WW_USER_CONFIG_DIR", str(directory))
 
     assert main(["--root", str(project), "init", "--no-input"]) == 0
@@ -332,19 +332,19 @@ def test_the_launcher_runs_the_lowest_level_executable(
     def settings(path: Path, level: str) -> None:
         _write(path, json.dumps({"executable": str(bin_dir / f"ww-{level}")}))
 
-    settings(user / "ww-agentic-workflows.json", "user")
+    settings(user / "ww.json", "user")
     assert _run_launcher(project, user) == "ww-user"
 
-    settings(project / "ww-agentic-workflows.json", "repo")
+    settings(project / "ww.json", "repo")
     assert _run_launcher(project, user) == "ww-repo"
 
-    settings(project / "ww-agentic-workflows.local.json", "local")
+    settings(project / "ww.local.json", "local")
     assert _run_launcher(project, user) == "ww-local"
 
     # An unreadable or keyless level is skipped, not fatal.
-    _write(project / "ww-agentic-workflows.local.json", "{not json")
+    _write(project / "ww.local.json", "{not json")
     assert _run_launcher(project, user) == "ww-repo"
-    _write(project / "ww-agentic-workflows.local.json", '{"executable": "  "}')
+    _write(project / "ww.local.json", '{"executable": "  "}')
     assert _run_launcher(project, user) == "ww-repo"
 
 
@@ -354,27 +354,27 @@ def test_init_commits_no_enabled_another_level_sets(
 ) -> None:
     directory = user if level == "user" else project
     name = (
-        "ww-agentic-workflows.json"
+        "ww.json"
         if level == "user"
-        else "ww-agentic-workflows.local.json"
+        else "ww.local.json"
     )
     _write(directory / name, '{"enabled": false}\n')
 
     _init(project, capsys)
 
     assert "enabled" not in json.loads(
-        (project / "ww-agentic-workflows.json").read_text()
+        (project / "ww.json").read_text()
     )
 
 
 def test_init_keeps_the_repo_files_own_enabled(
     user: Path, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(user / "ww-agentic-workflows.json", '{"enabled": false}\n')
-    _write(project / "ww-agentic-workflows.json", '{"enabled": "on_request"}\n')
+    _write(user / "ww.json", '{"enabled": false}\n')
+    _write(project / "ww.json", '{"enabled": "on_request"}\n')
 
     _init(project, capsys)
 
-    assert json.loads((project / "ww-agentic-workflows.json").read_text())[
+    assert json.loads((project / "ww.json").read_text())[
         "enabled"
     ] == "on_request"

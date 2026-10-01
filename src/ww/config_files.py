@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The names and locations of ww's configuration files.
 
-``ww-agentic-workflows.yaml`` describes what workflows do and
-``ww-agentic-workflows.json`` how the tools around them behave. Each comes in
+``ww.yaml`` describes what workflows do and
+``ww.json`` how the tools around them behave. Each comes in
 three levels, applied top to bottom so a lower level wins:
 
-1. user: ``ww-agentic-workflows.{yaml,json}`` in the user's configuration
+1. user: ``ww.{yaml,json}`` in the user's configuration
    directory, shared by every project of the user;
-2. repo: ``ww-agentic-workflows.{yaml,json}`` in the project root;
-3. local: ``ww-agentic-workflows.local.{yaml,json}`` next to the repo files,
+2. repo: ``ww.{yaml,json}`` in the project root;
+3. local: ``ww.local.{yaml,json}`` next to the repo files,
    kept out of version control.
 """
 
@@ -21,7 +21,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
-FILE_STEM = "ww-agentic-workflows"
+FILE_STEM = "ww"
 WORKFLOWS_FILE = f"{FILE_STEM}.yaml"
 SETTINGS_FILE = f"{FILE_STEM}.json"
 LOCAL_WORKFLOWS_FILE = f"{FILE_STEM}.local.yaml"
@@ -37,7 +37,7 @@ RULES_IMPORT_FILE = "ww-rules.yaml"
 SETUP_IMPORT_FILE = "ww-setup.yaml"
 LOCAL_SETUP_IMPORT_FILE = "ww-setup.local.yaml"
 # The .gitignore patterns ``init`` adds; they also cover local files a local
-# configuration imports, such as ``git.ww-agentic-workflows.local.yaml``.
+# configuration imports, such as ``git.ww.local.yaml``.
 LOCAL_IGNORE_PATTERNS = (
     f"*{LOCAL_WORKFLOWS_FILE}",
     f"*{LOCAL_SETTINGS_FILE}",

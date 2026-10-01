@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The workflows ww ships with, composed below every configuration level.
 
-Each file in ``ww/assets/workflows/`` is ordinary ``ww-agentic-workflows.yaml``
+Each file in ``ww/assets/workflows/`` is ordinary ``ww.yaml``
 notation holding one or more workflows, and optionally the root ``documents``
 and ``modes`` that belong to them. Together they form a built-in level beneath
 the user, repo and local levels:
 
 - a workflow, document or mode that any configuration level defines under the
   same name replaces the built-in one;
-- ``ww-agentic-workflows.json`` switches a built-in workflow off with
+- ``ww.json`` switches a built-in workflow off with
   ``"workflows": {"<name>": {"enabled": false}}``; a file whose workflows are
   all switched off contributes nothing, its documents and modes included.
 

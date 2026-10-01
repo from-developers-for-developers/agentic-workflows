@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Durable documents: free-format files workflows read and update across runs.
 
-A document is declared once at the root of ``ww-agentic-workflows.yaml`` and lives in
+A document is declared once at the root of ``ww.yaml`` and lives in
 the task directory, under ``.ww`` for the project scope, or in the user
 configuration directory for the user scope, where every project of the user
 shares it.  Agents edit the file in place; ww only resolves its path, checks

@@ -199,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser(
         "lint",
-        help="Validate ww-agentic-workflows.yaml without compiling a "
+        help="Validate ww.yaml without compiling a "
         "workflow plan.",
     )
 

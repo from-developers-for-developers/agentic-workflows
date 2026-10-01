@@ -310,7 +310,7 @@ class Antigravity(HookAgent):
     settings_file = ".agents/hooks.json"
     user_settings_file = "~/.gemini/config/hooks.json"
     # Antigravity groups hooks under a name of the owner's choosing.
-    group = "ww-agentic-workflows"
+    group = "ww"
     # There is no session-start event: the first pre-invocation of a
     # conversation is its start.
     registrations = (

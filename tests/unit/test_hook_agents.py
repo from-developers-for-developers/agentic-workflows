@@ -121,11 +121,7 @@ def test_each_agent_answers_in_its_own_shape() -> None:
 
 
 def _commands(document: dict, agent: str) -> dict[str, list[str]]:
-    hooks = (
-        document["ww-agentic-workflows"]
-        if agent == "antigravity"
-        else document["hooks"]
-    )
+    hooks = document["ww"] if agent == "antigravity" else document["hooks"]
     result: dict[str, list[str]] = {}
     for native, entries in hooks.items():
         if native == "enabled":

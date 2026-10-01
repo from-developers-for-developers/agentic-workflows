@@ -14,7 +14,7 @@ _SUMMARY = ("--summary", "ok")
 
 
 def _project(root: Path) -> None:
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -177,7 +177,7 @@ def test_status_never_observes_a_half_written_task(tmp_path: Path) -> None:
 
 
 def test_status_does_not_wait_for_a_writer_that_is_mid_command(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: slow
     argv: [sleep, "1.0"]

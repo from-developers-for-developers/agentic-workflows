@@ -8,7 +8,7 @@ takes.
 
 What it adds over the equivalent shell handlers is memory and configuration. It
 records every commit it makes and every branch it opens, and it reads its
-settings from the ``ww/git`` section of ``ww-agentic-workflows.json``:
+settings from the ``ww/git`` section of ``ww.json``:
 
 ```json
 "extensions": {
@@ -120,12 +120,12 @@ _SIGNING_FAILURE_MARKERS = (
 
 @dataclass(frozen=True)
 class Settings:
-    """The ``ww/git`` section of ``ww-agentic-workflows.json``, validated."""
+    """The ``ww/git`` section of ``ww.json``, validated."""
 
     commit_format: str = DEFAULT_COMMIT_FORMAT
     # Per workflow name, with ``default`` for every other workflow.  A
     # repository with its own conventions states them in its own
-    # ``ww-agentic-workflows.json``, which ww applies for tasks working there.
+    # ``ww.json``, which ww applies for tasks working there.
     base_branches: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
     separate_branch: bool = False
     branch_name_formats: dict[str, str] = field(

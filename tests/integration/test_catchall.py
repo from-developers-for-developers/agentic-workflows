@@ -19,7 +19,7 @@ TASK = "TASK-1"
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    config_file = tmp_path / "ww-agentic-workflows.yaml"
+    config_file = tmp_path / "ww.yaml"
     config_file.write_text("workflows: []\n", encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
@@ -84,10 +84,10 @@ def test_a_new_request_on_the_same_task_starts_a_new_run(tmp_path: Path) -> None
 
 
 def _lookup_project(tmp_path: Path, task_format: str = "FOOBAR-{{digit}}") -> Path:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         json.dumps({"task_format": task_format}), encoding="utf-8"
     )
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - develop: Develop.\n",
         encoding="utf-8",
     )
@@ -203,7 +203,7 @@ def test_lookup_refuses_when_the_catchall_is_switched_off(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _lookup_project(tmp_path)
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps({"workflows": {"catchall": {"enabled": False}}}), encoding="utf-8"
     )
 

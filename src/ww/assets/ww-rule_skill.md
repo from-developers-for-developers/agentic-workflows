@@ -9,7 +9,7 @@ A rule is one sentence a step's agent must follow, in a Markdown file whose
 optional frontmatter scopes it to files (`paths`) or gives it a command
 (`check`). You decide what the rules are; `./ww rules add`, `edit`, `move`,
 `filter` and `promote` write them, validated. Never edit a rule file, a
-group, `ww-rules.yaml`, `ww-agentic-workflows.yaml` or
+group, `ww-rules.yaml`, `ww.yaml` or
 `ww-rule-automation.json` yourself.
 
 1. **Learn what exists.** Run `./ww rules --json` (groups, their filters and

@@ -89,7 +89,7 @@ def test_claims_come_from_task_state(tmp_path: Path) -> None:
         extensions=ExtensionRegistry(tmp_path),
     )
 
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )

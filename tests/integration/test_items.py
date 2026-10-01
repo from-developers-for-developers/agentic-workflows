@@ -12,7 +12,7 @@ from ww.storage import Storage
 
 
 def test_collected_items_expand_to_a_per_item_plan(tmp_path: Path, capsys) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -129,7 +129,7 @@ def test_collected_items_expand_to_a_per_item_plan(tmp_path: Path, capsys) -> No
 def test_items_reads_run_and_items_from_one_snapshot(
     tmp_path: Path, monkeypatch
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -155,7 +155,7 @@ def test_items_reads_run_and_items_from_one_snapshot(
 def test_artifact_false_keeps_a_completed_step_out_of_artifact_storage(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -185,7 +185,7 @@ def test_artifact_false_keeps_a_completed_step_out_of_artifact_storage(
 
 
 def test_per_item_stages_materialize_their_full_hook_lifecycle(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -238,7 +238,7 @@ def test_per_item_stages_materialize_their_full_hook_lifecycle(tmp_path: Path) -
 def test_item_materialization_is_a_complete_executable_plan_revision(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: prepare
     shell: printf 'prepared\\n' >> expanded.txt
@@ -336,7 +336,7 @@ workflows:
 def test_a_loop_inside_per_item_stages_runs_independently_per_item(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:

@@ -28,7 +28,7 @@ WORKFLOWS = """workflows:
 
 
 def _service(root: Path, runtime: str = "auto") -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (root / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     service = WorkflowService(Storage(root))
     service.start(
         "task",
@@ -225,7 +225,7 @@ def test_the_command_line_carries_the_token(
 
 
 def test_the_page_tells_the_performer_to_spawn_no_subagents(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:

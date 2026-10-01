@@ -55,8 +55,8 @@ def _root(
     subprocess.run(
         ("git", "commit", "-qm", "seed"), cwd=tmp_path, check=True, capture_output=True
     )
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.yaml").write_text(workflows, encoding="utf-8")
+    (tmp_path / "ww.json").write_text(
         json.dumps(
             {
                 "enabled": True,

@@ -51,7 +51,7 @@ def _write(path: Path, content: str) -> Path:
 
 
 def _config(root: Path, yaml: str) -> Path:
-    return _write(root / "ww-agentic-workflows.yaml", yaml)
+    return _write(root / "ww.yaml", yaml)
 
 
 def _rule(root: Path, relative: str, content: str) -> Path:
@@ -65,11 +65,11 @@ def _step(
 
 
 def _groups(root: Path) -> dict[str, RuleGroup]:
-    return load_configuration(root / "ww-agentic-workflows.yaml").rule_groups_by_name
+    return load_configuration(root / "ww.yaml").rule_groups_by_name
 
 
 def _compile(root: Path, workflow: str = "task", **kwargs: Any) -> WorkflowPlan:
-    configuration = load_configuration(root / "ww-agentic-workflows.yaml")
+    configuration = load_configuration(root / "ww.yaml")
     return WorkflowPlanCompiler(
         configuration, root, "codex", "TASK-1", **kwargs
     ).compile(workflow)
@@ -332,7 +332,7 @@ def test_root_mapping_errors(tmp_path: Path, rules: str, message: str) -> None:
     _config(tmp_path, "rules:\n" + rules + _WORKFLOWS)
 
     with pytest.raises(ConfigurationError, match=message):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+        load_configuration(tmp_path / "ww.yaml")
 
 
 def test_two_files_with_one_stem_in_a_group_are_an_error(tmp_path: Path) -> None:
@@ -341,7 +341,7 @@ def test_two_files_with_one_stem_in_a_group_are_an_error(tmp_path: Path) -> None
     _config(tmp_path, "rules:\n  docs: [a/, b/]\n" + _WORKFLOWS)
 
     with pytest.raises(ConfigurationError, match="two rules named 'style'"):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+        load_configuration(tmp_path / "ww.yaml")
 
 
 def test_an_absolute_rule_path_is_accepted_with_a_notice(tmp_path: Path) -> None:
@@ -349,8 +349,8 @@ def test_an_absolute_rule_path_is_accepted_with_a_notice(tmp_path: Path) -> None
     project = tmp_path / "project"
     _config(project, f"rules:\n  abs: [{rule}]\n" + _WORKFLOWS)
 
-    configuration = load_configuration(project / "ww-agentic-workflows.yaml")
-    notices = compose_configuration(project / "ww-agentic-workflows.yaml").notices
+    configuration = load_configuration(project / "ww.yaml")
+    notices = compose_configuration(project / "ww.yaml").notices
 
     assert configuration.rule_groups[0].rules[0].text == "Anywhere."
     assert any(
@@ -366,11 +366,11 @@ def test_rule_groups_merge_by_name_across_levels(tmp_path: Path) -> None:
         "rules:\n  docs: [rules/repo.md]\n  other: [rules/repo.md]\n" + _WORKFLOWS,
     )
     _write(
-        tmp_path / "ww-agentic-workflows.local.yaml",
+        tmp_path / "ww.local.yaml",
         "rules:\n  docs: [rules/local.md]\n",
     )
 
-    composed = compose_configuration(tmp_path / "ww-agentic-workflows.yaml")
+    composed = compose_configuration(tmp_path / "ww.yaml")
     groups = _groups(tmp_path)
 
     assert [rule.id for rule in groups["docs"].rules] == ["docs/local"]
@@ -393,7 +393,7 @@ workflows:
     )
     _config(tmp_path, "imports: [shared/rules.yaml]\n" + _WORKFLOWS)
 
-    configuration = load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+    configuration = load_configuration(tmp_path / "ww.yaml")
 
     assert configuration.rule_groups_by_name["shared"].rules[0].text == (
         "From the import."
@@ -430,7 +430,7 @@ workflows:
 """,
     )
 
-    rules = _step(load_configuration(tmp_path / "ww-agentic-workflows.yaml")).rules
+    rules = _step(load_configuration(tmp_path / "ww.yaml")).rules
 
     assert isinstance(rules[0], RuleDefinition)
     assert (rules[0].id, rules[0].text, rules[0].check) == (
@@ -471,7 +471,7 @@ def test_step_entry_errors(tmp_path: Path, entry: str, message: str) -> None:
     )
 
     with pytest.raises(ConfigurationError, match=message):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+        load_configuration(tmp_path / "ww.yaml")
 
 
 def test_rules_on_a_step_without_agent_work_are_an_error(tmp_path: Path) -> None:
@@ -505,7 +505,7 @@ workflows:
 """,
     )
 
-    rules = _step(load_configuration(tmp_path / "ww-agentic-workflows.yaml")).rules
+    rules = _step(load_configuration(tmp_path / "ww.yaml")).rules
 
     assert [rule.text for rule in rules if isinstance(rule, RuleDefinition)] == [
         "Be kind."
@@ -527,7 +527,7 @@ def test_assert_empty_parses_and_holds_only_on_blank_output(tmp_path: Path) -> N
 """,
     )
 
-    assertion = _step(load_configuration(tmp_path / "ww-agentic-workflows.yaml")).action
+    assertion = _step(load_configuration(tmp_path / "ww.yaml")).action
     assert assertion is not None
     assert assertion.payload.assertion == EMPTY
     assert EMPTY.holds(" \n")
@@ -552,7 +552,7 @@ def test_assert_condition_errors(tmp_path: Path, assertion: str, message: str) -
     )
 
     with pytest.raises(ConfigurationError, match=message):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+        load_configuration(tmp_path / "ww.yaml")
 
 
 def test_an_empty_assertion_fails_a_handler_that_prints() -> None:
@@ -605,7 +605,7 @@ def test_on_failure_is_parsed_on_hooks_and_handler_members(tmp_path: Path) -> No
 """,
     )
 
-    configuration = load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+    configuration = load_configuration(tmp_path / "ww.yaml")
     hooks = configuration.workflows[0].hooks
 
     assert [hook.on_failure for hook in hooks] == ["fix", "fix", "operator", "operator"]
@@ -630,7 +630,7 @@ def test_on_failure_errors(tmp_path: Path, hooks: str, message: str) -> None:
     _hooks(tmp_path, hooks)
 
     with pytest.raises(ConfigurationError, match=message):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+        load_configuration(tmp_path / "ww.yaml")
 
 
 def test_on_failure_fix_is_not_valid_on_a_workflow_transition(tmp_path: Path) -> None:
@@ -652,7 +652,7 @@ def test_on_failure_fix_is_not_valid_on_a_workflow_transition(tmp_path: Path) ->
     )
 
     with pytest.raises(ConfigurationError, match="not valid on a workflow transition"):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+        load_configuration(tmp_path / "ww.yaml")
 
 
 def test_a_fix_hook_must_run_a_command(tmp_path: Path) -> None:
@@ -697,7 +697,7 @@ workflows:
     )
 
     configuration = load_configuration(
-        tmp_path / "ww-agentic-workflows.yaml", extensions
+        tmp_path / "ww.yaml", extensions
     )
 
     groups = configuration.rule_groups_by_name
@@ -725,7 +725,7 @@ def test_an_unconfigured_extension_contributes_nothing(tmp_path: Path) -> None:
     )
 
     configuration = load_configuration(
-        tmp_path / "ww-agentic-workflows.yaml", extensions
+        tmp_path / "ww.yaml", extensions
     )
 
     assert configuration.rule_groups == ()
@@ -740,7 +740,7 @@ def test_a_group_name_in_both_yaml_and_an_extension_is_an_error(tmp_path: Path) 
     )
 
     with pytest.raises(ConfigurationError, match="shipped by extension acme/rules"):
-        load_configuration(tmp_path / "ww-agentic-workflows.yaml", extensions)
+        load_configuration(tmp_path / "ww.yaml", extensions)
 
 
 @pytest.mark.parametrize(
@@ -1027,7 +1027,7 @@ def test_the_yaml_loader_reads_extension_groups_itself(tmp_path: Path) -> None:
     )
 
     configuration = parse_yaml_configuration(
-        tmp_path / "ww-agentic-workflows.yaml", extensions
+        tmp_path / "ww.yaml", extensions
     )
 
     assert configuration.rule_groups[0].name == "acme-python"

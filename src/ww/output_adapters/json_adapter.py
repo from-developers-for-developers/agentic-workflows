@@ -25,8 +25,8 @@ class JsonOutputAdapter(OutputAdapter):
         return json.dumps(
             {
                 "root": result.root,
-                "workflow_config": "ww-agentic-workflows.yaml",
-                "project_config": "ww-agentic-workflows.json",
+                "workflow_config": "ww.yaml",
+                "project_config": "ww.json",
                 "launcher": "ww",
                 "created": list(result.created),
                 "preserved": list(result.preserved),

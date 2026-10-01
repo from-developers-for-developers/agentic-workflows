@@ -18,7 +18,7 @@ from ww.storage import Storage
 
 
 def _service(root: Path, runtime: str = "single") -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         """handlers:
   - name: prepare-agent
     description: Prepare the work.
@@ -181,7 +181,7 @@ def test_worker_completes_full_assignment_then_hands_back(
 
 
 def test_protocol_renderers_and_role_rejection_are_consistent(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -215,7 +215,7 @@ def test_protocol_renderers_and_role_rejection_are_consistent(tmp_path: Path) ->
 def test_automatic_failure_reports_that_worker_result_was_saved(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: reject
     argv: ["false"]
@@ -258,7 +258,7 @@ workflows:
 def test_materialized_item_and_successor_run_are_manager_boundaries(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: items
     steps:
@@ -327,7 +327,7 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
 def test_interrupted_worker_assignment_recovers_through_manager(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: publish
     argv: [touch, published.txt]
@@ -382,7 +382,7 @@ workflows:
 def test_declared_preparation_input_remains_worker_assignment_work(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: prepare
     variables:
@@ -425,7 +425,7 @@ workflows:
 
 
 def test_child_workflow_coordination_returns_to_manager(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: parent
     steps:
@@ -463,7 +463,7 @@ def test_child_workflow_coordination_returns_to_manager(tmp_path: Path) -> None:
 
 
 def test_input_only_assignment_stays_with_the_manager(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: commit
     variables:
@@ -554,7 +554,7 @@ workflows:
 def test_each_step_sees_the_previous_step_result_but_never_a_hook(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: note
     description: Leave a note.
@@ -624,7 +624,7 @@ workflows:
 
 
 def test_a_step_must_hand_over_a_summary_but_hooks_need_not(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: note
     description: Leave a note.
@@ -689,7 +689,7 @@ workflows:
 def test_delegate_page_describes_the_step_not_its_preparation_hook(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """profiles:
   developer: Build it well.
 handlers:
@@ -765,7 +765,7 @@ workflows:
 
 
 def test_delegated_pending_input_page_has_a_delegate_heading(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: commit
     variables:

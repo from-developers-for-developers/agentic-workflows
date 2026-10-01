@@ -2,9 +2,9 @@
 """Compose the workflow configuration levels and their imports into one document.
 
 Workflows come from up to three levels, applied top to bottom: the user's
-``ww-agentic-workflows.yaml`` in the user configuration directory, the repo's
-``ww-agentic-workflows.yaml`` (required), and the checkout's
-``ww-agentic-workflows.local.yaml``. A level is its root file plus the files
+``ww.yaml`` in the user configuration directory, the repo's
+``ww.yaml`` (required), and the checkout's
+``ww.local.yaml``. A level is its root file plus the files
 that root lists under ``imports``, which come before any other key but
 ``extends``. An import may define anything a root can, except further imports,
 and resolves next to the file that lists it.
@@ -30,7 +30,7 @@ machine.
 A level extends the ones above unless one of its files says ``extends: false``;
 then folding starts again at that level.
 
-The composed document is ordinary ``ww-agentic-workflows.yaml`` notation:
+The composed document is ordinary ``ww.yaml`` notation:
 the parser reads it exactly as it would a single file, and nothing is
 written to disk.
 """
@@ -84,7 +84,7 @@ class Override:
 
 @dataclass(frozen=True)
 class ComposedConfiguration:
-    """Composed ``ww-agentic-workflows.yaml`` text, its mapping, and overrides.
+    """Composed ``ww.yaml`` text, its mapping, and overrides.
 
     ``sources`` lists the files folded in, in order; ``ignored`` the files a
     lower level's ``extends: false`` left out.

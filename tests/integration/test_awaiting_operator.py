@@ -35,7 +35,7 @@ PLAIN = """workflows:
 
 
 def _service(root: Path, config: str, runtime: str = "single") -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
+    (root / "ww.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(Storage(root))
     service.start(
         "task",

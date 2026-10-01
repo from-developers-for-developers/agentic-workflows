@@ -46,7 +46,7 @@ workflows:
 
 
 def _write(tmp_path: Path, text: str = WORKFLOWS) -> Path:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(text, encoding="utf-8")
     return path
 

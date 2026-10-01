@@ -1,6 +1,6 @@
 # Examples
 
-Each example is a complete `ww-agentic-workflows.yaml`, unless it says otherwise, and every
+Each example is a complete `ww.yaml`, unless it says otherwise, and every
 one is loaded and compiled by the test suite. They are ordered from the simplest
 to the most involved and each one introduces a different control or behaviour.
 Agent-facing text is deliberately short; in a real project the descriptions
@@ -179,7 +179,7 @@ workflows:
 A `loop` repeats its body until a worker breaks it or the round limit is
 reached. `break` and `continue` are natural-language conditions the worker
 evaluates after doing the step. `max_rounds` overrides the project default, `limits.rounds` in
-`ww-agentic-workflows.json`.
+`ww.json`.
 
 ```yaml
 workflows:
@@ -392,7 +392,7 @@ workflows:
 ## 14. Git branches, commits, and worktrees
 
 Git integration is the bundled `ww/git` extension. Its handlers are referenced
-like any other, and its settings live in `ww-agentic-workflows.json`.
+like any other, and its settings live in `ww.json`.
 
 ```yaml
 hooks:
@@ -437,7 +437,7 @@ workflows:
 
 ## 15. One ww instance over several repositories
 
-With `projects` in `ww-agentic-workflows.json`, the ww root is a workspace above
+With `projects` in `ww.json`, the ww root is a workspace above
 the repositories. `start --project` and `add-child --project` choose where a
 task works, and the git extension follows.
 
@@ -459,8 +459,8 @@ task works, and the git extension follows.
 ```
 
 A repository with conventions of its own states them in its own
-`ww-agentic-workflows.json`; only its `extensions` section is read, key by
-key over the root's, so `frontend/ww-agentic-workflows.json` needs nothing
+`ww.json`; only its `extensions` section is read, key by
+key over the root's, so `frontend/ww.json` needs nothing
 but what differs:
 
 ```json

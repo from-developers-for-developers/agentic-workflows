@@ -341,7 +341,7 @@ class WorkflowService:
         # ``"on_request"`` allows it: an agent starts a task only when asked.
         if self.extensions.config.disabled:
             raise StateError(
-                "ww is disabled for this project (ww-agentic-workflows.json has "
+                "ww is disabled for this project (ww.json has "
                 '"enabled": false); do not use ww for this work'
             )
         if not agent:

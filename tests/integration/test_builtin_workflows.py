@@ -66,8 +66,8 @@ def _project(
 ) -> Path:
     root = tmp_path / "project"
     root.mkdir(exist_ok=True)
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.json").write_text(
         json.dumps(settings or {}), encoding="utf-8"
     )
     return root
@@ -75,7 +75,7 @@ def _project(
 
 def _load(root: Path) -> WorkflowConfiguration:
     return load_configuration(
-        root / "ww-agentic-workflows.yaml", ExtensionRegistry.discover(root)
+        root / "ww.yaml", ExtensionRegistry.discover(root)
     )
 
 
@@ -142,7 +142,7 @@ def test_the_user_level_replaces_a_built_in_by_name(
     user = tmp_path / "user"
     user.mkdir()
     monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
-    (user / "ww-agentic-workflows.yaml").write_text(
+    (user / "ww.yaml").write_text(
         "workflows:\n  - name: learn\n    description: Mine.\n"
         "    steps:\n      - ask: Ask.\n",
         encoding="utf-8",

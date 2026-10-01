@@ -36,8 +36,8 @@ class _Payload(io.StringIO):
 
 
 def _root(tmp_path: Path, settings: dict | None = None) -> Path:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.json").write_text(
         json.dumps(settings or {}), encoding="utf-8"
     )
     return tmp_path
@@ -506,7 +506,7 @@ def test_a_hook_never_fails_the_agent(
         == 0
     )
     assert main(["--root", str(root), "hook", "stop", "--agent", "someone"]) == 0
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps({"enabled": "maybe"}), encoding="utf-8"
     )
     assert _hook(root, monkeypatch, capsys, "session-start") == ""
@@ -853,7 +853,7 @@ def test_session_start_names_each_tasks_agent(
 
 
 def _delegated(root: Path, own_step: bool = False) -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - develop: Implement it.\n"
         + ("        role: manager\n" if own_step else ""),
         encoding="utf-8",

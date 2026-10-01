@@ -11,7 +11,7 @@ put back as it was and the command fails: a write never leaves the project in
 a state ``ww lint`` rejects. Nothing is committed; rule files are
 configuration, committed with the change that needs them.
 
-Rule files are edited in place. The repo's ``ww-agentic-workflows.yaml`` is
+Rule files are edited in place. The repo's ``ww.yaml`` is
 never rewritten: a new root group goes into ``ww-rules.yaml``, a file ww owns
 and rewrites whole, which the repo file lists under ``imports``; adding that
 one list entry is the only change ww makes to the repo file, and it is checked

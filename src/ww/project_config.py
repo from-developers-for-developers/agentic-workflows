@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The project configuration file, ``ww-agentic-workflows.json``.
+"""The project configuration file, ``ww.json``.
 
-ww's settings file, separate from ``ww-agentic-workflows.yaml``. The YAML
+ww's settings file, separate from ``ww.yaml``. The YAML
 describes what a workflow *does*, while this describes how the tools around
 it behave. It
 contains ww-wide settings, built-in execution hints, and extension settings.
@@ -37,7 +37,7 @@ as ``catchall``; each is on unless its entry says ``"enabled": false``.
 
 ``projects`` are the directories, usually repositories, a task may work in.
 They are optional and machine-specific, which is why they live here rather than
-in ``ww-agentic-workflows.yaml``: the same workflows can run in checkouts laid out
+in ``ww.yaml``: the same workflows can run in checkouts laid out
 differently on each machine.
 
 An extension's settings are handed to it untouched. ww validates the shape of
@@ -50,8 +50,8 @@ extension validates its own settings and reports its own errors.
 require an ID for every task. It is a setting of the checkout and of the
 tracker a repository uses, not of what a workflow does, so it lives here.
 
-A configured project may carry its own ``ww-agentic-workflows.json`` and
-``ww-agentic-workflows.local.json``. Of those files ww reads only the keys in
+A configured project may carry its own ``ww.json`` and
+``ww.local.json``. Of those files ww reads only the keys in
 ``PROJECT_FILE_KEYS``, ``extensions`` applied over the root's and
 ``task_format`` replacing it, for work done in that project; every other key
 describes the project as a ww root of its own, and the workspace root owns

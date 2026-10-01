@@ -137,7 +137,7 @@ def state_path() -> Path:
         return Path(configured) / "updates.json"
     base = os.environ.get("XDG_CONFIG_HOME")
     root = Path(base) if base else Path.home() / ".config"
-    return root / "ww-agentic-workflows" / "updates.json"
+    return root / "ww" / "updates.json"
 
 
 def load_state(path: Path | None = None) -> UpdateState:

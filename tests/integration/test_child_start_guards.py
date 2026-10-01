@@ -18,7 +18,7 @@ PARENT = "P"
 
 def _parent(tmp_path: Path, *children: str) -> WorkflowService:
     """A parent waiting for its pending children to run."""
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: parent
     steps:

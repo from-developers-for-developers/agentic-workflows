@@ -58,8 +58,8 @@ def _workspace(tmp_path: Path, git: bool = False) -> Path:
             (repo / "README.md").write_text("seed\n", encoding="utf-8")
             _git(repo, "add", "-A")
             _git(repo, "commit", "-qm", "seed")
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.json").write_text(
         json.dumps({"enabled": True, "projects": PROJECTS, "extensions": {}}),
         encoding="utf-8",
     )
@@ -116,7 +116,7 @@ def test_projects_are_parsed_and_listed_by_discover(
 def test_discover_without_projects_shows_no_project_option(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
@@ -146,11 +146,11 @@ def test_discover_without_projects_shows_no_project_option(
 def test_invalid_projects_are_rejected(
     tmp_path: Path, projects: object, message: str
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         json.dumps({"projects": projects}), encoding="utf-8"
     )
 
@@ -196,7 +196,7 @@ def test_unknown_or_missing_project_directories_are_rejected(tmp_path: Path) -> 
         service.start("feature", "T1", agent="codex", project="frontend")
     assert not service.tasks.task_exists("T1")
 
-    (root / "ww-agentic-workflows.json").write_text("{}", encoding="utf-8")
+    (root / "ww.json").write_text("{}", encoding="utf-8")
     with pytest.raises(StateError, match="no projects are configured"):
         WorkflowService(Storage(root)).start(
             "feature", "T2", agent="codex", project="x"
@@ -315,10 +315,10 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
         "      handlers:\n        - ext/ww/git/handlers:git-commit: ~\n"
         "        - ext/ww/git/handlers:return-to-base-branch: ~\n"
     )
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         WORKFLOWS.replace(feature, git_hooks + feature), encoding="utf-8"
     )
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps(
             {
                 "projects": PROJECTS,
@@ -409,7 +409,7 @@ def test_projects_catalog_and_variables(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _workspace(tmp_path)
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         WORKFLOWS.replace(
             "      - develop: Implement it.\n",
             "      - develop: Implement {{ww.project.name}} in {{ww.project.dir}} "
@@ -439,7 +439,7 @@ def _write_json(path: Path, payload: object) -> None:
 
 def _commit_settings(repo: Path, payload: object) -> None:
     """Give a project repository its own settings file, committed like any."""
-    _write_json(repo / "ww-agentic-workflows.json", payload)
+    _write_json(repo / "ww.json", payload)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "Add ww settings")
 
@@ -456,7 +456,7 @@ def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _workspace(tmp_path)
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         WORKFLOWS.replace(
             "          after_complete:\n            - name: where\n",
             "          after_complete:\n            - name: where\n"
@@ -469,11 +469,11 @@ def test_extension_items_freeze_the_settings_of_the_directory_they_act_on(
         encoding="utf-8",
     )
     _write_json(
-        root / "ww-agentic-workflows.json",
+        root / "ww.json",
         {"projects": PROJECTS, "extensions": {"ww/git": ROOT_GIT_SETTINGS}},
     )
     _write_json(
-        root / "backend" / "ww-agentic-workflows.json",
+        root / "backend" / "ww.json",
         {
             "extensions": {
                 "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
@@ -528,7 +528,7 @@ def test_a_projects_worktree_settings_open_its_worktree_beside_the_project(
     tmp_path: Path,
 ) -> None:
     root = _workspace(tmp_path, git=True)
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         "hooks:\n  before_start_workflow:\n    - workflows: [feature]\n"
         "      handlers:\n        - ext/ww/git/handlers:is-git-clean: ~\n"
         "        - ext/ww/git/handlers:start-task-branch: ~\n"
@@ -536,7 +536,7 @@ def test_a_projects_worktree_settings_open_its_worktree_beside_the_project(
         encoding="utf-8",
     )
     _write_json(
-        root / "ww-agentic-workflows.json",
+        root / "ww.json",
         {"projects": PROJECTS, "extensions": {"ww/git": ROOT_GIT_SETTINGS}},
     )
     _commit_settings(
@@ -572,11 +572,11 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
 ) -> None:
     root = _workspace(tmp_path)
     _write_json(
-        root / "ww-agentic-workflows.json",
+        root / "ww.json",
         {"projects": PROJECTS, "extensions": {"ww/git": ROOT_GIT_SETTINGS}},
     )
     _write_json(
-        root / "backend" / "ww-agentic-workflows.json",
+        root / "backend" / "ww.json",
         {
             "extensions": {
                 "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
@@ -584,23 +584,23 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
         },
     )
     _write_json(
-        root / "backend" / "ww-agentic-workflows.local.json",
+        root / "backend" / "ww.local.json",
         {"extensions": {"ww/git": {"worktrees": True, "worktree_dir": "../wt"}}},
     )
 
     assert main(["--root", str(root), "lint"]) == 0
     assert capsys.readouterr().out == (
-        "ww-agentic-workflows.yaml is valid.\n"
-        "Configuration files: ww-agentic-workflows.yaml, ww-agentic-workflows.json\n"
-        "Project backend extension settings: backend/ww-agentic-workflows.json, "
-        "backend/ww-agentic-workflows.local.json\n"
+        "ww.yaml is valid.\n"
+        "Configuration files: ww.yaml, ww.json\n"
+        "Project backend extension settings: backend/ww.json, "
+        "backend/ww.local.json\n"
     )
 
     assert main(["--root", str(root), "plan", "-w", "feature", "-a", "codex"]) == 0
     assert capsys.readouterr().out.endswith(
-        "Configuration files: ww-agentic-workflows.yaml, ww-agentic-workflows.json\n"
-        "Project backend extension settings: backend/ww-agentic-workflows.json, "
-        "backend/ww-agentic-workflows.local.json\n"
+        "Configuration files: ww.yaml, ww.json\n"
+        "Project backend extension settings: backend/ww.json, "
+        "backend/ww.local.json\n"
     )
 
     assert main(["--root", str(root), "extension", "ww/git", "settings"]) == 0
@@ -621,12 +621,12 @@ def test_lint_plan_and_the_settings_command_show_a_projects_files(
     assert resolved["branch_name_formats"] == {"default": "feature/{{ww.task.id}}"}
 
     _write_json(
-        root / "backend" / "ww-agentic-workflows.json",
+        root / "backend" / "ww.json",
         {"extensions": {"acme/nope": {}}},
     )
     assert main(["--root", str(root), "lint"]) != 0
     assert (
-        "backend/ww-agentic-workflows.json (project 'backend') configures unknown "
+        "backend/ww.json (project 'backend') configures unknown "
         "extension 'acme/nope'"
     ) in capsys.readouterr().err
 
@@ -639,11 +639,11 @@ def test_generated_ids_follow_the_projects_task_format(
 ) -> None:
     root = _workspace(tmp_path)
     _write_json(
-        root / "ww-agentic-workflows.json",
+        root / "ww.json",
         {"projects": PROJECTS, "task_format": "ROOT-{{digit}}", "extensions": {}},
     )
     _write_json(
-        root / "backend" / "ww-agentic-workflows.json", {"task_format": "BE-{{digit}}"}
+        root / "backend" / "ww.json", {"task_format": "BE-{{digit}}"}
     )
     service = WorkflowService(Storage(root))
 
@@ -695,11 +695,11 @@ def test_a_project_may_require_explicit_ids_while_the_root_generates_them(
 ) -> None:
     root = _workspace(tmp_path)
     _write_json(
-        root / "ww-agentic-workflows.json",
+        root / "ww.json",
         {"projects": PROJECTS, "task_format": "ROOT-{{digit}}", "extensions": {}},
     )
     _write_json(
-        root / "backend" / "ww-agentic-workflows.json", {"task_format": "explicit"}
+        root / "backend" / "ww.json", {"task_format": "explicit"}
     )
     service = WorkflowService(Storage(root))
 

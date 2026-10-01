@@ -51,8 +51,8 @@ workflows:
 
 def _root(tmp_path: Path, workflows: str = WORKFLOWS) -> Path:
     (tmp_path / "backend").mkdir()
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.yaml").write_text(workflows, encoding="utf-8")
+    (tmp_path / "ww.json").write_text(
         json.dumps(
             {
                 "enabled": True,
@@ -182,7 +182,7 @@ def test_project_workdir_uses_the_project_checkout_not_the_task_worktree(
         ("commit", "-q", "--allow-empty", "-m", "seed"),
     ):
         subprocess.run(("git", *args), cwd=backend, check=True, capture_output=True)
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps(
             {
                 "projects": [{"name": "backend", "path": "./backend"}],

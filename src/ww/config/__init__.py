@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Strict loading for the normalized ``ww-agentic-workflows.yaml`` schema."""
+"""Strict loading for the normalized ``ww.yaml`` schema."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ from .values import (
 
 @dataclass(frozen=True)
 class YamlConfigurationLoader:
-    """The built-in ``ww-agentic-workflows.yaml`` notation frontend.
+    """The built-in ``ww.yaml`` notation frontend.
 
     ``extensions`` supply the rule groups the project's configured extensions
     ship, merged under the root ``rules`` before any step names them.
@@ -99,7 +99,7 @@ def parse_yaml_text(
     base: Path | None = None,
     extension_rule_groups: tuple[tuple[str, RuleGroupContribution], ...] = (),
 ) -> WorkflowConfiguration:
-    """Parse ``ww-agentic-workflows.yaml`` notation held in memory, named ``source``.
+    """Parse ``ww.yaml`` notation held in memory, named ``source``.
 
     ``base`` is the directory rule paths resolve against; it defaults to the
     current directory.

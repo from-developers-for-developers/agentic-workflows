@@ -36,8 +36,8 @@ workflows:
 
 
 def _project(tmp_path: Path, config: dict[str, object] | None = None) -> Path:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.json").write_text(
         json.dumps(config or {}), encoding="utf-8"
     )
     return tmp_path
@@ -140,7 +140,7 @@ def test_a_disabled_project_tells_agents_not_to_use_ww(
 ) -> None:
     root = _project(tmp_path, {"enabled": False})
     # The workflow file is not even read once ww is disabled.
-    (root / "ww-agentic-workflows.yaml").write_text("not: [valid", encoding="utf-8")
+    (root / "ww.yaml").write_text("not: [valid", encoding="utf-8")
 
     output = _discover(root, capsys)
     report = json.loads(_discover(root, capsys, "--json"))
@@ -328,7 +328,7 @@ def test_init_without_skills_suggests_installing_them(
         f"Optionally install the ww skills ({', '.join(SKILLS)}) with "
         "`init --skills` for: .claude." in output
     )
-    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
+    config = json.loads((tmp_path / "ww.json").read_text())
     assert config["enabled"] is True
 
 
@@ -359,7 +359,7 @@ def test_init_asks_when_agents_use_ww_and_explains_each_value(
     assert "on_request  only when the user explicitly asks for ww" in output
     assert "false       never" in output
     assert "Use ww [true/on_request/false] (true): " in output
-    config = json.loads((tmp_path / "ww-agentic-workflows.json").read_text())
+    config = json.loads((tmp_path / "ww.json").read_text())
     assert config["enabled"] == enabled
     choices = json.loads((tmp_path / ".ww/init-choices.json").read_text())
     assert choices["enabled"] == enabled
@@ -525,7 +525,7 @@ def test_the_permission_notice_is_shown_once_and_getting_started_until_a_workflo
     assert "Allow ww to run without confirmation" in first
     assert "Getting started" in first
 
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
@@ -561,7 +561,7 @@ def test_explicit_task_format_requires_an_id(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path, {"task_format": "explicit"})
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         WORKFLOWS
         + """  - name: tracked
     steps:
@@ -641,7 +641,7 @@ def test_the_configured_runtime_must_exist(tmp_path: Path) -> None:
 
 
 def _runtime_advice_project(tmp_path: Path) -> Path:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """
 workflows:
   - name: plain

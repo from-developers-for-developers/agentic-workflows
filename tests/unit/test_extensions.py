@@ -122,7 +122,7 @@ def test_an_extension_cannot_introduce_a_core_variable(tmp_path: Path) -> None:
 
 
 def _listing(root: Path, *identifiers: str) -> None:
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps({"extensions": {identifier: {} for identifier in identifiers}}),
         encoding="utf-8",
     )
@@ -638,7 +638,7 @@ def _project_registry(
 
 
 def _write_project_settings(tmp_path: Path, payload: object) -> None:
-    (tmp_path / "backend" / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "backend" / "ww.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
 
@@ -665,7 +665,7 @@ def test_a_projects_settings_apply_over_the_roots(tmp_path: Path) -> None:
         "nested": {"x": 1, "y": 3},
     }
     assert registry.project_settings("backend").sources == (
-        tmp_path / "backend" / "ww-agentic-workflows.json",
+        tmp_path / "backend" / "ww.json",
     )
     with pytest.raises(ConfigurationError, match="unknown project 'web'"):
         registry.settings("acme/demo", "web")
@@ -688,7 +688,7 @@ def test_a_project_section_naming_an_unknown_extension_names_the_project(
 
     with pytest.raises(
         ConfigurationError,
-        match=r"backend/ww-agentic-workflows.json \(project 'backend'\) configures "
+        match=r"backend/ww.json \(project 'backend'\) configures "
         "unknown extension 'acme/nope'; installed: acme/demo",
     ):
         registry.settings("acme/demo", "backend")

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""ww-agentic-workflows.json: loading, validation, and per-extension isolation."""
+"""ww.json: loading, validation, and per-extension isolation."""
 
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ from ww.project_config import (
 
 
 def write(root: Path, payload: object) -> Path:
-    path = root / "ww-agentic-workflows.json"
+    path = root / "ww.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
 def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
-    config = load_project_config(tmp_path / "ww-agentic-workflows.json")
+    config = load_project_config(tmp_path / "ww.json")
 
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
@@ -162,13 +162,13 @@ def test_a_malformed_file_is_rejected(
 
 
 def test_invalid_json_names_the_file(tmp_path: Path) -> None:
-    path = tmp_path / "ww-agentic-workflows.json"
+    path = tmp_path / "ww.json"
     path.write_text("{", encoding="utf-8")
 
     with pytest.raises(ConfigurationError) as error:
         load_project_config(path)
 
-    assert "ww-agentic-workflows.json" in str(error.value)
+    assert "ww.json" in str(error.value)
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -227,8 +227,8 @@ def _workspace(
     directory = tmp_path / "backend"
     directory.mkdir()
     for name, payload in (
-        ("ww-agentic-workflows.json", repo),
-        ("ww-agentic-workflows.local.json", local),
+        ("ww.json", repo),
+        ("ww.local.json", local),
     ):
         if payload is not None:
             (directory / name).write_text(
@@ -266,7 +266,7 @@ def test_only_the_extensions_section_of_a_project_file_is_read(
 
     loaded = load_project_settings(tmp_path, project)
 
-    assert loaded.sources == (tmp_path / "backend" / "ww-agentic-workflows.json",)
+    assert loaded.sources == (tmp_path / "backend" / "ww.json",)
     assert loaded.sections.sections == {
         "ww/git": {"commit_format": "[{{ww.task.id}}] {{commit_message}}"}
     }
@@ -282,15 +282,15 @@ def test_a_projects_local_file_extends_its_repo_file(tmp_path: Path) -> None:
     loaded = load_project_settings(tmp_path, project)
 
     assert loaded.sources == (
-        tmp_path / "backend" / "ww-agentic-workflows.json",
-        tmp_path / "backend" / "ww-agentic-workflows.local.json",
+        tmp_path / "backend" / "ww.json",
+        tmp_path / "backend" / "ww.local.json",
     )
     assert loaded.sections.settings_for("ww/git") == {
         "worktrees": True,
         "worktree_dir": "../elsewhere",
     }
     assert loaded.sections.source == (
-        "backend/ww-agentic-workflows.json + backend/ww-agentic-workflows.local.json"
+        "backend/ww.json + backend/ww.local.json"
         " (project 'backend')"
     )
 
@@ -298,11 +298,11 @@ def test_a_projects_local_file_extends_its_repo_file(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
-        ("[]", "backend/ww-agentic-workflows.json must contain a JSON object"),
-        ("{not json", "invalid .*backend/ww-agentic-workflows.json"),
+        ("[]", "backend/ww.json must contain a JSON object"),
+        ("{not json", "invalid .*backend/ww.json"),
         (
             {"extensions": []},
-            r"backend/ww-agentic-workflows.json \(project 'backend'\)\.extensions "
+            r"backend/ww.json \(project 'backend'\)\.extensions "
             "must be an object",
         ),
         (
@@ -328,7 +328,7 @@ def test_project_sections_are_validated_against_installed_extensions(
 
     with pytest.raises(
         ConfigurationError,
-        match=r"backend/ww-agentic-workflows.json \(project 'backend'\) configures "
+        match=r"backend/ww.json \(project 'backend'\) configures "
         "unknown extension 'acme/nope'",
     ):
         loaded.sections.validate_against(("ww/git",))
@@ -346,7 +346,7 @@ def test_project_validation_names_the_file_that_holds_the_section(
 
     with pytest.raises(
         ConfigurationError,
-        match=r"backend/ww-agentic-workflows.local.json \(project 'backend'\) "
+        match=r"backend/ww.local.json \(project 'backend'\) "
         "configures unknown extension 'acme/nope'",
     ):
         loaded.validate_against(("ww/git",))
@@ -432,13 +432,13 @@ def test_a_lower_settings_level_replaces_task_format(
     user = tmp_path / "user"
     user.mkdir()
     monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
-    (user / "ww-agentic-workflows.json").write_text(
+    (user / "ww.json").write_text(
         json.dumps({"task_format": "M-{{digit}}"}), encoding="utf-8"
     )
     path = write(tmp_path, {"enabled": True})
     assert load_project_config(path).task_format == "M-{{digit}}"
 
-    (tmp_path / "ww-agentic-workflows.local.json").write_text(
+    (tmp_path / "ww.local.json").write_text(
         json.dumps({"task_format": "L-{{digit}}"}), encoding="utf-8"
     )
     assert load_project_config(path).task_format == "L-{{digit}}"
@@ -452,7 +452,7 @@ def test_a_project_file_may_carry_its_own_task_format(tmp_path: Path) -> None:
     )
 
     assert load_project_settings(tmp_path, project).task_format == "explicit"
-    (tmp_path / "backend" / "ww-agentic-workflows.local.json").unlink()
+    (tmp_path / "backend" / "ww.local.json").unlink()
     assert load_project_settings(tmp_path, project).task_format == "BE-{{digit}}"
     workspace_without_files = _workspace_without_files(tmp_path)
     assert load_project_settings(tmp_path, workspace_without_files).task_format is None
@@ -468,7 +468,7 @@ def test_an_invalid_project_task_format_names_the_project(tmp_path: Path) -> Non
 
     with pytest.raises(
         ConfigurationError,
-        match=r"backend/ww-agentic-workflows.json \(project 'backend'\)\.task_format "
+        match=r"backend/ww.json \(project 'backend'\)\.task_format "
         r"has unknown placeholder\(s\): \{\{nope\}\}",
     ):
         load_project_settings(tmp_path, project)

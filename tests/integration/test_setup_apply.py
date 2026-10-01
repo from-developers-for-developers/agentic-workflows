@@ -42,8 +42,8 @@ settings:
 def root(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    (project / "ww-agentic-workflows.yaml").write_text(REPO, encoding="utf-8")
-    (project / "ww-agentic-workflows.json").write_text(
+    (project / "ww.yaml").write_text(REPO, encoding="utf-8")
+    (project / "ww.json").write_text(
         json.dumps({"limits": {"rounds": 3}}, indent=2) + "\n", encoding="utf-8"
     )
     return project
@@ -61,7 +61,7 @@ def _apply(root: Path, *arguments: str) -> int:
 
 def _workflows(root: Path) -> list[str]:
     configuration = load_configuration(
-        root / "ww-agentic-workflows.yaml", ExtensionRegistry.discover(root)
+        root / "ww.yaml", ExtensionRegistry.discover(root)
     )
     return [workflow.name for workflow in configuration.workflows]
 
@@ -83,18 +83,18 @@ def test_for_team_writes_the_shared_import_and_settings(
 
     captured = capsys.readouterr()
     assert "ww-setup.yaml (new): adds workflow `review`, mode `gently`" in captured.err
-    assert "ww-agentic-workflows.yaml: adds ww-setup.yaml to imports" in captured.err
+    assert "ww.yaml: adds ww-setup.yaml to imports" in captured.err
     assert (
-        "ww-agentic-workflows.json: sets runtime, extensions" in captured.err
+        "ww.json: sets runtime, extensions" in captured.err
     )
     assert captured.out.startswith("Applied.\n")
-    repo = (root / "ww-agentic-workflows.yaml").read_text(encoding="utf-8")
+    repo = (root / "ww.yaml").read_text(encoding="utf-8")
     assert repo == "# The project's own workflows.\nimports:\n  - ww-setup.yaml\n" + (
         REPO.split("\n", 1)[1]
     )
     setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
     assert set(setup) == {"workflows", "modes"}
-    assert json.loads((root / "ww-agentic-workflows.json").read_text()) == {
+    assert json.loads((root / "ww.json").read_text()) == {
         "limits": {"rounds": 3},
         "runtime": "auto",
         "extensions": {"ww/git": {"separate_branch": True}},
@@ -112,16 +112,16 @@ def test_for_me_writes_local_files_and_creates_the_local_root(
     assert _apply(root, str(fragment), "--for", "me", "--yes") == 0
 
     capsys.readouterr()
-    assert (root / "ww-agentic-workflows.local.yaml").read_text() == (
+    assert (root / "ww.local.yaml").read_text() == (
         "imports:\n  - ww-setup.local.yaml\n"
     )
     assert "review" in (root / "ww-setup.local.yaml").read_text()
-    assert json.loads((root / "ww-agentic-workflows.local.json").read_text()) == {
+    assert json.loads((root / "ww.local.json").read_text()) == {
         "limits": {"fixes": 5},
         "extensions": {"ww/git": {"separate_branch": True}},
     }
     # The shared files are untouched.
-    assert (root / "ww-agentic-workflows.yaml").read_text() == REPO
+    assert (root / "ww.yaml").read_text() == REPO
     assert not (root / "ww-setup.yaml").exists()
     assert "review" in _workflows(root)
 
@@ -129,7 +129,7 @@ def test_for_me_writes_local_files_and_creates_the_local_root(
 def test_for_me_adds_the_import_to_an_existing_local_file(
     root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (root / "ww-agentic-workflows.local.yaml").write_text(
+    (root / "ww.local.yaml").write_text(
         "modes:\n  - economy: Short.\n", encoding="utf-8"
     )
     fragment = _fragment(tmp_path, "modes:\n  - gently: Kindly.\n")
@@ -137,7 +137,7 @@ def test_for_me_adds_the_import_to_an_existing_local_file(
     assert _apply(root, str(fragment), "--for", "me", "--yes") == 0
 
     capsys.readouterr()
-    assert (root / "ww-agentic-workflows.local.yaml").read_text() == (
+    assert (root / "ww.local.yaml").read_text() == (
         "imports:\n  - ww-setup.local.yaml\nmodes:\n  - economy: Short.\n"
     )
 
@@ -186,7 +186,7 @@ def test_a_second_apply_merges_by_name(
     ]
     assert setup["rules"] == {"style": ["rules/named.md"]}
     # The repo file lists the import once.
-    repo = yaml.safe_load((root / "ww-agentic-workflows.yaml").read_text())
+    repo = yaml.safe_load((root / "ww.yaml").read_text())
     assert repo["imports"] == ["ww-setup.yaml"]
 
 
@@ -237,8 +237,8 @@ def test_dry_run_shows_the_change_and_writes_nothing(
     assert report["applied"] is False
     assert [entry["path"] for entry in report["files"]] == [
         "ww-setup.local.yaml",
-        "ww-agentic-workflows.local.yaml",
-        "ww-agentic-workflows.local.json",
+        "ww.local.yaml",
+        "ww.local.json",
     ]
     assert _snapshot(root) == before
 
@@ -309,7 +309,7 @@ def test_an_unimported_setup_file_is_left_to_the_operator(
 
     assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
 
-    assert "exists but ww-agentic-workflows.yaml does not import it" in (
+    assert "exists but ww.yaml does not import it" in (
         capsys.readouterr().err
     )
 
@@ -326,7 +326,7 @@ def test_a_definition_the_root_file_keeps_is_flagged(
     assert _apply(root, str(fragment), "--for", "team", "--dry-run") == 0
 
     assert (
-        "Warning: workflow `task` is also defined in ww-agentic-workflows.yaml, "
+        "Warning: workflow `task` is also defined in ww.yaml, "
         "which takes precedence over ww-setup.yaml"
     ) in capsys.readouterr().out
 
@@ -366,15 +366,15 @@ def test_writes_go_through_symbolic_links_and_keep_the_mode(
     shared = tmp_path / "shared"
     shared.mkdir()
     target = shared / "settings.json"
-    (root / "ww-agentic-workflows.json").replace(target)
+    (root / "ww.json").replace(target)
     target.chmod(0o640)
-    (root / "ww-agentic-workflows.json").symlink_to(target)
+    (root / "ww.json").symlink_to(target)
 
     fragment = _fragment(tmp_path, FRAGMENT)
     assert _apply(root, str(fragment), "--for", "team", "--yes") == 0
 
     capsys.readouterr()
-    link = root / "ww-agentic-workflows.json"
+    link = root / "ww.json"
     assert link.is_symlink()
     assert json.loads(target.read_text())["runtime"] == "auto"
     assert target.stat().st_mode & 0o777 == 0o640

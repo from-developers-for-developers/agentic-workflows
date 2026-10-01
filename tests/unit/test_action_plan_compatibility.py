@@ -26,7 +26,7 @@ def test_existing_plan_compilation_and_decoding_are_compatible(
     tmp_path: Path,
     case: dict,
 ) -> None:
-    configuration = tmp_path / "ww-agentic-workflows.yaml"
+    configuration = tmp_path / "ww.yaml"
     configuration.write_text(case["yaml"], encoding="utf-8")
     plan = WorkflowPlanCompiler(
         load_configuration(configuration), tmp_path, "codex", "TEST-1"

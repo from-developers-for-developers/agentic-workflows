@@ -154,7 +154,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                 [
                     "",
                     terminal_accent("Git support is enabled"),
-                    "  The ww/git extension is configured in ww-agentic-workflows.json",
+                    "  The ww/git extension is configured in ww.json",
                     "  with its default settings. See:",
                     "  https://github.com/from-developers-for-developers/agentic-workflows/blob/main/documentation/features.md#configuring-one",
                 ]
@@ -176,7 +176,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                     terminal_accent("Getting started"),
                     "",
                     "  " + terminal_accent("1. Create your first workflow"),
-                    "     Define the steps in ww-agentic-workflows.yaml.",
+                    "     Define the steps in ww.yaml.",
                     "",
                     "  " + terminal_accent("2. Start developing with your agent"),
                     "     For example, type:",
@@ -269,7 +269,7 @@ def _permission_notice(
         terminal_accent(f"└{rule}┘"),
         "",
         *wrapped(
-            "ww runs the commands your ww-agentic-workflows.yaml configures — "
+            "ww runs the commands your ww.yaml configures — "
             "your tests, linters, and commits — so an agent treats it as a "
             "command needing confirmation and asks every single time. Allow "
             "it once:"
@@ -297,10 +297,9 @@ def _permission_notice(
         "Without this you get a prompt per step, and an interactive step's "
         "operator page cannot open its local port from inside an agent "
         "sandbox — it fails with a permission error rather than a busy port.",
-        "What you are trusting is your own ww-agentic-workflows.yaml, with "
-        "its local and user levels (ww-agentic-workflows.local.yaml here, "
-        "ww-agentic-workflows.yaml in your user configuration directory): "
-        "review changes to them like a CI config, since whoever "
+        "What you are trusting is your own ww.yaml, with its local and user "
+        "levels (ww.local.yaml here, ww.yaml in your user configuration "
+        "directory): review changes to them like a CI config, since whoever "
         "edits them can run commands here.",
     ):
         lines.extend(wrapped(paragraph))
@@ -2030,7 +2029,7 @@ def _required_metadata(lines: Lines, instruction: Instruction) -> None:
 def _manager_intro() -> Lines:
     return [
         "`ww` keeps this task's plan and progress and names each role's next "
-        "command: follow its pages, without reading `ww-agentic-workflows.yaml` "
+        "command: follow its pages, without reading `ww.yaml` "
         "or the `ww` source to work out what comes next.",
         "",
     ]

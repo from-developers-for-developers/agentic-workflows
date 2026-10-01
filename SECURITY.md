@@ -19,7 +19,7 @@ otherwise about a tool of this kind. What follows is the trust boundary, so you
 can check it rather than take it on faith. Every claim below is greppable in a
 clone.
 
-**`ww-agentic-workflows.yaml` is executable configuration.** A handler's `argv` runs
+**`ww.yaml` is executable configuration.** A handler's `argv` runs
 directly, and a `shell` handler runs through `/bin/sh -c`. Whoever writes or
 edits that file has code execution on the machine running ww, exactly as with a
 CI configuration. Review changes to it the same way. ww narrows the blast radius
@@ -30,7 +30,7 @@ source for that reason — pass them through `args` or `env`.
 **ww makes no network requests of its own, with one exception.** The update
 check runs `git fetch` against the remote your checkout already points at, at
 most once a day, and reports nothing anywhere. Turn it off with
-`"update_check": false` in `ww-agentic-workflows.json` or `WW_UPDATE_CHECK=0`.
+`"update_check": false` in `ww.json` or `WW_UPDATE_CHECK=0`.
 Anything else that reaches the network does so because a handler you configured
 told it to.
 

@@ -2,7 +2,7 @@
 
 ww's instructions to agents are static, so they cannot say which task is
 half done. Agent hooks are the agent's own hooks, installed with `ww hook`
-— not the workflow hooks of `ww-agentic-workflows.yaml` (see
+— not the workflow hooks of `ww.yaml` (see
 [Workflow hooks, variables, and transitions](features.md#workflow-hooks-variables-and-transitions)
 in the feature reference), which run as part of a plan and can run
 handlers, gate completion, or trigger a check. Agent hooks carry ww's task
@@ -84,7 +84,7 @@ Which tasks concern a session:
 | Claude Code | `.claude/settings.json` | `SessionStart`, `Stop`, `SubagentStop`, `SessionEnd` | `.claude/settings.local.json` |
 | Codex | `.codex/hooks.json` | `SessionStart`, `Stop`, `SubagentStop`, `Interrupt`, `SessionEnd` | none; user file `~/.codex/hooks.json` |
 | Cursor | `.cursor/hooks.json` | `sessionStart`, `stop`, `subagentStop`, `sessionEnd` | none; user file `~/.cursor/hooks.json` |
-| Antigravity | `.agents/hooks.json`, group `ww-agentic-workflows` | `PreInvocation`, `Stop` | none; user file `~/.gemini/config/hooks.json` |
+| Antigravity | `.agents/hooks.json`, group `ww` | `PreInvocation`, `Stop` | none; user file `~/.gemini/config/hooks.json` |
 
 Claude Code's `SessionStart` has no matcher, so it fires for every source,
 compaction included. Pressing Esc fires no hook in Claude Code; the end of the

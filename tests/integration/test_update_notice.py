@@ -36,13 +36,13 @@ def _commit(repository: Path, message: str) -> None:
 
 def _lint_output(*config_files: str) -> str:
     return (
-        "ww-agentic-workflows.yaml is valid.\n"
+        "ww.yaml is valid.\n"
         f"Configuration files: {', '.join(config_files)}"
     )
 
 
 def _project(root: Path) -> None:
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Do it.\n",
         encoding="utf-8",
     )
@@ -79,7 +79,7 @@ def test_a_command_announces_the_update_above_its_own_output(
 
     output = capsys.readouterr().out
     assert output.index("A newer ww is available") < output.index(
-        "ww-agentic-workflows.yaml is valid."
+        "ww.yaml is valid."
     )
     assert "- `interact --pause` pauses." in output
     assert "Tell the person you are working for" in output
@@ -98,7 +98,7 @@ def test_the_same_update_is_not_announced_a_second_time(
 
     second = capsys.readouterr().out
     assert "A newer ww is available" not in second
-    assert second.strip() == _lint_output("ww-agentic-workflows.yaml")
+    assert second.strip() == _lint_output("ww.yaml")
 
 
 def test_json_output_stays_machine_readable(
@@ -147,7 +147,7 @@ def test_the_project_can_turn_the_check_off(
     project = tmp_path / "project"
     project.mkdir()
     _project(project)
-    (project / "ww-agentic-workflows.json").write_text(
+    (project / "ww.json").write_text(
         json.dumps({"update_check": False}), encoding="utf-8"
     )
     monkeypatch.delenv("WW_UPDATE_CHECK", raising=False)
@@ -157,7 +157,7 @@ def test_the_project_can_turn_the_check_off(
     output = capsys.readouterr().out
     assert "A newer ww is available" not in output
     assert output.strip() == _lint_output(
-        "ww-agentic-workflows.yaml", "ww-agentic-workflows.json"
+        "ww.yaml", "ww.json"
     )
 
 
@@ -175,5 +175,5 @@ def test_a_broken_update_check_never_disturbs_the_command(
 
     assert main(["--root", str(project), "lint"]) == 0
     assert capsys.readouterr().out.strip() == _lint_output(
-        "ww-agentic-workflows.yaml"
+        "ww.yaml"
     )

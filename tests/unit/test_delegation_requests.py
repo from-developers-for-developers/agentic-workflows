@@ -13,9 +13,9 @@ from ww.workflow_config import delegation_requests
 
 
 def _workflows(tmp_path: Path, source: str) -> dict[str, tuple[str, ...]]:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(source, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(source, encoding="utf-8")
     configuration = load_configuration(
-        tmp_path / "ww-agentic-workflows.yaml", ExtensionRegistry.discover(tmp_path)
+        tmp_path / "ww.yaml", ExtensionRegistry.discover(tmp_path)
     )
     return {
         workflow.name: delegation_requests(workflow)

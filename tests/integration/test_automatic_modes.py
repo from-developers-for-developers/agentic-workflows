@@ -32,7 +32,7 @@ workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -102,7 +102,7 @@ def test_an_automatic_mode_by_workflow_applies_unselected(tmp_path: Path) -> Non
 
 
 def test_a_step_without_modes_has_no_modes_section(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - develop: Develop.\n",
         encoding="utf-8",
     )

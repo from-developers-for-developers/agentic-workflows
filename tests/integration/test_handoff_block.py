@@ -45,7 +45,7 @@ CHECKED = """workflows:
 
 
 def _auto(root: Path, workflows: str) -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     service = WorkflowService(Storage(root))
     start_after_init(
         service,
@@ -237,7 +237,7 @@ def test_a_failed_assignment_carries_the_error(tmp_path: Path) -> None:
 def test_a_handler_failure_after_the_last_completion_is_the_blocks_error(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -266,7 +266,7 @@ def test_a_handler_failure_after_the_last_completion_is_the_blocks_error(
 
 
 def test_the_single_runtime_has_no_block(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(ROUND, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(ROUND, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "task", TASK, agent="codex")
     service.next(TASK)
@@ -303,7 +303,7 @@ def test_the_bootstrap_page_announces_the_block_by_token(tmp_path: Path) -> None
 
 
 def test_a_retried_handlers_values_carry_the_open_token(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: gate
     variables:

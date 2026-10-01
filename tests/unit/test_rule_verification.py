@@ -61,8 +61,8 @@ NOW = "2026-09-29T12:00:00Z"
 
 @pytest.fixture
 def develop(tmp_path: Path) -> PlanItem:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
-    configuration = load_configuration(tmp_path / "ww-agentic-workflows.yaml")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    configuration = load_configuration(tmp_path / "ww.yaml")
     plan = WorkflowPlanCompiler(configuration, tmp_path, "codex", "TASK-1").compile(
         "task"
     )

@@ -22,7 +22,7 @@ from ww.storage_adapters import MemoryTaskStorageAdapter, ProjectMetadata
 
 
 def _service(root: Path, configuration: str) -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(configuration, encoding="utf-8")
+    (root / "ww.yaml").write_text(configuration, encoding="utf-8")
     return WorkflowService(Storage(root))
 
 
@@ -197,7 +197,7 @@ def test_continue_and_retry_preserve_command_output_history(
                 - name: evidence
                   shell: 'printf %s "$WW_OPERATION_ATTEMPT"; exit 1'
 """
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(
         Storage(
             tmp_path,
@@ -245,7 +245,7 @@ def test_continue_preserves_command_output_history(
                 - name: evidence
                   argv: [printf, evidence]
 """
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(config, encoding="utf-8")
     service = WorkflowService(
         Storage(
             tmp_path,
@@ -602,7 +602,7 @@ def test_parent_refresh_does_not_retry_a_hook_that_just_failed(
 
 
 def test_numeric_task_generation_continues_past_fifty(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"task_format": "TASK-{{digit}}"}', encoding="utf-8"
     )
     service = _service(

@@ -23,7 +23,7 @@ practice.
 releases to define one against: nothing is contractually promised to survive a
 pull of `main`, and there is no deprecation period before a change lands.
 
-In practice the surfaces have settled. `ww-agentic-workflows.yaml` and the command line
+In practice the surfaces have settled. `ww.yaml` and the command line
 have been stable for a while, and most work now is internal refactoring, new
 capabilities, and fixes. Incompatible changes are possible but uncommon; when
 one lands it is deliberate and called out in the changelog. Persisted task
@@ -94,7 +94,7 @@ fails loudly rather than hanging.
   stage in one place when collection completes. An `items` step cannot also
   declare `steps`, `loop`, an item operation marker, or child tasks.
 - Each started run executes from its saved plan snapshot, so edits to
-  `ww-agentic-workflows.yaml` cannot alter work already in progress. To pick up a
+  `ww.yaml` cannot alter work already in progress. To pick up a
   configuration change, start a new task.
 - A loop has a round limit (`max_rounds`). Reaching it escalates rather than
   failing silently, and leaving the loop requires an explicit
@@ -127,7 +127,7 @@ collects the limitations, so it is not repeated there.
   [agent-hooks.md](agent-hooks.md#agents-and-their-files).
 - Editing its own workflow files: some agents' safety layers, such as Claude
   Code's auto mode, refuse an agent's edits to the workflow files it runs
-  under (`ww-agentic-workflows.yaml` and `.json`) as self-modification, even
+  under (`ww.yaml` and `.json`) as self-modification, even
   after the user agreed in chat. The agent then prepares the change as a
   script or patch, and the operator applies it.
 

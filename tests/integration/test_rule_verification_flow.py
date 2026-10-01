@@ -61,7 +61,7 @@ def _git(*arguments: str, cwd: Path) -> None:
 def _project(
     root: Path, workflows: str = WORKFLOWS, store: dict | None = None
 ) -> Path:
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     (root / "README.md").write_text("seed\n", encoding="utf-8")
     if store is not None:
         (root / STORE_FILE).write_text(
@@ -841,7 +841,7 @@ STAGE_B = {"id": "develop/1", "status": "approach", "check": "cli-surface"}
 
 
 def _approval(root: Path, value: str) -> None:
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps({"rules": {"approval": value}}), encoding="utf-8"
     )
 

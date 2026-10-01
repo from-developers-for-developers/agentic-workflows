@@ -23,7 +23,7 @@ notation frontend + project-local agent actions
                   transition functions        automatic action executor     instruction builder
 ```
 
-The built-in frontend in `../src/ww/config/` parses `../ww-agentic-workflows.yaml` into the
+The built-in frontend in `../src/ww/config/` parses `../ww.yaml` into the
 immutable definitions in `../src/ww/workflow_config.py`; another notation can
 produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
@@ -31,7 +31,7 @@ parsers do not acquire different workflow semantics. Validation is also where
 the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
 parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall`, and
 `onboarding.yaml` with ww's learning and setup workflows) with the same frontend, once per process, and adds each workflow the
-configuration does not define itself and `../ww-agentic-workflows.json` does not
+configuration does not define itself and `../ww.json` does not
 switch off, with the documents and modes its file declares, dropping a
 recommendation of a workflow that is switched off; every loader passes
 through validation, so no frontend can miss them. The learning workflows are
@@ -57,9 +57,9 @@ deterministic execution order.
 
 Before the YAML frontend parses anything, `../src/ww/config/composition.py`
 composes the configuration levels — the user's
-`ww-agentic-workflows.yaml` in the user configuration directory, the required repo
-`../ww-agentic-workflows.yaml`, and the checkout's
-`ww-agentic-workflows.local.yaml` — each with the files its leading `imports`
+`ww.yaml` in the user configuration directory, the required repo
+`../ww.yaml`, and the checkout's
+`ww.local.yaml` — each with the files its leading `imports`
 list names, into one mapping and dumps it back to YAML text. The parser
 receives that text exactly as it would a single file, so composition adds no
 parsing rules of its own: it only folds files in order, user to local and
@@ -90,7 +90,7 @@ actions directly.
 
 `task_format` is not part of that contract: it describes the checkout and the
 tracker a repository uses, not what a workflow does, so it is a key of
-`../ww-agentic-workflows.json`, parsed and validated in
+`../ww.json`, parsed and validated in
 `../src/ww/project_config.py` at every settings level, and the YAML frontend
 rejects the key in any file with an error that names the file. It accepts
 only the explicit `{{timestamp}}`, `{{digit}}`, and `{{uuid}}` placeholders, or
@@ -103,7 +103,7 @@ integer without a fixed ceiling; timestamp collisions use a bounded suffix retry
 When `ww/git` worktrees are enabled, generated IDs also reserve the configured
 rendered worktree path. This prevents a task whose persisted state is gone from
 adopting an unrelated or stale checkout with the same task-derived name.
-Project configuration has a narrower purpose: `../ww-agentic-workflows.json` contains
+Project configuration has a narrower purpose: `../ww.json` contains
 ww-wide operational limits, per-extension settings, and optional execution
 settings for the implicit init and workflow-summary built-ins. The default loop
 limit is materialized during initialization because it is a user-facing safety
@@ -140,7 +140,7 @@ from `permissions()` (only Claude Code today), and every other set-up agent is
 named with the plain command prefixes, so ww never prints a format it cannot
 vouch for.
 
-Both configuration files share the `ww-agentic-workflows` stem, and their names
+Both configuration files share the `ww` stem, and their names
 are defined once in `../src/ww/config_files.py`, together with the local
 names derived from the same stem and the level order; the user level reuses
 the repo names in its own directory. The user directory follows
@@ -996,9 +996,9 @@ fingerprints cover distribution name, version, and entry-point metadata. The
 current plan schema requires identity metadata; older plan snapshots are
 rejected.
 
-Extension settings live in `../ww-agentic-workflows.json`. Initialization merges
+Extension settings live in `../ww.json`. Initialization merges
 missing defaults without replacing existing extension choices. The split is
-deliberate: `../ww-agentic-workflows.yaml` says what a
+deliberate: `../ww.yaml` says what a
 workflow does, and the project config says how the tools around it behave. ww
 validates the file's shape and hands each extension its own section untouched —
 it cannot know a third party's schema, so an extension validates its own
@@ -1287,7 +1287,7 @@ resolved against it when used or printed (`ww.workspace`). A checkout mounted
 at another path, such as inside a container, therefore reads the same state
 and prints paths valid there. Until now the two
 coincided unless a Git worktree moved a task. The optional `projects` list in
-`ww-agentic-workflows.json` makes the distinction explicit; it belongs to the
+`ww.json` makes the distinction explicit; it belongs to the
 machine-specific settings file because checkouts are laid out differently on
 each machine while the workflows are shared: `start --project` or
 `add-child --project` resolves a configured directory and persists it as the
@@ -1301,8 +1301,8 @@ without configuration.
 
 A repository's conventions, such as its base branch, commit subject format,
 worktree layout, or tracker key format, belong to that repository, so a
-configured project may carry `ww-agentic-workflows.json` and
-`ww-agentic-workflows.local.json` of its own. Core reads exactly the keys
+configured project may carry `ww.json` and
+`ww.local.json` of its own. Core reads exactly the keys
 `ww.project_config.PROJECT_FILE_KEYS` names, `extensions` and `task_format`
 (`ww.project_config.load_project_settings`, cached per project by the
 extension registry), and applies the sections over the root's effective
@@ -1576,7 +1576,7 @@ up in `lint`. `rule` and `rules` are read-only views over the frozen plan and
 the store; `rules prune` deletes orphan store entries after asking, and
 `rules revoke` rejects one check and its rules the same way.
 
-`rules.approval` in `ww-agentic-workflows.json` is read live, when a
+`rules.approval` in `ww.json` is read live, when a
 verification completes: `automatic_decisions` turns it into the same
 `Decisions` value the operator's `next` builds, and `apply_decisions` records
 it with `approved_by: auto`, so there is one approval path. Under `auto`,

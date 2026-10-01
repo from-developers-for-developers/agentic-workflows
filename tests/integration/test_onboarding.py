@@ -30,7 +30,7 @@ def user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def root(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    (project / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (project / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return project
 
 
@@ -171,7 +171,7 @@ def test_discover_offers_setup_and_asks_about_explaining_once(
 def test_on_request_discover_mentions_onboarding_only_as_information(
     user: Path, root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps({"enabled": "on_request"}), encoding="utf-8"
     )
 

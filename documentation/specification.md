@@ -1,6 +1,6 @@
-# `../ww-agentic-workflows.yaml` specification
+# `../ww.yaml` specification
 
-`../ww-agentic-workflows.yaml` defines what `ww` workflows do. The file is strict: unknown
+`../ww.yaml` defines what `ww` workflows do. The file is strict: unknown
 keys, invalid types, and invalid references are errors.
 
 ## Common types
@@ -46,12 +46,12 @@ Names must be unique within their catalog or sibling step list.
 | `rules` | mapping of rule groups | no | Named groups of rule files, active where their filters allow; see [Rules](#rules). |
 
 The generated task ID format, `task_format`, is not a key of this file: it
-lives in `ww-agentic-workflows.json` (see the features guide), and a
+lives in `ww.json` (see the features guide), and a
 `task_format` key in a YAML file is an unknown key.
 
 ## Imports
 
-A root file — `../ww-agentic-workflows.yaml` or the root file of another
+A root file — `../ww.yaml` or the root file of another
 [configuration level](#configuration-levels) — may split its definitions across
 other YAML files by listing them under `imports`, which must come before every
 other key except `extends`:
@@ -90,7 +90,7 @@ workflows:
   overrode it. A name repeated within a single file is still reported as a
   duplicate.
 - The files are composed in memory, on every command, into one document that is
-  then read exactly as a single `ww-agentic-workflows.yaml`; nothing is cached on disk.
+  then read exactly as a single `ww.yaml`; nothing is cached on disk.
   Every rule in this specification applies to that composed document.
 
 ## Configuration levels
@@ -99,9 +99,9 @@ Workflows come from up to three levels, applied top to bottom:
 
 | Level | Root file | Required |
 | --- | --- | --- |
-| user | `ww-agentic-workflows.yaml` in `$WW_USER_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ww-agentic-workflows/`, else `~/.config/ww-agentic-workflows/` | no |
-| repo | `../ww-agentic-workflows.yaml` | yes |
-| local | `../ww-agentic-workflows.local.yaml`, next to the repo file | no |
+| user | `ww.yaml` in `$WW_USER_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ww/`, else `~/.config/ww/` | no |
+| repo | `../ww.yaml` | yes |
+| local | `../ww.local.yaml`, next to the repo file | no |
 
 The repo file is what makes a directory a ww project; a user file alone
 never does. A level is its root file plus the files that root imports, and
@@ -121,24 +121,24 @@ directory when it is missing.
   list; `lint` notices name the file of the level that overrode a definition.
 
 ```yaml
-# ~/.config/ww-agentic-workflows/ww-agentic-workflows.yaml
+# ~/.config/ww/ww.yaml
 handlers:
   - name: test
     argv: [pytest]
 ```
 
 ```yaml
-# ww-agentic-workflows.local.yaml
+# ww.local.yaml
 modes:
   - economy: Keep answers short.
 ```
 
-`ww-agentic-workflows.json` has matching user (`ww-agentic-workflows.json` in
+`ww.json` has matching user (`ww.json` in
 the user directory) and `.local.json` levels, which are always deep-merged and take no `extends` key; `task_format`
 is one of its keys, so a lower JSON level replaces it. See the features guide.
 
 Projects, the directories a task may work in, are configured in
-`ww-agentic-workflows.json` rather than here because their locations differ per
+`ww.json` rather than here because their locations differ per
 machine; see the features guide.
 
 ## Setup fragments
@@ -147,7 +147,7 @@ machine; see the features guide.
 proposes; see the features guide for the command. The file is a YAML
 fragment with any of the root keys `workflows`, `modes`, `profiles`,
 `documents`, `handlers`, `hooks`, and `rules`, in this notation, plus an
-optional `settings` mapping of `ww-agentic-workflows.json` keys:
+optional `settings` mapping of `ww.json` keys:
 
 ```yaml
 workflows:
@@ -166,8 +166,8 @@ rewrites whole, which the level's root file imports:
 
 | `--for` | YAML part | Imported by | `settings` merge into |
 | --- | --- | --- | --- |
-| `team` | `ww-setup.yaml` | `ww-agentic-workflows.yaml` | `ww-agentic-workflows.json` |
-| `me` | `ww-setup.local.yaml` | `ww-agentic-workflows.local.yaml`, created with only `imports` when missing | `ww-agentic-workflows.local.json` |
+| `team` | `ww-setup.yaml` | `ww.yaml` | `ww.json` |
+| `me` | `ww-setup.local.yaml` | `ww.local.yaml`, created with only `imports` when missing | `ww.local.json` |
 
 Each lives next to the repo file. An existing setup file keeps what the
 fragment does not name: a workflow, mode, document, or handler of the same
@@ -239,7 +239,7 @@ Each item in `workflows` accepts:
 | `role` | `manager` or `worker` | no | The role every step inherits unless it or an enclosing step sets its own; see the step key. |
 | `subagents` | boolean | no | `false`: no step's performer spawns subagents, unless a step sets `true`; see the step key. |
 | `handoff` | — | — | Removed; rejected with a message. A workflow transition (`handoff_to` on the last step) makes a handoff workflow; see the step key `handoff_to`. |
-| `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww-agentic-workflows.json`, and the flag outranks it. |
+| `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww.json`, and the flag outranks it. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a `handoff_to` transition). |
@@ -252,7 +252,7 @@ omits reasoning, reasoning resets to `auto`. Repeating the same model preserves
 the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 `start` and may not be `auto`.
 
-`../ww-agentic-workflows.json` sets ww-wide project behavior separately from workflow
+`../ww.json` sets ww-wide project behavior separately from workflow
 syntax. `enabled` is `true` (the default: agents use ww for project work),
 `false` (agents do not use ww, `discover` says only that, and `start` refuses),
 or `"on_request"` (ww stays available, but agents use it only when the user
@@ -267,7 +267,7 @@ also override the internal requests of the implicit init action, `cheapest` /
 off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
 entry is an object whose only key, `enabled`, defaults to `true`, and a name ww
 does not ship is an error listing the built-in ones. A workflow of the same
-name in any `ww-agentic-workflows.yaml` level replaces the built-in one instead.
+name in any `ww.yaml` level replaces the built-in one instead.
 `executable` names the ww binary the project runs, a command on `PATH` or a
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
@@ -314,7 +314,7 @@ user level:
 - A built-in file may declare, besides `workflows`, the root `documents` and
   `modes` that belong to them, and nothing else. They come along while any of
   the file's workflows is enabled; when `workflows` in
-  `ww-agentic-workflows.json` switches all of them off, the file contributes
+  `ww.json` switches all of them off, the file contributes
   nothing.
 - Built-in workflows follow the configured ones. They are added after the
   levels are composed, so `extends: false` never removes them.
@@ -472,7 +472,7 @@ hooks, then resets the body and dispatches its first step. If no worker breaks
 or continues the loop, reaching the end resets the body and the manager
 dispatches the first step again until the effective maximum is reached. The
 effective value comes from the wrapper's `max_rounds`, or from `limits.rounds`
-in `../ww-agentic-workflows.json` when the wrapper omits it, and is frozen in the saved
+in `../ww.json` when the wrapper omits it, and is frozen in the saved
 workflow plan. At the limit, ww does not expose a continuation command: it
 reports `awaiting_operator` with `operator_reason: loop_limit` and a warning
 that must be escalated to the user for manual resolution, and shows the operator's exit, `next --force --reason`,
@@ -1117,7 +1117,7 @@ Controllers must not instantiate services; inject them.
 | --- | --- | --- |
 | `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run. |
 | `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
-| `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww-agentic-workflows.json` (3). |
+| `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
 
 A rule's identity by wording is the SHA-256 of its text with surrounding
@@ -1266,7 +1266,7 @@ included, then verifies what remains or records the held completion.
 
 #### Who approves: `rules.approval`
 
-`ww-agentic-workflows.json` sets who approves what verifiers propose:
+`ww.json` sets who approves what verifiers propose:
 
 ```json
 "rules": { "approval": "operator" }
@@ -1379,7 +1379,7 @@ restores every file. Writes print the steps the rule or group reaches and
 never commit. `rules --json` gives each rule a `store_check`: the approved
 store check that runs for a rule without a command of its own.
 
-`ww-rules.yaml`, next to `ww-agentic-workflows.yaml`, holds only a `rules`
+`ww-rules.yaml`, next to `ww.yaml`, holds only a `rules`
 mapping written by `rules add --group` and `rules filter`; ww rewrites it
 whole and it is composed like any import. While it exists without being
 imported, the write commands refuse to use it.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Action, command, metadata, and hook parsing for ww-agentic-workflows.yaml."""
+"""Action, command, metadata, and hook parsing for ww.yaml."""
 
 from __future__ import annotations
 

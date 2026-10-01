@@ -36,7 +36,7 @@ workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -129,7 +129,7 @@ def test_the_documents_command_prints_the_listing(
 def test_a_declared_path_resolves_in_the_project_or_the_task_workspace(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """documents:
   - notes: Notes kept with the repository.
     path: documentation/issues/{{ww.task.id}}/notes.md
@@ -223,7 +223,7 @@ def test_a_user_document_lives_in_the_user_directory(
     monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
     root = tmp_path / "project"
     root.mkdir()
-    (root / "ww-agentic-workflows.yaml").write_text(USER_DOCUMENTS, encoding="utf-8")
+    (root / "ww.yaml").write_text(USER_DOCUMENTS, encoding="utf-8")
     service = WorkflowService(Storage(root))
     start_after_init(service, "learn", "TASK-1", agent="codex")
     me = (user / "me.md").resolve()
@@ -258,7 +258,7 @@ def test_a_user_document_lives_in_the_user_directory(
 def test_a_user_document_path_stays_in_the_user_directory(
     tmp_path: Path, declaration: str, message: str
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "documents:\n  - me: Me.\n    scope: user\n"
         + declaration
         + "workflows:\n  - task:\n    steps:\n      - work: Work.\n",

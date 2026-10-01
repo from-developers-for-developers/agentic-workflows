@@ -260,7 +260,7 @@ def test_variables_take_descriptions_or_bare_returned_names() -> None:
 
 
 def test_ww_values_compile_in_descriptions(tmp_path: Path) -> None:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(
         "documents:\n  - plan: The plan.\n    path: plans/{{ww.task.id}}.md\n"
         + _workflow(
@@ -288,7 +288,7 @@ def test_ww_executable_is_left_for_the_page_and_names_the_printed_command(
     from ww.executable import printed_executable
     from ww.variables import EXECUTABLE, runtime_variable_values
 
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(
         _workflow("      - work: Run `{{ww.executable}} discover`.\n"),
         encoding="utf-8",
@@ -319,7 +319,7 @@ def test_unavailable_values_leave_ww_own_values_out() -> None:
 
 
 def _settings(tmp_path: Path, settings: dict[str, object]) -> Path:
-    path = tmp_path / "ww-agentic-workflows.json"
+    path = tmp_path / "ww.json"
     path.write_text(json.dumps(settings), encoding="utf-8")
     return path
 

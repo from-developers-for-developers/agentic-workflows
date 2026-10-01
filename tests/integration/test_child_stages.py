@@ -37,7 +37,7 @@ STAGES = """workflows:
 
 
 def _service(root: Path, workflows: str = STAGES) -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     return WorkflowService(Storage(root))
 
 
@@ -336,7 +336,7 @@ def test_a_stage_reads_the_childs_branch_once_it_is_recorded(tmp_path: Path) -> 
       - work: Do child work.
 """,
     )
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         json.dumps({"enabled": True, "extensions": {"ww/git": {}}}),
         encoding="utf-8",
     )

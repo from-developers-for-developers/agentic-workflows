@@ -26,7 +26,7 @@ WORKFLOWS = """workflows:
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     return WorkflowService(Storage(tmp_path))
 
 
@@ -72,7 +72,7 @@ def test_other_unfinished_runs_still_refuse_a_start(tmp_path: Path) -> None:
 
 
 def test_restartable_is_a_boolean(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: t\n    restartable: yes please\n    steps:\n"
         "      - work: Work.\n",
         encoding="utf-8",

@@ -71,7 +71,7 @@ def _dummy_value(
     if name == "workflow":
         if handoff_target:
             return handoff_target
-        configuration = load_configuration(root / "ww-agentic-workflows.yaml")
+        configuration = load_configuration(root / "ww.yaml")
         for workflow in configuration.workflows:
             if workflow.name != current_workflow and not workflow.handoff:
                 return workflow.name

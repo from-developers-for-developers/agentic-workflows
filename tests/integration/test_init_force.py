@@ -106,7 +106,7 @@ def test_force_asks_again_and_only_adds(
             ".gitignore",
             "AGENTS.md",
             ".claude/settings.json",
-            "ww-agentic-workflows.json",
+            "ww.json",
             ".claude/skills/noww/SKILL.md",
         )
     }
@@ -171,7 +171,7 @@ def test_the_notice_names_each_agents_file_and_entries(
 ) -> None:
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".codex").mkdir()
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"executable": "ww-agentic-workflows-dev"}\n', encoding="utf-8"
     )
 
@@ -197,8 +197,9 @@ def test_the_notice_names_each_agents_file_and_entries(
         "     ww   (when the shortcut exists)\n"
     ) in output
     # The trust note stays, naming the user and local levels.
-    assert "ww-agentic-workflows.local.yaml here" in output
-    assert "user configuration directory" in output
+    prose = " ".join(output.split())
+    assert "ww.local.yaml here" in prose
+    assert "user configuration directory" in prose
 
 
 def test_without_a_known_agent_the_notice_names_the_commands(

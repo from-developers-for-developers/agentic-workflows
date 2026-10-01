@@ -21,7 +21,7 @@ def test_every_runtime_defines_responsibilities_and_the_ww_boundary(
     assert "worker" in guidance
     assert "only ./ww start, next, and complete operate this flow" in guidance
     assert "Do not mimic or bypass" in guidance
-    assert "ww-agentic-workflows.yaml" in guidance
+    assert "ww.yaml" in guidance
 
 
 def test_single_is_both_manager_and_worker() -> None:

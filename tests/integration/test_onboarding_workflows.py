@@ -52,11 +52,11 @@ pytestmark = pytest.mark.usefixtures("shipped_builtins")
 
 def _project(root: Path, settings: dict[str, object] | None = None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
-    (root / "ww-agentic-workflows.json").write_text(
+    (root / "ww.json").write_text(
         json.dumps(settings or {}), encoding="utf-8"
     )
     return root
@@ -64,7 +64,7 @@ def _project(root: Path, settings: dict[str, object] | None = None) -> Path:
 
 def _load(root: Path) -> WorkflowConfiguration:
     return load_configuration(
-        root / "ww-agentic-workflows.yaml", ExtensionRegistry.discover(root)
+        root / "ww.yaml", ExtensionRegistry.discover(root)
     )
 
 

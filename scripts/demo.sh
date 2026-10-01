@@ -60,7 +60,7 @@ run ww-agentic-workflows init --no-input --no-worktrees --no-skills \
   --no-link-instructions --task-format digit
 
 say "Describe the process as steps. This one is two steps and a test handler."
-cat > ww-agentic-workflows.yaml <<'YAML'
+cat > ww.yaml <<'YAML'
 handlers:
   - name: tests
     argv: [python3, -c, "print('3 passed')"]
@@ -79,7 +79,7 @@ workflows:
       - develop: Implement the requested change.
       - document: Update the documentation the change affects.
 YAML
-run cat ww-agentic-workflows.yaml
+run cat ww.yaml
 
 say "Validate it, without running anything."
 run ./ww lint

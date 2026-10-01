@@ -15,7 +15,7 @@ from ww.storage_adapters import MemoryTaskStorageAdapter
 
 
 def _service(tmp_path: Path) -> WorkflowService:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -113,7 +113,7 @@ def test_loop_repeats_automatically_until_worker_stops(tmp_path: Path) -> None:
 def test_loop_command_output_keeps_each_iteration_evidence(
     tmp_path: Path, in_memory: bool
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """hooks:
   before_complete:
     - steps: [review]
@@ -188,7 +188,7 @@ workflows:
 
 
 def test_loop_wrapper_artifact_can_be_disabled(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -223,7 +223,7 @@ def test_loop_wrapper_artifact_can_be_disabled(tmp_path: Path) -> None:
 def test_loop_stop_requires_wrapper_artifact_when_body_artifact_is_disabled(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -303,7 +303,7 @@ def test_loop_stops_and_escalates_when_default_limit_is_reached(
 
 
 def test_operator_force_leaves_a_loop_at_its_limit(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -355,7 +355,7 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -400,10 +400,10 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
 
 
 def test_loop_step_limit_overrides_global_project_limit(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"limits": {"rounds": 9}, "extensions": {}}', encoding="utf-8"
     )
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -444,7 +444,7 @@ def test_only_stop_enabled_active_step_may_exit_loop(tmp_path: Path) -> None:
 
 
 def test_wrapper_completion_hook_waits_for_an_explicit_stop(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """hooks:
   before_complete:
     - steps: [code-review]
@@ -531,7 +531,7 @@ def test_cli_records_worker_stop_decision(tmp_path: Path, capsys) -> None:
 def test_stop_finishes_step_hooks_before_skipping_remaining_body(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -576,7 +576,7 @@ def test_stop_finishes_step_hooks_before_skipping_remaining_body(
 
 
 def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -624,7 +624,7 @@ def test_continue_restarts_loop_body_from_its_beginning(tmp_path: Path) -> None:
 
 
 def test_per_round_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -763,7 +763,7 @@ def test_a_later_round_sees_the_previous_round_last_step(tmp_path: Path) -> None
 def test_one_manager_next_passes_preparation_hooks_and_nested_boundaries(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:

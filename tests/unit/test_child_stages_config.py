@@ -33,7 +33,7 @@ STAGES = """      - slices: One child per slice.
 
 
 def _load(tmp_path: Path, steps: str, extra: str = CHILD) -> WorkflowConfiguration:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(
         f"workflows:\n  - name: parent\n    steps:\n{steps}{extra}", encoding="utf-8"
     )
@@ -109,7 +109,7 @@ def test_a_break_inside_a_stage_loop_ends_that_loop_only(tmp_path: Path) -> None
 
 
 def test_per_child_stages_read_the_childs_extension_values(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"extensions": {"ww/git": {}}}', encoding="utf-8"
     )
     configuration = _load(
@@ -133,7 +133,7 @@ def test_per_child_stages_read_the_childs_extension_values(tmp_path: Path) -> No
 def test_a_per_child_stage_can_land_the_child_with_merge_branch(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"extensions": {"ww/git": {}}}', encoding="utf-8"
     )
     configuration = _load(
@@ -261,7 +261,7 @@ def test_the_simple_children_form_still_works_inside_a_loop(tmp_path: Path) -> N
 def test_a_stage_before_the_run_cannot_read_child_extension_values(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"extensions": {"ww/git": {}}}', encoding="utf-8"
     )
     configuration = _load(

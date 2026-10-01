@@ -41,7 +41,7 @@ SERVICES = "Put every service under `src/Service/`."
 def _project(root: Path, workflows: str = WORKFLOWS) -> Path:
     (root / "rules/docs").mkdir(parents=True)
     (root / "rules/docs/header.md").write_text(HEADER_RULE, encoding="utf-8")
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     (root / "README.md").write_text("foo\n", encoding="utf-8")
     return root
 
@@ -121,7 +121,7 @@ def test_add_writes_a_rule_file_into_the_groups_directory(
     assert "Created rules/docs/put-every-service-under-src.md: rule " in out
     assert "`src/**/*.php` matches 1 file(s) now." in out
     assert "- task: develop, review" in out
-    configuration = load_configuration(root / "ww-agentic-workflows.yaml")
+    configuration = load_configuration(root / "ww.yaml")
     (group,) = configuration.rule_groups
     rule = next(rule for rule in group.rules if rule.id.endswith("under-src"))
     assert rule.check is not None and rule.paths == ("src/**/*.php",)
@@ -254,7 +254,7 @@ def test_add_group_writes_the_import_file_and_only_adds_the_import(
     )
 
     out = capsys.readouterr().out
-    assert _text(root / "ww-agentic-workflows.yaml") == WORKFLOWS.replace(
+    assert _text(root / "ww.yaml") == WORKFLOWS.replace(
         "rules:\n", "imports:\n  - ww-rules.yaml\nrules:\n", 1
     )
     assert _text(root / "ww-rules.yaml").endswith(
@@ -263,14 +263,14 @@ def test_add_group_writes_the_import_file_and_only_adds_the_import(
     )
     assert (root / "rules/php").is_dir()
     assert "Added rule group `php` (rules/php/) to ww-rules.yaml." in out
-    assert "Added ww-rules.yaml to imports in ww-agentic-workflows.yaml." in out
+    assert "Added ww-rules.yaml to imports in ww.yaml." in out
     assert "git does not keep an empty directory" in out
     assert "- task: develop" in out
     # A second group joins the same file; the repo file is not touched again.
-    before = _text(root / "ww-agentic-workflows.yaml")
+    before = _text(root / "ww.yaml")
     assert _ww(root, "rules", "add", "--group", "style", "--dir", "rules/docs") == 0
-    assert _text(root / "ww-agentic-workflows.yaml") == before
-    groups = load_configuration(root / "ww-agentic-workflows.yaml").rule_groups
+    assert _text(root / "ww.yaml") == before
+    groups = load_configuration(root / "ww.yaml").rule_groups
     assert [group.name for group in groups] == ["php", "style", "docs"]
     assert _ww(root, "rules", "add", "php", "--text", SERVICES) == 0
     assert (root / "rules/php/put-every-service-under-src.md").is_file()
@@ -295,13 +295,13 @@ def test_add_group_extends_an_existing_imports_list(
 ) -> None:
     root = _project(tmp_path, "")
     (root / "extra.yaml").write_text("modes: []\n", encoding="utf-8")
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         imports + WORKFLOWS, encoding="utf-8"
     )
 
     assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/php") == 0
 
-    assert _text(root / "ww-agentic-workflows.yaml") == expected + WORKFLOWS
+    assert _text(root / "ww.yaml") == expected + WORKFLOWS
 
 
 def test_add_group_refuses_bad_filters_and_leaves_everything_as_it_was(
@@ -316,7 +316,7 @@ def test_add_group_refuses_bad_filters_and_leaves_everything_as_it_was(
     )
 
     assert "unknown step(s): deploy" in capsys.readouterr().err
-    assert _text(root / "ww-agentic-workflows.yaml") == WORKFLOWS
+    assert _text(root / "ww.yaml") == WORKFLOWS
     assert not (root / "ww-rules.yaml").exists()
     assert not (root / "rules/php").exists()
 
@@ -330,7 +330,7 @@ def test_add_group_refuses_a_name_in_use_and_an_unimported_file(
     assert "rule group 'docs' already exists" in capsys.readouterr().err
     (root / "ww-rules.yaml").write_text("rules: {}\n", encoding="utf-8")
     assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/php") == 1
-    assert "ww-rules.yaml exists but ww-agentic-workflows.yaml does not import it" in (
+    assert "ww-rules.yaml exists but ww.yaml does not import it" in (
         capsys.readouterr().err
     )
     assert _ww(root, "rules", "add", "--group", "php", "--dir", "../elsewhere") == 1
@@ -399,7 +399,7 @@ def test_edit_refuses_a_rule_written_in_the_yaml(
     assert "written in a step's own `rules` list" in capsys.readouterr().err
     assert _ww(root, "rules", "edit", "docs/nothing", "--text", "Other.") == 1
     assert "no rule 'docs/nothing' is declared" in capsys.readouterr().err
-    assert _text(root / "ww-agentic-workflows.yaml") == WORKFLOWS
+    assert _text(root / "ww.yaml") == WORKFLOWS
 
 
 # rules move -------------------------------------------------------------------
@@ -487,12 +487,12 @@ def test_filter_rewrites_a_group_of_the_import_file(
     assert "Changed the filters of rule group `php` in ww-rules.yaml." in out
     assert "Reaches no step yet" in out
     group = load_configuration(
-        root / "ww-agentic-workflows.yaml"
+        root / "ww.yaml"
     ).rule_groups_by_name["php"]
     assert (group.workflows.names, group.steps.names) == ((), ("develop", "review"))
     assert _ww(root, "rules", "filter", "php", "--all-workflows", "--all-steps") == 0
     group = load_configuration(
-        root / "ww-agentic-workflows.yaml"
+        root / "ww.yaml"
     ).rule_groups_by_name["php"]
     assert group.workflows.admits_all and group.steps.admits_all
     assert "- task: develop, review" in capsys.readouterr().out
@@ -514,7 +514,7 @@ def test_a_star_filter_option_writes_star(
     entry = yaml.safe_load(_text(root / "ww-rules.yaml"))["rules"]["php"]
     assert (entry["workflows"], entry["steps"]) == ("*", "*")
     group = load_configuration(
-        root / "ww-agentic-workflows.yaml"
+        root / "ww.yaml"
     ).rule_groups_by_name["php"]
     assert group.workflows.admits_all and group.steps.admits_all
     capsys.readouterr()
@@ -544,7 +544,7 @@ def test_filter_refuses_a_group_declared_by_hand(
     assert _ww(root, "rules", "filter", "docs", "--steps", "develop") == 1
 
     err = capsys.readouterr().err
-    assert "declared in ww-agentic-workflows.yaml, which ww does not rewrite" in err
+    assert "declared in ww.yaml, which ww does not rewrite" in err
     assert "rules.docs: steps: [develop]" in err
     assert _ww(root, "rules", "filter", "docs") == 1
     assert "rules filter needs --workflows" in capsys.readouterr().err
@@ -555,8 +555,8 @@ def test_filter_refuses_a_group_the_repo_file_declares_again(
 ) -> None:
     root = _project(tmp_path)
     assert _ww(root, "rules", "add", "--group", "php", "--dir", "rules/docs") == 0
-    text = _text(root / "ww-agentic-workflows.yaml")
-    (root / "ww-agentic-workflows.yaml").write_text(
+    text = _text(root / "ww.yaml")
+    (root / "ww.yaml").write_text(
         text.replace(
             "  docs: [rules/docs/]",
             "  docs: [rules/docs/]\n  php: [rules/docs/]",
@@ -567,7 +567,7 @@ def test_filter_refuses_a_group_the_repo_file_declares_again(
 
     assert _ww(root, "rules", "filter", "php", "--steps", "review") == 1
 
-    assert "is declared again in ww-agentic-workflows.yaml" in capsys.readouterr().err
+    assert "is declared again in ww.yaml" in capsys.readouterr().err
 
 
 # rules promote ----------------------------------------------------------------
@@ -615,7 +615,7 @@ def test_promote_moves_an_approved_check_into_the_rule_files(
     automation = RuleStore(root).load()
     assert automation.checks == {}
     assert set(automation.rules) == {other}
-    groups = load_configuration(root / "ww-agentic-workflows.yaml").rule_groups
+    groups = load_configuration(root / "ww.yaml").rule_groups
     assert all(rule.check is not None for rule in groups[0].rules)
 
 

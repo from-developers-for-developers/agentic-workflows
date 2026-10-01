@@ -91,7 +91,7 @@ def test_recovery_values_and_workspace_do_not_require_a_checker(
     try:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             f"""workflows:
   - name: task
     steps:
@@ -151,7 +151,7 @@ def test_segment_attestation_rejects_whole_action_fields(
     action = AttestableCommand()
     actions.register(action)
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:

@@ -15,7 +15,7 @@ from ww.storage import Storage
 
 
 def _plan(tmp_path: Path, yaml: str, project: ProjectConfig | None = None):
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(yaml, encoding="utf-8")
     return compile_workflow_plan(
         load_configuration(path),
@@ -171,14 +171,14 @@ workflows:
 
 
 def test_project_builtin_schema_is_strict(tmp_path: Path) -> None:
-    path = tmp_path / "ww-agentic-workflows.json"
+    path = tmp_path / "ww.json"
     path.write_text('{"builtins":{"unknown":{"model":"x"}}}', encoding="utf-8")
     with pytest.raises(ConfigurationError, match="unknown name"):
         load_project_config(path)
 
 
 def test_agent_auto_is_rejected(tmp_path: Path) -> None:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(
         "workflows:\n- name: task\n  agent: auto\n  steps: []\n", encoding="utf-8"
     )
@@ -187,7 +187,7 @@ def test_agent_auto_is_rejected(tmp_path: Path) -> None:
 
 
 def test_orchestrated_preview_and_item_selection_are_separate(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """
 profiles:
   developer: Prefer small, well-tested changes.

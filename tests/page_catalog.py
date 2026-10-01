@@ -124,7 +124,7 @@ RULES = """workflows:
 
 
 def _service(root: Path, config: str) -> WorkflowService:
-    (root / "ww-agentic-workflows.yaml").write_text(config, encoding="utf-8")
+    (root / "ww.yaml").write_text(config, encoding="utf-8")
     return WorkflowService(Storage(root))
 
 

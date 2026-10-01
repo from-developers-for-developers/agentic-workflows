@@ -18,7 +18,7 @@ from ww.storage import Storage
 
 
 def _write_workflow(root: Path) -> None:
-    (root / "ww-agentic-workflows.yaml").write_text(
+    (root / "ww.yaml").write_text(
         """handlers:
   - name: prepare
     shell: printf start > started.txt
@@ -136,7 +136,7 @@ def test_execution_snapshot_automatic_input_nested_state_and_artifacts(
 
 
 def test_assess_routes_to_selected_conditional_outcome(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: record-positive
     description: Positive follow-up.
@@ -228,7 +228,7 @@ def test_handoff_starts_the_target_as_its_own_run(tmp_path: Path) -> None:
 
 
 def test_a_finished_run_is_recorded_once_in_the_ledger(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: implementation
     steps:
@@ -325,7 +325,7 @@ def test_handoff_target_run_continues_normally(tmp_path: Path) -> None:
 
 
 def test_task_can_keep_multiple_workflow_runs_and_summaries(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: implementation
     steps:
@@ -440,7 +440,7 @@ def test_aggregate_commit_uses_compare_and_swap_revision(tmp_path: Path) -> None
 def test_leading_automatic_input_is_collected_without_creating_agent_work(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: setup
     variables:
@@ -480,7 +480,7 @@ workflows:
 
 
 def test_a_failed_handler_asks_for_its_values_again_on_retry(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: gate
     variables:
@@ -541,7 +541,7 @@ workflows:
 
 
 def test_interpolated_command_values_remain_data(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: safe-write
     variables:
@@ -589,7 +589,7 @@ workflows:
 def test_full_command_output_is_kept_out_of_hot_execution_state(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: produce
     shell: printf '%020000d' 0
@@ -621,7 +621,7 @@ workflows:
 def test_automatic_command_failure_retries_only_the_failed_handler(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """hooks:
   before_start_workflow:
     - handlers:
@@ -649,7 +649,7 @@ workflows:
 
 
 def test_automatic_command_failure_marks_hook_step_failed(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: setup
     argv: ["false"]
@@ -680,7 +680,7 @@ workflows:
 def test_interrupted_automatic_handler_requires_explicit_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: publish
     shell: printf published > published.txt
@@ -737,7 +737,7 @@ workflows:
 def test_cli_recovery_attests_one_handler_and_continues_with_the_next(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """hooks:
   before_complete:
     - steps: [work]
@@ -785,7 +785,7 @@ workflows:
 def test_interrupted_idempotent_handler_replays_without_an_operator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: count
     shell: printf x >> count.txt
@@ -840,7 +840,7 @@ workflows:
 def test_a_crash_after_a_failed_exit_is_a_known_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: check
     shell: printf boom >&2; exit 3
@@ -899,7 +899,7 @@ workflows:
 def test_automatic_command_persists_attempt_and_operation_environment(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """handlers:
   - name: inspect
     shell: >-
@@ -933,7 +933,7 @@ def test_execution_uses_snapshot_after_configuration_changes(tmp_path: Path) -> 
     _write_workflow(tmp_path)
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "task", "TASK-5", agent="codex")
-    config_file = tmp_path / "ww-agentic-workflows.yaml"
+    config_file = tmp_path / "ww.yaml"
     config_file.write_text("not: valid\n", encoding="utf-8")
 
     active = service.next("TASK-5")

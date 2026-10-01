@@ -18,7 +18,7 @@ CHILD = "  - name: child\n    steps:\n      - work: Work.\n"
 
 
 def _load(tmp_path: Path, steps: str, extra: str = CHILD):  # type: ignore[no-untyped-def]
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(
         f"workflows:\n  - name: parent\n    steps:\n{steps}{extra}", encoding="utf-8"
     )

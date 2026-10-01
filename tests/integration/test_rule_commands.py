@@ -65,7 +65,7 @@ def _project(root: Path, workflows: str = WORKFLOWS) -> Path:
     rules = root / "rules/docs"
     rules.mkdir(parents=True)
     (rules / "header.md").write_text(HEADER_RULE, encoding="utf-8")
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     (root / "README.md").write_text("foo seed\n", encoding="utf-8")
     _git("init", "-q", "-b", "main", ".", cwd=root)
     _git("config", "user.email", "t@e.st", cwd=root)
@@ -885,7 +885,7 @@ def test_revoke_refuses_without_a_terminal_or_an_unknown_check(
 def test_a_worker_is_refused_the_managers_item(
     tmp_path: Path, setting: str, why: str
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         f"""workflows:
   - name: task
     steps:

@@ -51,6 +51,6 @@ edit ww's configuration files yourself: ww's workflows place changes with
    operator declined everything, so the offer is not repeated. Tell them what
    was written where, which shared files are left uncommitted for them to
    review and commit (`.ww/team.md`, `.ww/company.md`, `.ww/project.md`,
-   and the setup files `ww-setup.yaml`, `ww-agentic-workflows.yaml` and
-   `ww-agentic-workflows.json` when a setup was shared), and that `/ww-setup`
+   and the setup files `ww-setup.yaml`, `ww.yaml` and
+   `ww.json` when a setup was shared), and that `/ww-setup`
    can be run again any time.

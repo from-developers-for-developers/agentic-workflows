@@ -14,7 +14,7 @@ from ww.plan import PlanItem, WorkflowPlanCompiler
 
 
 def _roles(tmp_path: Path, workflows: str) -> dict[str, str]:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(workflows, encoding="utf-8")
     plan = WorkflowPlanCompiler(
         load_configuration(path), tmp_path, "codex", "TASK-1"
@@ -127,7 +127,7 @@ def test_an_inherited_role_passes_over_steps_ww_runs(tmp_path: Path) -> None:
 
 
 def test_lint_notes_worker_settings_on_a_managers_step(tmp_path: Path) -> None:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(
         """workflows:
   - name: task
@@ -142,14 +142,14 @@ def test_lint_notes_worker_settings_on_a_managers_step(tmp_path: Path) -> None:
     notices = compose_configuration(path).notices
 
     assert any(
-        "review in ww-agentic-workflows.yaml has role: manager, so model has no "
+        "review in ww.yaml has role: manager, so model has no "
         "effect on it" in notice
         for notice in notices
     )
 
 
 def _items(tmp_path: Path, workflows: str) -> dict[str, PlanItem]:
-    path = tmp_path / "ww-agentic-workflows.yaml"
+    path = tmp_path / "ww.yaml"
     path.write_text(workflows, encoding="utf-8")
     plan = WorkflowPlanCompiler(
         load_configuration(path), tmp_path, "codex", "TASK-1"

@@ -69,7 +69,7 @@ def test_separately_packaged_extension_is_discovered_and_executed(
 
     monkeypatch.syspath_prepend(str(site_packages))
     importlib.invalidate_caches()
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:

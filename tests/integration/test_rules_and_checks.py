@@ -56,7 +56,7 @@ def _project(root: Path, workflows: str = WORKFLOWS, *, git: bool = True) -> Pat
     rules = root / "rules/docs"
     rules.mkdir(parents=True)
     (rules / "header.md").write_text(HEADER_RULE, encoding="utf-8")
-    (root / "ww-agentic-workflows.yaml").write_text(workflows, encoding="utf-8")
+    (root / "ww.yaml").write_text(workflows, encoding="utf-8")
     (root / "README.md").write_text("foo seed\n", encoding="utf-8")
     if git:
         _git("init", "-q", "-b", "main", ".", cwd=root)

@@ -20,7 +20,7 @@ TASK = "TASK-1"
 
 def _interrupted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> WorkflowService:
     """Leave a checked command hook interrupted with an unknown outcome."""
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -70,7 +70,7 @@ def test_conflicting_flags_are_rejected_before_loading(
 
 
 def test_recover_outside_an_interruption_only_reports(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         "workflows:\n  - name: task\n    steps:\n      - work: Work.\n",
         encoding="utf-8",
     )
@@ -152,7 +152,7 @@ def test_retry_replays_the_handler_interrupted(
 
 
 def test_a_failed_handler_shows_the_operator_recovery_commands(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -187,7 +187,7 @@ def test_a_failed_handler_hands_the_decision_to_the_operator(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The page must set expectations, not just list two commands."""
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """
 handlers:
   - name: tests

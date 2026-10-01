@@ -31,7 +31,7 @@ def _finish(service: WorkflowService, workflow: str, agent: str) -> Instruction:
 
 
 def test_a_completed_run_offers_its_recommendation(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
 
     done = _finish(service, "hotfix", "codex")
@@ -61,7 +61,7 @@ def test_a_completed_run_offers_its_recommendation(tmp_path: Path) -> None:
 
 
 def test_a_workflow_without_a_recommendation_offers_nothing(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(WORKFLOWS, encoding="utf-8")
+    (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     service = WorkflowService(Storage(tmp_path))
 
     done = _finish(service, "merge-to-dev", "codex")

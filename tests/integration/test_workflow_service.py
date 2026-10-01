@@ -41,7 +41,7 @@ def test_execution_service_reports_missing_configuration(
 def test_core_workspace_dir_resolves_to_the_canonical_project_root(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - task: ~
     steps:
@@ -58,7 +58,7 @@ def test_core_workspace_dir_resolves_to_the_canonical_project_root(
 
 
 def test_in_progress_instruction_includes_resolved_profile(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """profiles:
   researcher: Investigate the problem independently.
 workflows:
@@ -79,7 +79,7 @@ workflows:
 
 
 def test_execution_selection_is_persisted_and_rendered(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -117,7 +117,7 @@ def test_execution_selection_is_persisted_and_rendered(tmp_path: Path) -> None:
 
 
 def test_artifact_from_is_visible_with_an_explicit_prompt(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -140,7 +140,7 @@ def test_artifact_from_is_visible_with_an_explicit_prompt(tmp_path: Path) -> Non
 
 
 def test_nested_artifact_from_names_the_upper_level_step_path(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -170,7 +170,7 @@ def test_nested_artifact_from_names_the_upper_level_step_path(tmp_path: Path) ->
 
 
 def test_in_progress_instruction_lists_later_sibling_steps(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -219,11 +219,11 @@ def test_service_start_accepts_an_injected_normalized_configuration_loader(
     instruction = _start_after_init(service, "object-notation", "TASK-1", agent="codex")
 
     assert instruction.item_name == "work"
-    assert not (tmp_path / "ww-agentic-workflows.yaml").exists()
+    assert not (tmp_path / "ww.yaml").exists()
 
 
 def test_artifact_enabled_step_requires_a_nonempty_artifact(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -243,7 +243,7 @@ def test_artifact_enabled_step_requires_a_nonempty_artifact(tmp_path: Path) -> N
 def test_task_workspace_instruction_explicitly_changes_directory(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -266,7 +266,7 @@ def test_task_workspace_instruction_explicitly_changes_directory(
 
 
 def test_in_progress_instruction_includes_mcp_connection(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -292,7 +292,7 @@ def test_in_progress_instruction_includes_mcp_connection(tmp_path: Path) -> None
 
 
 def test_agent_can_fail_mcp_item_and_next_retries_it(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -319,7 +319,7 @@ def test_agent_can_fail_mcp_item_and_next_retries_it(tmp_path: Path) -> None:
 
 
 def test_force_is_required_to_skip_failed_agent_item(tmp_path: Path) -> None:
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - name: task
     steps:
@@ -352,10 +352,10 @@ def test_force_is_required_to_skip_failed_agent_item(tmp_path: Path) -> None:
 def test_start_uses_the_workflow_runtime_unless_the_flag_says_otherwise(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "ww-agentic-workflows.json").write_text(
+    (tmp_path / "ww.json").write_text(
         '{"runtime": "auto", "extensions": {}}', encoding="utf-8"
     )
-    (tmp_path / "ww-agentic-workflows.yaml").write_text(
+    (tmp_path / "ww.yaml").write_text(
         """workflows:
   - manual: Manual testing.
     runtime: single

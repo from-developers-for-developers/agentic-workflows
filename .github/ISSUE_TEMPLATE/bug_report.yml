@@ -19,7 +19,7 @@ body:
     attributes:
       label: The workflow
       description: >
-        The relevant part of your `ww-agentic-workflows.yaml`, reduced to what still
+        The relevant part of your `ww.yaml`, reduced to what still
         reproduces the problem.
       render: yaml
     validations:

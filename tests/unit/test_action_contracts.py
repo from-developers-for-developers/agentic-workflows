@@ -272,7 +272,7 @@ def test_custom_action_yaml_outputs_are_declared_and_reach_downstream_steps(
 ) -> None:
     actions.register(OutputProbeAction())
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -312,7 +312,7 @@ def test_custom_command_payload_overrides_text_through_aliases(
     """A command-capable custom payload needs no parser or executor special case."""
     actions.register(OutputProbeAction())
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """handlers:
   - name: restricted-probe
     action:
@@ -334,7 +334,7 @@ workflows:
             encoding="utf-8",
         )
         plan = compile_workflow_plan(
-            load_configuration(tmp_path / "ww-agentic-workflows.yaml"),
+            load_configuration(tmp_path / "ww.yaml"),
             tmp_path,
             "task",
             "codex",
@@ -364,7 +364,7 @@ workflows:
 def test_registered_action_round_trips_without_consumer_changes(tmp_path: Path) -> None:
     actions.register(ProbeAction())
     try:
-        path = tmp_path / "ww-agentic-workflows.yaml"
+        path = tmp_path / "ww.yaml"
         path.write_text(
             """workflows:
   - name: task
@@ -436,7 +436,7 @@ def test_registered_action_round_trips_without_consumer_changes(tmp_path: Path) 
 def test_registered_action_can_supply_the_bootstrap_task_id(tmp_path: Path) -> None:
     actions.register(ProbeAction())
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -468,7 +468,7 @@ def test_registered_command_action_tracks_and_executes_commands(
 ) -> None:
     actions.register(AlternateCommandAction())
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -511,7 +511,7 @@ def test_checker_segment_attestation_resumes_a_generic_command_sequence(
     action = CheckableCommandAction()
     actions.register(action)
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -578,7 +578,7 @@ def test_custom_automatic_action_uses_generic_dispatch_and_command_service(
 ) -> None:
     actions.register(AutomaticProbeAction())
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -618,7 +618,7 @@ def test_custom_automatic_action_recovery_checker_uses_generic_dispatch(
     action = AutomaticProbeAction()
     actions.register(action)
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -667,7 +667,7 @@ def test_recovery_checker_action_scope_applies_its_output_to_a_command_action(
     action = AutomaticProbeAction()
     actions.register(action)
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:
@@ -724,7 +724,7 @@ def test_custom_command_action_can_attest_an_interrupted_segment(
     action = AutomaticProbeAction()
     actions.register(action)
     try:
-        (tmp_path / "ww-agentic-workflows.yaml").write_text(
+        (tmp_path / "ww.yaml").write_text(
             """workflows:
   - name: task
     steps:

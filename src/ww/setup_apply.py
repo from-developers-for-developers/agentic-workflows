@@ -3,16 +3,16 @@
 
 A setup skill proposes a fragment: any of the root keys ``workflows``,
 ``modes``, ``profiles``, ``documents``, ``handlers``, ``hooks`` and ``rules``,
-plus an optional ``settings`` mapping of ``ww-agentic-workflows.json`` keys.
+plus an optional ``settings`` mapping of ``ww.json`` keys.
 ww, not the agent, puts it in place, so no agent edits ww's own configuration
 files (which some agents' safety layers refuse):
 
 - ``--for team``: the YAML part goes into ``ww-setup.yaml`` next to the repo
   file, which lists it under ``imports``; ``settings`` merge into
-  ``ww-agentic-workflows.json``;
+  ``ww.json``;
 - ``--for me``: the YAML part goes into ``ww-setup.local.yaml``, imported by
-  ``ww-agentic-workflows.local.yaml`` (created with just that import when it
-  is missing); ``settings`` merge into ``ww-agentic-workflows.local.json``. All
+  ``ww.local.yaml`` (created with just that import when it
+  is missing); ``settings`` merge into ``ww.local.json``. All
   three stay out of version control.
 
 The setup file is ww's own and rewritten whole: a definition of the same name
