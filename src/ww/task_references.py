@@ -2,7 +2,7 @@
 """Map what a person calls a task onto the task IDs this project uses.
 
 People rarely type an ID the way ww stores it. With ``task_format:
-FORMS-{{digit}}`` they say "12345" or "forms-12345" and mean ``FORMS-12345``;
+FOOBAR-{{digit}}`` they say "12345" or "foobar-12345" and mean ``FOOBAR-12345``;
 with tracker keys (``task_format: explicit``) "12345" usually means the one
 existing task whose key ends in it. Resolution is deterministic and read-only:
 it proposes, and the caller decides what to do with the answer.
@@ -61,7 +61,7 @@ def resolve_task_reference(
     An exact ID, the same ID in other letter case, and the ID the task format
     builds from the reference are strong matches, and the first found wins.
     Only without one do existing IDs ending in the reference after a
-    separator count, so "12345" finds ``FORMS-12345`` but not ``FORMS-112345``.
+    separator count, so "12345" finds ``FOOBAR-12345`` but not ``FOOBAR-112345``.
     """
     text = reference.strip()
     if not text:

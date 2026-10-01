@@ -83,7 +83,7 @@ def test_a_new_request_on_the_same_task_starts_a_new_run(tmp_path: Path) -> None
 # --------------------------------------------------------------------------- #
 
 
-def _lookup_project(tmp_path: Path, task_format: str = "FORMS-{{digit}}") -> Path:
+def _lookup_project(tmp_path: Path, task_format: str = "FOOBAR-{{digit}}") -> Path:
     (tmp_path / "ww-agentic-workflows.json").write_text(
         json.dumps({"task_format": task_format}), encoding="utf-8"
     )
@@ -106,14 +106,14 @@ def test_lookup_maps_a_bare_number_onto_the_task_format(
 ) -> None:
     root = _lookup_project(tmp_path)
     service = WorkflowService(Storage(root))
-    service.start("catchall", "FORMS-12345", agent="codex", init_artifact="One.")
+    service.start("catchall", "FOOBAR-12345", agent="codex", init_artifact="One.")
 
     report = _lookup(root, capsys, "12345", "--agent", "codex")
 
     # Its only run is an unfinished catch-all, which a new start replaces.
     assert report["outcome"] == "start"
     assert report["command"] == (
-        "./ww start FORMS-12345 --workflow catchall --agent codex "
+        "./ww start FOOBAR-12345 --workflow catchall --agent codex "
         '--requirements "<the request, normalized>" --role manager'
     )
 
@@ -123,17 +123,17 @@ def test_lookup_sends_a_change_to_the_task_s_unfinished_run(
 ) -> None:
     root = _lookup_project(tmp_path)
     WorkflowService(Storage(root)).start(
-        "task", "FORMS-7", agent="codex", init_artifact="Build it."
+        "task", "FOOBAR-7", agent="codex", init_artifact="Build it."
     )
 
-    report = _lookup(root, capsys, "forms-7", "--agent", "codex")
+    report = _lookup(root, capsys, "foobar-7", "--agent", "codex")
 
     assert report["outcome"] == "continue"
-    assert report["command"] == "./ww instruction FORMS-7 --role manager"
+    assert report["command"] == "./ww instruction FOOBAR-7 --role manager"
     # Starting the catch-all there anyway is refused with the same way out.
-    with pytest.raises(StateError, match="continue it with ./ww instruction FORMS-7"):
+    with pytest.raises(StateError, match="continue it with ./ww instruction FOOBAR-7"):
         WorkflowService(Storage(root)).start(
-            "catchall", "FORMS-7", agent="codex", init_artifact="Also this."
+            "catchall", "FOOBAR-7", agent="codex", init_artifact="Also this."
         )
 
 
@@ -147,17 +147,17 @@ def test_lookup_asks_the_operator_before_a_never_seen_task(
     assert report["outcome"] == "confirm"
     assert report["choice_mechanism"] == "request_user_input"
     assert [choice["label"] for choice in report["choices"]] == [
-        "Create FORMS-99",
+        "Create FOOBAR-99",
         "Work without ww",
     ]
-    assert report["choices"][0]["command"].startswith("./ww start FORMS-99 ")
+    assert report["choices"][0]["command"].startswith("./ww start FOOBAR-99 ")
     assert report["choices"][1]["command"] is None
-    assert not (root / ".ww/tasks/FORMS-99").exists()
+    assert not (root / ".ww/tasks/FOOBAR-99").exists()
 
     assert main(["--root", str(root), "lookup", "99", "--agent", "claudecode"]) == 0
     page = capsys.readouterr().out
     assert "`AskUserQuestion` tool" in page
-    assert "1. **Create FORMS-99**" in page
+    assert "1. **Create FOOBAR-99**" in page
     assert "Run a command only after the operator picked its choice" in page
 
 
@@ -183,7 +183,7 @@ def test_lookup_lets_the_operator_pick_between_matching_tasks(
 @pytest.mark.parametrize(
     ("task_format", "command"),
     [
-        ("FORMS-{{digit}}", "./ww start --workflow catchall"),
+        ("FOOBAR-{{digit}}", "./ww start --workflow catchall"),
         ("explicit", "./ww start <task-id> --workflow catchall"),
     ],
 )

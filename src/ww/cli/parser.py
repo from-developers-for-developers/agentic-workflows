@@ -215,7 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     lookup.add_argument(
         "reference",
         nargs="?",
-        help="What the operator called the task, such as 12345 or FORMS-12345.",
+        help="What the operator called the task, such as 12345 or FOOBAR-12345.",
     )
     lookup.add_argument("-a", "--agent", required=True)
     subparsers.add_parser(

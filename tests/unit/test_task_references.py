@@ -4,19 +4,19 @@ import pytest
 from ww.errors import StateError
 from ww.task_references import TaskResolution, resolve_task_reference
 
-KNOWN = ("FORMS-12345", "FORMS-2", "OPS-7", "OTHER-7")
+KNOWN = ("FOOBAR-12345", "FOOBAR-2", "OPS-7", "OTHER-7")
 
 
 @pytest.mark.parametrize(
     ("reference", "task_format", "expected"),
     [
         # The format's slot takes the number people quote...
-        ("12345", "FORMS-{{digit}}", TaskResolution("12345", ("FORMS-12345",), None)),
+        ("12345", "FOOBAR-{{digit}}", TaskResolution("12345", ("FOOBAR-12345",), None)),
         # ...in any letter case, and the exact ID still wins.
-        ("forms-12345", "FORMS-{{digit}}", ("FORMS-12345",)),
-        ("FORMS-2", "FORMS-{{digit}}", ("FORMS-2",)),
+        ("foobar-12345", "FOOBAR-{{digit}}", ("FOOBAR-12345",)),
+        ("FOOBAR-2", "FOOBAR-{{digit}}", ("FOOBAR-2",)),
         # Tracker keys: the one task ending in the number after a separator.
-        ("12345", "explicit", ("FORMS-12345",)),
+        ("12345", "explicit", ("FOOBAR-12345",)),
         ("7", "explicit", ("OPS-7", "OTHER-7")),
         ("2345", "explicit", ()),
     ],
@@ -35,13 +35,13 @@ def test_references_resolve_to_existing_tasks(
 @pytest.mark.parametrize(
     ("reference", "task_format", "proposed"),
     [
-        ("99", "FORMS-{{digit}}", "FORMS-99"),
-        ("forms-99", "FORMS-{{digit}}", "FORMS-99"),
+        ("99", "FOOBAR-{{digit}}", "FOOBAR-99"),
+        ("foobar-99", "FOOBAR-{{digit}}", "FOOBAR-99"),
         # A value the slot cannot hold is proposed as written.
-        ("abc", "FORMS-{{digit}}", "abc"),
-        ("FORMS-9", "explicit", "FORMS-9"),
+        ("abc", "FOOBAR-{{digit}}", "abc"),
+        ("FOOBAR-9", "explicit", "FOOBAR-9"),
         ("20260928120000", None, "TASK-20260928120000"),
-        ("not a task id", "FORMS-{{digit}}", None),
+        ("not a task id", "FOOBAR-{{digit}}", None),
     ],
 )
 def test_an_unknown_reference_proposes_the_id_a_new_task_would_get(
@@ -56,4 +56,4 @@ def test_an_unknown_reference_proposes_the_id_a_new_task_would_get(
 
 def test_an_empty_reference_is_refused() -> None:
     with pytest.raises(StateError, match="must not be empty"):
-        resolve_task_reference("  ", "FORMS-{{digit}}", KNOWN)
+        resolve_task_reference("  ", "FOOBAR-{{digit}}", KNOWN)

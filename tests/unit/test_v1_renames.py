@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The v1 renames: new names parse, and every old name is rejected naming its
-replacement (documentation/plans/naming.md, migration table)."""
+replacement (the v1 naming decisions)."""
 
 from __future__ import annotations
 

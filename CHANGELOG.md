@@ -197,7 +197,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   `workflows.yaml` defines no workflow is no longer rejected.
 - New `lookup [<task>] --agent <agent>`, the catch-all's entry point. It maps
   what the operator called the task onto the project's IDs (`12345` or
-  `forms-12345` is `FORMS-12345` under `task_format: FORMS-{digit}`; with
+  `foobar-12345` is `FOOBAR-12345` under `task_format: FOOBAR-{digit}`; with
   tracker keys, the one task ending in `-12345`) and answers with one next
   step: continue the task's unfinished run, start `catchall` on it, or ask
   the operator through the agent's choice menu, which a never-seen task, a

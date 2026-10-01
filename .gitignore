@@ -16,3 +16,6 @@ __pycache__/
 *ww-agentic-workflows.local.yaml
 *ww-agentic-workflows.local.json
 ww-setup.local.yaml
+
+# Planning notes stay local
+/documentation/plans/

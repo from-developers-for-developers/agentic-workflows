@@ -259,7 +259,7 @@ A request no workflow fits still goes through ww once it changes files. The
 agent records it with `catchall`, a one-step workflow ww provides to every
 project, and otherwise works exactly as it would without ww. Questions and
 other read-only work never start a task. The agent first runs `./ww lookup`
-with the task you named, however you wrote it (`12345` finds `FORMS-12345`),
+with the task you named, however you wrote it (`12345` finds `FOOBAR-12345`),
 and a task ww has never seen is only created after you confirm it in the
 agent's choice menu. Say `/noww` when you want the
 agent to leave ww out.

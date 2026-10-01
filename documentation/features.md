@@ -429,17 +429,17 @@ wrote it, and without one when there is none:
 
 `lookup` is read-only. It maps the reference onto the project's task IDs:
 the exact ID in any letter case, the ID `task_format` builds from it, so
-`12345` and `forms-12345` both mean `FORMS-12345` under `FORMS-{{digit}}`, and,
+`12345` and `foobar-12345` both mean `FOOBAR-12345` under `FOOBAR-{{digit}}`, and,
 failing both, the existing tasks whose ID ends in it after a separator, so
-with tracker keys `12345` finds `FORMS-12345`. Then it answers with one next
+with tracker keys `12345` finds `FOOBAR-12345`. Then it answers with one next
 step:
 
 | Found | Next step |
 |---|---|
-| One task, with an unfinished run of another workflow | Continue that run: `./ww instruction FORMS-12345 --role manager`. The change belongs to it. |
+| One task, with an unfinished run of another workflow | Continue that run: `./ww instruction FOOBAR-12345 --role manager`. The change belongs to it. |
 | One task, otherwise | Start `catchall` on it; the printed `start` command is ready to run. |
 | Several tasks | Ask the operator which one, then continue or start on it. |
-| No task | Ask the operator to confirm creating the ID the reference names, `FORMS-99` for `99`. |
+| No task | Ask the operator to confirm creating the ID the reference names, `FOOBAR-99` for `99`. |
 | No reference | Ask the operator whether to create a new task; under `"task_format": "explicit"` they give its ID. |
 
 Asking goes through the agent's own choice menu, the same mechanism as an
@@ -3346,7 +3346,7 @@ any YAML file is an error that names the file and points here.
 Prefer an explicit ID whenever the request names an external ticket, so the
 task matches the issue it works on; `discover` and the embedded agent
 instructions say so. Avoid a generated format that imitates your tracker's keys,
-such as `FORMS-{{digit}}` next to Jira's `FORMS-10859`. To rule generated IDs out,
+such as `FOOBAR-{{digit}}` next to Jira's `FOOBAR-10859`. To rule generated IDs out,
 set `"task_format": "explicit"`: `start` and `add-child` then require an ID, and the
 only exception is a workflow that obtains its own ID in its first step.
 
