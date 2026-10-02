@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- Setup proposals run verification commands through automatic hooks without duplicate agent prompts or loops;
+  agents receive failures to fix and ww reruns the checks on completion. `1b610bb`
 - A running task takes a changed workflow: `next` stops at `plan_changed` showing what changed, and `--replan` applies it
   (rerunning finished steps after confirmation) while `--keep-plan` ignores it. `5622971`
 - A reused task ID no longer inherits a dead task's `ww/git` state: a recorded base is trusted only for the same
