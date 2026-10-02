@@ -508,6 +508,7 @@ class ExtensionRegistry:
         task_id: str,
         workflow: str | None,
         project: str | None,
+        lane: str | None = None,
     ) -> ExtensionContext:
         """The context a task-identity hook receives for ``task_id``."""
         return ExtensionContext(
@@ -516,6 +517,7 @@ class ExtensionRegistry:
             config=self.settings(identifier, project),
             task_id=task_id,
             workflow=workflow,
+            lane=lane or workflow,
             workspace=(
                 self.config.projects_by_name[project].directory(self.root)
                 if project is not None
@@ -524,7 +526,11 @@ class ExtensionRegistry:
         )
 
     def reserved_paths(
-        self, task_id: str, workflow: str | None, project: str | None = None
+        self,
+        task_id: str,
+        workflow: str | None,
+        project: str | None = None,
+        lane: str | None = None,
     ) -> tuple[Path, ...]:
         """Paths configured extensions claim for ``task_id`` outside ww state."""
         paths: list[Path] = []
@@ -532,7 +538,7 @@ class ExtensionRegistry:
             extension = self.get(identifier)
             if extension.reserved_paths is None:
                 continue
-            context = self._task_context(identifier, task_id, workflow, project)
+            context = self._task_context(identifier, task_id, workflow, project, lane)
             try:
                 claimed = extension.reserved_paths(context)
             except ConfigurationError:
@@ -563,14 +569,18 @@ class ExtensionRegistry:
         )
 
     def claims_task(
-        self, task_id: str, workflow: str | None, project: str | None = None
+        self,
+        task_id: str,
+        workflow: str | None,
+        project: str | None = None,
+        lane: str | None = None,
     ) -> bool:
         """Whether an extension in use still holds records for ``task_id``."""
         for identifier in self._record_keepers(project):
             extension = self.get(identifier)
             if extension.claims_task is None:
                 continue
-            context = self._task_context(identifier, task_id, workflow, project)
+            context = self._task_context(identifier, task_id, workflow, project, lane)
             try:
                 claimed = extension.claims_task(context)
             except ConfigurationError:

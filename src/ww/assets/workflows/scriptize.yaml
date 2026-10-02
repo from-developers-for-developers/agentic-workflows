@@ -93,7 +93,10 @@ workflows:
               says `ww done`. Record nothing in this step and never edit
               `ww-rule-automation.json` yourself. Then record the conversation
               once with the pick. The artifact lists the exact commands to
-              record, each as previewed and approved, without `--dry-run`.
+              record, each as previewed and approved with `--yes` in the
+              place of `--dry-run`: before `--check-shell` or `--check-argv
+              --`, never at the end, where `--check-argv --` would take it
+              for the tool's argv.
             choices:
               - record: Record the approved checks and declines.
               - none: Record nothing.
@@ -101,9 +104,11 @@ workflows:
           - name: record
             artifact_from: checks
             description: >-
-              Run every command the checks step agreed, exactly as listed,
-              with `--yes`, which stands for the operator's approval given
-              there; run nothing else and never edit
+              Run every command the checks step agreed, exactly as listed:
+              each carries `--yes`, which stands for the operator's approval
+              given there, where its preview had `--dry-run`. Add nothing
+              after `--check-argv --`, since everything there is the tool's
+              argv; run nothing else and never edit
               `ww-rule-automation.json` yourself. If a command refuses, report
               its message and stop. `rules convert` and `rules decline` write
               `ww-rule-automation.json` at the project root, in the main

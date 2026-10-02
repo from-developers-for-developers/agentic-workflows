@@ -17,7 +17,7 @@ settings from the ``ww/git`` section of ``ww.json``:
     "base_branches": {
       "default": "main",
       "bugfix": "develop",
-      "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
+      "task": {"argv": ["./scripts/base-branch", "{{ww.task.lane}}"]}
     },
     "separate_branch": true,
     "branch_name_formats": {
@@ -87,8 +87,12 @@ _PORCELAIN_STATUS_WIDTH = 3
 
 # The tokens a format reads: the task's ID, its workflow, and its run.
 WORKFLOW_TOKEN = "ww.task.workflow"
+# The workflow whose branch handling the task takes: its ``hooks_from``, else
+# the workflow itself, the key ``branch_name_formats`` and ``base_branches``
+# are looked up by.
+LANE_TOKEN = "ww.task.lane"
 RUN_TOKEN = "ww.task.run"
-FORMAT_TOKENS = (TASK_ID, WORKFLOW_TOKEN, RUN_TOKEN)
+FORMAT_TOKENS = (TASK_ID, WORKFLOW_TOKEN, LANE_TOKEN, RUN_TOKEN)
 DEFAULT_COMMIT_FORMAT = "{{ww.task.id}}: {{commit_message}}"
 DEFAULT_BRANCH_FORMAT = "{{ww.task.id}}"
 _SETTING_KEYS = {
@@ -426,6 +430,7 @@ def _tokens(context: ExtensionContext) -> dict[str, str]:
     return {
         TASK_ID: context.task_id or "",
         WORKFLOW_TOKEN: context.workflow or "",
+        LANE_TOKEN: _lane(context) or "",
         RUN_TOKEN: context.run_id or "",
     }
 
@@ -610,7 +615,8 @@ def _lane(context: ExtensionContext) -> str | None:
     """The workflow whose ``branch_name_formats`` and ``base_branches`` apply.
 
     A workflow that takes a lane's hooks (``hooks_from``) branches as that
-    lane; records and ``{{ww.task.workflow}}`` keep the workflow's own name.
+    lane; records and ``{{ww.task.workflow}}`` keep the workflow's own name,
+    and ``{{ww.task.lane}}`` gives formats and base-branch commands the lane.
     """
     return context.lane or context.workflow
 

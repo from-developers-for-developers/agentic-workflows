@@ -3226,7 +3226,7 @@ separate from `ww.yaml`, which describes what a workflow *does*:
       "base_branches": {
         "default": "main",
         "bugfix": "develop",
-        "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
+        "task": {"argv": ["./scripts/base-branch", "{{ww.task.lane}}"]}
       },
       "separate_branch": true,
       "branch_name_formats": {
@@ -3246,8 +3246,11 @@ party's schema. A section naming no installed extension is an error rather than
 ignored, because a block that silently applies to nothing looks configured and
 is not.
 
-The formats read `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.run}}`,
-and, in `commit_format`, `{{commit_message}}`.
+The formats read `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.lane}}`,
+`{{ww.task.run}}`, and, in `commit_format`, `{{commit_message}}`.
+`{{ww.task.lane}}` is the workflow whose branch handling the task takes: the
+workflow's `hooks_from` when it has one, else the workflow itself, the name
+`branch_name_formats` and `base_branches` are looked up by.
 
 For `ww/git`, `ww-agentic-workflows extension ww/git settings` prints what actually resolved,
 which is the first thing to run after editing the file; `--project <name>`
@@ -3268,7 +3271,8 @@ repository under a configured project with a base branch of its own sets
 Each value may be either a literal branch name or an
 object with a non-empty `argv` array. An argv command runs directly without a shell in
 the project root; its single non-empty stdout line becomes the base branch.
-Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, and `{{ww.task.run}}`.
+Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.lane}}`, and `{{ww.task.run}}`;
+a script choosing the base by workflow reads `{{ww.task.lane}}`, so a workflow with `hooks_from` gets its lane's base.
 The resolved base is recorded with the task branch so retries, worktree creation,
 and return-to-base use one stable value. The record is trusted only while it
 names the branch being resolved and that branch exists; a record of another

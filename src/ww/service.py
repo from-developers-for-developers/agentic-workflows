@@ -2381,7 +2381,7 @@ class WorkflowService:
                 else None
             ),
             project=child.project,
-            lane=run.snapshot.plan.lane if run else None,
+            lane=(run.snapshot.plan.lane if run else self._configured_lane(workflow)),
         )
         return {
             **child_values(child.id, child.description, child.project, child.fields),
@@ -3878,7 +3878,23 @@ class WorkflowService:
             extensions=self.extensions,
             workflow_name=workflow_name,
             project=project,
+            lane=self._configured_lane(workflow_name),
         )
+
+    def _configured_lane(self, workflow_name: str | None) -> str | None:
+        """The lane the configured workflow takes, else its own name.
+
+        A configuration that does not load leaves the name as it is; the
+        caller's own work reports that configuration.
+        """
+        if workflow_name is None:
+            return None
+        try:
+            workflows = self._load_configuration().workflows_by_name
+        except ConfigurationError:
+            return workflow_name
+        workflow = workflows.get(workflow_name)
+        return workflow.lane if workflow is not None else workflow_name
 
     def _generated_child_id(
         self,

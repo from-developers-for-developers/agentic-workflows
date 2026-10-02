@@ -93,13 +93,19 @@ def test_the_workflow_collects_agrees_builds_and_records() -> None:
     assert "rules convert <check> --covers" in checks
     assert "--check-argv -- <arg>...)" in checks
     assert "rules decline <rule-id>... --reason" in checks
-    assert "--dry-run" in checks and "--yes" not in checks
+    assert "--proven --dry-run" in checks and "--yes (" not in checks
     assert "Record nothing in this step" in checks
     assert [c.label for c in _step("checks").choices] == ["record", "none"]
     record = _step("record")
     assert not record.interactive and record.artifact_dependency == "checks"
     recorded = " ".join(record.description.split())
-    assert "with `--yes`" in recorded
+    assert "`--yes` in the place of `--dry-run`" in checks
+    assert "never at the end" in checks
+    assert "where its preview had `--dry-run`" in recorded
+    assert "Add nothing after `--check-argv --`" in recorded
+    # The previewed command keeps --dry-run ahead of the argv, where --yes goes.
+    template = checks[checks.index("rules convert <check>") :]
+    assert template.index("--dry-run") < template.index("--check-argv --")
     assert "never edit `ww-rule-automation.json` yourself" in recorded
     assert "commit that file in the main checkout" in recorded
     assert "`is-git-clean`" in recorded
@@ -399,3 +405,28 @@ def test_levels_merge_enabled_and_the_lane(
     workflow = configuration.workflows_by_name.get(NAME)
     assert (workflow is not None) is listed
     assert workflow is None or workflow.hooks_from == "task"
+
+
+def test_a_task_id_claim_is_asked_under_the_lane(tmp_path: Path) -> None:
+    (tmp_path / "ww.json").write_text(
+        json.dumps(
+            {
+                "extensions": {
+                    "ww/git": {
+                        "worktrees": True,
+                        "worktree_dir": "wt",
+                        "worktree_name_format": "{{ww.task.lane}}-{{ww.task.id}}",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = _service(tmp_path, CHORES)
+    (tmp_path / "wt" / "task-C-1").mkdir(parents=True)
+
+    assert service._configured_lane("chores") == "task"
+    assert service._configured_lane("heir") == "task"
+    assert service._configured_lane("gone") == "gone"
+    assert service._task_exists("C-1", "chores")
+    assert not service._task_exists("C-2", "chores")

@@ -53,6 +53,7 @@ def context(
     *,
     task_id: str | None = "TASK-1",
     workflow: str | None = "task",
+    lane: str | None = None,
     values: dict[str, str] | None = None,
     arguments: tuple[str, ...] = (),
     workspace: Path | None = None,
@@ -65,6 +66,7 @@ def context(
         task_id=task_id,
         run_id="01-task",
         workflow=workflow,
+        lane=lane,
         values=values or {},
         arguments=arguments,
         workspace=workspace,
@@ -984,6 +986,30 @@ def test_base_branch_command_arguments_support_context_tokens(repository: Path) 
 
     assert result.ok, result.error
     assert "from task-base" in result.output
+
+
+def test_a_base_branch_command_reads_the_lane(repository: Path) -> None:
+    _run("git", "branch", "hotfix-base", cwd=repository)
+    config = {
+        "separate_branch": True,
+        "base_branches": {
+            "hotfix": {
+                "argv": [
+                    sys.executable,
+                    "-c",
+                    "import sys; print(sys.argv[1] + '-base')",
+                    "{{ww.task.lane}}",
+                ]
+            }
+        },
+    }
+
+    result = handler("start-task-branch")(
+        context(repository, config, workflow="chores", lane="hotfix")
+    )
+
+    assert result.ok, result.error
+    assert "from hotfix-base" in result.output
 
 
 @pytest.mark.parametrize(
