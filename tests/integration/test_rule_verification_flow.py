@@ -402,9 +402,42 @@ def test_the_state_with_a_held_completion_survives_a_round_trip(
     assert record.held_completion is not None
     assert record.rule_resolutions[0].status == "judged"
     verifier = state.item_executions[state.cursor]
-    assert [rule.state for rule in verifier.verification] == ["judged"]
+    assert [rule.id for rule in verifier.verification] == ["develop/1"]
     run = reloaded.tasks.read_task_record("TASK-1")[0][0]
     assert TaskRunAggregate.from_dict(run.to_dict()) == run
+
+
+@pytest.mark.parametrize(
+    ("resolution", "asked"),
+    [("unresolved", "unresolved"), ("pending_operator", "approach_approved")],
+)
+def test_a_state_the_previous_build_wrote_loads_as_judged(
+    tmp_path: Path, resolution: str, asked: str
+) -> None:
+    # The previous build let verifiers propose checks: a rule could be
+    # unresolved or wait on the operator, and records kept the proposals.
+    root = _project(tmp_path)
+    _developed(root)
+    path = root / ".ww/tasks/TASK-1/state.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for item in document["runs"][0]["state"]["item_executions"]:
+        for entry in item.get("rule_resolutions", []):
+            entry["status"] = resolution
+            item["open_proposals"] = [rule_text_hash(CLI)]
+        for rule in item.get("verification", []):
+            rule.update(state=asked, approach="Grep the CLI.", pending_operator=True)
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    service = WorkflowService(Storage(root))
+    state, snapshot = service.load("TASK-1")
+    record = state.item_executions[_index(snapshot, "develop")]
+    assert [entry.status for entry in record.rule_resolutions] == ["judged"]
+    verifier = state.item_executions[state.cursor]
+    assert [rule.id for rule in verifier.verification] == ["develop/1"]
+    # The held step goes on as a judged one.
+    service.next("TASK-1")
+    _report(service, PASS)
+    assert service.next("TASK-1").item_name == "check"
 
 
 def test_lint_reports_orphan_store_entries_and_unscriptized_rules(
@@ -424,10 +457,9 @@ def test_lint_reports_orphan_store_entries_and_unscriptized_rules(
     assert f"Orphan rule {'e' * 12}: Undecided.\n" in out
     assert "Pending rule" not in out
     assert "Orphan rule " + rule_text_hash(CLI)[:12] not in out
-    assert (
-        "Warning: 1 rule has no check yet (develop/2); `ww-scriptize-rules` "
-        "builds checks for them.\n"
-    ) in out
+    # Without the shipped built-ins there is no ``ww-scriptize-rules`` to
+    # suggest.
+    assert "Warning: 1 rule has no check yet (develop/2).\n" in out
 
 
 def test_the_cli_refuses_a_malformed_rule_result(

@@ -21,7 +21,6 @@ from ww.contracts import (
     RuleResolutionStatus,
     StepStatus,
     Verdict,
-    VerificationState,
 )
 from ww.plan import PlannedCheck
 from ww.validation import (
@@ -180,10 +179,16 @@ class RuleResolution:
         require_keys(
             data, {"id", "status", "check", "interpretation"}, "rule resolution"
         )
+        status = data["status"]
+        # The previous format also recorded rules a verifier would propose a
+        # check for (``unresolved``) or waiting on the operator
+        # (``pending_operator``); both are judged now.
+        if status in {"unresolved", "pending_operator"}:
+            status = "judged"
         return cls(
             id=expect_string(data["id"], "rule resolution.id"),
             status=expect_literal(
-                data["status"], RuleResolutionStatus, "rule resolution.status"
+                status, RuleResolutionStatus, "rule resolution.status"
             ),
             check=expect_optional_string(data["check"], "rule resolution.check"),
             interpretation=expect_optional_string(
@@ -391,14 +396,12 @@ class Dispute:
 class VerificationRule:
     """One rule a verification item judges, as the step began with it.
 
-    ``state`` says what is asked: a verdict (``judged``). ``interpretation``
-    is the store's reading of the rule, when it has one.
+    ``interpretation`` is the store's reading of the rule, when it has one.
     """
 
     id: str
     text: str
     text_hash: str
-    state: VerificationState
     interpretation: str | None = None
     # A judged rule whose converted ``check`` does not apply in this step:
     # the configuration file the step's directory lacks.
@@ -410,7 +413,6 @@ class VerificationRule:
             "id": self.id,
             "text": self.text,
             "text_hash": self.text_hash,
-            "state": self.state,
             "interpretation": self.interpretation,
             "check": self.check,
         }
@@ -422,25 +424,18 @@ class VerificationRule:
     def from_dict(cls, data: Any) -> VerificationRule:
         if not isinstance(data, dict):
             raise ValueError("verification rule must be a mapping")
+        # The previous format also stored what was asked (``state``: an
+        # approach, a prepared check or a verdict) with ``approach`` and
+        # ``pending_operator``; a verifier now only judges, so they are ignored.
         require_keys(
             data,
-            {
-                "id",
-                "text",
-                "text_hash",
-                "state",
-                "interpretation",
-                "check",
-            },
+            {"id", "text", "text_hash", "interpretation", "check"},
             "verification rule",
         )
         return cls(
             id=expect_string(data["id"], "verification rule.id"),
             text=expect_string(data["text"], "verification rule.text"),
             text_hash=expect_string(data["text_hash"], "verification rule.text_hash"),
-            state=expect_literal(
-                data["state"], VerificationState, "verification rule.state"
-            ),
             interpretation=expect_optional_string(
                 data["interpretation"], "verification rule.interpretation"
             ),

@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from ww.actions import PlannedAction, Prompt, actions
-from ww.contracts import RuleResultStatus, Verdict
+from ww.contracts import Verdict
 from ww.errors import StateError
 from ww.execution_models import (
     CheckReport,
@@ -187,7 +187,6 @@ def verification_needs(
                 id=rule.id,
                 text=rule.text,
                 text_hash=rule.text_hash,
-                state="judged",
                 interpretation=resolution.interpretation if resolution else None,
                 check=resolution.check if resolution and resolution.missing else None,
                 missing=resolution.missing if resolution else None,
@@ -556,7 +555,6 @@ class RuleResult:
     """A verifier's verdict on one rule, with its evidence when it fails."""
 
     id: str
-    status: RuleResultStatus
     verdict: Verdict
     failures: tuple[JudgedFailure, ...] = ()
 
@@ -603,7 +601,6 @@ def _rule_result(data: dict[str, Any], rule: VerificationRule) -> RuleResult:
     verdict: Verdict = "pass" if value == "pass" else "fail"
     return RuleResult(
         id=rule.id,
-        status="judged",
         verdict=verdict,
         failures=_failures(data.get("failures"), label, verdict),
     )

@@ -350,15 +350,20 @@ def _unscriptized_warning(
 ) -> str:
     """Name the declared rules no check covers yet; verifiers judge them.
 
-    A warning only: ``ww-scriptize-rules`` builds checks for them.
+    A warning only: ``ww-scriptize-rules`` builds checks for them, and is
+    suggested only while it is switched on.
     """
     rules = rule_conversion.unscriptized_rules(configuration, store.load())
     if not rules:
         return ""
-    return (
+    warning = (
         f"Warning: {len(rules)} rule{'s have' if len(rules) != 1 else ' has'} no "
-        "check yet (" + ", ".join(rule.id for rule in rules) + "); "
-        f"`{rule_conversion.SCRIPTIZE_WORKFLOW}` builds checks for them.\n"
+        "check yet (" + ", ".join(rule.id for rule in rules) + ")"
+    )
+    if rule_conversion.SCRIPTIZE_WORKFLOW not in configuration.workflows_by_name:
+        return f"{warning}.\n"
+    return (
+        f"{warning}; `{rule_conversion.SCRIPTIZE_WORKFLOW}` builds checks for them.\n"
     )
 
 

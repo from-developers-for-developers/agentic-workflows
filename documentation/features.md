@@ -1918,7 +1918,8 @@ check yet and suggest the `ww-scriptize` skill, which starts
 unset in `ww.json`, the notice also names that setting, since the workflow
 refuses to start without it. The notice never blocks a task; it is left out
 while `ww-scriptize-rules` is switched off, and on the pages of
-`ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules, and
+`ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules,
+suggesting `ww-scriptize-rules` only while it is switched on, and
 lists store entries whose wording no rule has any more; only
 `ww rules prune`, after listing them and asking the operator, deletes the
 orphans.

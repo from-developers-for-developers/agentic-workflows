@@ -521,6 +521,54 @@ def test_no_notice_while_the_workflow_is_switched_off(
     assert "declared rule" not in _first_page(root, "task", capsys)
 
 
+def test_lint_lists_the_rules_without_suggesting_a_switched_off_workflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _judged(tmp_path, {"workflows": {NAME: {"enabled": False}}})
+
+    assert main(["--root", str(root), "lint"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Warning: 2 rules have no check yet (develop/1, develop/2).\n" in out
+    assert NAME not in out
+
+
+def test_discover_and_start_ignore_a_store_that_cannot_be_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "ww.yaml").write_text(
+        JUDGED.replace("    steps:\n", "    steps:\n      - plan: Plan it.\n"),
+        encoding="utf-8",
+    )
+    (root / "ww-rule-automation.json").write_text("{not json", encoding="utf-8")
+
+    assert "## Rules" not in _discover(root, capsys)
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "start",
+                "S-1",
+                "--workflow",
+                "task",
+                "--agent",
+                "codex",
+                "--runtime",
+                "single",
+                "--requirements",
+                "Do.",
+                "--role",
+                "manager",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["rules_notice"] is None
+
+
 def test_no_notice_once_every_rule_is_scriptized(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

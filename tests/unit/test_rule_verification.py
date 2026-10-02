@@ -75,7 +75,7 @@ def _record(**fields: object) -> PlanItemExecution:
 
 
 def _rule(text: str = CLI, rule_id: str = "develop/1") -> VerificationRule:
-    return VerificationRule(rule_id, text, rule_text_hash(text), "judged")
+    return VerificationRule(rule_id, text, rule_text_hash(text))
 
 
 def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
@@ -172,9 +172,9 @@ def test_needs_skip_checked_verified_and_waived_rules(develop: PlanItem) -> None
 
     needs = verification_needs(develop, record)
 
-    assert [(need.id, need.state, need.interpretation) for need in needs] == [
-        ("develop/2", "judged", "Clear."),
-        ("develop/3", "judged", None),
+    assert [(need.id, need.interpretation) for need in needs] == [
+        ("develop/2", "Clear."),
+        ("develop/3", None),
     ]
     assert [need.check for need in needs] == [None, None]
     done = _record(
@@ -278,7 +278,7 @@ def test_a_failing_verdict_carries_its_evidence() -> None:
         },
     )
 
-    assert (result.status, result.verdict) == ("judged", "fail")
+    assert result.verdict == "fail"
     assert result.failures[0].text() == "cli.py:3 — flag renamed"
 
 
@@ -350,5 +350,5 @@ def test_a_judged_rule_names_its_check_whose_config_is_missing(
     needs = verification_needs(develop, _record(rule_resolutions=resolutions))
 
     cli = next(need for need in needs if need.id == "develop/1")
-    assert (cli.state, cli.check, cli.missing) == ("judged", "lint", "lint.toml")
+    assert (cli.check, cli.missing) == ("lint", "lint.toml")
     assert checks == ()

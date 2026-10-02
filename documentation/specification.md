@@ -1256,7 +1256,8 @@ held completion as submitted.
 `ww-scriptize-rules`; while that workflow has no `hooks_from`, the notice
 also names the `ww.json` setting. The notice is left out while
 `ww-scriptize-rules` is switched off and when it is the workflow started,
-and never blocks anything. `lint` warns with the IDs of those rules.
+and never blocks anything. `lint` warns with the IDs of those rules and
+suggests `ww-scriptize-rules` only while it is switched on.
 
 #### Guiding checks: `rules.check_guidance`
 
