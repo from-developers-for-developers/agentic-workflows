@@ -638,6 +638,14 @@ class WorkflowDefinition:
     inherits: str | None = None
     # A workflow to offer the operator once this one completes.
     recommended_next_workflow: str | None = None
+    # The workflow whose global hooks this one runs with: a hook filtered to
+    # ``workflows: [task]`` applies here too when this names ``task``, so a
+    # workflow can take a lane's branch, worktree and commit handling.
+    hooks_from: str | None = None
+    # ``start`` refuses until ``hooks_from`` is set, for a workflow that must
+    # not run without the project's lane handling (a built-in that installs
+    # tools and writes configuration, for example).
+    needs_hooks_from: bool = False
 
     @property
     def hands_off(self) -> bool:

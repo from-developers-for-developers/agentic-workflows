@@ -762,7 +762,7 @@ class WorkflowPlanCompiler:
         produced: list[str] = []
         for hook in hooks:
             applies = hook.applies_to(
-                workflow.name,
+                workflow.hooks_from or workflow.name,
                 step.name,
                 step_path,
                 _logical_step_paths(workflow.steps),
@@ -1180,7 +1180,9 @@ class WorkflowPlanCompiler:
             )
             if hook.phase == "before_complete"
             and hook.on_failure == "fix"
-            and hook.applies_to(workflow.name, step.name, step_path, precise)
+            and hook.applies_to(
+                workflow.hooks_from or workflow.name, step.name, step_path, precise
+            )
         )
 
     def _plan_check(

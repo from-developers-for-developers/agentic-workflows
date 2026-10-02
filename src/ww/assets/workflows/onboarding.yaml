@@ -575,7 +575,10 @@ workflows:
               wrapper that commands go through, such as a container: one or two
               sentences telling the verifier that scripts a rule where its
               check must run (through the wrapper, on the task's worktree) and
-              when the host may run one; `limits` only on request.
+              when the host may run one; under `workflows`,
+              `ww-scriptize-rules` with `hooks_from` naming the main lane, so
+              scriptizing rules runs on a branch and worktree of its own;
+              `limits` only on request.
 
 
               Hook the `ww/git` handlers to the lanes:

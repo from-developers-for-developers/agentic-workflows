@@ -240,6 +240,8 @@ Each item in `workflows` accepts:
 | `subagents` | boolean | no | `false`: no step's performer spawns subagents, unless a step sets `true`; see the step key. |
 | `handoff` | — | — | Removed; rejected with a message. A workflow transition (`handoff_to` on the last step) makes a handoff workflow; see the step key `handoff_to`. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww.json`, and the flag outranks it. |
+| `hooks_from` | string | no | The workflow whose global hooks this one runs with: a global hook filtered with `workflows` applies here when it applies to the named workflow, so this workflow takes that lane's branch, worktree and commit handling. Must name another workflow that has no `hooks_from` of its own. For a built-in workflow, `ww.json` sets it: `"workflows": {"<name>": {"hooks_from": "<workflow>"}}`. |
+| `needs_hooks_from` | boolean | no | `start` refuses the workflow until `hooks_from` is set, naming the `ww.json` setting. `ww-scriptize-rules` sets it. Defaults to `false`. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a `handoff_to` transition). |
@@ -343,6 +345,7 @@ The built-in workflows:
 | `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
+| `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own; `needs_hooks_from`, `restartable`. |
 
 `onboarding.yaml` also declares the documents `me` (`scope: user`), `myrole`,
 `team`, `company` and `project` (`scope: project`, `path: .ww/<name>.md`;

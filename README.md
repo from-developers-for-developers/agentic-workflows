@@ -157,7 +157,7 @@ The wizard asks a few questions and then sets the project up:
   out, a `ww-rule` skill, which turns your own words into rules for ww's
   steps, and the `ww-setup` skill with the skills it guides through
   (`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
-  `ww-rules-from-artifacts`, `ww-automate`).
+  `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`).
 - **Your user configuration directory**, `~/.config/ww/`,
   where settings of your own for every project live.
 

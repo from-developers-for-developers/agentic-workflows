@@ -134,6 +134,7 @@ def validate_configuration(
     _validate_workflow_boundary_hooks(normalized)
     _validate_hook_references(normalized)
     _validate_recommendations(normalized)
+    _validate_hooks_from(normalized)
     _validate_child_tasks(normalized.workflows)
     return normalized
 
@@ -551,6 +552,29 @@ def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
                 "defines a loop, steps, items, or children; a hook runs a "
                 f"single action, so use {registered.name!r} as a workflow "
                 "step instead"
+            )
+
+
+def _validate_hooks_from(configuration: WorkflowConfiguration) -> None:
+    """``hooks_from`` names another workflow that takes no one's hooks itself."""
+    known = configuration.workflows_by_name
+    for workflow in configuration.workflows:
+        source = workflow.hooks_from
+        if source is None:
+            continue
+        if source == workflow.name:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} cannot take its hooks from itself"
+            )
+        if source not in known:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} takes its hooks from unknown "
+                f"workflow {source!r}"
+            )
+        if known[source].hooks_from is not None:
+            raise ConfigurationError(
+                f"workflow {workflow.name!r} takes its hooks from {source!r}, "
+                "which takes its own from another workflow; name that one"
             )
 
 

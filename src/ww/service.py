@@ -519,6 +519,13 @@ class WorkflowService:
         if workflow_name not in configuration.workflows_by_name:
             raise ConfigurationError(f"workflow not found: {workflow_name}")
         workflow = configuration.workflows_by_name[workflow_name]
+        if workflow.needs_hooks_from and workflow.hooks_from is None:
+            raise ConfigurationError(
+                f"workflow {workflow_name!r} runs with a project lane's branch, "
+                "worktree and commit handling; name that lane in ww.json first: "
+                f'"workflows": {{"{workflow_name}": {{"hooks_from": "<workflow>"}}}}, '
+                'for example "task"'
+            )
         unknown_modes = self._unknown_modes(mode_names, configuration)
         if unknown_modes:
             raise StateError("unknown mode(s): " + ", ".join(sorted(unknown_modes)))

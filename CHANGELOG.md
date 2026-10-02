@@ -11,6 +11,12 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- `ww-scriptize-rules`, started by the `ww-scriptize` skill, scriptizes every rule that has no check yet as a project
+  task: it groups the rules into the fewest checks, agrees them with the operator, builds and proves them on a branch
+  of its own (a deliberate violation, then a sample of real files, real violations reported), and records the
+  approved ones with `rules convert`. A workflow's new `hooks_from` key runs it with a lane's global hooks; for this
+  built-in, `ww.json` sets `"workflows": {"ww-scriptize-rules": {"hooks_from": "<lane>"}}`, and `start` refuses until
+  it is set. `ww-suggest` proposes it.
 - `ww rules convert <check> --covers <rule-id>...` records an approved check in the rule-automation store, and `ww
   rules decline <rule-id>... --reason` records rules as not convertible, each after the operator's confirmation, so
   checks can be scriptized outside a task. `ww rules --json` gives each rule its `scriptize` state. A converted check

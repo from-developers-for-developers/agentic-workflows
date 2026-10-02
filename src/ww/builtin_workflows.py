@@ -99,10 +99,15 @@ def is_builtin(workflow: WorkflowDefinition) -> bool:
     """Whether ``workflow`` is a built-in one, not a configured replacement.
 
     A built-in whose recommended workflow is switched off loses the
-    recommendation and is still the built-in.
+    recommendation and is still the built-in, as is one that takes its hooks
+    from a lane ``ww.json`` names.
     """
     return any(
-        replace(workflow, recommended_next_workflow=builtin.recommended_next_workflow)
+        replace(
+            workflow,
+            recommended_next_workflow=builtin.recommended_next_workflow,
+            hooks_from=builtin.hooks_from,
+        )
         == builtin
         for builtin in builtin_workflows()
     )
@@ -133,7 +138,9 @@ def with_builtin_workflows(
         if not enabled:
             continue
         added_workflows.extend(
-            workflow for workflow in enabled if workflow.name not in workflows
+            _with_hooks_from(workflow, project_config)
+            for workflow in enabled
+            if workflow.name not in workflows
         )
         for document in builtin.documents:
             if document.name not in documents:
@@ -159,6 +166,14 @@ def with_builtin_workflows(
         documents=(*configuration.documents, *added_documents),
         modes=(*configuration.modes, *added_modes),
     )
+
+
+def _with_hooks_from(
+    workflow: WorkflowDefinition, project_config: ProjectConfig
+) -> WorkflowDefinition:
+    """A built-in with the lane ``ww.json`` names for its hooks, if any."""
+    source = project_config.builtin_hooks_from.get(workflow.name)
+    return workflow if source is None else replace(workflow, hooks_from=source)
 
 
 def _parse_file(entry: Traversable | Path) -> BuiltinFile:
