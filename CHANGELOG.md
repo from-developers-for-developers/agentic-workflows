@@ -16,8 +16,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
   --approve`/`--approach`/`--pick` and the "Rules converted in this run" report are gone. `rules.scripting` is refused
   as an unknown key: delete it from `ww.json` or `ww.local.json`. `discover` and `start` say how many rules have no
   check yet and suggest the `ww-scriptize` skill; `lint` lists them. Earlier task records still load, their undecided
-  rules read as judged, but a task stopped at `rules_proposed` may not: decide its proposals before upgrading, or reset
-  it.
+  rules read as judged, but a task stopped at `rules_proposed` does not load: decide its proposals before upgrading, or
+  reset it with `ww reset <task> --yes`.
 - `ww-scriptize-rules`, started by the `ww-scriptize` skill, scriptizes every rule with no check yet as a project task,
   on the lane `ww.json` names with `hooks_from`, taking its hooks, branch format and base branch; `ww-suggest` proposes
   it. `rules convert` and `rules add` take `--check-argv -- <arg>...`, so a tool's own options stay its own. `5a277b4`

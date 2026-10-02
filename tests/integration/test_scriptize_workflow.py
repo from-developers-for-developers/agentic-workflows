@@ -490,7 +490,10 @@ def test_discover_and_start_name_the_rules_without_a_check(
 
     for text in (discovered, page):
         assert NOTICE in text
-        assert f"The `ww-scriptize` skill starts `{NAME}`" in text
+        assert (
+            f"The `ww-scriptize` skill starts `{NAME}`, which builds checks for "
+            "them with the operator."
+        ) in text
         assert LANE_HINT in text
     assert discovered.index("## Rules") < discovered.index("## Workflows")
     assert main(["--root", str(root), "discover", "--json"]) == 0
@@ -567,6 +570,36 @@ def test_discover_and_start_ignore_a_store_that_cannot_be_read(
         == 0
     )
     assert json.loads(capsys.readouterr().out)["rules_notice"] is None
+
+
+def test_the_notice_follows_the_count_of_one_rule(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _judged(tmp_path)
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "rules",
+                "decline",
+                "develop/1",
+                "--reason",
+                "Judgement.",
+                "--yes",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    discovered = _discover(root, capsys)
+
+    assert (
+        "1 declared rule has no check yet, so a verifier judges it in every "
+        f"step. The `ww-scriptize` skill starts `{NAME}`, which builds a check "
+        "for it with the operator."
+    ) in discovered
 
 
 def test_no_notice_once_every_rule_is_scriptized(

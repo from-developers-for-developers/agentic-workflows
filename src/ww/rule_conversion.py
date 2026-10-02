@@ -81,8 +81,9 @@ def scriptize_notice(
         f"{count} declared rule{'s have' if count != 1 else ' has'} no check "
         "yet, so a verifier judges "
         f"{'them' if count != 1 else 'it'} in every step. The `ww-scriptize` "
-        f"skill starts `{SCRIPTIZE_WORKFLOW}`, which builds checks for them "
-        "with the operator."
+        f"skill starts `{SCRIPTIZE_WORKFLOW}`, which builds "
+        f"{'checks for them' if count != 1 else 'a check for it'} with the "
+        "operator."
     )
     if missing_lane(workflow) is not None:
         notice += (
