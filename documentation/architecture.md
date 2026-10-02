@@ -31,15 +31,19 @@ parsers do not acquire different workflow semantics. Validation is also where
 the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
 parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall`, `scriptize.yaml` with `ww-scriptize-rules`, and
 `onboarding.yaml` with ww's learning and setup workflows) with the same frontend, once per process, and adds each workflow the
-configuration does not define itself (giving one the `hooks_from` lane `../ww.json` names, which makes the workflow take that lane's global hooks) and `../ww.json` does not
+configuration does not define itself and `../ww.json` does not
 switch off, with the documents and modes its file declares, dropping a
 recommendation of a workflow that is switched off; every loader passes
 through validation, so no frontend can miss them. The learning workflows are
-plain notation: no core concept exists for them. They reach ww only through
+plain notation: no core concept exists for them. They reach ww through
 its CLI (`onboarding --set`, `setup apply`, `rules add`), named in their text
 with `{{ww.executable}}`, a runtime value from `../src/ww/executable.py`. The module imports the
 frontend only when it first reads a file, since the frontend validates through
-it. `lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
+it. The scriptizing workflow declares its own Git lifecycle hooks to isolate
+tool installs and configuration changes from the operator's current branch.
+`ww/git` always branches it from the required default base and follows its
+worktree settings; built-in composition needs no project lane setting.
+`lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
 point: `../src/ww/task_references.py` maps what the operator called a task onto
 the task format and the IDs the storage port lists, and the command answers
 with one next step, asking the operator through the agent's choice menu

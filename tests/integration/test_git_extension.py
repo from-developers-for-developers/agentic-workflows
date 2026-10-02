@@ -86,6 +86,41 @@ def command(name: str):
     return git_extension.EXTENSION.commands_by_name[name].run
 
 
+@pytest.mark.parametrize("worktrees", [False, True])
+def test_scriptizing_requires_default_before_creating_a_branch(
+    repository: Path, worktrees: bool
+) -> None:
+    result = handler("start-task-branch")(
+        context(
+            repository,
+            {
+                "worktrees": worktrees,
+                "worktree_dir": "wt",
+                "base_branches": {"ww-scriptize-rules": "main"},
+            },
+            workflow="ww-scriptize-rules",
+        )
+    )
+    assert not result.ok
+    assert "extensions.ww/git.base_branches.default" in result.error
+    assert branch_of(repository) == "main"
+    assert not (repository / "wt").exists()
+
+
+def test_scriptizing_returns_to_default_even_when_separate_branch_is_off(
+    repository: Path,
+) -> None:
+    ctx = context(
+        repository,
+        {"base_branches": {"default": "main"}},
+        workflow="ww-scriptize-rules",
+    )
+    assert handler("start-task-branch")(ctx).ok
+    assert branch_of(repository) == "task-1"
+    assert handler("return-to-base-branch")(ctx).ok
+    assert branch_of(repository) == "main"
+
+
 # --------------------------------------------------------------------------- #
 # Settings
 # --------------------------------------------------------------------------- #

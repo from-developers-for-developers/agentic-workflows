@@ -441,7 +441,7 @@ for one of them.
 | `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
-| `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It is a project task: it runs with the hooks of the lane `ww.json` names, `"workflows": {"ww-scriptize-rules": {"hooks_from": "task"}}`, and refuses to start until one is named, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
+| `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It automatically creates a branch from `extensions.ww/git.base_branches.default`, which must be configured, and follows ww/git worktree settings, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
 The questions are interactive steps: an interview opens with its questions in
@@ -570,8 +570,12 @@ changed, and marks what no longer holds as superseded with the date. So
 refreshing is running `ww-learn` or `ww-learn-project` again, which is what
 the `ww-refresh` skill does after showing when ww last learned each.
 
-**Git hooks.** These workflows create no branch or worktree and commit
-nothing themselves. A project's global hooks filtered with `workflows:` to its
+**Git hooks.** The learning and setup workflows create no branch or worktree
+and commit nothing themselves. `ww-scriptize-rules` has its own Git hooks: it
+requires `extensions.ww/git.base_branches.default`, always creates a branch
+even when `separate_branch` is false, follows the worktree settings, commits
+its changes and returns to the base when worktrees are off.
+A project's global hooks filtered with `workflows:` to its
 own workflows, as the `ww/git` start hooks usually are, do not reach them; a
 global hook without a `workflows` filter does, so list your workflows in it
 if it creates branches or worktrees.
@@ -585,12 +589,9 @@ is enabled, and a recommendation of a switched-off one (`ww-learn-project` recom
 {"workflows": {"ww-solve": {"enabled": false}, "ww-automate": {"enabled": false}}}
 ```
 
-A workflow of the same name in any `ww.yaml` level replaces
-the shipped one; `ww.json` then refuses a `"hooks_from"` for it, which belongs
-in that definition instead. `ww-scriptize-rules` also needs `"hooks_from"`, the lane whose
-branch, worktree and commit handling it takes: the lane's global hooks run
-for it, and `ww/git` uses the lane's `branch_name_formats` and `base_branches`
-entries; see the `ww-scriptize` skill above.
+A workflow of the same name in any `ww.yaml` level replaces the shipped one.
+The `ww.json` workflow settings only switch built-ins on or off; scriptizing
+needs no lane setting.
 
 ## The catch-all workflow
 
@@ -1918,9 +1919,7 @@ completion as submitted.
 
 `discover` and the first page of `start` say how many declared rules have no
 check yet and suggest the `ww-scriptize` skill, which starts
-`ww-scriptize-rules`. While `workflows.ww-scriptize-rules.hooks_from` is
-unset in `ww.json`, the notice also names that setting, since the workflow
-refuses to start without it. The notice never blocks a task; it is left out
+`ww-scriptize-rules`. The notice never blocks a task; it is left out
 while `ww-scriptize-rules` is switched off, and on the pages of
 `ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules,
 suggesting `ww-scriptize-rules` only while it is switched on, and
@@ -3240,6 +3239,8 @@ task's ID, and with it that task's history, to a new one.
 
 `base_branches` maps exact workflow names to base branches, and its `default`
 entry covers every other workflow, the same shape as `branch_name_formats`. A
+`ww-scriptize-rules` task always uses the required `default` entry, even when
+an entry names that workflow explicitly. A
 repository under a configured project with a base branch of its own sets
 `base_branches` in [its own settings file](#a-projects-own-extension-settings).
 Each value may be either a literal branch name or an

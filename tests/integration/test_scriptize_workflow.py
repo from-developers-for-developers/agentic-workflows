@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.integration.test_git_extension import _run, branch_of
 from tests.workflow_helpers import start_after_init
 from ww.builtin_workflows import builtin_workflow, is_builtin
 from ww.cli import main
@@ -73,7 +74,7 @@ def test_the_workflow_collects_agrees_builds_and_records() -> None:
         "checks",
         "record",
     ]
-    assert workflow.needs_hooks_from and workflow.hooks_from is None
+    assert not workflow.needs_hooks_from and workflow.hooks_from is None
     assert workflow.restartable
     assert _step("approaches").interactive and _step("checks").interactive
     assert [c.label for c in _step("approaches").choices] == ["build", "nothing to do"]
@@ -111,76 +112,64 @@ def test_the_workflow_collects_agrees_builds_and_records() -> None:
     assert "`is-git-clean`" in recorded
 
 
-def test_it_refuses_to_start_without_a_lane(tmp_path: Path) -> None:
-    root = _project(tmp_path)
+def test_it_has_its_own_git_lifecycle() -> None:
+    workflow = builtin_workflow(NAME)
+    assert is_builtin(workflow)
+    assert [hook.handler.name for hook in workflow.hooks] == [
+        "ext/ww/git/handlers:is-git-clean",
+        "ext/ww/git/handlers:start-task-branch",
+        "ext/ww/git/handlers:create-worktree",
+        "ext/ww/git/handlers:git-commit",
+        "ext/ww/git/handlers:return-to-base-branch",
+    ]
 
-    with pytest.raises(ConfigurationError, match="name that lane in ww.json"):
-        _start(root)
 
-
-def test_it_runs_with_the_lanes_hooks(tmp_path: Path) -> None:
-    root = _project(tmp_path, {"workflows": {NAME: {"hooks_from": "task"}}})
+@pytest.mark.parametrize("worktrees", [False, True])
+def test_it_starts_from_default_without_borrowing_lane_hooks(
+    tmp_path: Path, worktrees: bool
+) -> None:
+    root = _project(
+        tmp_path,
+        {
+            "extensions": {
+                "ww/git": {
+                    "base_branches": {"default": "main", NAME: "other"},
+                    "separate_branch": False,
+                    "worktrees": worktrees,
+                    "worktree_dir": "wt",
+                }
+            }
+        },
+    )
+    _run("git", "init", "-q", "-b", "main", ".", cwd=root)
+    _run("git", "config", "user.email", "t@e.st", cwd=root)
+    _run("git", "config", "user.name", "Test", cwd=root)
+    (root / ".gitignore").write_text(".ww/\nwt/\n", encoding="utf-8")
+    _run("git", "add", "-A", cwd=root)
+    _run("git", "commit", "-qm", "seed", cwd=root)
+    base = _run("git", "rev-parse", "main", cwd=root).stdout.strip()
+    _run("git", "switch", "-c", "other", cwd=root)
+    (root / "other.txt").write_text("other branch\n", encoding="utf-8")
+    _run("git", "add", "-A", cwd=root)
+    _run("git", "commit", "-qm", "other", cwd=root)
 
     service = _start(root)
-
-    _, snapshot = service.load("S-1")
-    assert snapshot.plan.items[0].phase == "before_start_workflow"
-    assert (root / "lane-hook.txt").read_text().strip() == "lane"
-    configuration = load_configuration(
-        root / "ww.yaml", ExtensionRegistry.discover(root)
-    )
-    workflow = configuration.workflows_by_name[NAME]
-    assert workflow.hooks_from == "task"
-    assert is_builtin(workflow)
-
-
-@pytest.mark.parametrize(
-    ("source", "message"),
-    [
-        (
-            "nope",
-            f'ww.json "workflows.{NAME}.hooks_from": workflow {NAME!r} takes its '
-            "hooks from unknown workflow 'nope'",
-        ),
-        (NAME, "cannot take its hooks from itself"),
-    ],
-)
-def test_a_bad_lane_is_refused(tmp_path: Path, source: str, message: str) -> None:
-    root = _project(tmp_path, {"workflows": {NAME: {"hooks_from": source}}})
-
-    with pytest.raises(ConfigurationError) as error:
-        load_configuration(root / "ww.yaml", ExtensionRegistry.discover(root))
-
-    assert message in str(error.value)
+    page = service.next("S-1")
+    assert page.item_name == "collect"
+    workspace = root / "wt" / "S-1" if worktrees else root
+    assert branch_of(workspace) == "s-1"
+    assert _run("git", "rev-parse", "HEAD", cwd=workspace).stdout.strip() == base
+    assert not (workspace / "other.txt").exists()
+    assert not (workspace / "lane-hook.txt").exists()
+    if worktrees:
+        assert branch_of(root) == "other"
 
 
-def test_a_lane_that_takes_hooks_itself_is_refused(tmp_path: Path) -> None:
-    root = _project(tmp_path, {"workflows": {NAME: {"hooks_from": "copy"}}})
-    (root / "ww.yaml").write_text(
-        LANE_HOOK + "  - name: copy\n    hooks_from: task\n    steps:\n"
-        "      - work: Work.\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigurationError, match="name that one"):
-        load_configuration(root / "ww.yaml", ExtensionRegistry.discover(root))
-
-
-@pytest.mark.parametrize(
-    ("value", "message"),
-    [
-        ({"hooks_from": ""}, "hooks_from must name a workflow"),
-        ({"hooks_from": 3}, "hooks_from must name a workflow"),
-        ({"lane": "task"}, r"unknown key\(s\): lane"),
-    ],
-)
-def test_the_setting_is_validated(
-    tmp_path: Path, value: dict[str, object], message: str
-) -> None:
+@pytest.mark.parametrize("source", ["task", "", 3])
+def test_the_old_lane_setting_is_refused(tmp_path: Path, source: object) -> None:
     path = tmp_path / "ww.json"
-    path.write_text(json.dumps({"workflows": {NAME: value}}), encoding="utf-8")
-
-    with pytest.raises(ConfigurationError, match=message):
+    path.write_text(json.dumps({"workflows": {NAME: {"hooks_from": source}}}))
+    with pytest.raises(ConfigurationError, match=r"unknown key\(s\): hooks_from"):
         load_project_config(path)
 
 
@@ -205,7 +194,7 @@ def test_the_skill_starts_the_workflow() -> None:
 
     assert skill.startswith("---\nname: ww-scriptize\ndescription: ")
     assert f"--workflow {NAME} " in skill
-    assert "never edit ww's configuration files yourself" in " ".join(skill.split())
+    assert "Never edit ww's configuration files yourself" in " ".join(skill.split())
 
 
 def test_discover_lists_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -369,28 +358,14 @@ def test_a_replan_that_drops_a_needed_lane_is_refused(tmp_path: Path) -> None:
     assert CONFIGURED_REFUSAL in change.refusal
 
 
-def test_a_lane_for_a_builtin_the_project_replaces_is_refused(tmp_path: Path) -> None:
-    root = _project(tmp_path, {"workflows": {NAME: {"hooks_from": "task"}}})
-    (root / "ww.yaml").write_text(
-        LANE_HOOK + f"  - name: {NAME}\n    steps:\n      - work: Work.\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(
-        ConfigurationError,
-        match=f'ww.json "workflows.{NAME}.hooks_from" sets the lane of the built-in',
-    ):
-        load_configuration(root / "ww.yaml", ExtensionRegistry.discover(root))
-
-
 @pytest.mark.parametrize(
     ("local", "listed"),
     [({"enabled": True}, True), ({"enabled": False}, False)],
 )
-def test_levels_merge_enabled_and_the_lane(
+def test_levels_merge_enabled(
     tmp_path: Path, local: dict[str, object], listed: bool
 ) -> None:
-    root = _project(tmp_path, {"workflows": {NAME: {"hooks_from": "task"}}})
+    root = _project(tmp_path, {"workflows": {NAME: {"enabled": True}}})
     (root / "ww.local.json").write_text(
         json.dumps({"workflows": {NAME: local}}), encoding="utf-8"
     )
@@ -400,11 +375,10 @@ def test_levels_merge_enabled_and_the_lane(
         root / "ww.yaml", ExtensionRegistry.discover(root)
     )
 
-    assert settings.builtin_hooks_from == {NAME: "task"}
     assert settings.workflow_enabled(NAME) is listed
     workflow = configuration.workflows_by_name.get(NAME)
     assert (workflow is not None) is listed
-    assert workflow is None or workflow.hooks_from == "task"
+    assert workflow is None or workflow.hooks_from is None
 
 
 def test_a_task_id_claim_is_asked_under_the_lane(tmp_path: Path) -> None:
@@ -441,7 +415,6 @@ JUDGED = LANE_HOOK.replace(
     "          - Name things clearly.\n",
 )
 NOTICE = "2 declared rules have no check yet, so a verifier judges them in every step."
-LANE_HINT = f'`"workflows": {{"{NAME}": {{"hooks_from": "<workflow>"}}}}` in ww.json'
 
 
 def _judged(root: Path, settings: dict[str, object] | None = None) -> Path:
@@ -494,25 +467,13 @@ def test_discover_and_start_name_the_rules_without_a_check(
             f"The `ww-scriptize` skill starts `{NAME}`, which builds checks for "
             "them with the operator."
         ) in text
-        assert LANE_HINT in text
+        assert "hooks_from" not in text
     assert discovered.index("## Rules") < discovered.index("## Workflows")
     assert main(["--root", str(root), "discover", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["rules_notice"].startswith(NOTICE)
     assert main(["--root", str(root), "next", "S-1", "--role", "manager"]) == 0
     assert NOTICE not in capsys.readouterr().out
-
-
-def test_the_notice_drops_the_lane_hint_once_the_lane_is_set(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    root = _judged(tmp_path, {"workflows": {NAME: {"hooks_from": "task"}}})
-
-    discovered = _discover(root, capsys)
-
-    assert NOTICE in discovered
-    assert LANE_HINT not in discovered
-    assert NOTICE not in _first_page(root, NAME, capsys)
 
 
 def test_no_notice_while_the_workflow_is_switched_off(

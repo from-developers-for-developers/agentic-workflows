@@ -3,8 +3,8 @@
 # ww-scriptize-rules turns the rules that have no check yet into checks, once,
 # for the whole project, so tasks only use checks and never build them. It is
 # a project task, not one of ww's learning workflows: it installs tools and
-# writes their configuration, so it runs with a project lane's branch,
-# worktree and commit handling (`hooks_from`, set in ww.json), and the
+# writes their configuration, so it creates a branch from ww/git's default
+# base and follows its worktree and commit settings, and the
 # operator merges what it built. ww records the approved checks in the
 # rule-automation store at the project root with `rules convert`; a check runs
 # only where its configuration files exist, so tasks pick it up once the
@@ -15,7 +15,14 @@ workflows:
       Turns the rules that have no check yet into checks, proven and approved,
       on a branch of their own.
     restartable: true
-    needs_hooks_from: true
+    hooks:
+      before_start_workflow:
+        - ext/ww/git/handlers:is-git-clean: ~
+        - ext/ww/git/handlers:start-task-branch: ~
+        - ext/ww/git/handlers:create-worktree: ~
+      before_complete_workflow:
+        - ext/ww/git/handlers:git-commit: ~
+        - ext/ww/git/handlers:return-to-base-branch: ~
     steps:
       - name: collect
         description: >-

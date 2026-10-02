@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Literal
 
-from ww.builtin_workflows import is_builtin, missing_lane
+from ww.builtin_workflows import missing_lane
 from ww.errors import StateError
 from ww.rule_store import (
     CheckEntry,
@@ -68,8 +68,7 @@ def scriptize_notice(
     """What ``discover`` and ``start`` say about rules without a check yet.
 
     ``None`` when there are none, or while ``ww-scriptize-rules`` is switched
-    off. While the workflow lacks the lane it needs, the notice names where
-    to set it. It never blocks anything: such rules are judged by verifiers.
+    off. It never blocks anything: such rules are judged by verifiers.
     """
     workflow = configuration.workflows_by_name.get(SCRIPTIZE_WORKFLOW)
     if workflow is None:
@@ -87,11 +86,7 @@ def scriptize_notice(
     )
     if missing_lane(workflow) is not None:
         notice += (
-            " It first needs the lane it works in: "
-            f'`"workflows": {{"{SCRIPTIZE_WORKFLOW}": {{"hooks_from": '
-            '"<workflow>"}}` in ww.json.'
-            if is_builtin(workflow)
-            else " It first needs the lane it works in: `hooks_from` in its "
+            " It first needs the lane it works in: `hooks_from` in its "
             "ww.yaml definition."
         )
     return notice

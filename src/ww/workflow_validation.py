@@ -8,7 +8,7 @@ from dataclasses import replace
 from types import MappingProxyType
 
 from ww.actions import DefinedAction, Prompt
-from ww.builtin_workflows import is_builtin, with_builtin_workflows
+from ww.builtin_workflows import with_builtin_workflows
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.operations import WorkflowHandoff
@@ -558,19 +558,14 @@ def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
 def _validate_hooks_from(configuration: WorkflowConfiguration) -> None:
     """``hooks_from`` names another workflow that takes no one's hooks itself.
 
-    Each error names where the value is set: ``ww.json``'s key for a
-    built-in, the workflow's ``hooks_from`` in ``ww.yaml`` otherwise.
+    Each error names the workflow's ``hooks_from`` in ``ww.yaml``.
     """
     known = configuration.workflows_by_name
     for workflow in configuration.workflows:
         source = workflow.hooks_from
         if source is None:
             continue
-        where = (
-            f'ww.json "workflows.{workflow.name}.hooks_from"'
-            if is_builtin(workflow)
-            else f"workflow {workflow.name!r} hooks_from in ww.yaml"
-        )
+        where = f"workflow {workflow.name!r} hooks_from in ww.yaml"
         if source == workflow.name:
             raise ConfigurationError(
                 f"{where}: workflow {workflow.name!r} cannot take its hooks from itself"

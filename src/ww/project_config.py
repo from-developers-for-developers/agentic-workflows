@@ -271,9 +271,6 @@ class ProjectConfig:
     update_check: bool = True
     # Built-in workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
-    # Built-in workflows that take their global hooks from a project lane,
-    # ``workflows.<name>.hooks_from``.
-    builtin_hooks_from: dict[str, str] = field(default_factory=dict)
     # The ww binary this project runs: a command on PATH or a path. ``None``
     # means the project launcher, ``./ww``, which falls back to the standard
     # name.
@@ -476,9 +473,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         raise ConfigurationError(
             f"{path}.runtime must be one of: " + ", ".join(RUNTIME_INSTRUCTIONS)
         )
-    disabled_workflows, builtin_hooks_from = _parse_workflows(
-        raw.get("workflows"), path
-    )
+    disabled_workflows = _parse_workflows(raw.get("workflows"), path)
     builtins = raw.get("builtins", {})
     if not isinstance(builtins, dict):
         raise ConfigurationError(f"{path}.builtins must be an object")
@@ -514,7 +509,6 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         runtime=runtime,
         update_check=update_check,
         disabled_workflows=disabled_workflows,
-        builtin_hooks_from=builtin_hooks_from,
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
         **_parse_rules(raw.get("rules"), path),
@@ -618,13 +612,10 @@ def _parse_executable(data: Any, path: str) -> str | None:
     return data.strip()
 
 
-def _parse_workflows(data: Any, path: str) -> tuple[frozenset[str], dict[str, str]]:
-    """The built-in workflows switched off, and the lanes some take hooks from.
-
-    From ``{"<name>": {"enabled": false, "hooks_from": "<workflow>"}}``.
-    """
+def _parse_workflows(data: Any, path: str) -> frozenset[str]:
+    """The built-in workflows switched off by ``enabled: false``."""
     if data is None:
-        return frozenset(), {}
+        return frozenset()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.workflows must be an object")
     known = builtin_workflow_names()
@@ -635,12 +626,11 @@ def _parse_workflows(data: Any, path: str) -> tuple[frozenset[str], dict[str, st
             "built-in workflows: " + ", ".join(sorted(known))
         )
     disabled: set[str] = set()
-    hooks_from: dict[str, str] = {}
     for name, value in data.items():
         context = f"{path}.workflows.{name}"
         if not isinstance(value, dict):
             raise ConfigurationError(f"{context} must be an object")
-        unknown_keys = set(value) - {"enabled", "hooks_from"}
+        unknown_keys = set(value) - {"enabled"}
         if unknown_keys:
             raise ConfigurationError(
                 f"{context} has unknown key(s): {', '.join(sorted(unknown_keys))}"
@@ -650,12 +640,7 @@ def _parse_workflows(data: Any, path: str) -> tuple[frozenset[str], dict[str, st
             raise ConfigurationError(f"{context}.enabled must be true or false")
         if not enabled:
             disabled.add(name)
-        source = value.get("hooks_from")
-        if source is not None:
-            if not isinstance(source, str) or not source.strip():
-                raise ConfigurationError(f"{context}.hooks_from must name a workflow")
-            hooks_from[name] = source.strip()
-    return frozenset(disabled), hooks_from
+    return frozenset(disabled)
 
 
 def _parse_projects(data: Any, path: str) -> tuple[ProjectDefinition, ...]:

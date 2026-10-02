@@ -59,7 +59,7 @@ import json
 import subprocess
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -483,7 +483,7 @@ def _worktree_path(context: ExtensionContext, settings: Settings, name: str) -> 
 
 def _reserved_paths(context: ExtensionContext) -> tuple[Path, ...]:
     """The worktree this task would own, so ww never reuses its ID elsewhere."""
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     if not settings.worktrees or not settings.worktree_dir:
         return ()
     name = interpolate(settings.worktree_name_format, _tokens(context)).strip()
@@ -627,6 +627,14 @@ def _task_branch(
     """Resolve the branch and base shared by branch/worktree handlers."""
     if not context.task_id:
         return None, None, "a task is required to name a branch"
+    if (
+        context.workflow == "ww-scriptize-rules"
+        and "default" not in settings.base_branches
+    ):
+        return None, None, (
+            "ww-scriptize-rules requires extensions.ww/git.base_branches.default "
+            "in ww.json"
+        )
     strategy = context.values.get(BRANCH_NAMING_STRATEGY)
     branch_format = settings.branch_format(_lane(context), strategy)
     if branch_format is None:
@@ -648,6 +656,22 @@ def _task_branch(
     return branch, base, None
 
 
+def _task_settings(context: ExtensionContext) -> Settings:
+    """Scriptizing always branches from the default, independent of lanes."""
+    settings = settings_from(context.config)
+    if context.workflow == "ww-scriptize-rules":
+        settings = replace(
+            settings,
+            separate_branch=True,
+            base_branches={
+                key: value
+                for key, value in settings.base_branches.items()
+                if key == "default"
+            },
+        )
+    return settings
+
+
 def _claims_task(context: ExtensionContext) -> bool:
     """Whether ww/git still holds this task ID: a record or a task branch.
 
@@ -660,7 +684,7 @@ def _claims_task(context: ExtensionContext) -> bool:
         return False
     if _recorded_branch(context, task_id) is not None:
         return True
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     repository = _repository(context)
     for branch_format in dict.fromkeys(
         (DEFAULT_BRANCH_FORMAT, *settings.branch_name_formats.values())
@@ -737,7 +761,7 @@ def _commit_message_error(values: Mapping[str, str]) -> str | None:
 
 
 def _commit(context: ExtensionContext) -> ExtensionResult:
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     error = _commit_message_error(context.values)
     if error is not None:
         return ExtensionResult(False, error=error)
@@ -1043,7 +1067,7 @@ def _merge(context: ExtensionContext) -> ExtensionResult:
     A conflict is never resolved here: the merge is aborted and the handler
     fails naming the conflicting files, so the task stops for the operator.
     """
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     parsed = _merge_arguments(context)
     if isinstance(parsed, str):
         return ExtensionResult(False, error=parsed)
@@ -1283,7 +1307,7 @@ def _is_clean(context: ExtensionContext) -> ExtensionResult:
 
 
 def _start_branch(context: ExtensionContext) -> ExtensionResult:
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     repository = _repository(context)
     if not settings.separate_branch and not settings.worktrees:
         return ExtensionResult(True, output="configured to work on the current branch")
@@ -1369,7 +1393,7 @@ def _worktree_holding(
 
 def _create_worktree(context: ExtensionContext) -> ExtensionResult:
     """Create a separate checkout only after ``start-task-branch`` prepared it."""
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     repository = _repository(context)
     if not settings.worktrees:
         return ExtensionResult(True, output="worktrees are not enabled")
@@ -1439,7 +1463,7 @@ def _create_worktree(context: ExtensionContext) -> ExtensionResult:
 
 def _task_workspace_dir(context: ExtensionContext) -> str | None:
     """Select the canonical checkout for this task when Git knows one."""
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     root = _repository(context)
     if not settings.worktrees or not context.task_id:
         return str(root)
@@ -1497,7 +1521,7 @@ def _branch_strategy_variable(context: ExtensionContext) -> str | None:
 
 
 def _remove_worktree(context: ExtensionContext) -> ExtensionResult:
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     if not settings.worktrees:
         return ExtensionResult(True, output="worktrees are not enabled")
     if not context.task_id:
@@ -1521,7 +1545,7 @@ def _remove_worktree(context: ExtensionContext) -> ExtensionResult:
 
 
 def _return_to_base(context: ExtensionContext) -> ExtensionResult:
-    settings = settings_from(context.config)
+    settings = _task_settings(context)
     if settings.worktrees:
         return ExtensionResult(True, output="worktrees leave the main checkout alone")
     if not settings.separate_branch:
