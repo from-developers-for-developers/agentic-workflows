@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- `ww-scriptize-rules` automatically branches from the required ww/git default base and follows its worktree settings;
+  `hooks_from` is removed from ww.json workflow settings. `3d3b243`
 - Setup proposals run verification commands through automatic hooks without duplicate agent prompts or loops;
   agents receive failures to fix and ww reruns the checks on completion. `1b610bb`
 - Breaking: verifiers only judge. A rule without a command is checked by its converted store check or gets a
