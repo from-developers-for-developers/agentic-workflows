@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- Completion hooks sharing a variable now request it once instead of blocking the transition;
+  conflicting requests name the variable and both sources. `7d10159`
 - `ww-scriptize-rules` automatically branches from the required ww/git default base and follows its worktree settings;
   `hooks_from` is removed from ww.json workflow settings. `3d3b243`
 - Setup proposals run verification commands through automatic hooks without duplicate agent prompts or loops;
