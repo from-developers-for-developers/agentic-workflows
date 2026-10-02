@@ -11,12 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
-- A running task can take a changed workflow: when `ww.yaml` changes a task's workflow, the manager's `next` stops at
-  `operator_reason: plan_changed` with each changed step or hook and its fields before and after, ahead of any
-  `--retry`. `next --replan` takes the new definition from the first change on, rerunning finished steps from there
-  after confirmation (`--yes`), with earlier attempts kept in the run's history; `next --keep-plan` carries on with
-  the saved plan. A fixed hook command no longer needs a reset and restart. Already expanded per-item or per-child
-  stages, and rewinds past started child tasks, still need one.
+- A running task takes a changed workflow: `next` stops at `plan_changed` showing what changed, and `--replan` applies it
+  (rerunning finished steps after confirmation) while `--keep-plan` ignores it. `5622971`
 - A reused task ID no longer inherits a dead task's `ww/git` state: a recorded base is trusted only for the same
   branch while it exists, else `base_branches` is resolved; `reset` drops the task's branch and commit records (an
   extension's new `forget_task` hook); and a generated ID skips one an extension still holds (new `claims_task` hook),
