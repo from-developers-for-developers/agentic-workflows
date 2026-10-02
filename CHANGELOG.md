@@ -15,10 +15,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
   they run (host, container exec, virtual environment or task runner, per worktree or not) in `project.md`, and
   `ww-suggest`, `ww-solve`, `ww-automate`, `ww-rules-from-artifacts`, the `ww-rule` skill and the rule verifier write
   every handler, hook, check and script for the step's directory (the task's worktree when there is one) through that
-  wrapper, never naming the main checkout. The verifier page says where checks run and proves a prepared check there.
+  wrapper, never naming the main checkout. The verifier page says where checks run and proves a prepared check there. `76f391e`
 - `ww-suggest` and `ww-solve` fit each workflow to its kind of work without being asked: `items` steps for cases,
   interactive steps and the operator page (`interactive: page`) for what the operator performs, such as manual tests,
-  documents and item fields for a template such as a test case, and loops for work repeated until a condition holds.
+  documents and item fields for a template such as a test case, and loops for work repeated until a condition holds. `76f391e`
 - `ww setup apply` and the `ww rules` commands write readable YAML: block style, no anchors or `null`, long text
   folded, and blank lines between sections and items. `4d0b30c`
 - `ww-setup` offers an express path: `ww-learn-project`, then `ww-express` infers the operator's profile, role, team
