@@ -487,9 +487,13 @@ layout found candidates (it asks for the sibling repositories' paths and never
 scans them), a rule for a fix-prone path only when the fixes show a repeated
 cause, and whether the setup is for the operator alone or the team. The proposal then
 follows the project: `ww/git` settings for the branching and commit format and
-its handlers as hooks, one handler per verify command that loops until the
-command passes and lets the command, run as `argv`, decide; one workflow per
-lane reusing those handlers, with `inherit` where lanes differ only in their
+its handlers as hooks, one automatic `argv` or `shell` handler per verify
+command, attached as an ordered `before_complete` check with `on_failure: fix`
+to the steps that change code. ww runs these commands without an agent prompt;
+only failures return their output to the worker for fixes, and ww checks again
+on completion. No agent step asks for the same command, and no workflow-boundary
+hook duplicates it. There is one workflow per
+lane, with `inherit` where lanes differ only in their
 base branch; modes for preferences; and rules only for conventions no command
 can check. A workflow is fitted to its kind of work without the operator
 asking: a manual-testing workflow, for example, collects the test cases as

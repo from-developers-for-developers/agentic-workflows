@@ -582,13 +582,16 @@ workflows:
               `ext/ww/git/handlers:is-git-clean`, `start-task-branch` and, with
               worktrees, `create-worktree` before a lane starts, `git-commit`
               before it completes where agents commit; nothing pushes. Give each
-              verify command a handler: a `loop` whose step runs the exact
-              command and fixes what it reports, with a `break` such as "All
-              tests pass." and a `before_complete` hook running it as `argv`
-              with `on_failure: fix`, so the command decides; lint and type
-              check may share one. Give each lane a workflow reusing the
-              handlers as steps (`- run-tests: ~`): investigate, implement or
-              fix, verify, and the review chosen in design; `inherit` for a
+              verify command an automatic handler with the exact `argv` or
+              `shell`, with no agent prompt or command-running loop. Attach
+              these handlers as ordered `before_complete` hooks with
+              `on_failure: fix` to the steps that change code, such as
+              implement, fix or merge. ww runs the checks when the worker
+              completes; only a failed check sends its output back to the
+              worker to fix, and ww reruns the checks on completion. Never
+              also ask the agent to run these commands or add duplicate
+              verification steps. Give each lane a workflow: investigate,
+              implement or fix, and the review chosen in design; `inherit` for a
               lane that differs only in its base branch, a `merge-to-<integration
               branch>` lane where there is one, and `recommended_next_workflow`
               where lanes chain.
@@ -620,8 +623,10 @@ workflows:
               with a `break`. A plain code lane needs none of them.
 
 
-              Add a `before_complete_workflow` test hook only
-              where the tests gate every lane, a mode only for a preference that
+              Choose one place for each automated check; never repeat a
+              step's check at `before_complete_workflow`. Use a workflow
+              boundary check only when it belongs at that boundary rather
+              than on a code-changing step. Add a mode only for a preference that
               changes how an agent works, and rules only for conventions no
               command checks, on the steps they govern, with a one-line check
               where one exists; a rule never restates its step, a preference or
@@ -638,7 +643,8 @@ workflows:
               `hotfix/*` branches merged this year" or "`run-tests` runs `npm
               test`: `package.json` scripts", then the dry run's changes. Then
               walk through the main lane: its steps in order with what an agent
-              does at each, from the fragment, in ten lines or fewer. Ask
+              does at each and where ww runs checks automatically without an
+              agent prompt, from the fragment, in ten lines or fewer. Ask
               whether to apply it; discuss and take changes, checking and
               showing it again, until the operator says `ww done`; then record
               the conversation once with their pick, apply or cancel.
