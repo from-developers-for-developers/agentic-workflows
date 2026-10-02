@@ -113,6 +113,36 @@ def is_builtin(workflow: WorkflowDefinition) -> bool:
     )
 
 
+def missing_lane(workflow: WorkflowDefinition) -> str | None:
+    """Why ``workflow`` cannot run: it needs ``hooks_from`` and has none.
+
+    ``None`` when it can. The message names where the lane is set: ``ww.json``
+    for a built-in, the workflow's own ``ww.yaml`` definition otherwise.
+    """
+    if not workflow.needs_hooks_from or workflow.hooks_from is not None:
+        return None
+    name = workflow.name
+    where = (
+        "name that lane in ww.json first: "
+        f'"workflows": {{"{name}": {{"hooks_from": "<workflow>"}}}}, '
+        'for example "task"'
+        if is_builtin(workflow)
+        else "name that lane with hooks_from in its definition in ww.yaml "
+        'first, for example "hooks_from: task"'
+    )
+    return (
+        f"workflow {name!r} runs with a project lane's branch, worktree and "
+        f"commit handling; {where}"
+    )
+
+
+def require_lane(workflow: WorkflowDefinition) -> None:
+    """Refuse to run ``workflow`` while it needs ``hooks_from`` and has none."""
+    reason = missing_lane(workflow)
+    if reason is not None:
+        raise ConfigurationError(reason)
+
+
 def with_builtin_workflows(
     configuration: WorkflowConfiguration, project_config: ProjectConfig
 ) -> WorkflowConfiguration:
@@ -122,8 +152,23 @@ def with_builtin_workflows(
     documents and modes come along while any of its workflows is enabled,
     unless the configuration declares one of the same name. A built-in's
     ``recommended_next_workflow`` is dropped while that workflow is off.
+    ``ww.json``'s ``hooks_from`` for a built-in the configuration replaces is
+    refused, since it would otherwise be dropped silently.
     """
     workflows = {workflow.name for workflow in configuration.workflows}
+    # A configuration validated again already holds the built-ins themselves.
+    replaced = sorted(
+        workflow.name
+        for workflow in configuration.workflows
+        if workflow.name in project_config.builtin_hooks_from
+        and not is_builtin(workflow)
+    )
+    if replaced:
+        raise ConfigurationError(
+            f'ww.json "workflows.{replaced[0]}.hooks_from" sets the lane of the '
+            f"built-in {replaced[0]!r}, which ww.yaml replaces with a workflow of "
+            "its own; set hooks_from in that definition instead"
+        )
     documents = {document.name for document in configuration.documents}
     modes = {mode.name for mode in configuration.modes}
     added_workflows: list[WorkflowDefinition] = []

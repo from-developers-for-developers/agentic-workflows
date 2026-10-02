@@ -81,19 +81,36 @@ workflows:
             description: >-
               Show the operator every built check in one message: its command
               in full, its config files, the proof and the violations, and the
-              rules agreed as not convertible. Ask which to record; discuss
-              and take changes until the operator says `ww done`, then record
-              the conversation once. For each check they approve, run
+              rules agreed as not convertible. For each check, run
               `{{ww.executable}} rules convert <check> --covers <rule-id>...
-              (--check-argv <arg>... | --check-shell "<sh>") [--assert ...]
-              --config <path>... --proven --dry-run`, show its side effects,
-              and then the same command with `--yes` in place of `--dry-run`,
-              which records the operator's approval. For the rules they agreed
-              are not convertible, run `{{ww.executable}} rules decline
-              <rule-id>... --reason "<why>" --yes`. Never edit
-              `ww-rule-automation.json` yourself. Tell the operator that the
-              checks run in a task only where their config files exist, so
-              once this run's branch is merged.
+              [--assert ...] --config <path>... --proven --dry-run
+              (--check-shell "<sh>" | --check-argv -- <arg>...)`, with
+              `--check-argv -- <arg>...` last so the tool's own options stay
+              its own, and for the rules not convertible `{{ww.executable}}
+              rules decline <rule-id>... --reason "<why>" --dry-run`; show
+              every preview in full. Ask which to record; discuss, take
+              changes and preview a changed command again, until the operator
+              says `ww done`. Record nothing in this step and never edit
+              `ww-rule-automation.json` yourself. Then record the conversation
+              once with the pick. The artifact lists the exact commands to
+              record, each as previewed and approved, without `--dry-run`.
             choices:
-              - recorded: The approved checks are recorded.
-              - none: Nothing was recorded.
+              - record: Record the approved checks and declines.
+              - none: Record nothing.
+          - assess: Did the operator choose "record" in the checks step?
+          - name: record
+            artifact_from: checks
+            description: >-
+              Run every command the checks step agreed, exactly as listed,
+              with `--yes`, which stands for the operator's approval given
+              there; run nothing else and never edit
+              `ww-rule-automation.json` yourself. If a command refuses, report
+              its message and stop. `rules convert` and `rules decline` write
+              `ww-rule-automation.json` at the project root, in the main
+              checkout, not on this run's branch. Tell the operator to commit
+              that file in the main checkout, on the integration branch,
+              together with or right after merging this run's branch: until
+              then `is-git-clean` refuses the next task's start. The checks
+              run in a task only where their config files exist,
+              so once the branch is merged. The artifact lists what was
+              recorded.

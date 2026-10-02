@@ -8,7 +8,7 @@ from dataclasses import replace
 from types import MappingProxyType
 
 from ww.actions import DefinedAction, Prompt
-from ww.builtin_workflows import with_builtin_workflows
+from ww.builtin_workflows import is_builtin, with_builtin_workflows
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.operations import WorkflowHandoff
@@ -335,7 +335,7 @@ def _validate_transitions(
             later
             for later in (*global_hooks, *workflow.hooks, *last.hooks)
             if later.phase in {"before_complete", "after_complete"}
-            and later.applies_to(workflow.name, last.name, last.name, paths)
+            and later.applies_in(workflow, last.name, last.name, paths)
         ]
     if following:
         raise ConfigurationError(
@@ -556,25 +556,35 @@ def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
 
 
 def _validate_hooks_from(configuration: WorkflowConfiguration) -> None:
-    """``hooks_from`` names another workflow that takes no one's hooks itself."""
+    """``hooks_from`` names another workflow that takes no one's hooks itself.
+
+    Each error names where the value is set: ``ww.json``'s key for a
+    built-in, the workflow's ``hooks_from`` in ``ww.yaml`` otherwise.
+    """
     known = configuration.workflows_by_name
     for workflow in configuration.workflows:
         source = workflow.hooks_from
         if source is None:
             continue
+        where = (
+            f'ww.json "workflows.{workflow.name}.hooks_from"'
+            if is_builtin(workflow)
+            else f"workflow {workflow.name!r} hooks_from in ww.yaml"
+        )
         if source == workflow.name:
             raise ConfigurationError(
-                f"workflow {workflow.name!r} cannot take its hooks from itself"
+                f"{where}: workflow {workflow.name!r} cannot take its hooks from itself"
             )
         if source not in known:
             raise ConfigurationError(
-                f"workflow {workflow.name!r} takes its hooks from unknown "
-                f"workflow {source!r}"
+                f"{where}: workflow {workflow.name!r} takes its hooks from "
+                f"unknown workflow {source!r}"
             )
         if known[source].hooks_from is not None:
             raise ConfigurationError(
-                f"workflow {workflow.name!r} takes its hooks from {source!r}, "
-                "which takes its own from another workflow; name that one"
+                f"{where}: workflow {workflow.name!r} takes its hooks from "
+                f"{source!r}, which takes its own from another workflow; name "
+                "that one"
             )
 
 

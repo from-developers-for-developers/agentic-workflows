@@ -184,6 +184,77 @@ def test_a_dry_run_records_nothing(
     assert not (root / STORE_FILE).exists()
 
 
+def test_argv_after_the_separator_keeps_the_tools_own_options(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+
+    assert (
+        _cli(
+            root,
+            "convert",
+            "lint",
+            "--covers",
+            "develop/1",
+            "--config",
+            "ruff.toml",
+            "--proven",
+            "--yes",
+            "--check-argv",
+            "--",
+            "ruff",
+            "check",
+            "--select",
+            "E",
+            "--config",
+            "ruff.toml",
+        )
+        == 0
+    )
+
+    capsys.readouterr()
+    check = _store(root)["checks"]["lint"]
+    assert check["argv"] == [
+        "ruff",
+        "check",
+        "--select",
+        "E",
+        "--config",
+        "ruff.toml",
+    ]
+    assert check["config"] == ["ruff.toml"]
+
+
+def test_rules_add_takes_argv_after_the_separator(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "rules/docs").mkdir(parents=True)
+    (root / "ww.yaml").write_text(
+        "rules:\n  docs: [rules/docs/]\n" + WORKFLOWS, encoding="utf-8"
+    )
+
+    assert (
+        _cli(
+            root,
+            "add",
+            "docs",
+            "--text",
+            "Lint the docs. Always.",
+            "--check-argv",
+            "--",
+            "ruff",
+            "check",
+            "--select",
+            "E",
+        )
+        == 0
+    ), capsys.readouterr().err
+
+    (written,) = (root / "rules/docs").glob("*.md")
+    assert "argv: [ruff, check, --select, E]" in written.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("covers", "message"),
     [

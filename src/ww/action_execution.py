@@ -274,6 +274,7 @@ class _ExtensionService:
             task_id=state.task_id,
             run_id=state.run_id,
             workflow=state.workflow,
+            lane=self._dispatch.snapshot.plan.lane,
             values=values,
             arguments=tuple(
                 interpolate(argument, values) for argument in planned.arguments
@@ -410,6 +411,7 @@ class _RecoveryExtensionService:
             task_id=self._state.task_id,
             run_id=self._state.run_id,
             workflow=self._state.workflow,
+            lane=self._plan.lane,
             values=values,
             workspace=workspace,
             item_id=self._item.id,

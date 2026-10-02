@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Protocol, cast
 
 from ww.artifacts import render_step_artifact
+from ww.builtin_workflows import require_lane
 from ww.completion_inputs import validate_requested_values, validate_values
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
@@ -96,6 +97,7 @@ class BootstrapCoordinator:
         if workflow_name not in configuration.workflows_by_name:
             raise ConfigurationError(f"workflow not found: {workflow_name}")
         workflow = configuration.workflows_by_name[workflow_name]
+        require_lane(workflow)
         unknown_modes = unknown_modes_for(mode_names, configuration)
         if unknown_modes:
             raise StateError("unknown mode(s): " + ", ".join(sorted(unknown_modes)))

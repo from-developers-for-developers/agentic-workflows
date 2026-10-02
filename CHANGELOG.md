@@ -12,7 +12,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 ## 2026-10-02
 
 - `ww-scriptize-rules`, started by the `ww-scriptize` skill, scriptizes every rule with no check yet as a project task,
-  on the lane `ww.json` names with `hooks_from`; `ww-suggest` proposes it. `5a277b4`
+  on the lane `ww.json` names with `hooks_from`, taking its hooks, branch format and base branch; `ww-suggest` proposes
+  it. `rules convert` and `rules add` take `--check-argv -- <arg>...`, so a tool's own options stay its own. `5a277b4`
 - `ww rules convert <check> --covers <rule-id>...` records an approved check in the rule-automation store, and `ww
   rules decline <rule-id>... --reason` records rules as not convertible, each after the operator's confirmation, so
   checks can be scriptized outside a task. `ww rules --json` gives each rule its `scriptize` state. A converted check

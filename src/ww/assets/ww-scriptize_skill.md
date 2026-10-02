@@ -27,4 +27,9 @@ handling; this skill starts it.
    files yourself.
 3. Follow every page until the run completes. Tell the operator that the
    checks run in tasks only where their configuration files exist, so once
-   this run's branch is merged.
+   this run's branch is merged, and that `./ww rules convert` and
+   `./ww rules decline` wrote `ww-rule-automation.json` at the project root,
+   in the main checkout: they commit it there, on the integration branch,
+   together with or right after merging this run's branch. Until then the
+   next task's start is refused by `is-git-clean`, which finds the checkout
+   changed.

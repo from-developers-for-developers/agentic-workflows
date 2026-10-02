@@ -328,6 +328,7 @@ class ExtensionRegistry:
         workflow: str,
         workflow_values: dict[str, str],
         workspace: Path | None,
+        lane: str | None = None,
     ) -> dict[str, str]:
         """Apply referenced extensions' overrides to existing core variables."""
         result = dict(values)
@@ -345,6 +346,7 @@ class ExtensionRegistry:
                 task_id=task_id,
                 run_id=run_id,
                 workflow=workflow,
+                lane=lane or workflow,
                 values={**workflow_values, **values},
                 workspace=workspace,
             )
@@ -434,6 +436,7 @@ class ExtensionRegistry:
         workflow_values: Mapping[str, str],
         workspace: Path | None,
         project: str | None,
+        lane: str | None = None,
     ) -> dict[str, str]:
         """Resolve the namespaced ``names`` for ``task_id``.
 
@@ -459,6 +462,7 @@ class ExtensionRegistry:
                 task_id=task_id,
                 run_id=run_id,
                 workflow=workflow,
+                lane=lane or workflow,
                 values=dict(workflow_values),
                 workspace=workspace,
             )
