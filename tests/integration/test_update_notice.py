@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from ww import package_updates
 from ww.cli import main
 from ww.cli import updates as cli_updates
 
@@ -167,4 +168,47 @@ def test_a_broken_update_check_never_disturbs_the_command(
     monkeypatch.setattr(cli_updates, "installation_checkout", explode)
 
     assert main(["--root", str(project), "lint"]) == 0
+    assert capsys.readouterr().out.strip() == _lint_output("ww.yaml")
+
+
+def test_package_notice_reaches_commands_and_json_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    _project(tmp_path)
+    monkeypatch.setenv("WW_UPDATE_CHECK", "1")
+    monkeypatch.setenv("WW_STATE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(cli_updates, "installation_checkout", lambda: None)
+    (tmp_path / "ww.json").write_text(
+        json.dumps({"executable": "ww-agentic-workflows-preview"})
+    )
+    monkeypatch.setattr(package_updates, "__version__", "1.0.0.dev42")
+    monkeypatch.setattr(
+        package_updates,
+        "fetch_releases",
+        lambda: {
+            "releases": {
+                "1.0.0.dev47": [{"packagetype": "sdist", "requires_python": ">=3.10"}]
+            }
+        },
+    )
+    assert main(["--root", str(tmp_path), "lint"]) == 0
+    output = capsys.readouterr().out
+    assert output.index("1.0.0.dev42 → 1.0.0.dev47") < output.index("ww.yaml is valid")
+    assert "ww-agentic-workflows-preview upgrade" in output
+    assert main(["--root", str(tmp_path), "lint"]) == 0
+    assert "dev47" not in capsys.readouterr().out
+    assert main(["--root", str(tmp_path), "updates", "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["notice"]["available_version"] == "1.0.0.dev47"
+
+
+def test_offline_package_check_does_not_disturb_the_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    _project(tmp_path)
+    monkeypatch.setenv("WW_UPDATE_CHECK", "1")
+    monkeypatch.setenv("WW_STATE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(cli_updates, "installation_checkout", lambda: None)
+    monkeypatch.setattr(package_updates, "fetch_releases", lambda: None)
+    assert main(["--root", str(tmp_path), "lint"]) == 0
     assert capsys.readouterr().out.strip() == _lint_output("ww.yaml")

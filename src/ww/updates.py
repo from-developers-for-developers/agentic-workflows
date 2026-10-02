@@ -25,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from ww.executable import ww_command
+
 # One check a day. The state file records the last attempt, so ordinary
 # invocations between two checks read a small JSON file and run no Git at all.
 DEFAULT_INTERVAL_SECONDS = 24 * 60 * 60
@@ -94,7 +96,7 @@ class UpdateNotice:
             "continue**, and let them decide whether to update. To update:",
             "",
             "```console",
-            f"git -C {self.checkout} pull",
+            f"{ww_command()} upgrade",
             "```",
             "",
             "This notice is shown once. `ww updates` prints it again.",
@@ -182,7 +184,9 @@ def installation_checkout() -> Path | None:
     """
     here = Path(__file__).resolve()
     for candidate in here.parents:
-        if (candidate / ".git").exists():
+        if (candidate / ".git").exists() and (
+            candidate / "src/ww/updates.py"
+        ).resolve() == here:
             return candidate
     return None
 

@@ -96,6 +96,8 @@ def main() -> int:
                 "from importlib.resources import files\n"
                 "from pathlib import Path\n"
                 "import ww\n"
+                "from importlib.metadata import version\n"
+                "assert ww.__version__ == version('ww-agentic-workflows')\n"
                 "asset = files('ww.assets').joinpath('agent_instructions.md')\n"
                 "assert asset.is_file()\n"
                 "assert Path(ww.__file__).parent.joinpath("

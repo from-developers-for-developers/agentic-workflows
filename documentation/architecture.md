@@ -805,6 +805,23 @@ The supported model layers are normalized authored definitions
 records (the `execution_models` package). Persisted state uses a single
 current format; any other task layout or record schema is rejected.
 
+## Installation updates
+
+`ww.__version__` comes from installed distribution metadata, with a fallback
+for an unpackaged source checkout. Update notices share the CLI announcement
+path: editable source installations use Git history; packaged installations
+use `package_updates` to select newer compatible PyPI versions and persist a
+per-environment/version daily cache. The PyPI request has a two-second timeout
+and a response-size limit. Failures do not affect normal command execution.
+
+`upgrade` is an explicit installation operation and does not initialise a
+workflow, load project extensions or create task state. It reads open-work
+records before invoking the owning installer (pip or pipx), or performing an
+editable checkout's fast-forward pull. Prerelease selection follows the
+installed version, with an explicit `--pre` override. The guard checks the
+current project and an editable source checkout, not all projects sharing the
+installation. See [features.md](features.md#update-notices-and-upgrading-ww).
+
 ## Release guarantees and intentional limits
 
 ### Version and compatibility policy

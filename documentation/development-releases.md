@@ -32,6 +32,11 @@ pip install --upgrade --pre ww-agentic-workflows
 
 Or select a particular snapshot with `ww-agentic-workflows==1.0.0.dev42`.
 
+Once installed, `ww-agentic-workflows upgrade` automatically allows newer
+prereleases when the installed version is a development build, beta or RC.
+Normal commands show a cached update notice when PyPI has a newer compatible
+version; `ww-agentic-workflows updates --now` forces a fresh check.
+
 ## One-time publishing setup
 
 1. In the GitHub repository, create the environment `pypi-dev`. Restrict its

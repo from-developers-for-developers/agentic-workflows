@@ -3950,14 +3950,61 @@ running install's bundled `ww/git`, ignoring the checkout's own `ext/ww/*`
 copy. In any other project, an `ext/ww/<name>` of its own is refused as
 a duplicate of the bundled extension.
 
-## Staying current with the ww checkout
+## Update notices and upgrading ww
 
-ww is installed from a Git clone in editable mode, so whether a newer ww
-exists is a local question. Before running the command it was asked for, ww
-compares the checkout it runs from against the branch that checkout tracks,
-and prints a short notice when it is behind:
+Before normal commands, ww checks for an update at most once a day and shows
+an available update once. Editable Git installs compare their checkout with
+its tracking branch and summarise changelog entries or commit subjects.
+Package installs query PyPI for newer compatible, non-yanked versions. Stable
+installs select stable releases; dev, beta and RC installs also allow
+prereleases. A final release supersedes its earlier prereleases.
 
-````markdown
+A package notice names both versions and the upgrade command, using the
+project's configured executable, for example:
+
+```text
+## A newer ww is available
+
+1.0.0.dev42 → 1.0.0.dev47
+Run: `ww-agentic-workflows upgrade`
+```
+
+Checks have short network timeouts and remain silent when offline. Notices go
+to stderr for JSON and other machine-readable commands. They do not prevent
+the requested command from running. PyPI checks send only an ordinary package
+metadata request, with no project or task information.
+
+```console
+ww-agentic-workflows updates          # repeat the cached notice
+ww-agentic-workflows updates --now    # force a fresh check
+ww-agentic-workflows updates --json   # machine-readable version information
+ww-agentic-workflows upgrade          # preserve the installed release preference
+ww-agentic-workflows upgrade --pre    # allow prereleases from a stable installation
+```
+
+`upgrade` uses pip in the running Python environment or pipx for the owning
+pipx environment, including suffixed installs and a custom `PIPX_HOME`. A pipx
+installation requires pipx on PATH. An installation injected into another
+pipx environment must be upgraded through pipx directly. Installer errors are
+reported without overriding environment protections.
+
+For editable Git installs, `upgrade` performs `git pull --ff-only` on the
+checkout's actual tracking branch. It refuses local changes, detached HEAD,
+missing upstream and divergent history; local work is not stashed or reset.
+An editable installation without a Git checkout cannot use this command.
+
+Before any upgrade, ww checks the current project's open tasks and unreadable
+task records, including children. It also checks the source checkout's task
+records when upgrading an editable installation. Finish open tasks and resolve
+unreadable records first. This check covers those roots, not every project on
+the machine; finish tasks in other projects that use the same installation too.
+
+The per-user cache is under `~/.config/ww`, or `$XDG_CONFIG_HOME/ww`; package
+checks have separate cache files for each Python environment and installed
+version. `WW_STATE_HOME` overrides the cache directory. `update_check: false`
+in `ww.json` disables notices for a project; `WW_UPDATE_CHECK=0` disables them
+globally. `WW_UPDATE_CHECK_INTERVAL` sets the seconds between checks.
+
 ## A newer ww is available
 
 This checkout is 23 commits behind `origin/main`.

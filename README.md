@@ -370,34 +370,32 @@ branches serve these purposes:
 | `main` | **What users should install and run**, and what contributions branch from. It receives updates frequently. |
 | `dev` | The maintainers' in-flight work and CI-checked development snapshots. Intended for testing; do not target it in a contribution pull request. |
 
-To update, pull `main` in your clone:
+To update either a source checkout or a package installation:
 
 ```console
-git -C ~/tools/agentic-workflows pull
+ww-agentic-workflows upgrade
 ```
 
-Because the install is editable, that is the whole upgrade. Updates land
-often, though mostly as new capabilities and fixes rather than changes to
-workflows you have already written — see
-[Stability and compatibility](#stability-and-compatibility) for what is
-settled. Skim [CHANGELOG.md](CHANGELOG.md) when you pull, and finish or
-`reset` any task that is mid-flight first.
+Source checkouts update their tracking branch with a fast-forward pull; local
+changes are preserved by refusing to upgrade a dirty checkout. Package installs
+upgrade through pip or pipx. Stable installs follow stable releases; development,
+beta and RC installs also allow prereleases. `upgrade --pre` opts a stable
+installation into prereleases.
 
-For editable source installations, ww compares its own checkout against the
-branch it tracks, at most once a day, and prints a short notice above the
-command's output when it is behind — listing the changelog entries you would
-be pulling in, and telling the agent to show them to you before it carries on.
-The command still runs; nothing is blocked. The only network call is a
-`git fetch` against the remote you cloned from, no data leaves your machine,
-and each notice appears once:
+WW checks for updates at most once a day and shows a short notice above normal
+command output. Source installations compare Git commits; package installations
+compare PyPI versions. Checks remain silent when offline. Before upgrading,
+finish tasks in projects using that installation and skim [CHANGELOG.md](CHANGELOG.md).
 
 ```console
-./ww updates            # print the last notice again
-./ww updates --now      # look now
+ww-agentic-workflows updates            # show the cached notice
+ww-agentic-workflows updates --now      # check now
 ```
 
-Set `"update_check": false` in `ww.json` to switch it off for a
-project, or `WW_UPDATE_CHECK=0` to switch it off everywhere.
+Set `"update_check": false` in `ww.json` to switch notices off for a project,
+or `WW_UPDATE_CHECK=0` to switch them off everywhere. See
+[update notices and upgrading](documentation/features.md#update-notices-and-upgrading-ww)
+for the installer behavior and task checks.
 
 ## Stability and compatibility
 
@@ -406,8 +404,8 @@ have been stable in practice for a while, and most work on `main` now is
 internal refactoring, new capabilities, and fixes rather than changes to what
 you have already written. Frequent updates do not mean frequent breakage.
 
-What there is not, yet, is a *formal* guarantee: no versions to pin, no
-deprecation cycle, and no promise that an incompatible change could not land.
+Development snapshots can be pinned, but there is not yet a formal deprecation
+cycle or a promise that an incompatible change could not land.
 When one does, it is deliberate and rare, and
 [CHANGELOG.md](CHANGELOG.md) marks it "Breaking:". A changed name is then an
 unknown key that `lint` reports, and saved task state in another schema
