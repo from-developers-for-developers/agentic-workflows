@@ -2203,9 +2203,12 @@ The conversation comes first and is not interrupted by ww commands. The agent
 holds it in its own session: it presents, asks, listens, follows up and
 proposes, and records nothing while they talk. It opens by telling the
 operator how the conversation ends: "say `ww done` when you are finished with
-this; I will then record our conversation and move on"; an unmistakable
-"we're done" counts too. Then one command records both sides, verbatim, and
-ends the interaction:
+this; I will then record our conversation and move on". When the agent
+judges that the conversation has covered what the step needs, it asks
+through its question tool (a numbered list in the chat where it has none):
+`Move on` or `I have more`; `Move on`, `ww done`, or an unmistakable "we're
+done" ends it. Then one command records both sides, verbatim, and ends the
+interaction:
 
 ```console
 ww-agentic-workflows interact TASK-123 --role manager --transcript - --end <<'EOF'

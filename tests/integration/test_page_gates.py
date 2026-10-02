@@ -89,6 +89,7 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
             "<<'EOF'",
             "completion is refused while it is open",
             "say `ww done` when you are finished",
+            "`Move on` or `I have more`",
         ),
     },
     "step-rules": {
