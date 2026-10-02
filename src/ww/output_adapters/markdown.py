@@ -1012,6 +1012,23 @@ def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
 
 def _verification_duties(lines: Lines, page: VerificationPage) -> None:
     states = {rule.state for rule in page.rules}
+    if page.directory and states & {"unresolved", "approach_approved"}:
+        lines.extend(
+            [
+                "",
+                "#### Where checks run",
+                "",
+                f"ww runs every check from `{page.directory}`, the step's "
+                "directory, with nothing else set up. Write each command "
+                "for that directory: paths relative to it, never another "
+                "checkout's absolute path or a `cd` out of it. Run tools the "
+                "way the project runs its own test and lint commands there, "
+                "through the same wrapper (container exec, virtual "
+                "environment, task runner) the existing checks, the "
+                "project's agent instructions or ww's `.ww/project.md` "
+                "name.",
+            ]
+        )
     lines.extend(["", "#### What to do", ""])
     if "unresolved" in states:
         lines.extend(
@@ -1027,6 +1044,8 @@ def _verification_duties(lines: Lines, page: VerificationPage) -> None:
                 "tool above can express the rule, propose extending its "
                 "configuration, naming that check. Use plain shell (`grep`, "
                 "`find`, `git`, `sed`, `awk`) only for what no tool covers. "
+                "Say in the approach how the command runs from the directory "
+                "above, wrapper included, so the operator approves that too. "
                 "Write no command and install nothing yet: the operator "
                 "approves the approach first.",
             ]
@@ -1037,11 +1056,12 @@ def _verification_duties(lines: Lines, page: VerificationPage) -> None:
                 "- For a rule to prepare: install a tool into the project's "
                 "manifest as a development dependency, never globally; keep its "
                 "configuration in the repository and list those files under "
-                "`config`. The command must run offline. Prove every check: "
-                "construct a deliberately violating input in a temporary copy "
-                "and show the command fails there and passes on the real change "
-                "set. Report `not_convertible` with a reason when preparation "
-                "shows the approach does not work.",
+                "`config`. The command must run offline. Prove every check by "
+                "running it exactly as ww will, from the directory above: "
+                "add a deliberately violating input there, show the command "
+                "fails, remove the input, and show it passes on the real "
+                "change set. Report `not_convertible` with a reason when "
+                "preparation shows the approach does not work.",
             ]
         )
     lines.append(

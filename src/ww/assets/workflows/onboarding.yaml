@@ -383,7 +383,13 @@ workflows:
           with the candidate `task_format`; and the commit convention with the
           candidate `commit_format`. Spend your own reading only on what
           inspect cannot see, naming the file or command for each fact you
-          add: what agents are allowed or forbidden to do, from the content of
+          add: how and where commands run, on the host or through a wrapper
+          (a container exec such as `docker compose exec app`, a virtual
+          environment, a task runner), with the wrapper as an exact argument
+          list, and whether each worktree gets its own environment, from the
+          Makefile or task runner, the compose and devcontainer files, the CI
+          jobs and the agent instructions; what agents are allowed or
+          forbidden to do, from the content of
           AGENTS.md, CLAUDE.md and cursor rules; what the pull request template
           and CODEOWNERS demand; the process sections of the README and
           CONTRIBUTING, such as reviews, releases and versioning; the gates the
@@ -408,7 +414,8 @@ workflows:
           the fixes keep returning to for the same cause; one fix is not a
           pattern. For each, give a candidate rule in one imperative sentence,
           its evidence (the commits or reviews), and, where a one-line command
-          could verify it, that command as its check. The artifact is the
+          could verify it, that command as its check, run the way the scan
+          found the project runs its commands. The artifact is the
           list; an empty one is a fine result.
       - name: review
         interactive: true
@@ -433,7 +440,9 @@ workflows:
               default branch, the integration branch, the branch patterns,
               merge or rebase, required pull requests, the test, lint, type
               check, format check and build commands as exact argument lists,
-              the tracker and its candidate `task_format`, the commit
+              how and where commands run (on the host or through which
+              wrapper, as an exact argument list, and whether each worktree
+              has its own environment), the tracker and its candidate `task_format`, the commit
               convention and its candidate `commit_format`, the CI gates and
               release practice, and what agents are allowed or forbidden to do,
               each with its evidence or "not found". Then sections for agent
@@ -471,7 +480,9 @@ workflows:
           only what neither has, such as what AGENTS.md, CLAUDE.md and cursor
           rules let agents do. The artifact lists every fact a setup decision
           can rest on, each with its evidence or "not found": the branches and
-          lanes, the verify commands, the team shape and cadence, the fix
+          lanes, the verify commands and how and where they run, the kind of
+          work each lane or workflow the operator wants covers (code changes,
+          manual testing, reviews, reports), the team shape and cadence, the fix
           signals, the candidate projects, the tracker key and commit
           convention; then the operator's preferences that map to modes,
           operator stops or a review step, whether they work on several tasks
@@ -496,7 +507,9 @@ workflows:
           actually present: feature work, plus a hotfix, bugfix or release
           lane only where such branches exist or the operator asks for one,
           and a merge back where there is an integration branch; (2) the
-          verify commands and their order, from the manifests; (3) whether
+          verify commands and their order, from the manifests, and how they
+          run: on the host or through the project's wrapper, in the task's
+          worktree when there is one; (3) whether
           agents commit, following the commit convention (yes by default), and
           push (never); (4) a worktree per task: on by default when several
           contributors are active and the operator works on parallel tasks,
@@ -505,13 +518,19 @@ workflows:
           team shape, no interactive review by default but an agent
           self-review step, and for a small team or a team, the operator
           keeping the review in an interactive step by default, an agent review
-          loop being the alternative; (7) the operator's preferences that
-          become modes, such as brief updates or asking first, and the
-          decisions that become operator stops; (8) only when the layout lists
-          candidate projects, `projects`: ask for the paths of the sibling
-          repositories, which ww never scans; (9) a rule for a hot path or a
+          loop being the alternative; (7) for each workflow whose work is not
+          a plain code change, such as manual testing, the step features it
+          uses, proposed as decided where the work calls for them (see the
+          propose step): an `items` step for work that splits into cases,
+          interactive steps or the operator page for what the operator
+          performs or judges, and a document or item fields for a template
+          the work fills; (8) the operator's preferences that become modes,
+          such as brief updates or asking first, and the decisions that
+          become operator stops; (9) only when the layout lists candidate
+          projects, `projects`: ask for the paths of the sibling
+          repositories, which ww never scans; (10) a rule for a hot path or a
           fix-prone path, only when the Fixes section shows a repeated cause
-          there, naming it; (10) last, for whom the setup is: the operator
+          there, naming it; (11) last, for whom the setup is: the operator
           alone, in local files kept out of version control, or the team, in
           files committed with the project. If ww-setup.local.yaml exists
           beside ww.yaml, an earlier run set ww up for the operator alone: say
@@ -567,7 +586,35 @@ workflows:
               fix, verify, and the review chosen in design; `inherit` for a
               lane that differs only in its base branch, a `merge-to-<integration
               branch>` lane where there is one, and `recommended_next_workflow`
-              where lanes chain. Add a `before_complete_workflow` test hook only
+              where lanes chain.
+
+
+              Every command the fragment carries, a handler's step, a hook's
+              `argv` or `shell`, a rule's check and a script, runs the way
+              the project runs its commands: ww runs it from the step's
+              directory, the task's worktree when worktrees are on, so write
+              it for that directory, through the project's wrapper where it
+              has one, and never name the main checkout's absolute path or
+              `cd` out of it.
+
+
+              Fit each workflow's steps to its kind of work with ww's step
+              features, and propose them without waiting to be asked: work
+              that splits into cases of one kind, such as test cases, review
+              comments or tickets, is an `items` step (`items:` with
+              `steps:` stages, `persistent: true` when the same cases return
+              each round); what the operator performs or judges, such as
+              running a manual test, is `interactive: true`, or, per item,
+              `interactive: page` with `choices` (for example `pass` and
+              `fail`) so the operator answers every case on one page; a
+              structure the work fills each time, such as a test case
+              template or a report, is a `documents` entry the step `saves`,
+              and per-item values are `item.field.<name>` entries of
+              `saves`; work repeated until a condition holds is a `loop`
+              with a `break`. A plain code lane needs none of them.
+
+
+              Add a `before_complete_workflow` test hook only
               where the tests gate every lane, a mode only for a preference that
               changes how an agent works, and rules only for conventions no
               command checks, on the steps they govern, with a one-line check
@@ -640,7 +687,18 @@ workflows:
           workflow or a step, a mode, a rule, a hook, or a setting. Weigh the
           operator's role: what they own gets rules and checks, what they hand
           over gets handoffs, and decisions they keep become operator stops or
-          interactive steps. Write it as a setup fragment to
+          interactive steps. Where the problem is about a kind of work, use
+          the step features that fit it: an `items` step for work that
+          splits into cases, `interactive: true` or, per item,
+          `interactive: page` with `choices` for what the operator performs
+          or judges, such as a manual test, a `documents` entry or
+          `item.field.<name>` saves for a template the work fills, and a
+          `loop` with a `break` for work repeated until a condition holds.
+          Write every command it carries, a hook's `argv` or `shell`, a
+          rule's check or a script, for the step's directory, the task's
+          worktree when worktrees are on, through the project's wrapper as
+          {{ww.documents.project}} records it, never with the main
+          checkout's absolute path. Write it as a setup fragment to
           {{ww.documents.setup_proposal}} (the root keys `workflows`, `modes`,
           `documents`, `handlers`, `hooks`, `rules` and `settings`; rules as
           literal sentences in the `rules` lists of the steps they govern). A
@@ -706,7 +764,9 @@ workflows:
         description: >-
           Turn each lesson into a candidate rule: one imperative sentence, with
           a `paths` glob only when it is about a kind of file, and a check only
-          when it is an obvious one-line command. Choose the rule group it
+          when it is an obvious one-line command, written for the step's
+          directory (the task's worktree when there is one) and run through
+          the project's wrapper as {{ww.documents.project}} records it. Choose the rule group it
           belongs to from `{{ww.executable}} rules --json`, or a new group with
           the workflows and steps it concerns. Show the operator all candidates
           in one block, each with its group, the steps it will reach, and the
@@ -773,9 +833,13 @@ workflows:
           `argv` or `shell` step. A fragment cannot change a workflow that
           ww.yaml defines itself; for that, show the operator
           the exact YAML to change by hand. Never edit ww's configuration files
-          yourself. Check the fragment with `{{ww.executable}} setup apply
-          {{ww.documents.setup_proposal}} --for me --dry-run`. Show the
-          operator the script, where it would live, and the dry run's list of
+          yourself. ww runs the script from the step's directory, the task's
+          worktree when worktrees are on: write it for that directory, run
+          the project's tools through its wrapper as
+          {{ww.documents.project}} records it, and never name the main
+          checkout's absolute path. Check the fragment with
+          `{{ww.executable}} setup apply {{ww.documents.setup_proposal}} --for
+          me --dry-run`. Show the operator the script, where it would live, and the dry run's list of
           changes, and ask where to apply it.
         choices:
           - for me: Apply it to my local setup.

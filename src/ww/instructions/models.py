@@ -276,7 +276,9 @@ class VerificationPage:
 
     ``files`` is the verified step's change set, or every file when
     ``all_files`` (no git); ``diff_command`` shows the change itself;
-    ``draft_artifact`` is the path of the step worker's held artifact.
+    ``draft_artifact`` is the path of the step worker's held artifact;
+    ``directory`` is where ww runs the step's checks, its worktree when the
+    task has one.
     """
 
     step: str
@@ -286,6 +288,7 @@ class VerificationPage:
     diff_command: str | None = None
     draft_artifact: str | None = None
     checks: tuple[KnownCheck, ...] = ()
+    directory: str | None = None
 
     @property
     def prepares(self) -> bool:
@@ -301,6 +304,7 @@ class VerificationPage:
             "diff_command": self.diff_command,
             "draft_artifact": self.draft_artifact,
             "checks": [check.to_dict() for check in self.checks],
+            "directory": self.directory,
         }
 
 

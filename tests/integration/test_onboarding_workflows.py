@@ -430,11 +430,69 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
     ):
         assert piece in description, piece
     # The proposal reads as paragraphs, not one block.
-    assert description.count("\n\n") == 2
+    assert description.count("\n\n") == 5
     apply = _step("ww-suggest", "apply").description
     assert "--for <me or team, as chosen in design> --yes" in apply
     assert "plan --workflow <the main lane>" in apply
     assert '"what an agent gets on the first task"' in apply
+
+
+def test_the_project_scan_records_how_and_where_commands_run() -> None:
+    scan = _step("ww-learn-project", "scan").description
+    assert "how and where commands run" in scan
+    assert "`docker compose exec app`" in scan
+    assert "whether each worktree gets its own environment" in scan
+    assert "run the way the scan" in _step("ww-learn-project", "history").description
+
+    (project,) = _step("ww-learn-project", "review").update_document
+    assert "how and where commands run" in project.instruction
+
+
+@pytest.mark.parametrize(
+    ("workflow", "step"),
+    [
+        ("ww-suggest", "propose"),
+        ("ww-solve", "propose"),
+        ("ww-automate", "propose"),
+        ("ww-rules-from-artifacts", "propose"),
+    ],
+)
+def test_every_generated_command_follows_the_projects_convention(
+    workflow: str, step: str
+) -> None:
+    description = _step(workflow, step).description
+    assert "worktree" in description
+    assert "wrapper" in description
+    if workflow != "ww-rules-from-artifacts":
+        assert "main checkout's absolute path" in description
+
+
+def test_the_rule_skill_writes_checks_for_the_step_directory() -> None:
+    path = Path(__file__).parents[2] / "src/ww/assets/ww-rule_skill.md"
+    skill = " ".join(path.read_text(encoding="utf-8").split())
+    assert "the step's directory (the task's worktree when there is one)" in skill
+    assert "never an absolute path into the main checkout" in skill
+
+
+def test_proposals_use_the_step_features_the_work_calls_for() -> None:
+    design = _step("ww-suggest", "design").description
+    assert "such as manual testing, the step features it" in design
+    assert "an `items` step for work that splits into cases" in design
+    assert "(11) last" in design
+    assert "manual testing" in _step("ww-suggest", "gather").description
+
+    for workflow in ("ww-suggest", "ww-solve"):
+        propose = _step(workflow, "propose").description
+        for feature in (
+            "`items` step",
+            "`interactive: true`",
+            "`interactive: page` with `choices`",
+            "`documents` entry",
+            "`item.field.<name>`",
+            "`loop` with a `break`",
+        ):
+            assert feature in propose, (workflow, feature)
+    assert "without waiting to be asked" in _step("ww-suggest", "propose").description
 
 
 def test_the_setup_skill_recommends_what_was_not_learned_yet() -> None:

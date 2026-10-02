@@ -435,10 +435,10 @@ for one of them.
 | `ww-setup` | — | The guide. Asks once, in its opening message, whether the operator wants to see what ww does as it learns (`explain`) and which path to take: Express (learn-project → express → suggest) or Guided (learn-project → learn → suggest), and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
 | `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their role in this project (what they own, who they work with and hand over to, what they are measured on, which decisions they keep), their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
 | — | `ww-express` | Started by `ww-setup` in express mode. Infers the operator's profile, their role, their team and their company from the repository (their own commits, the other authors and the paths each touches, the review signals, the remote's organisation, the authors' e-mail domains, manifest and README fields, and the company's or product's public website), shows the four drafts with the evidence and a confidence for each finding, and writes them once the operator has corrected and confirmed them. |
-| `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file. |
-| `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, designs the setup with the operator in one set of questions, proposes it in full, shows it with `setup apply --dry-run`'s list of changes, and places it on confirmation; see below. |
+| `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, how and where those commands run (on the host or through a container exec, virtual environment or task runner, given as an exact argument list, and whether each worktree has its own environment), the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file. |
+| `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, designs the setup with the operator in one set of questions, proposes it in full, with the step features each kind of work calls for (an `items` step for cases, interactive steps and the operator page for what the operator performs, a document or item fields for a template such as a test case, a loop for work repeated until a condition holds), shows it with `setup apply --dry-run`'s list of changes, and places it on confirmation; see below. |
 | `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
-| `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, and applies it for the operator or the team on confirmation. |
+| `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
@@ -476,11 +476,12 @@ a default for each answer taken from the profile, what the setup turns on,
 and states as decided what the profile already answers: the integration
 branch and the lanes, from the branch patterns present (no `hotfix` lane
 without hotfix-like branches, unless the operator asks), the commands that
-verify a change and their order, whether agents commit (following the
+verify a change, their order and how they run, whether agents commit (following the
 project's convention) and push (never), worktrees (on by default when several
 contributors are active and the operator works on parallel tasks), the task ID
 format, who reviews (for a solo project an agent self-review step rather than
-an interactive review; for a team the operator keeps the review), which of
+an interactive review; for a team the operator keeps the review), the step
+features a workflow whose work is not a plain code change uses, which of
 the operator's preferences become modes or operator stops, `projects` when the
 layout found candidates (it asks for the sibling repositories' paths and never
 scans them), a rule for a fix-prone path only when the fixes show a repeated
@@ -490,7 +491,18 @@ its handlers as hooks, one handler per verify command that loops until the
 command passes and lets the command, run as `argv`, decide; one workflow per
 lane reusing those handlers, with `inherit` where lanes differ only in their
 base branch; modes for preferences; and rules only for conventions no command
-can check. A small project gets one lane and a handler or two. [Example
+can check. A workflow is fitted to its kind of work without the operator
+asking: a manual-testing workflow, for example, collects the test cases as
+an `items` step, puts each case before the operator on the operator page
+(`interactive: page` with `pass` and `fail` choices), and keeps the test case
+template as a document the steps save, with per-case values as item fields;
+work repeated until a condition holds is a `loop` with a `break`. Every
+command the proposal carries, in a handler, a hook, a rule's check or a
+script, is written for the directory ww runs it from, the task's worktree
+when worktrees are on, through the wrapper `project.md` records for the
+project's commands, and never names the main checkout. `ww-solve`,
+`ww-automate`, `ww-rules-from-artifacts` and the `ww-rule` skill follow the
+same convention. A small project gets one lane and a handler or two. [Example
 18](examples.md#18-what-ww-suggest-proposes-for-a-node-project-with-devmain-and-a-jira-like-tracker)
 shows the shape to expect. It is presented section by section, changed as the
 operator asks for up to three rounds, and placed only on "apply".
@@ -1836,7 +1848,11 @@ own assignment: under `auto` the manager hands it to a new worker; under
 `single` the same session performs it, and its page says to read the change
 as a reviewer would. The verification page lists each rule and what is
 asked about it, the step's changed files and the `git diff` that shows them,
-the path of the held artifact, and the checks the project already has.
+the path of the held artifact, the checks the project already has, and,
+while a check is still to be proposed or prepared, where ww runs checks: the
+step's directory, the task's worktree when it has one. Each command is
+written for that directory, through the wrapper the project runs its own
+commands with, never with another checkout's absolute path.
 
 What ww knows lives in `ww-rule-automation.json` at the project root, a file
 to commit, keyed by each rule's text hash; `checks` there are named, and one
@@ -1852,7 +1868,8 @@ operator stop, `operator_reason: rules_proposed`:
 2. **Prepare.** For an approved approach the verifier builds the check:
    installs the tool as a development dependency, writes its configuration in
    the repository, proves the command fails on a deliberate violation and
-   passes on the change, and reports the command. ww records it as
+   passes on the change, running it from the step's directory as ww will,
+   and reports the command. ww records it as
    `proposed`; the operator's approval converts it and its rules. An extended
    check keeps running as approved until its revision is approved.
 

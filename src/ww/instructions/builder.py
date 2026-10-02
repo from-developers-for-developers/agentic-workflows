@@ -727,6 +727,13 @@ class InstructionBuilder:
         step_record = state.item_executions[step_index]
         held = step_record.held_completion
         automation = self.rule_store.load()
+        # Where ``complete`` runs the step's checks: the same directory.
+        workspace, _ = item_workspace_values(
+            self.root,
+            step.workdir,
+            state.working_directory,
+            {**dict(state.workflow_values), **self.task_values(state, plan)},
+        )
         return VerificationPage(
             step=step.name,
             rules=tuple(
@@ -767,6 +774,7 @@ class InstructionBuilder:
                 for name, entry in automation.checks.items()
                 if entry.status != "rejected"
             ),
+            directory=str(workspace or self.root),
         )
 
     def _child_control(

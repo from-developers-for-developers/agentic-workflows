@@ -172,6 +172,9 @@ def test_completing_holds_the_step_and_opens_a_verification(tmp_path: Path) -> N
     assert "### Verification" in rendered
     assert "This session also did that step's work" in rendered
     assert "Prefer the ecosystem's own tools" in rendered
+    assert held.verification.directory == str(root)
+    assert f"ww runs every check from `{root}`, the step's directory" in rendered
+    assert "how the command runs from the directory above" in rendered
     assert "--rule-result='<JSON result for develop/1>'" in rendered
     state, snapshot = service.load("TASK-1")
     items = [item.id for item in snapshot.plan.items]
@@ -181,6 +184,7 @@ def test_completing_holds_the_step_and_opens_a_verification(tmp_path: Path) -> N
     assert snapshot.plan_revision == 2
     rendered_json = json.loads(JsonOutputAdapter().render_instruction(held))
     assert rendered_json["verification"]["rules"][0]["state"] == "unresolved"
+    assert rendered_json["verification"]["directory"] == str(root)
 
 
 def test_results_are_refused_on_an_ordinary_step(tmp_path: Path) -> None:
@@ -227,6 +231,8 @@ def test_the_two_stages_and_their_approvals_end_in_a_derived_check(
     assert '`"assert": ["empty"]` when it must print nothing' in prepare_page
     assert '`"assert": [{"equals": "<value>"}]`' in prepare_page
     assert '"operator"' not in prepare_page
+    assert "#### Where checks run" in prepare_page
+    assert "running it exactly as ww will, from the directory above" in prepare_page
     stop = _report(
         service,
         {"id": "develop/1", "status": "approach", "check": "cli-surface"},

@@ -36,8 +36,13 @@ group, `ww-rules.yaml`, `ww.yaml` or
    the step page shows only the first sentence. Propose a `check` only when
    it is obvious: a one-line shell command, or an existing tool whose
    configuration the rule plainly belongs to, listed among the store's
-   `checks`. Otherwise leave it without one: a verifier judges it, and may
-   propose an approach the operator confirms before anything is built.
+   `checks`. Write a check for the directory ww runs it from, the step's
+   directory (the task's worktree when there is one), through the wrapper
+   the project runs its own commands with, such as a container exec, as
+   `.ww/project.md` or the agent instructions record it; never an absolute
+   path into the main checkout. Otherwise leave it without one: a verifier
+   judges it, and may propose an approach the operator confirms before
+   anything is built.
 6. **Confirm once.** Show one block with, per rule: ID, group, the group's
    filters, glob and its match count, the sentence, and `new` or
    `replaces <id>: <old sentence>`. For an amendment of a rule with an

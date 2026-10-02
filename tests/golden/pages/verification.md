@@ -42,10 +42,14 @@ The step worker's artifact, held until you finish: `<root>/.ww/tasks/TASK-1/runs
 
 The project has no derived checks yet.
 
+#### Where checks run
+
+ww runs every check from `<root>`, the step's directory, with nothing else set up. Write each command for that directory: paths relative to it, never another checkout's absolute path or a `cd` out of it. Run tools the way the project runs its own test and lint commands there, through the same wrapper (container exec, virtual environment, task runner) the existing checks, the project's agent instructions or ww's `.ww/project.md` name.
+
 #### What to do
 
 - Interpret each rule in one sentence. If more than one reasonable reading exists, report `ambiguous` with the candidates and stop on that rule.
-- Propose the fewest checks for the unresolved rules; a check may cover several. Prefer the ecosystem's own tools (deptrac, PHPStan or Psalm for PHP; import-linter, ruff or a pytest architecture test for Python; eslint for JavaScript), which express many rules in one configuration. If an existing check's tool above can express the rule, propose extending its configuration, naming that check. Use plain shell (`grep`, `find`, `git`, `sed`, `awk`) only for what no tool covers. Write no command and install nothing yet: the operator approves the approach first.
+- Propose the fewest checks for the unresolved rules; a check may cover several. Prefer the ecosystem's own tools (deptrac, PHPStan or Psalm for PHP; import-linter, ruff or a pytest architecture test for Python; eslint for JavaScript), which express many rules in one configuration. If an existing check's tool above can express the rule, propose extending its configuration, naming that check. Use plain shell (`grep`, `find`, `git`, `sed`, `awk`) only for what no tool covers. Say in the approach how the command runs from the directory above, wrapper included, so the operator approves that too. Write no command and install nothing yet: the operator approves the approach first.
 - For judged rules and for rules you could not convert: give a verdict `pass` or `fail`, with evidence `file:line — what` for each failure.
 
 #### What to report
