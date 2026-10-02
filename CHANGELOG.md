@@ -15,7 +15,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
   rules decline <rule-id>... --reason` records rules as not convertible, each after the operator's confirmation, so
   checks can be scriptized outside a task. `ww rules --json` gives each rule its `scriptize` state. A converted check
   now runs in a step only where all of its `config` files exist; elsewhere its rules are judged, naming the missing
-  file.
+  file. `a49d1f3`
 - A running task takes a changed workflow: `next` stops at `plan_changed` showing what changed, and `--replan` applies it
   (rerunning finished steps after confirmation) while `--keep-plan` ignores it. `5622971`
 - A reused task ID no longer inherits a dead task's `ww/git` state: a recorded base is trusted only for the same
