@@ -813,6 +813,11 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
                     "  This rule has a pending proposal; the operator has not "
                     "yet decided."
                 )
+            if rule.missing is not None:
+                lines.append(
+                    f"  Its check `{rule.check}` does not run here: "
+                    f"`{rule.missing}` is missing in this step's directory."
+                )
         lines.extend(
             [
                 "",
@@ -964,6 +969,11 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
         if rule.pending_operator:
             lines.append(
                 "  A proposal for this rule waits for the operator; judge it for now."
+            )
+        if rule.missing is not None:
+            lines.append(
+                f"  Its check `{rule.check}` does not run here: `{rule.missing}` "
+                "is missing in this step's directory, so judge it instead."
             )
     _verification_evidence(lines, page)
     _verification_duties(lines, page)

@@ -2011,6 +2011,33 @@ kept in `.ww/rule-disputes.json`, and `ww lint` lists each disputed ID with
 how often and where it was last disputed, since a check disputed again and
 again deserves a look at its wording or command.
 
+### Recording checks outside a task
+
+A check can also be built once for the project and recorded without a task's
+verifier, for example by `ww-scriptize-rules`, or by hand:
+
+```console
+./ww rules convert phpstan --covers php/no-new-services php/typed-returns \
+  --check-argv vendor/bin/phpstan analyse --config phpstan.neon --proven
+./ww rules decline docs/tone --reason "A matter of review."
+```
+
+`rules convert` shows the check with its command in full, its config files,
+the rules it covers with where each stands now, and anything else it
+changes, and asks; `--yes` stands for the operator's answer,
+and without a terminal it refuses. It creates the check, or replaces an
+existing one's command, configuration and coverage; a rule it no longer
+covers goes back to not scriptized. `rules decline` records rules as not
+convertible: a verifier judges them, and they are not proposed again. Both
+take `--dry-run`. `rules --json` gives each rule's `scriptize` state:
+`command`, `converted`, `not_convertible`, `rejected` or `unscriptized`.
+
+A converted check runs in a step only when all of its `config` files exist in
+the directory the step's checks run in. A check built on a branch that is not
+merged yet therefore does not run in another task's worktree: its rules are
+judged there, and the step page, like the verifier page, says why, naming
+the missing file.
+
 ### Reading the rules
 
 `ww rule <task> <id>` prints one rule or check of a task as the task's plan

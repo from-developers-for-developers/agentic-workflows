@@ -1043,7 +1043,7 @@ class WorkflowService:
             selected_model=model if model != "auto" else None,
             selected_reasoning=reasoning if reasoning != "auto" else None,
             change_mark=self._change_mark(state, snapshot.plan, item),
-            resolution=self._resolution(state, item),
+            resolution=self._resolution(state, snapshot.plan, item),
             now=_now,
         )
         self.commit(state, snapshot)
@@ -3259,7 +3259,7 @@ class WorkflowService:
             selected_model=state.assignment_selected_model,
             selected_reasoning=state.assignment_selected_reasoning,
             change_mark=self._change_mark(state, snapshot.plan, item),
-            resolution=self._resolution(state, item),
+            resolution=self._resolution(state, snapshot.plan, item),
             now=_now,
         )
         self.commit(state, snapshot)
@@ -3515,12 +3515,14 @@ class WorkflowService:
         )
 
     def _resolution(
-        self, state: ExecutionState, item: PlanItem
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]] | None:
         """How the rules without a command of a beginning step are enforced.
 
         Read from the store once, when the step first begins; a step that
-        began before keeps what it began with.
+        began before keeps what it began with. A converted check applies only
+        where its configuration files exist in the directory the step's
+        checks run in.
         """
         if (
             not judged_rules(item)
@@ -3531,6 +3533,7 @@ class WorkflowService:
             item,
             self.rule_store.load(),
             scripting=self.extensions.config.rule_scripting,
+            directory=self._check_scope(state, plan, item).directory,
         )
 
     def _check_scope(
