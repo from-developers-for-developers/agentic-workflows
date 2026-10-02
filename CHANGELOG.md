@@ -11,6 +11,8 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-03
 
+- `upgrade` updates pip, pipx and editable Git installs while preserving the installed prerelease preference;
+  package installations now show cached PyPI update notices and their actual version. `6e7e6a0`
 - Pushes to `dev` publish CI-checked development snapshots to PyPI once Trusted Publishing is configured;
   testers can install or pin `1.0.0.devN` packages. `5b5bc6a`
 
