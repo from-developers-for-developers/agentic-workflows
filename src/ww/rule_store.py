@@ -49,7 +49,8 @@ from ww.validation import (
 
 STORE_FILE = RULE_AUTOMATION_FILE
 STORE_SCHEMA_VERSION = 1
-# Who approved a proposal: the operator, or ww under ``rules.approval``.
+# Who approved a proposal. ww asks the operator for every approval; ``auto``
+# is what a store written by an earlier ww may record for its own approvals.
 RuleApprover = Literal["operator", "auto"]
 # A check name: lower-case words joined by single hyphens, e.g. "lint-src".
 CHECK_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")

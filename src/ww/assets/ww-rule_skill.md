@@ -13,7 +13,8 @@ group, `ww-rules.yaml`, `ww.yaml` or
 `ww-rule-automation.json` yourself.
 
 1. **Learn what exists.** Run `./ww rules --json` (groups, their filters and
-   directories' rules with IDs, summaries, globs) and `./ww discover` (the
+   directories' rules with IDs, summaries, globs, and the project's
+   `scripting` and `check_guidance` settings) and `./ww discover` (the
    workflows and their steps). Use only workflow and step names they show;
    never invent one.
 2. **Split into atomic obligations.** One rule is one thing an agent can do
@@ -40,9 +41,10 @@ group, `ww-rules.yaml`, `ww.yaml` or
    directory (the task's worktree when there is one), through the wrapper
    the project runs its own commands with, such as a container exec, as
    `.ww/project.md` or the agent instructions record it; never an absolute
-   path into the main checkout. Otherwise leave it without one: a verifier
-   judges it, and may propose an approach the operator confirms before
-   anything is built.
+   path into the main checkout. When `check_guidance` is set, follow it; it
+   wins over these defaults. Otherwise leave it without one: a verifier
+   judges it, and, unless `scripting` is `false`, may propose an approach
+   the operator confirms before anything is built.
 6. **Confirm once.** Show one block with, per rule: ID, group, the group's
    filters, glob and its match count, the sentence, and `new` or
    `replaces <id>: <old sentence>`. For an amendment of a rule with an

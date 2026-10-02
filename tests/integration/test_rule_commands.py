@@ -631,6 +631,22 @@ def test_rules_lists_groups_and_step_rules(
     assert (group["name"], group["workflows"], group["steps"]) == ("docs", "*", "*")
     assert group["rules"][0]["source"] == "rules/docs/header.md"
     assert data["steps"][0]["rules"][0]["id"] == "develop/1"
+    assert (data["scripting"], data["check_guidance"]) == (True, None)
+
+
+def test_rules_json_carries_the_rules_settings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "ww.json").write_text(
+        json.dumps({"rules": {"scripting": False, "check_guidance": "Run in docker."}}),
+        encoding="utf-8",
+    )
+
+    assert main(["--root", str(root), "rules", "--json"]) == 0
+
+    data = json.loads(capsys.readouterr().out)
+    assert (data["scripting"], data["check_guidance"]) == (False, "Run in docker.")
 
 
 def test_rules_names_group_filters(
@@ -748,7 +764,7 @@ def test_prune_keeps_a_check_a_live_rule_still_names(tmp_path: Path) -> None:
 
 
 def _converted_store(root: Path) -> str:
-    """A converted check, approved automatically, covering the judged rule."""
+    """A converted check, approved by the operator, covering the judged rule."""
     live = rule_text_hash(JUDGED)
     (root / STORE_FILE).write_text(
         json.dumps(
@@ -759,7 +775,7 @@ def _converted_store(root: Path) -> str:
                         "text": JUDGED,
                         "status": "converted",
                         "check": "cli-diff",
-                        "approved_by": "auto",
+                        "approved_by": "operator",
                         "approved_in": "TASK-1/01-task",
                     }
                 },

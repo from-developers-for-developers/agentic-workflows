@@ -112,12 +112,6 @@ PROJECT_FILE_KEYS = ("extensions", "task_format")
 # when the user explicitly asks for it (``"on_request"``).
 ON_REQUEST: Literal["on_request"] = "on_request"
 Enabled = bool | Literal["on_request"]
-# ``rules.approval``: who approves what a rule verifier proposes. The operator
-# approves approaches and checks (``operator``), only checks (``check``), or
-# nothing, a proven check being approved automatically (``auto``).
-RuleApproval = Literal["operator", "check", "auto"]
-RULE_APPROVALS: tuple[RuleApproval, ...] = ("operator", "check", "auto")
-DEFAULT_RULE_APPROVAL: RuleApproval = "operator"
 
 
 @dataclass(frozen=True)
@@ -267,9 +261,13 @@ class ProjectConfig:
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
     enabled: Enabled = True
-    # Who approves rule verifiers' proposals; read when a verification
-    # completes, never frozen into a run.
-    rule_approval: RuleApproval = DEFAULT_RULE_APPROVAL
+    # ``rules.scripting``: whether verifiers turn rules into checks, each
+    # approach and check approved by the operator, or only judge them. Read
+    # when a step begins.
+    rule_scripting: bool = True
+    # ``rules.check_guidance``: the operator's own words for the verifier
+    # that proposes or prepares a check; read when its page renders.
+    rule_check_guidance: str | None = None
     projects: tuple[ProjectDefinition, ...] = ()
     # The runtime ``start`` uses when ``--runtime`` is omitted.
     runtime: str = DEFAULT_RUNTIME
@@ -516,7 +514,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         disabled_workflows=_parse_workflows(raw.get("workflows"), path),
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
-        rule_approval=_parse_rules(raw.get("rules"), path),
+        **_parse_rules(raw.get("rules"), path),
     )
 
 
@@ -559,25 +557,28 @@ def _parse_agent_hooks(data: Any, path: str) -> AgentHooks:
     return AgentHooks(**data)
 
 
-def _parse_rules(data: Any, path: str) -> RuleApproval:
-    """``rules``: an object whose one key, ``approval``, names the approver."""
+def _parse_rules(data: Any, path: str) -> dict[str, Any]:
+    """``rules``: an optional ``scripting`` switch and ``check_guidance`` text."""
     if data is None:
-        return DEFAULT_RULE_APPROVAL
+        return {}
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.rules must be an object")
-    unknown = set(data) - {"approval"}
+    unknown = set(data) - {"scripting", "check_guidance"}
     if unknown:
         raise ConfigurationError(
             f"{path}.rules has unknown key(s): {', '.join(sorted(unknown))}"
         )
-    approval = data.get("approval", DEFAULT_RULE_APPROVAL)
-    for value in RULE_APPROVALS:
-        if approval == value:
-            return value
-    raise ConfigurationError(
-        f"{path}.rules.approval must be one of: "
-        + ", ".join(f'"{value}"' for value in RULE_APPROVALS)
-    )
+    scripting = data.get("scripting", True)
+    if not isinstance(scripting, bool):
+        raise ConfigurationError(f"{path}.rules.scripting must be true or false")
+    guidance = data.get("check_guidance")
+    if guidance is not None and not isinstance(guidance, str):
+        raise ConfigurationError(f"{path}.rules.check_guidance must be a string")
+    return {
+        "rule_scripting": scripting,
+        # Blank text means unset.
+        "rule_check_guidance": (guidance or "").strip() or None,
+    }
 
 
 def _parse_enabled(data: Any, path: str) -> Enabled:

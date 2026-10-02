@@ -280,8 +280,8 @@ Without it, printed commands use `./ww` and the launcher runs
 missing. `runtime` (`single` or `auto`) is the runtime `start` uses when
 neither `--runtime` nor the workflow names one, `update_check: false` silences
 the notice that the ww checkout is behind its remote, `task_format` is the
-generated task ID format, `rules.approval` decides [who approves a rule
-verifier's proposals](#who-approves-rulesapproval), `projects` lists the
+generated task ID format, `rules` sets [whether verifiers script rules and
+how](#scripting-rules-rulesscripting-and-rulescheck_guidance), `projects` lists the
 directories a task may work in, and `extensions` holds each extension's
 settings. Missing fields retain their individual defaults; this is every key
 with its default, as `init` writes it:
@@ -295,7 +295,7 @@ with its default, as `init` writes it:
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
-  "rules": {"approval": "operator"},
+  "rules": {"scripting": true},
   "builtins": {
     "init": {"model": "cheapest", "reasoning": "low"},
     "workflow_summary": {"model": "auto", "reasoning": "auto"}
@@ -1272,40 +1272,33 @@ A rule hash may be given by a unique prefix of at least 8 characters. Once
 nothing is undecided, ww runs the step's checks again, newly approved ones
 included, then verifies what remains or records the held completion.
 
-#### Who approves: `rules.approval`
-
-`ww.json` sets who approves what verifiers propose:
+#### Scripting rules: `rules.scripting` and `rules.check_guidance`
 
 ```json
-"rules": { "approval": "operator" }
+"rules": { "scripting": true, "check_guidance": "<free text>" }
 ```
 
-| Value | Approaches | Checks | Stops per converted rule |
+| Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `operator` (default) | the operator | the operator | 2 |
-| `check` | automatic | the operator | 1 |
-| `auto` | automatic | automatic, only when `proven: true` | 0 |
+| `scripting` | boolean | `true` | `true`: verifiers propose and prepare checks, and the operator approves each approach and each check at the step's `rules_proposed` stop, 2 stops per converted rule. `false`: no verifier proposes or prepares a check; every rule without a command, approved approaches and undecided proposals included, is judged. |
+| `check_guidance` | string | none | The operator's guidance for proposing and preparing checks, shown as written on the verifier page while a rule is `unresolved` or `approach_approved`; blank text is unset. |
 
-`rules` takes only `approval`; another key or value is an error. The setting
-is read when a verification item completes, not frozen into the run. ww's
-approvals go through the same code as the operator's `next --approve`, are
-recorded with `approved_by: auto`, and an approved check runs on the held
-completion at once. Under `check`, an ambiguous rule and a proposed check
-still stop the task. Under `auto` nothing stops it: an unproven check stays
-`proposed` and an ambiguous rule stays `ambiguous` in the store, and meanwhile
-a verifier judges their rules, as for an undecided proposal from elsewhere;
-`not_convertible` is recorded as always.
+`rules` takes no other key; another key, a non-boolean `scripting` or a
+non-string `check_guidance` is an error. `scripting` is read when a step
+begins, with its rule resolutions; `check_guidance` when the verifier page
+renders (JSON: `verification.guidance`). With `scripting: false`, a check the
+store already holds as `converted` still runs. Every approval is the
+operator's, through `next --approve`, and is recorded with `approved_by:
+operator`; a store written by an earlier ww may still hold `auto`.
 
 #### Rules converted in this run
 
 When a run completes, ww lists what it converted, from the store entries whose
 `approved_in` is the run: for each check its status, who approved it, the rule
 IDs it covers with a wording summary, its command, config files, and whether it
-was proven, and for an automatic approval the undo command, `rules revoke
-<check>`. Under `auto` the run's proposals left undecided follow. The section
-is shown on the completion page (JSON: `rule_conversions`) and appended by ww
-to the workflow summary artifact as `## Rules converted in this run`, in every
-approval mode, whenever it is not empty. No agent writes it.
+was proven. The section is shown on the completion page (JSON:
+`rule_conversions`) and appended by ww to the workflow summary artifact as `##
+Rules converted in this run` whenever it is not empty. No agent writes it.
 
 ### The rule-automation store
 

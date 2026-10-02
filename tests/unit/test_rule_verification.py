@@ -24,8 +24,6 @@ from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_verification import (
     Decisions,
     apply_decisions,
-    automatic_decisions,
-    blocking_proposals,
     effective_hints,
     parse_check_results,
     parse_rule_results,
@@ -146,6 +144,39 @@ def test_a_rule_resolves_by_its_store_status(
 
     assert resolutions[0].status == resolved
     assert checks == ()
+
+
+@pytest.mark.parametrize(
+    "status", [None, "interpreted", "approach_approved", "ambiguous", "rejected"]
+)
+def test_without_scripting_every_rule_without_a_check_is_judged(
+    develop: PlanItem, status: str | None
+) -> None:
+    automation = RuleAutomation()
+    if status is not None:
+        automation = automation.with_rule(
+            rule_text_hash(CLI),
+            RuleEntry(CLI, status, check="lint"),  # type: ignore[arg-type]
+        )
+
+    resolutions, checks = resolve_rules(develop, automation, scripting=False)
+
+    assert resolutions[0].status == "judged"
+    assert checks == ()
+
+
+def test_without_scripting_an_approved_check_still_runs(develop: PlanItem) -> None:
+    automation = RuleAutomation().with_check(
+        "lint", _check((rule_text_hash(CLI),), "converted")
+    )
+    automation = automation.with_rule(
+        rule_text_hash(CLI), RuleEntry(CLI, "converted", check="lint")
+    )
+
+    resolutions, checks = resolve_rules(develop, automation, scripting=False)
+
+    assert resolutions[0].status == "converted"
+    assert [check.covers for check in checks] == [("develop/1",)]
 
 
 def test_one_planned_check_per_shared_check_name(develop: PlanItem) -> None:
@@ -527,46 +558,16 @@ def test_approvals_record_who_approved_and_in_which_run() -> None:
         KEYS,
         Decisions(approve=(rule_text_hash(CLI), "log-check")),
         NOW,
-        approved_by="auto",
         run="TASK-1/01-task",
     )
 
     cli = automation.rules[rule_text_hash(CLI)]
-    assert (cli.approved_by, cli.approved_in) == ("auto", "TASK-1/01-task")
+    assert (cli.approved_by, cli.approved_in) == ("operator", "TASK-1/01-task")
     check = automation.checks["log-check"]
-    assert (check.approved_by, check.approved_in) == ("auto", "TASK-1/01-task")
-    assert automation.rules[rule_text_hash(LOGS)].approved_by == "auto"
+    assert (check.approved_by, check.approved_in) == ("operator", "TASK-1/01-task")
+    assert automation.rules[rule_text_hash(LOGS)].approved_by == "operator"
     # Nothing undecided is marked approved.
     assert automation.rules[rule_text_hash(NAMES)].approved_by is None
-
-
-def _proven(proven: bool) -> RuleAutomation:
-    check = _check((rule_text_hash(LOGS),), "proposed")
-    return _proposed().with_check(
-        "log-check", replace(check, spec=replace(check.spec, proven=proven))
-    )
-
-
-def test_operator_approval_decides_nothing_automatically() -> None:
-    assert not automatic_decisions(_proven(True), KEYS, "operator")
-    assert blocking_proposals(_proven(True), KEYS, "operator") == KEYS
-
-
-def test_check_approval_approves_only_approaches() -> None:
-    decisions = automatic_decisions(_proven(True), KEYS, "check")
-
-    assert decisions == Decisions(approve=(rule_text_hash(CLI),))
-    assert blocking_proposals(_proven(True), KEYS, "check") == KEYS
-
-
-@pytest.mark.parametrize("proven", [True, False])
-def test_auto_approval_approves_approaches_and_proven_checks(proven: bool) -> None:
-    decisions = automatic_decisions(_proven(proven), KEYS, "auto")
-
-    expected = (rule_text_hash(CLI), "log-check") if proven else (rule_text_hash(CLI),)
-    assert decisions == Decisions(approve=expected)
-    # An ambiguous rule and an unproven check never stop the task under auto.
-    assert blocking_proposals(_proven(proven), KEYS, "auto") == ()
 
 
 def test_revoking_rejects_the_check_and_the_rules_it_covers() -> None:

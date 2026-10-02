@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
@@ -18,7 +17,6 @@ from ww.contracts import (
     OperatorReason,
     PlanItemKind,
     RecoveryAction,
-    RuleAutomationStatus,
     StepRole,
 )
 from ww.execution_models import WorkflowRunSummary
@@ -289,6 +287,9 @@ class VerificationPage:
     draft_artifact: str | None = None
     checks: tuple[KnownCheck, ...] = ()
     directory: str | None = None
+    # ``rules.check_guidance``: the operator's words for proposing and
+    # preparing checks, shown as written.
+    guidance: str | None = None
 
     @property
     def prepares(self) -> bool:
@@ -305,6 +306,7 @@ class VerificationPage:
             "draft_artifact": self.draft_artifact,
             "checks": [check.to_dict() for check in self.checks],
             "directory": self.directory,
+            "guidance": self.guidance,
         }
 
 
@@ -392,8 +394,7 @@ class CoveredRule:
 
 @dataclass(frozen=True)
 class ConvertedCheck:
-    """A check approved in this run. ``undo`` is the command that revokes an
-    automatic approval; an operator's approval has none."""
+    """A check the operator approved in this run."""
 
     name: str
     status: CheckAutomationStatus
@@ -402,7 +403,6 @@ class ConvertedCheck:
     config: tuple[str, ...]
     proven: bool
     approved_by: RuleApprover | None
-    undo: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -413,45 +413,18 @@ class ConvertedCheck:
             "config": list(self.config),
             "proven": self.proven,
             "approved_by": self.approved_by,
-            "undo": self.undo,
-        }
-
-
-@dataclass(frozen=True)
-class UndecidedProposal:
-    """A proposal of this run still waiting for the operator (under ``auto``)."""
-
-    kind: Literal["check", "rule"]
-    key: str
-    status: CheckAutomationStatus | RuleAutomationStatus
-    rules: tuple[CoveredRule, ...]
-    command: str | None = None
-    proven: bool | None = None
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "kind": self.kind,
-            "key": self.key,
-            "status": self.status,
-            "rules": [rule.to_dict() for rule in self.rules],
-            "command": self.command,
-            "proven": self.proven,
         }
 
 
 @dataclass(frozen=True)
 class RuleConversions:
     converted: tuple[ConvertedCheck, ...] = ()
-    undecided: tuple[UndecidedProposal, ...] = ()
 
     def __bool__(self) -> bool:
-        return bool(self.converted or self.undecided)
+        return bool(self.converted)
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "converted": [check.to_dict() for check in self.converted],
-            "undecided": [proposal.to_dict() for proposal in self.undecided],
-        }
+        return {"converted": [check.to_dict() for check in self.converted]}
 
 
 @dataclass(frozen=True)

@@ -75,7 +75,7 @@ defaults. Without Git, and with the uuid format:
     "recent_days": 3
   },
   "rules": {
-    "approval": "operator"
+    "scripting": true
   },
   "builtins": {
     "init": {
@@ -1892,36 +1892,48 @@ wording no rule has any more and entries awaiting a decision; only
 `ww rules prune`, after listing them and asking the operator, deletes the
 orphans.
 
-### Fewer stops: `rules.approval`
+### Turning scripting off, and guiding it: `rules.scripting` and `rules.check_guidance`
 
-Two stops per wording is the careful default. `ww.json`
-can lower it:
+Every check a verifier builds goes through both stops: the operator approves
+its approach before anything is built and its command after it is proven, at
+the step that proposed it. Nothing is approved automatically or left for the
+end of the run. A project that wants no scripting at all switches it off in
+`ww.json`:
 
 ```json
-"rules": { "approval": "check" }
+"rules": { "scripting": false }
 ```
 
-- `operator` (default): the operator approves both the approach and the
-  check.
-- `check`: approaches are approved automatically; the operator still
-  approves each check, reading its command, and picks the reading of an
-  ambiguous rule. One stop.
-- `auto`: approaches are approved automatically, and so is a check whose
-  verifier proved it (`proven: true`). Nothing stops the task: an unproven
-  check stays `proposed` and an ambiguous rule stays `ambiguous` for the
-  operator to decide later, and meanwhile a verifier judges their rules.
+With `scripting: false`, a verifier never proposes or prepares a check: every
+rule without a command of its own is judged, with a `pass` or `fail` verdict,
+on every completion. A check the operator approved earlier keeps running; `ww
+rules revoke <check>` turns it back into a judged rule. ww reads the setting
+when a step begins, so a change applies from the next step on.
 
-ww reads the setting whenever a verification completes, so a change applies
-at once, even to a running task. Automatic approvals take the same path as
-`next --approve` and are recorded in the store as `approved_by: auto`, with
-the run that made them (`approved_in`); operator approvals say `operator`.
+`rules.check_guidance` is free text for the verifier that proposes or
+prepares a check, in the operator's own words, such as how the project runs
+its tools:
 
-However approvals are made, a run that converted something ends with a
-**Rules converted in this run** section, on the completion page and
-appended by ww to the workflow summary artifact: each check with the rules
-it covers, its command, its config files, whether it was proven, and who
-approved it; under `auto`, also the run's proposals left undecided. An
-automatic approval shows its undo command:
+```json
+"rules": {
+  "check_guidance": "Development and quality checks run inside the docker container, on the worktree. Write every new check to run inside the container and act on the worktree, never on the host. Run a check on the host only when it uses nothing but the standard Linux tools, or when the host's tool versions, such as PHP, match the container's."
+}
+```
+
+It appears as written, quoted under the verifier page's "Where checks run"
+section, whenever a rule's check is still to be proposed or prepared, and it
+wins over ww's defaults there; a page that only asks for verdicts leaves it
+out. It is read each time the page renders, so a change applies at once. Like
+any setting, it can live in `ww.local.json` for the operator alone. The
+`ww-rule` skill and ww's setup workflows honour it for the checks they write,
+and `ww-suggest` proposes it when `project.md` records a wrapper, such as a
+container, that checks must go through.
+
+A run that converted something ends with a **Rules converted in this run**
+section, on the completion page and appended by ww to the workflow summary
+artifact: each check with the rules it covers, its command, its config files,
+whether it was proven, and who approved it. A check the team finds wrong can
+be undone at any time:
 
 ```console
 ./ww rules revoke deptrac --reason "too slow for every step"
@@ -1933,11 +1945,6 @@ covers, so they are judged by a verifier from then on. It changes only the
 store: the YAML, the rule files, and the check's configuration files, such
 as `deptrac.yaml` and an installed dev dependency, stay for you to keep or
 remove.
-
-When the last verifier's completion records the held completion under
-`auto`, that verifier's assignment ends there: the step's automatic follow-ups
-run, and its next agent item, such as an agent-owned `after_complete` hook,
-waits for the manager to dispatch as a new assignment.
 
 ### Checking early and disputing a check
 

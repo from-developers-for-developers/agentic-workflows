@@ -283,15 +283,24 @@ class ListedStep:
 
 @dataclass(frozen=True)
 class RulesListing:
-    """The project's declared rules, for ``ww rules``."""
+    """The project's declared rules, for ``ww rules``.
+
+    ``scripting`` and ``check_guidance`` are the project's ``rules``
+    settings, so an agent writing a check reads them without opening ww's
+    configuration files.
+    """
 
     groups: tuple[ListedGroup, ...]
     steps: tuple[ListedStep, ...]
+    scripting: bool = True
+    check_guidance: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "groups": [group.to_dict() for group in self.groups],
             "steps": [step.to_dict() for step in self.steps],
+            "scripting": self.scripting,
+            "check_guidance": self.check_guidance,
         }
 
 

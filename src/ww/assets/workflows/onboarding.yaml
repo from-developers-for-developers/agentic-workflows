@@ -570,7 +570,12 @@ workflows:
               integration branch, `hotfix` the release branch),
               `branch_name_formats` per lane, `commit_format` after the commit
               convention, `separate_branch: true`, and `worktrees` with
-              `worktree_dir` only when chosen; `limits` only on request.
+              `worktree_dir` only when chosen; under `rules`, a
+              `check_guidance` only when {{ww.documents.project}} records a
+              wrapper that commands go through, such as a container: one or two
+              sentences telling the verifier that scripts a rule where its
+              check must run (through the wrapper, on the task's worktree) and
+              when the host may run one; `limits` only on request.
 
 
               Hook the `ww/git` handlers to the lanes:
@@ -594,8 +599,9 @@ workflows:
               the project runs its commands: ww runs it from the step's
               directory, the task's worktree when worktrees are on, so write
               it for that directory, through the project's wrapper where it
-              has one, and never name the main checkout's absolute path or
-              `cd` out of it.
+              has one, following the `check_guidance` that `{{ww.executable}}
+              rules --json` shows when it is set, and never name the main
+              checkout's absolute path or `cd` out of it.
 
 
               Fit each workflow's steps to its kind of work with ww's step
@@ -697,8 +703,9 @@ workflows:
           Write every command it carries, a hook's `argv` or `shell`, a
           rule's check or a script, for the step's directory, the task's
           worktree when worktrees are on, through the project's wrapper as
-          {{ww.documents.project}} records it, never with the main
-          checkout's absolute path. Write it as a setup fragment to
+          {{ww.documents.project}} records it and as the `check_guidance` of
+          `{{ww.executable}} rules --json` says when it is set, never with
+          the main checkout's absolute path. Write it as a setup fragment to
           {{ww.documents.setup_proposal}} (the root keys `workflows`, `modes`,
           `documents`, `handlers`, `hooks`, `rules` and `settings`; rules as
           literal sentences in the `rules` lists of the steps they govern). A
@@ -766,7 +773,9 @@ workflows:
           a `paths` glob only when it is about a kind of file, and a check only
           when it is an obvious one-line command, written for the step's
           directory (the task's worktree when there is one) and run through
-          the project's wrapper as {{ww.documents.project}} records it. Choose the rule group it
+          the project's wrapper as {{ww.documents.project}} records it,
+          following the `check_guidance` of `{{ww.executable}} rules --json`
+          when it is set. Choose the rule group it
           belongs to from `{{ww.executable}} rules --json`, or a new group with
           the workflows and steps it concerns. Show the operator all candidates
           in one block, each with its group, the steps it will reach, and the

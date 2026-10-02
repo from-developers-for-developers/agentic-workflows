@@ -1029,6 +1029,20 @@ def _verification_duties(lines: Lines, page: VerificationPage) -> None:
                 "name.",
             ]
         )
+        if page.guidance:
+            lines.extend(
+                [
+                    "",
+                    "The operator's guidance for every check you propose or "
+                    "prepare (`rules.check_guidance`); it wins over the "
+                    "defaults above:",
+                    "",
+                    *(
+                        f"> {line}" if line.strip() else ">"
+                        for line in page.guidance.splitlines()
+                    ),
+                ]
+            )
     lines.extend(["", "#### What to do", ""])
     if "unresolved" in states:
         lines.extend(

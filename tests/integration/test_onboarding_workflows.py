@@ -474,6 +474,34 @@ def test_the_rule_skill_writes_checks_for_the_step_directory() -> None:
     assert "never an absolute path into the main checkout" in skill
 
 
+@pytest.mark.parametrize(
+    ("workflow", "step"),
+    [
+        ("ww-suggest", "propose"),
+        ("ww-solve", "propose"),
+        ("ww-rules-from-artifacts", "propose"),
+    ],
+)
+def test_generated_checks_follow_the_check_guidance(workflow: str, step: str) -> None:
+    description = _step(workflow, step).description
+    assert "`check_guidance`" in description
+    assert "rules --json" in description
+
+
+def test_ww_suggest_proposes_check_guidance_for_a_wrapper() -> None:
+    description = _step("ww-suggest", "propose").description
+    assert "under `rules`, a `check_guidance` only when" in description
+    assert "records a wrapper that commands go through" in description
+
+
+def test_the_rule_skill_follows_the_rules_settings() -> None:
+    path = Path(__file__).parents[2] / "src/ww/assets/ww-rule_skill.md"
+    skill = " ".join(path.read_text(encoding="utf-8").split())
+    assert "`scripting` and `check_guidance` settings" in skill
+    assert "When `check_guidance` is set, follow it" in skill
+    assert "unless `scripting` is `false`" in skill
+
+
 def test_proposals_use_the_step_features_the_work_calls_for() -> None:
     design = _step("ww-suggest", "design").description
     assert "such as manual testing, the step features it" in design

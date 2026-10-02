@@ -838,16 +838,14 @@ def test_yes_approves_without_the_prompt(
     assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "approach_approved"
 
 
-# rules.approval ------------------------------------------------------------------
+# rules settings -----------------------------------------------------------------
 
 JUDGED_PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
 STAGE_B = {"id": "develop/1", "status": "approach", "check": "cli-surface"}
 
 
-def _approval(root: Path, value: str) -> None:
-    (root / "ww.json").write_text(
-        json.dumps({"rules": {"approval": value}}), encoding="utf-8"
-    )
+def _rules(root: Path, **settings: object) -> None:
+    (root / "ww.json").write_text(json.dumps({"rules": settings}), encoding="utf-8")
 
 
 def _active(service: WorkflowService, page: Instruction) -> Instruction:
@@ -898,146 +896,108 @@ def test_the_operator_path_records_the_operator_as_approver(tmp_path: Path) -> N
     assert rule["proposed_run"] == "TASK-1/01-task"
 
 
-def test_check_approval_approves_the_approach_and_stops_for_the_check(
+def test_an_operator_approved_check_is_reported_when_the_run_completes(
     tmp_path: Path,
 ) -> None:
     root = _project(tmp_path)
-    _approval(root, "check")
     service, _ = _developed(root, "print(1)  # foo\n")
-    text_hash = rule_text_hash(CLI)
-
-    prepare = _active(service, _report(service, _approach()))
-
-    assert prepare.item_name == "develop-verify-1"
-    assert prepare.verification is not None
-    assert prepare.verification.rules[0].state == "approach_approved"
-    entry = _store(root)["rules"][text_hash]
-    assert (entry["status"], entry["approved_by"]) == ("approach_approved", "auto")
-    stop = _report(service, STAGE_B, checks=(FOO_CHECK,))
-    assert stop.operator_reason == "rules_proposed"
-    assert [(p.kind, p.key) for p in stop.proposals] == [("check", "cli-surface")]
-
+    _report(service, _approach())
+    service.next("TASK-1", approve=(rule_text_hash(CLI)[:12],))
+    _report(service, STAGE_B, checks=(FOO_CHECK,))
     recorded = service.next("TASK-1", approve=("cli-surface",))
 
-    assert recorded.item_name == "check"
-    assert _store(root)["checks"]["cli-surface"]["approved_by"] == "operator"
-
-
-def test_check_approval_still_stops_for_an_ambiguous_rule(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    _approval(root, "check")
-    service, _ = _developed(root)
-
-    stop = _report(
-        service,
-        {"id": "develop/1", "status": "ambiguous", "candidates": ["a", "b"]},
-    )
-
-    assert stop.operator_reason == "rules_proposed"
-    assert stop.proposals[0].kind == "ambiguous"
-
-
-def test_auto_approval_converts_a_proven_check_without_a_stop(
-    tmp_path: Path,
-) -> None:
-    root = _project(tmp_path)
-    _approval(root, "auto")
-    service, _ = _developed(root, "print(1)  # foo\n")
-    text_hash = rule_text_hash(CLI)
-
-    prepare = _active(service, _report(service, _approach()))
-    assert prepare.verification is not None
-    assert prepare.verification.rules[0].state == "approach_approved"
-    recorded = _report(service, STAGE_B, checks=(FOO_CHECK,))
-
-    assert recorded.status != "failed"
-    assert "- `develop/1`: passed (check `cli-surface`)" in _artifact(root)
-    check = _store(root)["checks"]["cli-surface"]
-    assert (check["status"], check["approved_by"], check["approved_in"]) == (
-        "converted",
-        "auto",
-        "TASK-1/01-task",
-    )
-    assert _store(root)["rules"][text_hash]["status"] == "converted"
     done = _finish(service, recorded)
+
     assert done.status == "completed"
-    assert [check.name for check in done.rule_conversions.converted] == ["cli-surface"]
-    converted = done.rule_conversions.converted[0]
+    (converted,) = done.rule_conversions.converted
+    assert (converted.name, converted.approved_by) == ("cli-surface", "operator")
     assert converted.rules[0].id == "develop/1"
-    assert converted.approved_by == "auto"
-    assert converted.undo is not None and converted.undo.endswith(
-        "rules revoke cli-surface"
-    )
     page = _markdown(done)
     assert "### Rules converted in this run" in page
-    assert "- Check `cli-surface` (approved by auto)" in page
+    assert "- Check `cli-surface` (approved by operator)" in page
     assert f"  - Rule `develop/1`: {CLI}" in page
-    assert "  - Proven: yes" in page
-    assert "rules revoke cli-surface`" in page
-    summary = _summary_artifact(root, service)
-    assert summary.startswith("Summary.")
-    assert "## Rules converted in this run" in summary
-    assert "rules revoke cli-surface" in summary
-    rendered_json = json.loads(JsonOutputAdapter().render_instruction(done))
-    assert rendered_json["rule_conversions"]["converted"][0]["name"] == "cli-surface"
-
-
-def test_auto_approval_leaves_an_unproven_check_undecided_and_judges(
-    tmp_path: Path,
-) -> None:
-    root = _project(tmp_path)
-    _approval(root, "auto")
-    service, _ = _developed(root)
-    _active(service, _report(service, _approach()))
-
-    judged = _active(
-        service,
-        _report(service, STAGE_B, checks=({**FOO_CHECK, "proven": False},)),
-    )
-
-    assert judged.status != "failed"
-    assert judged.verification is not None
-    rule = judged.verification.rules[0]
-    assert (rule.state, rule.pending_operator) == ("judged", True)
-    assert _store(root)["checks"]["cli-surface"]["status"] == "proposed"
-    recorded = _report(service, JUDGED_PASS)
-    assert recorded.status != "failed"
-    done = _finish(service, recorded)
-    assert done.rule_conversions.converted == ()
-    assert [(p.kind, p.key, p.proven) for p in done.rule_conversions.undecided] == [
-        ("check", "cli-surface", False)
-    ]
-    page = _markdown(done)
-    assert "No check was approved in this run." in page
-    assert "- Check `cli-surface` (proposed)" in page
+    assert "Undo" not in page
     assert "## Rules converted in this run" in _summary_artifact(root, service)
+    rendered_json = json.loads(JsonOutputAdapter().render_instruction(done))
+    assert rendered_json["rule_conversions"] == {"converted": [converted.to_dict()]}
 
 
-def test_auto_approval_judges_an_ambiguous_rule_without_a_stop(
-    tmp_path: Path,
-) -> None:
+def test_without_scripting_a_verifier_only_judges(tmp_path: Path) -> None:
     root = _project(tmp_path)
-    _approval(root, "auto")
-    service, _ = _developed(root)
+    _rules(root, scripting=False, check_guidance="Run checks inside docker.")
 
-    judged = _active(
-        service,
-        _report(
-            service,
-            {"id": "develop/1", "status": "ambiguous", "candidates": ["a", "b"]},
-        ),
+    _, held = _developed(root)
+
+    assert held.verification is not None
+    assert [rule.state for rule in held.verification.rules] == ["judged"]
+    page = _markdown(held)
+    assert "judged: give a verdict" in page
+    assert "#### Where checks run" not in page
+    assert "Run checks inside docker." not in page
+    assert "--check-result" not in page
+    assert "propose how to check it" not in page
+
+
+def test_without_scripting_an_approved_approach_is_judged(tmp_path: Path) -> None:
+    text_hash = rule_text_hash(CLI)
+    root = _project(
+        tmp_path,
+        store={
+            "rules": {
+                text_hash: {
+                    "text": CLI,
+                    "status": "approach_approved",
+                    "approach": "diff the parser's help output",
+                    "check": "cli-surface",
+                    "interpretation": "No flag changes.",
+                }
+            },
+            "checks": {},
+        },
     )
+    _rules(root, scripting=False)
 
-    assert judged.status != "failed"
-    assert judged.verification is not None
-    assert judged.verification.rules[0].state == "judged"
-    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "ambiguous"
-    recorded = _report(service, JUDGED_PASS)
-    assert recorded.status != "failed"
-    done = _finish(service, recorded)
-    assert [(p.kind, p.status) for p in done.rule_conversions.undecided] == [
-        ("rule", "ambiguous")
-    ]
+    _, held = _developed(root)
+
+    assert held.verification is not None
+    assert [rule.state for rule in held.verification.rules] == ["judged"]
+    assert "prepare and prove its check" not in _markdown(held)
+
+
+def test_the_check_guidance_reaches_the_verifier_as_written(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    guidance = (
+        "Checks run inside the docker container, on the worktree.\n"
+        "\n"
+        "Plain coreutils may run on the host."
+    )
+    _rules(root, check_guidance=f"  {guidance}\n")
+
+    _, held = _developed(root)
+
+    assert held.verification is not None
+    assert held.verification.guidance == guidance
+    page = _markdown(held)
+    assert (
+        "> Checks run inside the docker container, on the worktree.\n"
+        ">\n"
+        "> Plain coreutils may run on the host."
+    ) in page
+    assert page.index("#### Where checks run") < page.index("> Checks run inside")
+    assert page.index("> Plain coreutils") < page.index("#### What to do")
+    rendered_json = json.loads(JsonOutputAdapter().render_instruction(held))
+    assert rendered_json["verification"]["guidance"] == guidance
+
+
+def test_blank_check_guidance_shows_nothing(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _rules(root, check_guidance="   ")
+
+    _, held = _developed(root)
+
+    assert held.verification is not None
+    assert held.verification.guidance is None
+    assert "rules.check_guidance" not in _markdown(held)
 
 
 def test_nothing_converted_leaves_no_section(tmp_path: Path) -> None:

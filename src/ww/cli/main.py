@@ -510,11 +510,16 @@ def _rules(context: _Context) -> _Outcome:
         return _revoke(context)
     if args.rules_action is not None:
         return _rule_write(context, configuration)
-    listing = rules_listing(
-        configuration,
-        context.storage.root,
-        DisputeLog(context.storage.root).load(),
-        RuleStore(context.storage.root).load(),
+    settings = context.extensions.config
+    listing = replace(
+        rules_listing(
+            configuration,
+            context.storage.root,
+            DisputeLog(context.storage.root).load(),
+            RuleStore(context.storage.root).load(),
+        ),
+        scripting=settings.rule_scripting,
+        check_guidance=settings.rule_check_guidance,
     )
     return _Outcome(
         _json(listing.to_dict()) if args.json_output else render_rules_listing(listing)

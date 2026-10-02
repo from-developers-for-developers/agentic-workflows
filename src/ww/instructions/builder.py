@@ -41,7 +41,6 @@ from ww.execution_models import (
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
-from ww.project_config import DEFAULT_RULE_APPROVAL, RuleApproval
 from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
@@ -134,10 +133,6 @@ class _Selection:
         )
 
 
-def _operator_approval() -> RuleApproval:
-    return DEFAULT_RULE_APPROVAL
-
-
 class InstructionBuilder:
     """Build caller-facing instructions from authoritative run records."""
 
@@ -150,7 +145,7 @@ class InstructionBuilder:
         documents: DocumentStore,
         interactions: InteractionLog,
         rule_store: RuleStore | None = None,
-        rule_approval: Callable[[], RuleApproval] | None = None,
+        rule_check_guidance: Callable[[], str | None] | None = None,
         child_values: ChildValues = _no_child_values,
     ) -> None:
         self.tasks = tasks
@@ -160,8 +155,9 @@ class InstructionBuilder:
         # Read for display only: the checks a verifier may extend, and the
         # proposals the operator decides at a ``rules_proposed`` stop.
         self.rule_store = rule_store or RuleStore(root)
-        # The project's ``rules.approval``, read when a completed run is shown.
-        self.rule_approval = rule_approval or _operator_approval
+        # The project's ``rules.check_guidance``, read when a verifier's page
+        # renders, so a changed setting applies at once.
+        self.rule_check_guidance = rule_check_guidance or (lambda: None)
         # Persisted paths are project-relative; instructions print them
         # absolute for the filesystem this process runs in.
         self.root = root
@@ -325,7 +321,6 @@ class InstructionBuilder:
             self.rule_store.load(),
             run_reference(state.task_id, state.run_id, state.workflow),
             plan,
-            auto=self.rule_approval() == "auto",
         )
 
     def _awaiting_input(self, state: ExecutionState, plan: WorkflowPlan) -> Instruction:
@@ -775,6 +770,7 @@ class InstructionBuilder:
                 if entry.status != "rejected"
             ),
             directory=str(workspace or self.root),
+            guidance=self.rule_check_guidance(),
         )
 
     def _child_control(

@@ -33,16 +33,25 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
     assert config.settings_for("ww/git") == {}
     assert config.limits == Limits(rounds=3, fixes=3)
     assert config.agent_hooks == AgentHooks(check_unfinished=True, recent_days=3)
-    assert config.rule_approval == "operator"
+    assert config.rule_scripting is True
+    assert config.rule_check_guidance is None
 
 
-@pytest.mark.parametrize("value", ["operator", "check", "auto"])
-def test_the_rule_approval_loads_from_project_config(
-    tmp_path: Path, value: str
+@pytest.mark.parametrize("value", [True, False])
+def test_rule_scripting_loads_from_project_config(tmp_path: Path, value: bool) -> None:
+    path = write(tmp_path, {"rules": {"scripting": value}})
+
+    assert load_project_config(path).rule_scripting is value
+
+
+def test_the_check_guidance_loads_trimmed_and_blank_means_unset(
+    tmp_path: Path,
 ) -> None:
-    path = write(tmp_path, {"rules": {"approval": value}})
+    path = write(tmp_path, {"rules": {"check_guidance": "  Run in docker.\n"}})
+    assert load_project_config(path).rule_check_guidance == "Run in docker."
 
-    assert load_project_config(path).rule_approval == value
+    path = write(tmp_path, {"rules": {"check_guidance": " \n "}})
+    assert load_project_config(path).rule_check_guidance is None
 
 
 def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
@@ -170,10 +179,11 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
             "ww.json.agent_hooks.recent_days must be a positive integer",
         ),
         ({"rules": "auto"}, "rules must be an object"),
-        ({"rules": {"approve": "auto"}}, "rules has unknown key(s): approve"),
+        ({"rules": {"approval": "auto"}}, "rules has unknown key(s): approval"),
+        ({"rules": {"scripting": "yes"}}, "rules.scripting must be true or false"),
         (
-            {"rules": {"approval": "never"}},
-            'rules.approval must be one of: "operator", "check", "auto"',
+            {"rules": {"check_guidance": ["Run in docker."]}},
+            "rules.check_guidance must be a string",
         ),
     ],
 )

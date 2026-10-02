@@ -65,7 +65,6 @@ from ww.plan import (
     WorkflowPlan,
     number_step_paths,
 )
-from ww.project_config import RuleApproval
 from ww.rule_store import (
     UNDECIDED_RULE_STATUSES,
     CheckEntry,
@@ -98,14 +97,16 @@ def to_verify(item: PlanItem, record: PlanItemExecution) -> tuple[PlannedRule, .
 
 
 def resolve_rules(
-    item: PlanItem, automation: RuleAutomation
+    item: PlanItem, automation: RuleAutomation, *, scripting: bool = True
 ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]:
     """How each rule without a command is enforced, as the step begins.
 
     A rule whose wording has an approved check is checked by it; several
     rules sharing one check get one planned check that covers them all. A
     rule whose approach was approved, or whose reading the operator picked,
-    is still unresolved: a verifier prepares or proposes its check.
+    is still unresolved: a verifier prepares or proposes its check. Without
+    ``scripting`` (``rules.scripting: false``) every other rule is judged:
+    no verifier proposes or prepares a check.
     """
     resolutions: list[RuleResolution] = []
     covered: dict[str, list[PlannedRule]] = {}
@@ -123,7 +124,9 @@ def resolve_rules(
             )
             continue
         status: RuleResolutionStatus
-        if entry is None or entry.status in {"interpreted", "approach_approved"}:
+        if not scripting:
+            status = "judged"
+        elif entry is None or entry.status in {"interpreted", "approach_approved"}:
             status = "unresolved"
         elif entry.status in UNDECIDED_RULE_STATUSES:
             status = "pending_operator"
@@ -182,8 +185,16 @@ def verification_needs(
         ):
             continue
         interpretation = entry.interpretation if entry else None
-        if entry is None or entry.status == "interpreted":
-            state: VerificationState = "unresolved"
+        # A rule the step began by judging (``rules.scripting: false``) stays
+        # judged, whatever the store says now.
+        began_judged = any(
+            resolution.id == rule.id and resolution.status == "judged"
+            for resolution in record.rule_resolutions
+        )
+        if began_judged:
+            state: VerificationState = "judged"
+        elif entry is None or entry.status == "interpreted":
+            state = "unresolved"
         elif entry.status == "approach_approved":
             state = "approach_approved"
         else:
@@ -1046,8 +1057,7 @@ def record_results(
 
 @dataclass(frozen=True)
 class Decisions:
-    """What the operator decided at a ``rules_proposed`` stop, or what ww
-    approves on its own under ``rules.approval`` (:func:`automatic_decisions`)."""
+    """What the operator decided at a ``rules_proposed`` stop."""
 
     approve: tuple[str, ...] = ()
     approaches: tuple[tuple[str, str], ...] = ()
@@ -1077,45 +1087,6 @@ def resolve_key(key: str, keys: tuple[str, ...]) -> str:
     )
 
 
-def automatic_decisions(
-    automation: RuleAutomation, keys: tuple[str, ...], approval: RuleApproval
-) -> Decisions:
-    """What ww approves on its own among ``keys`` under ``rules.approval``.
-
-    ``check`` and ``auto`` approve every proposed approach; ``auto`` also
-    approves every proposed check, or check revision, that its verifier
-    proved. Nothing else is decided: an unproven check and an ambiguous rule
-    stay undecided.
-    """
-    if approval == "operator":
-        return Decisions()
-    approve: list[str] = []
-    for key in keys:
-        check = automation.checks.get(key)
-        if check is not None:
-            proposed = check.pending or check.spec
-            if approval == "auto" and check.undecided and proposed.proven:
-                approve.append(key)
-            continue
-        entry = automation.rules.get(key)
-        if entry is not None and entry.status == "approach_proposed":
-            approve.append(key)
-    return Decisions(approve=tuple(approve))
-
-
-def blocking_proposals(
-    automation: RuleAutomation, keys: tuple[str, ...], approval: RuleApproval
-) -> tuple[str, ...]:
-    """The undecided proposals among ``keys`` that stop the task for the operator.
-
-    Under ``auto`` none does: an unproven check and an ambiguous rule stay
-    undecided in the store while a verifier judges their rules, like any
-    proposal from elsewhere. Otherwise every undecided proposal stops it.
-    """
-    undecided = tuple(key for key in keys if automation.undecided(key))
-    return () if approval == "auto" else undecided
-
-
 def apply_decisions(
     automation: RuleAutomation,
     keys: tuple[str, ...],
@@ -1125,7 +1096,7 @@ def apply_decisions(
     approved_by: RuleApprover = "operator",
     run: str | None = None,
 ) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
-    """Apply decisions, the operator's or ww's, to undecided proposals.
+    """Apply the operator's decisions to undecided proposals.
 
     Returns the store, the proposals still undecided, and the checks now
     approved. Approving a rule's approach lets a verifier prepare its check;

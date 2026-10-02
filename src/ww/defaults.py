@@ -15,7 +15,6 @@ from ww.config_files import (
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.project_config import (
     BUILTIN_DEFAULTS,
-    DEFAULT_RULE_APPROVAL,
     AgentHooks,
     Limits,
 )
@@ -42,7 +41,7 @@ def default_settings() -> dict[str, Any]:
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
         "agent_hooks": AgentHooks().to_dict(),
-        "rules": {"approval": DEFAULT_RULE_APPROVAL},
+        "rules": {"scripting": True},
         "builtins": deepcopy(BUILTIN_DEFAULTS),
         "workflows": {},
         "projects": [],

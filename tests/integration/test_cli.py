@@ -625,7 +625,7 @@ def test_init_adds_missing_settings_and_leaves_user_level_ones(
 
     settings = json.loads((project / "ww.json").read_text())
     assert settings["limits"] == {"rounds": 5, "fixes": 3}
-    assert settings["rules"] == {"approval": "operator"}
+    assert settings["rules"] == {"scripting": True}
     assert "runtime" not in settings
 
 
