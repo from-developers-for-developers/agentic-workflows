@@ -14,9 +14,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - A reused task ID no longer inherits a dead task's `ww/git` state: a recorded base is trusted only for the same
   branch while it exists, else `base_branches` is resolved; `reset` drops the task's branch and commit records (an
   extension's new `forget_task` hook); and a generated ID skips one an extension still holds (new `claims_task` hook),
-  for `ww/git` a branch record or an existing task branch.
+  for `ww/git` a branch record or an existing task branch. `b3acd6f`
 - `init` rewrites a `./ww` launcher that differs from the current one and reports it as updated, since one an older ww
-  wrote reads old config names and runs the wrong binary; `lint` warns about it. Choose the binary with `executable`.
+  wrote reads old config names and runs the wrong binary; `lint` warns about it. Choose the binary with `executable`. `b3acd6f`
 - Breaking: `rules.approval` is gone; `rules.scripting` (`true` by default, or `false` for no scripting) replaces it, and the operator approves every approach and check. Replace `"approval"` in `ww.json` or `ww.local.json`. `7fe8ab9`
 - `rules.check_guidance` takes your own words for the verifier that scripts a rule, such as where checks run; the verifier page, the `ww-rule` skill and the setup workflows follow it. `7fe8ab9`
 - Commands ww's agents write follow the project's way of running commands: `ww-learn-project` records where and how
