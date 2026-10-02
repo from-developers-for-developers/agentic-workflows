@@ -5,9 +5,14 @@ it lands — there is no staging period and nothing is waiting to ship. Sections
 are dated by the day `main` changed, newest first, because there are no version
 tags yet to group them by. Pulled a week ago? Read down to that date and stop.
 
-The package version stays at 0.1.0 while the release process is not yet in
-place. What may change between two pulls, and what ww does not promise yet,
-is in [documentation/limitations.md](documentation/limitations.md).
+The committed package version stays at 0.1.0; development snapshots from `dev`
+use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
+yet, is in [documentation/limitations.md](documentation/limitations.md).
+
+## 2026-10-03
+
+- Pushes to `dev` publish CI-checked development snapshots to PyPI once Trusted Publishing is configured;
+  testers can install or pin `1.0.0.devN` packages. `5b5bc6a`
 
 ## 2026-10-02
 
