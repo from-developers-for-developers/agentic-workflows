@@ -336,6 +336,7 @@ The built-in workflows:
 | --- | --- | --- |
 | `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
 | `ww-learn` | `onboarding.yaml` | Interviews the operator into the documents `me`, `myrole`, `team` and `company`. |
+| `ww-express` | `onboarding.yaml` | Infers the documents `me`, `myrole`, `team` and `company` from the repository and writes them once the operator confirms. |
 | `ww-learn-project` | `onboarding.yaml` | Scans how the project's work is organised into `project`. |
 | `ww-suggest` | `onboarding.yaml` | Designs a setup with the operator, proposes it in full, and places it with `setup apply`. |
 | `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |

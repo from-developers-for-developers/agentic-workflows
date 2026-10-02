@@ -3,7 +3,8 @@
 # ww's learning and setup workflows. They learn who uses ww and how the
 # project works, into five files ww keeps for its own use, and design a
 # setup with the operator from them, which ww places with `setup apply`. The
-# `ww-*` skills start them; `ww-setup` guides through them on a first use.
+# `ww-*` skills start them; `ww-setup` guides through them on a first use and
+# starts `ww-express`, which has no skill of its own.
 #
 # Every step that writes a learning file starts it with the same remark, so an
 # agent that is not doing ww work leaves the file alone. The steps always
@@ -251,6 +252,110 @@ workflows:
           operator to review and commit with the project, naming them: `git add
           .ww/team.md .ww/company.md`. me.md and myrole.md stay on their
           machine.
+
+  - name: ww-express
+    description: >-
+      Infers the operator, their role, team and company from the repository
+      and asks them to confirm.
+    runtime: single
+    restartable: true
+    role: manager
+    recommended_next_workflow: ww-suggest
+    steps:
+      - name: infer
+        description: >-
+          Draft what ww would otherwise learn in interviews, from the
+          repository in {{ww.task.workspace_dir}}. Read only; change no file,
+          and look at nothing outside this checkout. Start from the Profile
+          section of {{ww.documents.project}}; if that file does not exist,
+          run `{{ww.executable}} inspect` and say that the findings rest on the
+          repository alone. Then gather what the profile does not carry. The
+          operator: `git config user.name` and `git config user.email`; their
+          own commits (`git log --author=<their email> -n 300`): their share of
+          all commits, the paths they touch most (what they own), their commit
+          message style and typical commit size, and when they commit
+          (weekdays or weekends, time of day), as careful hints about their
+          working style, never as judgements. The team: the other authors, how
+          many were active in the last 90 days, the paths each touches most
+          (roles by area, such as frontend, backend, infrastructure or
+          documentation), and the review signals (merge commits by author, a
+          pull request template, CODEOWNERS). The company: the remote's
+          organisation (`git remote -v`), the e-mail domains of the authors,
+          the author and organisation fields of the README, LICENSE and
+          package manifests, and a domain or product name the documents
+          mention. You may visit the public website of the company or product
+          found this way to describe the company in two or three sentences;
+          never look up individual people online, and never copy personal
+          data beyond what the repository already carries. The artifact is a
+          draft section for each of {{ww.documents.me}},
+          {{ww.documents.myrole}}, {{ww.documents.team}} and
+          {{ww.documents.company}}, each finding with its evidence (the command
+          or file) and a confidence (high, medium or low), then a short list
+          of what could not be inferred.
+      - name: confirm
+        interactive: true
+        artifact_from: infer
+        description: >-
+          Show the operator the four drafts side by side in plain words: what
+          ww inferred about them, their role, their team and their company,
+          what each finding rests on, and which findings are guesses. If a
+          file already exists, say what it holds and what the draft would
+          change. Remind them that team.md and company.md are shared with the
+          team: they carry nothing personal or confidential, and nobody is
+          named without asking. Then converse: the operator corrects, adds or
+          removes, and you revise the drafts, until the operator says `ww
+          done`; then record the conversation once and write the four files
+          as confirmed.
+        saves:
+          - documents.me: >-
+              A short Markdown description of the operator, one section per
+              topic, as confirmed. The first line is exactly: <!-- This file is
+              maintained by ww for ww's own use. Do not use it for anything
+              else. If you are an agent that is not doing ww work, ignore this
+              file. --> The second line is: Inferred by ww from the repository
+              and confirmed by the operator on <today's date>. Keep what still
+              holds in an existing file, update what changed, and mark what the
+              operator withdrew as superseded, with today's date, rather than
+              silently deleting it.
+          - documents.myrole: >-
+              A short Markdown description of the operator's role in this
+              project, one section per topic, as confirmed. The first line is
+              exactly: <!-- This file is maintained by ww for ww's own use. Do
+              not use it for anything else. If you are an agent that is not
+              doing ww work, ignore this file. --> The second line is: Inferred
+              by ww from the repository and confirmed by the operator on
+              <today's date>. Keep what still holds in an existing file, update
+              what changed, and mark what the operator withdrew as superseded,
+              with today's date, rather than silently deleting it.
+          - documents.team: >-
+              A short Markdown description of the team, one section per topic,
+              as confirmed, naming nobody the operator did not agree to name.
+              The first line is exactly: <!-- This file is maintained by ww for
+              ww's own use. Do not use it for anything else. If you are an
+              agent that is not doing ww work, ignore this file. --> The second
+              line is: Inferred by ww from the repository and confirmed by the
+              operator on <today's date>. Keep what still holds in an existing
+              file, update what changed, and mark what no longer holds as
+              superseded, with today's date, rather than silently deleting it.
+          - documents.company: >-
+              A few lines about the company, as confirmed. The first line is
+              exactly: <!-- This file is maintained by ww for ww's own use. Do
+              not use it for anything else. If you are an agent that is not
+              doing ww work, ignore this file. --> The second line is: Inferred
+              by ww from the repository and confirmed by the operator on
+              <today's date>. Keep what still holds in an existing file, update
+              what changed, and mark what no longer holds as superseded, with
+              today's date.
+      - name: finish
+        description: >-
+          Record when ww learned: `{{ww.executable}} onboarding --set
+          learned.me=now --set learned.myrole=now --set learned.team=now --set
+          learned.company=now`. Then tell the operator what was written where:
+          {{ww.documents.me}} and {{ww.documents.myrole}} stay on their
+          machine; {{ww.documents.team}} and {{ww.documents.company}} are left
+          uncommitted for them to review and commit with the project, for
+          example `git add .ww/team.md .ww/company.md`. Say that ww-suggest
+          comes next.
 
   - name: ww-learn-project
     description: >-

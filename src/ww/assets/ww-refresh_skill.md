@@ -18,7 +18,9 @@ existing files first and update them in place.
    workflow: start it once and answer its `choose` step to match ("only me",
    "only my role", "only team and company", or "everything" when all three
    are picked). "The project" is `ww-learn-project`, which reruns `./ww
-   inspect` and rebuilds the profile in `.ww/project.md` from it.
+   inspect` and rebuilds the profile in `.ww/project.md` from it. A file
+   `ww-express` inferred from the repository, whose second line says so, is
+   refreshed the same way: the `ww-learn` interviews correct it.
 3. If `user.explain` is `true`, add `--mode ww-narrate`. Start each chosen
    workflow with the start command `./ww discover` shows, omitting the task
    ID unless discover says this project needs one:

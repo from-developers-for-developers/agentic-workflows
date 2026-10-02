@@ -24,6 +24,7 @@ from ww.workflow_config import StepDefinition, WorkflowConfiguration
 
 ONBOARDING = (
     "ww-learn",
+    "ww-express",
     "ww-learn-project",
     "ww-suggest",
     "ww-solve",
@@ -270,7 +271,8 @@ def test_init_installs_the_setup_skills(
 
 @pytest.mark.parametrize(
     ("skill", "workflow"),
-    [(name, name) for name in ONBOARDING if name != "ww-refresh"],
+    # ww-express has no skill of its own: ww-setup starts it.
+    [(name, name) for name in ONBOARDING if name != "ww-express"],
 )
 def test_each_skill_starts_its_workflow(skill: str, workflow: str) -> None:
     assert f"--workflow {workflow} " in SKILLS[skill]
@@ -289,7 +291,7 @@ def test_the_setup_skill_guides_and_records_the_state() -> None:
 
 def test_a_first_setup_asks_each_thing_once() -> None:
     setup = SKILLS["ww-setup"]
-    assert "Put the narration question and the offer of step 3 in one" in setup
+    assert "Put everything into one opening message" in setup
     assert "so that its `choose` step does not ask" in setup
     choose = _step("ww-learn", "choose").description
     assert "When the requirements already say what to cover" in choose
@@ -442,3 +444,52 @@ def test_the_setup_skill_recommends_what_was_not_learned_yet() -> None:
     assert "also when `project.setup.done` is already" in text
     for choice in ('"only me"', '"only my role"', '"only team and company"'):
         assert choice in text
+
+
+def test_ww_express_infers_the_four_documents_and_confirms_them_once() -> None:
+    workflow = builtin_workflow("ww-express")
+    assert [step.name for step in workflow.steps] == ["infer", "confirm", "finish"]
+    assert workflow.recommended_next_workflow == "ww-suggest"
+
+    infer = _step("ww-express", "infer")
+    assert not infer.interactive
+    for signal in (
+        "{{ww.documents.project}}",
+        "`{{ww.executable}} inspect`",
+        "`git config user.email`",
+        "`git log --author=<their email> -n 300`",
+        "`git remote -v`",
+        "never look up individual people online",
+        "a confidence (high, medium or low)",
+        "what could not be inferred",
+    ):
+        assert signal in infer.description, signal
+
+    confirm = _step("ww-express", "confirm")
+    assert confirm.interactive
+    assert "until the operator says `ww done`" in confirm.description
+    assert "record the conversation once" in confirm.description
+    assert "nobody is named without asking" in confirm.description
+    updates = {update.name: update.instruction for update in confirm.update_document}
+    assert list(updates) == ["me", "myrole", "team", "company"]
+    for instruction in updates.values():
+        assert REMARK in instruction
+        assert (
+            "The second line is: Inferred by ww from the repository and confirmed "
+            "by the operator on <today's date>." in instruction
+        )
+
+    finish = _step("ww-express", "finish").description
+    for key in ("me", "myrole", "team", "company"):
+        assert f"--set learned.{key}=now" in finish, key
+    assert "ww-suggest" in finish
+
+
+def test_the_setup_skill_offers_express_and_guided() -> None:
+    text = SKILLS["ww-setup"]
+    assert "- Express: ww learns the project, infers your profile" in text
+    assert "Runs `ww-learn-project`, then `ww-express`, then `ww-suggest`." in text
+    assert "- Guided: ww learns the project, then short interviews" in text
+    assert "Runs `ww-learn-project`, then\n     `ww-learn`, then `ww-suggest`." in text
+    assert "Express takes five replies" in text
+    assert "inferred from the repository" in SKILLS["ww-refresh"]

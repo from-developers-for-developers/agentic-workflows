@@ -9,6 +9,12 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-02
+
+- `ww-setup` offers an express path: `ww-learn-project`, then `ww-express` infers the operator's profile, role, team
+  and company from the repository (their own commits, the other authors, the remote organisation and public site) and
+  asks for one confirmation, then `ww-suggest`. Guided keeps the interviews.
+
 ## 2026-10-01
 
 - Interactive steps are talk-first: the agent converses, the operator says `ww done`, and one

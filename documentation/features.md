@@ -429,8 +429,9 @@ for one of them.
 
 | Skill | Workflow | Does |
 | --- | --- | --- |
-| `ww-setup` | — | The guide. Asks once whether the operator wants to see what ww does as it learns (`explain`), then offers learn-project → learn → suggest, each optional, and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
+| `ww-setup` | — | The guide. Asks once, in its opening message, whether the operator wants to see what ww does as it learns (`explain`) and which path to take: Express (learn-project → express → suggest) or Guided (learn-project → learn → suggest), and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
 | `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their role in this project (what they own, who they work with and hand over to, what they are measured on, which decisions they keep), their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
+| — | `ww-express` | Started by `ww-setup` in express mode. Infers the operator's profile, their role, their team and their company from the repository (their own commits, the other authors and the paths each touches, the review signals, the remote's organisation, the authors' e-mail domains, manifest and README fields, and the company's or product's public website), shows the four drafts with the evidence and a confidence for each finding, and writes them once the operator has corrected and confirmed them. |
 | `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file. |
 | `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, designs the setup with the operator in one set of questions, proposes it in full, shows it with `setup apply --dry-run`'s list of changes, and places it on confirmation; see below. |
 | `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
@@ -438,20 +439,34 @@ for one of them.
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
-The questions are interactive steps: an interview puts its questions in one
-numbered message with at most one follow-up each, and a pick between a few
-answers goes through the agent's own question tool. `ww-setup` asks about
+The questions are interactive steps: an interview opens with its questions in
+one numbered message, then converses until the operator says `ww done`, and a
+pick between a few answers goes through the agent's own question tool. `ww-setup` asks about
 narration and which workflows to run in one message and passes the choice on,
 so `ww-learn` does not ask it again. Every question can be skipped. An
 interview writes its file from the answers and shows it, without a separate
 confirmation (`ww-refresh` corrects it, and the shared files stay uncommitted
 until the operator commits them); `project.md` and the setup are shown before
-they are written. A first setup takes about seven replies: the opening
+they are written. A guided first setup takes about seven replies: the opening
 question, three interviews, the project review, the design and "apply". These workflows declare `runtime: single`
 and give every step to the session that talks to the operator (`role:
 manager`), so they work in agents without subagents. When `explain` is `true`,
 the skills start them with the built-in `ww-narrate` mode, whose steps tell
 the operator what each one does and why.
+
+**Express or Guided.** The opening question offers two paths. Guided runs
+`ww-learn-project`, the `ww-learn` interviews and `ww-suggest`. Express runs
+`ww-learn-project`, then `ww-express` instead of the interviews, then
+`ww-suggest`, and takes five replies: the opening question, the project
+review, the confirmation, the design and "apply". `ww-express` drafts `me.md`,
+`myrole.md`, `team.md` and `company.md` from what the checkout shows, each
+finding with its evidence and a confidence and a list of what it could not
+infer, and the operator corrects them in one conversation before they are
+written. Each file's second line says it was inferred from the repository and
+confirmed on that date; `ww-refresh` refreshes it like any other, through the
+interviews. The inference reads only this checkout and the public website of
+the company or product it names; it never looks people up online and copies
+no personal data beyond what the repository already carries.
 
 **What `ww-suggest` proposes.** Its `design` step asks, in one message with
 a default for each answer taken from the profile, what the setup turns on,
@@ -492,9 +507,9 @@ What ww learns goes into five files it keeps for its own use:
 
 | File | Where | Shared | Written by |
 | --- | --- | --- | --- |
-| `me.md` | the user configuration directory (`scope: user`) | no, personal | `ww-learn` |
-| `myrole.md` | `.ww/` at the project root | no, personal to the checkout | `ww-learn` |
-| `team.md`, `company.md` | `.ww/` at the project root | yes, once committed | `ww-learn` |
+| `me.md` | the user configuration directory (`scope: user`) | no, personal | `ww-learn`, `ww-express` |
+| `myrole.md` | `.ww/` at the project root | no, personal to the checkout | `ww-learn`, `ww-express` |
+| `team.md`, `company.md` | `.ww/` at the project root | yes, once committed | `ww-learn`, `ww-express` |
 | `project.md` | `.ww/` at the project root | yes, once committed | `ww-learn-project` |
 
 They are the built-in documents `me`, `myrole`, `team`, `company` and
@@ -543,7 +558,7 @@ if it creates branches or worktrees.
 **Switching them off.** Each is a built-in workflow, switched off by name in
 `ww.json`; the documents and the mode stay while any of them
 is enabled, and a recommendation of a switched-off one (`ww-learn-project` recommends
-`ww-learn`, which recommends `ww-suggest`) is dropped:
+`ww-learn`, which recommends `ww-suggest`, as `ww-express` does) is dropped:
 
 ```json
 {"workflows": {"ww-solve": {"enabled": false}, "ww-automate": {"enabled": false}}}
