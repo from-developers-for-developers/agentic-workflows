@@ -1366,6 +1366,8 @@ or `schema_version` is an error.
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
+| `rules convert <check> --covers <rule-id>... (--check-shell "<sh>" \| --check-argv <arg>...) [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json]` | Shows the check, its command in full, its config files and the rules it covers, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one; a rule this check covered before and no longer does returns to unscriptized (its entry is removed). Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. |
+| `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage: a verifier judges them, and they are not proposed for scriptizing again. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--check-shell "<sh>" \| --check-argv <arg>...] [--assert empty\|equals:<value>]... [--id <stem>]` | Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. `--assert` is repeatable, one condition each. |
 | `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |
@@ -1379,7 +1381,19 @@ not load, or the write would not have its effect, every file is restored and
 the command fails with the reason. `--dry-run` validates the same way and
 restores every file. Writes print the steps the rule or group reaches and
 never commit. `rules --json` gives each rule a `store_check`: the approved
-store check that runs for a rule without a command of its own.
+store check that runs for a rule without a command of its own; and a
+`scriptize` state: `command` (its own check), `converted`, `not_convertible`,
+`rejected`, or `unscriptized`, which a rule with no store entry, or one in a
+verifier's interim status (`interpreted`, `approach_proposed`,
+`approach_approved`, `proposed`, `ambiguous`), has. The text listing names the
+same state after each rule a verifier judges.
+
+A converted check applies to a step only when every path in its `config`
+exists in the directory the step's checks run in, the task's worktree when it
+has one. Otherwise its rules are judged for that step (`missing` on the step's
+rule resolution and on the verifier page's rule names the first absent file),
+so a check whose configuration is still on an unmerged branch never runs where
+that configuration is absent.
 
 `ww-rules.yaml`, next to `ww.yaml`, holds only a `rules`
 mapping written by `rules add --group` and `rules filter`; ww rewrites it

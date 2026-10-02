@@ -239,6 +239,9 @@ class VerificationRuleLine:
     approach: str | None = None
     check: str | None = None
     pending_operator: bool = False
+    # Its converted check does not apply here: this configuration file is
+    # missing in the step's directory.
+    missing: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -249,6 +252,7 @@ class VerificationRuleLine:
             "approach": self.approach,
             "check": self.check,
             "pending_operator": self.pending_operator,
+            "missing": self.missing,
         }
 
 

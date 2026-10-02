@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from ww.actions import Commands, PlannedAction, Prompt, actions
@@ -97,7 +98,11 @@ def to_verify(item: PlanItem, record: PlanItemExecution) -> tuple[PlannedRule, .
 
 
 def resolve_rules(
-    item: PlanItem, automation: RuleAutomation, *, scripting: bool = True
+    item: PlanItem,
+    automation: RuleAutomation,
+    *,
+    scripting: bool = True,
+    directory: Path | None = None,
 ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]:
     """How each rule without a command is enforced, as the step begins.
 
@@ -106,7 +111,10 @@ def resolve_rules(
     rule whose approach was approved, or whose reading the operator picked,
     is still unresolved: a verifier prepares or proposes its check. Without
     ``scripting`` (``rules.scripting: false``) every other rule is judged:
-    no verifier proposes or prepares a check.
+    no verifier proposes or prepares a check. With ``directory``, the one the
+    step's checks run in, a converted check whose configuration files are not
+    all there, such as one built on a branch not merged yet, does not apply:
+    its rules are judged, naming the missing file.
     """
     resolutions: list[RuleResolution] = []
     covered: dict[str, list[PlannedRule]] = {}
@@ -117,6 +125,12 @@ def resolve_rules(
         converted = automation.converted_check(rule.text_hash)
         if converted is not None:
             name, check = converted
+            missing = _missing_config(check.spec, directory)
+            if missing is not None:
+                resolutions.append(
+                    RuleResolution(rule.id, "judged", name, interpretation, missing)
+                )
+                continue
             covered.setdefault(name, []).append(rule)
             specs[name] = check
             resolutions.append(
@@ -137,6 +151,13 @@ def resolve_rules(
         derived_check(name, specs[name].spec, rules) for name, rules in covered.items()
     )
     return tuple(resolutions), checks
+
+
+def _missing_config(spec: CheckSpec, directory: Path | None) -> str | None:
+    """The first of a check's configuration files ``directory`` lacks."""
+    if directory is None:
+        return None
+    return next((path for path in spec.config if not (directory / path).exists()), None)
 
 
 def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
@@ -185,12 +206,18 @@ def verification_needs(
         ):
             continue
         interpretation = entry.interpretation if entry else None
-        # A rule the step began by judging (``rules.scripting: false``) stays
-        # judged, whatever the store says now.
-        began_judged = any(
-            resolution.id == rule.id and resolution.status == "judged"
-            for resolution in record.rule_resolutions
+        # A rule the step began by judging (``rules.scripting: false``, or a
+        # converted check whose configuration is missing here) stays judged,
+        # whatever the store says now.
+        began = next(
+            (
+                resolution
+                for resolution in record.rule_resolutions
+                if resolution.id == rule.id and resolution.status == "judged"
+            ),
+            None,
         )
+        began_judged = began is not None
         if began_judged:
             state: VerificationState = "judged"
         elif entry is None or entry.status == "interpreted":
@@ -207,12 +234,19 @@ def verification_needs(
                 state=state,
                 interpretation=interpretation,
                 approach=entry.approach if entry and state != "unresolved" else None,
-                check=entry.check if entry and state == "approach_approved" else None,
+                check=(
+                    entry.check
+                    if entry and state == "approach_approved"
+                    else began.check
+                    if began is not None and began.missing is not None
+                    else None
+                ),
                 pending_operator=(
                     state == "judged"
                     and entry is not None
                     and entry.status in UNDECIDED_RULE_STATUSES
                 ),
+                missing=began.missing if began is not None else None,
             )
         )
     return tuple(needs)

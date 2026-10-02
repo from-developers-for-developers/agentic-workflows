@@ -16,8 +16,9 @@ from ww.output_adapters.markdown import (
     _fix_failures,
     _waivers,
 )
-from ww.rule_store import CheckEntry, RuleAutomation, describe_command
+from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, describe_command
 from ww.rule_views import ListedRule, Orphans, RulesListing, RuleView
+from ww.workflow_config import RuleDefinition
 
 
 def _ids(ids: tuple[str, ...]) -> str:
@@ -181,6 +182,14 @@ def render_rules_listing(listing: RulesListing) -> str:
     return _document(lines)
 
 
+# How a rule without a command is enforced when no store check runs for it.
+_JUDGED_STATES = {
+    "not_convertible": " (judged: declined for scriptizing)",
+    "rejected": " (judged: its check was rejected)",
+    "unscriptized": " (judged: not scriptized yet)",
+}
+
+
 def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
     if not rules:
         return
@@ -192,7 +201,7 @@ def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
             if rule.has_check
             else f" (checked by store check `{rule.store_check}`)"
             if rule.store_check
-            else ""
+            else _JUDGED_STATES.get(rule.scriptize, "")
         )
         disputed = (
             f" (disputed {rule.disputes} time{'s' if rule.disputes != 1 else ''})"
@@ -215,6 +224,28 @@ def render_orphans(listed: Orphans, automation: RuleAutomation) -> str:
     lines.extend(
         f"- check {name} ({automation.checks[name].status})" for name in listed.checks
     )
+    return "\n".join(lines) + "\n"
+
+
+def render_convert_preview(
+    name: str,
+    spec: CheckSpec,
+    rules: tuple[RuleDefinition, ...],
+    previous: CheckEntry | None,
+) -> str:
+    """The check ``ww rules convert`` would record, command in full."""
+    action = "replaces" if previous is not None else "creates"
+    lines = [
+        f"Check {name} ({action} the store's entry): {describe_command(spec.command)}",
+    ]
+    if spec.command.assertion is not None:
+        lines.append(f"- output must be: {spec.command.assertion.describe()}")
+    lines.append(
+        "- config files: " + (", ".join(spec.config) if spec.config else "none")
+    )
+    lines.append(f"- proven: {'yes' if spec.proven else 'no'}")
+    lines.append(f"- covers {len(rules)} rule(s):")
+    lines.extend(f"  - `{rule.id}`: {rule.summary}" for rule in rules)
     return "\n".join(lines) + "\n"
 
 

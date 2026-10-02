@@ -20,6 +20,7 @@ from ww.execution_models import CheckReport, ExecutionState, PlanItemExecution
 from ww.instructions.builder import fix_failures
 from ww.instructions.models import CheckPreview
 from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
+from ww.rule_conversion import ScriptizeState, scriptize_state
 from ww.rule_disputes import DisputeEntry
 from ww.rule_store import RuleAutomation, describe_command
 from ww.rule_verification import to_verify
@@ -215,7 +216,8 @@ class ListedRule:
 
     ``store_check`` names the approved rule-automation check that runs for a
     rule without a command of its own, the one ``rules promote`` copies into
-    its file.
+    its file. ``scriptize`` says where the rule stands: ``command``,
+    ``converted``, ``not_convertible``, ``rejected`` or ``unscriptized``.
     """
 
     id: str
@@ -225,6 +227,7 @@ class ListedRule:
     source: str | None = None
     disputes: int = 0
     store_check: str | None = None
+    scriptize: ScriptizeState = "unscriptized"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -235,6 +238,7 @@ class ListedRule:
             "source": self.source,
             "disputes": self.disputes,
             "store_check": self.store_check,
+            "scriptize": self.scriptize,
         }
 
 
@@ -330,6 +334,7 @@ def rules_listing(
             source=rule_source(rule.source, root),
             disputes=counts.get(rule.id, 0),
             store_check=_store_check(automation, rule),
+            scriptize=scriptize_state(automation, rule),
         )
 
     groups = tuple(

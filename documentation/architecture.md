@@ -1634,7 +1634,11 @@ one check for the step. Waivers are kept per check on the item record, and
 disputes in a log beside the store, so a check that is disputed often shows
 up in `lint`. `rule` and `rules` are read-only views over the frozen plan and
 the store; `rules prune` deletes orphan store entries after asking, and
-`rules revoke` rejects one check and its rules the same way.
+`rules revoke` rejects one check and its rules the same way. `rules convert`
+and `rules decline` (`rule_conversion.py`) record an operator-approved check
+or `not_convertible` rules through the same locked store write. `resolve_rules`
+is given the step's directory and resolves a converted check's rules as
+judged when one of its `config` files is missing there.
 
 Every proposal waits for the operator: `apply_decisions` records the
 `Decisions` the operator's `next` builds, the one approval path.

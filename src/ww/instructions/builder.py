@@ -740,6 +740,7 @@ class InstructionBuilder:
                     rule.approach,
                     rule.check,
                     rule.pending_operator,
+                    rule.missing,
                 )
                 for rule in record.verification
             ),

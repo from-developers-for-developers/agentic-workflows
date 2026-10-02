@@ -852,6 +852,77 @@ def _rules_parser(
         action="store_true",
         help="Validate the write and report it, then put every file back.",
     )
+    convert = actions.add_parser(
+        "convert",
+        parents=[after],
+        help=(
+            "Record an approved check in the rule-automation store, covering "
+            "the rules named, after showing it and asking."
+        ),
+    )
+    convert.add_argument("check_name", metavar="CHECK")
+    convert.add_argument(
+        "--covers",
+        nargs="+",
+        required=True,
+        metavar="RULE",
+        help="The IDs of the rules the check covers, as `rules` lists them.",
+    )
+    convert_command = convert.add_mutually_exclusive_group(required=True)
+    convert_command.add_argument("--check-shell", metavar="SCRIPT", default=None)
+    convert_command.add_argument("--check-argv", nargs="+", metavar="ARG", default=None)
+    convert.add_argument(
+        "--assert",
+        dest="assertion",
+        action="append",
+        metavar="empty|equals:VALUE",
+        help="A condition the check's output must meet; repeat for several.",
+    )
+    convert.add_argument(
+        "--config",
+        nargs="+",
+        default=[],
+        metavar="PATH",
+        help=(
+            "The project files holding the check's logic; the check runs only "
+            "where they all exist."
+        ),
+    )
+    convert.add_argument(
+        "--proven",
+        action="store_true",
+        help="The check failed on a deliberate violation and passed otherwise.",
+    )
+    convert.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be recorded and change nothing.",
+    )
+    convert.add_argument(
+        "--yes",
+        action="store_true",
+        help="Record without the y/N prompt, on the operator's word.",
+    )
+    decline = actions.add_parser(
+        "decline",
+        parents=[after],
+        help=(
+            "Record rules as not convertible, after asking: judged from then "
+            "on and never proposed for scriptizing again."
+        ),
+    )
+    decline.add_argument("rule_ids", nargs="+", metavar="RULE")
+    decline.add_argument("--reason", required=True, help="Why; recorded.")
+    decline.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be recorded and change nothing.",
+    )
+    decline.add_argument(
+        "--yes",
+        action="store_true",
+        help="Record without the y/N prompt, on the operator's word.",
+    )
     add = actions.add_parser(
         "add",
         parents=[dry_run],

@@ -965,6 +965,11 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
             lines.append(
                 "  A proposal for this rule waits for the operator; judge it for now."
             )
+        if rule.missing is not None:
+            lines.append(
+                f"  Its check `{rule.check}` does not run here: `{rule.missing}` "
+                "is missing in this step's directory, so judge it instead."
+            )
     _verification_evidence(lines, page)
     _verification_duties(lines, page)
     _verification_results(lines, page)

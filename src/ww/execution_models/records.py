@@ -153,20 +153,27 @@ class RuleResolution:
     verdict (``pending_operator`` while an undecided proposal exists); an
     ``unresolved`` one gets a verifier's proposal. ``interpretation`` is the
     store's one-sentence reading, shown under the rule on the page.
+    ``missing`` is set on a judged rule whose converted ``check`` does not
+    apply here: the first of its configuration files the step's directory
+    lacks.
     """
 
     id: str
     status: RuleResolutionStatus
     check: str | None = None
     interpretation: str | None = None
+    missing: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "id": self.id,
             "status": self.status,
             "check": self.check,
             "interpretation": self.interpretation,
         }
+        if self.missing is not None:
+            data["missing"] = self.missing
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> RuleResolution:
@@ -183,6 +190,9 @@ class RuleResolution:
             check=expect_optional_string(data["check"], "rule resolution.check"),
             interpretation=expect_optional_string(
                 data["interpretation"], "rule resolution.interpretation"
+            ),
+            missing=expect_optional_string(
+                data.get("missing"), "rule resolution.missing"
             ),
         )
 
@@ -398,9 +408,12 @@ class VerificationRule:
     approach: str | None = None
     check: str | None = None
     pending_operator: bool = False
+    # A judged rule whose converted ``check`` does not apply in this step:
+    # the configuration file the step's directory lacks.
+    missing: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "id": self.id,
             "text": self.text,
             "text_hash": self.text_hash,
@@ -410,6 +423,9 @@ class VerificationRule:
             "check": self.check,
             "pending_operator": self.pending_operator,
         }
+        if self.missing is not None:
+            data["missing"] = self.missing
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> VerificationRule:
@@ -445,6 +461,9 @@ class VerificationRule:
             check=expect_optional_string(data["check"], "verification rule.check"),
             pending_operator=expect_bool(
                 data["pending_operator"], "verification rule.pending_operator"
+            ),
+            missing=expect_optional_string(
+                data.get("missing"), "verification rule.missing"
             ),
         )
 
