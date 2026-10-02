@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- Setup proposals run verification commands through automatic hooks without duplicate agent prompts or loops;
+  agents receive failures to fix and ww reruns the checks on completion. `1b610bb`
 - Breaking: verifiers only judge. A rule without a command is checked by its converted store check or gets a
   `pass`/`fail` verdict; the in-task approach and prepare stages, `--check-result`, the `rules_proposed` stop, `next
   --approve`/`--approach`/`--pick` and the "Rules converted in this run" report are gone. `rules.scripting` is refused

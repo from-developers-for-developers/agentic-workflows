@@ -454,6 +454,18 @@ def test_the_project_scan_records_how_and_where_commands_run() -> None:
     assert "how and where commands run" in project.instruction
 
 
+def test_setup_verification_runs_automatically_without_duplicate_agent_work() -> None:
+    description = _step("ww-suggest", "propose").description
+
+    assert "automatic handler with the exact `argv` or `shell`" in description
+    assert "no agent prompt or command-running loop" in description
+    assert "ordered `before_complete` hooks with `on_failure: fix`" in description
+    assert "only a failed check sends its output back" in description
+    assert "Never also ask the agent to run these commands" in description
+    assert "never repeat a step's check at `before_complete_workflow`" in description
+    assert "handlers as steps (`- run-tests: ~`)" not in description
+
+
 @pytest.mark.parametrize(
     ("workflow", "step"),
     [

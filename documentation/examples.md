@@ -638,8 +638,10 @@ step instead of asking a verifier.
 The shape to expect from `ww-suggest` for a project that integrates on `dev`,
 releases from `main`, references `PROJ-123` keys in its commits, and verifies
 a change with `npm run lint`, `npm run typecheck` and `npm test`. The commands
-are handlers whose `before_complete` check runs the exact `argv`, so ww, not
-the agent, decides that they pass. `bugfix` is `hotfix` on another base
+are automatic handlers attached to the code-changing steps as `before_complete`
+checks. ww runs them once on completion without asking the agent to run them.
+Failures return their output to that step's worker to fix; ww checks again when
+the worker completes. `bugfix` is `hotfix` on another base
 branch, `hotfix` recommends the merge back into `dev`, and the operator keeps
 the review of a feature. The operator's wish for short updates is a mode, not
 a rule; no rule is needed, since every convention here is a command or a
@@ -647,27 +649,22 @@ setting. Applied for the team, the fragment becomes `ww-setup.yaml`:
 
 ```yaml
 handlers:
-  - check-code-quality:
-    loop:
-      - lint: Run `npm run lint` and `npm run typecheck`, and fix what they report.
-        break: Neither command reports a finding.
-        hooks:
-          before_complete:
-            - argv: [npm, run, lint]
-              on_failure: fix
-            - argv: [npm, run, typecheck]
-              on_failure: fix
-
-  - run-tests:
-    loop:
-      - test: Run `npm test` and fix every failing test.
-        break: All tests pass.
-        hooks:
-          before_complete:
-            - argv: [npm, test]
-              on_failure: fix
+  - name: lint
+    argv: [npm, run, lint]
+  - name: typecheck
+    argv: [npm, run, typecheck]
+  - name: run-tests
+    argv: [npm, test]
 
 hooks:
+  before_complete:
+    - workflows: [feature, hotfix, bugfix, merge-to-dev]
+      steps: [implement, fix, merge]
+      on_failure: fix
+      handlers:
+        - name: lint
+        - name: typecheck
+        - name: run-tests
   before_start_workflow:
     - workflows: [feature, hotfix, bugfix]
       handlers:
@@ -689,8 +686,6 @@ workflows:
           break.
       - implement: Implement the change with its tests.
         artifact_from: investigate
-      - check-code-quality:
-      - run-tests:
       - review: Walk the operator through the change and take their review.
         interactive: true
 
@@ -700,8 +695,6 @@ workflows:
       - investigate: Find why the bug happens and reproduce it with a failing test.
       - fix: Fix the bug at its cause.
         artifact_from: investigate
-      - check-code-quality:
-      - run-tests:
 
   - bugfix: Fix a bug on dev, released with the next regular release.
     inherit: hotfix
@@ -714,8 +707,6 @@ workflows:
           in the primary checkout, resolving every conflict so that both sides' intent
           survives. Do not push.
         role: manager
-      - check-code-quality:
-      - run-tests:
 ```
 
 and its `settings` go into `ww.json`:
