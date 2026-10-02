@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- `ww setup apply` and the `ww rules` commands write readable YAML: block style, no anchors or `null`, long text
+  folded, and blank lines between sections and items. `4d0b30c`
 - `ww-setup` offers an express path: `ww-learn-project`, then `ww-express` infers the operator's profile, role, team
   and company from the repository (their own commits, the other authors, the remote organisation and public site) and
   asks for one confirmation, then `ww-suggest`. Guided keeps the interviews.
