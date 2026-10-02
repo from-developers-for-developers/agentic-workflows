@@ -11,15 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
-- Breaking: `rules.approval` is gone; `rules.scripting` (`true`, the default, or `false`) replaces it. With `true`,
-  the operator approves every scripted rule twice at the step, its approach before the check is built and the check
-  once it is proven; nothing is approved automatically or left undecided for the end of the run. With `false`,
-  verifiers never propose or build a check and judge every rule without one; checks approved earlier keep running.
-  Replace `"approval"` in `ww.json` or `ww.local.json`, which ww now refuses.
-- `rules.check_guidance` takes the operator's own words for the verifier that scripts a rule, such as "checks run
-  inside the docker container, on the worktree": the verifier page quotes it under "Where checks run", `ww rules
-  --json` shows it, and the `ww-rule` skill and the setup workflows follow it; `ww-suggest` proposes it when
-  `project.md` records a wrapper such as a container.
+- Breaking: `rules.approval` is gone; `rules.scripting` (`true` by default, or `false` for no scripting) replaces it, and the operator approves every approach and check. Replace `"approval"` in `ww.json` or `ww.local.json`. `7fe8ab9`
+- `rules.check_guidance` takes your own words for the verifier that scripts a rule, such as where checks run; the verifier page, the `ww-rule` skill and the setup workflows follow it. `7fe8ab9`
 - Commands ww's agents write follow the project's way of running commands: `ww-learn-project` records where and how
   they run (host, container exec, virtual environment or task runner, per worktree or not) in `project.md`, and
   `ww-suggest`, `ww-solve`, `ww-automate`, `ww-rules-from-artifacts`, the `ww-rule` skill and the rule verifier write
