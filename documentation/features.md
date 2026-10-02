@@ -2178,6 +2178,13 @@ the performer passes it with `complete --variable name=<value>`. A bare string,
 `- name`, is a value an automatic action returns itself. A step's values are
 available to its completion hooks and later plan items.
 
+When several automatic completion hooks request the same variable with the
+same description, ww asks for it once and gives that value to each hook.
+For example, project and workflow commit hooks share one `commit_message`.
+Different descriptions for the same name are a conflict: the error names the
+variable and both requesting plan items. A supplied `--variable` still appears
+only once in the completion command.
+
 ```yaml
 variables:
   - workflow: The workflow name corresponding to one of {{ww.task.workflows}}.

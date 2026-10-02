@@ -3,9 +3,57 @@
 
 from pathlib import Path
 
-from ww.assignments import active_assignment, assignment_at
+import pytest
+
+from ww.assignments import active_assignment, assignment_at, completion_window
 from ww.config import load_configuration
+from ww.errors import StateError
 from ww.plan import compile_workflow_plan
+
+
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_completion_inputs_share_matching_requests_and_identify_conflicts(
+    tmp_path: Path, conflicting: bool
+) -> None:
+    other_description = "A different message." if conflicting else "The message."
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        f"""handlers:
+  - name: first
+    argv: [echo, "{{{{message}}}}"]
+    variables:
+      - message: The message.
+  - name: second
+    argv: [echo, "{{{{message}}}}"]
+    variables:
+      - message: {other_description}
+hooks:
+  before_complete_workflow:
+    - name: first
+workflows:
+  - name: task
+    hooks:
+      before_complete_workflow:
+        - name: second
+    steps:
+      - record: Record it.
+""",
+        encoding="utf-8",
+    )
+    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
+    cursor = next(
+        index for index, item in enumerate(plan.items) if item.name == "record"
+    )
+    if conflicting:
+        with pytest.raises(StateError) as error:
+            completion_window(plan, cursor)
+        assert "conflicting provided variable 'message'" in str(error.value)
+        assert "first (global," in str(error.value)
+        assert "second (workflow," in str(error.value)
+    else:
+        values, context = completion_window(plan, cursor)
+        assert [value.name for value in values] == ["message"]
+        assert context == ("first", "second")
 
 
 def test_parent_preparation_is_separate_and_parent_tail_follows_leaf(

@@ -567,6 +567,12 @@ with its own record, so completion, reload, and recovery need no span-specific
 state; only the instruction builder marks the first stage of a span with its
 scope and later stages as compact continuations.
 
+The same module collects the inputs of a completion window. Matching variable
+requests share one value across its automatic handlers, so overlapping project
+and workflow hooks do not make an otherwise valid transition fail. Conflicting
+descriptions remain an error with the variable name and both item identities;
+the instruction builder and completion validator use the same collection.
+
 Declared `--metadata name=value` inputs are validated at the same completion
 boundary and routed to the scope recorded in the saved plan. Completion first
 commits the source item and its metadata publication intent in the authoritative

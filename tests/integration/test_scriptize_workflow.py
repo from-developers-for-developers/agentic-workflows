@@ -173,6 +173,62 @@ def test_the_old_lane_setting_is_refused(tmp_path: Path, source: object) -> None
         load_project_config(path)
 
 
+def test_record_transition_shares_commit_message_with_project_hook(
+    tmp_path: Path,
+) -> None:
+    root = _project(
+        tmp_path, {"extensions": {"ww/git": {"base_branches": {"default": "main"}}}}
+    )
+    path = root / "ww.yaml"
+    path.write_text(
+        path.read_text().replace(
+            "hooks:\n",
+            "hooks:\n  before_complete_workflow:\n"
+            "    - ext/ww/git/handlers:git-commit: ~\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    _run("git", "init", "-q", "-b", "main", ".", cwd=root)
+    _run("git", "config", "user.email", "t@e.st", cwd=root)
+    _run("git", "config", "user.name", "Test", cwd=root)
+    (root / ".gitignore").write_text(".ww/\n", encoding="utf-8")
+    _run("git", "add", "-A", cwd=root)
+    _run("git", "commit", "-qm", "seed", cwd=root)
+    service = _start(root)
+    for name in ("collect", "approaches", "assess", "build", "checks", "assess"):
+        page = service.next("S-1")
+        assert page.item_name == name
+        if name in {"approaches", "checks"}:
+            service.interact(
+                "S-1",
+                transcript="Agent: Approve?\nOperator: Approved. ww done",
+                choice="build" if name == "approaches" else "record",
+                end=True,
+            )
+        service.complete("S-1", artifact=f"Finished {name}.", summary_for_next="Done.")
+        if name == "assess":
+            page = service.next("S-1", outcome="positive")
+
+    page = service.next("S-1")
+    assert page.item_name == "record"
+    assert [value.name for value in page.required_values] == ["commit_message"]
+    # Completing record feeds the same input to both automatic commit hooks.
+    (root / "check-config.json").write_text("{}\n", encoding="utf-8")
+    service.complete(
+        "S-1",
+        (("commit_message", "Add check configuration"),),
+        artifact="Recorded checks.",
+        summary_for_next="Recorded.",
+    )
+    assert branch_of(root) == "main"
+    assert _run("git", "show", "s-1:check-config.json", cwd=root).stdout == "{}\n"
+    summary = service.next("S-1")
+    assert summary.item_name == "update-workflow-summary"
+    done = service.complete("S-1", (("summary", "Scriptized."),), artifact="Done.")
+    assert done.status == "completed"
+
+
 def test_a_configured_workflow_may_take_a_lanes_hooks(tmp_path: Path) -> None:
     root = tmp_path
     (root / "ww.yaml").write_text(

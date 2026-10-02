@@ -261,12 +261,20 @@ def completion_window(
 ) -> tuple[tuple[ProvidedVariable, ...], tuple[str, ...]]:
     """Return inputs required to complete the current assignment boundary."""
     items = completion_window_items(plan, cursor, stop)
-    required = [value for item in items for value in item.provide]
+    required: dict[str, ProvidedVariable] = {}
+    sources: dict[str, str] = {}
+    for item in items:
+        for value in item.provide:
+            source = f"{item.name} ({item.source}, {item.id})"
+            if value.name in required and required[value.name] != value:
+                raise StateError(
+                    f"completion window has conflicting provided variable "
+                    f"{value.name!r}: {sources[value.name]} and {source}"
+                )
+            required.setdefault(value.name, value)
+            sources.setdefault(value.name, source)
     context = [item.name for item in items[1:]]
-    names = [value.name for value in required]
-    if len(names) != len(set(names)):
-        raise StateError("completion window has duplicate provided variable names")
-    return tuple(required), tuple(context)
+    return tuple(required.values()), tuple(context)
 
 
 def _coordinator(item: PlanItem) -> bool:

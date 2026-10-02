@@ -874,6 +874,11 @@ Names must be unique in the list and may not start with `ww` as their first
 dot-separated segment, or with `__`: those are ww's own values. Dots are
 allowed in a name.
 
+Within one completion window, matching supplied-variable declarations (the
+same name and description) share one input across handlers, in first-request
+order. Conflicting declarations for a name are an error identifying that name
+and both plan items. Repeating a supplied `--variable` remains an error.
+
 ### Assessments
 
 `assess` asks the agent to choose a named outcome before work continues. Prefer
