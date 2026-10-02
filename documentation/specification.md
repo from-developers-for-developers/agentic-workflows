@@ -283,8 +283,8 @@ missing. The launcher is ww-owned: `init` rewrites a `./ww` that differs from
 the current template, and `lint` warns about one. `runtime` (`single` or `auto`) is the runtime `start` uses when
 neither `--runtime` nor the workflow names one, `update_check: false` silences
 the notice that the ww checkout is behind its remote, `task_format` is the
-generated task ID format, `rules` sets [whether verifiers script rules and
-how](#scripting-rules-rulesscripting-and-rulescheck_guidance), `projects` lists the
+generated task ID format, `rules` holds [the guidance for building
+checks](#guiding-checks-rulescheck_guidance), `projects` lists the
 directories a task may work in, and `extensions` holds each extension's
 settings. Missing fields retain their individual defaults; this is every key
 with its default, as `init` writes it:
@@ -298,7 +298,7 @@ with its default, as `init` writes it:
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
-  "rules": {"scripting": true},
+  "rules": {},
   "builtins": {
     "init": {"model": "cheapest", "reasoning": "low"},
     "workflow_summary": {"model": "auto", "reasoning": "auto"}
@@ -1226,90 +1226,61 @@ completion, records nothing yet, and inserts **verification items** right
 before the step: agent items ww generates, IDs
 `<workflow>:<step path>:verify:<n>`, one per distinct worker among the rules
 (the rule's or group's `agent`, `model`, `reasoning`, else the step's). Each is
-an assignment of its own, and asks about each of its rules according to the
-rule-automation store:
+an assignment of its own, and asks for a verdict on each of its rules.
 
-| The store has the rule | The verifier is asked |
-| --- | --- |
-| nothing, or `interpreted` | `unresolved`: an interpretation and an approach, or `not_convertible`, or `ambiguous` |
-| `approach_approved` | to prepare and prove its check, or report `not_convertible` |
-| `rejected`, `not_convertible`, or an undecided proposal from elsewhere | `judged`: a verdict |
-
-A rule whose wording has a `converted` check is checked by it and asks no
-verifier. What the store says is read when the step begins and kept with it.
+When the step begins, each rule without a command resolves once against the
+rule-automation store, and the step keeps what it resolved: `converted` when
+its wording has a `converted` check, which then checks it and asks no
+verifier (subject to its `config` files; see [Rule commands](#rule-commands)),
+else `judged`, whatever other status the store gives the wording. A verifier
+never writes the store.
 
 A verification item completes with its findings as `--artifact` and one
-`--rule-result` per rule, plus one `--check-result` per check it prepared;
-both are repeatable JSON objects, and `complete` refuses a missing, unknown,
-duplicate, or malformed one, and either option on any other step.
+`--rule-result` per rule, a repeatable JSON object; `complete` refuses a
+missing, unknown, duplicate, or malformed one, and the option on any other
+step.
 
 | `--rule-result` key | Meaning |
 | --- | --- |
 | `id` | The rule ID; required. |
-| `status` | `approach`, `not_convertible`, `ambiguous` (not for a judged rule), or `judged` (only for one). |
-| `interpretation` | The rule in one sentence. |
-| `check`, `approach` | For `approach`: the kebab-case check name, at most 40 characters, to create or extend, and for an unresolved rule the approach in one line. |
-| `reason` | For `not_convertible`: why. |
-| `candidates` | For `ambiguous`: two or more readings. |
-| `verdict`, `failures` | For `judged` and `not_convertible`: `pass`, or `fail` with `failures`, each `{file, line?, what}`. |
-
-| `--check-result` key | Meaning |
-| --- | --- |
-| `name` | The check a prepared rule names; required. |
-| `argv`, or `shell` with `args` and `env`, and `assert` | Its command, as in [Commands](#commands). |
-| `config` | The project files holding the check's logic. |
-| `covers` | The IDs of the step's rules it checks, including every rule naming it. |
-| `proven` | Whether it failed on a deliberate violation and passed on the change. |
+| `status` | `judged`; any other value is refused. |
+| `verdict`, `failures` | `pass`, or `fail` with `failures`, each `{file, line?, what}`. |
 
 A failing verdict rejects the held completion as a failed check would, under
-the rule's `max_fixes`. Proposals stop the task with `operator_reason:
-rules_proposed`; the operator answers with `next`:
+the rule's `max_fixes`. Once every rule of the round passed, ww records the
+held completion as submitted.
 
-| Option | Effect |
-| --- | --- |
-| `--approve <hash or check>` | Approves a rule's approach, so a verifier prepares its check; or approves a check, converting it and the rules it covers, or its pending revision. Repeatable; the CLI prints the command and asks first. |
-| `--approach <hash> "<text>"` | Approves the operator's own approach instead. Repeatable. |
-| `--pick <hash>=<number>` | Fixes an ambiguous rule's reading; a verifier proposes an approach for it again. Repeatable. |
-| `--force --reason "<why>"` | Rejects every undecided proposal; those rules are judged. |
+`discover` (a "Rules" section; JSON: `rules_notice`) and the first page of
+`start` (JSON: `rules_notice`) say how many declared rules are
+`unscriptized` and suggest the `ww-scriptize` skill, which starts
+`ww-scriptize-rules`; while that workflow has no `hooks_from`, the notice
+also names the `ww.json` setting. The notice is left out while
+`ww-scriptize-rules` is switched off and when it is the workflow started,
+and never blocks anything. `lint` warns with the IDs of those rules and
+suggests `ww-scriptize-rules` only while it is switched on.
 
-A rule hash may be given by a unique prefix of at least 8 characters. Once
-nothing is undecided, ww runs the step's checks again, newly approved ones
-included, then verifies what remains or records the held completion.
-
-#### Scripting rules: `rules.scripting` and `rules.check_guidance`
+#### Guiding checks: `rules.check_guidance`
 
 ```json
-"rules": { "scripting": true, "check_guidance": "<free text>" }
+"rules": { "check_guidance": "<free text>" }
 ```
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `scripting` | boolean | `true` | `true`: verifiers propose and prepare checks, and the operator approves each approach and each check at the step's `rules_proposed` stop, 2 stops per converted rule. `false`: no verifier proposes or prepares a check; every rule without a command, approved approaches and undecided proposals included, is judged. |
-| `check_guidance` | string | none | The operator's guidance for proposing and preparing checks, shown as written on the verifier page while a rule is `unresolved` or `approach_approved`; blank text is unset. |
+| `check_guidance` | string | none | The operator's guidance for building checks, carried as written by `rules --json` (`check_guidance`) for `ww-scriptize-rules` and ww's rule-writing skills; blank text is unset. |
 
-`rules` takes no other key; another key, a non-boolean `scripting` or a
-non-string `check_guidance` is an error. `scripting` is read when a step
-begins, with its rule resolutions; `check_guidance` when the verifier page
-renders (JSON: `verification.guidance`). With `scripting: false`, a check the
-store already holds as `converted` still runs. Every approval is the
-operator's, through `next --approve`, and is recorded with `approved_by:
-operator`; a store written by an earlier ww may still hold `auto`.
-
-#### Rules converted in this run
-
-When a run completes, ww lists what it converted, from the store entries whose
-`approved_in` is the run: for each check its status, who approved it, the rule
-IDs it covers with a wording summary, its command, config files, and whether it
-was proven. The section is shown on the completion page (JSON:
-`rule_conversions`) and appended by ww to the workflow summary artifact as `##
-Rules converted in this run` whenever it is not empty. No agent writes it.
+`rules` takes no other key; another key, such as the retired `scripting`, or
+a non-string `check_guidance` is an error. Every check is recorded by the
+operator, through `rules convert`, with `approved_by: operator`; a store
+written by an earlier ww may still hold `auto`.
 
 ### The rule-automation store
 
-`ww-rule-automation.json` at the project root keeps what verification
-learned. It is meant to be committed; ww writes it under its own lock, and
-leaves it out of every change set. Verification never edits YAML or rule
-files; only the operator's `rules` write commands do.
+`ww-rule-automation.json` at the project root keeps the project's converted
+checks and what is known about each rule wording. It is meant to be
+committed; ww writes it under its own lock, only for the operator's `rules`
+commands, and leaves it out of every change set. Verification never edits
+it, YAML, or rule files; only the operator's `rules` write commands do.
 
 ```json
 {
@@ -1319,12 +1290,8 @@ files; only the operator's `rules` write commands do.
       "text": "Controllers must not instantiate services; inject them.",
       "status": "converted",
       "interpretation": "No `new *Service(` in src/Controller.",
-      "approach": "deptrac layer rule",
       "check": "deptrac",
-      "proposed_in": "task:develop:verify:1",
-      "proposed_run": "TASK-7/01-task",
-      "approved_by": "operator",
-      "approved_in": "TASK-7/01-task"
+      "approved_by": "operator"
     }
   },
   "checks": {
@@ -1335,28 +1302,26 @@ files; only the operator's `rules` write commands do.
       "covers": ["9f2a…"],
       "proven": true,
       "status": "converted",
-      "proposed_at": "2026-09-29T10:00:00Z",
+      "proposed_at": "2026-09-29T11:00:00Z",
       "approved_at": "2026-09-29T11:00:00Z",
-      "proposed_in": "task:develop:verify:2",
-      "proposed_run": "TASK-7/01-task",
-      "approved_by": "operator",
-      "approved_in": "TASK-7/01-task"
+      "approved_by": "operator"
     }
   }
 }
 ```
 
-`rules` is keyed by the rule's text hash; its `status` is one of
-`approach_proposed`, `approach_approved`, `interpreted`, `proposed`,
-`converted`, `rejected`, `not_convertible`, `ambiguous`, with `reason` for a
-rejected or unconvertible rule and `candidates` for an ambiguous one. `checks`
-is keyed by check name; `status` is `proposed`, `converted`, or `rejected`,
-`covers` lists rule hashes, and `pending` holds a proposed revision of a
-converted check, and `reason` explains a rejected one. Only a `converted`
-check runs. On both maps, `proposed_in` is the verification item that last
-reported on the entry and `proposed_run` its run, as `<task>/<run>`;
-`approved_by` (`operator` or `auto`) and `approved_in` (`<task>/<run>`) record
-who approved an approach, a picked reading, or a check, and in which run.
+`rules` is keyed by the rule's text hash; ww writes its `status` as
+`converted`, `not_convertible` or `rejected`, with `reason` for a rejected or
+unconvertible rule. `checks` is keyed by check name; ww writes its `status`
+as `converted` or `rejected`, `covers` lists rule hashes, and `reason`
+explains a rejected one. Only a `converted` check runs. `approved_by`
+(`operator` or `auto`) records who approved an entry. A store written while
+verifiers proposed checks inside tasks may also hold the rule statuses
+`approach_proposed`, `approach_approved`, `interpreted`, `proposed` and
+`ambiguous` (with `approach`, `extends` and `candidates`), the check status
+`proposed`, a check's `pending` revision, and `proposed_in`, `proposed_run`
+and `approved_in` on either map; ww reads them, judges such rules, and never
+writes them any more.
 ww reads and writes `schema_version` 1 of the store. An unknown key, status,
 or `schema_version` is an error.
 
@@ -1369,8 +1334,8 @@ or `schema_version` is an error.
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
-| `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and a check whose approved coverage and pending revision both cover nothing more is removed; a pending revision left covering nothing is dropped. The preview warns whenever an undecided proposal is discarded: a rule's, a removed proposed check's, or a dropped pending revision. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project and refused when absolute or with a `..` part. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
-| `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and they are not proposed for scriptizing again. `--json` gives the rules and the same changes as `rules convert`. |
+| `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project and refused when absolute or with a `..` part. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
+| `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. `--assert` is repeatable, one condition each. |
 | `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |
@@ -1386,8 +1351,8 @@ restores every file. Writes print the steps the rule or group reaches and
 never commit. `rules --json` gives each rule a `store_check`: the approved
 store check that runs for a rule without a command of its own; and a
 `scriptize` state: `command` (its own check), `converted`, `not_convertible`,
-`rejected`, or `unscriptized`, which a rule with no store entry, or one in a
-verifier's interim status (`interpreted`, `approach_proposed`,
+`rejected`, or `unscriptized`, which a rule with no store entry, or one in an
+old store's interim status (`interpreted`, `approach_proposed`,
 `approach_approved`, `proposed`, `ambiguous`), has. The text listing names the
 same state after each rule a verifier judges.
 
@@ -1418,9 +1383,9 @@ step record keeps its waivers as `checks_waived`, a mapping of ID to reason.
 item on; confirmed when it reruns finished steps) and `next --keep-plan` (carry
 on with the saved plan) answer the `plan_changed` stop; see
 [features.md](features.md#when-the-workflow-changes-mid-run).
-`next --yes` confirms `--retry`, `--force`, `--approve`, or a rewinding
-`--replan` without the y/N prompt, for an agent carrying out the operator's stated decision; the effect
-or the approved command is still printed, and the audit record notes the
+`next --yes` confirms `--retry`, `--force`, or a rewinding `--replan`
+without the y/N prompt, for an agent carrying out the operator's stated
+decision; the effect is still printed, and the audit record notes the
 confirmation. `--yes` without one of them is an error. ww asks only at a
 terminal: without one and without `--yes` it refuses at once, never reading
 an answer from a pipe.

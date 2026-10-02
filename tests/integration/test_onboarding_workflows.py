@@ -495,17 +495,21 @@ def test_generated_checks_follow_the_check_guidance(workflow: str, step: str) ->
 
 
 def test_ww_suggest_proposes_check_guidance_for_a_wrapper() -> None:
-    description = _step("ww-suggest", "propose").description
+    description = " ".join(_step("ww-suggest", "propose").description.split())
     assert "under `rules`, a `check_guidance` only when" in description
     assert "records a wrapper that commands go through" in description
+    assert "telling `ww-scriptize-rules`, which scripts rules into checks" in (
+        description
+    )
 
 
 def test_the_rule_skill_follows_the_rules_settings() -> None:
     path = Path(__file__).parents[2] / "src/ww/assets/ww-rule_skill.md"
     skill = " ".join(path.read_text(encoding="utf-8").split())
-    assert "`scripting` and `check_guidance` settings" in skill
+    assert "the project's `check_guidance` setting" in skill
     assert "When `check_guidance` is set, follow it" in skill
-    assert "unless `scripting` is `false`" in skill
+    assert "scripting" not in skill
+    assert "judges it until `ww-scriptize-rules`" in skill
 
 
 def test_proposals_use_the_step_features_the_work_calls_for() -> None:

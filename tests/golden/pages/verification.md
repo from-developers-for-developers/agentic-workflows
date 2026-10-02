@@ -21,7 +21,7 @@ This session also did that step's work: read the change as a reviewer would, not
 
 #### Rules
 
-- `develop/1` — unresolved: interpret it and propose how to check it
+- `develop/1`
   Keep the public CLI unchanged.
 
 #### Change set
@@ -38,28 +38,11 @@ git diff <commit> <commit>
 
 The step worker's artifact, held until you finish: `<root>/.ww/tasks/TASK-1/runs/01-task/command-output/<id>/<id>/attempt-01/01.stdout`
 
-#### Existing checks
-
-The project has no derived checks yet.
-
-#### Where checks run
-
-ww runs every check from `<root>`, the step's directory, with nothing else set up. Write each command for that directory: paths relative to it, never another checkout's absolute path or a `cd` out of it. Run tools the way the project runs its own test and lint commands there, through the same wrapper (container exec, virtual environment, task runner) the existing checks, the project's agent instructions or ww's `.ww/project.md` name.
-
-#### What to do
-
-- Interpret each rule in one sentence. If more than one reasonable reading exists, report `ambiguous` with the candidates and stop on that rule.
-- Propose the fewest checks for the unresolved rules; a check may cover several. Prefer the ecosystem's own tools (deptrac, PHPStan or Psalm for PHP; import-linter, ruff or a pytest architecture test for Python; eslint for JavaScript), which express many rules in one configuration. If an existing check's tool above can express the rule, propose extending its configuration, naming that check. Use plain shell (`grep`, `find`, `git`, `sed`, `awk`) only for what no tool covers. Say in the approach how the command runs from the directory above, wrapper included, so the operator approves that too. Write no command and install nothing yet: the operator approves the approach first.
-- For judged rules and for rules you could not convert: give a verdict `pass` or `fail`, with evidence `file:line — what` for each failure.
-
 #### What to report
 
-Complete with your findings as the artifact and one `--rule-result` JSON object per rule:
+Judge each rule against the change set: a verdict `pass` or `fail`, with evidence `file:line — what` for each failure. Complete with your findings as the artifact and one `--rule-result` JSON object per rule:
 
-- an approach: `{"id": "<rule>", "interpretation": "<one sentence>", "status": "approach", "check": "<kebab-name>", "approach": "<the tool or command, one line>"}`
-- a reading to choose: `{"id": "<rule>", "status": "ambiguous", "candidates": ["<reading>", "<reading>"]}`
-- not convertible: `{"id": "<rule>", "status": "not_convertible", "reason": "<why>", "verdict": "pass"}`
-- a verdict: `{"id": "<rule>", "status": "judged", "verdict": "fail", "failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, or `"verdict": "pass"` without failures
+`{"id": "<rule>", "status": "judged", "verdict": "fail", "failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, or `"verdict": "pass"` without failures.
 
 ### Previous artifacts
 

@@ -1614,16 +1614,19 @@ Judged rules, those without a command, are verified by an agent that is never
 the step's worker. Completing such a step holds the completion: the
 arguments, the change set and the draft artifact stay on the item record,
 and ww inserts one verification item per distinct worker setting before the
-step as a new plan revision, each an assignment of its own. A verifier gives
-verdicts with evidence, or, once per rule wording, interprets the rule and
-proposes how to check it; the operator approves the approach and then the
-prepared command at a `rules_proposed` stop, and only then does the command
-run, on the held completion first. What ww learns this way lives in
-`ww-rule-automation.json` at the project root, keyed by the hash of the rule
-text, with checks that may cover several rules; it is derived knowledge that ww owns and commits, never configuration, so YAML and rule files are never
-rewritten. A failing verdict is a rejection like a failed check and counts
-toward the same limit; when nothing is left to verify or decide, ww records
-the held completion by replaying it with the saved arguments.
+step as a new plan revision, each an assignment of its own. A verifier only
+judges: it gives verdicts with evidence and never writes anything else.
+Turning rules into checks is a project task of its own,
+`ww-scriptize-rules`, whose checks the operator records with `rules
+convert`. They live in `ww-rule-automation.json` at the project root, keyed
+by the hash of the rule text, with checks that may cover several rules; it is
+derived knowledge that ww owns and commits, never configuration, so YAML and
+rule files are never rewritten. When a step begins, `resolve_rules` settles
+each rule without a command once, as `converted` (its store check runs) or
+`judged`, whatever interim status an old store gives it. A failing verdict is
+a rejection like a failed check and counts toward the same limit; when
+nothing is left to verify, ww records the held completion by replaying it
+with the saved arguments.
 
 The agent facing a check has two commands of its own. `check` runs the
 active step's checks now, through a checker without an output writer, so it
@@ -1640,15 +1643,15 @@ or `not_convertible` rules through the same locked store write. `resolve_rules`
 is given the step's directory and resolves a converted check's rules as
 judged when one of its `config` files is missing there.
 
-Every proposal waits for the operator: `apply_decisions` records the
-`Decisions` the operator's `next` builds, the one approval path.
-`rules.scripting` in `ww.json` is read when a step begins: with `false`,
-`resolve_rules` resolves every rule without a converted check as judged, so
-no verifier is asked for an approach or a check. `rules.check_guidance` is
-read when a verifier page renders and shown as written. The
-"Rules converted in this run" report (`instructions/conversions.py`) is
-derived from the store's `approved_in` / `proposed_run` and rendered on the
-completion page and appended to the workflow summary artifact by ww.
+Only the operator's `rules` commands write the store, and `rules convert` is
+the one approval path. `rules.check_guidance` in
+`ww.json` reaches `ww-scriptize-rules` through `rules --json` only.
+`rule_conversion.scriptize_notice` counts the declared rules that are
+`unscriptized`, from the configuration and the store, in one place: the
+`discover` report and the first page `start` returns carry its notice, unless
+`ww-scriptize-rules` is switched off or is the workflow started, and `lint`
+lists the same rules from `unscriptized_rules`. The notice is a view; it
+selects no work.
 
 Rules are written by the operator, through the `ww-rule` skill, never by a
 running task. The skill holds the judgment (atomic rules, amendments, globs,

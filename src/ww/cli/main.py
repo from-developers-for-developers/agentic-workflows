@@ -72,7 +72,6 @@ from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import compose_settings, load_project_config
 from ww.rule_disputes import DisputeLog
 from ww.rule_store import (
-    UNDECIDED_RULE_STATUSES,
     CheckSpec,
     RuleAutomation,
     RuleStore,
@@ -111,7 +110,6 @@ from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
 from .prompts import (
     _confirm_force_next,
-    confirm_approval,
     confirm_interrupted_retry,
     confirm_operator,
 )
@@ -285,6 +283,7 @@ def _lint(context: _Context) -> _Outcome:
         f"{_launcher_warning(context.storage.root)}"
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
+        f"{_unscriptized_warning(RuleStore(context.storage.root), configuration)}"
         f"{_disputes_summary(DisputeLog(context.storage.root))}"
     )
 
@@ -329,8 +328,7 @@ def _rule_store_summary(store: RuleStore, configuration: WorkflowConfiguration) 
     """What ``ww-rule-automation.json`` holds that needs the operator's eye.
 
     An entry is an orphan when no rule of the composed configuration has its
-    wording any more (``ww rules prune`` deletes those); a pending one waits
-    for the operator's decision. Lint removes nothing.
+    wording any more (``ww rules prune`` deletes those). Lint removes nothing.
     """
     if not store.exists():
         return ""
@@ -344,16 +342,29 @@ def _rule_store_summary(store: RuleStore, configuration: WorkflowConfiguration) 
     for text_hash, entry in automation.rules.items():
         if text_hash not in hashes:
             lines.append(f"Orphan rule {text_hash[:12]}: {entry.text}\n")
-    for text_hash, entry in automation.rules.items():
-        if entry.status in UNDECIDED_RULE_STATUSES:
-            lines.append(
-                f"Pending rule {text_hash[:12]} ({entry.status}): {entry.text}\n"
-            )
-    for name, check in automation.checks.items():
-        if check.undecided:
-            state = "revision proposed" if check.pending is not None else check.status
-            lines.append(f"Pending check {name} ({state})\n")
     return "".join(lines)
+
+
+def _unscriptized_warning(
+    store: RuleStore, configuration: WorkflowConfiguration
+) -> str:
+    """Name the declared rules no check covers yet; verifiers judge them.
+
+    A warning only: ``ww-scriptize-rules`` builds checks for them, and is
+    suggested only while it is switched on.
+    """
+    rules = rule_conversion.unscriptized_rules(configuration, store.load())
+    if not rules:
+        return ""
+    warning = (
+        f"Warning: {len(rules)} rule{'s have' if len(rules) != 1 else ' has'} no "
+        "check yet (" + ", ".join(rule.id for rule in rules) + ")"
+    )
+    if rule_conversion.SCRIPTIZE_WORKFLOW not in configuration.workflows_by_name:
+        return f"{warning}.\n"
+    return (
+        f"{warning}; `{rule_conversion.SCRIPTIZE_WORKFLOW}` builds checks for them.\n"
+    )
 
 
 def _rules_summary(configuration: WorkflowConfiguration) -> str:
@@ -441,9 +452,6 @@ def _next(context: _Context) -> _Outcome:
                 outcome=args.outcome,
                 selected_agent=args.selected_agent,
                 caller_role=args.role,
-                approve=tuple(args.approve),
-                approaches=tuple((key, text) for key, text in args.approach),
-                picks=_picks(args.pick),
                 reassign=args.reassign,
                 replan=args.replan,
                 keep_plan=args.keep_plan,
@@ -451,17 +459,6 @@ def _next(context: _Context) -> _Outcome:
             args.json_output,
         ),
     )
-
-
-def _picks(values: list[str]) -> tuple[tuple[str, int], ...]:
-    """``--pick HASH=NUMBER`` values, the number being a reading's position."""
-    picks = []
-    for value in values:
-        key, separator, number = value.partition("=")
-        if not separator or not key or not number.isdigit():
-            raise StateError(f"--pick takes HASH=NUMBER, not {value!r}")
-        picks.append((key, int(number)))
-    return tuple(picks)
 
 
 def _loop(context: _Context) -> _Outcome:
@@ -552,7 +549,6 @@ def _rules(context: _Context) -> _Outcome:
             DisputeLog(context.storage.root).load(),
             RuleStore(context.storage.root).load(),
         ),
-        scripting=settings.rule_scripting,
         check_guidance=settings.rule_check_guidance,
     )
     return _Outcome(
@@ -907,7 +903,6 @@ def _complete(context: _Context) -> _Outcome:
             summary_for_next=args.summary,
             caller_role=args.role,
             rule_results=tuple(args.rule_result),
-            check_results=tuple(args.check_result),
             assignment=args.assignment,
         ),
         args.json_output,
@@ -1397,9 +1392,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if args.retry:
             args.confirmation = _confirmation(args.yes)
-        if args.yes and not (args.retry or args.force or args.approve or args.replan):
+        if args.yes and not (args.retry or args.force or args.replan):
             print(
-                "ww error: --yes confirms next --retry, --force, --approve or --replan",
+                "ww error: --yes confirms next --retry, --force or --replan",
                 file=sys.stderr,
             )
             return 1
@@ -1436,13 +1431,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "next" and args.force:
             effect = service.force_target(args.task_id)
             if not _confirm_force_next(effect, assume_yes=args.yes):
-                return 1
-            args.confirmation = _confirmation(args.yes)
-        # An approval is shown in full first: reading the command is the
-        # operator's safety, as ww keeps no allowlist of executables.
-        if args.command == "next" and args.approve:
-            preview = service.approval_preview(args.task_id, tuple(args.approve))
-            if not confirm_approval(preview, assume_yes=args.yes):
                 return 1
             args.confirmation = _confirmation(args.yes)
         # A replan that rewinds runs finished steps again: the operator agrees

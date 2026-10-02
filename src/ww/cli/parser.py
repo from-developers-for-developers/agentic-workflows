@@ -371,43 +371,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--yes",
         action="store_true",
         help=(
-            "Confirm --retry, --force, --approve or --replan without the y/N "
+            "Confirm --retry, --force or --replan without the y/N "
             "prompt. Only for carrying out a decision the operator stated."
         ),
     )
     next_step.add_argument(
         "--outcome", help="Selected outcome for the pending assess step."
-    )
-    next_step.add_argument(
-        "--approve",
-        action="append",
-        default=[],
-        metavar="HASH_OR_CHECK",
-        help=(
-            "At a rules_proposed stop: approve a rule's proposed approach (by "
-            "rule hash) or a proposed check (by name). Repeatable."
-        ),
-    )
-    next_step.add_argument(
-        "--approach",
-        action="append",
-        default=[],
-        nargs=2,
-        metavar=("HASH", "TEXT"),
-        help=(
-            "At a rules_proposed stop: approve your own approach for a rule "
-            "instead of the verifier's. Repeatable."
-        ),
-    )
-    next_step.add_argument(
-        "--pick",
-        action="append",
-        default=[],
-        metavar="HASH=NUMBER",
-        help=(
-            "At a rules_proposed stop: choose the reading of an ambiguous rule "
-            "by its number. Repeatable."
-        ),
     )
 
     completion = _shared("json", "role", "selection")
@@ -467,14 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="JSON",
-        help="A verification's result for one rule, as a JSON object. Repeatable.",
-    )
-    complete.add_argument(
-        "--check-result",
-        action="append",
-        default=[],
-        metavar="JSON",
-        help="A check a verification prepared, as a JSON object. Repeatable.",
+        help="A verification's verdict on one rule, as a JSON object. Repeatable.",
     )
     interact = subparsers.add_parser(
         "interact",

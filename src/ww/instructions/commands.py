@@ -252,15 +252,13 @@ def complete_command(
     role: CallerRole = "worker",
     summary: bool = False,
     rule_results: tuple[str, ...] = (),
-    check_results: tuple[str, ...] = (),
     assignment: str | None = None,
 ) -> str:
     """The command that submits a step or breaks/continues its loop.
 
     ``role`` is the manager only when the pending input belongs to an
     input-only assignment that the manager supplies itself. A verification
-    item reports one ``--rule-result`` per rule ID in ``rule_results`` and
-    one ``--check-result`` per check name in ``check_results``.
+    item reports one ``--rule-result`` per rule ID in ``rule_results``.
     """
     parts = ["loop" if loop_control else "complete", _arg(task_id)]
     if loop_control:
@@ -280,7 +278,6 @@ def complete_command(
     if summary:
         parts.append(f'{SUMMARY_FLAG}="<one or two sentences for the next step>"')
     parts.extend(f"--rule-result='<JSON result for {rule}>'" for rule in rule_results)
-    parts.extend(f"--check-result='<JSON check {name}>'" for name in check_results)
     return _command(*parts)
 
 
@@ -327,25 +324,3 @@ def recovery_commands(task_id: str) -> tuple[RecoveryCommand, ...]:
         RecoveryCommand("retry", next_command(task_id, retry=True)),
         force_command(task_id),
     )
-
-
-def decision_commands(task_id: str, kind: str, key: str) -> tuple[RecoveryCommand, ...]:
-    """The operator's choices for one proposal at a ``rules_proposed`` stop.
-
-    An approach is approved or replaced by the operator's own sentence, a
-    check is approved, an ambiguous rule gets one of its readings picked.
-    """
-
-    def decide(*flags: str) -> str:
-        return _command("next", _arg(task_id), *flags, "--role", "manager")
-
-    if kind == "ambiguous":
-        return (RecoveryCommand("pick", decide("--pick", f"{key}=<number>")),)
-    commands = [RecoveryCommand("approve", decide("--approve", _arg(key), "--yes"))]
-    if kind == "approach":
-        commands.append(
-            RecoveryCommand(
-                "approach", decide("--approach", _arg(key), '"<your approach>"')
-            )
-        )
-    return tuple(commands)

@@ -14,7 +14,7 @@ group, `ww-rules.yaml`, `ww.yaml` or
 
 1. **Learn what exists.** Run `./ww rules --json` (groups, their filters and
    directories' rules with IDs, summaries, globs, and the project's
-   `scripting` and `check_guidance` settings) and `./ww discover` (the
+   `check_guidance` setting) and `./ww discover` (the
    workflows and their steps). Use only workflow and step names they show;
    never invent one.
 2. **Split into atomic obligations.** One rule is one thing an agent can do
@@ -43,16 +43,16 @@ group, `ww-rules.yaml`, `ww.yaml` or
    `.ww/project.md` or the agent instructions record it; never an absolute
    path into the main checkout. When `check_guidance` is set, follow it; it
    wins over these defaults. Otherwise leave it without one: a verifier
-   judges it, and, unless `scripting` is `false`, may propose an approach
-   the operator confirms before anything is built.
+   judges it until `ww-scriptize-rules` (the `ww-scriptize` skill) builds a
+   check for it with the operator.
 6. **Confirm once.** Show one block with, per rule: ID, group, the group's
    filters, glob and its match count, the sentence, and `new` or
    `replaces <id>: <old sentence>`. For an amendment of a rule with an
    approved store command (`store_check` in `./ww rules --json`), say
    whether you will **promote** that command first, the default when the
-   meaning is unchanged (`./ww rules promote <check>`, then edit), or let a
-   verifier derive one again for the new wording, since changing the
-   wording stops the stored command from matching. Wait for the operator's answer; change nothing
+   meaning is unchanged (`./ww rules promote <check>`, then edit), or let
+   `ww-scriptize-rules` build one again for the new wording, since changing
+   the wording stops the stored command from matching. Wait for the operator's answer; change nothing
    before it.
 7. **Write only through the CLI**, in this order: new groups
    (`./ww rules add --group <name> --dir <path> [--workflows ...] [--steps ...]`),

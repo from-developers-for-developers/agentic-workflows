@@ -10,7 +10,6 @@ from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.contracts import (
     CallerRole,
-    CheckAutomationStatus,
     Control,
     InstructionStatus,
     ItemStatus,
@@ -23,7 +22,6 @@ from ww.contracts import (
 from ww.execution_models import WorkflowRunSummary
 from ww.items import WorkItem
 from ww.plan import PlannedMode
-from ww.rule_store import RuleApprover
 
 if TYPE_CHECKING:
     from ww.replanning import PlanChange
@@ -130,11 +128,9 @@ class RuleLine:
     has_command: bool = False
     hook: bool = False
     interpretation: str | None = None
-    # The approved derived check that checks a rule without a command, or,
+    # The converted derived check that checks a rule without a command, or,
     # with ``missing``, the converted check that does not apply here.
     check: str | None = None
-    # A verifier judges the rule while an undecided proposal for it waits.
-    pending_operator: bool = False
     # A verifier judges the rule because its converted ``check`` does not
     # apply here: this configuration file is missing in the step's directory.
     missing: str | None = None
@@ -148,7 +144,6 @@ class RuleLine:
             "hook": self.hook,
             "interpretation": self.interpretation,
             "check": self.check,
-            "pending_operator": self.pending_operator,
             "missing": self.missing,
         }
 
@@ -235,49 +230,23 @@ class CheckPreview:
 
 @dataclass(frozen=True)
 class VerificationRuleLine:
-    """One rule on a verification page, with what the verifier must report."""
+    """One rule on a verification page, which the verifier judges."""
 
     id: str
     text: str
-    state: str
     interpretation: str | None = None
-    approach: str | None = None
-    check: str | None = None
-    pending_operator: bool = False
-    # Its converted check does not apply here: this configuration file is
+    # Its converted ``check`` does not apply here: this configuration file is
     # missing in the step's directory.
+    check: str | None = None
     missing: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
             "text": self.text,
-            "state": self.state,
             "interpretation": self.interpretation,
-            "approach": self.approach,
             "check": self.check,
-            "pending_operator": self.pending_operator,
             "missing": self.missing,
-        }
-
-
-@dataclass(frozen=True)
-class KnownCheck:
-    """A check already in the rule-automation store, which a rule may join."""
-
-    name: str
-    status: str
-    command: str
-    config: tuple[str, ...] = ()
-    covers: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "status": self.status,
-            "command": self.command,
-            "config": list(self.config),
-            "covers": list(self.covers),
         }
 
 
@@ -287,9 +256,7 @@ class VerificationPage:
 
     ``files`` is the verified step's change set, or every file when
     ``all_files`` (no git); ``diff_command`` shows the change itself;
-    ``draft_artifact`` is the path of the step worker's held artifact;
-    ``directory`` is where ww runs the step's checks, its worktree when the
-    task has one.
+    ``draft_artifact`` is the path of the step worker's held artifact.
     """
 
     step: str
@@ -298,16 +265,6 @@ class VerificationPage:
     all_files: bool = False
     diff_command: str | None = None
     draft_artifact: str | None = None
-    checks: tuple[KnownCheck, ...] = ()
-    directory: str | None = None
-    # ``rules.check_guidance``: the operator's words for proposing and
-    # preparing checks, shown as written.
-    guidance: str | None = None
-
-    @property
-    def prepares(self) -> bool:
-        """Whether any rule asks for a prepared check, so ``--check-result``."""
-        return any(rule.state == "approach_approved" for rule in self.rules)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -317,53 +274,6 @@ class VerificationPage:
             "all_files": self.all_files,
             "diff_command": self.diff_command,
             "draft_artifact": self.draft_artifact,
-            "checks": [check.to_dict() for check in self.checks],
-            "directory": self.directory,
-            "guidance": self.guidance,
-        }
-
-
-@dataclass(frozen=True)
-class Proposal:
-    """One verifier proposal the operator decides at a ``rules_proposed`` stop.
-
-    ``kind`` is ``approach`` (stage A: how a rule would be checked),
-    ``check`` (stage B: a prepared command, or a ``revision`` of an approved
-    one), or ``ambiguous`` (readings to pick from). ``key`` is what the
-    decision commands name: a check name or a rule hash.
-    """
-
-    kind: str
-    key: str
-    rules: tuple[tuple[str, str], ...]
-    commands: tuple[RecoveryCommand, ...]
-    interpretation: str | None = None
-    approach: str | None = None
-    check: str | None = None
-    extends: bool = False
-    command: str | None = None
-    assertion: str | None = None
-    config: tuple[str, ...] = ()
-    proven: bool | None = None
-    revision: bool = False
-    candidates: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "kind": self.kind,
-            "key": self.key,
-            "rules": [{"id": rule_id, "text": text} for rule_id, text in self.rules],
-            "commands": [command.to_dict() for command in self.commands],
-            "interpretation": self.interpretation,
-            "approach": self.approach,
-            "check": self.check,
-            "extends": self.extends,
-            "command": self.command,
-            "assert": self.assertion,
-            "config": list(self.config),
-            "proven": self.proven,
-            "revision": self.revision,
-            "candidates": list(self.candidates),
         }
 
 
@@ -389,55 +299,6 @@ class FixRequired:
             "failures": [failure.to_dict() for failure in self.failures],
             "draft_artifact": self.draft_artifact,
         }
-
-
-@dataclass(frozen=True)
-class CoveredRule:
-    """One rule a check covers: its ID in this run's plan, and a wording summary.
-
-    ``id`` is the rule's short text hash when no step of the run declares it.
-    """
-
-    id: str
-    wording: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {"id": self.id, "wording": self.wording}
-
-
-@dataclass(frozen=True)
-class ConvertedCheck:
-    """A check the operator approved in this run."""
-
-    name: str
-    status: CheckAutomationStatus
-    rules: tuple[CoveredRule, ...]
-    command: str
-    config: tuple[str, ...]
-    proven: bool
-    approved_by: RuleApprover | None
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "status": self.status,
-            "rules": [rule.to_dict() for rule in self.rules],
-            "command": self.command,
-            "config": list(self.config),
-            "proven": self.proven,
-            "approved_by": self.approved_by,
-        }
-
-
-@dataclass(frozen=True)
-class RuleConversions:
-    converted: tuple[ConvertedCheck, ...] = ()
-
-    def __bool__(self) -> bool:
-        return bool(self.converted)
-
-    def to_dict(self) -> dict[str, object]:
-        return {"converted": [check.to_dict() for check in self.converted]}
 
 
 @dataclass(frozen=True)
@@ -584,8 +445,6 @@ class Instruction:
     recommended_workflow: str | None = None
     # A completed child task's parent, which the manager continues next.
     parent_task_id: str | None = None
-    # A completed run's "Rules converted in this run", built from the store.
-    rule_conversions: RuleConversions = RuleConversions()
     # An assessment's answers and what each does: on the assessment's own
     # page, and on the page that asks ``next`` for the chosen one.
     assessment_outcomes: tuple[AssessmentOutcome, ...] = ()
@@ -626,6 +485,8 @@ class Instruction:
     assignment_items: tuple[str, ...] = ()
     assignment_continues: bool = False
     manager_intro: bool = False
+    # On the first page of ``start``: the declared rules no check covers yet.
+    rules_notice: str | None = None
     completion_registered: bool = False
     # The completion was accepted but held: verifiers judge its rules first.
     completion_held: bool = False
@@ -656,10 +517,8 @@ class Instruction:
     # The worker's assignment ended with this command: ww's report of it,
     # which the worker returns to the manager verbatim.
     handoff_block: HandoffBlock | None = None
-    # A verification item's rules and evidence, and, at a ``rules_proposed``
-    # stop, the proposals the operator decides.
+    # A verification item's rules and evidence.
     verification: VerificationPage | None = None
-    proposals: tuple[Proposal, ...] = ()
     # At a ``plan_changed`` stop: how the workflow's current definition
     # differs from the run's saved plan, which the operator takes or declines.
     plan_change: PlanChange | None = None
@@ -731,7 +590,6 @@ class Instruction:
             "handoff": self.handoff,
             "recommended_workflow": self.recommended_workflow,
             "parent_task_id": self.parent_task_id,
-            "rule_conversions": self.rule_conversions.to_dict(),
             "assessment_outcomes": [
                 {
                     "label": outcome.label,
@@ -769,6 +627,7 @@ class Instruction:
             "assignment_items": list(self.assignment_items),
             "assignment_continues": self.assignment_continues,
             "manager_intro": self.manager_intro,
+            "rules_notice": self.rules_notice,
             "completion_registered": self.completion_registered,
             "completion_held": self.completion_held,
             "caller_role": self.caller_role,
@@ -791,7 +650,6 @@ class Instruction:
             "verification": (
                 self.verification.to_dict() if self.verification else None
             ),
-            "proposals": [proposal.to_dict() for proposal in self.proposals],
             "plan_change": (
                 self.plan_change.to_dict() if self.plan_change is not None else None
             ),

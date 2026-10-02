@@ -66,11 +66,6 @@ from ww.extensions import ExtensionRegistry, is_extension_reference, parse_refer
 from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
-from ww.instructions.conversions import (
-    conversions_markdown,
-    rule_conversions,
-    run_reference,
-)
 from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview
 from ww.interactions import InteractionLog, parse_transcript
@@ -96,32 +91,23 @@ from ww.results import (
     TaskStatus,
 )
 from ww.rule_checks import CheckScope, RuleChecker, change_set, item_reports
+from ww.rule_conversion import SCRIPTIZE_WORKFLOW, scriptize_notice
 from ww.rule_disputes import DisputeEntry, DisputeLog
-from ww.rule_store import RuleAutomation, RuleStore, describe_command
+from ww.rule_store import RuleStore
 from ww.rule_verification import (
-    Decisions,
-    add_resolved_checks,
-    apply_decisions,
-    approved_checks,
     close_round,
-    decide_proposals,
     hold_completion,
     index_of,
     judged_report,
     judged_rules,
     open_verification_round,
-    parse_check_results,
     parse_rule_results,
-    record_results,
     record_round,
-    resolve_key,
     resolve_rules,
     resume_held,
     round_open,
     skip_idle_verification,
-    stop_for_proposals,
     to_verify,
-    undecided_proposals,
     verdicts_of,
     verification_needs,
 )
@@ -291,8 +277,6 @@ class WorkflowService:
             root=self.storage.root,
             documents=self.documents,
             interactions=self.interactions,
-            rule_store=self.rule_store,
-            rule_check_guidance=lambda: self.extensions.config.rule_check_guidance,
         )
         self.runs = RunCoordinator(self.tasks)
         self.metadata_publisher = MetadataPublisher(
@@ -374,7 +358,7 @@ class WorkflowService:
                 project=project,
             )
             if bootstrap is not None:
-                return replace(
+                instruction = replace(
                     self._tag_caller(
                         self.bootstrap.start(
                             workflow_name,
@@ -392,7 +376,8 @@ class WorkflowService:
                     ),
                     manager_intro=True,
                 )
-            return replace(
+                return self._with_rules_notice(instruction, workflow_name)
+            instruction = replace(
                 self._tag_caller(
                     self._start_generated(
                         workflow_name,
@@ -409,9 +394,10 @@ class WorkflowService:
                 ),
                 manager_intro=True,
             )
+            return self._with_rules_notice(instruction, workflow_name)
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
-            return replace(
+            instruction = replace(
                 self._tag_caller(
                     self._start(
                         task_id,
@@ -430,6 +416,27 @@ class WorkflowService:
                 ),
                 manager_intro=True,
             )
+        return self._with_rules_notice(instruction, workflow_name)
+
+    def _with_rules_notice(
+        self, instruction: Instruction, workflow_name: str
+    ) -> Instruction:
+        """The first page of a start, with the notice of rules without a check.
+
+        ``ww-scriptize-rules`` itself is the answer to the notice, so its
+        pages go without it. The task has started by now: a store that cannot
+        be read drops the notice rather than failing the start.
+        """
+        if workflow_name == SCRIPTIZE_WORKFLOW:
+            return instruction
+        try:
+            automation = self.rule_store.load()
+        except StateError:
+            return instruction
+        return replace(
+            instruction,
+            rules_notice=scriptize_notice(self._load_configuration(), automation),
+        )
 
     def _project_path(self, project: str | None) -> str | None:
         """The configured project's directory, without checking it exists."""
@@ -706,40 +713,28 @@ class WorkflowService:
         selected_agent: str | None = None,
         *,
         caller_role: CallerRole | None = None,
-        approve: tuple[str, ...] = (),
-        approaches: tuple[tuple[str, str], ...] = (),
-        picks: tuple[tuple[str, int], ...] = (),
         reassign: bool = False,
         replan: bool = False,
         keep_plan: bool = False,
     ) -> Instruction:
-        """Advance the task; at a ``rules_proposed`` stop, apply the decisions.
+        """Advance the task.
 
-        ``approve``, ``approaches`` and ``picks`` decide the proposals of the
-        stop; ``force`` rejects every one still undecided. ``reassign`` gives
-        the open assignment a new token, so its previous worker can no longer
-        act, and returns the page to dispatch it again. When the workflow's
-        definition changed since the run's plan was saved, ``next`` stops at a
-        ``plan_changed`` page first; ``replan`` takes the new definition from
-        the first changed item on, ``keep_plan`` carries on with the saved
-        plan, and either then advances as usual.
+        ``reassign`` gives the open assignment a new token, so its previous
+        worker can no longer act, and returns the page to dispatch it again.
+        When the workflow's definition changed since the run's plan was saved,
+        ``next`` stops at a ``plan_changed`` page first; ``replan`` takes the
+        new definition from the first changed item on, ``keep_plan`` carries
+        on with the saved plan, and either then advances as usual.
         """
         self._require_manager("next", caller_role)
         if (replan or keep_plan) and (
-            replan == keep_plan
-            or force
-            or retry
-            or approve
-            or approaches
-            or picks
-            or outcome
-            or reassign
+            replan == keep_plan or force or retry or outcome or reassign
         ):
             raise StateError(
                 "choose one of next --replan or --keep-plan, without other decisions"
             )
         if reassign:
-            if force or retry or approve or approaches or picks or outcome:
+            if force or retry or outcome:
                 raise StateError("next --reassign takes no other decision")
             return self._tag_caller(self._reassign(task_id), caller_role)
         if force and (force_reason is None or not force_reason.strip()):
@@ -748,12 +743,6 @@ class WorkflowService:
             raise StateError("--reason requires next --force")
         if retry and force:
             raise StateError("choose only one of next --retry or next --force")
-        decisions = Decisions(approve, approaches, picks)
-        if decisions and (retry or force):
-            raise StateError(
-                "--approve, --approach and --pick cannot be combined with "
-                "--retry or --force"
-            )
         self._validate_execution_metadata(model, reasoning)
         self._validate_selected_agent(selected_agent)
         refreshed = self.children.refresh_parent(task_id)
@@ -773,7 +762,6 @@ class WorkflowService:
             outcome,
             selected_agent=selected_agent,
             caller_role=caller_role,
-            decisions=decisions,
         )
         self.children.reconcile_after_child(task_id)
         return self._tag_caller(instruction, caller_role)
@@ -790,19 +778,14 @@ class WorkflowService:
         selected_agent: str | None = None,
         *,
         caller_role: CallerRole | None = None,
-        decisions: Decisions | None = None,
     ) -> Instruction:
         self._validate_execution_metadata(model, reasoning)
-        if decisions is None:
-            decisions = Decisions()
         request = (
             self.storage.read_bootstrap(task_id)
             if is_bootstrap_request(task_id)
             else None
         )
         if request is not None:
-            if decisions:
-                raise StateError("a bootstrap request has no proposals to decide")
             return self.bootstrap.next(
                 request,
                 force,
@@ -815,12 +798,6 @@ class WorkflowService:
             )
         if retry:
             validate_task_id(task_id)
-            state, _ = self.load(task_id)
-            if state.failure_kind == "rules_proposed":
-                raise StateError(
-                    "nothing to retry: the task waits for the operator to decide "
-                    "the proposals with --approve, --approach, --pick, or --force"
-                )
             return self.recovery.recover(task_id, retry=True)
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
@@ -833,7 +810,6 @@ class WorkflowService:
                 reasoning,
                 selected_agent=selected_agent,
                 caller_role=caller_role,
-                decisions=decisions,
             )
 
     def recover(
@@ -870,10 +846,7 @@ class WorkflowService:
         selected_agent: str | None = None,
         *,
         caller_role: CallerRole | None = None,
-        decisions: Decisions | None = None,
     ) -> Instruction:
-        if decisions is None:
-            decisions = Decisions()
         state, snapshot = self.load(task_id)
         state = select_assessment_outcome(state, snapshot.plan, outcome, _now)
         if outcome is not None:
@@ -904,28 +877,6 @@ class WorkflowService:
                 if replayed is None:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
-        if state.failure_kind == "rules_proposed":
-            if not decisions and not force:
-                return self.render(state, snapshot)
-            if self._decide(
-                state,
-                snapshot,
-                replace(decisions, reject=force_reason if force else None),
-            ):
-                # Some proposals are still undecided: the stop stays.
-                state, snapshot = self.load(task_id)
-                return self.render(state, snapshot)
-            state, snapshot = self.load(task_id)
-            self._replay_held(task_id, state.cursor, caller_role=caller_role)
-            state, snapshot = self.load(task_id)
-            if state.status != "pending" or state.active_item_id is not None:
-                return self.render(state, snapshot)
-            force = False
-        elif decisions:
-            raise StateError(
-                "--approve, --approach and --pick decide a rules_proposed stop; "
-                f"task {task_id!r} is not stopped for one"
-            )
         if state.status == "failed":
             if force and state.failure_kind in {"fix_limit", "check_disputed"}:
                 # Forcing past a step at its fix limit completes it without
@@ -1051,42 +1002,6 @@ class WorkflowService:
         self.commit(state, snapshot)
         return self.render(state, snapshot)
 
-    def _decide(
-        self, state: ExecutionState, snapshot: PlanSnapshot, decisions: Decisions
-    ) -> tuple[str, ...]:
-        """Apply the operator's decisions at a ``rules_proposed`` stop.
-
-        The store changes under its own lock; the step keeps its still
-        undecided proposals, and an approved check is enforced on it at once.
-        Returns the proposals still undecided.
-        """
-        index = state.cursor
-        item = snapshot.plan.items[index]
-        record = state.item_executions[index]
-        outcome: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
-
-        def change(automation: RuleAutomation) -> RuleAutomation:
-            keys = undecided_proposals(record, automation)
-            updated, remaining, approved = apply_decisions(
-                automation,
-                keys,
-                decisions,
-                _now(),
-                approved_by="operator",
-                run=run_reference(state.task_id, state.run_id, state.workflow),
-            )
-            outcome.append((remaining, approved))
-            return updated
-
-        automation = self.rule_store.modify(change)
-        remaining, approved = outcome[-1]
-        state = decide_proposals(state, index, remaining, _now)
-        checks = approved_checks(item, automation, approved)
-        if checks:
-            state = add_resolved_checks(state, index, checks, _now)
-        self.commit(state, snapshot)
-        return remaining
-
     @staticmethod
     def _waivable(state: ExecutionState, plan: WorkflowPlan) -> tuple[str, ...]:
         """What ``next --force`` waives: the disputed check, or all of them."""
@@ -1095,38 +1010,6 @@ class WorkflowService:
             assert record.dispute is not None
             return (record.dispute.check,)
         return tuple(fix_limits(plan.items[state.cursor], record))
-
-    def approval_preview(self, task_id: str, keys: tuple[str, ...]) -> str:
-        """What ``next --approve`` would approve, commands in full.
-
-        The CLI prints this before recording an approval: reading the command
-        is the operator's safety, as ww keeps no allowlist of executables.
-        """
-        validate_task_id(task_id)
-        state, snapshot = self.load(task_id)
-        if state.failure_kind != "rules_proposed":
-            raise StateError(f"task {task_id!r} has no proposals to approve")
-        record = state.item_executions[state.cursor]
-        automation = self.rule_store.load()
-        undecided = undecided_proposals(record, automation)
-        lines = []
-        for key in keys:
-            name = resolve_key(key, undecided)
-            check = automation.checks.get(name)
-            if check is not None:
-                spec = check.pending or check.spec
-                lines.append(
-                    f"check {name}: {describe_command(spec.command)}"
-                    + (
-                        f" ({spec.command.assertion.describe()})"
-                        if spec.command.assertion
-                        else ""
-                    )
-                )
-            else:
-                entry = automation.rules[name]
-                lines.append(f"approach for rule {name[:12]}: {entry.approach}")
-        return "\n".join(lines)
 
     def force_target(self, task_id: str) -> str:
         """Describe what ``next --force`` would do, or raise when nothing can be forced.
@@ -1137,12 +1020,6 @@ class WorkflowService:
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         items = snapshot.plan.items
-        if state.status == "failed" and state.failure_kind == "rules_proposed":
-            return (
-                f"reject every undecided proposal of `{items[state.cursor].name}`; "
-                "its completion then goes on with those rules judged by a "
-                "verifier"
-            )
         if state.status == "failed" and state.failure_kind == "fix_limit":
             return (
                 f"waive the failed checks of `{items[state.cursor].name}`: its "
@@ -1463,13 +1340,12 @@ class WorkflowService:
         summary_for_next: str | None = None,
         caller_role: CallerRole | None = None,
         rule_results: tuple[str, ...] = (),
-        check_results: tuple[str, ...] = (),
         assignment: str | None = None,
     ) -> Instruction:
         """Complete the active agent item.
 
-        A verification item reports one ``rule_results`` JSON object per rule
-        it covers and one ``check_results`` object per check it prepared.
+        A verification item reports one ``rule_results`` JSON object, a
+        verdict, per rule it covers.
         """
         self._validate_caller_role(caller_role)
         self._validate_selected_agent(selected_agent)
@@ -1487,7 +1363,7 @@ class WorkflowService:
         if request is not None:
             if metadata_values:
                 raise StateError("bootstrap completion cannot save task metadata")
-            if rule_results or check_results:
+            if rule_results:
                 raise StateError("a bootstrap completion verifies no rules")
             return replace(
                 self._tag_caller(
@@ -1520,7 +1396,6 @@ class WorkflowService:
                 summary_for_next=summary_for_next,
                 caller_role=caller_role,
                 rule_results=rule_results,
-                check_results=check_results,
             )
             held = instruction.completion_held
             instruction = self._with_handoff(
@@ -1583,13 +1458,12 @@ class WorkflowService:
         initialization: bool = False,
         drain_stop: int | None = None,
         rule_results: tuple[str, ...] = (),
-        check_results: tuple[str, ...] = (),
         replayed: bool = False,
     ) -> Instruction:
         """Complete the active agent item; see :meth:`complete`.
 
         ``replayed`` records a held completion for a caller who is not the
-        step's worker, a verifier or the operator: the step's automatic
+        step's worker, such as a verifier: the step's automatic
         follow-ups still run, but its next agent item is not opened for that
         caller, whose assignment ends here.
         """
@@ -1691,13 +1565,11 @@ class WorkflowService:
                 item,
                 artifact,
                 rule_results,
-                check_results,
                 caller_role=caller_role,
             )
-        if rule_results or check_results:
+        if rule_results:
             raise StateError(
-                "--rule-result and --check-result report a verification; "
-                f"{item.name!r} is not one"
+                f"--rule-result reports a verification; {item.name!r} is not one"
             )
         held = active_record.held_completion
         waived = {key for key, _ in active_record.checks_waived}
@@ -1757,8 +1629,6 @@ class WorkflowService:
             task_id, state, item, task_metadata, project_metadata
         )
         promised_documents = self._promised_documents(snapshot.plan, item, state)
-        if item.summary and artifact is not None:
-            artifact = self._with_conversions(state, snapshot.plan, artifact)
         artifact_reference, wrapper_artifact_reference = write_completion_artifacts(
             self.tasks,
             task_id,
@@ -3280,19 +3150,16 @@ class WorkflowService:
         artifact: str | None,
         request: HeldCompletion,
     ) -> Instruction | None:
-        """Hold a completion whose rules still need a verifier or the operator.
+        """Hold a completion whose rules still need a verifier.
 
-        Returns ``None`` when nothing is left to verify or decide, and the
-        completion is recorded as usual. Otherwise the completion, its change
-        set, and its draft artifact are kept on the record; a verification
-        round opens for the rules that need one, or, when only this step's
-        proposals wait, the task stops for the operator.
+        Returns ``None`` when nothing is left to verify, and the completion
+        is recorded as usual. Otherwise the completion, its change set, and
+        its draft artifact are kept on the record, and a verification round
+        opens for the rules that need one.
         """
         record = state.item_executions[state.cursor]
-        automation = self.rule_store.load()
-        needs = verification_needs(item, record, automation)
-        undecided = undecided_proposals(record, automation)
-        if not needs and not undecided:
+        needs = verification_needs(item, record)
+        if not needs:
             return None
         directory = self._check_scope(state, snapshot.plan, item).directory
         if check_report is not None:
@@ -3309,29 +3176,9 @@ class WorkflowService:
             report=check_report,
         )
         state = hold_completion(state, snapshot.plan, held, artifact, _now)
-        if needs:
-            state, snapshot = open_verification_round(
-                state, snapshot, item, needs, _now
-            )
-        else:
-            state = stop_for_proposals(
-                state, snapshot.plan, state.cursor, undecided, _now
-            )
+        state, snapshot = open_verification_round(state, snapshot, item, needs, _now)
         self.commit(state, snapshot)
         return replace(self.render(state, snapshot), completion_held=True)
-
-    def _with_conversions(
-        self, state: ExecutionState, plan: WorkflowPlan, artifact: str
-    ) -> str:
-        """The workflow summary with ww's "Rules converted in this run" section."""
-        section = conversions_markdown(
-            rule_conversions(
-                self.rule_store.load(),
-                run_reference(state.task_id, state.run_id, state.workflow),
-                plan,
-            )
-        )
-        return f"{artifact.rstrip()}\n\n{section}" if section else artifact
 
     def _write_draft(
         self,
@@ -3363,20 +3210,13 @@ class WorkflowService:
         item: PlanItem,
         artifact: str | None,
         rule_results: tuple[str, ...],
-        check_results: tuple[str, ...],
         *,
         caller_role: CallerRole | None,
     ) -> Instruction:
-        """Record a verifier's results, then continue the held step.
+        """Record a verifier's verdicts, then continue the held step.
 
-        The store is written first, under its own lock, then the task state,
-        so an interruption between the two leaves the verification to be
-        completed again; the verifier's own earlier entries are then
-        rewritten, not refused. Every proposal waits for the operator. A
-        failing verdict sends
-        the step back to its worker; otherwise the next verifier of the round
-        goes on, or the operator decides the proposals that stop the task, or
-        ww records the held completion.
+        A failing verdict sends the step back to its worker; otherwise the
+        next verifier of the round goes on, or ww records the held completion.
         """
         record = state.item_executions[state.cursor]
         target = item.verifies
@@ -3392,48 +3232,12 @@ class WorkflowService:
         index = index_of(plan, target.item_id)
         step = plan.items[index]
         results = parse_rule_results(rule_results, record.verification)
-        checks = parse_check_results(check_results, record.verification, results, step)
-        run = run_reference(state.task_id, state.run_id, state.workflow)
-        earlier = state.item_executions[index].open_proposals
-        recorded: list[tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
-
-        def change(automation: RuleAutomation) -> RuleAutomation:
-            updated, opened, notices = record_results(
-                automation,
-                record.verification,
-                results,
-                checks,
-                step,
-                item.id,
-                _now(),
-                run=run,
-            )
-            keys = tuple(
-                key
-                for key in dict.fromkeys((*earlier, *opened))
-                if updated.undecided(key)
-            )
-            recorded.append((opened, notices, keys))
-            return updated
-
-        self.rule_store.modify(change)
-        opened, notices, blocking = recorded[-1]
         artifact_reference, _ = write_completion_artifacts(
             self.tasks, state.task_id, state, snapshot, item, None, artifact
         )
         state = complete_agent_item(state, plan, {}, artifact_reference, _now)
-        if notices:
-            records = list(state.item_executions)
-            records[state.cursor - 1] = replace(
-                records[state.cursor - 1], result="; ".join(notices)
-            )
-            state = replace(state, item_executions=tuple(records))
         verdicts = verdicts_of(results, item.id)
-        state = record_round(state, index, verdicts, opened, _now)
-        # Only what stops the task stays open on the step; a proposal decided
-        # elsewhere is no longer waited for, so its rules are verified again:
-        # prepared once approved, else judged.
-        state = decide_proposals(state, index, blocking, _now)
+        state = record_round(state, index, verdicts, _now)
         step_record = state.item_executions[index]
         if any(verdict.verdict == "fail" for verdict in verdicts):
             at_step = replace(close_round(state, plan, step.id, _now), cursor=index)
@@ -3454,11 +3258,6 @@ class WorkflowService:
         if round_open(state, plan, step.id):
             self.commit(state, snapshot)
             return self._after_verification(state, snapshot, caller_role)
-        undecided = undecided_proposals(step_record, self.rule_store.load())
-        if undecided:
-            state = stop_for_proposals(state, plan, index, undecided, _now)
-            self.commit(state, snapshot)
-            return self.render(state, snapshot)
         self.commit(state, snapshot)
         return self._replay_held(state.task_id, index, caller_role=caller_role)
 
@@ -3482,13 +3281,12 @@ class WorkflowService:
     ) -> Instruction:
         """Complete a held step exactly as its worker submitted it.
 
-        The checks run again, reusing results while the tree is unchanged, so
-        a newly approved check runs on the held completion; what is still to
-        verify opens another round. A caller with a role gets the step's own
-        assignment, so the completion window and the automatic items that
-        drain after it are the step worker's; the caller is a verifier or the
-        operator, never that worker, so the assignment ends before its next
-        agent item, which the manager dispatches anew.
+        The checks run again, reusing results while the tree is unchanged;
+        what is still to verify opens another round. A caller with a role
+        gets the step's own assignment, so the completion window and the
+        automatic items that drain after it are the step worker's; the caller
+        is a verifier, never that worker, so the assignment ends before its
+        next agent item, which the manager dispatches anew.
         """
         state, snapshot = self.load(task_id)
         record = state.item_executions[index]
@@ -3538,7 +3336,6 @@ class WorkflowService:
         return resolve_rules(
             item,
             self.rule_store.load(),
-            scripting=self.extensions.config.rule_scripting,
             directory=self._check_scope(state, plan, item).directory,
         )
 

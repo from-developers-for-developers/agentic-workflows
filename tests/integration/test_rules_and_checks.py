@@ -97,14 +97,7 @@ def _verify(service: WorkflowService) -> Instruction:
         "TASK-1",
         artifact="Verified.",
         rule_results=(
-            json.dumps(
-                {
-                    "id": "develop/1",
-                    "status": "not_convertible",
-                    "reason": "A matter of review.",
-                    "verdict": "pass",
-                }
-            ),
+            json.dumps({"id": "develop/1", "status": "judged", "verdict": "pass"}),
         ),
     )
 
@@ -159,7 +152,6 @@ def test_the_step_page_lists_judged_rules_and_names_the_checked_ones(
         "hook": False,
         "interpretation": None,
         "check": None,
-        "pending_operator": False,
         "missing": None,
     }
 
@@ -452,6 +444,7 @@ def test_the_complete_command_exits_non_zero_on_a_rejection(
     assert "## Fix required" in capsys.readouterr().out
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 def test_lint_reports_the_rules(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -459,4 +452,8 @@ def test_lint_reports_the_rules(
 
     assert main(["--root", str(root), "lint"]) == 0
 
-    assert capsys.readouterr().out.endswith("Rules: 1 group, 2 rules\n")
+    assert capsys.readouterr().out.endswith(
+        "Rules: 1 group, 2 rules\n"
+        "Warning: 1 rule has no check yet (develop/1); `ww-scriptize-rules` "
+        "builds checks for them.\n"
+    )

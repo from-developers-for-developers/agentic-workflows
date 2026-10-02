@@ -21,7 +21,6 @@ from ww.contracts import (
     RuleResolutionStatus,
     StepStatus,
     Verdict,
-    VerificationState,
 )
 from ww.plan import PlannedCheck
 from ww.validation import (
@@ -150,12 +149,10 @@ class RuleResolution:
     Decided from the rule-automation store when the step begins, so a run
     never re-reads the store to decide it again: ``converted`` rules are
     checked by the derived check ``check``; ``judged`` ones get a verifier's
-    verdict (``pending_operator`` while an undecided proposal exists); an
-    ``unresolved`` one gets a verifier's proposal. ``interpretation`` is the
-    store's one-sentence reading, shown under the rule on the page.
-    ``missing`` is set on a judged rule whose converted ``check`` does not
-    apply here: the first of its configuration files the step's directory
-    lacks.
+    verdict. ``interpretation`` is the store's one-sentence reading, shown
+    under the rule on the page. ``missing`` is set on a judged rule whose
+    converted ``check`` does not apply here: the first of its configuration
+    files the step's directory lacks.
     """
 
     id: str
@@ -182,10 +179,16 @@ class RuleResolution:
         require_keys(
             data, {"id", "status", "check", "interpretation"}, "rule resolution"
         )
+        status = data["status"]
+        # The previous format also recorded rules a verifier would propose a
+        # check for (``unresolved``) or waiting on the operator
+        # (``pending_operator``); both are judged now.
+        if status in {"unresolved", "pending_operator"}:
+            status = "judged"
         return cls(
             id=expect_string(data["id"], "rule resolution.id"),
             status=expect_literal(
-                data["status"], RuleResolutionStatus, "rule resolution.status"
+                status, RuleResolutionStatus, "rule resolution.status"
             ),
             check=expect_optional_string(data["check"], "rule resolution.check"),
             interpretation=expect_optional_string(
@@ -391,25 +394,18 @@ class Dispute:
 
 @dataclass(frozen=True)
 class VerificationRule:
-    """One rule a verification item is asked about, as the store had it.
+    """One rule a verification item judges, as the step began with it.
 
-    ``state`` says what is asked: an approach (``unresolved``; a fixed
-    ``interpretation`` when the operator picked one), a prepared check for
-    the ``approach`` the operator approved (``approach_approved``, with the
-    proposed ``check`` name), or a verdict (``judged``;
-    ``pending_operator`` when the store holds an undecided proposal).
+    ``interpretation`` is the store's reading of the rule, when it has one.
     """
 
     id: str
     text: str
     text_hash: str
-    state: VerificationState
     interpretation: str | None = None
-    approach: str | None = None
-    check: str | None = None
-    pending_operator: bool = False
     # A judged rule whose converted ``check`` does not apply in this step:
     # the configuration file the step's directory lacks.
+    check: str | None = None
     missing: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -417,11 +413,8 @@ class VerificationRule:
             "id": self.id,
             "text": self.text,
             "text_hash": self.text_hash,
-            "state": self.state,
             "interpretation": self.interpretation,
-            "approach": self.approach,
             "check": self.check,
-            "pending_operator": self.pending_operator,
         }
         if self.missing is not None:
             data["missing"] = self.missing
@@ -431,37 +424,22 @@ class VerificationRule:
     def from_dict(cls, data: Any) -> VerificationRule:
         if not isinstance(data, dict):
             raise ValueError("verification rule must be a mapping")
+        # The previous format also stored what was asked (``state``: an
+        # approach, a prepared check or a verdict) with ``approach`` and
+        # ``pending_operator``; a verifier now only judges, so they are ignored.
         require_keys(
             data,
-            {
-                "id",
-                "text",
-                "text_hash",
-                "state",
-                "interpretation",
-                "approach",
-                "check",
-                "pending_operator",
-            },
+            {"id", "text", "text_hash", "interpretation", "check"},
             "verification rule",
         )
         return cls(
             id=expect_string(data["id"], "verification rule.id"),
             text=expect_string(data["text"], "verification rule.text"),
             text_hash=expect_string(data["text_hash"], "verification rule.text_hash"),
-            state=expect_literal(
-                data["state"], VerificationState, "verification rule.state"
-            ),
             interpretation=expect_optional_string(
                 data["interpretation"], "verification rule.interpretation"
             ),
-            approach=expect_optional_string(
-                data["approach"], "verification rule.approach"
-            ),
             check=expect_optional_string(data["check"], "verification rule.check"),
-            pending_operator=expect_bool(
-                data["pending_operator"], "verification rule.pending_operator"
-            ),
             missing=expect_optional_string(
                 data.get("missing"), "verification rule.missing"
             ),
@@ -595,7 +573,7 @@ class PlanItemExecution:
     checks_waived: tuple[tuple[str, str], ...] = ()
     # The worker's open objection to a check, while the operator decides.
     dispute: Dispute | None = None
-    # How each rule without a command is enforced, and the approved derived
+    # How each rule without a command is enforced, and the converted derived
     # checks that enforce the converted ones; both settled when the step
     # first begins.
     rule_resolutions: tuple[RuleResolution, ...] = ()
@@ -603,9 +581,6 @@ class PlanItemExecution:
     # A completion accepted by the checks and held while verifiers judge the
     # step's rules; its artifact is ``draft_artifact``.
     held_completion: HeldCompletion | None = None
-    # Rule hashes and check names this step's verifiers proposed that the
-    # operator has not decided yet; kept across fix rounds until decided.
-    open_proposals: tuple[str, ...] = ()
     # On a verification item's record: the rules it is asked about.
     verification: tuple[VerificationRule, ...] = ()
 
@@ -657,7 +632,6 @@ class PlanItemExecution:
             "held_completion": (
                 self.held_completion.to_dict() if self.held_completion else None
             ),
-            "open_proposals": list(self.open_proposals),
             "verification": [rule.to_dict() for rule in self.verification],
         }
 
@@ -747,7 +721,6 @@ class PlanItemExecution:
                 if data.get("held_completion") is not None
                 else None
             ),
-            open_proposals=_strings(data.get("open_proposals", []), "open proposals"),
             verification=tuple(
                 VerificationRule.from_dict(entry)
                 for entry in _list(data.get("verification", []), "verification")

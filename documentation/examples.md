@@ -626,12 +626,12 @@ completions ww stops with `operator_reason: fix_limit`: `next --retry` gives
 the worker another round, `next --force --reason` waives the checks.
 
 The rules without a command, "Keep the public CLI unchanged." and the
-engineering rules, go to a verifier once develop's checks pass. The first time
-it sees a wording it proposes how to check it; the operator approves with
-`next --approve`, the verifier prepares the command, and after a second
-approval ww runs it for that wording in every later step. Until then, and for
-a rule no command can check, the verifier gives a verdict, and a failing one
-sends develop back like a failed check.
+engineering rules, go to a verifier once develop's checks pass. The verifier
+gives a verdict, and a failing one sends develop back like a failed check.
+`discover` and `start` say how many rules have no check yet; the
+`ww-scriptize` skill starts `ww-scriptize-rules`, which builds checks for them
+with the operator, and ww then runs each check for its wording in every later
+step instead of asking a verifier.
 
 ## 18. What ww-suggest proposes for a Node project with dev/main and a Jira-like tracker
 

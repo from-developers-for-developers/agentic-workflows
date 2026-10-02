@@ -41,7 +41,7 @@ def default_settings() -> dict[str, Any]:
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
         "agent_hooks": AgentHooks().to_dict(),
-        "rules": {"scripting": True},
+        "rules": {},
         "builtins": deepcopy(BUILTIN_DEFAULTS),
         "workflows": {},
         "projects": [],

@@ -31,12 +31,10 @@ from ww.instructions.commands import (
     set_item_fields_command,
     start_command,
 )
-from ww.instructions.conversions import conversions_markdown
 from ww.instructions.handoff import HANDOFF_TITLE, handoff_markdown
 from ww.instructions.models import (
     FixFailure,
     HandoffBlock,
-    Proposal,
     VerificationPage,
 )
 from ww.instructions.policy import Audience, audience
@@ -411,6 +409,8 @@ def _header(instruction: Instruction) -> Lines:
         lines.append("")
     if instruction.manager_intro:
         lines.extend(_manager_intro())
+    if instruction.rules_notice:
+        lines.extend([instruction.rules_notice, ""])
     return lines
 
 
@@ -438,15 +438,6 @@ def _completed(lines: Lines, instruction: Instruction) -> None:
         )
     elif instruction.control == "handoff_manager":
         lines.extend(["", "Control is with the manager for final reporting."])
-    if instruction.rule_conversions:
-        lines.extend(
-            [
-                "",
-                *conversions_markdown(instruction.rule_conversions, "###")
-                .rstrip()
-                .splitlines(),
-            ]
-        )
     _recommendation(lines, instruction)
 
 
@@ -504,7 +495,6 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "handler_interrupted": "an automatic handler was interrupted",
     "loop_limit": "the loop reached its iteration limit",
     "fix_limit": "the step's checks reached their fix limit",
-    "rules_proposed": "verifiers proposed checks for the step's rules",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
 }
@@ -808,11 +798,6 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
             lines.append(f"- `{rule.id}`{scope} — {rule.summary}")
             if rule.interpretation:
                 lines.append(f"  {rule.interpretation}")
-            if rule.pending_operator:
-                lines.append(
-                    "  This rule has a pending proposal; the operator has not "
-                    "yet decided."
-                )
             if rule.missing is not None:
                 lines.append(
                     f"  Its check `{rule.check}` does not run here: "
@@ -959,32 +944,17 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
         )
     lines.extend(["#### Rules", ""])
     for rule in page.rules:
-        lines.append(f"- `{rule.id}` — {_VERIFICATION_ASK[rule.state]}")
+        lines.append(f"- `{rule.id}`")
         lines.extend(f"  {line}" for line in rule.text.splitlines())
         if rule.interpretation:
             lines.append(f"  Interpretation: {rule.interpretation}")
-        if rule.state == "approach_approved":
-            lines.append(f"  Approved approach: {rule.approach}")
-            lines.append(f"  Check to prepare: `{rule.check}`")
-        if rule.pending_operator:
-            lines.append(
-                "  A proposal for this rule waits for the operator; judge it for now."
-            )
         if rule.missing is not None:
             lines.append(
                 f"  Its check `{rule.check}` does not run here: `{rule.missing}` "
                 "is missing in this step's directory, so judge it instead."
             )
     _verification_evidence(lines, page)
-    _verification_duties(lines, page)
-    _verification_results(lines, page)
-
-
-_VERIFICATION_ASK = {
-    "unresolved": "unresolved: interpret it and propose how to check it",
-    "approach_approved": "approach approved: prepare and prove its check",
-    "judged": "judged: give a verdict",
-}
+    _verification_results(lines)
 
 
 def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
@@ -1011,235 +981,24 @@ def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
                 f"`{page.draft_artifact}`",
             ]
         )
-    lines.extend(["", "#### Existing checks", ""])
-    if not page.checks:
-        lines.append("The project has no derived checks yet.")
-    for check in page.checks:
-        lines.append(f"- `{check.name}` ({check.status}): `{check.command}`")
-        if check.config:
-            lines.append(
-                "  Configuration: " + ", ".join(f"`{path}`" for path in check.config)
-            )
-        for text in check.covers:
-            lines.append(f"  Covers: {text}")
 
 
-def _verification_duties(lines: Lines, page: VerificationPage) -> None:
-    states = {rule.state for rule in page.rules}
-    if page.directory and states & {"unresolved", "approach_approved"}:
-        lines.extend(
-            [
-                "",
-                "#### Where checks run",
-                "",
-                f"ww runs every check from `{page.directory}`, the step's "
-                "directory, with nothing else set up. Write each command "
-                "for that directory: paths relative to it, never another "
-                "checkout's absolute path or a `cd` out of it. Run tools the "
-                "way the project runs its own test and lint commands there, "
-                "through the same wrapper (container exec, virtual "
-                "environment, task runner) the existing checks, the "
-                "project's agent instructions or ww's `.ww/project.md` "
-                "name.",
-            ]
-        )
-        if page.guidance:
-            lines.extend(
-                [
-                    "",
-                    "The operator's guidance for every check you propose or "
-                    "prepare (`rules.check_guidance`); it wins over the "
-                    "defaults above:",
-                    "",
-                    *(
-                        f"> {line}" if line.strip() else ">"
-                        for line in page.guidance.splitlines()
-                    ),
-                ]
-            )
-    lines.extend(["", "#### What to do", ""])
-    if "unresolved" in states:
-        lines.extend(
-            [
-                "- Interpret each rule in one sentence. If more than one "
-                "reasonable reading exists, report `ambiguous` with the "
-                "candidates and stop on that rule.",
-                "- Propose the fewest checks for the unresolved rules; a check "
-                "may cover several. Prefer the ecosystem's own tools (deptrac, "
-                "PHPStan or Psalm for PHP; import-linter, ruff or a pytest "
-                "architecture test for Python; eslint for JavaScript), which "
-                "express many rules in one configuration. If an existing check's "
-                "tool above can express the rule, propose extending its "
-                "configuration, naming that check. Use plain shell (`grep`, "
-                "`find`, `git`, `sed`, `awk`) only for what no tool covers. "
-                "Say in the approach how the command runs from the directory "
-                "above, wrapper included, so the operator approves that too. "
-                "Write no command and install nothing yet: the operator "
-                "approves the approach first.",
-            ]
-        )
-    if "approach_approved" in states:
-        lines.extend(
-            [
-                "- For a rule to prepare: install a tool into the project's "
-                "manifest as a development dependency, never globally; keep its "
-                "configuration in the repository and list those files under "
-                "`config`. The command must run offline. Prove every check by "
-                "running it exactly as ww will, from the directory above: "
-                "add a deliberately violating input there, show the command "
-                "fails, remove the input, and show it passes on the real "
-                "change set. Report `not_convertible` with a reason when "
-                "preparation shows the approach does not work.",
-            ]
-        )
-    lines.append(
-        "- For judged rules and for rules you could not convert: give a "
-        "verdict `pass` or `fail`, with evidence `file:line — what` for each "
-        "failure."
-    )
-
-
-def _verification_results(lines: Lines, page: VerificationPage) -> None:
-    states = {rule.state for rule in page.rules}
+def _verification_results(lines: Lines) -> None:
     lines.extend(
         [
             "",
             "#### What to report",
             "",
+            "Judge each rule against the change set: a verdict `pass` or "
+            "`fail`, with evidence `file:line — what` for each failure. "
             "Complete with your findings as the artifact and one "
             "`--rule-result` JSON object per rule:",
             "",
+            '`{"id": "<rule>", "status": "judged", "verdict": "fail", '
+            '"failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, '
+            'or `"verdict": "pass"` without failures.',
         ]
     )
-    if "unresolved" in states:
-        lines.extend(
-            [
-                '- an approach: `{"id": "<rule>", "interpretation": "<one '
-                'sentence>", "status": "approach", "check": "<kebab-name>", '
-                '"approach": "<the tool or command, one line>"}`',
-                '- a reading to choose: `{"id": "<rule>", "status": "ambiguous", '
-                '"candidates": ["<reading>", "<reading>"]}`',
-            ]
-        )
-    if "approach_approved" in states:
-        lines.append(
-            '- a prepared check: `{"id": "<rule>", "status": "approach", '
-            '"check": "<kebab-name>"}`'
-        )
-    if states & {"unresolved", "approach_approved"}:
-        lines.append(
-            '- not convertible: `{"id": "<rule>", "status": "not_convertible", '
-            '"reason": "<why>", "verdict": "pass"}`'
-        )
-    lines.append(
-        '- a verdict: `{"id": "<rule>", "status": "judged", "verdict": "fail", '
-        '"failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, '
-        'or `"verdict": "pass"` without failures'
-    )
-    if page.prepares:
-        lines.extend(
-            [
-                "",
-                "And one `--check-result` per check you prepared: "
-                '`{"name": "<kebab-name>", "argv": ["<program>", "<arg>"], '
-                '"assert": null, "config": ["<path>"], "covers": ["<rule>"], '
-                '"proven": true}`; a shell check gives `"shell"` (with '
-                '`"args"` and `"env"`) instead of `"argv"`, and '
-                '`"assert": ["empty"]` when it must print nothing, or '
-                '`"assert": [{"equals": "<value>"}]` when it must print exactly '
-                "that value.",
-            ]
-        )
-
-
-def _rules_proposed(lines: Lines, instruction: Instruction) -> None:
-    """The operator's stop: what the verifiers proposed, and each decision."""
-    worker = (
-        instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
-    )
-    lines.extend(
-        [
-            "",
-            "The step's verifiers proposed how to check its rules. ww holds the "
-            "step's completion until the operator decides every proposal "
-            "below; nothing new runs before.",
-        ]
-    )
-    for proposal in instruction.proposals:
-        _proposal(lines, proposal, worker)
-    if worker:
-        lines.extend(
-            [
-                "",
-                f"Stop here. {_return_phrase(instruction)}: the operator "
-                "decides each proposal.",
-            ]
-        )
-        return
-    _append_section(lines, "Operator decision")
-    lines.extend(
-        [
-            "Show the operator each proposal above, quoted, and ask for a "
-            "decision on each; do not decide for them. An approved check runs "
-            "at once on the held completion. To reject every proposal still "
-            "undecided, which lets the completion go on with those rules "
-            "judged, only with the operator's explicit approval:",
-        ]
-    )
-    for command in instruction.recovery_commands:
-        lines.extend(["", "```console", command.command, "```"])
-
-
-def _proposal(lines: Lines, proposal: Proposal, worker: bool) -> None:
-    title = {
-        "approach": "an approach",
-        "check": "a revision of an approved check" if proposal.revision else "a check",
-        "ambiguous": "a reading to choose",
-    }[proposal.kind]
-    _append_section(lines, f"`{proposal.key}`: {title}")
-    for rule_id, text in proposal.rules:
-        lines.append(f"- `{rule_id}`: {text}")
-    lines.append("")
-    if proposal.interpretation:
-        lines.append(f"Interpretation: {proposal.interpretation}")
-    if proposal.kind == "approach":
-        lines.append(f"Approach: {proposal.approach}")
-        verb = "extend the existing check" if proposal.extends else "create the check"
-        lines.append(f"It would {verb} `{proposal.check}`.")
-    if proposal.kind == "check":
-        lines.extend(["Command:", "", "```sh", str(proposal.command), "```", ""])
-        if proposal.assertion:
-            lines.append(f"Assertion: {proposal.assertion}")
-        if proposal.config:
-            lines.append(
-                "Configuration files: "
-                + ", ".join(f"`{path}`" for path in proposal.config)
-            )
-        lines.append(
-            "Proof: the verifier showed it fails on a violation and passes on "
-            "the change."
-            if proposal.proven
-            else "Proof: none; the verifier did not prove it."
-        )
-        if proposal.revision:
-            lines.append(
-                "The approved command keeps running until this revision is approved."
-            )
-    if proposal.kind == "ambiguous":
-        lines.append("Readings:")
-        lines.extend(
-            f"{number}. {candidate}"
-            for number, candidate in enumerate(proposal.candidates, 1)
-        )
-    if worker:
-        return
-    for command in proposal.commands:
-        purpose = {
-            "approve": "To approve it",
-            "approach": "To replace the approach with the operator's own",
-            "pick": "To choose a reading by its number",
-        }[command.action]
-        lines.extend(["", f"{purpose}:", "", "```console", command.command, "```"])
 
 
 def _outcome_effect(outcome: AssessmentOutcome) -> str:
@@ -1699,9 +1458,6 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
         return
     if instruction.fix_required is not None:
         _fix_limit(lines, instruction)
-        return
-    if instruction.operator_reason == "rules_proposed":
-        _rules_proposed(lines, instruction)
         return
     if instruction.dispute is not None:
         _check_disputed(lines, instruction)

@@ -261,12 +261,8 @@ class ProjectConfig:
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
     enabled: Enabled = True
-    # ``rules.scripting``: whether verifiers turn rules into checks, each
-    # approach and check approved by the operator, or only judge them. Read
-    # when a step begins.
-    rule_scripting: bool = True
-    # ``rules.check_guidance``: the operator's own words for the verifier
-    # that proposes or prepares a check; read when its page renders.
+    # ``rules.check_guidance``: the operator's own words for the commands
+    # ``ww-scriptize-rules`` builds, which it reads from ``ww rules --json``.
     rule_check_guidance: str | None = None
     projects: tuple[ProjectDefinition, ...] = ()
     # The runtime ``start`` uses when ``--runtime`` is omitted.
@@ -565,24 +561,20 @@ def _parse_agent_hooks(data: Any, path: str) -> AgentHooks:
 
 
 def _parse_rules(data: Any, path: str) -> dict[str, Any]:
-    """``rules``: an optional ``scripting`` switch and ``check_guidance`` text."""
+    """``rules``: an optional ``check_guidance`` text."""
     if data is None:
         return {}
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.rules must be an object")
-    unknown = set(data) - {"scripting", "check_guidance"}
+    unknown = set(data) - {"check_guidance"}
     if unknown:
         raise ConfigurationError(
             f"{path}.rules has unknown key(s): {', '.join(sorted(unknown))}"
         )
-    scripting = data.get("scripting", True)
-    if not isinstance(scripting, bool):
-        raise ConfigurationError(f"{path}.rules.scripting must be true or false")
     guidance = data.get("check_guidance")
     if guidance is not None and not isinstance(guidance, str):
         raise ConfigurationError(f"{path}.rules.check_guidance must be a string")
     return {
-        "rule_scripting": scripting,
         # Blank text means unset.
         "rule_check_guidance": (guidance or "").strip() or None,
     }
