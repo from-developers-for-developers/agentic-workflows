@@ -498,6 +498,27 @@ class ExtensionRegistry:
             )
         )
 
+    def _task_context(
+        self,
+        identifier: str,
+        task_id: str,
+        workflow: str | None,
+        project: str | None,
+    ) -> ExtensionContext:
+        """The context a task-identity hook receives for ``task_id``."""
+        return ExtensionContext(
+            root=self.root,
+            store=self.store(identifier),
+            config=self.settings(identifier, project),
+            task_id=task_id,
+            workflow=workflow,
+            workspace=(
+                self.config.projects_by_name[project].directory(self.root)
+                if project is not None
+                else None
+            ),
+        )
+
     def reserved_paths(
         self, task_id: str, workflow: str | None, project: str | None = None
     ) -> tuple[Path, ...]:
@@ -507,18 +528,7 @@ class ExtensionRegistry:
             extension = self.get(identifier)
             if extension.reserved_paths is None:
                 continue
-            context = ExtensionContext(
-                root=self.root,
-                store=self.store(identifier),
-                config=self.settings(identifier, project),
-                task_id=task_id,
-                workflow=workflow,
-                workspace=(
-                    self.config.projects_by_name[project].directory(self.root)
-                    if project is not None
-                    else None
-                ),
-            )
+            context = self._task_context(identifier, task_id, workflow, project)
             try:
                 claimed = extension.reserved_paths(context)
             except ConfigurationError:
@@ -529,6 +539,71 @@ class ExtensionRegistry:
                 ) from error
             paths.extend(Path(path) for path in claimed)
         return tuple(paths)
+
+    def _record_keepers(self, project: str | None) -> tuple[str, ...]:
+        """Extensions that may hold task records: listed, or with a store.
+
+        A handler referenced from a workflow writes records even when the
+        extension has no settings section, so an existing store counts; a
+        listed extension counts even with an empty section and no store yet.
+        """
+        return tuple(
+            identifier
+            for identifier in self.identifiers
+            if self.config.sections.lists(identifier)
+            or (
+                project is not None
+                and self.project_settings(project).sections.lists(identifier)
+            )
+            or ExtensionStore(self.root, identifier).directory.is_dir()
+        )
+
+    def claims_task(
+        self, task_id: str, workflow: str | None, project: str | None = None
+    ) -> bool:
+        """Whether an extension in use still holds records for ``task_id``."""
+        for identifier in self._record_keepers(project):
+            extension = self.get(identifier)
+            if extension.claims_task is None:
+                continue
+            context = self._task_context(identifier, task_id, workflow, project)
+            try:
+                claimed = extension.claims_task(context)
+            except ConfigurationError:
+                raise
+            except Exception as error:  # noqa: BLE001 - add extension context
+                raise ConfigurationError(
+                    f"extension {identifier!r} failed to report a task claim: {error}"
+                ) from error
+            if claimed:
+                return True
+        return False
+
+    def forget_task(self, task_id: str) -> None:
+        """Let every extension in use anywhere drop its records of a task.
+
+        Extension stores are per ww root, not per project, so each extension
+        listed at the root or in any project, or with a store, forgets the
+        task once, with the first settings that list it.
+        """
+        scopes: dict[str, str | None] = {}
+        for project in (None, *self.config.projects_by_name):
+            for identifier in self._record_keepers(project):
+                scopes.setdefault(identifier, project)
+        for identifier, project in scopes.items():
+            extension = self.get(identifier)
+            if extension.forget_task is None:
+                continue
+            context = self._task_context(identifier, task_id, None, project)
+            try:
+                extension.forget_task(context)
+            except ConfigurationError:
+                raise
+            except Exception as error:  # noqa: BLE001 - add extension context
+                raise ConfigurationError(
+                    f"extension {identifier!r} failed to forget task "
+                    f"{task_id!r}: {error}"
+                ) from error
 
     def branch_strategies(self, project: str | None = None) -> tuple[str, ...]:
         """Names configured extensions accept for ``start --branch-strategy``."""

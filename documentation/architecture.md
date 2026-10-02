@@ -125,7 +125,11 @@ choose the binary before any ww code runs.
 
 Initialization is a convergent project-repair operation rather than a one-time
 state transition. It fills absent root configuration keys and recreates missing
-ww-owned files, but preserves authored values. Runtime state, including task
+ww-owned files, but preserves authored values. The `./ww` launcher is the one
+existing file `init` replaces: it is ww-owned and holds nothing authored (the
+binary is the `executable` setting), and a launcher an older ww wrote reads
+old configuration names and runs the wrong binary, so `init` rewrites one that
+differs from `PROJECT_LAUNCHER` and `lint` warns about it. Runtime state, including task
 documents, lives below `../.ww` so projects can exclude one directory as a unit;
 the `.gitignore` lines `init` writes (`RUNTIME_IGNORE_LINES` in
 `../src/ww/config_files.py`) ignore that directory's contents rather than the
@@ -968,6 +972,18 @@ lock across a complete read–modify–write operation. Extensions must use that
 operation when new state depends on old state; separate reads and writes do not
 form a transaction, and atomic replacement alone cannot prevent lost updates.
 
+Such records outlive the task state they belong to, so two optional hooks keep
+them from shaping a later task under the same ID. `claims_task` reports that an
+extension still holds a task ID, and generated-ID claims ask it after task
+state and `reserved_paths`; `forget_task` drops the task's records, and
+`reset` calls it. Both reach the extensions listed at the root or in the
+task's project, even with an empty section, and any with a store, since a
+handler referenced without settings still writes records. `ww/git` claims an
+ID with a branch record or an existing task branch, forgets the task's and its
+children's branch and commit records, and trusts a recorded base only for the
+same branch while that branch exists; otherwise it resolves `base_branches`
+again.
+
 Unlike a shell handler, an extension handler has no per-command ledger: it is
 one unit, and an explicit retry re-runs it whole. The extension API can expose
 a tri-state checker for interrupted operations; checker errors remain unknown
@@ -1357,8 +1373,9 @@ promised file exists before journaling run, step, time, and content hash. The
 journal, not the file, is what state knows; the file's content and format stay
 the workflow's. The document store and the interaction log are the two task
 records kept beside the storage adapter, on the filesystem under the task
-directory; `reset` asks each to forget the task before the adapter removes
-what it owns, so a task started later under the same ID inherits nothing.
+directory; `reset` asks each, and each extension through `forget_task`, to
+forget the task before the adapter removes what it owns, so a task started
+later under the same ID inherits nothing.
 
 ## Children that bind their own identity
 

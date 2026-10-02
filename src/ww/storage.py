@@ -126,9 +126,20 @@ class Storage:
             self.locks.atomic_write(self.project_config_path, project_config)
             created.append(SETTINGS_FILE)
 
+        # The launcher is ww-owned: one an older ww wrote reads old config
+        # names and can run the wrong binary, so a differing one is replaced.
+        if launcher_path.exists():
+            if launcher_path.read_text(encoding="utf-8") != launcher:
+                self.locks.atomic_write(launcher_path, launcher)
+                created.append("ww (updated to the current launcher)")
+            else:
+                preserved.append("ww")
+        else:
+            self.locks.atomic_write(launcher_path, launcher)
+            created.append("ww")
+
         for path, content in (
             (instructions_path, agent_instructions),
-            (launcher_path, launcher),
             *((self.root / relative, content) for relative, content in skills),
         ):
             relative = str(path.relative_to(self.root))

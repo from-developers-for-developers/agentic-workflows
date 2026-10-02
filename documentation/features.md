@@ -3177,7 +3177,10 @@ prints what a task in that configured project receives.
 When `worktrees` is enabled, generated task IDs reserve any existing path
 rendered by `worktree_dir` and `worktree_name_format`. For example, an existing
 `worktrees/TASK-1` makes the next `{{digit}}`-formatted task use `TASK-2`, rather
-than adopting that checkout for a new task.
+than adopting that checkout for a new task. A generated ID also skips one
+`ww/git` still holds: a branch record for it, or an existing branch its branch
+name formats render for it, so a cleaned-up `.ww/tasks` does not hand an old
+task's ID, and with it that task's history, to a new one.
 
 `base_branches` maps exact workflow names to base branches, and its `default`
 entry covers every other workflow, the same shape as `branch_name_formats`. A
@@ -3188,8 +3191,12 @@ object with a non-empty `argv` array. An argv command runs directly without a sh
 the project root; its single non-empty stdout line becomes the base branch.
 Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, and `{{ww.task.run}}`.
 The resolved base is recorded with the task branch so retries, worktree creation,
-and return-to-base use one stable value. A child task always uses its recorded
-parent task branch instead.
+and return-to-base use one stable value. The record is trusted only while it
+names the branch being resolved and that branch exists; a record of another
+branch, or of a deleted one, is left behind by an earlier task under the same
+ID, and the configured base is resolved instead. A child task always uses its
+recorded parent task branch instead. `reset` drops the task's branch and commit
+records, and its children's.
 
 `branch_name_formats` names the available branch naming strategies. Without an
 override, `start-task-branch` first looks for a strategy matching the workflow
@@ -3404,6 +3411,25 @@ def _subject_error(values):
 ExtensionHandler(
     "git-commit", _commit, provide=(ProvidedVariable("commit_message"),),
     validate=_subject_error,
+)
+```
+
+An extension that keeps records per task, as `ww/git` keeps branch and commit
+records, may declare two optional hooks so a reused task ID inherits nothing.
+`claims_task` receives a context with `task_id` (and `workflow` and the
+project's `config`) and returns `True` while the extension still holds
+anything for that ID; a generated task ID skips such an ID, as it skips one
+whose `reserved_paths` exist. `forget_task` receives the same context and drops
+the records of the task and its children; `reset` calls it. ww asks the
+extensions the root or the task's project lists, even with an empty section,
+and any that has a store.
+
+```python
+def _claims(context):
+    return context.store.read_text(f"{context.task_id}.json") is not None
+
+EXTENSION = Extension(
+    vendor="acme", name="tickets", claims_task=_claims, forget_task=_forget,
 )
 ```
 
@@ -3665,7 +3691,9 @@ it on a disposable branch or a test repository.
 
 `init` creates a normalized default configuration and project-local agent
 instructions. `cleanup` removes inactive lock sidecar files. `reset` deletes one
-task's saved state and artifacts and therefore requires explicit confirmation.
+task's saved state and artifacts, and the records extensions keep for it, such
+as `ww/git`'s branch and commit records, and therefore requires explicit
+confirmation.
 
 ```console
 ww-agentic-workflows init
@@ -3815,8 +3843,12 @@ may also come from the user or local settings file, the local one winning,
 so one checkout can use a development install without changing the shared
 file. Without the key, printed
 commands use `./ww` and the launcher runs `ww-agentic-workflows`. `init` writes
-`"executable": "ww-agentic-workflows"` when the key is missing, and leaves an
-existing launcher alone.
+`"executable": "ww-agentic-workflows"` when the key is missing. The launcher
+itself is ww-owned: `init` rewrites a `./ww` that differs from the current one
+and reports it as updated, because a launcher an older ww wrote can read old
+configuration file names and run the wrong binary, and `lint` warns about such
+a launcher, naming `init` as the fix. Choose the binary with `executable`, not
+by editing `./ww`.
 
 This is what lets two installs live side by side, for example one checkout for
 developing ww itself, switched between branches often, and another kept on

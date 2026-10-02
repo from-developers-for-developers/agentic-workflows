@@ -25,6 +25,7 @@ from ww.config_files import (
     WORKFLOWS_FILE,
     display_path,
 )
+from ww.defaults import PROJECT_LAUNCHER
 from ww.errors import StateError, WwError
 from ww.executable import printed_executable, ww_command
 from ww.extensions import ExtensionContext, ExtensionRegistry
@@ -272,9 +273,27 @@ def _lint(context: _Context) -> _Outcome:
         f"{WORKFLOWS_FILE} is valid.\n"
         f"{_configuration_files(context.storage, context.extensions)}"
         f"{notices}"
+        f"{_launcher_warning(context.storage.root)}"
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
         f"{_disputes_summary(DisputeLog(context.storage.root))}"
+    )
+
+
+def _launcher_warning(root: Path) -> str:
+    """Warn when ./ww is not the launcher this ww writes.
+
+    The launcher is ww-owned; one an older ww wrote can read old
+    configuration names and run the wrong binary, and ``init`` rewrites it.
+    """
+    launcher = root / "ww"
+    if not launcher.is_file():
+        return ""
+    if launcher.read_text(encoding="utf-8") == PROJECT_LAUNCHER:
+        return ""
+    return (
+        "Warning: ./ww differs from the current launcher; run "
+        f"`{ww_command()} init` to rewrite it.\n"
     )
 
 

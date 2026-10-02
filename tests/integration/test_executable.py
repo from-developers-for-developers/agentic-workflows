@@ -160,7 +160,7 @@ def test_init_records_the_standard_executable_and_writes_the_launcher(
     assert (tmp_path / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
 
 
-def test_init_keeps_an_edited_launcher_and_a_configured_executable(
+def test_init_rewrites_an_edited_launcher_and_keeps_a_configured_executable(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "ww").write_text('#!/bin/sh\nexec my-ww "$@"\n', encoding="utf-8")
@@ -172,6 +172,8 @@ def test_init_keeps_an_edited_launcher_and_a_configured_executable(
 
     config = json.loads((tmp_path / "ww.json").read_text())
     assert config["executable"] == "ww-agentic-workflows-dev"
-    assert "my-ww" in (tmp_path / "ww").read_text(encoding="utf-8")
+    # The launcher is ww-owned; the configured executable is how a project
+    # chooses its binary.
+    assert "my-ww" not in (tmp_path / "ww").read_text(encoding="utf-8")
     # The summary names the binary the project runs.
     assert "     ww-agentic-workflows-dev\n" in output

@@ -2393,6 +2393,9 @@ class WorkflowService:
             self.interactions.remove(task_id)
             self.hook_records.remove(task_id)
             self.documents.remove_task(task_id)
+            # Extension records outlive task state otherwise, and a later
+            # task under the same ID would inherit them.
+            self.extensions.forget_task(task_id)
             return ResetResult(task_id, self.tasks.remove_task(task_id))
 
     def interruption(self, task_id: str) -> Interruption | None:

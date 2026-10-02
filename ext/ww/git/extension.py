@@ -569,6 +569,43 @@ def _resolve_base_branch(
     return output, None
 
 
+def _branch_name(
+    context: ExtensionContext, branch_format: str
+) -> tuple[str | None, str | None, str | None]:
+    """Render the task's branch from ``branch_format``: (branch, parent, error).
+
+    A child task's branch is its parent's recorded branch plus the child ID,
+    whatever the format says.
+    """
+    branch = interpolate(branch_format, _tokens(context)).strip()
+    if not branch:
+        return None, None, "branch name format rendered empty"
+    parent_branch = _parent_branch(context)
+    if parent_branch and context.task_id:
+        child_id = context.task_id.rpartition("/")[2]
+        branch = f"{parent_branch}-{child_id}"
+    return branch.lower(), parent_branch, None
+
+
+def _trusted_base(context: ExtensionContext, branch: str) -> str | None:
+    """The base recorded for ``branch``, while that branch still exists.
+
+    A record outlives its task: after task state is cleaned up, a generated
+    ID can be handed out again, and the old task's record (perhaps a hotfix
+    from another base) must not choose the new task's base.  Only a record
+    naming this very branch, which still exists, is the task's own.
+    """
+    record = _recorded_branch(context, context.task_id or "")
+    if record is None or record.get("branch") != branch:
+        return None
+    base = record.get("base")
+    if not isinstance(base, str) or not base:
+        return None
+    if not _branch_exists(context, branch, cwd=_repository(context)):
+        return None
+    return base
+
+
 def _task_branch(
     context: ExtensionContext, settings: Settings
 ) -> tuple[str | None, str | None, str | None]:
@@ -579,32 +616,69 @@ def _task_branch(
     branch_format = settings.branch_format(context.workflow, strategy)
     if branch_format is None:
         return None, None, f"branch naming strategy not found: {strategy}"
-    branch = interpolate(branch_format, _tokens(context)).strip()
-    if not branch:
-        return None, None, "branch name format rendered empty"
-    parent_branch = _parent_branch(context)
+    branch, parent_branch, error = _branch_name(context, branch_format)
+    if error or branch is None:
+        return None, None, error
     if parent_branch:
-        child_id = context.task_id.rpartition("/")[2]
-        branch = f"{parent_branch}-{child_id}"
-    branch = branch.lower()
-    record = _recorded_branch(context, context.task_id)
-    recorded_base = record.get("base") if record else None
-    if not isinstance(recorded_base, str) or not recorded_base:
-        recorded_base = None
-    configured_base = None
-    if not parent_branch and not recorded_base:
-        configured_base, base_error = _resolve_base_branch(
-            context, settings.base_branch_for(context.workflow)
-        )
-        if base_error:
-            return None, None, base_error
-    base = (
-        parent_branch
-        or recorded_base
-        or configured_base
-        or _current_branch(context, cwd=_repository(context))
+        return branch, parent_branch, None
+    recorded_base = _trusted_base(context, branch)
+    if recorded_base:
+        return branch, recorded_base, None
+    configured_base, base_error = _resolve_base_branch(
+        context, settings.base_branch_for(context.workflow)
     )
+    if base_error:
+        return None, None, base_error
+    base = configured_base or _current_branch(context, cwd=_repository(context))
     return branch, base, None
+
+
+def _claims_task(context: ExtensionContext) -> bool:
+    """Whether ww/git still holds this task ID: a record or a task branch.
+
+    Either outlives the task state, so a generated ID that has one is not
+    handed out again.  Every configured branch format is tried, since the
+    branch strategy of a future start is not known yet.
+    """
+    task_id = context.task_id
+    if not task_id:
+        return False
+    if _recorded_branch(context, task_id) is not None:
+        return True
+    settings = settings_from(context.config)
+    repository = _repository(context)
+    for branch_format in dict.fromkeys(
+        (DEFAULT_BRANCH_FORMAT, *settings.branch_name_formats.values())
+    ):
+        branch, _parent, error = _branch_name(context, branch_format)
+        if not error and branch and _branch_exists(context, branch, cwd=repository):
+            return True
+    return False
+
+
+def _forget_task(context: ExtensionContext) -> None:
+    """Drop the branch and commit records of the task and its children."""
+    task_id = context.task_id
+    if not task_id:
+        return
+
+    def belongs(line: str) -> bool:
+        if not line:
+            return False
+        owner = json.loads(line).get("task_id")
+        return isinstance(owner, str) and (
+            owner == task_id or owner.startswith(f"{task_id}/")
+        )
+
+    def without_task(current: str | None) -> str:
+        lines = [
+            line for line in (current or "").splitlines() if line and not belongs(line)
+        ]
+        return "\n".join(lines) + "\n" if lines else ""
+
+    for name in (BRANCHES_FILE, COMMITS_FILE):
+        if context.store.read_text(name) is not None:
+            context.store.update_text(name, without_task)
 
 
 # --------------------------------------------------------------------------- #
@@ -1522,6 +1596,8 @@ EXTENSION = Extension(
         ),
     ),
     reserved_paths=_reserved_paths,
+    claims_task=_claims_task,
+    forget_task=_forget_task,
     branch_strategies=_branch_strategies,
     handlers=(
         ExtensionHandler(

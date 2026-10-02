@@ -617,6 +617,40 @@ def test_reserved_paths_come_only_from_configured_extensions(tmp_path: Path) -> 
         Extension(vendor="acme", name="bad", reserved_paths="not callable")  # type: ignore[arg-type]
 
 
+def test_task_claims_and_forgetting_reach_listed_extensions_and_stores(
+    tmp_path: Path,
+) -> None:
+    forgotten: list[tuple[str, str | None]] = []
+
+    def holds(context: ExtensionContext) -> bool:
+        return context.task_id == "T-1"
+
+    def forget(context: ExtensionContext) -> None:
+        forgotten.append((context.store.identifier, context.task_id))
+
+    listed = Extension(
+        vendor="acme", name="listed", claims_task=holds, forget_task=forget
+    )
+    stored = Extension(vendor="acme", name="stored", forget_task=forget)
+    idle = Extension(vendor="acme", name="idle", claims_task=holds, forget_task=forget)
+    registry = ExtensionRegistry(
+        tmp_path,
+        (listed, stored, idle),
+        # An empty section still lists the extension.
+        config=ProjectConfig(extensions={"acme/listed": {}}),
+    )
+    # A handler referenced without a section still leaves a store behind.
+    registry.store("acme/stored").append_line("records.jsonl", "{}")
+
+    assert registry.claims_task("T-1", "task")
+    assert not registry.claims_task("T-2", "task")
+    registry.forget_task("T-1")
+    assert sorted(forgotten) == [("acme/listed", "T-1"), ("acme/stored", "T-1")]
+    for hook in ("claims_task", "forget_task"):
+        with pytest.raises(TypeError, match=f"{hook} must be callable"):
+            Extension(vendor="acme", name="bad", **{hook: "not callable"})  # type: ignore[arg-type]
+
+
 # A configured project's own extension settings
 
 

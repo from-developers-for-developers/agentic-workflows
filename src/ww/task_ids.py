@@ -97,14 +97,17 @@ def task_id_claimed(
 ) -> bool:
     """Return whether task state or an extension already claims ``task_id``.
 
-    An extension's artefact (for example a Git worktree) can outlive the task
-    state it belonged to.  Extensions report such paths themselves, so core
-    needs no knowledge of any one extension's settings; a task starting in a
+    An extension's artefact (for example a Git worktree) or record (for
+    example a Git branch record) can outlive the task state it belonged to.
+    Extensions report such paths and claims themselves, so core needs no
+    knowledge of any one extension's settings; a task starting in a
     configured project asks under that project's settings.
     """
     if tasks.task_exists(task_id):
         return True
-    return any(
+    if any(
         path.exists()
         for path in extensions.reserved_paths(task_id, workflow_name, project)
-    )
+    ):
+        return True
+    return extensions.claims_task(task_id, workflow_name, project)

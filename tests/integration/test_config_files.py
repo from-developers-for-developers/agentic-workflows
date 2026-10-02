@@ -41,16 +41,28 @@ def project(tmp_path: Path) -> Path:
     return directory
 
 
-def test_an_edited_launcher_is_preserved(
+def test_an_edited_launcher_is_rewritten(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    edited = PROJECT_LAUNCHER + "# mine\n"
-    _write(project / "ww", edited)
+    # The launcher is ww-owned: an edit, like an older ww's, is replaced.
+    _write(project / "ww", PROJECT_LAUNCHER + "# mine\n")
 
     assert main(["--root", str(project), "init", "--no-input"]) == 0
     capsys.readouterr()
 
-    assert (project / "ww").read_text(encoding="utf-8") == edited
+    assert (project / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
+
+
+def test_a_current_launcher_is_preserved(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write(project / "ww", PROJECT_LAUNCHER)
+
+    assert main(["--root", str(project), "init", "--no-input"]) == 0
+    output = capsys.readouterr().out
+
+    assert "ww (updated" not in output
+    assert (project / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
 
 
 def test_the_project_root_is_found_by_its_workflow_file(

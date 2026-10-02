@@ -277,7 +277,8 @@ name in any `ww.yaml` level replaces the built-in one instead.
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
 `ww-agentic-workflows`; `init` writes `ww-agentic-workflows` when it is
-missing. `runtime` (`single` or `auto`) is the runtime `start` uses when
+missing. The launcher is ww-owned: `init` rewrites a `./ww` that differs from
+the current template, and `lint` warns about one. `runtime` (`single` or `auto`) is the runtime `start` uses when
 neither `--runtime` nor the workflow names one, `update_check: false` silences
 the notice that the ww checkout is behind its remote, `task_format` is the
 generated task ID format, `rules` sets [whether verifiers script rules and
@@ -1445,6 +1446,7 @@ workflows:
         description: Implement and verify the requested change.
 ```
 
-Use `ww-agentic-workflows lint` to validate the complete configuration. Use
+Use `ww-agentic-workflows lint` to validate the complete configuration; it also
+warns when `./ww` differs from the launcher this ww writes. Use
 `ww-agentic-workflows plan --workflow <name> --agent <agent>` to inspect a
 selected workflow's resulting execution plan.

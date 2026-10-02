@@ -67,6 +67,18 @@ as a Git worktree, may declare ``reserved_paths``. ww asks configured
 extensions for those paths before handing out a generated task ID, so an ID
 whose worktree still exists on disk is never reused for an unrelated task.
 
+Task records
+------------
+
+An extension that keeps its own records per task, as ww/git keeps branch and
+commit records, may declare two hooks. ``claims_task`` returns whether the
+extension still holds anything for ``task_id`` (a record, or a branch named
+after the task); ww skips such an ID when it generates one, as it does for a
+reserved path. ``forget_task`` drops the extension's records for ``task_id``
+and its children; ``ww reset`` calls it for every configured extension, so a
+reset task leaves nothing behind that could shape a later task under the same
+ID.
+
 Rule groups
 -----------
 
@@ -463,6 +475,12 @@ class Extension:
     # Paths a task claims outside ww state; receives config, root, task_id,
     # and workflow on the context.  ``None`` when the extension owns none.
     reserved_paths: Callable[[ExtensionContext], tuple[Path, ...]] | None = None
+    # Whether the extension still holds records for ``task_id`` (same context
+    # as ``reserved_paths``), so a generated ID skips it.  ``None`` for never.
+    claims_task: Callable[[ExtensionContext], bool] | None = None
+    # Forget ``task_id`` and its children when the task is reset; receives
+    # root, store, config, and task_id.  ``None`` when there is nothing to drop.
+    forget_task: Callable[[ExtensionContext], None] | None = None
     # Names accepted by ``start --branch-strategy``, given the extension's
     # settings.  ``None`` when the extension does not name branches.
     branch_strategies: Callable[[Mapping[str, object]], tuple[str, ...]] | None = None
@@ -479,6 +497,10 @@ class Extension:
             raise TypeError("extension namespace must be an ExtensionNamespace")
         if self.reserved_paths is not None and not callable(self.reserved_paths):
             raise TypeError("extension reserved_paths must be callable")
+        if self.claims_task is not None and not callable(self.claims_task):
+            raise TypeError("extension claims_task must be callable")
+        if self.forget_task is not None and not callable(self.forget_task):
+            raise TypeError("extension forget_task must be callable")
         if self.branch_strategies is not None and not callable(self.branch_strategies):
             raise TypeError("extension branch_strategies must be callable")
         for label, value in (("vendor", self.vendor), ("name", self.name)):
