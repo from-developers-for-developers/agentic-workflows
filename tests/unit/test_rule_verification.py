@@ -13,7 +13,7 @@ from ww.actions import CommandDefinition, Commands
 from ww.config import load_configuration
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
-from ww.execution_models import PlanItemExecution
+from ww.execution_models import ExecutionState, PlanItemExecution
 from ww.execution_models.records import (
     HeldCompletion,
     RuleVerdict,
@@ -23,7 +23,9 @@ from ww.plan import PlanItem, WorkflowPlanCompiler
 from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_verification import (
     Decisions,
+    add_resolved_checks,
     apply_decisions,
+    derived_check,
     effective_hints,
     parse_check_results,
     parse_rule_results,
@@ -614,3 +616,65 @@ def test_hints_default_to_the_step(develop: PlanItem) -> None:
     rule = replace(develop.rules[0], hints=RuleHints(model="opus"))
 
     assert effective_hints(rule, step) == RuleHints("claudecode", "opus", "auto")
+
+
+def _converted(config: tuple[str, ...]) -> RuleAutomation:
+    cli = rule_text_hash(CLI)
+    check = _check((cli,))
+    return (
+        RuleAutomation()
+        .with_check("lint", replace(check, spec=replace(check.spec, config=config)))
+        .with_rule(cli, RuleEntry(CLI, "converted", check="lint"))
+    )
+
+
+@pytest.mark.parametrize("path", ["../lint.toml", "/etc/hosts"])
+def test_a_config_path_outside_the_directory_counts_as_missing(
+    develop: PlanItem, tmp_path: Path, path: str
+) -> None:
+    (tmp_path / "lint.toml").write_text("", encoding="utf-8")
+    directory = tmp_path / "tree"
+    directory.mkdir()
+
+    resolutions, checks = resolve_rules(
+        develop, _converted((path,)), directory=directory
+    )
+
+    cli = next(entry for entry in resolutions if entry.id == "develop/1")
+    assert (cli.status, cli.check, cli.missing) == ("judged", "lint", path)
+    assert checks == ()
+
+
+def test_a_newly_approved_check_clears_a_stale_missing_file(
+    develop: PlanItem,
+) -> None:
+    resolutions, _ = resolve_rules(
+        develop, _converted(("lint.toml",)), directory=Path("/nonexistent")
+    )
+    record = _record(status="in_progress", rule_resolutions=resolutions)
+    state = ExecutionState(
+        task_id="TASK-1",
+        run_id="01-task",
+        workflow="task",
+        agent="codex",
+        modes=(),
+        status="in_progress",
+        created_at=NOW,
+        updated_at=NOW,
+        snapshot_digest="x",
+        cursor=0,
+        active_item_id="develop",
+        item_executions=(record,),
+        steps=(),
+    )
+    rule = next(rule for rule in develop.rules if rule.id == "develop/1")
+    check = derived_check("lint", _check((rule.text_hash,)).spec, [rule])
+
+    updated = add_resolved_checks(state, 0, (check,), lambda: NOW)
+
+    cli = next(
+        entry
+        for entry in updated.item_executions[0].rule_resolutions
+        if entry.id == "develop/1"
+    )
+    assert (cli.status, cli.check, cli.missing) == ("converted", "lint", None)

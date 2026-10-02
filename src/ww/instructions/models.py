@@ -130,10 +130,14 @@ class RuleLine:
     has_command: bool = False
     hook: bool = False
     interpretation: str | None = None
-    # The approved derived check that checks a rule without a command.
+    # The approved derived check that checks a rule without a command, or,
+    # with ``missing``, the converted check that does not apply here.
     check: str | None = None
     # A verifier judges the rule while an undecided proposal for it waits.
     pending_operator: bool = False
+    # A verifier judges the rule because its converted ``check`` does not
+    # apply here: this configuration file is missing in the step's directory.
+    missing: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -145,6 +149,7 @@ class RuleLine:
             "interpretation": self.interpretation,
             "check": self.check,
             "pending_operator": self.pending_operator,
+            "missing": self.missing,
         }
 
 

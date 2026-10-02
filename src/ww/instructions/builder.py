@@ -1012,24 +1012,31 @@ def rule_lines(item: PlanItem, record: PlanItemExecution) -> tuple[RuleLine, ...
     """The rules a step's page lists: its rules, then its ``fix`` hooks.
 
     A rule without a command that an approved derived check covers is listed
-    as checked; a judged one carries the store's interpretation, and a note
-    when a proposal for it still waits for the operator.
+    as checked; a judged one carries the store's interpretation, a note when
+    a proposal for it still waits for the operator, and the missing
+    configuration file when its converted check does not apply here.
     """
     resolutions = {entry.id: entry for entry in record.rule_resolutions}
 
     def line(rule: PlannedRule) -> RuleLine:
         resolution = resolutions.get(rule.id)
         converted = resolution is not None and resolution.status == "converted"
+        missing = resolution.missing if resolution else None
         return RuleLine(
             rule.id,
             rule.summary,
             rule.paths,
             rule.has_command or converted,
             interpretation=resolution.interpretation if resolution else None,
-            check=resolution.check if converted and resolution else None,
+            check=(
+                resolution.check
+                if resolution is not None and (converted or missing is not None)
+                else None
+            ),
             pending_operator=(
                 resolution is not None and resolution.status == "pending_operator"
             ),
+            missing=missing,
         )
 
     return (

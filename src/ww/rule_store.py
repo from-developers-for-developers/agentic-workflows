@@ -30,7 +30,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
 from ww.actions import Commands
@@ -230,6 +230,12 @@ def is_check_name(value: str) -> bool:
     The limit keeps a name from ever looking like a rule's 64-character hash.
     """
     return len(value) <= CHECK_NAME_LIMIT and CHECK_NAME.fullmatch(value) is not None
+
+
+def is_config_path(path: str) -> bool:
+    """Whether ``path`` stays inside the directory it is read from."""
+    pure = PurePosixPath(path)
+    return bool(path.strip()) and not pure.is_absolute() and ".." not in pure.parts
 
 
 def parse_command(mapping: dict[str, Any], path: str) -> Commands:

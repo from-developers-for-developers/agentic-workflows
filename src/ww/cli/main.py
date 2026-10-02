@@ -61,6 +61,7 @@ from ww.output import (
 from ww.output_adapters.rule_pages import (
     render_check_preview,
     render_convert_preview,
+    render_decline_preview,
     render_orphans,
     render_revoke_preview,
     render_revoked,
@@ -714,7 +715,13 @@ def _convert(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
     )
     store = RuleStore(context.storage.root)
     name = args.check_name
-    preview = render_convert_preview(name, spec, rules, store.load().checks.get(name))
+    now = _store_time()
+
+    def change(automation: RuleAutomation) -> rule_conversion.StoreChange:
+        return rule_conversion.convert(automation, name, spec, rules, now)
+
+    current = store.load()
+    preview = render_convert_preview(name, rules, current, change(current))
     if args.dry_run:
         return _Outcome(preview + "Dry run: nothing was recorded.\n")
     sys.stderr.write(preview)
@@ -727,24 +734,7 @@ def _convert(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
         assume_yes=args.yes,
     ):
         return _Outcome("", error="convert cancelled", exit_code=1)
-    outcome: list[tuple[str, ...]] = []
-
-    def change(automation: RuleAutomation) -> RuleAutomation:
-        updated, dropped = rule_conversion.convert(
-            automation,
-            name,
-            spec,
-            rules,
-            datetime.now(timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z"),
-        )
-        outcome.append(dropped)
-        return updated
-
-    store.modify(change)
-    dropped = outcome[-1]
+    result = _modify_store(store, change)
     if args.json_output:
         return _Outcome(
             _json(
@@ -752,18 +742,20 @@ def _convert(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
                     "converted": {
                         "check": name,
                         "rules": [rule.id for rule in rules],
-                        "unscriptized": list(dropped),
+                        **_change_json(result),
                     }
                 }
             )
         )
     text = f"Recorded check {name}, covering {', '.join(rule.id for rule in rules)}.\n"
-    if dropped:
+    if result.unscriptized:
         text += (
-            f"No longer covered, so not scriptized: {len(dropped)} rule wording(s) "
-            "(" + ", ".join(key[:12] for key in dropped) + ").\n"
+            f"No longer covered, so not scriptized: {len(result.unscriptized)} "
+            "rule wording(s) ("
+            + ", ".join(key[:12] for key in result.unscriptized)
+            + ").\n"
         )
-    return _Outcome(text)
+    return _Outcome(text + _dropped_text(result))
 
 
 def _decline(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
@@ -773,8 +765,13 @@ def _decline(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
     reason = args.reason.strip()
     if not reason:
         raise StateError("rules decline needs --reason")
-    preview = "".join(f"- `{rule.id}`: {rule.summary}\n" for rule in rules)
-    preview = f"Rules to record as not convertible ({reason}):\n" + preview
+    store = RuleStore(context.storage.root)
+
+    def change(automation: RuleAutomation) -> rule_conversion.StoreChange:
+        return rule_conversion.decline(automation, rules, reason)
+
+    current = store.load()
+    preview = render_decline_preview(rules, reason, current, change(current))
     if args.dry_run:
         return _Outcome(preview + "Dry run: nothing was recorded.\n")
     sys.stderr.write(preview)
@@ -787,16 +784,75 @@ def _decline(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
         assume_yes=args.yes,
     ):
         return _Outcome("", error="decline cancelled", exit_code=1)
-    RuleStore(context.storage.root).modify(
-        lambda automation: rule_conversion.decline(automation, rules, reason)
-    )
+    result = _modify_store(store, change)
     if args.json_output:
-        return _Outcome(_json({"declined": [rule.id for rule in rules]}))
+        return _Outcome(
+            _json(
+                {
+                    "declined": {
+                        "rules": [rule.id for rule in rules],
+                        **_change_json(result),
+                    }
+                }
+            )
+        )
     return _Outcome(
         f"Recorded {len(rules)} rule(s) as not convertible: "
         + ", ".join(rule.id for rule in rules)
         + ".\n"
+        + _dropped_text(result)
     )
+
+
+def _store_time() -> str:
+    """Now, as the rule-automation store records its times."""
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _modify_store(
+    store: RuleStore,
+    change: Callable[[RuleAutomation], rule_conversion.StoreChange],
+) -> rule_conversion.StoreChange:
+    """Apply ``change`` under the store's lock and return what it did."""
+    outcome: list[rule_conversion.StoreChange] = []
+
+    def apply(automation: RuleAutomation) -> RuleAutomation:
+        outcome.append(change(automation))
+        return outcome[-1].automation
+
+    store.modify(apply)
+    return outcome[-1]
+
+
+def _change_json(change: rule_conversion.StoreChange) -> dict[str, object]:
+    return {
+        "unscriptized": list(change.unscriptized),
+        "moved": [{"rule": key, "from": check} for key, check in change.moved],
+        "dropped_checks": list(change.dropped_checks),
+        "dropped_revisions": list(change.dropped_revisions),
+    }
+
+
+def _dropped_text(change: rule_conversion.StoreChange) -> str:
+    text = ""
+    if change.dropped_checks:
+        text += (
+            "Removed, covering nothing more: check(s) "
+            + ", ".join(change.dropped_checks)
+            + ".\n"
+        )
+    if change.dropped_revisions:
+        text += (
+            "Dropped the pending revision of check(s) "
+            + ", ".join(change.dropped_revisions)
+            + ".\n"
+        )
+    return text
 
 
 def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:

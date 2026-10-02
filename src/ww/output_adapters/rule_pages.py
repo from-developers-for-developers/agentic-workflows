@@ -16,7 +16,13 @@ from ww.output_adapters.markdown import (
     _fix_failures,
     _waivers,
 )
-from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, describe_command
+from ww.rule_conversion import StoreChange, scriptize_state
+from ww.rule_store import (
+    UNDECIDED_RULE_STATUSES,
+    CheckEntry,
+    RuleAutomation,
+    describe_command,
+)
 from ww.rule_views import ListedRule, Orphans, RulesListing, RuleView
 from ww.workflow_config import RuleDefinition
 
@@ -229,12 +235,13 @@ def render_orphans(listed: Orphans, automation: RuleAutomation) -> str:
 
 def render_convert_preview(
     name: str,
-    spec: CheckSpec,
     rules: tuple[RuleDefinition, ...],
-    previous: CheckEntry | None,
+    current: RuleAutomation,
+    change: StoreChange,
 ) -> str:
-    """The check ``ww rules convert`` would record, command in full."""
-    action = "replaces" if previous is not None else "creates"
+    """What ``ww rules convert`` would record, command in full."""
+    spec = change.automation.checks[name].spec
+    action = "replaces" if name in current.checks else "creates"
     lines = [
         f"Check {name} ({action} the store's entry): {describe_command(spec.command)}",
     ]
@@ -245,8 +252,70 @@ def render_convert_preview(
     )
     lines.append(f"- proven: {'yes' if spec.proven else 'no'}")
     lines.append(f"- covers {len(rules)} rule(s):")
-    lines.extend(f"  - `{rule.id}`: {rule.summary}" for rule in rules)
+    _covered_rules(lines, rules, current)
+    _side_effects(lines, rules, current, change)
     return "\n".join(lines) + "\n"
+
+
+def render_decline_preview(
+    rules: tuple[RuleDefinition, ...],
+    reason: str,
+    current: RuleAutomation,
+    change: StoreChange,
+) -> str:
+    """What ``ww rules decline`` would record."""
+    lines = [f"Rules to record as not convertible ({reason}):"]
+    _covered_rules(lines, rules, current)
+    _side_effects(lines, rules, current, change)
+    return "\n".join(lines) + "\n"
+
+
+def _covered_rules(
+    lines: Lines, rules: tuple[RuleDefinition, ...], current: RuleAutomation
+) -> None:
+    """Each rule with where it stands in the store now."""
+    undecided = False
+    for rule in rules:
+        entry = current.rules.get(rule.text_hash)
+        state: str = scriptize_state(current, rule)
+        if entry is not None and entry.status in UNDECIDED_RULE_STATUSES:
+            undecided = True
+            state = f"undecided in-task proposal ({entry.status})"
+        elif state == "converted" and entry is not None and entry.check:
+            state = f"converted by check {entry.check}"
+        lines.append(f"  - `{rule.id}`: {rule.summary} (now: {state})")
+    if undecided:
+        lines.append(
+            "- warning: this overrides an undecided in-task proposal; a task "
+            "stopped for the operator to decide it (`rules_proposed`) has "
+            "nothing left to approve with `next --approve`."
+        )
+
+
+def _side_effects(
+    lines: Lines,
+    rules: tuple[RuleDefinition, ...],
+    current: RuleAutomation,
+    change: StoreChange,
+) -> None:
+    """The store's other changes: moved rules, unscriptized ones, drops."""
+    ids = {rule.text_hash: rule.id for rule in rules}
+    for key, check in change.moved:
+        lines.append(f"- takes `{ids[key]}` out of check {check}")
+    for key in change.unscriptized:
+        lines.append(
+            f"- returns {_rule_name(current, key)} to not scriptized: no longer covered"
+        )
+    for check in change.dropped_checks:
+        lines.append(f"- removes check {check}: it covers nothing more")
+    for check in change.dropped_revisions:
+        lines.append(f"- drops the pending revision of check {check}")
+
+
+def _rule_name(automation: RuleAutomation, key: str) -> str:
+    entry = automation.rules.get(key)
+    text = entry.text.splitlines()[0] if entry is not None and entry.text else ""
+    return f"rule {key[:12]}" + (f" ({text})" if text else "")
 
 
 def render_revoke_preview(name: str, check: CheckEntry) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -266,4 +267,332 @@ def test_a_check_whose_config_exists_runs(tmp_path: Path) -> None:
         "converted",
         "lint",
         None,
+    )
+
+
+def _edit_store(root: Path, change: Callable[[dict], None]) -> None:
+    store = _store(root)
+    change(store)
+    (root / STORE_FILE).write_text(json.dumps(store), encoding="utf-8")
+
+
+def test_reconverting_a_revoked_check_keeps_its_rejections(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1", "develop/2") == 0
+    assert _cli(root, "revoke", "lint", "--reason", "Too slow.", "--yes") == 0
+
+    assert _convert(root, "lint", "develop/2") == 0
+
+    store = _store(root)
+    entry = store["rules"][rule_text_hash(CLI)]
+    assert entry["status"] == "rejected"
+    assert entry["reason"].endswith("Too slow.")
+    assert store["checks"]["lint"]["status"] == "converted"
+    states = _states(root, capsys)
+    assert (states["develop/1"], states["develop/2"]) == ("rejected", "converted")
+
+
+@pytest.mark.parametrize("path", ["/etc/hosts", "../lint.toml", "conf/../../x"])
+def test_convert_refuses_a_config_path_outside_the_project(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], path: str
+) -> None:
+    root = _project(tmp_path)
+
+    assert _convert(root, "lint", "develop/1", config=path) == 1
+
+    assert "must be a relative path inside the project" in capsys.readouterr().err
+    assert not (root / STORE_FILE).exists()
+
+
+def test_convert_normalises_config_paths(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+
+    assert _convert(root, "lint", "develop/1", config="./conf//lint.toml") == 0
+
+    assert _store(root)["checks"]["lint"]["config"] == ["conf/lint.toml"]
+
+
+def test_a_check_left_covering_nothing_is_removed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1") == 0
+    assert _convert(root, "names", "develop/2", "develop/3") == 0
+    capsys.readouterr()
+
+    assert _convert(root, "other", "develop/1", "develop/2") == 0
+
+    out = capsys.readouterr()
+    assert "- removes check lint: it covers nothing more" in out.err
+    assert "- takes `develop/2` out of check names" in out.err
+    assert "Removed, covering nothing more: check(s) lint." in out.out
+    store = _store(root)
+    assert "lint" not in store["checks"]
+    assert store["checks"]["names"]["covers"] == [rule_text_hash(LOGS)]
+
+    assert _cli(root, "decline", "develop/3", "--reason", "Judgement.", "--yes") == 0
+
+    assert "names" not in _store(root)["checks"]
+
+
+def test_an_emptied_pending_revision_is_dropped(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1", "develop/2") == 0
+
+    def pend(store: dict) -> None:
+        check = store["checks"]["lint"]
+        check["pending"] = {"shell": "false", "covers": [rule_text_hash(NAMES)]}
+
+    _edit_store(root, pend)
+    capsys.readouterr()
+
+    assert _convert(root, "names", "develop/2") == 0
+
+    assert "- drops the pending revision of check lint" in capsys.readouterr().err
+    check = _store(root)["checks"]["lint"]
+    assert "pending" not in check
+    assert check["covers"] == [rule_text_hash(CLI)]
+
+
+def test_the_preview_warns_before_overriding_an_undecided_proposal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1") == 0
+
+    def propose(store: dict) -> None:
+        store["rules"][rule_text_hash(NAMES)] = {
+            "text": NAMES,
+            "status": "approach_proposed",
+            "approach": "grep for it",
+            "check": "lint",
+        }
+        store["checks"]["lint"]["pending"] = {
+            "shell": "false",
+            "covers": [rule_text_hash(CLI), rule_text_hash(NAMES)],
+        }
+
+    _edit_store(root, propose)
+    capsys.readouterr()
+
+    assert (
+        _cli(
+            root,
+            "convert",
+            "lint",
+            "--covers",
+            "develop/1",
+            "develop/2",
+            "--check-shell",
+            "true",
+            "--dry-run",
+        )
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert (
+        "`develop/1`: Keep the public CLI unchanged. (now: converted by check lint)"
+        in (out)
+    )
+    assert "(now: undecided in-task proposal (approach_proposed))" in out
+    assert "warning: this overrides an undecided in-task proposal" in out
+    assert "- drops the pending revision of check lint" in out
+
+
+def test_a_dry_run_shows_every_change(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1", "develop/2") == 0
+    assert _convert(root, "names", "develop/3") == 0
+    before = _store(root)
+    capsys.readouterr()
+
+    assert (
+        _cli(
+            root,
+            "convert",
+            "lint",
+            "--covers",
+            "develop/3",
+            "--check-shell",
+            "true",
+            "--dry-run",
+        )
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert "(replaces the store's entry)" in out
+    assert "- takes `develop/3` out of check names" in out
+    assert "- removes check names: it covers nothing more" in out
+    assert (
+        f"- returns rule {rule_text_hash(CLI)[:12]} ({CLI}) to not scriptized"
+    ) in out
+    assert _store(root) == before
+
+
+def test_a_dry_run_refuses_a_bad_check_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+
+    assert (
+        _cli(
+            root,
+            "convert",
+            "Bad_Name",
+            "--covers",
+            "develop/1",
+            "--check-shell",
+            "true",
+            "--dry-run",
+        )
+        == 1
+    )
+
+    out = capsys.readouterr()
+    assert "must be kebab-case" in out.err
+    assert "Check Bad_Name" not in out.out
+
+
+def test_convert_and_decline_report_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1", "develop/2") == 0
+    capsys.readouterr()
+
+    assert (
+        _cli(
+            root,
+            "convert",
+            "lint",
+            "--covers",
+            "develop/2",
+            "--check-shell",
+            "true",
+            "--yes",
+            "--json",
+        )
+        == 0
+    )
+
+    assert json.loads(capsys.readouterr().out) == {
+        "converted": {
+            "check": "lint",
+            "rules": ["develop/2"],
+            "unscriptized": [rule_text_hash(CLI)],
+            "moved": [],
+            "dropped_checks": [],
+            "dropped_revisions": [],
+        }
+    }
+
+    assert _cli(root, "decline", "develop/2", "--reason", "No.", "--yes", "--json") == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "declined": {
+            "rules": ["develop/2"],
+            "unscriptized": [],
+            "moved": [{"rule": rule_text_hash(NAMES), "from": "lint"}],
+            "dropped_checks": ["lint"],
+            "dropped_revisions": [],
+        }
+    }
+
+
+def test_the_text_listing_names_each_scriptize_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1") == 0
+    assert _convert(root, "names", "develop/2") == 0
+    assert _cli(root, "revoke", "names", "--reason", "Wrong.", "--yes") == 0
+    capsys.readouterr()
+
+    assert _cli(root) == 0
+
+    out = capsys.readouterr().out
+    lines = {
+        rule_id: next(line for line in out.splitlines() if f"`{rule_id}`" in line)
+        for rule_id in ("develop/1", "develop/2", "develop/3")
+    }
+    assert "(checked by store check `lint`)" in lines["develop/1"]
+    assert "(judged: its check was rejected)" in lines["develop/2"]
+    assert "(judged: not scriptized yet)" in lines["develop/3"]
+
+
+def test_the_step_page_names_the_missing_config_file(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1", config="lint.toml") == 0
+    service = WorkflowService(Storage(root))
+    service.start(
+        "task", "TASK-1", agent="codex", workflow_runtime="single", init_artifact="Do."
+    )
+
+    step = service.next("TASK-1")
+
+    line = next(rule for rule in step.rules if rule.id == "develop/1")
+    assert (line.has_command, line.check, line.missing) == (False, "lint", "lint.toml")
+    page = MarkdownOutputAdapter().render_instruction(step)
+    assert (
+        "  Its check `lint` does not run here: `lint.toml` is missing in this "
+        "step's directory."
+    ) in page
+
+
+def test_a_worktree_without_the_config_judges_the_rule(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / "ww.yaml").write_text(
+        "hooks:\n  before_start_workflow:\n    - workflows: [task]\n"
+        "      handlers:\n"
+        "        - ext/ww/git/handlers:start-task-branch: ~\n"
+        "        - ext/ww/git/handlers:create-worktree: ~\n" + WORKFLOWS,
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text(".ww/\ntrees/\nlint.toml\n", encoding="utf-8")
+    (root / "ww.json").write_text(
+        json.dumps(
+            {
+                "extensions": {
+                    "ww/git": {
+                        "separate_branch": True,
+                        "base_branches": {"default": "main"},
+                        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
+                        "worktrees": True,
+                        "worktree_dir": "./trees",
+                        "worktree_name_format": "{{ww.task.id}}",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git("config", "commit.gpgsign", "false", cwd=root)
+    _git("add", "-A", cwd=root)
+    _git("commit", "-qm", "worktrees", cwd=root)
+    # Built on the project root, as on an unmerged branch: never committed.
+    (root / "lint.toml").write_text("", encoding="utf-8")
+    assert _convert(root, "lint", "develop/1", config="lint.toml") == 0
+    service = WorkflowService(Storage(root))
+    service.start(
+        "task", "TASK-1", agent="codex", workflow_runtime="single", init_artifact="Do."
+    )
+
+    service.next("TASK-1")
+
+    state, _ = service.load("TASK-1")
+    assert (root / "trees" / "TASK-1").is_dir()
+    record = state.item_executions[state.cursor]
+    (resolution,) = [r for r in record.rule_resolutions if r.id == "develop/1"]
+    assert (resolution.status, resolution.check, resolution.missing) == (
+        "judged",
+        "lint",
+        "lint.toml",
     )

@@ -74,6 +74,7 @@ from ww.rule_store import (
     RuleAutomation,
     RuleEntry,
     is_check_name,
+    is_config_path,
     parse_command,
 )
 from ww.transitions import Clock, project_steps
@@ -128,7 +129,13 @@ def resolve_rules(
             missing = _missing_config(check.spec, directory)
             if missing is not None:
                 resolutions.append(
-                    RuleResolution(rule.id, "judged", name, interpretation, missing)
+                    RuleResolution(
+                        id=rule.id,
+                        status="judged",
+                        check=name,
+                        interpretation=interpretation,
+                        missing=missing,
+                    )
                 )
                 continue
             covered.setdefault(name, []).append(rule)
@@ -154,10 +161,21 @@ def resolve_rules(
 
 
 def _missing_config(spec: CheckSpec, directory: Path | None) -> str | None:
-    """The first of a check's configuration files ``directory`` lacks."""
+    """The first of a check's configuration files ``directory`` lacks.
+
+    A path that would reach outside ``directory`` (absolute, or with a ``..``
+    part, as only a hand-edited store holds) counts as missing.
+    """
     if directory is None:
         return None
-    return next((path for path in spec.config if not (directory / path).exists()), None)
+    return next(
+        (
+            path
+            for path in spec.config
+            if not is_config_path(path) or not (directory / path).exists()
+        ),
+        None,
+    )
 
 
 def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
@@ -598,7 +616,7 @@ def add_resolved_checks(
             *checks,
         ),
         rule_resolutions=tuple(
-            replace(entry, status="converted", check=covered[entry.id])
+            replace(entry, status="converted", check=covered[entry.id], missing=None)
             if entry.id in covered
             else entry
             for entry in record.rule_resolutions

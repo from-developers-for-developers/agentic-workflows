@@ -160,6 +160,7 @@ def test_the_step_page_lists_judged_rules_and_names_the_checked_ones(
         "interpretation": None,
         "check": None,
         "pending_operator": False,
+        "missing": None,
     }
 
 
