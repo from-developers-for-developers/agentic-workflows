@@ -39,6 +39,21 @@ and persistence invariants, see [architecture.md](architecture.md).
 - Atomic persistence, task-level concurrency control, interruption recovery,
   execution logs, and lock cleanup.
 
+## Development package snapshots
+
+Pushes to this repository's `dev` branch publish `1.0.0.devN` snapshots to PyPI
+after the release gates pass and the final distribution files are validated.
+Snapshots identify unreleased work; they do not create Git tags or GitHub
+releases. Install an exact build, for example:
+
+```console
+pip install ww-agentic-workflows==1.0.0.dev42
+```
+
+Publishing requires the one-time Trusted Publisher setup described in
+[development releases](development-releases.md). That guide also covers the
+run-number sequence, retry behavior and opting into the latest snapshot.
+
 ## Initialize a project
 
 `ww-agentic-workflows init` is additive and safe to run after a partial checkout

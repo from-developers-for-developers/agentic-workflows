@@ -103,8 +103,8 @@ ww deliberately does not do yet so you can tell a limitation from a bug.
 
 Python 3.10 or newer and [pipx](https://pipx.pypa.io/) are required.
 
-There is no published package yet. Clone the repository into a stable tools
-directory and install that checkout in editable mode:
+For a source installation, clone the repository into a stable tools directory
+and install that checkout in editable mode:
 
 ```console
 mkdir -p ~/tools
@@ -352,21 +352,23 @@ agents not to use ww in a project at all.
 
 ## Releases and branches
 
-**There is no PyPI package.** Installation is `pipx install --editable` from a
-clone, as above. This is deliberate while ww is under active development:
-publishing a package implies a release cadence and upgrade guarantees that
-would slow the work down right now. Once ww reaches a stable version it will be
-distributed as an ordinary Python package, and this section will change.
+Source installation uses `pipx install --editable` from a clone, as above.
+Once Trusted Publishing is configured, pushes to `dev` also publish development
+snapshots to PyPI as `1.0.0.devN`. They pass automated CI checks but are intended
+for testing unreleased changes. Install one with:
 
-**There is no versioning yet.** No tags, no release notes per version, nothing
-to pin to — but do not read that as "not released". Whatever is on `main` is
-released, in the only sense that matters here: people are running it. The
-branches carry that meaning instead of version numbers:
+```console
+pipx install --pip-args=--pre ww-agentic-workflows
+```
+
+See [development releases](documentation/development-releases.md) for setup and
+versioning. Beta and stable package publishing are not configured yet. The
+branches serve these purposes:
 
 | Branch | Use it for |
 | --- | --- |
 | `main` | **What users should install and run**, and what contributions branch from. It receives updates frequently. |
-| `dev` | The maintainers' in-flight work. Unstable by design — do not use it for real work, and do not target it in a pull request. |
+| `dev` | The maintainers' in-flight work and CI-checked development snapshots. Intended for testing; do not target it in a contribution pull request. |
 
 To update, pull `main` in your clone:
 
@@ -381,7 +383,7 @@ workflows you have already written — see
 settled. Skim [CHANGELOG.md](CHANGELOG.md) when you pull, and finish or
 `reset` any task that is mid-flight first.
 
-You do not have to remember to look. ww compares its own checkout against the
+For editable source installations, ww compares its own checkout against the
 branch it tracks, at most once a day, and prints a short notice above the
 command's output when it is behind — listing the changelog entries you would
 be pulling in, and telling the agent to show them to you before it carries on.
@@ -593,6 +595,11 @@ scripts/test
 
 `scripts/test` creates or reuses `.venv` and runs ruff, mypy and the test
 suite, in parallel.
+
+Pushes to `dev` also publish CI-checked development snapshots to PyPI once
+Trusted Publishing is configured. See
+[development releases](documentation/development-releases.md) for versioning,
+installation and the one-time setup.
 
 ## License
 

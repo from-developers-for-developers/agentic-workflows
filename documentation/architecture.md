@@ -841,6 +841,15 @@ distribution. Every storage adapter must also pass the same behavioral
 contract, including malformed identity rejection and compare-and-swap behavior.
 CI runs these focused checks before the complete test suite.
 
+Development publishing calls the same release-gates workflow on each push to
+`dev`. After the gates pass, a separate build job stamps a disposable checkout
+with `1.0.0.devN`, checks the final wheel and sdist, and uploads those files as a
+workflow artifact. A publishing job downloads that artifact and authenticates
+to PyPI through Trusted Publishing in the `pypi-dev` environment. Only that job
+can request an OIDC token; it does not execute checkout code. No version commit,
+Git tag or GitHub release is created for a development snapshot. See
+[development releases](development-releases.md) for setup and retry behavior.
+
 The guarantees for the current local execution model are:
 
 - A run executes from its persisted plan snapshot. That snapshot is immutable
