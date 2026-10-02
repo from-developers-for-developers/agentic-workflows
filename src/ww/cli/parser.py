@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -17,12 +19,46 @@ from ww.runtimes import RUNTIME_INSTRUCTIONS
 HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
 
 
+CHECK_ARGV = "--check-argv"
+
+
 class _Parser(argparse.ArgumentParser):
-    """An argument parser that accepts only complete flag names."""
+    """An argument parser that accepts only complete flag names.
+
+    ``--check-argv -- <arg>...`` takes every argument after ``--`` as the
+    check's argv, options of the checked tool included (``ruff check
+    --select E``), so it goes last on the command line.
+    """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("allow_abbrev", False)
         super().__init__(*args, **kwargs)
+
+    def parse_known_args(  # type: ignore[override]
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> tuple[argparse.Namespace, list[str]]:
+        arguments = list(sys.argv[1:] if args is None else args)
+        split = _check_argv_after_separator(arguments)
+        if split is None:
+            return super().parse_known_args(arguments, namespace)
+        head, argv = split
+        # A stand-in keeps argparse's own checks (a required command, the
+        # mutually exclusive --check-shell); the real argv replaces it.
+        parsed, extras = super().parse_known_args([*head, CHECK_ARGV, "-"], namespace)
+        parsed.check_argv = argv
+        return parsed, extras
+
+
+def _check_argv_after_separator(
+    arguments: list[str],
+) -> tuple[list[str], list[str]] | None:
+    """The arguments before ``--check-argv --`` and the argv after it."""
+    for index, argument in enumerate(arguments[:-2]):
+        if argument == CHECK_ARGV and arguments[index + 1] == "--":
+            return arguments[:index], arguments[index + 2 :]
+    return None
 
 
 def _shared(*add: str) -> _Parser:
@@ -870,7 +906,16 @@ def _rules_parser(
     )
     convert_command = convert.add_mutually_exclusive_group(required=True)
     convert_command.add_argument("--check-shell", metavar="SCRIPT", default=None)
-    convert_command.add_argument("--check-argv", nargs="+", metavar="ARG", default=None)
+    convert_command.add_argument(
+        CHECK_ARGV,
+        nargs="+",
+        metavar="ARG",
+        default=None,
+        help=(
+            "The check's command as argv; write `--check-argv -- <arg>...`, "
+            "last, when an argument starts with `-`."
+        ),
+    )
     convert.add_argument(
         "--assert",
         dest="assertion",
@@ -936,7 +981,16 @@ def _rules_parser(
     add.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
     command = add.add_mutually_exclusive_group()
     command.add_argument("--check-shell", metavar="SCRIPT", default=None)
-    command.add_argument("--check-argv", nargs="+", metavar="ARG", default=None)
+    command.add_argument(
+        CHECK_ARGV,
+        nargs="+",
+        metavar="ARG",
+        default=None,
+        help=(
+            "The check's command as argv; write `--check-argv -- <arg>...`, "
+            "last, when an argument starts with `-`."
+        ),
+    )
     add.add_argument(
         "--assert",
         dest="assertion",

@@ -61,8 +61,9 @@ group, `ww-rules.yaml`, `ww.yaml` or
    moves (`./ww rules move <id> <group>`), filter changes
    (`./ww rules filter <group> [--workflows ...] [--steps ...]`), new rules
    (`./ww rules add <group> --text "<sentence and body>" [--paths <glob> ...]
-   [--check-shell "<sh>" | --check-argv <arg> ...] [--assert empty|equals:<v> ...]
-   [--id <stem>]`). Each command refuses a write that would leave the
+   [--assert empty|equals:<v> ...] [--id <stem>]
+   [--check-shell "<sh>" | --check-argv -- <arg> ...]`; `--check-argv --` goes
+   last, so the checked tool's own options stay its own). Each command refuses a write that would leave the
    configuration invalid and changes nothing then; `--dry-run` checks one
    first. A refusal is reported to the operator, not worked around.
 8. **Show the result.** Run `./ww lint` and show its output, and show where

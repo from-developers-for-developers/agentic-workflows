@@ -29,9 +29,9 @@ produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
 parsers do not acquire different workflow semantics. Validation is also where
 the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
-parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall`, and
+parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall`, `scriptize.yaml` with `ww-scriptize-rules`, and
 `onboarding.yaml` with ww's learning and setup workflows) with the same frontend, once per process, and adds each workflow the
-configuration does not define itself and `../ww.json` does not
+configuration does not define itself (giving one the `hooks_from` lane `../ww.json` names, which makes the workflow take that lane's global hooks) and `../ww.json` does not
 switch off, with the documents and modes its file declares, dropping a
 recommendation of a workflow that is switched off; every loader passes
 through validation, so no frontend can miss them. The learning workflows are

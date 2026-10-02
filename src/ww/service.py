@@ -25,6 +25,7 @@ from ww.assignments import (
     completion_window_items,
 )
 from ww.bootstrap import BootstrapCoordinator
+from ww.builtin_workflows import missing_lane, require_lane
 from ww.changes import take_mark
 from ww.child_coordination import ChildCoordinator
 from ww.children import ChildTask, skip_pending
@@ -519,6 +520,7 @@ class WorkflowService:
         if workflow_name not in configuration.workflows_by_name:
             raise ConfigurationError(f"workflow not found: {workflow_name}")
         workflow = configuration.workflows_by_name[workflow_name]
+        require_lane(workflow)
         unknown_modes = self._unknown_modes(mode_names, configuration)
         if unknown_modes:
             raise StateError("unknown mode(s): " + ", ".join(sorted(unknown_modes)))
@@ -2301,6 +2303,7 @@ class WorkflowService:
             workflow=state.workflow,
             workflow_values=dict(state.workflow_values),
             workspace=workspace,
+            lane=plan.lane,
         )
         # Resolved now, for the task as it stands; a value not available yet
         # is left out, and a step reading it stops for the operator
@@ -2315,6 +2318,7 @@ class WorkflowService:
                 workflow_values=dict(state.workflow_values),
                 workspace=workspace,
                 project=project or None,
+                lane=plan.lane,
             ),
         }
 
@@ -2377,6 +2381,7 @@ class WorkflowService:
                 else None
             ),
             project=child.project,
+            lane=(run.snapshot.plan.lane if run else self._configured_lane(workflow)),
         )
         return {
             **child_values(child.id, child.description, child.project, child.fields),
@@ -3035,6 +3040,7 @@ class WorkflowService:
         configuration = self._load_configuration()
         if target not in configuration.workflows_by_name:
             raise StateError(f"handoff target workflow not found: {target}")
+        require_lane(configuration.workflows_by_name[target])
         new_snapshot = PlanSnapshot(
             schema_version=PLAN_SCHEMA_VERSION,
             compiler_version=PLAN_COMPILER_VERSION,
@@ -3801,7 +3807,11 @@ class WorkflowService:
             )
         except ConfigurationError:
             return None, None
-        return digest, plan_change(state, snapshot, template, digest)
+        change = plan_change(state, snapshot, template, digest)
+        lane_missing = missing_lane(configuration.workflows_by_name[state.workflow])
+        if change is not None and change.refusal is None and lane_missing:
+            change = replace(change, refusal=lane_missing)
+        return digest, change
 
     def _plan_gate(
         self, task_id: str, *, replan: bool, keep_plan: bool
@@ -3868,7 +3878,23 @@ class WorkflowService:
             extensions=self.extensions,
             workflow_name=workflow_name,
             project=project,
+            lane=self._configured_lane(workflow_name),
         )
+
+    def _configured_lane(self, workflow_name: str | None) -> str | None:
+        """The lane the configured workflow takes, else its own name.
+
+        A configuration that does not load leaves the name as it is; the
+        caller's own work reports that configuration.
+        """
+        if workflow_name is None:
+            return None
+        try:
+            workflows = self._load_configuration().workflows_by_name
+        except ConfigurationError:
+            return workflow_name
+        workflow = workflows.get(workflow_name)
+        return workflow.lane if workflow is not None else workflow_name
 
     def _generated_child_id(
         self,

@@ -242,8 +242,12 @@ class ExtensionContext:
     """Everything a handler or command is allowed to know about the caller.
 
     ``task_id``, ``run_id`` and ``workflow`` are absent for commands invoked
-    outside a task. ``values`` holds the workflow values collected so far, so a
-    handler reads its declared inputs from it by name.
+    outside a task. ``lane`` is the workflow whose project handling the task
+    takes: the workflow's ``hooks_from``, else ``workflow`` itself. An
+    extension keys its per-workflow settings (a branch format, a base branch)
+    by ``lane`` and records and shows ``workflow``. ``values`` holds the
+    workflow values collected so far, so a handler reads its declared inputs
+    from it by name.
 
     ``config`` is this extension's own section of ``ww.json``,
     and nothing else from that file. ww passes it through unvalidated: it cannot
@@ -257,6 +261,7 @@ class ExtensionContext:
     task_id: str | None = None
     run_id: str | None = None
     workflow: str | None = None
+    lane: str | None = None
     values: Mapping[str, str] = field(default_factory=dict)
     arguments: tuple[str, ...] = ()
     workspace: Path | None = None

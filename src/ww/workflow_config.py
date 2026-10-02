@@ -416,6 +416,25 @@ class HookDefinition:
             precise_step_paths,
         )
 
+    def applies_in(
+        self,
+        workflow: WorkflowDefinition,
+        step_name: str,
+        step_path: str,
+        precise_step_paths: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Whether this hook runs for one step of ``workflow``.
+
+        A hook filtered with ``workflows`` applies when the filter admits the
+        workflow's own name or the lane it takes its hooks from
+        (``hooks_from``), so a workflow with a lane keeps the hooks written
+        for itself.
+        """
+        return any(
+            self.applies_to(name, step_name, step_path, precise_step_paths)
+            for name in dict.fromkeys((workflow.name, workflow.lane))
+        )
+
 
 @dataclass(frozen=True)
 class RuleHints:
@@ -638,6 +657,24 @@ class WorkflowDefinition:
     inherits: str | None = None
     # A workflow to offer the operator once this one completes.
     recommended_next_workflow: str | None = None
+    # The workflow whose global hooks this one runs with: a hook filtered to
+    # ``workflows: [task]`` applies here too when this names ``task``, so a
+    # workflow can take a lane's branch, worktree and commit handling.
+    hooks_from: str | None = None
+    # ``start`` refuses until ``hooks_from`` is set, for a workflow that must
+    # not run without the project's lane handling (a built-in that installs
+    # tools and writes configuration, for example).
+    needs_hooks_from: bool = False
+
+    @property
+    def lane(self) -> str:
+        """The workflow whose project handling this one takes.
+
+        Its ``hooks_from`` when it has one, else itself: global hooks filtered
+        to the lane apply here, and extensions key their workflow settings
+        (a branch format, a base branch) by it.
+        """
+        return self.hooks_from or self.name
 
     @property
     def hands_off(self) -> bool:

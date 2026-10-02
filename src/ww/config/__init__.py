@@ -264,6 +264,8 @@ _OVERRIDES = {
     "runtime": ("runtime",),
     "restartable": ("restartable",),
     "recommended_next_workflow": ("recommended_next_workflow",),
+    "hooks_from": ("hooks_from",),
+    "needs_hooks_from": ("needs_hooks_from",),
 }
 
 
@@ -294,6 +296,8 @@ def _parse_workflow(
         "restartable",
         "inherit",
         "recommended_next_workflow",
+        "hooks_from",
+        "needs_hooks_from",
     }
     mapping = _named_entry(
         _mapping(data, path),
@@ -341,6 +345,14 @@ def _parse_workflow(
         raise ConfigurationError(
             f"{path}.recommended_next_workflow must name a workflow"
         )
+    hooks_from = mapping.get("hooks_from")
+    if hooks_from is not None and (
+        not isinstance(hooks_from, str) or not hooks_from.strip()
+    ):
+        raise ConfigurationError(f"{path}.hooks_from must name a workflow")
+    needs_hooks_from = mapping.get("needs_hooks_from", False)
+    if not isinstance(needs_hooks_from, bool):
+        raise ConfigurationError(f"{path}.needs_hooks_from must be true or false")
     definition = WorkflowDefinition(
         name=name,
         description=_description(mapping.get("description"), f"workflow {name!r}"),
@@ -359,6 +371,8 @@ def _parse_workflow(
         restartable=restartable,
         inherits=inherits,
         recommended_next_workflow=recommended,
+        hooks_from=hooks_from,
+        needs_hooks_from=needs_hooks_from,
     )
     return _ParsedWorkflow(
         definition,

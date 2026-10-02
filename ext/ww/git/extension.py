@@ -17,7 +17,7 @@ settings from the ``ww/git`` section of ``ww.json``:
     "base_branches": {
       "default": "main",
       "bugfix": "develop",
-      "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
+      "task": {"argv": ["./scripts/base-branch", "{{ww.task.lane}}"]}
     },
     "separate_branch": true,
     "branch_name_formats": {
@@ -87,8 +87,12 @@ _PORCELAIN_STATUS_WIDTH = 3
 
 # The tokens a format reads: the task's ID, its workflow, and its run.
 WORKFLOW_TOKEN = "ww.task.workflow"
+# The workflow whose branch handling the task takes: its ``hooks_from``, else
+# the workflow itself, the key ``branch_name_formats`` and ``base_branches``
+# are looked up by.
+LANE_TOKEN = "ww.task.lane"
 RUN_TOKEN = "ww.task.run"
-FORMAT_TOKENS = (TASK_ID, WORKFLOW_TOKEN, RUN_TOKEN)
+FORMAT_TOKENS = (TASK_ID, WORKFLOW_TOKEN, LANE_TOKEN, RUN_TOKEN)
 DEFAULT_COMMIT_FORMAT = "{{ww.task.id}}: {{commit_message}}"
 DEFAULT_BRANCH_FORMAT = "{{ww.task.id}}"
 _SETTING_KEYS = {
@@ -426,6 +430,7 @@ def _tokens(context: ExtensionContext) -> dict[str, str]:
     return {
         TASK_ID: context.task_id or "",
         WORKFLOW_TOKEN: context.workflow or "",
+        LANE_TOKEN: _lane(context) or "",
         RUN_TOKEN: context.run_id or "",
     }
 
@@ -606,6 +611,16 @@ def _trusted_base(context: ExtensionContext, branch: str) -> str | None:
     return base
 
 
+def _lane(context: ExtensionContext) -> str | None:
+    """The workflow whose ``branch_name_formats`` and ``base_branches`` apply.
+
+    A workflow that takes a lane's hooks (``hooks_from``) branches as that
+    lane; records and ``{{ww.task.workflow}}`` keep the workflow's own name,
+    and ``{{ww.task.lane}}`` gives formats and base-branch commands the lane.
+    """
+    return context.lane or context.workflow
+
+
 def _task_branch(
     context: ExtensionContext, settings: Settings
 ) -> tuple[str | None, str | None, str | None]:
@@ -613,7 +628,7 @@ def _task_branch(
     if not context.task_id:
         return None, None, "a task is required to name a branch"
     strategy = context.values.get(BRANCH_NAMING_STRATEGY)
-    branch_format = settings.branch_format(context.workflow, strategy)
+    branch_format = settings.branch_format(_lane(context), strategy)
     if branch_format is None:
         return None, None, f"branch naming strategy not found: {strategy}"
     branch, parent_branch, error = _branch_name(context, branch_format)
@@ -625,7 +640,7 @@ def _task_branch(
     if recorded_base:
         return branch, recorded_base, None
     configured_base, base_error = _resolve_base_branch(
-        context, settings.base_branch_for(context.workflow)
+        context, settings.base_branch_for(_lane(context))
     )
     if base_error:
         return None, None, base_error
@@ -1468,15 +1483,16 @@ def _base_branch_variable(context: ExtensionContext) -> str | None:
 def _branch_strategy_variable(context: ExtensionContext) -> str | None:
     """``{{ww.git.branch_strategy}}``: the branch format key the task uses.
 
-    The one ``start --branch-strategy`` chose, else the workflow's own entry
+    The one ``start --branch-strategy`` chose, else the lane's own entry
     in ``branch_name_formats``, else ``default``.
     """
     strategy = context.values.get(BRANCH_NAMING_STRATEGY)
     if strategy:
         return strategy
     formats = settings_from(context.config).branch_name_formats
-    if context.workflow and context.workflow in formats:
-        return context.workflow
+    lane = _lane(context)
+    if lane and lane in formats:
+        return lane
     return "default"
 
 
@@ -1514,7 +1530,7 @@ def _return_to_base(context: ExtensionContext) -> ExtensionResult:
     base = record.get("base")
     if not isinstance(base, str) or not base:
         base, error = _resolve_base_branch(
-            context, settings.base_branch_for(context.workflow)
+            context, settings.base_branch_for(_lane(context))
         )
         if error:
             return ExtensionResult(False, error=error)

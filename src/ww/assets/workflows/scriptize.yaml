@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ww-scriptize-rules turns the rules that have no check yet into checks, once,
+# for the whole project, so tasks only use checks and never build them. It is
+# a project task, not one of ww's learning workflows: it installs tools and
+# writes their configuration, so it runs with a project lane's branch,
+# worktree and commit handling (`hooks_from`, set in ww.json), and the
+# operator merges what it built. ww records the approved checks in the
+# rule-automation store at the project root with `rules convert`; a check runs
+# only where its configuration files exist, so tasks pick it up once the
+# branch is merged.
+workflows:
+  - name: ww-scriptize-rules
+    description: >-
+      Turns the rules that have no check yet into checks, proven and approved,
+      on a branch of their own.
+    restartable: true
+    needs_hooks_from: true
+    steps:
+      - name: collect
+        description: >-
+          Run `{{ww.executable}} rules --json` and list every rule whose
+          `scriptize` state is `unscriptized`, with its ID, summary and
+          globs; read the `check_guidance` it shows, and `.ww/project.md`
+          where it exists for how and where the project runs its commands.
+          Read the checks the store already has (`ww-rule-automation.json` at
+          the project root, read only). Group the rules into the fewest
+          checks: prefer the ecosystem's own tools, which express many rules
+          in one configuration (PHPStan, Psalm or deptrac for PHP;
+          import-linter, ruff or a pytest architecture test for Python;
+          eslint for JavaScript), extend an existing check where its tool can
+          express the rule, and use plain shell only for what no tool
+          covers. A rule no command can decide is proposed as not
+          convertible, with the reason. The artifact lists each proposed
+          check: a kebab-case name, the tool, the rules it covers by ID, what
+          it will install and configure, and how it runs, following the
+          guidance and the project's command convention; then the rules
+          proposed as not convertible. When no rule is `unscriptized`, say so;
+          that is a fine result.
+      - name: approaches
+        interactive: true
+        artifact_from: collect
+        description: >-
+          Show the operator every proposed check and every rule proposed as
+          not convertible in one message, numbered, each with its rules, tool
+          and what it will install and configure, so they approve, change or
+          drop each one. Discuss and revise until the operator says `ww
+          done`; then record the conversation once. The artifact is the
+          agreed list. When collect found nothing to scriptize, say so and
+          offer only "nothing to do".
+        choices:
+          - build: Build the checks as agreed.
+          - nothing to do: Build nothing; the run ends.
+      - assess: Did the operator choose "build" in the approaches step?
+      - name: scriptize
+        steps:
+          - name: build
+            artifact_from: approaches
+            description: >-
+              Build every agreed check in this task's workspace. Install each
+              tool as a development dependency in the project's manifest,
+              never globally, and write its configuration in the repository;
+              every command follows the `check_guidance` and the project's
+              command convention, written for this directory and never naming
+              another checkout. Prove each check by running it exactly as ww
+              will, from this directory: add a deliberately violating input,
+              show the command fails, remove the input, and show it passes.
+              Then run it on a sample of real files matching its rules' globs,
+              up to twenty, and report every violation it finds as
+              `file:line — what`; real violations do not block the check.
+              Where the tool supports a baseline, such as a PHPStan baseline,
+              offer one and say which file it would write. Leave the agreed
+              not-convertible rules alone. The artifact gives, per check: its
+              name, the rule IDs it covers, its command as `argv` or `shell`
+              with any output assertion, its config files (relative paths of
+              every file holding its logic, which decide where it runs), the
+              proof, and the violations.
+          - name: checks
+            interactive: true
+            artifact_from: build
+            description: >-
+              Show the operator every built check in one message: its command
+              in full, its config files, the proof and the violations, and the
+              rules agreed as not convertible. For each check, run
+              `{{ww.executable}} rules convert <check> --covers <rule-id>...
+              [--assert ...] --config <path>... --proven --dry-run
+              (--check-shell "<sh>" | --check-argv -- <arg>...)`, with
+              `--check-argv -- <arg>...` last so the tool's own options stay
+              its own, and for the rules not convertible `{{ww.executable}}
+              rules decline <rule-id>... --reason "<why>" --dry-run`; show
+              every preview in full. Ask which to record; discuss, take
+              changes and preview a changed command again, until the operator
+              says `ww done`. Record nothing in this step and never edit
+              `ww-rule-automation.json` yourself. Then record the conversation
+              once with the pick. The artifact lists the exact commands to
+              record, each as previewed and approved with `--yes` in the
+              place of `--dry-run`: before `--check-shell` or `--check-argv
+              --`, never at the end, where `--check-argv --` would take it
+              for the tool's argv.
+            choices:
+              - record: Record the approved checks and declines.
+              - none: Record nothing.
+          - assess: Did the operator choose "record" in the checks step?
+          - name: record
+            artifact_from: checks
+            description: >-
+              Run every command the checks step agreed, exactly as listed:
+              each carries `--yes`, which stands for the operator's approval
+              given there, where its preview had `--dry-run`. Add nothing
+              after `--check-argv --`, since everything there is the tool's
+              argv; run nothing else and never edit
+              `ww-rule-automation.json` yourself. If a command refuses, report
+              its message and stop. `rules convert` and `rules decline` write
+              `ww-rule-automation.json` at the project root, in the main
+              checkout, not on this run's branch. Tell the operator to commit
+              that file in the main checkout, on the integration branch,
+              together with or right after merging this run's branch: until
+              then `is-git-clean` refuses the next task's start. The checks
+              run in a task only where their config files exist,
+              so once the branch is merged. The artifact lists what was
+              recorded.

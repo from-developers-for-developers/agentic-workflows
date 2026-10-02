@@ -421,6 +421,7 @@ class WorkflowPlanCompiler:
             items=number_step_paths(tuple(items)),
             documents=self.configuration.documents,
             recommended_next_workflow=workflow.recommended_next_workflow,
+            hooks_from=workflow.hooks_from,
         )
         return self._apply_options(plan)
 
@@ -761,8 +762,8 @@ class WorkflowPlanCompiler:
         hook_annotations = _merge_annotations(annotations, step_annotations(step))
         produced: list[str] = []
         for hook in hooks:
-            applies = hook.applies_to(
-                workflow.name,
+            applies = hook.applies_in(
+                workflow,
                 step.name,
                 step_path,
                 _logical_step_paths(workflow.steps),
@@ -1180,7 +1181,7 @@ class WorkflowPlanCompiler:
             )
             if hook.phase == "before_complete"
             and hook.on_failure == "fix"
-            and hook.applies_to(workflow.name, step.name, step_path, precise)
+            and hook.applies_in(workflow, step.name, step_path, precise)
         )
 
     def _plan_check(

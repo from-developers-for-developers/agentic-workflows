@@ -440,6 +440,7 @@ for one of them.
 | `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
+| `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It is a project task: it runs with the hooks of the lane `ww.json` names, `"workflows": {"ww-scriptize-rules": {"hooks_from": "task"}}`, and refuses to start until one is named, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
 The questions are interactive steps: an interview opens with its questions in
@@ -580,7 +581,11 @@ is enabled, and a recommendation of a switched-off one (`ww-learn-project` recom
 ```
 
 A workflow of the same name in any `ww.yaml` level replaces
-the shipped one.
+the shipped one; `ww.json` then refuses a `"hooks_from"` for it, which belongs
+in that definition instead. `ww-scriptize-rules` also needs `"hooks_from"`, the lane whose
+branch, worktree and commit handling it takes: the lane's global hooks run
+for it, and `ww/git` uses the lane's `branch_name_formats` and `base_branches`
+entries; see the `ww-scriptize` skill above.
 
 ## The catch-all workflow
 
@@ -2018,11 +2023,18 @@ verifier, for example by `ww-scriptize-rules`, or by hand:
 
 ```console
 ./ww rules convert phpstan --covers php/no-new-services php/typed-returns \
-  --check-argv vendor/bin/phpstan analyse --config phpstan.neon --proven
+  --config phpstan.neon --proven \
+  --check-argv -- vendor/bin/phpstan analyse --configuration phpstan.neon
 ./ww rules decline docs/tone --reason "A matter of review."
 ```
 
-`rules convert` shows the check with its command in full, its config files,
+`--check-argv -- <arg>...` goes last: everything after `--` is the check's
+argv, so the tool's own options, such as `--configuration` or `--select E`,
+are not taken for ww's. Without `--`, `--check-argv` takes the arguments up
+to the next option.
+
+`ww-scriptize-rules` (the `ww-scriptize` skill) does this for every rule that
+needs it, on a branch of its own. `rules convert` shows the check with its command in full, its config files,
 the rules it covers with where each stands now, and anything else it
 changes, and asks; `--yes` stands for the operator's answer,
 and without a terminal it refuses. It creates the check, or replaces an
@@ -3214,7 +3226,7 @@ separate from `ww.yaml`, which describes what a workflow *does*:
       "base_branches": {
         "default": "main",
         "bugfix": "develop",
-        "task": {"argv": ["./scripts/base-branch", "{{ww.task.workflow}}"]}
+        "task": {"argv": ["./scripts/base-branch", "{{ww.task.lane}}"]}
       },
       "separate_branch": true,
       "branch_name_formats": {
@@ -3234,8 +3246,11 @@ party's schema. A section naming no installed extension is an error rather than
 ignored, because a block that silently applies to nothing looks configured and
 is not.
 
-The formats read `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.run}}`,
-and, in `commit_format`, `{{commit_message}}`.
+The formats read `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.lane}}`,
+`{{ww.task.run}}`, and, in `commit_format`, `{{commit_message}}`.
+`{{ww.task.lane}}` is the workflow whose branch handling the task takes: the
+workflow's `hooks_from` when it has one, else the workflow itself, the name
+`branch_name_formats` and `base_branches` are looked up by.
 
 For `ww/git`, `ww-agentic-workflows extension ww/git settings` prints what actually resolved,
 which is the first thing to run after editing the file; `--project <name>`
@@ -3256,7 +3271,8 @@ repository under a configured project with a base branch of its own sets
 Each value may be either a literal branch name or an
 object with a non-empty `argv` array. An argv command runs directly without a shell in
 the project root; its single non-empty stdout line becomes the base branch.
-Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, and `{{ww.task.run}}`.
+Arguments may interpolate `{{ww.task.id}}`, `{{ww.task.workflow}}`, `{{ww.task.lane}}`, and `{{ww.task.run}}`;
+a script choosing the base by workflow reads `{{ww.task.lane}}`, so a workflow with `hooks_from` gets its lane's base.
 The resolved base is recorded with the task branch so retries, worktree creation,
 and return-to-base use one stable value. The record is trusted only while it
 names the branch being resolved and that branch exists; a record of another

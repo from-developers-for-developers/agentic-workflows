@@ -94,6 +94,7 @@ def task_id_claimed(
     extensions: ExtensionRegistry,
     workflow_name: str | None = None,
     project: str | None = None,
+    lane: str | None = None,
 ) -> bool:
     """Return whether task state or an extension already claims ``task_id``.
 
@@ -107,7 +108,7 @@ def task_id_claimed(
         return True
     if any(
         path.exists()
-        for path in extensions.reserved_paths(task_id, workflow_name, project)
+        for path in extensions.reserved_paths(task_id, workflow_name, project, lane)
     ):
         return True
-    return extensions.claims_task(task_id, workflow_name, project)
+    return extensions.claims_task(task_id, workflow_name, project, lane)

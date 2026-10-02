@@ -98,7 +98,8 @@ AGENT_INSTRUCTIONS = (
 # ``ww-rule`` to write rules for ww's steps from the operator's words, and
 # ``ww-setup`` with the skills it guides through, each starting one of ww's
 # learning and setup workflows (``ww-refresh`` reruns the learning ones;
-# ``ww-setup`` itself starts ``ww-express``, which has no skill of its own).
+# ``ww-setup`` itself starts ``ww-express``, which has no skill of its own),
+# and ``ww-scriptize``, which starts ``ww-scriptize-rules``.
 WW_SKILL_NAME = "ww"
 SKILLS = {
     name: files("ww.assets").joinpath(f"{name}_skill.md").read_text(encoding="utf-8")
@@ -114,6 +115,7 @@ SKILLS = {
         "ww-solve",
         "ww-rules-from-artifacts",
         "ww-automate",
+        "ww-scriptize",
     )
 }
 

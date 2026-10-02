@@ -209,3 +209,49 @@ def test_a_provided_value_may_not_start_with_ww(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="reserved"):
         service.start("feature", "T1", agent="codex")
+
+
+def test_a_workflow_with_a_lane_branches_as_that_lane(tmp_path: Path) -> None:
+    root = _root(
+        tmp_path,
+        BRANCHING
+        + """  - name: hotfix
+    steps:
+      - fix: Fix it.
+  - name: chores
+    hooks_from: hotfix
+    steps:
+      - review: Review {{ww.git.branch}} as {{ww.git.branch_strategy}}.
+""",
+        {
+            "ww/git": {
+                **GIT_SETTINGS,
+                "base_branches": {"default": "main", "hotfix": "stable"},
+                "branch_name_formats": {
+                    "default": "feature/{{ww.task.id}}",
+                    "hotfix": "hotfix/{{ww.task.id}}",
+                },
+            }
+        },
+    )
+    (root / "ww.yaml").write_text(
+        (root / "ww.yaml")
+        .read_text(encoding="utf-8")
+        .replace("workflows: [feature]", "workflows: [hotfix]", 1),
+        encoding="utf-8",
+    )
+    subprocess.run(("git", "branch", "stable"), cwd=root, check=True)
+    service = WorkflowService(Storage(root))
+
+    start_after_init(service, "chores", "C1", agent="codex")
+    instruction = service.next("C1")
+
+    assert instruction.action_text is not None
+    assert "Review hotfix/c1 as hotfix." in instruction.action_text
+    lines = (root / ".ww/ext/ww/git/branches.jsonl").read_text(encoding="utf-8")
+    record = json.loads(lines.splitlines()[-1])
+    assert (record["task_id"], record["workflow"], record["base"]) == (
+        "C1",
+        "chores",
+        "stable",
+    )

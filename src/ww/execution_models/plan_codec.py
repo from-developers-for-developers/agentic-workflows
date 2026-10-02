@@ -91,6 +91,7 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         recommended_next_workflow=expect_optional_string(
             data.get("recommended_next_workflow"), "recommended next workflow"
         ),
+        hooks_from=expect_optional_string(data.get("hooks_from"), "hooks_from"),
     )
 
 

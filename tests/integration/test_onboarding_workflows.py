@@ -206,14 +206,20 @@ def test_discover_lists_the_learning_workflows_briefly(
 
     assert main(["--root", str(root), "discover", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
-    assert [item["name"] for item in report["builtin_workflows"]] == list(ONBOARDING)
+    assert [item["name"] for item in report["builtin_workflows"]] == [
+        *ONBOARDING,
+        "ww-scriptize-rules",
+    ]
     assert "task" in [item["name"] for item in report["workflows"]]
 
     assert main(["--root", str(root), "discover"]) == 0
     output = capsys.readouterr().out
     section = output.split("## ww's own workflows", 1)[1].split("\n## ", 1)[0]
     entries = [line for line in section.splitlines() if line.startswith("- ")]
-    assert [entry.split("`")[1] for entry in entries] == list(ONBOARDING)
+    assert [entry.split("`")[1] for entry in entries] == [
+        *ONBOARDING,
+        "ww-scriptize-rules",
+    ]
     # One short line each.
     assert all(len(entry) < 140 for entry in entries)
 

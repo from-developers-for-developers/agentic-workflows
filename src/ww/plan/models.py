@@ -594,6 +594,14 @@ class WorkflowPlan:
     # Offered to the operator when the run completes; frozen with the plan so
     # a later configuration change does not alter a finished run's page.
     recommended_next_workflow: str | None = None
+    # The workflow whose project handling the run takes (``hooks_from``),
+    # frozen so extensions key their settings by the lane the run started on.
+    hooks_from: str | None = None
+
+    @property
+    def lane(self) -> str:
+        """The workflow extensions key their settings by: the lane, else this."""
+        return self.hooks_from or self.workflow
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -609,4 +617,6 @@ class WorkflowPlan:
             data["documents"] = [document.to_dict() for document in self.documents]
         if self.recommended_next_workflow is not None:
             data["recommended_next_workflow"] = self.recommended_next_workflow
+        if self.hooks_from is not None:
+            data["hooks_from"] = self.hooks_from
         return data
