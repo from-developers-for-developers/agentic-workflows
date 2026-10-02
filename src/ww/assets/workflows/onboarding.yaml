@@ -56,7 +56,7 @@ workflows:
     runtime: single
     restartable: true
     role: manager
-    recommended_next_workflow: ww-learn-project
+    recommended_next_workflow: ww-suggest
     steps:
       - name: choose
         interactive: true
@@ -148,7 +148,10 @@ workflows:
                         Interview the operator about their role in this
                         project. If {{ww.documents.myrole}} exists, read it
                         first, show them in short what it says, and ask only
-                        what is missing or may have changed. Put all of the questions below in one message, numbered,
+                        what is missing or may have changed. Where {{ww.documents.project}} exists, take
+                        from its profile what it already shows (contributors
+                        and cadence, stack, tracker, branching) and confirm it
+                        in a clause instead of asking. Put all of the questions below in one message, numbered,
                         each one plain sentence; where the answer is one of a
                         few options, list the options under the question. End
                         your turn and wait for the answers; "skip" is a valid
@@ -192,7 +195,10 @@ workflows:
                         Interview the operator about their team and company. If
                         {{ww.documents.team}} or {{ww.documents.company}}
                         exists, read it first, show them in short what it says,
-                        and ask only what is missing or may have changed. Put
+                        and ask only what is missing or may have changed. Where {{ww.documents.project}} exists, take
+                        from its profile what it already shows (contributors
+                        and cadence, stack, tracker, branching) and confirm it
+                        in a clause instead of asking. Put
                         all of the questions in one message, numbered, each
                         one plain sentence; end your turn and wait for the
                         answers, "skip" being a valid answer to any. Then
@@ -253,7 +259,7 @@ workflows:
     runtime: single
     restartable: true
     role: manager
-    recommended_next_workflow: ww-suggest
+    recommended_next_workflow: ww-learn
     steps:
       - name: scan
         description: >-

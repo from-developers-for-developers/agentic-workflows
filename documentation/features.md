@@ -429,7 +429,7 @@ for one of them.
 
 | Skill | Workflow | Does |
 | --- | --- | --- |
-| `ww-setup` | — | The guide. Asks once whether the operator wants to see what ww does as it learns (`explain`), then offers learn → learn-project → suggest, each optional, and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
+| `ww-setup` | — | The guide. Asks once whether the operator wants to see what ww does as it learns (`explain`), then offers learn-project → learn → suggest, each optional, and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
 | `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their role in this project (what they own, who they work with and hand over to, what they are measured on, which decisions they keep), their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
 | `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file. |
 | `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, designs the setup with the operator in one set of questions, proposes it in full, shows it with `setup apply --dry-run`'s list of changes, and places it on confirmation; see below. |
@@ -542,8 +542,8 @@ if it creates branches or worktrees.
 
 **Switching them off.** Each is a built-in workflow, switched off by name in
 `ww.json`; the documents and the mode stay while any of them
-is enabled, and a recommendation of a switched-off one (`ww-learn` recommends
-`ww-learn-project`, which recommends `ww-suggest`) is dropped:
+is enabled, and a recommendation of a switched-off one (`ww-learn-project` recommends
+`ww-learn`, which recommends `ww-suggest`) is dropped:
 
 ```json
 {"workflows": {"ww-solve": {"enabled": false}, "ww-automate": {"enabled": false}}}

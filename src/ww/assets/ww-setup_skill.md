@@ -1,6 +1,6 @@
 ---
 name: ww-setup
-description: Guide the operator through setting ww up in this project, step by step, each step optional - ww learns about them, their role in the project, their team and company (ww-learn), learns how the project works (ww-learn-project), then designs a setup with the operator and proposes it (ww-suggest). Use the first time ww is used in a project (`./ww discover` offers it while setup is not done), or when the operator asks to set up, onboard, or configure ww; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
+description: Guide the operator through setting ww up in this project, step by step, each step optional - ww learns how the project works (ww-learn-project), then about them, their role in the project, their team and company (ww-learn), then designs a setup with the operator and proposes it (ww-suggest). Use the first time ww is used in a project (`./ww discover` offers it while setup is not done), or when the operator asks to set up, onboard, or configure ww; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
 ---
 
 # Set ww up with the operator
@@ -41,16 +41,17 @@ configuration files yourself: ww's workflows place changes with
    and "everything" when they fall under more than one of these;
    `ww-learn-project` for project. When `project.setup.done` is `false`,
    explain the path in a few sentences, then ask which to do now (several
-   may be picked; all three, in order, is the default):
+   may be picked; all three, in order, is the default; the project first, so the
+   interviews can confirm what its profile shows instead of asking):
+   - `ww-learn-project`: profiles how the project's work is organised with
+     `./ww inspect` (branching, activity, fixes, verify commands, tracker,
+     commit convention), adds what only its documents say (tooling, stack,
+     recurring pitfalls) and writes it into `.ww/project.md`.
    - `ww-learn`: a short interview about you, your role in this project,
      your team and your company. `me.md` stays on your machine, and
      `.ww/myrole.md` stays in this checkout, out of version control;
      `team.md` and `company.md` go in `.ww/` and are shared with the team
      once committed.
-   - `ww-learn-project`: profiles how the project's work is organised with
-     `./ww inspect` (branching, activity, fixes, verify commands, tracker,
-     commit convention), adds what only its documents say (tooling, stack,
-     recurring pitfalls) and writes it into `.ww/project.md`.
    - `ww-suggest`: designs the setup with you, each default taken from the
      profile (lanes, the commands that verify a change, who reviews, your
      preferences as modes), and proposes it in full with the evidence for
