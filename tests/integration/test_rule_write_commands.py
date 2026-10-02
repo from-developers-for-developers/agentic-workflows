@@ -111,8 +111,10 @@ def test_add_writes_a_rule_file_into_the_groups_directory(
     assert _text(file) == (
         "---\n"
         "paths: [src/**/*.php]\n"
+        "\n"
         "check:\n"
-        "  shell: find $WW_STEP_CHANGED_FILES -name '*Service.php' -not -path "
+        "  shell: >-\n"
+        "    find $WW_STEP_CHANGED_FILES -name '*Service.php' -not -path "
         "'src/Service/*'\n"
         "  assert: [empty]\n"
         "---\n"

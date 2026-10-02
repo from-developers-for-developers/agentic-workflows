@@ -671,12 +671,12 @@ hooks:
   before_start_workflow:
     - workflows: [feature, hotfix, bugfix]
       handlers:
-        - ext/ww/git/handlers:is-git-clean: ~
-        - ext/ww/git/handlers:start-task-branch: ~
+        - ext/ww/git/handlers:is-git-clean:
+        - ext/ww/git/handlers:start-task-branch:
   before_complete_workflow:
     - workflows: [feature, hotfix, bugfix]
       handlers:
-        - ext/ww/git/handlers:git-commit: ~
+        - ext/ww/git/handlers:git-commit:
 
 modes:
   - brief: Keep updates to the operator to a few plain sentences.
@@ -684,11 +684,13 @@ modes:
 workflows:
   - feature: Implement a ticket from the tracker, up to a tested commit.
     steps:
-      - investigate: Read the ticket and the code it touches; say what changes and what could break.
+      - investigate: >-
+          Read the ticket and the code it touches; say what changes and what could
+          break.
       - implement: Implement the change with its tests.
         artifact_from: investigate
-      - check-code-quality: ~
-      - run-tests: ~
+      - check-code-quality:
+      - run-tests:
       - review: Walk the operator through the change and take their review.
         interactive: true
 
@@ -698,22 +700,22 @@ workflows:
       - investigate: Find why the bug happens and reproduce it with a failing test.
       - fix: Fix the bug at its cause.
         artifact_from: investigate
-      - check-code-quality: ~
-      - run-tests: ~
+      - check-code-quality:
+      - run-tests:
 
   - bugfix: Fix a bug on dev, released with the next regular release.
     inherit: hotfix
-    recommended_next_workflow: ~
+    recommended_next_workflow:
 
   - merge-to-dev: Merge a hotfix branch back into dev and leave dev passing.
     steps:
       - merge: >-
-          Merge the branch the requirements name into dev with `git merge
-          --no-ff` in the primary checkout, resolving every conflict so that
-          both sides' intent survives. Do not push.
+          Merge the branch the requirements name into dev with `git merge --no-ff`
+          in the primary checkout, resolving every conflict so that both sides' intent
+          survives. Do not push.
         role: manager
-      - check-code-quality: ~
-      - run-tests: ~
+      - check-code-quality:
+      - run-tests:
 ```
 
 and its `settings` go into `ww.json`:

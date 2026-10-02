@@ -1615,7 +1615,13 @@ repo file gains only its `imports` entry, checked by reading it back.
 files validated. The write mechanics both this and `ww setup apply` use — a
 `FileWrite` plan, the `Transaction` that restores every file, and
 `import_write`, which adds one `imports` entry and checks nothing else moved —
-live in `../src/ww/config_writes.py`.
+live in `../src/ww/config_writes.py`, with `dump_yaml`, which writes every YAML
+file ww owns the way a person would: block style, no anchors or aliases, an
+empty value rather than `null` (`- run-tests:`), long text folded with `>-` and
+multi-line text as a `|` block, short scalar lists such as `argv` inline,
+sequences indented under their key, and a blank line between top-level sections
+and between the items of a top-level list. The output loads back to the same
+data.
 
 `ww setup apply` (`../src/ww/setup_apply.py`) is how the setup skills put
 configuration "in proper places" without an agent editing ww's own files, which
