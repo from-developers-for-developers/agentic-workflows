@@ -115,10 +115,81 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def dump_yaml(value: dict[str, Any]) -> str:
-    return yaml.safe_dump(  # type: ignore[no-any-return]
-        value, sort_keys=False, allow_unicode=True, default_flow_style=None, width=1000
+_WIDTH = 80
+_ITEM = re.compile(r"  -( |$)")
+_LONG_TEXT = 72
+_SHORT_LIST = 60
+
+
+class _Dumper(yaml.SafeDumper):
+    """Block style YAML a person would write, without anchors or ``null``."""
+
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        super().increase_indent(flow, False)
+
+
+def _represent_none(dumper: _Dumper, _: None) -> yaml.ScalarNode:
+    return dumper.represent_scalar("tag:yaml.org,2002:null", "")
+
+
+def _represent_str(dumper: _Dumper, text: str) -> yaml.ScalarNode:
+    style = "|" if "\n" in text else ">" if len(text) > _LONG_TEXT else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", text, style=style)
+
+
+def _is_short_scalar(item: Any) -> bool:
+    if isinstance(item, str):
+        return "\n" not in item and len(item) <= _SHORT_LIST
+    return isinstance(item, (bool, int, float))
+
+
+def _represent_list(dumper: _Dumper, items: list[Any]) -> yaml.SequenceNode:
+    inline = all(map(_is_short_scalar, items)) and len(str(items)) <= _SHORT_LIST
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", items, flow_style=inline)
+
+
+_Dumper.add_representer(type(None), _represent_none)
+_Dumper.add_representer(str, _represent_str)
+_Dumper.add_representer(list, _represent_list)
+
+
+def _dump(value: Any) -> str:
+    return yaml.dump(  # type: ignore[no-any-return]
+        value,
+        Dumper=_Dumper,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=_WIDTH,
     )
+
+
+def _section(key: Any, value: Any) -> str:
+    """One top-level key, with a blank line between the items of its list.
+
+    Every other line of a block list's item, block text included, is indented
+    deeper than the ``  - `` that starts the item.
+    """
+    lines = _dump({key: value}).splitlines(True)
+    if not isinstance(value, list):
+        return "".join(lines)
+    return "".join(
+        f"\n{line}" if index > 1 and _ITEM.match(line) else line
+        for index, line in enumerate(lines)
+    )
+
+
+def dump_yaml(value: dict[str, Any]) -> str:
+    """``value`` as readable YAML that loads back to the same data.
+
+    Mappings are written in block style, short scalar lists inline, long text
+    folded and multi-line text as a literal block. Top-level sections and the
+    items of a top-level list are separated by a blank line.
+    """
+    return "\n".join(_section(key, item) for key, item in value.items())
 
 
 def import_write(

@@ -335,7 +335,10 @@ places it in the shared files (`ww-setup.yaml`, imported by
 the repository. Running it again refines the same setup file: definitions of
 the same name are replaced, the rest kept, and a hook identical to one already
 in its phase is skipped (the summary says so), so applying a fragment twice
-adds nothing.
+adds nothing. The file is written as readable YAML, as a person would write
+it: block style, a bare `- run-tests:` for a handler shorthand, long text
+folded with `>-`, short lists such as `argv` inline, and a blank line between
+sections and between workflows, so it can be reviewed and edited by hand.
 
 ww first validates the fragment in memory: it loads the configuration as any
 command would, reading the planned contents in place of the files they
