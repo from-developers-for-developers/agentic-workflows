@@ -84,6 +84,9 @@ from ww.plan import (
     compile_workflow_plan,
 )
 from ww.recovery import RecoveryCoordinator
+from ww.replanning import PlanChange, plan_change
+from ww.replanning import keep_plan as keep_plan_
+from ww.replanning import replan as replan_
 from ww.results import (
     CleanupResult,
     InitializationResult,
@@ -540,6 +543,7 @@ class WorkflowService:
             configuration_digest=self._configuration_digest(configuration),
             compiled_at=_now(),
             plan=plan,
+            bootstrap_step=bootstrap_step,
         )
         if not snapshot.plan.items:
             raise ConfigurationError(
@@ -704,15 +708,34 @@ class WorkflowService:
         approaches: tuple[tuple[str, str], ...] = (),
         picks: tuple[tuple[str, int], ...] = (),
         reassign: bool = False,
+        replan: bool = False,
+        keep_plan: bool = False,
     ) -> Instruction:
         """Advance the task; at a ``rules_proposed`` stop, apply the decisions.
 
         ``approve``, ``approaches`` and ``picks`` decide the proposals of the
         stop; ``force`` rejects every one still undecided. ``reassign`` gives
         the open assignment a new token, so its previous worker can no longer
-        act, and returns the page to dispatch it again.
+        act, and returns the page to dispatch it again. When the workflow's
+        definition changed since the run's plan was saved, ``next`` stops at a
+        ``plan_changed`` page first; ``replan`` takes the new definition from
+        the first changed item on, ``keep_plan`` carries on with the saved
+        plan, and either then advances as usual.
         """
         self._require_manager("next", caller_role)
+        if (replan or keep_plan) and (
+            replan == keep_plan
+            or force
+            or retry
+            or approve
+            or approaches
+            or picks
+            or outcome
+            or reassign
+        ):
+            raise StateError(
+                "choose one of next --replan or --keep-plan, without other decisions"
+            )
         if reassign:
             if force or retry or approve or approaches or picks or outcome:
                 raise StateError("next --reassign takes no other decision")
@@ -734,6 +757,10 @@ class WorkflowService:
         refreshed = self.children.refresh_parent(task_id)
         if refreshed is not None:
             return self._tag_caller(refreshed, caller_role)
+        if not is_bootstrap_request(task_id):
+            stop = self._plan_gate(task_id, replan=replan, keep_plan=keep_plan)
+            if stop is not None:
+                return self._tag_caller(stop, caller_role)
         instruction = self._next_command(
             task_id,
             model,
@@ -1931,7 +1958,16 @@ class WorkflowService:
             )
         validate_task_id(task_id)
         self._authorize_worker(task_id, caller_role, assignment, read=True)
-        instruction = self.instruction_status(task_id, run_id)
+        instruction, resolved = self._status_from_one_read(task_id, run_id)
+        if caller_role != "worker" and run_id is None and resolved is not None:
+            _, change = self._detect_plan_change(*resolved)
+            if change is not None:
+                return replace(
+                    self._tag_caller(
+                        _plan_changed_page(instruction, change), caller_role
+                    ),
+                    manager_intro=True,
+                )
         if instruction.is_child_workflow_control:
             refreshed = self.children.refresh_parent(task_id)
             if refreshed is not None:
@@ -2125,9 +2161,18 @@ class WorkflowService:
 
     def instruction_status(self, task_id: str, run_id: str | None) -> Instruction:
         """Render a task from one record read, so it reflects one revision."""
+        return self._status_from_one_read(task_id, run_id)[0]
+
+    def _status_from_one_read(
+        self, task_id: str, run_id: str | None
+    ) -> tuple[Instruction, tuple[ExecutionState, PlanSnapshot] | None]:
+        """The task's page and the run it renders, from one record read.
+
+        The run is ``None`` for the summary of a task with several runs.
+        """
         runs, _, _ = self.tasks.read_task_record(task_id)
         if len(runs) > 1 and run_id is None:
-            return Instruction(
+            summary = Instruction(
                 task_id=task_id,
                 workflow="",
                 status="task_summary",
@@ -2143,7 +2188,9 @@ class WorkflowService:
                 next_role="manager",
                 control="handoff_manager",
             )
-        return self.render(*self.runs.resolve(task_id, runs, run_id))
+            return summary, None
+        state, snapshot = self.runs.resolve(task_id, runs, run_id)
+        return self.render(state, snapshot), (state, snapshot)
 
     def documents_listing(self, task_id: str | None) -> list[dict[str, object]]:
         """Describe every declared document, with its file and last update."""
@@ -3709,6 +3756,80 @@ class WorkflowService:
     def _with_steps(self, state: ExecutionState, plan: WorkflowPlan) -> ExecutionState:
         return project_steps(state, plan, _now)
 
+    def plan_change(self, task_id: str) -> PlanChange | None:
+        """How the configuration changed the task's open run, read only."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        return self._detect_plan_change(state, snapshot)[1]
+
+    def _detect_plan_change(
+        self, state: ExecutionState, snapshot: PlanSnapshot
+    ) -> tuple[str | None, PlanChange | None]:
+        """The current configuration's digest and what it changes in the run.
+
+        Nothing is compiled while the digest matches the one the plan was
+        saved under. A configuration that no longer loads, or no longer
+        defines the run's workflow, changes nothing here: the run goes on
+        with its saved plan, and ``lint`` reports the configuration.
+        """
+        if not run_is_open(state.status):
+            return None, None
+        try:
+            configuration = self._load_configuration()
+            digest = self._configuration_digest(configuration)
+            if digest == snapshot.configuration_digest:
+                return digest, None
+            if state.workflow not in configuration.workflows_by_name:
+                return None, None
+            template = compile_workflow_plan(
+                configuration,
+                self.storage.root,
+                state.workflow,
+                state.agent,
+                state.task_id,
+                self.extensions,
+                PlanCompilationOptions(
+                    task_id=state.task_id,
+                    completed_bootstrap_step=snapshot.bootstrap_step,
+                    project=dict(state.workflow_values).get(PROJECT) or None,
+                    modes=state.modes,
+                ),
+                self.extensions.config,
+            )
+        except ConfigurationError:
+            return None, None
+        return digest, plan_change(state, snapshot, template, digest)
+
+    def _plan_gate(
+        self, task_id: str, *, replan: bool, keep_plan: bool
+    ) -> Instruction | None:
+        """Stop ``next`` at a changed plan, or apply the operator's choice.
+
+        Returns the ``plan_changed`` page, or ``None`` for ``next`` to go on.
+        A configuration whose change leaves the run's plan as it is is
+        adopted silently, so it is not compiled again.
+        """
+        validate_task_id(task_id)
+        with self.tasks.lock_task(task_id):
+            state, snapshot = self.load(task_id)
+            digest, change = self._detect_plan_change(state, snapshot)
+            if digest is not None and digest != snapshot.configuration_digest:
+                if change is None or keep_plan:
+                    self.commit(*keep_plan_(state, snapshot, digest))
+                    return None
+                if replan:
+                    if change.refusal is not None:
+                        raise StateError(f"cannot replan: {change.refusal}")
+                    self.commit(*replan_(state, snapshot, change, _now))
+                    return None
+                return _plan_changed_page(self.render(state, snapshot), change)
+        if replan or keep_plan:
+            raise StateError(
+                "the workflow has not changed since this run's plan was saved; "
+                "there is nothing to replan"
+            )
+        return None
+
     def _load_configuration(self) -> WorkflowConfiguration:
         """Load any notation through the shared normalized-model contract."""
         return validate_configuration(self.configuration_loader(), self.extensions)
@@ -3793,6 +3914,17 @@ def resolve_choice(item: PlanItem, choice: str) -> str:
     raise StateError(
         f"{choice!r} is not one of the choices of {item.name!r}: "
         + ", ".join(f"{n}. {label}" for n, label in enumerate(labels, 1))
+    )
+
+
+def _plan_changed_page(instruction: Instruction, change: PlanChange) -> Instruction:
+    """The run's page turned into the operator's ``plan_changed`` stop."""
+    return replace(
+        instruction,
+        plan_change=change,
+        operator_reason="plan_changed",
+        control="awaiting_operator",
+        next_role="operator",
     )
 
 

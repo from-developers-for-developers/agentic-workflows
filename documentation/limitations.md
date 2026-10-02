@@ -96,9 +96,12 @@ always uses the filesystem one.
   Collected items belong to the workflow run, and ww expands every per-item
   stage in one place when collection completes. An `items` step cannot also
   declare `steps`, `loop`, an item operation marker, or child tasks.
-- Each started run executes from its saved plan snapshot, so edits to
-  `ww.yaml` cannot alter work already in progress. To pick up a
-  configuration change, start a new task.
+- Each started run executes from its saved plan snapshot. An edit to
+  `ww.yaml` reaches a running task only when the operator takes it at the
+  `plan_changed` stop (`next --replan`); it cannot reach per-item or
+  per-child stages the run has already expanded, or rewind past a children
+  step whose child tasks exist. For those, reset the task and start it
+  again.
 - A loop has a round limit (`max_rounds`). Reaching it escalates rather than
   failing silently, and leaving the loop requires an explicit
   `next --force --reason "<reason>"`.

@@ -28,7 +28,8 @@ description: Carry out the user's request through ww, this project's workflow to
 5. Never run a ww-owned handler yourself, edit ww state, or read
    `ww.yaml` or ww's source to work out what to do next. When
    ww reports `awaiting_operator` (a failed handler or work, an interrupted
-   command, a loop at its iteration limit), stop and report the task, its
+   command, a loop at its iteration limit, a changed workflow), stop and report the task, its
    `operator_reason` and the exact error to the user; when they decide, run
    the recovery command ww showed, `./ww next <task-id> --retry` to run the
-   handler again or `--force --reason` to skip it or leave the loop.
+   handler again, `--force --reason` to skip it or leave the loop, or
+   `--replan` / `--keep-plan` for a changed workflow.

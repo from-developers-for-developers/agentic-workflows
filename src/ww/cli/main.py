@@ -436,6 +436,8 @@ def _next(context: _Context) -> _Outcome:
                 approaches=tuple((key, text) for key, text in args.approach),
                 picks=_picks(args.pick),
                 reassign=args.reassign,
+                replan=args.replan,
+                keep_plan=args.keep_plan,
             ),
             args.json_output,
         ),
@@ -1225,9 +1227,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if args.retry:
             args.confirmation = _confirmation(args.yes)
-        if args.yes and not (args.retry or args.force or args.approve):
+        if args.yes and not (args.retry or args.force or args.approve or args.replan):
             print(
-                "ww error: --yes confirms next --retry, --force or --approve",
+                "ww error: --yes confirms next --retry, --force, --approve or --replan",
                 file=sys.stderr,
             )
             return 1
@@ -1273,6 +1275,21 @@ def main(argv: list[str] | None = None) -> int:
             if not confirm_approval(preview, assume_yes=args.yes):
                 return 1
             args.confirmation = _confirmation(args.yes)
+        # A replan that rewinds runs finished steps again: the operator agrees
+        # to that, knowing which ones, before anything changes.
+        if args.command == "next" and args.replan:
+            change = service.plan_change(args.task_id)
+            if change is not None and change.refusal is None and change.reruns:
+                if not confirm_operator(
+                    "ww next --replan",
+                    "run these finished steps again under the new definition: "
+                    + ", ".join(change.reruns),
+                    "Replan and rerun them?",
+                    "Replan",
+                    assume_yes=args.yes,
+                ):
+                    return 1
+                args.confirmation = _confirmation(args.yes)
         if logged:
             log("started", None)
         # Every command this invocation prints starts with the project's ww.

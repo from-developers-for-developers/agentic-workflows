@@ -42,8 +42,8 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
 - On a nonzero exit, read the whole response. On "Fix required", fix the causes
   and complete again (`./ww check <task-id>` previews checks) or `./ww dispute`
   a wrong check; `./ww fail` with the page's `--role` and `--assignment`
-  records work that cannot finish. On `awaiting_operator` (failed handler or
-  work, interruption, loop or fix limit, proposed or disputed checks), stop,
-  report the task, `operator_reason` and the exact error to the user, and run
-  only the `./ww next` option they pick (`--retry`, `--force`, `--approve`,
-  `--approach`, `--pick`, `--yes` once they said so); never reset unasked.
+  records work that cannot finish. On `awaiting_operator` (a failure, limit,
+  interruption, checks or changed workflow), stop, report the task,
+  `operator_reason` and the exact error to the user, and run only the `./ww next`
+  option they pick (`--retry`, `--force`, `--approve`, `--approach`, `--pick`,
+  `--replan`, `--keep-plan`, `--yes` once they said so); never reset unasked.

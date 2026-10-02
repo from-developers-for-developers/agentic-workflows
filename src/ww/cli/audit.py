@@ -98,6 +98,10 @@ def _invocation(args: argparse.Namespace) -> str:
             values.extend(["--approve", key])
         if args.reassign:
             values.append("--reassign")
+        if args.replan:
+            values.append("--replan")
+        if args.keep_plan:
+            values.append("--keep-plan")
         if args.yes:
             values.append("--yes")
     if args.command in {"status", "instruction"} and args.run_id:

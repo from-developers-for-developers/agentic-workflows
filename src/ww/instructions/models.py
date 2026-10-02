@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
@@ -23,6 +24,9 @@ from ww.execution_models import WorkflowRunSummary
 from ww.items import WorkItem
 from ww.plan import PlannedMode
 from ww.rule_store import RuleApprover
+
+if TYPE_CHECKING:
+    from ww.replanning import PlanChange
 from ww.workflow_config import (
     ChoiceDefinition,
     ItemFieldUpdate,
@@ -647,6 +651,9 @@ class Instruction:
     # stop, the proposals the operator decides.
     verification: VerificationPage | None = None
     proposals: tuple[Proposal, ...] = ()
+    # At a ``plan_changed`` stop: how the workflow's current definition
+    # differs from the run's saved plan, which the operator takes or declines.
+    plan_change: PlanChange | None = None
     # Internal capability markers let presentation and service refresh paths
     # avoid rediscovering a saved plan or matching built-in action names.
     is_child_workflow_control: bool = False
@@ -776,4 +783,7 @@ class Instruction:
                 self.verification.to_dict() if self.verification else None
             ),
             "proposals": [proposal.to_dict() for proposal in self.proposals],
+            "plan_change": (
+                self.plan_change.to_dict() if self.plan_change is not None else None
+            ),
         }

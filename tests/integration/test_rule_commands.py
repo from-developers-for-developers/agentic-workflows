@@ -520,7 +520,7 @@ def test_yes_alone_is_refused(
     _develop(root)
 
     assert main(["--root", str(root), "next", "TASK-1", "--yes"]) == 1
-    assert "--yes confirms next --retry, --force or --approve" in (
+    assert "--yes confirms next --retry, --force, --approve or --replan" in (
         capsys.readouterr().err
     )
 

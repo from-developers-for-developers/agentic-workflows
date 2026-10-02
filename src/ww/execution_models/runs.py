@@ -124,6 +124,9 @@ class PlanSnapshot:
     plan: WorkflowPlan
     plan_revision: int = 1
     template_plan: WorkflowPlan | None = None
+    # The step a bootstrap request already performed, which the plan omits;
+    # kept so a replan compiles the workflow the way the run started.
+    bootstrap_step: str | None = None
 
     def __post_init__(self) -> None:
         if self.template_plan is None:
@@ -146,6 +149,11 @@ class PlanSnapshot:
             "plan": self.plan.to_dict(),
             "plan_revision": self.plan_revision,
             "template_plan": template.to_dict(),
+            **(
+                {"bootstrap_step": self.bootstrap_step}
+                if self.bootstrap_step is not None
+                else {}
+            ),
         }
 
     @classmethod
@@ -181,6 +189,9 @@ class PlanSnapshot:
                 _plan_from_dict(data["template_plan"])
                 if "template_plan" in data
                 else plan
+            ),
+            bootstrap_step=expect_optional_string(
+                data.get("bootstrap_step"), "plan snapshot.bootstrap_step"
             ),
         )
 

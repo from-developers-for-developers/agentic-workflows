@@ -25,6 +25,7 @@ from ww.instructions.commands import (
     instruction_command,
     next_command,
     remove_item_command,
+    replan_command,
     reword_item_command,
     rule_command,
     set_item_fields_command,
@@ -66,6 +67,9 @@ class MarkdownOutputAdapter(OutputAdapter):
         if instruction.status == "task_summary":
             return _document(_task_summary(instruction))
         lines = _header(instruction)
+        if instruction.plan_change is not None:
+            _plan_changed(lines, instruction)
+            return _document(lines)
         if instruction.status == "completed":
             _completed(lines, instruction)
             return _document(lines)
@@ -1739,6 +1743,69 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
             "```",
             "",
             "When the child completes, `ww` resumes the parent workflow automatically.",
+        ]
+    )
+
+
+def _plan_changed(lines: Lines, instruction: Instruction) -> None:
+    """The operator's stop when the workflow's definition changed mid-run."""
+    change = instruction.plan_change
+    assert change is not None
+    lines.extend(
+        [
+            "## Operator: the workflow changed",
+            "",
+            f"The definition of workflow `{instruction.workflow}` changed since "
+            "this run's plan was saved, and ww stopped before going on. Tell "
+            "the user, who is the `ww` operator, what changed, as listed "
+            "below, and wait for their choice; do not pick for them. Run "
+            "exactly the option they choose.",
+        ]
+    )
+    _append_section(lines, "What changed")
+    for item in change.changes:
+        lines.append(f"- {item.kind.capitalize()}: {item.label}")
+        for field in item.fields:
+            lines.append(f"  - `{field.name}`: `{field.before}` → `{field.after}`")
+    if change.refusal is not None:
+        _append_section(lines, "Options")
+        lines.extend(
+            [
+                f"This change cannot be applied to this run: {change.refusal}.",
+                "",
+                "To carry on with the saved plan; ww does not ask again for "
+                "this configuration:",
+                "",
+                "```console",
+                replan_command(instruction.task_id, keep=True),
+                "```",
+            ]
+        )
+        return
+    _append_section(lines, "Options")
+    take = (
+        "To take the new definition from the first change on. This reruns "
+        "finished steps, which needs the operator's explicit agreement: "
+        + ", ".join(change.reruns)
+        + "."
+        if change.reruns
+        else "To take the new definition from the first change on; nothing "
+        "that already finished runs again."
+    )
+    lines.extend(
+        [
+            take,
+            "",
+            "```console",
+            replan_command(instruction.task_id, rerun=bool(change.reruns)),
+            "```",
+            "",
+            "To carry on with the saved plan; ww does not ask again for this "
+            "configuration:",
+            "",
+            "```console",
+            replan_command(instruction.task_id, keep=True),
+            "```",
         ]
     )
 

@@ -1390,7 +1390,7 @@ facts in `handoff_block`. The `single` runtime has no block.
 
 ### Confirmations
 
-`next --retry`, `next --force`, `next --approve`, `rules prune`, and `rules
+`next --retry`, `next --force`, `next --approve`, a `next --replan` that reruns finished steps, `rules prune`, and `rules
 revoke` ask the operator to confirm, because they can repeat an external
 effect, skip work, approve a command that will run from then on, or change
 the shared rule-automation store. ww asks only at a terminal. An
@@ -1418,6 +1418,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `rules_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
+| `plan_changed` | The workflow's definition changed since the run's plan was saved; see [When the workflow changes mid-run](#when-the-workflow-changes-mid-run). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
 replays it without asking anyone, so the task stays `blocked` for the manager.
@@ -1441,6 +1442,45 @@ to ask anyone: it returns to its manager, and the manager asks.
 
 The operator is someone ww waits for, not a caller: `--role` still accepts only
 `manager` and `worker`, and `--role operator` is rejected.
+
+### When the workflow changes mid-run
+
+A run works from the plan it compiled when it started. When the workflow's
+definition changes afterwards, say a hook's command was wrong and stopped the
+task, and the operator fixed it in `ww.yaml`, the manager's next `next` (and
+its `instruction` page) compiles the workflow again and compares it with the
+saved plan, step by step and hook by hook. If anything differs, ww stops
+before doing anything else, with `operator_reason: plan_changed`, and lists
+each changed, added or removed step or hook, with the fields that changed,
+before and after. This comes ahead of `--retry` too, so the fixed command is
+offered instead of the old one being run again. The operator picks one of two
+answers:
+
+```console
+./ww next TASK-1 --replan --role manager
+./ww next TASK-1 --keep-plan --role manager
+```
+
+- `--replan` takes the new definition from the first changed item on. Items
+  before it keep what they did; the first changed item and everything after
+  it are the new ones, with fresh records, and `next` goes on from there.
+  When the first change is in a step or hook that already finished, the run
+  rewinds to it and runs it, and everything after it, again. The page names
+  those steps, and `next --replan` asks the operator to confirm, or takes
+  `--yes` once they have agreed. Earlier attempts move to the run's history,
+  so their artifacts and output stay readable.
+- `--keep-plan` carries on with the saved plan and is not asked again for
+  the same configuration.
+
+A change that leaves the run's own workflow as it is, such as a new workflow
+beside it, is taken silently. A configuration that does not load stops
+nothing: the run goes on with its saved plan, and `ww lint` shows the error.
+Two changes cannot be applied to a running task, and the page says why,
+offering only `--keep-plan`: a change to per-item or per-child stages that
+the run has already expanded for its items or children, and a rewind past a
+children step whose child tasks already exist. For those, reset the task and
+start it again. A worker's pages never stop for a changed plan; the manager
+decides, between assignments.
 
 ## Lock cleanup and command attempts
 

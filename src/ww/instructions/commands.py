@@ -45,6 +45,18 @@ def _worker(role: CallerRole, assignment: str | None) -> tuple[str, ...]:
     return ("--role", role)
 
 
+def replan_command(task_id: str, *, keep: bool = False, rerun: bool = False) -> str:
+    """The operator's choice at a ``plan_changed`` stop.
+
+    Rerunning finished items is confirmed like a retry: ``--yes`` records
+    that the operator agreed, since the agent's shell has no terminal.
+    """
+    if keep:
+        return _command("next", _arg(task_id), "--keep-plan", "--role", "manager")
+    flags = ("--replan", "--yes") if rerun else ("--replan",)
+    return _command("next", _arg(task_id), *flags, "--role", "manager")
+
+
 def next_command(
     task_id: str,
     *,

@@ -1395,8 +1395,12 @@ At a `check_disputed` stop the operator answers with `next`:
 
 At the `fix_limit` stop `--force` waives every check and rule of the step. The
 step record keeps its waivers as `checks_waived`, a mapping of ID to reason.
-`next --yes` confirms `--retry`, `--force`, or `--approve` without the y/N
-prompt, for an agent carrying out the operator's stated decision; the effect
+`next --replan` (take the changed workflow definition from the first changed
+item on; confirmed when it reruns finished steps) and `next --keep-plan` (carry
+on with the saved plan) answer the `plan_changed` stop; see
+[features.md](features.md#when-the-workflow-changes-mid-run).
+`next --yes` confirms `--retry`, `--force`, `--approve`, or a rewinding
+`--replan` without the y/N prompt, for an agent carrying out the operator's stated decision; the effect
 or the approved command is still printed, and the audit record notes the
 confirmation. `--yes` without one of them is an error. ww asks only at a
 terminal: without one and without `--yes` it refuses at once, never reading

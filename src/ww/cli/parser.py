@@ -305,6 +305,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Replay an interrupted automatic operation after operator confirmation.",
     )
+    next_actions.add_argument(
+        "--replan",
+        action="store_true",
+        help=(
+            "At a plan_changed stop: take the workflow's new definition from "
+            "the first changed item on; rerunning finished items is confirmed."
+        ),
+    )
+    next_actions.add_argument(
+        "--keep-plan",
+        action="store_true",
+        help="At a plan_changed stop: carry on with the run's saved plan.",
+    )
     next_step.add_argument(
         "--reason",
         dest="force_reason",
@@ -322,8 +335,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--yes",
         action="store_true",
         help=(
-            "Confirm --retry, --force or --approve without the y/N prompt. Only "
-            "for carrying out a decision the operator stated."
+            "Confirm --retry, --force, --approve or --replan without the y/N "
+            "prompt. Only for carrying out a decision the operator stated."
         ),
     )
     next_step.add_argument(

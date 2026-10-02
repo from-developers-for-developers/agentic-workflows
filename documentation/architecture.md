@@ -1146,6 +1146,33 @@ supplies the concise summary value, and the executor records it only after that
 handler completes, keeping the task-wide ledger aligned with durable workflow
 completion without requiring workflow configuration.
 
+## Replanning a running task
+
+`replanning.py` owns how a run takes a changed workflow definition. The
+snapshot keeps the configuration digest it was compiled under and, when a
+bootstrap request performed the first step, that step's name
+(`bootstrap_step`), so the workflow can be compiled again exactly as the run
+started. The manager's `next` and `instruction` compare the digest first and
+compile only when it differs; `plan_change` then compares the saved template
+with the new one item by item, ignoring placement fields (`id`, `position`,
+`step_ordinals`), and the first difference is the change point. Changes are
+listed by aligning items on their identity (workflow, step, parent, phase,
+name) with `difflib`.
+
+The change point is found in the concrete plan through each item's template
+origin: its own ID, or for a verification item the step it verifies. Items
+before it are kept with their records; the new template's items from the
+change point on are appended with fresh records under a `replan-<revision>`
+operation scope, the displaced records move to `execution_history`, and the
+plan revision is bumped. When the change point is at or before the cursor,
+the cursor moves to it and whatever stopped the run there (a failure, an
+input request, an open assignment) is cleared; loops entered from there on
+count their rounds anew. Expanded per-item or per-child stages, recognised
+as template items (`item_template`) missing from the concrete plan, and a
+started children step in the rerun range refuse the replan. `keep_plan`
+adopts the new digest without touching the plan, which is also how a change
+that leaves the run's template as it is gets taken silently.
+
 ## External task identity bootstrap
 
 Most tracker-backed workflows do not know their durable ID until an agent has

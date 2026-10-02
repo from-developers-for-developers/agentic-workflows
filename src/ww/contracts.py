@@ -151,6 +151,7 @@ OperatorReason = Literal[
     "rules_proposed",
     "check_disputed",
     "value_unavailable",
+    "plan_changed",
 ]
 CALLER_ROLES: tuple[CallerRole, ...] = ("manager", "worker")
 CONTROL_VALUES: tuple[Control, ...] = (
