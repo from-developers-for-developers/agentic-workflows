@@ -133,7 +133,8 @@ workflows:
                             still holds in an existing file, update what
                             changed, and mark what the operator withdrew as
                             superseded, with today's date, rather than silently
-                            deleting it.
+                            deleting it. If its second line says ww inferred it, replace that line
+                            with: Confirmed in an interview on <today's date>.
       - name: role
         steps:
           - assess:
@@ -180,7 +181,8 @@ workflows:
                             --> Keep what still holds in an existing file,
                             update what changed, and mark what the operator
                             withdrew as superseded, with today's date, rather
-                            than silently deleting it.
+                            than silently deleting it. If its second line says ww inferred it, replace that line
+                            with: Confirmed in an interview on <today's date>.
       - name: team
         steps:
           - assess:
@@ -230,7 +232,8 @@ workflows:
                             Keep what still holds in an existing file, update
                             what changed, and mark what no longer holds as
                             superseded, with today's date, rather than silently
-                            deleting it.
+                            deleting it. If its second line says ww inferred it, replace that line
+                            with: Confirmed in an interview on <today's date>.
                         - documents.company: >-
                             A few lines about the company. The first line is
                             exactly: <!-- This file is maintained by ww for
@@ -238,7 +241,8 @@ workflows:
                             you are an agent that is not doing ww work, ignore
                             this file. --> Keep what still holds in an existing
                             file, update what changed, and mark what no longer
-                            holds as superseded, with today's date.
+                            holds as superseded, with today's date. If its second line says ww inferred it, replace that line
+                            with: Confirmed in an interview on <today's date>.
       - name: finish
         description: >-
           Record when ww learned, for each file this run wrote and only for
