@@ -243,9 +243,10 @@ def _uncover(
 ) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
     """Drop ``hashes`` from every check's coverage but ``keep``'s.
 
-    A check, other than a rejected one, left covering nothing is removed with
-    its pending revision; a pending revision left covering nothing is
-    dropped. Returns the store, the checks removed and the checks whose
+    A check, other than a rejected one, whose approved coverage and pending
+    revision both cover nothing more is removed; a pending revision left
+    covering nothing is dropped, and one still covering rules is kept,
+    reduced and undecided. Returns the store, the checks removed and the checks whose
     revision was dropped.
     """
     dropped_checks: list[str] = []
@@ -256,7 +257,11 @@ def _uncover(
             continue
         spec = _without(check.spec, hashes)
         pending = _without(check.pending, hashes) if check.pending else None
-        if not spec.covers and check.status != "rejected":
+        if (
+            not spec.covers
+            and not (pending is not None and pending.covers)
+            and check.status != "rejected"
+        ):
             del checks[check_name]
             dropped_checks.append(check_name)
             continue

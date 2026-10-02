@@ -325,7 +325,7 @@ def test_a_check_left_covering_nothing_is_removed(
     assert _convert(root, "other", "develop/1", "develop/2") == 0
 
     out = capsys.readouterr()
-    assert "- removes check lint: it covers nothing more" in out.err
+    assert "- removes check lint (converted): it covers nothing more" in out.err
     assert "- takes `develop/2` out of check names" in out.err
     assert "Removed, covering nothing more: check(s) lint." in out.out
     store = _store(root)
@@ -430,7 +430,7 @@ def test_a_dry_run_shows_every_change(
     out = capsys.readouterr().out
     assert "(replaces the store's entry)" in out
     assert "- takes `develop/3` out of check names" in out
-    assert "- removes check names: it covers nothing more" in out
+    assert "- removes check names (converted): it covers nothing more" in out
     assert (
         f"- returns rule {rule_text_hash(CLI)[:12]} ({CLI}) to not scriptized"
     ) in out
@@ -596,3 +596,108 @@ def test_a_worktree_without_the_config_judges_the_rule(tmp_path: Path) -> None:
         "lint",
         "lint.toml",
     )
+
+
+def _dry_convert(root: Path, name: str, *covers: str) -> int:
+    return _cli(
+        root,
+        "convert",
+        name,
+        "--covers",
+        *covers,
+        "--check-shell",
+        "true",
+        "--dry-run",
+    )
+
+
+WARNING = "warning: this overrides an undecided in-task proposal"
+
+
+def test_a_check_whose_pending_revision_still_covers_rules_is_kept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1") == 0
+
+    def pend(store: dict) -> None:
+        store["checks"]["lint"]["pending"] = {
+            "shell": "false",
+            "covers": [rule_text_hash(CLI), rule_text_hash(NAMES)],
+        }
+        store["rules"][rule_text_hash(NAMES)] = {
+            "text": NAMES,
+            "status": "proposed",
+            "check": "lint",
+        }
+
+    _edit_store(root, pend)
+    capsys.readouterr()
+
+    assert _convert(root, "other", "develop/1") == 0
+
+    out = capsys.readouterr()
+    assert "removes check lint" not in out.err
+    assert "drops the pending revision" not in out.err
+    store = _store(root)
+    check = store["checks"]["lint"]
+    assert check["covers"] == []
+    assert check["pending"]["covers"] == [rule_text_hash(NAMES)]
+    assert store["rules"][rule_text_hash(NAMES)]["check"] == "lint"
+
+
+def test_removing_a_proposed_check_warns(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/2") == 0
+
+    def propose(store: dict) -> None:
+        store["checks"]["lint"]["status"] = "proposed"
+        del store["rules"][rule_text_hash(NAMES)]
+
+    _edit_store(root, propose)
+    capsys.readouterr()
+
+    assert _dry_convert(root, "names", "develop/2") == 0
+
+    out = capsys.readouterr().out
+    assert "- removes check lint (proposed): it covers nothing more" in out
+    assert WARNING in out
+
+
+def test_dropping_a_pending_revision_warns(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert _convert(root, "lint", "develop/1", "develop/2") == 0
+    assert _convert(root, "logs", "develop/3") == 0
+
+    def pend(store: dict) -> None:
+        store["checks"]["lint"]["pending"] = {
+            "shell": "false",
+            "covers": [rule_text_hash(CLI)],
+        }
+        store["checks"]["logs"]["pending"] = {
+            "shell": "false",
+            "covers": [rule_text_hash(LOGS)],
+        }
+
+    _edit_store(root, pend)
+    capsys.readouterr()
+
+    # Its own pending revision, replaced by the new command.
+    assert _dry_convert(root, "lint", "develop/1", "develop/2") == 0
+    out = capsys.readouterr().out
+    assert "- drops the pending revision of check lint" in out
+    assert WARNING in out
+
+    # Another check's revision, left covering nothing.
+    assert _dry_convert(root, "names", "develop/1") == 0
+    out = capsys.readouterr().out
+    assert "- drops the pending revision of check lint" in out
+    assert WARNING in out
+
+    # No proposal is lost: no warning.
+    assert _dry_convert(root, "names", "develop/2") == 0
+    assert WARNING not in capsys.readouterr().out
