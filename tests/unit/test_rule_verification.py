@@ -13,7 +13,7 @@ from ww.actions import CommandDefinition, Commands
 from ww.config import load_configuration
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
-from ww.execution_models import ExecutionState, PlanItemExecution
+from ww.execution_models import PlanItemExecution
 from ww.execution_models.records import (
     HeldCompletion,
     RuleVerdict,
@@ -22,14 +22,8 @@ from ww.execution_models.records import (
 from ww.plan import PlanItem, WorkflowPlanCompiler
 from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_verification import (
-    Decisions,
-    add_resolved_checks,
-    apply_decisions,
-    derived_check,
     effective_hints,
-    parse_check_results,
     parse_rule_results,
-    record_results,
     resolve_rules,
     revoke_check,
     verification_item,
@@ -80,15 +74,8 @@ def _record(**fields: object) -> PlanItemExecution:
     return replace(PlanItemExecution("develop", 2), **fields)  # type: ignore[arg-type]
 
 
-def _rule(state: str, text: str = CLI, rule_id: str = "develop/1") -> VerificationRule:
-    return VerificationRule(
-        rule_id,
-        text,
-        rule_text_hash(text),
-        state,  # type: ignore[arg-type]
-        check="cli-surface" if state == "approach_approved" else None,
-        approach="diff the help" if state == "approach_approved" else None,
-    )
+def _rule(text: str = CLI, rule_id: str = "develop/1") -> VerificationRule:
+    return VerificationRule(rule_id, text, rule_text_hash(text), "judged")
 
 
 def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
@@ -106,7 +93,7 @@ def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
 
     assert [(entry.id, entry.status, entry.check) for entry in resolutions] == [
         ("develop/1", "converted", "lint"),
-        ("develop/2", "pending_operator", None),
+        ("develop/2", "judged", None),
         ("develop/3", "judged", None),
     ]
     assert resolutions[2].interpretation == "Log."
@@ -118,12 +105,15 @@ def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
 @pytest.mark.parametrize(
     ("status", "check_status", "resolved"),
     [
-        (None, None, "unresolved"),
-        ("interpreted", None, "unresolved"),
-        ("approach_approved", None, "unresolved"),
-        ("proposed", None, "pending_operator"),
-        ("ambiguous", None, "pending_operator"),
+        (None, None, "judged"),
+        ("interpreted", None, "judged"),
+        ("approach_proposed", None, "judged"),
+        ("approach_approved", None, "judged"),
+        ("proposed", "proposed", "judged"),
+        ("ambiguous", None, "judged"),
         ("not_convertible", None, "judged"),
+        ("rejected", None, "judged"),
+        ("converted", "converted", "converted"),
         # Converted, but its check is not: nothing mechanical runs.
         ("converted", "proposed", "judged"),
     ],
@@ -145,40 +135,9 @@ def test_a_rule_resolves_by_its_store_status(
     resolutions, checks = resolve_rules(develop, automation)
 
     assert resolutions[0].status == resolved
-    assert checks == ()
-
-
-@pytest.mark.parametrize(
-    "status", [None, "interpreted", "approach_approved", "ambiguous", "rejected"]
-)
-def test_without_scripting_every_rule_without_a_check_is_judged(
-    develop: PlanItem, status: str | None
-) -> None:
-    automation = RuleAutomation()
-    if status is not None:
-        automation = automation.with_rule(
-            rule_text_hash(CLI),
-            RuleEntry(CLI, status, check="lint"),  # type: ignore[arg-type]
-        )
-
-    resolutions, checks = resolve_rules(develop, automation, scripting=False)
-
-    assert resolutions[0].status == "judged"
-    assert checks == ()
-
-
-def test_without_scripting_an_approved_check_still_runs(develop: PlanItem) -> None:
-    automation = RuleAutomation().with_check(
-        "lint", _check((rule_text_hash(CLI),), "converted")
+    assert [check.id for check in checks] == (
+        ["lint"] if resolved == "converted" else []
     )
-    automation = automation.with_rule(
-        rule_text_hash(CLI), RuleEntry(CLI, "converted", check="lint")
-    )
-
-    resolutions, checks = resolve_rules(develop, automation, scripting=False)
-
-    assert resolutions[0].status == "converted"
-    assert [check.covers for check in checks] == [("develop/1",)]
 
 
 def test_one_planned_check_per_shared_check_name(develop: PlanItem) -> None:
@@ -196,32 +155,37 @@ def test_one_planned_check_per_shared_check_name(develop: PlanItem) -> None:
     assert checks[0].covers == ("develop/1", "develop/2")
 
 
-def test_needs_skip_checked_verified_and_waiting_rules(develop: PlanItem) -> None:
-    automation = RuleAutomation().with_rule(
-        rule_text_hash(NAMES), RuleEntry(NAMES, "approach_approved", check="names")
-    )
-    _, lint = resolve_rules(
+def test_needs_skip_checked_verified_and_waived_rules(develop: PlanItem) -> None:
+    resolutions, lint = resolve_rules(
         develop,
         RuleAutomation()
         .with_rule(rule_text_hash(CLI), RuleEntry(CLI, "converted", check="lint"))
+        .with_rule(
+            rule_text_hash(NAMES),
+            RuleEntry(
+                NAMES, "approach_approved", check="names", interpretation="Clear."
+            ),
+        )
         .with_check("lint", _check((rule_text_hash(CLI),))),
     )
-    record = _record(resolved_checks=lint)
+    record = _record(resolved_checks=lint, rule_resolutions=resolutions)
 
-    needs = verification_needs(develop, record, automation)
+    needs = verification_needs(develop, record)
 
-    assert [(need.id, need.state) for need in needs] == [
-        ("develop/2", "approach_approved"),
-        ("develop/3", "unresolved"),
+    assert [(need.id, need.state, need.interpretation) for need in needs] == [
+        ("develop/2", "judged", "Clear."),
+        ("develop/3", "judged", None),
     ]
-    verified = _record(
+    assert [need.check for need in needs] == [None, None]
+    done = _record(
         resolved_checks=lint,
+        rule_resolutions=resolutions,
         held_completion=HeldCompletion(
             verdicts=(RuleVerdict("develop/3", "pass", "v"),)
         ),
-        open_proposals=("names",),
+        checks_waived=(("develop/2", "not here"),),
     )
-    assert verification_needs(develop, verified, automation) == ()
+    assert verification_needs(develop, done) == ()
 
 
 def test_a_verification_item_per_hint_set(develop: PlanItem) -> None:
@@ -255,7 +219,22 @@ def _results(rules: tuple[VerificationRule, ...], *payloads: dict) -> tuple:
             ),
             "given twice",
         ),
-        (({"id": "develop/1", "status": "approach"},), "status must be one of judged"),
+        (({"id": "develop/1", "status": "approach"},), "status must be judged"),
+        (
+            ({"id": "develop/1", "status": "not_convertible", "verdict": "pass"},),
+            "status must be judged",
+        ),
+        (
+            (
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "pass",
+                    "interpretation": "x",
+                },
+            ),
+            "unknown keys: interpretation",
+        ),
         (({"id": "develop/1", "status": "judged"},), "requires verdict"),
         (
             ({"id": "develop/1", "status": "judged", "verdict": "fail"},),
@@ -280,296 +259,27 @@ def _results(rules: tuple[VerificationRule, ...], *payloads: dict) -> tuple:
 )
 def test_rule_results_are_validated(payloads: tuple, message: str) -> None:
     with pytest.raises(StateError, match=message):
-        _results((_rule("judged"),), *payloads)
+        _results((_rule(),), *payloads)
 
 
 def test_rule_results_that_are_not_json_are_refused() -> None:
     with pytest.raises(StateError, match="not valid JSON"):
-        parse_rule_results(("{nope",), (_rule("judged"),))
+        parse_rule_results(("{nope",), (_rule(),))
 
 
-def test_a_stage_a_result_needs_an_approach_and_a_check_name() -> None:
-    rules = (_rule("unresolved"),)
-
-    with pytest.raises(StateError, match="requires approach"):
-        _results(rules, {"id": "develop/1", "status": "approach", "check": "x"})
-    with pytest.raises(StateError, match="kebab-case"):
-        _results(
-            rules,
-            {"id": "develop/1", "status": "approach", "check": "X Y", "approach": "a"},
-        )
-    with pytest.raises(StateError, match="two or more candidates"):
-        _results(rules, {"id": "develop/1", "status": "ambiguous", "candidates": ["a"]})
-    result = _results(
-        rules,
+def test_a_failing_verdict_carries_its_evidence() -> None:
+    (result,) = _results(
+        (_rule(),),
         {
             "id": "develop/1",
-            "status": "not_convertible",
-            "reason": "taste",
+            "status": "judged",
             "verdict": "fail",
             "failures": [{"file": "cli.py", "line": 3, "what": "flag renamed"}],
         },
-    )[0]
-    assert result.verdict == "fail"
+    )
+
+    assert (result.status, result.verdict) == ("judged", "fail")
     assert result.failures[0].text() == "cli.py:3 — flag renamed"
-
-
-def test_check_results_must_match_the_prepared_rules(develop: PlanItem) -> None:
-    rules = (_rule("approach_approved"),)
-    results = _results(
-        rules, {"id": "develop/1", "status": "approach", "check": "cli-surface"}
-    )
-    check = {
-        "name": "cli-surface",
-        "argv": ["help-diff"],
-        "config": ["tools/help.txt"],
-        "covers": ["develop/1"],
-        "proven": True,
-    }
-
-    with pytest.raises(StateError, match="missing for cli-surface"):
-        parse_check_results((), rules, results, develop)
-    with pytest.raises(StateError, match="named by no rule"):
-        parse_check_results(
-            (json.dumps({**check, "name": "other"}),), rules, results, develop
-        )
-    with pytest.raises(StateError, match="must cover the rules that name it"):
-        parse_check_results(
-            (json.dumps({**check, "covers": ["develop/2"]}),), rules, results, develop
-        )
-    with pytest.raises(StateError, match="not rules without a command"):
-        parse_check_results(
-            (json.dumps({**check, "covers": ["develop/1", "develop/4"]}),),
-            rules,
-            results,
-            develop,
-        )
-    with pytest.raises(StateError, match="proven"):
-        parse_check_results(
-            (json.dumps({**check, "proven": "yes"}),), rules, results, develop
-        )
-    (parsed,) = parse_check_results((json.dumps(check),), rules, results, develop)
-    assert parsed.command.commands[0].argv == ("help-diff",)
-    assert parsed.config == ("tools/help.txt",)
-
-
-def test_stage_a_results_become_proposals(develop: PlanItem) -> None:
-    rules = (_rule("unresolved"), _rule("unresolved", NAMES, "develop/2"))
-    results = _results(
-        rules,
-        {
-            "id": "develop/1",
-            "interpretation": "No flags change.",
-            "status": "approach",
-            "check": "lint",
-            "approach": "extend lint",
-        },
-        {"id": "develop/2", "status": "ambiguous", "candidates": ["short", "long"]},
-    )
-    automation = RuleAutomation().with_check("lint", _check(()))
-
-    updated, opened, notices = record_results(
-        automation, rules, results, (), develop, "v1", NOW
-    )
-
-    cli = updated.rules[rule_text_hash(CLI)]
-    assert (cli.status, cli.check, cli.extends) == ("approach_proposed", "lint", True)
-    assert cli.interpretation == "No flags change."
-    assert updated.rules[rule_text_hash(NAMES)].candidates == ("short", "long")
-    assert opened == (rule_text_hash(CLI), rule_text_hash(NAMES))
-    assert notices == ()
-
-
-def test_an_entry_that_moved_on_is_never_overwritten(develop: PlanItem) -> None:
-    rules = (_rule("unresolved"),)
-    results = _results(
-        rules,
-        {"id": "develop/1", "status": "approach", "check": "x", "approach": "a"},
-    )
-    decided = RuleEntry(CLI, "rejected", reason="operator: no", proposed_in="other")
-    automation = RuleAutomation().with_rule(rule_text_hash(CLI), decided)
-
-    updated, opened, notices = record_results(
-        automation, rules, results, (), develop, "v1", NOW
-    )
-
-    assert updated.rules[rule_text_hash(CLI)] == decided
-    assert opened == ()
-    assert "not overwritten" in notices[0]
-
-
-def test_a_prepared_extension_of_an_approved_check_is_a_pending_revision(
-    develop: PlanItem,
-) -> None:
-    rules = (_rule("approach_approved"),)
-    results = _results(
-        rules, {"id": "develop/1", "status": "approach", "check": "cli-surface"}
-    )
-    checks = parse_check_results(
-        (
-            json.dumps(
-                {
-                    "name": "cli-surface",
-                    "argv": ["lint-tool", "--strict"],
-                    "config": [],
-                    "covers": ["develop/1"],
-                    "proven": True,
-                }
-            ),
-        ),
-        rules,
-        results,
-        develop,
-    )
-    approved = _check(("other-hash",))
-    automation = (
-        RuleAutomation()
-        .with_rule(
-            rule_text_hash(CLI),
-            RuleEntry(CLI, "approach_approved", check="cli-surface"),
-        )
-        .with_check("cli-surface", approved)
-    )
-
-    updated, opened, _ = record_results(
-        automation, rules, results, checks, develop, "v1", NOW
-    )
-
-    check = updated.checks["cli-surface"]
-    assert check.spec == approved.spec
-    assert check.pending is not None
-    assert check.pending.covers == (rule_text_hash(CLI),)
-    assert updated.rules[rule_text_hash(CLI)].status == "proposed"
-    assert opened == ("cli-surface",)
-
-
-def test_new_checks_are_proposed_never_converted(develop: PlanItem) -> None:
-    rules = (_rule("approach_approved"),)
-    results = _results(
-        rules, {"id": "develop/1", "status": "approach", "check": "cli-surface"}
-    )
-    checks = parse_check_results(
-        (
-            json.dumps(
-                {
-                    "name": "cli-surface",
-                    "shell": "help-diff",
-                    "assert": ["empty"],
-                    "covers": ["develop/1"],
-                    "proven": False,
-                }
-            ),
-        ),
-        rules,
-        results,
-        develop,
-    )
-    automation = RuleAutomation().with_rule(
-        rule_text_hash(CLI), RuleEntry(CLI, "approach_approved", check="cli-surface")
-    )
-
-    updated, _, _ = record_results(
-        automation, rules, results, checks, develop, "v1", NOW
-    )
-
-    assert updated.checks["cli-surface"].status == "proposed"
-    assert updated.checks["cli-surface"].proposed_at == NOW
-
-
-def _proposed() -> RuleAutomation:
-    cli, names = rule_text_hash(CLI), rule_text_hash(NAMES)
-    return (
-        RuleAutomation()
-        .with_rule(cli, RuleEntry(CLI, "approach_proposed", approach="a", check="c"))
-        .with_rule(names, RuleEntry(NAMES, "ambiguous", candidates=("x", "y")))
-        .with_rule(rule_text_hash(LOGS), RuleEntry(LOGS, "proposed", check="log-check"))
-        .with_check("log-check", _check((rule_text_hash(LOGS),), "proposed"))
-    )
-
-
-KEYS = (rule_text_hash(CLI), rule_text_hash(NAMES), "log-check")
-
-
-def test_approving_decides_approaches_and_converts_checks() -> None:
-    automation, remaining, approved = apply_decisions(
-        _proposed(),
-        KEYS,
-        Decisions(approve=(rule_text_hash(CLI)[:12], "log-check")),
-        NOW,
-    )
-
-    assert automation.rules[rule_text_hash(CLI)].status == "approach_approved"
-    assert automation.checks["log-check"].status == "converted"
-    assert automation.checks["log-check"].approved_at == NOW
-    assert automation.rules[rule_text_hash(LOGS)].status == "converted"
-    assert remaining == (rule_text_hash(NAMES),)
-    assert approved == ("log-check",)
-
-
-def test_an_approach_and_a_pick_are_the_operators_own() -> None:
-    automation, remaining, _ = apply_decisions(
-        _proposed(),
-        KEYS,
-        Decisions(
-            approaches=((rule_text_hash(CLI), "Diff `--help` output."),),
-            picks=((rule_text_hash(NAMES)[:8], 2),),
-        ),
-        NOW,
-    )
-
-    cli = automation.rules[rule_text_hash(CLI)]
-    assert (cli.status, cli.approach) == ("approach_approved", "Diff `--help` output.")
-    names = automation.rules[rule_text_hash(NAMES)]
-    assert (names.status, names.interpretation) == ("interpreted", "y")
-    assert remaining == ("log-check",)
-
-
-def test_rejecting_rejects_every_undecided_proposal() -> None:
-    automation, remaining, _ = apply_decisions(
-        _proposed(), KEYS, Decisions(reject="not now"), NOW
-    )
-
-    assert remaining == ()
-    assert automation.rules[rule_text_hash(CLI)].reason == "operator: not now"
-    assert automation.rules[rule_text_hash(NAMES)].status == "rejected"
-    assert automation.checks["log-check"].status == "rejected"
-    assert automation.rules[rule_text_hash(LOGS)].status == "rejected"
-
-
-def test_an_approved_revision_replaces_the_running_check() -> None:
-    revision = CheckSpec(Commands((CommandDefinition(argv=("new",)),)), covers=("h",))
-    automation = RuleAutomation().with_check(
-        "lint", replace(_check(("old",)), pending=revision)
-    )
-
-    approved, remaining, _ = apply_decisions(
-        automation, ("lint",), Decisions(approve=("lint",)), NOW
-    )
-
-    assert approved.checks["lint"].spec == revision
-    assert approved.checks["lint"].pending is None
-    assert remaining == ()
-    rejected, _, _ = apply_decisions(automation, ("lint",), Decisions(reject="no"), NOW)
-    assert rejected.checks["lint"].status == "converted"
-    assert rejected.checks["lint"].pending is None
-
-
-def test_approvals_record_who_approved_and_in_which_run() -> None:
-    automation, _, _ = apply_decisions(
-        _proposed(),
-        KEYS,
-        Decisions(approve=(rule_text_hash(CLI), "log-check")),
-        NOW,
-        run="TASK-1/01-task",
-    )
-
-    cli = automation.rules[rule_text_hash(CLI)]
-    assert (cli.approved_by, cli.approved_in) == ("operator", "TASK-1/01-task")
-    check = automation.checks["log-check"]
-    assert (check.approved_by, check.approved_in) == ("operator", "TASK-1/01-task")
-    assert automation.rules[rule_text_hash(LOGS)].approved_by == "operator"
-    # Nothing undecided is marked approved.
-    assert automation.rules[rule_text_hash(NAMES)].approved_by is None
 
 
 def test_revoking_rejects_the_check_and_the_rules_it_covers() -> None:
@@ -594,21 +304,6 @@ def test_revoking_rejects_the_check_and_the_rules_it_covers() -> None:
         revoke_check(revoked, "log-check", "again")
     with pytest.raises(StateError, match="has no check 'nope'"):
         revoke_check(revoked, "nope", "x")
-
-
-@pytest.mark.parametrize(
-    ("decisions", "message"),
-    [
-        (Decisions(approve=("nope",)), "not an undecided proposal"),
-        (Decisions(approve=(rule_text_hash(NAMES),)), "--pick"),
-        (Decisions(picks=((rule_text_hash(NAMES), 3),)), "from 1 to 2"),
-        (Decisions(picks=((rule_text_hash(CLI), 1),)), "not an ambiguous rule"),
-        (Decisions(approaches=((rule_text_hash(NAMES), "x"),)), "proposed approach"),
-    ],
-)
-def test_decisions_are_validated(decisions: Decisions, message: str) -> None:
-    with pytest.raises(StateError, match=message):
-        apply_decisions(_proposed(), KEYS, decisions, NOW)
 
 
 def test_hints_default_to_the_step(develop: PlanItem) -> None:
@@ -645,36 +340,15 @@ def test_a_config_path_outside_the_directory_counts_as_missing(
     assert checks == ()
 
 
-def test_a_newly_approved_check_clears_a_stale_missing_file(
+def test_a_judged_rule_names_its_check_whose_config_is_missing(
     develop: PlanItem,
 ) -> None:
-    resolutions, _ = resolve_rules(
+    resolutions, checks = resolve_rules(
         develop, _converted(("lint.toml",)), directory=Path("/nonexistent")
     )
-    record = _record(status="in_progress", rule_resolutions=resolutions)
-    state = ExecutionState(
-        task_id="TASK-1",
-        run_id="01-task",
-        workflow="task",
-        agent="codex",
-        modes=(),
-        status="in_progress",
-        created_at=NOW,
-        updated_at=NOW,
-        snapshot_digest="x",
-        cursor=0,
-        active_item_id="develop",
-        item_executions=(record,),
-        steps=(),
-    )
-    rule = next(rule for rule in develop.rules if rule.id == "develop/1")
-    check = derived_check("lint", _check((rule.text_hash,)).spec, [rule])
 
-    updated = add_resolved_checks(state, 0, (check,), lambda: NOW)
+    needs = verification_needs(develop, _record(rule_resolutions=resolutions))
 
-    cli = next(
-        entry
-        for entry in updated.item_executions[0].rule_resolutions
-        if entry.id == "develop/1"
-    )
-    assert (cli.status, cli.check, cli.missing) == ("converted", "lint", None)
+    cli = next(need for need in needs if need.id == "develop/1")
+    assert (cli.state, cli.check, cli.missing) == ("judged", "lint", "lint.toml")
+    assert checks == ()

@@ -430,3 +430,117 @@ def test_a_task_id_claim_is_asked_under_the_lane(tmp_path: Path) -> None:
     assert service._configured_lane("gone") == "gone"
     assert service._task_exists("C-1", "chores")
     assert not service._task_exists("C-2", "chores")
+
+
+JUDGED = LANE_HOOK.replace(
+    "      - develop: Do it.\n",
+    "      - name: develop\n"
+    "        description: Do it.\n"
+    "        rules:\n"
+    "          - Keep the public CLI unchanged.\n"
+    "          - Name things clearly.\n",
+)
+NOTICE = "2 declared rules have no check yet, so a verifier judges them in every step."
+LANE_HINT = f'`"workflows": {{"{NAME}": {{"hooks_from": "<workflow>"}}}}` in ww.json'
+
+
+def _judged(root: Path, settings: dict[str, object] | None = None) -> Path:
+    _project(root, settings)
+    (root / "ww.yaml").write_text(JUDGED, encoding="utf-8")
+    return root
+
+
+def _discover(root: Path, capsys: pytest.CaptureFixture[str]) -> str:
+    assert main(["--root", str(root), "discover"]) == 0
+    return capsys.readouterr().out
+
+
+def _first_page(root: Path, workflow: str, capsys: pytest.CaptureFixture[str]) -> str:
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "start",
+                "S-1",
+                "--workflow",
+                workflow,
+                "--agent",
+                "codex",
+                "--runtime",
+                "single",
+                "--requirements",
+                "Do.",
+                "--role",
+                "manager",
+            ]
+        )
+        == 0
+    )
+    return capsys.readouterr().out
+
+
+def test_discover_and_start_name_the_rules_without_a_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _judged(tmp_path)
+
+    discovered = _discover(root, capsys)
+    page = _first_page(root, "task", capsys)
+
+    for text in (discovered, page):
+        assert NOTICE in text
+        assert f"The `ww-scriptize` skill starts `{NAME}`" in text
+        assert LANE_HINT in text
+    assert discovered.index("## Rules") < discovered.index("## Workflows")
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["rules_notice"].startswith(NOTICE)
+    assert main(["--root", str(root), "next", "S-1", "--role", "manager"]) == 0
+    assert NOTICE not in capsys.readouterr().out
+
+
+def test_the_notice_drops_the_lane_hint_once_the_lane_is_set(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _judged(tmp_path, {"workflows": {NAME: {"hooks_from": "task"}}})
+
+    discovered = _discover(root, capsys)
+
+    assert NOTICE in discovered
+    assert LANE_HINT not in discovered
+    assert NOTICE not in _first_page(root, NAME, capsys)
+
+
+def test_no_notice_while_the_workflow_is_switched_off(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _judged(tmp_path, {"workflows": {NAME: {"enabled": False}}})
+
+    assert "declared rule" not in _discover(root, capsys)
+    assert "declared rule" not in _first_page(root, "task", capsys)
+
+
+def test_no_notice_once_every_rule_is_scriptized(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _judged(tmp_path)
+    for rule in ("develop/1", "develop/2"):
+        assert (
+            main(
+                [
+                    "--root",
+                    str(root),
+                    "rules",
+                    "decline",
+                    rule,
+                    "--reason",
+                    "Judgement.",
+                    "--yes",
+                ]
+            )
+            == 0
+        )
+    capsys.readouterr()
+
+    assert "declared rule" not in _discover(root, capsys)

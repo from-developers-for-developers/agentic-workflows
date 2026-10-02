@@ -312,7 +312,7 @@ def test_a_check_whose_config_is_missing_is_judged_instead(
 
     assert held.verification is not None
     rule = next(rule for rule in held.verification.rules if rule.id == "develop/1")
-    assert (rule.state, rule.check, rule.missing) == ("judged", "lint", "lint.toml")
+    assert (rule.check, rule.missing) == ("lint", "lint.toml")
     page = MarkdownOutputAdapter().render_instruction(held)
     assert (
         "Its check `lint` does not run here: `lint.toml` is missing in this "
@@ -429,7 +429,7 @@ def test_an_emptied_pending_revision_is_dropped(
     assert check["covers"] == [rule_text_hash(CLI)]
 
 
-def test_the_preview_warns_before_overriding_an_undecided_proposal(
+def test_the_preview_reads_an_old_stores_proposal_as_unscriptized(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
@@ -470,8 +470,8 @@ def test_the_preview_warns_before_overriding_an_undecided_proposal(
         "`develop/1`: Keep the public CLI unchanged. (now: converted by check lint)"
         in (out)
     )
-    assert "(now: undecided in-task proposal (approach_proposed))" in out
-    assert "warning: this overrides an undecided in-task proposal" in out
+    assert "`develop/2`: Name things clearly. (now: unscriptized)" in out
+    assert "warning" not in out
     assert "- drops the pending revision of check lint" in out
 
 
@@ -682,10 +682,7 @@ def _dry_convert(root: Path, name: str, *covers: str) -> int:
     )
 
 
-WARNING = "warning: this overrides an undecided in-task proposal"
-
-
-def test_a_check_whose_pending_revision_still_covers_rules_is_kept(
+def test_a_check_left_covering_nothing_is_removed_with_its_pending_revision(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
@@ -707,17 +704,16 @@ def test_a_check_whose_pending_revision_still_covers_rules_is_kept(
 
     assert _convert(root, "other", "develop/1") == 0
 
-    out = capsys.readouterr()
-    assert "removes check lint" not in out.err
-    assert "drops the pending revision" not in out.err
+    assert "- removes check lint (converted): it covers nothing more" in (
+        capsys.readouterr().err
+    )
     store = _store(root)
-    check = store["checks"]["lint"]
-    assert check["covers"] == []
-    assert check["pending"]["covers"] == [rule_text_hash(NAMES)]
-    assert store["rules"][rule_text_hash(NAMES)]["check"] == "lint"
+    assert "lint" not in store["checks"]
+    # The old store's interim entry stays, read as unscriptized.
+    assert store["rules"][rule_text_hash(NAMES)]["status"] == "proposed"
 
 
-def test_removing_a_proposed_check_warns(
+def test_removing_a_proposed_check_is_shown(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
@@ -734,10 +730,10 @@ def test_removing_a_proposed_check_warns(
 
     out = capsys.readouterr().out
     assert "- removes check lint (proposed): it covers nothing more" in out
-    assert WARNING in out
+    assert "warning" not in out
 
 
-def test_dropping_a_pending_revision_warns(
+def test_a_changed_check_drops_its_pending_revision(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
@@ -759,16 +755,10 @@ def test_dropping_a_pending_revision_warns(
 
     # Its own pending revision, replaced by the new command.
     assert _dry_convert(root, "lint", "develop/1", "develop/2") == 0
-    out = capsys.readouterr().out
-    assert "- drops the pending revision of check lint" in out
-    assert WARNING in out
+    assert "- drops the pending revision of check lint" in capsys.readouterr().out
 
-    # Another check's revision, left covering nothing.
+    # Another check that loses a rule loses its revision too.
     assert _dry_convert(root, "names", "develop/1") == 0
     out = capsys.readouterr().out
     assert "- drops the pending revision of check lint" in out
-    assert WARNING in out
-
-    # No proposal is lost: no warning.
-    assert _dry_convert(root, "names", "develop/2") == 0
-    assert WARNING not in capsys.readouterr().out
+    assert "check logs" not in out

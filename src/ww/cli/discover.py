@@ -14,6 +14,7 @@ from ww.builtin_workflows import CATCHALL, is_builtin
 from ww.config import load_configuration, load_modes
 from ww.contracts import CALLER_ROLES
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
+from ww.errors import StateError
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
 from ww.hooks.notices import (
@@ -27,10 +28,16 @@ from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
 from ww.onboarding import Onboarding, OnboardingState
 from ww.open_work import OpenTask, open_work
 from ww.project_config import FILE_NAME, ON_REQUEST
+from ww.rule_conversion import scriptize_notice
+from ww.rule_store import RuleStore
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
 from ww.task_ids import EXPLICIT_TASK_FORMAT
-from ww.workflow_config import ALL_NAMES, delegation_requests
+from ww.workflow_config import (
+    ALL_NAMES,
+    WorkflowConfiguration,
+    delegation_requests,
+)
 
 START_ARGUMENTS = (
     "start <TASK-ID> --workflow <workflow> --agent <agent> "
@@ -164,6 +171,8 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             "explain": onboarding.explain,
             "guidance": _onboarding_guidance(onboarding, on_request=config.on_request),
         },
+        # Declared rules no check covers yet; never a reason not to start.
+        "rules_notice": _rules_notice(configuration, storage.root),
         "projects": [
             {
                 **project.to_dict(),
@@ -351,6 +360,7 @@ def _markdown(report: dict[str, object], days: int, unfinished: list[str]) -> li
         *_unreadable_lines(report),
         *(["## Unfinished tasks", "", *unfinished, ""] if unfinished else []),
         *_onboarding_lines(report),
+        *_rules_notice_lines(report),
         "## Workflows",
         "",
     ]
@@ -569,3 +579,21 @@ def _onboarding_lines(report: dict[str, object]) -> list[str]:
     if not guidance:
         return []
     return ["## Onboarding", "", *(f"- {line}" for line in guidance), ""]
+
+
+def _rules_notice(configuration: WorkflowConfiguration, root: Path) -> str | None:
+    """The unscriptized-rules notice, or none when the store cannot be read.
+
+    ``discover`` is the first command an agent runs; a malformed store is
+    reported by ``lint`` and by the commands that use it, never here.
+    """
+    try:
+        automation = RuleStore(root).load()
+    except StateError:
+        return None
+    return scriptize_notice(configuration, automation)
+
+
+def _rules_notice_lines(report: dict[str, object]) -> list[str]:
+    notice = report.get("rules_notice")
+    return ["## Rules", "", notice, ""] if isinstance(notice, str) else []

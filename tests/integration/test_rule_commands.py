@@ -49,12 +49,7 @@ Include "foo" in every Markdown file you change.
 
 A marker keeps the documentation searchable.
 """
-PASS = {
-    "id": "develop/1",
-    "status": "not_convertible",
-    "reason": "A matter of review.",
-    "verdict": "pass",
-}
+PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
 
 
 def _git(*arguments: str, cwd: Path) -> None:
@@ -328,8 +323,7 @@ def test_a_dispute_of_the_judged_rule_records_its_wording(tmp_path: Path) -> Non
             json.dumps(
                 {
                     "id": "develop/1",
-                    "status": "not_convertible",
-                    "reason": "A matter of review.",
+                    "status": "judged",
                     "verdict": "fail",
                     "failures": [{"file": "README.md", "what": "a flag changed"}],
                 }
@@ -520,7 +514,7 @@ def test_yes_alone_is_refused(
     _develop(root)
 
     assert main(["--root", str(root), "next", "TASK-1", "--yes"]) == 1
-    assert "--yes confirms next --retry, --force, --approve or --replan" in (
+    assert "--yes confirms next --retry, --force or --replan" in (
         capsys.readouterr().err
     )
 
@@ -631,7 +625,8 @@ def test_rules_lists_groups_and_step_rules(
     assert (group["name"], group["workflows"], group["steps"]) == ("docs", "*", "*")
     assert group["rules"][0]["source"] == "rules/docs/header.md"
     assert data["steps"][0]["rules"][0]["id"] == "develop/1"
-    assert (data["scripting"], data["check_guidance"]) == (True, None)
+    assert data["check_guidance"] is None
+    assert "scripting" not in data
 
 
 def test_rules_json_carries_the_rules_settings(
@@ -639,14 +634,27 @@ def test_rules_json_carries_the_rules_settings(
 ) -> None:
     root = _project(tmp_path)
     (root / "ww.json").write_text(
-        json.dumps({"rules": {"scripting": False, "check_guidance": "Run in docker."}}),
+        json.dumps({"rules": {"check_guidance": "Run in docker."}}),
         encoding="utf-8",
     )
 
     assert main(["--root", str(root), "rules", "--json"]) == 0
 
     data = json.loads(capsys.readouterr().out)
-    assert (data["scripting"], data["check_guidance"]) == (False, "Run in docker.")
+    assert data["check_guidance"] == "Run in docker."
+
+
+def test_rules_scripting_is_refused_as_an_unknown_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "ww.json").write_text(
+        json.dumps({"rules": {"scripting": False}}), encoding="utf-8"
+    )
+
+    assert main(["--root", str(root), "lint"]) == 1
+
+    assert "rules has unknown key(s): scripting" in capsys.readouterr().err
 
 
 def test_rules_names_group_filters(

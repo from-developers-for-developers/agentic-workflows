@@ -86,7 +86,7 @@ def test_the_store_round_trips_rules_and_checks(tmp_path: Path) -> None:
     assert automation.converted_check(text_hash) == ("deptrac", _check((text_hash,)))
 
 
-def test_a_pending_revision_is_kept_beside_the_approved_check(tmp_path: Path) -> None:
+def test_an_old_stores_pending_revision_round_trips(tmp_path: Path) -> None:
     revision = CheckSpec(Commands((CommandDefinition(argv=("deptrac", "analyse")),)))
     entry = CheckEntry(_check().spec, "converted", pending=revision)
     store = RuleStore(tmp_path)
@@ -95,7 +95,6 @@ def test_a_pending_revision_is_kept_beside_the_approved_check(tmp_path: Path) ->
 
     loaded = store.load().checks["deptrac"]
     assert loaded.pending == revision
-    assert loaded.undecided
     assert loaded.spec == _check().spec
 
 

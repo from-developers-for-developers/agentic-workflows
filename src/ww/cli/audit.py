@@ -94,8 +94,6 @@ def _invocation(args: argparse.Namespace) -> str:
             values.append("--retry")
         if args.force_reason is not None:
             values.extend(["--reason", "<redacted>"])
-        for key in args.approve:
-            values.extend(["--approve", key])
         if args.reassign:
             values.append("--reassign")
         if args.replan:

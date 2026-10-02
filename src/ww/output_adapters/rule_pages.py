@@ -18,7 +18,6 @@ from ww.output_adapters.markdown import (
 )
 from ww.rule_conversion import StoreChange, scriptize_state
 from ww.rule_store import (
-    UNDECIDED_RULE_STATUSES,
     CheckEntry,
     RuleAutomation,
     describe_command,
@@ -252,9 +251,8 @@ def render_convert_preview(
     )
     lines.append(f"- proven: {'yes' if spec.proven else 'no'}")
     lines.append(f"- covers {len(rules)} rule(s):")
-    undecided = _covered_rules(lines, rules, current)
+    _covered_rules(lines, rules, current)
     _side_effects(lines, rules, current, change)
-    _undecided_warning(lines, undecided, current, change)
     return "\n".join(lines) + "\n"
 
 
@@ -266,30 +264,21 @@ def render_decline_preview(
 ) -> str:
     """What ``ww rules decline`` would record."""
     lines = [f"Rules to record as not convertible ({reason}):"]
-    undecided = _covered_rules(lines, rules, current)
+    _covered_rules(lines, rules, current)
     _side_effects(lines, rules, current, change)
-    _undecided_warning(lines, undecided, current, change)
     return "\n".join(lines) + "\n"
 
 
 def _covered_rules(
     lines: Lines, rules: tuple[RuleDefinition, ...], current: RuleAutomation
-) -> bool:
-    """Each rule with where it stands in the store now.
-
-    Returns whether one of them holds an undecided in-task proposal.
-    """
-    undecided = False
+) -> None:
+    """Each rule with where it stands in the store now."""
     for rule in rules:
         entry = current.rules.get(rule.text_hash)
         state: str = scriptize_state(current, rule)
-        if entry is not None and entry.status in UNDECIDED_RULE_STATUSES:
-            undecided = True
-            state = f"undecided in-task proposal ({entry.status})"
-        elif state == "converted" and entry is not None and entry.check:
+        if state == "converted" and entry is not None and entry.check:
             state = f"converted by check {entry.check}"
         lines.append(f"  - `{rule.id}`: {rule.summary} (now: {state})")
-    return undecided
 
 
 def _side_effects(
@@ -311,27 +300,6 @@ def _side_effects(
         lines.append(f"- removes check {check} ({status}): it covers nothing more")
     for check in change.dropped_revisions:
         lines.append(f"- drops the pending revision of check {check}")
-
-
-def _undecided_warning(
-    lines: Lines, rules_undecided: bool, current: RuleAutomation, change: StoreChange
-) -> None:
-    """Warn when the change discards a proposal a task may be waiting on.
-
-    That is an undecided rule proposal, a removed check with an undecided
-    proposal or revision, or any dropped pending revision.
-    """
-    if not (
-        rules_undecided
-        or change.dropped_revisions
-        or any(current.checks[check].undecided for check in change.dropped_checks)
-    ):
-        return
-    lines.append(
-        "- warning: this overrides an undecided in-task proposal; a task "
-        "stopped for the operator to decide it (`rules_proposed`) has "
-        "nothing left to approve with `next --approve`."
-    )
 
 
 def _rule_name(automation: RuleAutomation, key: str) -> str:

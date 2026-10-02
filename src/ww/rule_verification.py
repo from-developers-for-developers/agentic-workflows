@@ -1,30 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Verification of rules without a command, and the operator's approval gate.
+"""Verification of rules without a command.
 
-A rule without a command is never graded by the worker who did the step. When
-the step's worker completes and its checks pass, ww holds the completion and
+A rule without a command is never graded by the worker who did the step. As
+the step begins, each such rule resolves against the rule-automation store:
+a rule whose wording has a converted check is checked by it, where the
+check's configuration files exist; every other rule is judged. When the
+step's worker completes and its checks pass, ww holds the completion and
 inserts verification items right before the step: ww-generated agent items,
-one per distinct worker hint set among the rules, each asked about its rules:
+one per distinct worker hint set among the judged rules, each giving a
+``pass`` or ``fail`` verdict on its rules. A verifier never writes the store:
+turning rules into checks is ``ww-scriptize-rules``'s job, outside tasks.
 
-- an ``unresolved`` rule (the store knows nothing, or the operator picked its
-  reading) gets an interpretation and an approach: which command or tool
-  would check it, and which check it would join (stage A);
-- an ``approach_approved`` rule gets its check prepared, proven, and reported
-  (stage B);
-- a ``judged`` rule, and one the verifier could not convert, gets a verdict.
-
-What the verifiers report goes into the rule-automation store as proposals,
-never as approved checks. A failing verdict sends the step back to its worker
-through the fix loop. A proposal stops the task for the operator
-(``rules_proposed``), who approves, rewrites, picks, or rejects; ww then
-re-verifies what is left and finally records the held completion, running
-any newly approved check on it first. Nothing is reasoned about twice: a
-wording with an approved check is checked by it in every later step.
+A failing verdict sends the step back to its worker through the fix loop;
+once every rule passes, ww records the held completion.
 
 This module holds the pure parts: resolving a step's rules against the store,
 choosing what a round must ask, the verification items and round records,
-parsing and applying verifier results, and applying operator decisions. The
-service orchestrates them inside ``complete`` and ``next``.
+and parsing verifier results. The service orchestrates them inside
+``complete`` and ``next``.
 """
 
 from __future__ import annotations
@@ -34,13 +27,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ww.actions import Commands, PlannedAction, Prompt, actions
-from ww.contracts import (
-    RuleResolutionStatus,
-    RuleResultStatus,
-    Verdict,
-    VerificationState,
-)
+from ww.actions import PlannedAction, Prompt, actions
+from ww.contracts import RuleResultStatus, Verdict
 from ww.errors import StateError
 from ww.execution_models import (
     CheckReport,
@@ -66,25 +54,11 @@ from ww.plan import (
     WorkflowPlan,
     number_step_paths,
 )
-from ww.rule_store import (
-    UNDECIDED_RULE_STATUSES,
-    CheckEntry,
-    CheckSpec,
-    RuleApprover,
-    RuleAutomation,
-    RuleEntry,
-    is_check_name,
-    is_config_path,
-    parse_command,
-)
+from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, is_config_path
 from ww.transitions import Clock, project_steps
 from ww.workflow_config import RuleHints
 
-# The shortest rule-hash prefix the operator may type for a decision.
-MIN_HASH_PREFIX = 8
-HASH_LENGTH = 64
 SKIPPED_ROUND = "skipped: nothing to verify in this round"
-MIN_CANDIDATES = 2
 
 
 def judged_rules(item: PlanItem) -> tuple[PlannedRule, ...]:
@@ -102,20 +76,17 @@ def resolve_rules(
     item: PlanItem,
     automation: RuleAutomation,
     *,
-    scripting: bool = True,
     directory: Path | None = None,
 ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]:
     """How each rule without a command is enforced, as the step begins.
 
-    A rule whose wording has an approved check is checked by it; several
-    rules sharing one check get one planned check that covers them all. A
-    rule whose approach was approved, or whose reading the operator picked,
-    is still unresolved: a verifier prepares or proposes its check. Without
-    ``scripting`` (``rules.scripting: false``) every other rule is judged:
-    no verifier proposes or prepares a check. With ``directory``, the one the
-    step's checks run in, a converted check whose configuration files are not
-    all there, such as one built on a branch not merged yet, does not apply:
-    its rules are judged, naming the missing file.
+    A rule whose wording has a converted check is checked by it; several
+    rules sharing one check get one planned check that covers them all.
+    Every other rule is judged by a verifier, whatever else the store says
+    about it. With ``directory``, the one the step's checks run in, a
+    converted check whose configuration files are not all there, such as one
+    built on a branch not merged yet, does not apply: its rules are judged,
+    naming the missing file.
     """
     resolutions: list[RuleResolution] = []
     covered: dict[str, list[PlannedRule]] = {}
@@ -144,16 +115,7 @@ def resolve_rules(
                 RuleResolution(rule.id, "converted", name, interpretation)
             )
             continue
-        status: RuleResolutionStatus
-        if not scripting:
-            status = "judged"
-        elif entry is None or entry.status in {"interpreted", "approach_approved"}:
-            status = "unresolved"
-        elif entry.status in UNDECIDED_RULE_STATUSES:
-            status = "pending_operator"
-        else:
-            status = "judged"
-        resolutions.append(RuleResolution(rule.id, status, None, interpretation))
+        resolutions.append(RuleResolution(rule.id, "judged", None, interpretation))
     checks = tuple(
         derived_check(name, specs[name].spec, rules) for name, rules in covered.items()
     )
@@ -179,7 +141,7 @@ def _missing_config(spec: CheckSpec, directory: Path | None) -> str | None:
 
 
 def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
-    """One approved store check, planned for the step rules it covers.
+    """One converted store check, planned for the step rules it covers.
 
     Its globs are the union of its rules' globs, or none when any covered
     rule applies to every file; it may fail as often as the most lenient of
@@ -202,79 +164,36 @@ def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> Plann
 
 
 def verification_needs(
-    item: PlanItem, record: PlanItemExecution, automation: RuleAutomation
+    item: PlanItem, record: PlanItemExecution
 ) -> tuple[VerificationRule, ...]:
-    """The rules of a completing step that a verifier must still look at.
+    """The rules of a completing step that a verifier must still judge.
 
     Rules checked by a resolved derived check, rules with a verdict in the
-    current hold, rules whose proposal from this step awaits the operator,
-    and rules the operator waived for this step are done for now.
+    current hold, and rules the operator waived for this step are done for
+    now. What the step began with says the rest: a rule's reading, and the
+    converted check whose configuration is missing here.
     """
     covered = {rule_id for check in record.resolved_checks for rule_id in check.covers}
     covered.update(key for key, _ in record.checks_waived)
     held = record.held_completion
-    waiting = set(record.open_proposals)
+    began = {resolution.id: resolution for resolution in record.rule_resolutions}
     needs: list[VerificationRule] = []
     for rule in judged_rules(item):
         if rule.id in covered or (held is not None and held.verdict(rule.id)):
             continue
-        entry = automation.rules.get(rule.text_hash)
-        if rule.text_hash in waiting or (
-            entry is not None and entry.check is not None and entry.check in waiting
-        ):
-            continue
-        interpretation = entry.interpretation if entry else None
-        # A rule the step began by judging (``rules.scripting: false``, or a
-        # converted check whose configuration is missing here) stays judged,
-        # whatever the store says now.
-        began = next(
-            (
-                resolution
-                for resolution in record.rule_resolutions
-                if resolution.id == rule.id and resolution.status == "judged"
-            ),
-            None,
-        )
-        began_judged = began is not None
-        if began_judged:
-            state: VerificationState = "judged"
-        elif entry is None or entry.status == "interpreted":
-            state = "unresolved"
-        elif entry.status == "approach_approved":
-            state = "approach_approved"
-        else:
-            state = "judged"
+        resolution = began.get(rule.id)
         needs.append(
             VerificationRule(
                 id=rule.id,
                 text=rule.text,
                 text_hash=rule.text_hash,
-                state=state,
-                interpretation=interpretation,
-                approach=entry.approach if entry and state != "unresolved" else None,
-                check=(
-                    entry.check
-                    if entry and state == "approach_approved"
-                    else began.check
-                    if began is not None and began.missing is not None
-                    else None
-                ),
-                pending_operator=(
-                    state == "judged"
-                    and entry is not None
-                    and entry.status in UNDECIDED_RULE_STATUSES
-                ),
-                missing=began.missing if began is not None else None,
+                state="judged",
+                interpretation=resolution.interpretation if resolution else None,
+                check=resolution.check if resolution and resolution.missing else None,
+                missing=resolution.missing if resolution else None,
             )
         )
     return tuple(needs)
-
-
-def undecided_proposals(
-    record: PlanItemExecution, automation: RuleAutomation
-) -> tuple[str, ...]:
-    """This step's proposals the operator has not decided yet."""
-    return tuple(key for key in record.open_proposals if automation.undecided(key))
 
 
 def effective_hints(rule: PlannedRule, item: PlanItem) -> RuleHints:
@@ -539,10 +458,9 @@ def record_round(
     state: ExecutionState,
     index: int,
     verdicts: tuple[RuleVerdict, ...],
-    opened: tuple[str, ...],
     now: Clock,
 ) -> ExecutionState:
-    """Add one verifier's verdicts and proposals to the held step's record."""
+    """Add one verifier's verdicts to the held step's record."""
     records = list(state.item_executions)
     record = records[index]
     held = record.held_completion
@@ -557,69 +475,6 @@ def record_round(
                 *(entry for entry in held.verdicts if entry.id not in replaced),
                 *verdicts,
             ),
-        ),
-        open_proposals=tuple(dict.fromkeys((*record.open_proposals, *opened))),
-    )
-    return replace(state, item_executions=tuple(records), updated_at=now())
-
-
-def stop_for_proposals(
-    state: ExecutionState,
-    plan: WorkflowPlan,
-    index: int,
-    keys: tuple[str, ...],
-    now: Clock,
-) -> ExecutionState:
-    """Stop the task for the operator to decide the step's proposals."""
-    message = "proposals await the operator: " + ", ".join(_short(key) for key in keys)
-    records = list(state.item_executions)
-    records[index] = replace(records[index], status="failed", error=message)
-    return project_steps(
-        _without_assignment(
-            replace(
-                state,
-                status="failed",
-                failure_kind="rules_proposed",
-                cursor=index,
-                active_item_id=plan.items[index].id,
-                item_executions=tuple(records),
-                last_error=message,
-                updated_at=now(),
-            )
-        ),
-        plan,
-        now,
-    )
-
-
-def decide_proposals(
-    state: ExecutionState, index: int, remaining: tuple[str, ...], now: Clock
-) -> ExecutionState:
-    """Keep only the proposals still undecided on the stopped step's record."""
-    records = list(state.item_executions)
-    records[index] = replace(records[index], open_proposals=remaining)
-    return replace(state, item_executions=tuple(records), updated_at=now())
-
-
-def add_resolved_checks(
-    state: ExecutionState, index: int, checks: tuple[PlannedCheck, ...], now: Clock
-) -> ExecutionState:
-    """Enforce newly approved checks on the held step, replacing same names."""
-    records = list(state.item_executions)
-    record = records[index]
-    names = {check.id for check in checks}
-    covered = {rule_id: check.id for check in checks for rule_id in check.covers}
-    records[index] = replace(
-        record,
-        resolved_checks=(
-            *(check for check in record.resolved_checks if check.id not in names),
-            *checks,
-        ),
-        rule_resolutions=tuple(
-            replace(entry, status="converted", check=covered[entry.id], missing=None)
-            if entry.id in covered
-            else entry
-            for entry in record.rule_resolutions
         ),
     )
     return replace(state, item_executions=tuple(records), updated_at=now())
@@ -698,57 +553,15 @@ class JudgedFailure:
 
 @dataclass(frozen=True)
 class RuleResult:
-    """What a verifier reported about one rule, validated against its state."""
+    """A verifier's verdict on one rule, with its evidence when it fails."""
 
     id: str
     status: RuleResultStatus
-    interpretation: str | None = None
-    check: str | None = None
-    approach: str | None = None
-    reason: str | None = None
-    candidates: tuple[str, ...] = ()
-    verdict: Verdict | None = None
+    verdict: Verdict
     failures: tuple[JudgedFailure, ...] = ()
 
 
-@dataclass(frozen=True)
-class CheckProposal:
-    """A check a verifier prepared for approved approaches (stage B)."""
-
-    name: str
-    command: Commands
-    config: tuple[str, ...]
-    covers: tuple[str, ...]
-    proven: bool
-
-
-_ALLOWED: dict[VerificationState, tuple[RuleResultStatus, ...]] = {
-    "unresolved": ("approach", "not_convertible", "ambiguous"),
-    "approach_approved": ("approach", "not_convertible"),
-    "judged": ("judged",),
-}
-_RULE_RESULT_KEYS = {
-    "id",
-    "interpretation",
-    "status",
-    "check",
-    "approach",
-    "reason",
-    "candidates",
-    "verdict",
-    "failures",
-}
-_CHECK_RESULT_KEYS = {
-    "name",
-    "argv",
-    "shell",
-    "args",
-    "env",
-    "assert",
-    "config",
-    "covers",
-    "proven",
-}
+_RULE_RESULT_KEYS = {"id", "status", "verdict", "failures"}
 
 
 def parse_rule_results(
@@ -778,76 +591,21 @@ def parse_rule_results(
 
 def _rule_result(data: dict[str, Any], rule: VerificationRule) -> RuleResult:
     label = f"--rule-result for {rule.id!r}"
+    # A verifier only judges: the status says so before anything else.
+    if data.get("status") != "judged":
+        raise StateError(f"{label}: status must be judged")
     unknown = set(data) - _RULE_RESULT_KEYS
     if unknown:
         raise StateError(f"{label} has unknown keys: " + ", ".join(sorted(unknown)))
-    allowed = _ALLOWED[rule.state]
-    status = data.get("status")
-    if status not in allowed:
-        raise StateError(
-            f"{label}: status must be one of {', '.join(allowed)} for a rule that "
-            f"is {rule.state}"
-        )
-    present = {key for key, value in data.items() if value is not None}
-
-    def text(key: str, *, required: bool) -> str | None:
-        value = data.get(key)
-        if value is None:
-            if required:
-                raise StateError(f"{label}: {status} requires {key}")
-            return None
-        if not isinstance(value, str) or not value.strip():
-            raise StateError(f"{label}: {key} must be a non-empty string")
-        return value.strip()
-
-    def forbid(*keys: str) -> None:
-        extra = sorted(present & set(keys))
-        if extra:
-            raise StateError(f"{label}: {status} takes no {', '.join(extra)}")
-
-    interpretation = text("interpretation", required=False)
-    check = approach = reason = None
-    candidates: tuple[str, ...] = ()
-    if status == "approach":
-        check = text("check", required=True)
-        assert check is not None
-        if not is_check_name(check):
-            raise StateError(f"{label}: check must be a short kebab-case name")
-        approach = text("approach", required=rule.state == "unresolved")
-        forbid("reason", "candidates", "verdict", "failures")
-    elif status == "not_convertible":
-        reason = text("reason", required=True)
-        forbid("check", "approach", "candidates")
-    elif status == "ambiguous":
-        value = data.get("candidates")
-        if (
-            not isinstance(value, list)
-            or len(value) < MIN_CANDIDATES
-            or not all(isinstance(item, str) and item.strip() for item in value)
-        ):
-            raise StateError(f"{label}: ambiguous requires two or more candidates")
-        candidates = tuple(item.strip() for item in value)
-        forbid("check", "approach", "reason", "verdict", "failures")
-    else:
-        forbid("check", "approach", "reason", "candidates")
-    verdict: Verdict | None = None
-    failures: tuple[JudgedFailure, ...] = ()
-    if status in {"judged", "not_convertible"}:
-        value = data.get("verdict")
-        if value not in {"pass", "fail"}:
-            raise StateError(f"{label}: {status} requires verdict pass or fail")
-        verdict = "pass" if value == "pass" else "fail"
-        failures = _failures(data.get("failures"), label, verdict)
+    value = data.get("verdict")
+    if value not in {"pass", "fail"}:
+        raise StateError(f"{label}: judged requires verdict pass or fail")
+    verdict: Verdict = "pass" if value == "pass" else "fail"
     return RuleResult(
         id=rule.id,
-        status=status,
-        interpretation=interpretation,
-        check=check,
-        approach=approach,
-        reason=reason,
-        candidates=candidates,
+        status="judged",
         verdict=verdict,
-        failures=failures,
+        failures=_failures(data.get("failures"), label, verdict),
     )
 
 
@@ -875,81 +633,6 @@ def _failures(value: Any, label: str, verdict: Verdict) -> tuple[JudgedFailure, 
     return tuple(result)
 
 
-def parse_check_results(
-    raw: tuple[str, ...],
-    rules: tuple[VerificationRule, ...],
-    results: tuple[RuleResult, ...],
-    item: PlanItem,
-) -> tuple[CheckProposal, ...]:
-    """One validated check per check a stage-B rule names, and no other."""
-    states = {rule.id: rule.state for rule in rules}
-    naming: dict[str, list[str]] = {}
-    for result in results:
-        if result.status == "approach" and states[result.id] == "approach_approved":
-            assert result.check is not None
-            naming.setdefault(result.check, []).append(result.id)
-    judged = {rule.id for rule in judged_rules(item)}
-    parsed: dict[str, CheckProposal] = {}
-    for text in raw:
-        data = _json_object(text, "--check-result")
-        unknown = set(data) - _CHECK_RESULT_KEYS
-        if unknown:
-            raise StateError(
-                "--check-result has unknown keys: " + ", ".join(sorted(unknown))
-            )
-        name = data.get("name")
-        if not isinstance(name, str) or not is_check_name(name):
-            raise StateError("--check-result requires a short kebab-case name")
-        label = f"--check-result {name!r}"
-        if name not in naming:
-            raise StateError(
-                f"{label} is named by no rule prepared in this verification"
-            )
-        if name in parsed:
-            raise StateError(f"{label} is given twice")
-        command = parse_command(
-            {
-                key: data[key]
-                for key in ("argv", "shell", "args", "env", "assert")
-                if key in data and data[key] is not None
-            },
-            label,
-        )
-        config = data.get("config", [])
-        if not isinstance(config, list) or not all(
-            isinstance(path, str) and path for path in config
-        ):
-            raise StateError(f"{label}: config must be a list of project paths")
-        covers = data.get("covers")
-        if (
-            not isinstance(covers, list)
-            or not covers
-            or not all(isinstance(rule_id, str) for rule_id in covers)
-        ):
-            raise StateError(f"{label}: covers must list the rule IDs it checks")
-        strangers = [rule_id for rule_id in covers if rule_id not in judged]
-        if strangers:
-            raise StateError(
-                f"{label} covers {', '.join(strangers)}, which are not rules "
-                "without a command of this step"
-            )
-        uncovered = [rule_id for rule_id in naming[name] if rule_id not in covers]
-        if uncovered:
-            raise StateError(
-                f"{label} must cover the rules that name it: " + ", ".join(uncovered)
-            )
-        proven = data.get("proven")
-        if not isinstance(proven, bool):
-            raise StateError(f"{label}: proven must be true or false")
-        parsed[name] = CheckProposal(
-            name, command, tuple(config), tuple(dict.fromkeys(covers)), proven
-        )
-    missing = [name for name in naming if name not in parsed]
-    if missing:
-        raise StateError("--check-result is missing for " + ", ".join(missing))
-    return tuple(parsed[name] for name in naming)
-
-
 def _json_object(text: str, flag: str) -> dict[str, Any]:
     try:
         data = json.loads(text)
@@ -969,7 +652,6 @@ def verdicts_of(results: tuple[RuleResult, ...], by: str) -> tuple[RuleVerdict, 
             tuple(failure.text() for failure in result.failures),
         )
         for result in results
-        if result.verdict is not None
     )
 
 
@@ -997,261 +679,7 @@ def judged_report(
     )
 
 
-def record_results(
-    automation: RuleAutomation,
-    rules: tuple[VerificationRule, ...],
-    results: tuple[RuleResult, ...],
-    checks: tuple[CheckProposal, ...],
-    item: PlanItem,
-    by: str,
-    now: str,
-    *,
-    run: str | None = None,
-) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
-    """Write a verifier's results into the store; return proposals and notices.
-
-    Stage A writes approaches, unconvertible rules, and ambiguous ones; stage
-    B writes each prepared check as ``proposed``, never ``converted``, and
-    its rules as ``proposed``. An entry that moved on since the verification
-    began, say another task's decision, is not overwritten: a notice says so.
-    A prepared extension of an approved check becomes its pending revision,
-    so the approved command keeps running until the operator approves it.
-    Every entry written records ``run`` (``<task>/<run>``) as its
-    ``proposed_run``.
-    """
-    hashes = {rule.id: rule.text_hash for rule in item.rules}
-    opened: list[str] = []
-    notices: list[str] = []
-    for rule, result in zip(rules, results, strict=True):
-        if rule.state == "judged":
-            continue
-        entry = automation.rules.get(rule.text_hash)
-        current = entry.status if entry is not None else None
-        expected = (
-            {None, "interpreted"}
-            if rule.state == "unresolved"
-            else {"approach_approved"}
-        )
-        # The verifier's own earlier write, from a completion interrupted
-        # before the task state recorded it, is rewritten, not refused.
-        own = entry is not None and entry.proposed_in == by
-        if current not in expected and not own:
-            notices.append(
-                f"rule {rule.id}: the store already has it as {current}; not "
-                "overwritten"
-            )
-            continue
-        interpretation = result.interpretation or rule.interpretation
-        if result.status == "approach" and rule.state == "unresolved":
-            updated = RuleEntry(
-                text=rule.text,
-                status="approach_proposed",
-                interpretation=interpretation,
-                approach=result.approach,
-                check=result.check,
-                extends=result.check in automation.checks,
-                proposed_in=by,
-                proposed_run=run,
-            )
-            opened.append(rule.text_hash)
-        elif result.status == "approach":
-            assert entry is not None
-            updated = replace(
-                entry,
-                status="proposed",
-                interpretation=interpretation,
-                approach=result.approach or entry.approach,
-                check=result.check,
-                proposed_in=by,
-                proposed_run=run,
-            )
-        elif result.status == "not_convertible":
-            updated = RuleEntry(
-                text=rule.text,
-                status="not_convertible",
-                interpretation=interpretation,
-                reason=result.reason,
-                proposed_in=by,
-                proposed_run=run,
-            )
-        else:
-            updated = RuleEntry(
-                text=rule.text,
-                status="ambiguous",
-                interpretation=interpretation,
-                candidates=result.candidates,
-                proposed_in=by,
-                proposed_run=run,
-            )
-            opened.append(rule.text_hash)
-        automation = automation.with_rule(rule.text_hash, updated)
-    for check in checks:
-        spec = CheckSpec(
-            check.command,
-            check.config,
-            tuple(hashes[rule_id] for rule_id in check.covers),
-            check.proven,
-        )
-        existing = automation.checks.get(check.name)
-        if existing is not None and existing.status == "converted":
-            revised = replace(existing, pending=spec, proposed_in=by, proposed_run=run)
-        else:
-            revised = CheckEntry(
-                spec, "proposed", proposed_at=now, proposed_in=by, proposed_run=run
-            )
-        automation = automation.with_check(check.name, revised)
-        opened.append(check.name)
-    return automation, tuple(dict.fromkeys(opened)), tuple(notices)
-
-
-# --- The operator's decisions -------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Decisions:
-    """What the operator decided at a ``rules_proposed`` stop."""
-
-    approve: tuple[str, ...] = ()
-    approaches: tuple[tuple[str, str], ...] = ()
-    picks: tuple[tuple[str, int], ...] = ()
-    reject: str | None = None
-
-    def __bool__(self) -> bool:
-        return bool(self.approve or self.approaches or self.picks) or (
-            self.reject is not None
-        )
-
-
-def resolve_key(key: str, keys: tuple[str, ...]) -> str:
-    """A proposal by check name or rule hash; a hash may be a unique prefix."""
-    if key in keys:
-        return key
-    matches = [
-        candidate
-        for candidate in keys
-        if len(key) >= MIN_HASH_PREFIX and candidate.startswith(key)
-    ]
-    if len(matches) == 1:
-        return matches[0]
-    raise StateError(
-        f"{key!r} is not an undecided proposal of this stop; choose from "
-        + ", ".join(_short(candidate) for candidate in keys)
-    )
-
-
-def apply_decisions(
-    automation: RuleAutomation,
-    keys: tuple[str, ...],
-    decisions: Decisions,
-    now: str,
-    *,
-    approved_by: RuleApprover = "operator",
-    run: str | None = None,
-) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
-    """Apply the operator's decisions to undecided proposals.
-
-    Returns the store, the proposals still undecided, and the checks now
-    approved. Approving a rule's approach lets a verifier prepare its check;
-    approving a check converts it and every rule it covers, or replaces the
-    approved command with its pending revision. ``reject`` rejects every
-    proposal still undecided. Each approval, and each picked reading, records
-    ``approved_by`` and the run it was made in (``<task>/<run>``).
-    """
-    approval: dict[str, Any] = {"approved_by": approved_by, "approved_in": run}
-    approved: list[str] = []
-    for key in decisions.approve:
-        name = resolve_key(key, keys)
-        if name in automation.checks:
-            check = automation.checks[name]
-            if check.pending is not None:
-                check = replace(check, spec=check.pending, pending=None)
-            elif check.status != "proposed":
-                raise StateError(f"check {name!r} has nothing to approve")
-            check = replace(check, status="converted", approved_at=now, **approval)
-            automation = automation.with_check(name, check)
-            for text_hash in check.spec.covers:
-                entry = automation.rules.get(text_hash)
-                if entry is not None:
-                    automation = automation.with_rule(
-                        text_hash,
-                        replace(entry, status="converted", check=name, **approval),
-                    )
-            approved.append(name)
-            continue
-        entry = automation.rules[name]
-        if entry.status == "ambiguous":
-            raise StateError(
-                f"rule {_short(name)} is ambiguous: choose a reading with --pick"
-            )
-        if entry.status != "approach_proposed":
-            raise StateError(f"rule {_short(name)} has no approach to approve")
-        automation = automation.with_rule(
-            name, replace(entry, status="approach_approved", **approval)
-        )
-    for key, text in decisions.approaches:
-        name = resolve_key(key, keys)
-        entry = automation.rules.get(name)
-        if entry is None or entry.status != "approach_proposed":
-            raise StateError(f"{_short(name)} is not a rule with a proposed approach")
-        if not text.strip():
-            raise StateError("--approach needs the approach in words")
-        automation = automation.with_rule(
-            name,
-            replace(
-                entry, status="approach_approved", approach=text.strip(), **approval
-            ),
-        )
-    for key, number in decisions.picks:
-        name = resolve_key(key, keys)
-        entry = automation.rules.get(name)
-        if entry is None or entry.status != "ambiguous":
-            raise StateError(f"{_short(name)} is not an ambiguous rule")
-        if not 1 <= number <= len(entry.candidates):
-            raise StateError(
-                f"--pick for {_short(name)} takes a reading from 1 to "
-                f"{len(entry.candidates)}"
-            )
-        automation = automation.with_rule(
-            name,
-            replace(
-                entry,
-                status="interpreted",
-                interpretation=entry.candidates[number - 1],
-                **approval,
-            ),
-        )
-    if decisions.reject is not None:
-        reason = f"operator: {decisions.reject}"
-        for name in keys:
-            if not automation.undecided(name):
-                continue
-            if name in automation.checks:
-                check = automation.checks[name]
-                proposed = check.pending or check.spec
-                automation = automation.with_check(
-                    name,
-                    replace(check, pending=None)
-                    if check.status == "converted"
-                    else replace(check, status="rejected"),
-                )
-                # Its rules were waiting for this check: they are rejected too.
-                for text_hash in proposed.covers:
-                    entry = automation.rules.get(text_hash)
-                    if entry is not None and (entry.status, entry.check) == (
-                        "proposed",
-                        name,
-                    ):
-                        automation = automation.with_rule(
-                            text_hash,
-                            replace(entry, status="rejected", reason=reason),
-                        )
-            else:
-                automation = automation.with_rule(
-                    name,
-                    replace(automation.rules[name], status="rejected", reason=reason),
-                )
-    remaining = tuple(key for key in keys if automation.undecided(key))
-    return automation, remaining, tuple(approved)
+# --- Revoking a check ----------------------------------------------------------
 
 
 def revoke_check(
@@ -1286,22 +714,3 @@ def revoke_check(
         )
         rejected.append(text_hash)
     return automation, tuple(rejected)
-
-
-def approved_checks(
-    item: PlanItem, automation: RuleAutomation, names: tuple[str, ...]
-) -> tuple[PlannedCheck, ...]:
-    """Newly approved checks, planned for the step rules they cover."""
-    rules = judged_rules(item)
-    result = []
-    for name in names:
-        check = automation.checks[name]
-        covered = [rule for rule in rules if rule.text_hash in check.spec.covers]
-        if covered:
-            result.append(derived_check(name, check.spec, covered))
-    return tuple(result)
-
-
-def _short(key: str) -> str:
-    """A rule hash as the operator types it; a check name as is."""
-    return key[:12] if len(key) == HASH_LENGTH else key

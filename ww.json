@@ -12,9 +12,7 @@
     "check_unfinished": true,
     "recent_days": 3
   },
-  "rules": {
-    "scripting": true
-  },
+  "rules": {},
   "builtins": {
     "init": {
       "model": "cheapest",

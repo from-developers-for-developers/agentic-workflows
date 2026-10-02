@@ -9,7 +9,6 @@ import pytest
 
 from ww.cli.prompts import (
     _confirm_force_next,
-    confirm_approval,
     confirm_interrupted_retry,
 )
 
@@ -25,10 +24,6 @@ def _unread(_prompt: str) -> str:
 CONFIRMATIONS = [
     (confirm_interrupted_retry, "Retry"),
     (_confirm_force_next, "Force"),
-    (
-        lambda **kwargs: confirm_approval("check deptrac: deptrac analyse", **kwargs),
-        "Approval",
-    ),
 ]
 
 

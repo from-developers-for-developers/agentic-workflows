@@ -382,7 +382,7 @@ def plan_filter(
 def plan_promote(
     project: RuleProject, automation: RuleAutomation, name: str
 ) -> RuleWrite:
-    """An approved store check copied into the rule files it covers."""
+    """A converted store check copied into the rule files it covers."""
     check = automation.checks.get(name)
     if check is None:
         known = ", ".join(sorted(automation.checks))
@@ -393,8 +393,9 @@ def plan_promote(
     if check.status != "converted" or check.pending is not None:
         raise StateError(
             f"check {name!r} is {check.status}"
-            + (" with a revision awaiting approval" if check.pending else "")
-            + "; only an approved check without a pending revision is promoted"
+            + (" with a pending revision an earlier ww left" if check.pending else "")
+            + "; only a converted check without one is promoted, so record it "
+            "again with `rules convert` first"
         )
     waiting = sorted(
         key[:12]
@@ -403,8 +404,8 @@ def plan_promote(
     )
     if waiting:
         raise StateError(
-            f"rules {', '.join(waiting)} wait on a decision about check {name!r}; "
-            "decide them first"
+            f"rules {', '.join(waiting)} name check {name!r} without being "
+            "converted by it; record it again with `rules convert` first"
         )
     covers = check.spec.covers
     declared = _declared_rules(project.configuration)

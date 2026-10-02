@@ -33,15 +33,7 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
     assert config.settings_for("ww/git") == {}
     assert config.limits == Limits(rounds=3, fixes=3)
     assert config.agent_hooks == AgentHooks(check_unfinished=True, recent_days=3)
-    assert config.rule_scripting is True
     assert config.rule_check_guidance is None
-
-
-@pytest.mark.parametrize("value", [True, False])
-def test_rule_scripting_loads_from_project_config(tmp_path: Path, value: bool) -> None:
-    path = write(tmp_path, {"rules": {"scripting": value}})
-
-    assert load_project_config(path).rule_scripting is value
 
 
 def test_the_check_guidance_loads_trimmed_and_blank_means_unset(
@@ -180,7 +172,7 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ),
         ({"rules": "auto"}, "rules must be an object"),
         ({"rules": {"approval": "auto"}}, "rules has unknown key(s): approval"),
-        ({"rules": {"scripting": "yes"}}, "rules.scripting must be true or false"),
+        ({"rules": {"scripting": True}}, "rules has unknown key(s): scripting"),
         (
             {"rules": {"check_guidance": ["Run in docker."]}},
             "rules.check_guidance must be a string",

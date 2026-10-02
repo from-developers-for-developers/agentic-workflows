@@ -74,9 +74,7 @@ defaults. Without Git, and with the uuid format:
     "check_unfinished": true,
     "recent_days": 3
   },
-  "rules": {
-    "scripting": true
-  },
+  "rules": {},
   "builtins": {
     "init": {
       "model": "cheapest",
@@ -233,6 +231,9 @@ listed under "Unfinished tasks", newest first, in the `session-start` hook's
 format with any interruption notice, and `unfinished_tasks` in the JSON
 carries each one's `task_id`, `workflow`, `agent`, `step`, `item_status`,
 `workspace`, `updated_at`, `resume` command and whether it is `interrupted`.
+When declared rules have no check yet, a short "Rules" section, and
+`rules_notice` in the JSON, says how many and suggests the `ww-scriptize`
+skill; see [How a rule becomes a check](#how-a-rule-becomes-a-check).
 `discover` is read-only and leaves no audit record.
 
 A task whose state ww cannot read, such as one written by a build with another
@@ -1395,10 +1396,11 @@ facts in `handoff_block`. The `single` runtime has no block.
 
 ### Confirmations
 
-`next --retry`, `next --force`, `next --approve`, a `next --replan` that reruns finished steps, `rules prune`, and `rules
-revoke` ask the operator to confirm, because they can repeat an external
-effect, skip work, approve a command that will run from then on, or change
-the shared rule-automation store. ww asks only at a terminal. An
+`next --retry`, `next --force`, a `next --replan` that reruns finished steps,
+`rules prune`, `rules revoke`, `rules convert` and `rules decline` ask the
+operator to confirm, because they can repeat an external effect, skip work,
+record a command that will run from then on, or change the shared
+rule-automation store. ww asks only at a terminal. An
 agent's shell has none, so there ww refuses at once and names `--yes`, and it
 never reads an answer from a pipe. The pages that show these choices print
 them with `--yes`, since the agent runs one only after the operator chose it;
@@ -1420,7 +1422,6 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `handler_interrupted` | An automatic handler was interrupted and its outcome is unknown. |
 | `loop_limit` | A loop reached its round limit: its `max_rounds`, else `limits.rounds`. |
 | `fix_limit` | A step's check failed as many times as its rule's `max_fixes`, else `limits.fixes`, allows; see [Rules and checks](#rules-and-checks). |
-| `rules_proposed` | Verifiers proposed how to check a step's rules, and the operator decides; see [How a rule becomes a check](#how-a-rule-becomes-a-check). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
 | `plan_changed` | The workflow's definition changed since the run's plan was saved; see [When the workflow changes mid-run](#when-the-workflow-changes-mid-run). |
@@ -1811,13 +1812,12 @@ worker to say in its artifact, under a **Rules** heading, which rules it
 applied and any deviation. `init`, hooks, and the workflow summary get no
 rules. In the `auto` runtime the worker's page carries the section. JSON
 output lists them as `rules`, each with `id`, `summary`, `paths`,
-`has_command`, `hook`, `check`, `interpretation`, and `pending_operator`.
+`has_command`, `hook`, `check`, `interpretation`, and `missing`.
 
 A rule without a check is judged after completion by a verifier, never by the
-worker; the page says so. A rule whose wording already has an approved
+worker; the page says so. A rule whose wording already has a converted
 derived check is listed with the checked ones, and a judged rule shows the
-store's interpretation under it, plus a note while a proposal for it waits
-for the operator.
+store's interpretation under it.
 
 ### The fix loop
 
@@ -1880,10 +1880,21 @@ completions ww rejected before this one.
 
 ### How a rule becomes a check
 
-A rule without a command is judged by another agent, and the first time its
-wording is seen, that agent may propose a command for it; with the operator's
-approval ww runs the command from then on, for every step and task that has
-the rule. Nothing is reasoned about twice.
+A rule without a command is judged by another agent, a verifier, unless the
+rule-automation store has a converted check for its wording: then ww runs
+that check, for every step and task that has the rule. Verifiers only judge.
+Building checks is the job of `ww-scriptize-rules`, a project task of its
+own; see [Recording checks outside a task](#recording-checks-outside-a-task).
+
+What ww knows lives in `ww-rule-automation.json` at the project root, a file
+to commit, keyed by each rule's text hash; `checks` there are named, and one
+check may cover many rules, the usual case for an ecosystem tool such as
+deptrac, PHPStan, import-linter, ruff, or eslint, whose one configuration
+expresses several rules. When a step begins, each of its rules without a
+command is settled once: `converted`, checked by its store check where the
+check's configuration files exist, or `judged`. A store written by an earlier
+ww may still hold the interim entries verifiers once wrote inside tasks, such
+as an approach or a proposed check; ww reads them, and their rules are judged.
 
 When a step's worker completes and its checks pass, ww holds the completion:
 nothing is recorded, the artifact is kept as a draft, and **verification
@@ -1891,73 +1902,31 @@ items** are inserted before the step, one per distinct worker the rules ask
 for through `agent`, `model`, and `reasoning` (else the step's). Each is its
 own assignment: under `auto` the manager hands it to a new worker; under
 `single` the same session performs it, and its page says to read the change
-as a reviewer would. The verification page lists each rule and what is
-asked about it, the step's changed files and the `git diff` that shows them,
-the path of the held artifact, the checks the project already has, and,
-while a check is still to be proposed or prepared, where ww runs checks: the
-step's directory, the task's worktree when it has one. Each command is
-written for that directory, through the wrapper the project runs its own
-commands with, never with another checkout's absolute path.
+as a reviewer would. The verification page lists each rule, the step's
+changed files and the `git diff` that shows them, and the path of the held
+artifact. The verifier gives each rule a verdict, `pass` or `fail` with
+`file:line — what` evidence, as one `--rule-result` per rule,
+`{"id": "<rule>", "status": "judged", "verdict": "pass"}`, and writes
+nothing to the store. A failing verdict is a rejected completion: the step
+goes back to its worker with the fix page, and it counts toward the rule's
+`max_fixes` like a failed check. Once every rule passes, ww records the held
+completion as submitted.
 
-What ww knows lives in `ww-rule-automation.json` at the project root, a file
-to commit, keyed by each rule's text hash; `checks` there are named, and one
-check may cover many rules, the usual case for an ecosystem tool such as
-deptrac, PHPStan, import-linter, ruff, or eslint, whose one configuration
-expresses several rules. Scriptizing takes two stages, each ending at an
-operator stop, `operator_reason: rules_proposed`:
-
-1. **Approach.** For an unknown rule the verifier writes an interpretation
-   and a one-line approach: the tool or command, and the check it would
-   create or extend. It builds nothing. It may also report the rule
-   `not_convertible`, with a verdict, or `ambiguous`, with readings.
-2. **Prepare.** For an approved approach the verifier builds the check:
-   installs the tool as a development dependency, writes its configuration in
-   the repository, proves the command fails on a deliberate violation and
-   passes on the change, running it from the step's directory as ww will,
-   and reports the command. ww records it as
-   `proposed`; the operator's approval converts it and its rules. An extended
-   check keeps running as approved until its revision is approved.
-
-For a rule that is not convertible, or was rejected, the verifier gives a
-verdict, `pass` or `fail` with `file:line — what` evidence. A failing verdict
-is a rejected completion: the step goes back to its worker with the fix page,
-and it counts toward the rule's `max_fixes` like a failed check.
-
-At the stop the operator decides each proposal with `next`: `--approve
-<hash or check>`, `--approach <hash> "<text>"` to replace the verifier's
-approach, `--pick <hash>=<number>` for an ambiguous rule, or `--force
---reason` to reject everything undecided, after which those rules are
-judged. The CLI prints an approved command in full and asks before
-recording it: there is no allowlist of executables, the operator's reading is
-the safety. Once nothing is undecided, ww runs the step's checks again,
-including a newly approved one, which may send the step back, then records
-the held completion as submitted. The cost is two operator stops per rule
-wording, once ever, batched per step. `ww lint` lists store entries whose
-wording no rule has any more and entries awaiting a decision; only
+`discover` and the first page of `start` say how many declared rules have no
+check yet and suggest the `ww-scriptize` skill, which starts
+`ww-scriptize-rules`. While `workflows.ww-scriptize-rules.hooks_from` is
+unset in `ww.json`, the notice also names that setting, since the workflow
+refuses to start without it. The notice never blocks a task; it is left out
+while `ww-scriptize-rules` is switched off, and on the pages of
+`ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules, and
+lists store entries whose wording no rule has any more; only
 `ww rules prune`, after listing them and asking the operator, deletes the
 orphans.
 
-### Turning scripting off, and guiding it: `rules.scripting` and `rules.check_guidance`
+### Guiding the checks: `rules.check_guidance`
 
-Every check a verifier builds goes through both stops: the operator approves
-its approach before anything is built and its command after it is proven, at
-the step that proposed it. Nothing is approved automatically or left for the
-end of the run. A project that wants no scripting at all switches it off in
-`ww.json`:
-
-```json
-"rules": { "scripting": false }
-```
-
-With `scripting: false`, a verifier never proposes or prepares a check: every
-rule without a command of its own is judged, with a `pass` or `fail` verdict,
-on every completion. A check the operator approved earlier keeps running; `ww
-rules revoke <check>` turns it back into a judged rule. ww reads the setting
-when a step begins, so a change applies from the next step on.
-
-`rules.check_guidance` is free text for the verifier that proposes or
-prepares a check, in the operator's own words, such as how the project runs
-its tools:
+`rules.check_guidance` is free text, in the operator's own words, for whoever
+builds a check, such as how the project runs its tools:
 
 ```json
 "rules": {
@@ -1965,20 +1934,18 @@ its tools:
 }
 ```
 
-It appears as written, quoted under the verifier page's "Where checks run"
-section, whenever a rule's check is still to be proposed or prepared, and it
-wins over ww's defaults there; a page that only asks for verdicts leaves it
-out. It is read each time the page renders, so a change applies at once. Like
-any setting, it can live in `ww.local.json` for the operator alone. The
-`ww-rule` skill and ww's setup workflows honour it for the checks they write,
-and `ww-suggest` proposes it when `project.md` records a wrapper, such as a
-container, that checks must go through.
+`ww rules --json` carries it as written, as `check_guidance`, and
+`ww-scriptize-rules` follows it for every check it builds; it wins over ww's
+defaults there. Like any setting, it can live in `ww.local.json` for the
+operator alone. The `ww-rule` skill and ww's setup workflows honour it for
+the checks they write, and `ww-suggest` proposes it when `project.md` records
+a wrapper, such as a container, that checks must go through.
 
-A run that converted something ends with a **Rules converted in this run**
-section, on the completion page and appended by ww to the workflow summary
-artifact: each check with the rules it covers, its command, its config files,
-whether it was proven, and who approved it. A check the team finds wrong can
-be undone at any time:
+A project that wants no checks built leaves `ww-scriptize-rules` unused, or
+switches it off with `"workflows": {"ww-scriptize-rules": {"enabled":
+false}}`, which also silences the notice; its rules without a command are
+judged on every completion. A check the team finds wrong can be undone at
+any time:
 
 ```console
 ./ww rules revoke deptrac --reason "too slow for every step"
@@ -2018,8 +1985,8 @@ again deserves a look at its wording or command.
 
 ### Recording checks outside a task
 
-A check can also be built once for the project and recorded without a task's
-verifier, for example by `ww-scriptize-rules`, or by hand:
+A check is built once for the project and recorded outside any task's
+verification, by `ww-scriptize-rules` or by hand:
 
 ```console
 ./ww rules convert phpstan --covers php/no-new-services php/typed-returns \
@@ -2040,7 +2007,8 @@ changes, and asks; `--yes` stands for the operator's answer,
 and without a terminal it refuses. It creates the check, or replaces an
 existing one's command, configuration and coverage; a rule it no longer
 covers goes back to not scriptized. `rules decline` records rules as not
-convertible: a verifier judges them, and they are not proposed again. Both
+convertible: a verifier judges them, and `ww-scriptize-rules` leaves them out
+from then on. Both
 take `--dry-run`. `rules --json` gives each rule's `scriptize` state:
 `command`, `converted`, `not_convertible`, `rejected` or `unscriptized`.
 
@@ -2122,8 +2090,9 @@ Reaches these steps (an agent step's page shows it):
 - `rules promote <check>` copies an approved store check into the `check`
   frontmatter of every rule file it covers and removes the check and those
   rules' entries from the store, since a rule with its own command is never
-  looked up there. It refuses a check awaiting a decision and a rule written
-  in a step's own `rules` list.
+  looked up there. It refuses a check that is not converted, or that has a
+  pending revision an earlier ww left, and a rule written in a step's own
+  `rules` list.
 
 Each command ends with the steps the rule or group now reaches. `ww rules`
 names the approved store check of a rule without a command of its own

@@ -5,7 +5,8 @@ A rule without a command of its own is enforced by the rule-automation
 store. These operations write the store directly, on the operator's
 confirmation, so a check built once for the project (by
 ``ww-scriptize-rules``, or by hand) is recorded without a task's verifier.
-``scriptize_state`` says, for each declared rule, where it stands.
+``scriptize_state`` says, for each declared rule, where it stands, and
+``scriptize_notice`` tells the operator about the rules no check covers yet.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Literal
 
+from ww.builtin_workflows import is_builtin, missing_lane
 from ww.errors import StateError
 from ww.rule_store import (
     CheckEntry,
@@ -26,9 +28,13 @@ from ww.rule_store import (
 )
 from ww.workflow_config import RuleDefinition, WorkflowConfiguration, every_step
 
+# The built-in workflow that turns rules into checks, outside any task.
+SCRIPTIZE_WORKFLOW = "ww-scriptize-rules"
+
 # Where a declared rule stands: checked by its own command, by a converted
 # store check, declined or rejected (judged by a verifier), or not scriptized
-# yet. The in-task flow's interim statuses count as not scriptized.
+# yet. The interim statuses of an old store, from when verifiers proposed
+# checks inside tasks, count as not scriptized.
 ScriptizeState = Literal[
     "command", "converted", "not_convertible", "rejected", "unscriptized"
 ]
@@ -43,6 +49,51 @@ def scriptize_state(automation: RuleAutomation, rule: RuleDefinition) -> Scripti
     if entry is not None and entry.status in {"not_convertible", "rejected"}:
         return entry.status
     return "unscriptized"
+
+
+def unscriptized_rules(
+    configuration: WorkflowConfiguration, automation: RuleAutomation
+) -> tuple[RuleDefinition, ...]:
+    """The declared rules not scriptized yet, each once, in declaration order."""
+    found: dict[str, RuleDefinition] = {}
+    for rule in _every_rule(configuration):
+        if rule.id not in found and scriptize_state(automation, rule) == "unscriptized":
+            found[rule.id] = rule
+    return tuple(found.values())
+
+
+def scriptize_notice(
+    configuration: WorkflowConfiguration, automation: RuleAutomation
+) -> str | None:
+    """What ``discover`` and ``start`` say about rules without a check yet.
+
+    ``None`` when there are none, or while ``ww-scriptize-rules`` is switched
+    off. While the workflow lacks the lane it needs, the notice names where
+    to set it. It never blocks anything: such rules are judged by verifiers.
+    """
+    workflow = configuration.workflows_by_name.get(SCRIPTIZE_WORKFLOW)
+    if workflow is None:
+        return None
+    count = len(unscriptized_rules(configuration, automation))
+    if not count:
+        return None
+    notice = (
+        f"{count} declared rule{'s have' if count != 1 else ' has'} no check "
+        "yet, so a verifier judges "
+        f"{'them' if count != 1 else 'it'} in every step. The `ww-scriptize` "
+        f"skill starts `{SCRIPTIZE_WORKFLOW}`, which builds checks for them "
+        "with the operator."
+    )
+    if missing_lane(workflow) is not None:
+        notice += (
+            " It first needs the lane it works in: "
+            f'`"workflows": {{"{SCRIPTIZE_WORKFLOW}": {{"hooks_from": '
+            '"<workflow>"}}` in ww.json.'
+            if is_builtin(workflow)
+            else " It first needs the lane it works in: `hooks_from` in its "
+            "ww.yaml definition."
+        )
+    return notice
 
 
 def declared_rules(
@@ -92,9 +143,9 @@ class StoreChange:
     dropped_revisions: tuple[str, ...] = ()
 
 
-# Rule entries a check's own coverage stands for; any other entry naming the
-# check (a rejection, a decline, an in-task approach) is the operator's
-# record and is kept when the check stops covering the rule.
+# Rule entries a check's own coverage stands for (``proposed`` only in an old
+# store); any other entry naming the check, such as a rejection, is the
+# operator's record and is kept when the check stops covering the rule.
 _COVERED_STATUSES = frozenset({"converted", "proposed"})
 
 
@@ -243,10 +294,9 @@ def _uncover(
 ) -> tuple[RuleAutomation, tuple[str, ...], tuple[str, ...]]:
     """Drop ``hashes`` from every check's coverage but ``keep``'s.
 
-    A check, other than a rejected one, whose approved coverage and pending
-    revision both cover nothing more is removed; a pending revision left
-    covering nothing is dropped, and one still covering rules is kept,
-    reduced and undecided. Returns the store, the checks removed and the checks whose
+    A check it changes loses any pending revision (only an old store has
+    one); a check, other than a rejected one, left covering nothing is
+    removed. Returns the store, the checks removed and the kept checks whose
     revision was dropped.
     """
     dropped_checks: list[str] = []
@@ -256,19 +306,13 @@ def _uncover(
         if check_name == keep or not hashes & _coverage(check):
             continue
         spec = _without(check.spec, hashes)
-        pending = _without(check.pending, hashes) if check.pending else None
-        if (
-            not spec.covers
-            and not (pending is not None and pending.covers)
-            and check.status != "rejected"
-        ):
+        if not spec.covers and check.status != "rejected":
             del checks[check_name]
             dropped_checks.append(check_name)
             continue
-        if pending is not None and not pending.covers:
-            pending = None
+        if check.pending is not None:
             dropped_revisions.append(check_name)
-        checks[check_name] = replace(check, spec=spec, pending=pending)
+        checks[check_name] = replace(check, spec=spec, pending=None)
     return (
         replace(automation, checks=checks),
         tuple(dropped_checks),

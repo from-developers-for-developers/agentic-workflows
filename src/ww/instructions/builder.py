@@ -41,7 +41,6 @@ from ww.execution_models import (
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
-from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
@@ -61,7 +60,6 @@ from ww.workspace import resolve_workspace
 
 from .commands import (
     complete_command,
-    decision_commands,
     force_command,
     instruction_command,
     interact_commands,
@@ -70,7 +68,6 @@ from .commands import (
     start_child_command,
     update_child_command,
 )
-from .conversions import rule_conversions, run_reference
 from .models import (
     ConversationEntry,
     DisputeView,
@@ -78,10 +75,7 @@ from .models import (
     FixFailure,
     FixRequired,
     Instruction,
-    KnownCheck,
-    Proposal,
     RecoveryCommand,
-    RuleConversions,
     RuleLine,
     StepHandover,
     VerificationPage,
@@ -144,20 +138,12 @@ class InstructionBuilder:
         root: Path,
         documents: DocumentStore,
         interactions: InteractionLog,
-        rule_store: RuleStore | None = None,
-        rule_check_guidance: Callable[[], str | None] | None = None,
         child_values: ChildValues = _no_child_values,
     ) -> None:
         self.tasks = tasks
         self.child_values = child_values
         self.documents = documents
         self.interactions = interactions
-        # Read for display only: the checks a verifier may extend, and the
-        # proposals the operator decides at a ``rules_proposed`` stop.
-        self.rule_store = rule_store or RuleStore(root)
-        # The project's ``rules.check_guidance``, read when a verifier's page
-        # renders, so a changed setting applies at once.
-        self.rule_check_guidance = rule_check_guidance or (lambda: None)
         # Persisted paths are project-relative; instructions print them
         # absolute for the filesystem this process runs in.
         self.root = root
@@ -283,7 +269,6 @@ class InstructionBuilder:
                 _base(state, None),
                 handoff=handoff.rstrip() if handoff else None,
                 recommended_workflow=plan.recommended_next_workflow,
-                rule_conversions=self._conversions(state, plan),
                 parent_task_id=state.parent_task_id,
             )
         if state.status == "awaiting_input":
@@ -294,7 +279,6 @@ class InstructionBuilder:
             return replace(
                 _base(state, None, status="completed"),
                 recommended_workflow=plan.recommended_next_workflow,
-                rule_conversions=self._conversions(state, plan),
                 parent_task_id=state.parent_task_id,
             )
         item = plan.items[state.cursor]
@@ -311,16 +295,6 @@ class InstructionBuilder:
         return replace(
             _base(state, item, item_status="pending"),
             continuation_command=next_command(state.task_id),
-        )
-
-    def _conversions(
-        self, state: ExecutionState, plan: WorkflowPlan
-    ) -> RuleConversions:
-        """What the run converted, for its completion page."""
-        return rule_conversions(
-            self.rule_store.load(),
-            run_reference(state.task_id, state.run_id, state.workflow),
-            plan,
         )
 
     def _awaiting_input(self, state: ExecutionState, plan: WorkflowPlan) -> Instruction:
@@ -625,13 +599,7 @@ class InstructionBuilder:
                 else ()
             ),
             operation_id=record.operation_id if record else None,
-            recovery_commands=(
-                (force_command(state.task_id),)
-                if state.failure_kind == "rules_proposed"
-                else recovery_commands(state.task_id)
-                if current
-                else ()
-            ),
+            recovery_commands=recovery_commands(state.task_id) if current else (),
             # At the fix limit the operator decides on what the checks said.
             fix_required=(
                 fix_required(current, record)
@@ -647,67 +615,7 @@ class InstructionBuilder:
                 and record is not None
                 else None
             ),
-            proposals=(
-                self._proposals(state.task_id, current, record)
-                if state.failure_kind == "rules_proposed"
-                and current is not None
-                and record is not None
-                else ()
-            ),
         )
-
-    def _proposals(
-        self, task_id: str, item: PlanItem, record: PlanItemExecution
-    ) -> tuple[Proposal, ...]:
-        """The step's undecided proposals, as the store now has them."""
-        automation = self.rule_store.load()
-        texts = {rule.text_hash: (rule.id, rule.text) for rule in item.rules}
-        proposals = []
-        for key in record.open_proposals:
-            if not automation.undecided(key):
-                continue
-            check = automation.checks.get(key)
-            if check is not None:
-                spec = check.pending or check.spec
-                proposals.append(
-                    Proposal(
-                        kind="check",
-                        key=key,
-                        rules=tuple(
-                            texts.get(text_hash)
-                            or (text_hash[:12], _stored_text(automation, text_hash))
-                            for text_hash in spec.covers
-                        ),
-                        commands=decision_commands(task_id, "check", key),
-                        check=key,
-                        command=describe_command(spec.command),
-                        assertion=(
-                            spec.command.assertion.describe()
-                            if spec.command.assertion
-                            else None
-                        ),
-                        config=spec.config,
-                        proven=spec.proven,
-                        revision=check.pending is not None,
-                    )
-                )
-                continue
-            entry = automation.rules[key]
-            kind = "ambiguous" if entry.status == "ambiguous" else "approach"
-            proposals.append(
-                Proposal(
-                    kind=kind,
-                    key=key[:12],
-                    rules=(texts.get(key) or (key[:12], entry.text),),
-                    commands=decision_commands(task_id, kind, key[:12]),
-                    interpretation=entry.interpretation,
-                    approach=entry.approach,
-                    check=entry.check,
-                    extends=entry.extends,
-                    candidates=entry.candidates,
-                )
-            )
-        return tuple(proposals)
 
     def _verification(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
@@ -721,25 +629,14 @@ class InstructionBuilder:
         step = plan.items[step_index]
         step_record = state.item_executions[step_index]
         held = step_record.held_completion
-        automation = self.rule_store.load()
-        # Where ``complete`` runs the step's checks: the same directory.
-        workspace, _ = item_workspace_values(
-            self.root,
-            step.workdir,
-            state.working_directory,
-            {**dict(state.workflow_values), **self.task_values(state, plan)},
-        )
         return VerificationPage(
             step=step.name,
             rules=tuple(
                 VerificationRuleLine(
                     rule.id,
                     rule.text,
-                    rule.state,
                     rule.interpretation,
-                    rule.approach,
                     rule.check,
-                    rule.pending_operator,
                     rule.missing,
                 )
                 for rule in record.verification
@@ -756,22 +653,6 @@ class InstructionBuilder:
                 if held is not None and held.draft_ref
                 else None
             ),
-            checks=tuple(
-                KnownCheck(
-                    name,
-                    entry.status,
-                    describe_command(entry.spec.command),
-                    entry.spec.config,
-                    tuple(
-                        _stored_text(automation, text_hash)
-                        for text_hash in entry.spec.covers
-                    ),
-                )
-                for name, entry in automation.checks.items()
-                if entry.status != "rejected"
-            ),
-            directory=str(workspace or self.root),
-            guidance=self.rule_check_guidance(),
         )
 
     def _child_control(
@@ -874,17 +755,6 @@ class InstructionBuilder:
                 summary=item.hands_over,
                 rule_results=(
                     tuple(rule.id for rule in verification.rules)
-                    if verification
-                    else ()
-                ),
-                check_results=(
-                    tuple(
-                        dict.fromkeys(
-                            rule.check
-                            for rule in verification.rules
-                            if rule.state == "approach_approved" and rule.check
-                        )
-                    )
                     if verification
                     else ()
                 ),
@@ -1011,10 +881,9 @@ class InstructionBuilder:
 def rule_lines(item: PlanItem, record: PlanItemExecution) -> tuple[RuleLine, ...]:
     """The rules a step's page lists: its rules, then its ``fix`` hooks.
 
-    A rule without a command that an approved derived check covers is listed
-    as checked; a judged one carries the store's interpretation, a note when
-    a proposal for it still waits for the operator, and the missing
-    configuration file when its converted check does not apply here.
+    A rule without a command that a converted derived check covers is listed
+    as checked; a judged one carries the store's interpretation, and the
+    missing configuration file when its converted check does not apply here.
     """
     resolutions = {entry.id: entry for entry in record.rule_resolutions}
 
@@ -1032,9 +901,6 @@ def rule_lines(item: PlanItem, record: PlanItemExecution) -> tuple[RuleLine, ...
                 resolution.check
                 if resolution is not None and (converted or missing is not None)
                 else None
-            ),
-            pending_operator=(
-                resolution is not None and resolution.status == "pending_operator"
             ),
             missing=missing,
         )
@@ -1133,11 +999,6 @@ def dispute_view(item: PlanItem, record: PlanItemExecution) -> DisputeView | Non
         reason=dispute.reason,
         attempt=dispute.attempt,
     )
-
-
-def _stored_text(automation: RuleAutomation, text_hash: str) -> str:
-    entry = automation.rules.get(text_hash)
-    return entry.text if entry is not None else text_hash[:12]
 
 
 def worker_token(state: ExecutionState) -> str | None:

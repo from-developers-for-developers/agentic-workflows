@@ -204,19 +204,6 @@ def _confirm_force_next(
     )
 
 
-def confirm_approval(preview: str, *, assume_yes: bool = False) -> bool:
-    """Show what ``next --approve`` records, command in full, and ask for it.
-
-    ww keeps no allowlist of executables: an approved check runs in every
-    later step, so the operator reads it before it is recorded.
-    """
-    print(f"`ww next --approve` will approve:\n{preview}", file=sys.stderr)
-    if assume_yes:
-        print("Approved with --yes.", file=sys.stderr)
-        return True
-    return _ask_operator("Approve? [y/N] ", "Approval")
-
-
 def confirm_interrupted_retry(*, assume_yes: bool = False) -> bool:
     """Require an operator to acknowledge duplicate-effect risk."""
     if assume_yes:

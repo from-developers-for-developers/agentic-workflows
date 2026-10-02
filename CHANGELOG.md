@@ -11,6 +11,12 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-02
 
+- Breaking: verifiers only judge. A rule without a command is checked by its converted store check or gets a
+  `pass`/`fail` verdict; the in-task approach and prepare stages, `--check-result`, the `rules_proposed` stop, `next
+  --approve`/`--approach`/`--pick` and the "Rules converted in this run" report are gone. `rules.scripting` is refused
+  as an unknown key: delete it from `ww.json` or `ww.local.json`. `discover` and `start` say how many rules have no
+  check yet and suggest the `ww-scriptize` skill; `lint` lists them. Finish or reset tasks held at a rule verification
+  before upgrading.
 - `ww-scriptize-rules`, started by the `ww-scriptize` skill, scriptizes every rule with no check yet as a project task,
   on the lane `ww.json` names with `hooks_from`, taking its hooks, branch format and base branch; `ww-suggest` proposes
   it. `rules convert` and `rules add` take `--check-argv -- <arg>...`, so a tool's own options stay its own. `5a277b4`

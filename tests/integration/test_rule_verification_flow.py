@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Verifying rules without a command, end to end: rounds, the store, the gate."""
+"""Verifying rules without a command, end to end: rounds and verdicts."""
 
 from __future__ import annotations
 
@@ -45,13 +45,10 @@ TWO_HINTS = f"""workflows:
       - check: Check it.
 """
 FOO_CHECK = {
-    "name": "cli-surface",
     "shell": "grep -L foo $WW_STEP_CHANGED_FILES || true",
     "assert": ["empty"],
-    "config": [],
-    "covers": ["develop/1"],
-    "proven": True,
 }
+PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
 
 
 def _git(*arguments: str, cwd: Path) -> None:
@@ -93,29 +90,12 @@ def _developed(
     return service, held
 
 
-def _report(
-    service: WorkflowService, *results: dict, checks: tuple = ()
-) -> Instruction:
+def _report(service: WorkflowService, *results: dict) -> Instruction:
     return service.complete(
         "TASK-1",
         artifact="Findings.",
         rule_results=tuple(json.dumps(result) for result in results),
-        check_results=tuple(json.dumps(check) for check in checks),
     )
-
-
-def _approach(rule: str = "develop/1") -> dict:
-    return {
-        "id": rule,
-        "interpretation": "No command-line flag changes.",
-        "status": "approach",
-        "check": "cli-surface",
-        "approach": "diff the parser's help output",
-    }
-
-
-def _store(root: Path) -> dict:
-    return json.loads((root / STORE_FILE).read_text(encoding="utf-8"))
 
 
 def _artifact(root: Path) -> str:
@@ -158,9 +138,7 @@ def test_completing_holds_the_step_and_opens_a_verification(tmp_path: Path) -> N
     assert held.item_status == "in_progress"
     assert held.completion_held is True
     assert held.verification is not None
-    assert [(rule.id, rule.state) for rule in held.verification.rules] == [
-        ("develop/1", "unresolved")
-    ]
+    assert [rule.id for rule in held.verification.rules] == ["develop/1"]
     assert held.verification.files == ("app.py",)
     assert held.verification.diff_command is not None
     assert held.verification.diff_command.startswith("git diff ")
@@ -171,11 +149,11 @@ def test_completing_holds_the_step_and_opens_a_verification(tmp_path: Path) -> N
     assert "Completion accepted by `ww` and held" in rendered
     assert "### Verification" in rendered
     assert "This session also did that step's work" in rendered
-    assert "Prefer the ecosystem's own tools" in rendered
-    assert held.verification.directory == str(root)
-    assert f"ww runs every check from `{root}`, the step's directory" in rendered
-    assert "how the command runs from the directory above" in rendered
+    assert "a verdict `pass` or `fail`" in rendered
+    assert "#### Where checks run" not in rendered
+    assert "#### Existing checks" not in rendered
     assert "--rule-result='<JSON result for develop/1>'" in rendered
+    assert "--check-result" not in rendered
     state, snapshot = service.load("TASK-1")
     items = [item.id for item in snapshot.plan.items]
     assert items.index("task:develop:verify:1") < items.index(
@@ -183,8 +161,9 @@ def test_completing_holds_the_step_and_opens_a_verification(tmp_path: Path) -> N
     )
     assert snapshot.plan_revision == 2
     rendered_json = json.loads(JsonOutputAdapter().render_instruction(held))
-    assert rendered_json["verification"]["rules"][0]["state"] == "unresolved"
-    assert rendered_json["verification"]["directory"] == str(root)
+    assert rendered_json["verification"]["rules"][0]["id"] == "develop/1"
+    assert "directory" not in rendered_json["verification"]
+    assert "checks" not in rendered_json["verification"]
 
 
 def test_results_are_refused_on_an_ordinary_step(tmp_path: Path) -> None:
@@ -192,96 +171,13 @@ def test_results_are_refused_on_an_ordinary_step(tmp_path: Path) -> None:
     service = _started(root)
     service.next("TASK-1")
 
-    with pytest.raises(StateError, match="report a verification"):
+    with pytest.raises(StateError, match="reports a verification"):
         service.complete(
             "TASK-1",
             artifact="Built.",
             summary_for_next="Built.",
             rule_results=("{}",),
         )
-
-
-def test_the_two_stages_and_their_approvals_end_in_a_derived_check(
-    tmp_path: Path,
-) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root, "print(1)  # foo\n")
-    text_hash = rule_text_hash(CLI)
-
-    stop = _report(service, _approach())
-
-    assert stop.status == "failed"
-    assert stop.operator_reason == "rules_proposed"
-    assert [(p.kind, p.key) for p in stop.proposals] == [("approach", text_hash[:12])]
-    rendered = _markdown(stop)
-    assert "verifiers proposed checks for the step's rules" in rendered
-    assert "Approach: diff the parser's help output" in rendered
-    assert f"--approve {text_hash[:12]}" in rendered
-    assert _store(root)["rules"][text_hash]["status"] == "approach_proposed"
-    with pytest.raises(StateError, match="nothing to retry"):
-        service.next("TASK-1", retry=True)
-
-    prepare = service.next("TASK-1", approve=(text_hash[:12],))
-
-    assert prepare.item_name == "develop-verify-1"
-    assert prepare.verification is not None
-    assert prepare.verification.rules[0].state == "approach_approved"
-    prepare_page = _markdown(prepare)
-    assert "--check-result='<JSON check cli-surface>'" in prepare_page
-    assert '`"assert": ["empty"]` when it must print nothing' in prepare_page
-    assert '`"assert": [{"equals": "<value>"}]`' in prepare_page
-    assert '"operator"' not in prepare_page
-    assert "#### Where checks run" in prepare_page
-    assert "running it exactly as ww will, from the directory above" in prepare_page
-    stop = _report(
-        service,
-        {"id": "develop/1", "status": "approach", "check": "cli-surface"},
-        checks=(FOO_CHECK,),
-    )
-    assert stop.operator_reason == "rules_proposed"
-    assert [(p.kind, p.key, p.command) for p in stop.proposals] == [
-        ("check", "cli-surface", FOO_CHECK["shell"])
-    ]
-    assert _store(root)["checks"]["cli-surface"]["status"] == "proposed"
-    assert _store(root)["rules"][text_hash]["status"] == "proposed"
-
-    recorded = service.next("TASK-1", approve=("cli-surface",))
-
-    assert recorded.item_name == "check"
-    assert "- `develop/1`: passed (check `cli-surface`)" in _artifact(root)
-    assert _store(root)["checks"]["cli-surface"]["status"] == "converted"
-    assert _store(root)["rules"][text_hash]["status"] == "converted"
-
-
-def test_an_approved_check_that_fails_on_the_held_completion_sends_it_back(
-    tmp_path: Path,
-) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root)
-    _report(service, _approach())
-    service.next("TASK-1", approve=(rule_text_hash(CLI),))
-    _report(
-        service,
-        {"id": "develop/1", "status": "approach", "check": "cli-surface"},
-        checks=(FOO_CHECK,),
-    )
-
-    back = service.next("TASK-1", approve=("cli-surface",))
-
-    assert back.item_name == "develop"
-    assert back.fix_required is not None
-    (failure,) = back.fix_required.failures
-    assert (failure.id, failure.output, failure.covers) == (
-        "cli-surface",
-        "app.py",
-        ("develop/1",),
-    )
-    assert "(check covering `develop/1`)" in _markdown(back)
-    assert [rule.check for rule in back.rules] == ["cli-surface"]
-    (root / "app.py").write_text("print(1)  # foo\n", encoding="utf-8")
-    accepted = service.complete("TASK-1", artifact="Fixed.", summary_for_next="Fixed.")
-    assert accepted.item_name == "check"
-    assert "Completions rejected before this one: 1." in _artifact(root)
 
 
 def test_a_failing_verdict_is_a_fix_round_counted_with_the_checks(
@@ -291,8 +187,7 @@ def test_a_failing_verdict_is_a_fix_round_counted_with_the_checks(
     service, _ = _developed(root)
     failing = {
         "id": "develop/1",
-        "status": "not_convertible",
-        "reason": "It needs a reviewer.",
+        "status": "judged",
         "verdict": "fail",
         "failures": [{"file": "app.py", "line": 1, "what": "prints to stdout"}],
     }
@@ -307,13 +202,10 @@ def test_a_failing_verdict_is_a_fix_round_counted_with_the_checks(
     rendered = _markdown(back)
     assert "### `develop/1` (verifier's verdict)" in rendered
     assert "    app.py:1 — prints to stdout" in rendered
-    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "not_convertible"
     again = service.complete("TASK-1", artifact="Fixed.", summary_for_next="Fixed.")
     assert again.verification is not None
-    assert [rule.state for rule in again.verification.rules] == ["judged"]
-    recorded = _report(
-        service, {"id": "develop/1", "status": "judged", "verdict": "pass"}
-    )
+    assert [rule.id for rule in again.verification.rules] == ["develop/1"]
+    recorded = _report(service, PASS)
     assert recorded.item_name == "check"
     artifact = _artifact(root)
     assert "- `develop/1`: verified pass (by `task:develop:verify:1`)" in artifact
@@ -325,89 +217,17 @@ def test_judged_failures_reach_the_fix_limit(tmp_path: Path) -> None:
     service, _ = _developed(root)
     failing = {
         "id": "develop/1",
-        "status": "not_convertible",
-        "reason": "Review.",
+        "status": "judged",
         "verdict": "fail",
         "failures": [{"file": "app.py", "what": "bad"}],
     }
     _report(service, failing)
     for _ in range(2):
         service.complete("TASK-1", artifact="Again.", summary_for_next="Again.")
-        stopped = _report(
-            service,
-            {
-                "id": "develop/1",
-                "status": "judged",
-                "verdict": "fail",
-                "failures": [{"file": "app.py", "what": "bad"}],
-            },
-        )
+        stopped = _report(service, failing)
 
     assert stopped.operator_reason == "fix_limit"
     assert stopped.error == "check limit reached: develop/1"
-
-
-def test_an_ambiguous_rule_is_picked_then_proposed_again(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root)
-    text_hash = rule_text_hash(CLI)
-
-    stop = _report(
-        service,
-        {
-            "id": "develop/1",
-            "status": "ambiguous",
-            "candidates": ["no flag changes", "no output changes"],
-        },
-    )
-    assert stop.proposals[0].kind == "ambiguous"
-    assert "1. no flag changes" in _markdown(stop)
-    assert f"--pick {text_hash[:12]}=<number>" in _markdown(stop)
-
-    again = service.next("TASK-1", picks=((text_hash[:12], 2),))
-
-    assert again.item_name == "develop-verify-1"
-    assert again.verification is not None
-    rule = again.verification.rules[0]
-    assert (rule.state, rule.interpretation) == ("unresolved", "no output changes")
-    assert _store(root)["rules"][text_hash]["status"] == "interpreted"
-
-
-def test_the_operators_approach_replaces_the_verifiers(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root)
-    _report(service, _approach())
-
-    prepare = service.next(
-        "TASK-1", approaches=((rule_text_hash(CLI), "Snapshot `--help` in a test."),)
-    )
-
-    assert prepare.verification is not None
-    assert prepare.verification.rules[0].approach == "Snapshot `--help` in a test."
-    assert "Approved approach: Snapshot `--help` in a test." in _markdown(prepare)
-
-
-def test_force_rejects_every_pending_proposal_and_the_rule_is_judged(
-    tmp_path: Path,
-) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root)
-    _report(service, _approach())
-
-    assert "reject every undecided proposal" in service.force_target("TASK-1")
-    judged = service.next("TASK-1", force=True, force_reason="Not worth a tool.")
-
-    assert judged.verification is not None
-    assert [rule.state for rule in judged.verification.rules] == ["judged"]
-    entry = _store(root)["rules"][rule_text_hash(CLI)]
-    assert (entry["status"], entry["reason"]) == (
-        "rejected",
-        "operator: Not worth a tool.",
-    )
-    recorded = _report(
-        service, {"id": "develop/1", "status": "judged", "verdict": "pass"}
-    )
-    assert recorded.item_name == "check"
 
 
 def test_a_converted_rule_is_checked_at_once_and_reported_under_its_check(
@@ -436,37 +256,80 @@ def test_a_converted_rule_is_checked_at_once_and_reported_under_its_check(
     assert f"- `develop/2`: {NAMES}" in (failure.text or "")
 
 
-def test_a_pending_proposal_elsewhere_is_judged_for_now(tmp_path: Path) -> None:
-    text_hash = rule_text_hash(CLI)
-    root = _project(
-        tmp_path,
-        store={
-            "rules": {
-                text_hash: {
-                    "text": CLI,
-                    "status": "approach_proposed",
-                    "approach": "a",
-                    "check": "x",
-                    "interpretation": "No flag changes.",
-                }
-            },
-            "checks": {},
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {
+            "status": "approach_approved",
+            "approach": "diff the parser's help output",
+            "check": "cli-surface",
         },
-    )
+        {"status": "approach_proposed", "approach": "a", "check": "x"},
+        {"status": "ambiguous", "candidates": ["one reading", "another"]},
+    ],
+    ids=["approach_approved", "approach_proposed", "ambiguous"],
+)
+def test_an_old_stores_interim_entry_is_only_judged(
+    tmp_path: Path, entry: dict
+) -> None:
+    text_hash = rule_text_hash(CLI)
+    store = {
+        "rules": {
+            text_hash: {"text": CLI, "interpretation": "No flag changes.", **entry}
+        },
+        "checks": {},
+    }
+    root = _project(tmp_path, store=store)
     service = _started(root)
 
     page = service.next("TASK-1")
 
-    assert page.rules[0].pending_operator is True
-    rendered = _markdown(page)
-    assert "  No flag changes." in rendered
-    assert "This rule has a pending proposal; the operator has not yet decided." in (
-        rendered
-    )
+    assert [(rule.has_command, rule.check) for rule in page.rules] == [(False, None)]
+    assert "  No flag changes." in _markdown(page)
+    (root / "app.py").write_text("print(1)\n", encoding="utf-8")
     held = service.complete("TASK-1", artifact="Built.", summary_for_next="Built.")
     assert held.verification is not None
-    assert held.verification.rules[0].state == "judged"
-    assert held.verification.rules[0].pending_operator is True
+    (rule,) = held.verification.rules
+    assert (rule.id, rule.interpretation) == ("develop/1", "No flag changes.")
+    page_text = _markdown(held)
+    assert "prepare and prove its check" not in page_text
+    assert "--check-result" not in page_text
+    recorded = _report(service, PASS)
+    assert recorded.item_name == "check"
+    assert RuleStore(root).load().rules[text_hash].status == entry["status"]
+
+
+def test_a_verdict_other_than_judged_is_refused(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service, _ = _developed(root)
+
+    with pytest.raises(StateError, match="status must be judged"):
+        _report(
+            service,
+            {
+                "id": "develop/1",
+                "status": "approach",
+                "check": "cli-surface",
+                "approach": "diff the parser's help output",
+            },
+        )
+    with pytest.raises(StateError, match="unknown keys: approach, check"):
+        _report(
+            service,
+            {**PASS, "check": "cli-surface", "approach": "diff the help output"},
+        )
+    state, _ = service.load("TASK-1")
+    assert state.failure_kind is None
+
+
+def test_a_verifier_never_writes_the_store(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service, _ = _developed(root)
+
+    recorded = _report(service, PASS)
+
+    assert recorded.item_name == "check"
+    assert not (root / STORE_FILE).exists()
 
 
 def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
@@ -504,16 +367,7 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
     done = service.complete(
         "TASK-1",
         artifact="Findings.",
-        rule_results=(
-            json.dumps(
-                {
-                    "id": "develop/1",
-                    "status": "not_convertible",
-                    "reason": "Review.",
-                    "verdict": "pass",
-                }
-            ),
-        ),
+        rule_results=(json.dumps(PASS),),
         caller_role="worker",
         assignment=assignment_token(service, "TASK-1"),
     )
@@ -524,16 +378,7 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
     service.complete(
         "TASK-1",
         artifact="Findings.",
-        rule_results=(
-            json.dumps(
-                {
-                    "id": "develop/2",
-                    "status": "not_convertible",
-                    "reason": "Taste.",
-                    "verdict": "pass",
-                }
-            ),
-        ),
+        rule_results=(json.dumps({**PASS, "id": "develop/2"}),),
         caller_role="worker",
         assignment=assignment_token(service, "TASK-1"),
     )
@@ -544,101 +389,45 @@ def test_each_hint_set_gets_its_own_verifier_in_the_auto_runtime(
     assert "- `develop/2`: verified pass (by `task:develop:verify:2`)" in artifact
 
 
-def _stage_a_store(root: Path, runtime: str) -> dict:
-    service = _started(root, runtime=runtime)
-    role = "manager" if runtime == "auto" else None
-    worker = "worker" if runtime == "auto" else None
-    service.next("TASK-1", caller_role=role)
-    service.complete(
-        "TASK-1",
-        artifact="Built.",
-        summary_for_next="Built.",
-        caller_role=worker,
-        assignment=assignment_token(service, "TASK-1"),
-    )
-    if runtime == "auto":
-        service.next("TASK-1", caller_role="manager")
-    service.complete(
-        "TASK-1",
-        artifact="Findings.",
-        rule_results=(json.dumps(_approach()),),
-        caller_role=worker,
-        assignment=assignment_token(service, "TASK-1"),
-    )
-    return _store(root)
-
-
-def test_single_and_auto_write_the_same_store_entries(tmp_path: Path) -> None:
-    (tmp_path / "single").mkdir()
-    (tmp_path / "auto").mkdir()
-    single = _stage_a_store(_project(tmp_path / "single"), "single")
-    auto = _stage_a_store(_project(tmp_path / "auto"), "auto")
-
-    assert single == auto
-
-
 def test_the_state_with_a_held_completion_survives_a_round_trip(
     tmp_path: Path,
 ) -> None:
     root = _project(tmp_path)
-    service, _ = _developed(root)
-    _report(service, _approach())
+    _developed(root)
 
     reloaded = WorkflowService(Storage(root))
     state, snapshot = reloaded.load("TASK-1")
-    record = state.item_executions[state.cursor]
+    record = state.item_executions[_index(snapshot, "develop")]
 
-    assert state.failure_kind == "rules_proposed"
     assert record.held_completion is not None
-    assert record.open_proposals == (rule_text_hash(CLI),)
-    assert record.rule_resolutions[0].status == "unresolved"
+    assert record.rule_resolutions[0].status == "judged"
+    verifier = state.item_executions[state.cursor]
+    assert [rule.state for rule in verifier.verification] == ["judged"]
     run = reloaded.tasks.read_task_record("TASK-1")[0][0]
     assert TaskRunAggregate.from_dict(run.to_dict()) == run
 
 
-def test_lint_reports_orphan_and_pending_store_entries(
+def test_lint_reports_orphan_store_entries_and_unscriptized_rules(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     store = _converted(CLI)
     store["rules"]["f" * 64] = {"text": "A rule nobody declares.", "status": "rejected"}
     store["rules"]["e" * 64] = {"text": "Undecided.", "status": "ambiguous"}
-    root = _project(tmp_path, store=store)
+    store["rules"][rule_text_hash(NAMES)] = {"text": NAMES, "status": "ambiguous"}
+    root = _project(tmp_path, TWO_HINTS, store=store)
 
     assert main(["--root", str(root), "lint"]) == 0
 
     out = capsys.readouterr().out
-    assert "Rule store: 3 rules, 1 check\n" in out
+    assert "Rule store: 4 rules, 1 check\n" in out
     assert f"Orphan rule {'f' * 12}: A rule nobody declares.\n" in out
     assert f"Orphan rule {'e' * 12}: Undecided.\n" in out
-    assert f"Pending rule {'e' * 12} (ambiguous): Undecided.\n" in out
+    assert "Pending rule" not in out
     assert "Orphan rule " + rule_text_hash(CLI)[:12] not in out
-
-
-def test_the_cli_shows_an_approval_in_full_and_asks_first(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root)
-    _report(service, _approach())
-    service.next("TASK-1", approve=(rule_text_hash(CLI),))
-    _report(
-        service,
-        {"id": "develop/1", "status": "approach", "check": "cli-surface"},
-        checks=(FOO_CHECK,),
-    )
-    answers = iter(["n"])
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
-
-    code = main(["--root", str(root), "next", "TASK-1", "--approve", "cli-surface"])
-
-    assert code == 1
-    error = capsys.readouterr().err
-    assert f"check cli-surface: {FOO_CHECK['shell']}" in error
-    assert "Approval cancelled" in error
-    assert RuleStore(root).load().checks["cli-surface"].status == "proposed"
+    assert (
+        "Warning: 1 rule has no check yet (develop/2); `ww-scriptize-rules` "
+        "builds checks for them.\n"
+    ) in out
 
 
 def test_the_cli_refuses_a_malformed_rule_result(
@@ -662,14 +451,6 @@ def test_the_cli_refuses_a_malformed_rule_result(
 
     assert code == 1
     assert "--rule-result is not valid JSON" in capsys.readouterr().err
-
-
-PASS = {
-    "id": "develop/1",
-    "status": "not_convertible",
-    "reason": "A matter of review.",
-    "verdict": "pass",
-}
 
 
 def _index(snapshot: PlanSnapshot, name: str) -> int:
@@ -807,206 +588,13 @@ def test_a_replayed_completion_ends_the_verifiers_assignment(tmp_path: Path) -> 
     assert hook.assignment_items == ("record-notes",)
 
 
-def test_yes_approves_without_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_next_no_longer_takes_rule_decisions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
-    service, _ = _developed(root, "print(1)  # foo\n")
-    _report(service, _approach())
+    _developed(root)
 
-    def no_prompt(prompt: str) -> str:
-        raise AssertionError("--yes must not ask")
-
-    monkeypatch.setattr("builtins.input", no_prompt)
-
-    code = main(
-        [
-            "--root",
-            str(root),
-            "next",
-            "TASK-1",
-            "--approve",
-            rule_text_hash(CLI)[:12],
-            "--yes",
-        ]
-    )
-
-    assert code == 0
-    error = capsys.readouterr().err
-    assert "approach for rule" in error
-    assert "Approved with --yes." in error
-    assert _store(root)["rules"][rule_text_hash(CLI)]["status"] == "approach_approved"
-
-
-# rules settings -----------------------------------------------------------------
-
-JUDGED_PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
-STAGE_B = {"id": "develop/1", "status": "approach", "check": "cli-surface"}
-
-
-def _rules(root: Path, **settings: object) -> None:
-    (root / "ww.json").write_text(json.dumps({"rules": settings}), encoding="utf-8")
-
-
-def _active(service: WorkflowService, page: Instruction) -> Instruction:
-    """The page of the agent item now in progress, starting it if needed."""
-    if page.item_status == "in_progress":
-        return page
-    return service.next("TASK-1")
-
-
-def _finish(service: WorkflowService, page: Instruction) -> Instruction:
-    """Complete ``check`` and the workflow summary; the completion page."""
-    page = _active(service, page)
-    assert page.item_name == "check"
-    page = _active(
-        service,
-        service.complete("TASK-1", artifact="Checked.", summary_for_next="Checked."),
-    )
-    assert page.item_name == "update-workflow-summary"
-    service.complete("TASK-1", artifact="Summary.", variables=(("summary", "Did it."),))
-    return service.instruction("TASK-1")
-
-
-def _summary_artifact(root: Path, service: WorkflowService) -> str:
-    state, snapshot = service.load("TASK-1")
-    index = next(
-        index for index, item in enumerate(snapshot.plan.items) if item.summary
-    )
-    reference = state.item_executions[index].artifact
-    assert reference is not None
-    return (root / reference).read_text(encoding="utf-8")
-
-
-def test_the_operator_path_records_the_operator_as_approver(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root, "print(1)  # foo\n")
-    text_hash = rule_text_hash(CLI)
-    _report(service, _approach())
-    service.next("TASK-1", approve=(text_hash[:12],))
-    _report(service, STAGE_B, checks=(FOO_CHECK,))
-
-    service.next("TASK-1", approve=("cli-surface",))
-
-    check = _store(root)["checks"]["cli-surface"]
-    rule = _store(root)["rules"][text_hash]
-    run = "TASK-1/01-task"
-    assert (check["approved_by"], check["approved_in"]) == ("operator", run)
-    assert (rule["approved_by"], rule["approved_in"]) == ("operator", run)
-    assert rule["proposed_run"] == "TASK-1/01-task"
-
-
-def test_an_operator_approved_check_is_reported_when_the_run_completes(
-    tmp_path: Path,
-) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root, "print(1)  # foo\n")
-    _report(service, _approach())
-    service.next("TASK-1", approve=(rule_text_hash(CLI)[:12],))
-    _report(service, STAGE_B, checks=(FOO_CHECK,))
-    recorded = service.next("TASK-1", approve=("cli-surface",))
-
-    done = _finish(service, recorded)
-
-    assert done.status == "completed"
-    (converted,) = done.rule_conversions.converted
-    assert (converted.name, converted.approved_by) == ("cli-surface", "operator")
-    assert converted.rules[0].id == "develop/1"
-    page = _markdown(done)
-    assert "### Rules converted in this run" in page
-    assert "- Check `cli-surface` (approved by operator)" in page
-    assert f"  - Rule `develop/1`: {CLI}" in page
-    assert "Undo" not in page
-    assert "## Rules converted in this run" in _summary_artifact(root, service)
-    rendered_json = json.loads(JsonOutputAdapter().render_instruction(done))
-    assert rendered_json["rule_conversions"] == {"converted": [converted.to_dict()]}
-
-
-def test_without_scripting_a_verifier_only_judges(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    _rules(root, scripting=False, check_guidance="Run checks inside docker.")
-
-    _, held = _developed(root)
-
-    assert held.verification is not None
-    assert [rule.state for rule in held.verification.rules] == ["judged"]
-    page = _markdown(held)
-    assert "judged: give a verdict" in page
-    assert "#### Where checks run" not in page
-    assert "Run checks inside docker." not in page
-    assert "--check-result" not in page
-    assert "propose how to check it" not in page
-
-
-def test_without_scripting_an_approved_approach_is_judged(tmp_path: Path) -> None:
-    text_hash = rule_text_hash(CLI)
-    root = _project(
-        tmp_path,
-        store={
-            "rules": {
-                text_hash: {
-                    "text": CLI,
-                    "status": "approach_approved",
-                    "approach": "diff the parser's help output",
-                    "check": "cli-surface",
-                    "interpretation": "No flag changes.",
-                }
-            },
-            "checks": {},
-        },
-    )
-    _rules(root, scripting=False)
-
-    _, held = _developed(root)
-
-    assert held.verification is not None
-    assert [rule.state for rule in held.verification.rules] == ["judged"]
-    assert "prepare and prove its check" not in _markdown(held)
-
-
-def test_the_check_guidance_reaches_the_verifier_as_written(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    guidance = (
-        "Checks run inside the docker container, on the worktree.\n"
-        "\n"
-        "Plain coreutils may run on the host."
-    )
-    _rules(root, check_guidance=f"  {guidance}\n")
-
-    _, held = _developed(root)
-
-    assert held.verification is not None
-    assert held.verification.guidance == guidance
-    page = _markdown(held)
-    assert (
-        "> Checks run inside the docker container, on the worktree.\n"
-        ">\n"
-        "> Plain coreutils may run on the host."
-    ) in page
-    assert page.index("#### Where checks run") < page.index("> Checks run inside")
-    assert page.index("> Plain coreutils") < page.index("#### What to do")
-    rendered_json = json.loads(JsonOutputAdapter().render_instruction(held))
-    assert rendered_json["verification"]["guidance"] == guidance
-
-
-def test_blank_check_guidance_shows_nothing(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    _rules(root, check_guidance="   ")
-
-    _, held = _developed(root)
-
-    assert held.verification is not None
-    assert held.verification.guidance is None
-    assert "rules.check_guidance" not in _markdown(held)
-
-
-def test_nothing_converted_leaves_no_section(tmp_path: Path) -> None:
-    root = _project(tmp_path)
-    service, _ = _developed(root)
-
-    recorded = _report(service, PASS)
-
-    done = _finish(service, recorded)
-    assert not done.rule_conversions
-    assert "Rules converted in this run" not in _markdown(done)
-    assert "Rules converted" not in _summary_artifact(root, service)
+    for flags in (["--approve", "cli-surface"], ["--pick", "abc=1"]):
+        with pytest.raises(SystemExit):
+            main(["--root", str(root), "next", "TASK-1", *flags])
+        assert "unrecognized arguments" in capsys.readouterr().err

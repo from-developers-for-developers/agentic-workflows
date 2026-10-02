@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The rule-automation store: what ww learned about rules without a command.
 
-A rule without a command is judged by a verifier agent. Once, with the
-operator's approval, a verifier may turn it into a command: first it proposes
-an approach, then it prepares the check. ww keeps that knowledge in
-``ww-rule-automation.json`` at the project root, a file meant to be committed
-so every checkout and task shares it. Nothing here is configuration:
+A rule without a command is judged by a verifier agent, unless a converted
+check covers its wording. ``ww-scriptize-rules`` builds such checks outside
+any task, and ``ww rules convert`` records each on the operator's
+confirmation. ww keeps that knowledge in ``ww-rule-automation.json`` at the
+project root, a file meant to be committed so every checkout and task shares
+it. Nothing here is configuration:
 verification never rewrites YAML or rule files, and the store is derived
 knowledge only; the operator's ``ww rules`` writes are the only way rule files
 change (:mod:`ww.rule_writes`).
@@ -14,10 +15,13 @@ Two maps make up the store. ``rules`` is keyed by the hash of a rule's
 normalised text (:func:`ww.config.rules.rule_text_hash`, the single source of
 truth for that key), so the same wording shares its knowledge wherever it is
 declared and a changed wording starts over. ``checks`` is keyed by a short
-check name the verifier chooses; one check may cover several rules, the
+check name; one check may cover several rules, the
 normal case for an ecosystem tool whose one configuration holds many rules.
 Only a ``converted`` check is ever run, and a rule is mechanical only when
-its entry is ``converted`` and names a ``converted`` check.
+its entry is ``converted`` and names a ``converted`` check. A store written
+before verifiers stopped proposing checks may still hold their interim
+statuses (an approach, a proposed check, a pending revision); they are read
+as they are and never written any more.
 
 The file is shared by every task of the project, so each change is a
 read-modify-write under a dedicated file lock, taken inside the task lock of
@@ -55,10 +59,6 @@ RuleApprover = Literal["operator", "auto"]
 # A check name: lower-case words joined by single hyphens, e.g. "lint-src".
 CHECK_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CHECK_NAME_LIMIT = 40
-# Rule statuses that wait for the operator's decision.
-UNDECIDED_RULE_STATUSES: frozenset[RuleAutomationStatus] = frozenset(
-    {"approach_proposed", "proposed", "ambiguous"}
-)
 _RULE_KEYS = {
     "text",
     "status",
@@ -264,9 +264,9 @@ def describe_command(command: Commands) -> str:
 class CheckEntry:
     """One derived check and its approval state.
 
-    ``pending`` is a proposed revision of a ``converted`` check, such as an
-    extended configuration covering one more rule; the approved ``spec`` keeps
-    running until the operator approves the revision. ``reason`` explains a
+    ``pending`` is a revision of a ``converted`` check that a verifier once
+    proposed, as only an old store holds; it never runs, and ``rules
+    convert`` drops it. ``reason`` explains a
     ``rejected`` check, such as the operator's ``ww rules revoke``. The
     provenance fields are those of :class:`RuleEntry`.
     """
@@ -281,11 +281,6 @@ class CheckEntry:
     proposed_run: str | None = None
     approved_by: RuleApprover | None = None
     approved_in: str | None = None
-
-    @property
-    def undecided(self) -> bool:
-        """Whether the operator still has to approve or reject something here."""
-        return self.status == "proposed" or self.pending is not None
 
     def to_dict(self) -> dict[str, object]:
         data = self.spec.to_dict()
@@ -350,7 +345,7 @@ class RuleAutomation:
         return replace(self, checks={**self.checks, name: entry})
 
     def converted_check(self, text_hash: str) -> tuple[str, CheckEntry] | None:
-        """The approved check that makes a rule mechanical, if there is one."""
+        """The converted check that makes a rule mechanical, if there is one."""
         entry = self.rules.get(text_hash)
         if entry is None or entry.status != "converted" or entry.check is None:
             return None
@@ -358,13 +353,6 @@ class RuleAutomation:
         if check is None or check.status != "converted":
             return None
         return entry.check, check
-
-    def undecided(self, key: str) -> bool:
-        """Whether a proposal, by rule hash or check name, awaits the operator."""
-        if key in self.checks:
-            return self.checks[key].undecided
-        entry = self.rules.get(key)
-        return entry is not None and entry.status in UNDECIDED_RULE_STATUSES
 
     def to_dict(self) -> dict[str, object]:
         return {

@@ -25,7 +25,6 @@ _OPERATOR_REASONS = {
     "handler_interrupted": "a command was interrupted",
     "loop_limit": "a loop reached its limit",
     "fix_limit": "a step's checks kept failing",
-    "rules_proposed": "verifiers proposed checks to approve",
     "check_disputed": "a worker disputed a check",
     "value_unavailable": "a step's template value is not available yet",
 }

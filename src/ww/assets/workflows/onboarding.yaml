@@ -573,8 +573,8 @@ workflows:
               `worktree_dir` only when chosen; under `rules`, a
               `check_guidance` only when {{ww.documents.project}} records a
               wrapper that commands go through, such as a container: one or two
-              sentences telling the verifier that scripts a rule where its
-              check must run (through the wrapper, on the task's worktree) and
+              sentences telling `ww-scriptize-rules`, which scripts rules
+              into checks, where each check must run (through the wrapper, on the task's worktree) and
               when the host may run one; under `workflows`,
               `ww-scriptize-rules` with `hooks_from` naming the main lane, so
               scriptizing rules runs on a branch and worktree of its own;
