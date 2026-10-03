@@ -403,8 +403,8 @@ class Instruction:
     documents: tuple[DocumentTask, ...] = ()
     # An interactive step: its conversation state and the recording commands.
     interactive: bool = False
-    feedback_learning: bool = False
-    feedback_command: str | None = None
+    # Optional suggestion after completion; never a plan item or assignment.
+    feedback_deduction_command: str | None = None
     interaction_entries: int = 0
     interaction_ended: bool = False
     interact_commands: InteractCommands | None = None
@@ -561,8 +561,7 @@ class Instruction:
             "input_context": [item.to_dict() for item in self.input_context],
             "documents": [item.to_dict() for item in self.documents],
             "interactive": self.interactive,
-            "feedback_learning": self.feedback_learning,
-            "feedback_command": self.feedback_command,
+            "feedback_deduction_command": self.feedback_deduction_command,
             "interaction_entries": self.interaction_entries,
             "interaction_ended": self.interaction_ended,
             "interact_commands": (

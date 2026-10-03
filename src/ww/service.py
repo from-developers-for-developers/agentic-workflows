@@ -702,29 +702,63 @@ class WorkflowService:
         ):
             self.feedback.complete_task(state.task_id)
 
+    def feedback_sources(
+        self,
+        task_id: str,
+        run_id: str | None = None,
+    ) -> dict[str, object]:
+        """Expose completed learnable artifacts through the storage boundary."""
+        state, snapshot = self.load(task_id, run_id)
+        if state.status != "completed":
+            raise StateError("feedback deduction requires a completed workflow run")
+        sources = []
+        items = {item.id: item for item in snapshot.plan.items}
+        seen: set[str] = set()
+        for record in (*state.execution_history, *state.item_executions):
+            item = items.get(record.plan_item_id)
+            if (
+                item is None
+                or not item.learnable
+                or record.status != "completed"
+                or not record.artifact
+                or record.artifact in seen
+            ):
+                continue
+            seen.add(record.artifact)
+            source_id = (
+                "artifact-" + hashlib.sha256(record.artifact.encode()).hexdigest()[:16]
+            )
+            sources.append(
+                {
+                    "id": source_id,
+                    "step": item.step,
+                    "artifact": record.artifact,
+                    "encountered_at": record.completed_at or state.updated_at,
+                    "content": self.tasks.read_execution_artifact(record.artifact),
+                }
+            )
+        return {"task": task_id, "run": state.run_id, "sources": sources}
+
     def record_feedback(
         self,
         task_id: str,
         analysis: object,
         *,
+        run_id: str | None = None,
         caller_role: CallerRole | None = None,
         assignment: str | None = None,
     ) -> dict[str, object]:
-        """Persist agent generalisations supported by this interactive round."""
+        """Record deductions from a finished run, without modifying its plan/state."""
         self._validate_caller_role(caller_role)
         validate_task_id(task_id)
         if not load_project_config(self.storage.project_config_path).feedback_learning:
             raise StateError("feedback learning is disabled in ww.json")
         with self.tasks.lock_task(task_id):
             self._authorize_worker(task_id, caller_role, assignment)
-            state, snapshot = self.load(task_id)
-            if state.cursor >= len(snapshot.plan.items):
-                raise StateError("feedback record requires an active interactive step")
-            item = snapshot.plan.items[state.cursor]
-            if not item.interactive:
-                raise StateError("feedback record requires an interactive step")
+            sources = self.feedback_sources(task_id, run_id)
+            state, _ = self.load(task_id, run_id)
             return self.feedback.record(
-                task_id, state.run_id, item.name, item.item_id, analysis
+                task_id, state.run_id, analysis, sources["sources"]
             )
 
     def _commit_runs(

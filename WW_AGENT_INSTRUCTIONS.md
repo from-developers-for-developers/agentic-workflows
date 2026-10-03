@@ -1,6 +1,6 @@
 # Working with ww
 
-ww saves progress, runs handlers, and names the next role. Where used by default, use
+ww saves progress, runs handlers, and names the next role. Where ww is used by default, use
 it for requests to implement, fix, investigate, review, or otherwise carry out
 project work unless the user asks you not to, and every change to files goes
 through ww: when no workflow fits, run `./ww lookup [<task>] --agent <agent>`
@@ -45,5 +45,5 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
   `operator_reason` and the exact error to the user, and run only the `./ww next`
   option they pick (`--retry`, `--force`, `--replan`, `--keep-plan`, `--yes`
   once they said so); never reset unasked.
-- Follow enabled interactive feedback commands; never edit the feedback store.
-  Candidates become rules only on operator-requested review and explicit approval.
+- Relay optional feedback deduction suggestions only after workflow completion.
+  Use its skill and ww commands; rule approval and pruning are separate follow-ups.

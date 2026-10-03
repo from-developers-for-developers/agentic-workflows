@@ -282,6 +282,21 @@ class InstructionBuilder:
                 handoff=handoff.rstrip() if handoff else None,
                 recommended_workflow=plan.recommended_next_workflow,
                 parent_task_id=state.parent_task_id,
+                feedback_deduction_command=(
+                    f"{ww_command()} feedback sources {state.task_id} "
+                    f"--run {state.run_id} --json"
+                    if load_project_config(self.root / "ww.json").feedback_learning
+                    and any(
+                        record.status == "completed"
+                        and record.artifact
+                        and any(
+                            item.id == record.plan_item_id and item.learnable
+                            for item in plan.items
+                        )
+                        for record in (*state.execution_history, *state.item_executions)
+                    )
+                    else None
+                ),
             )
         if state.status == "awaiting_input":
             return self._awaiting_input(state, plan)
@@ -910,16 +925,6 @@ class InstructionBuilder:
             summary_required=item.hands_over,
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
-            feedback_learning=(
-                item.interactive
-                and load_project_config(self.root / "ww.json").feedback_learning
-            ),
-            feedback_command=(
-                f"{ww_command()} feedback record {state.task_id} "
-                "--analysis <analysis.json> --role manager"
-                if item.interactive
-                else None
-            ),
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(

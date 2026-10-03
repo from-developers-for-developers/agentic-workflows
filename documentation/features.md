@@ -4064,86 +4064,110 @@ and `WW_UPDATE_CHECK_INTERVAL` sets the seconds between checks.
 
 ## Learning from operator feedback
 
-`feedback_learning` in `ww.json` is a boolean, default `true`. When enabled,
-interactive step pages ask the agent to analyse all recorded operator feedback,
-match generalisations by meaning, and assess scripted versus reasoning
-enforcement. This includes requirement gaps and preferences as well as mistakes.
-The agent records its judgement through `ww feedback record TASK --analysis
-analysis.json --role manager`; ww validates operator evidence from the current
-run, step and work item. The JSON file is an array of points with `summary`,
-`reason`, `enforcement` (`scripted` or `reasoning`), `approach`, and `entries`
-(operator entry numbers from `ww feedback show TASK --json`). To match an
-existing point, supply its `id` from `ww feedback --json`. An empty array
-records that no generalisable feedback was found. The transcript remains the
-source of truth. A candidate does not become an obligation for future work.
+Feedback deduction is optional follow-up work after a workflow completes. It
+adds no assignments, gates, handlers or steps to the workflow. Explicitly mark
+artifact-producing steps that can contain useful negative feedback:
 
-The dedicated `.ww/feedback.json` store is updated under a project-scoped lock
-and written atomically. Repeating an analysis with the same supporting entry
-and candidate does not increment its count; retries creating a point with the
-same normalised wording reuse that point. Semantic matching of different
-wording remains the agent's responsibility. One candidate occurrence is one
-supporting operator entry, which can contain several related corrections.
-Task frequency counts distinct tasks, so multiple comments in one task cannot
-inflate the task ratio. `task_ratio` divides the number of tasks with matches
-by tracked tasks (completed tasks plus tasks with recorded analysis).
-`occurrence_ratio` divides supporting entry occurrences by tracked tasks and
-can exceed one when several comments occur in a task.
-`completed_task_ratio` includes only completed tasks on both sides. Tracking
-starts when this feature is enabled; it does not scan historical tasks.
-
-Each completed task counts once, even across workflow runs. A candidate is
-automatically deleted after five subsequently completed tasks without a match.
-Unfinished tasks with supporting evidence protect their candidates until they
-complete. Duplicate analysis does not refresh recency. Deletion removes the
-candidate, never its original transcript. Setting `feedback_learning: false`
-suppresses learning instructions, rejects recording, and stops completion
-tracking and retirement; existing evidence remains readable. Re-enabling
-resumes tracking without backfilling tasks completed while disabled.
-
-`ww-feedback-rules`, available through skill installation, reviews every
-candidate on the operator's request, compares existing rules, and proposes
-scope and enforcement with concrete wording. A single occurrence can warrant
-a proposal; neither count nor ratio imposes a minimum threshold or predicts
-future failures. The operator must approve the concrete proposals before the
-skill installs them using existing validated `ww rules` commands. Scripted
-approaches require proven checks; reasoning approaches remain verifier duties.
-
-For example, after the operator asks for English identifiers, record the
-conversation through the interactive step's normal `interact` command and
-inspect it with:
-
-```console
-./ww feedback --json
-./ww feedback show TASK-42 --json
+```yaml
+workflows:
+  - name: task
+    steps:
+      - review: Review the changes and record any corrections.
+        learnable: true
+      - confirm: Confirm acceptance with the operator.
+        interactive: true
+        learnable: true
 ```
 
-If operator entry 2 supports a lasting lesson, write `analysis.json`:
+`learnable` is a boolean, default `false`, independent of `interactive`.
+Noninteractive reviews can be learnable; ordinary conversations are not
+learnable unless explicitly marked. It requires `artifact: true`. The saved
+plan retains this source metadata without inserting learning work. When an
+eligible artifact exists and `feedback_learning` in `ww.json` is enabled
+(default `true`), the completed-workflow page suggests the `ww-deduce-feedback`
+skill. It does not run deduction automatically or postpone completion.
+
+The skill reads negative feedback from eligible completed-step artifacts,
+reasons about possible recurrence and matches existing generalizations by
+meaning. It records whether enforcement could be scripted or needs reasoning,
+including a concrete approach and its limits. A candidate is an observation,
+not an obligation or an installed rule. A single encounter can be useful;
+frequency is evidence rather than a required threshold or prediction.
+
+The internal commands expose sources and stable point IDs:
+
+```console
+./ww feedback sources TASK-42 --run 01-task --json
+./ww feedback --json
+./ww feedback get feedback-a1b2c3d4e5f6 --json
+```
+
+`sources` returns artifact source IDs, completion timestamps and content through
+ww's storage adapter. Only completed runs and explicitly learnable artifacts
+are eligible, including retained loop-round results. `show` is an alias for
+`sources`. Do not use arbitrary files or interactive transcripts as deduction
+sources. Generalize feedback in the artifacts, not artifact headings or
+instructions. The agent decides meaning; ww validates supporting quotes.
+
+Write an analysis array such as this, substituting a source ID ww returned:
 
 ```json
 [
   {
     "summary": "Use English variable names.",
-    "reason": "Unspecified naming language can cause the same issue in new code.",
+    "reason": "Unspecified naming language can recur in new code.",
     "enforcement": "reasoning",
-    "approach": "Review identifier language; dictionary checks have false positives.",
-    "entries": [2]
+    "approach": "Review identifiers; dictionaries have false positives.",
+    "evidence": [
+      {"source": "artifact-a1b2c3d4e5f60000", "quote": "Use English names."}
+    ]
   }
 ]
 ```
 
-Then record it while that interactive step is active:
+Then record the deductions after completion:
 
 ```console
-./ww feedback record TASK-42 --analysis analysis.json --role manager
+./ww feedback record TASK-42 --run 01-task --analysis analysis.json --role manager
 ```
 
-For a subsequent match, include the existing candidate's `id` instead of
-creating another point. To disable learning, add this setting in `ww.json`:
+New points omit `id`. For another encounter of an existing point, supply its
+exact `id` from `list` or `get`; ww rejects a same-wording update with new
+evidence if the ID is omitted. Semantic matching of paraphrases belongs to the
+agent. Repeating the same point and artifact quote does not add an occurrence,
+including retries of new-point creation. New supporting quotes increment the
+count; several quotes in one task still count as one distinct encountered task.
+Record `[]` when no negative feedback generalizes. Recording deductions does
+not change the completed run's state, plan, progress or assignment.
 
-```json
-{"feedback_learning": false}
+The locked, atomically written `.ww/feedback.json` store retains provenance,
+occurrences, distinct encountered tasks, and `last_encountered_at`: the latest
+supporting artifact completion time, not deduction time. This timestamp is
+stored for later use; it does not affect pruning. `task_ratio` measures the
+fraction of tracked tasks with encounters; `occurrence_ratio` divides supporting
+quote encounters by tracked tasks and can exceed one. `completed_task_ratio`
+uses completed tasks on both sides. Tracking counts each completed task once
+and also includes explicitly analysed historical tasks; it never automatically
+backfills old tasks. Earlier transcript-based points remain readable with their
+IDs and counts; their timestamp is derived from the recorded interaction time.
+
+Completion and deduction never delete points. Run `/ww-feedback-rules` for a
+separate review of every candidate and a batch of concrete rule proposals.
+The skill asks for explicit approval before writing rules through validated
+`ww rules` commands. It also maintains the store using a separate command:
+
+```console
+./ww feedback prune --dry-run --json
+./ww feedback prune --keep feedback-a1b2c3d4e5f6 --json
 ```
 
-Invoke `/ww-feedback-rules` when you want proposals for lasting rules. The
-agent shows the wording, scope, evidence and enforcement rationale and waits
-for approval before writing any of them.
+Pruning deletes candidates absent for five subsequently completed tasks. The
+review skill examines all candidates first and retains stale points still
+useful for proposals or deferred decisions with repeatable `--keep` IDs. A
+pruning preview does not write anything. Original artifacts are never deleted.
+No elapsed-time policy is implied by `last_encountered_at`.
+
+Set `"feedback_learning": false` in `ww.json` to disable completion suggestions,
+deduction recording and task-exposure tracking. Existing candidates and
+artifacts remain readable. Pruning remains an explicit maintenance operation,
+independent of that suggestion setting.

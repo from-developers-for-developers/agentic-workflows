@@ -9,15 +9,15 @@ import uuid
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 from ww.errors import StateError
-from ww.interactions import InteractionLog
 from ww.storage import Storage
 from ww.task_ids import validate_task_id
 
 STORE_SCHEMA = 1
-# Five subsequently completed tasks without a match retire a candidate.
+# Rule review may prune after five subsequently completed unmatched tasks.
 STALE_TASKS = 5
 
 
@@ -27,7 +27,6 @@ class FeedbackStore:
     def __init__(self, storage: Storage) -> None:
         self.storage = storage
         self.path = storage.runtime_path / "feedback.json"
-        self.log = InteractionLog(storage)
 
     def _lock(self) -> AbstractContextManager[None]:
         return self.storage.locks.lock(self.path, purpose="operator feedback")
@@ -59,8 +58,13 @@ class FeedbackStore:
                         raise ValueError("event must be an object")
                     _text(event, "task")
                     _text(event, "quote")
-                    if type(event.get("entry")) is not int:
-                        raise ValueError("event entry must be an integer")
+                    if "entry" in event:
+                        if type(event["entry"]) is not int:
+                            raise ValueError("event entry must be an integer")
+                    else:
+                        _text(event, "source")
+                    _timestamp(event.get("at"))
+                point["last_encountered_at"] = _last_encountered(point["events"])
             return dict(data)
         except (OSError, ValueError, StateError) as error:
             raise StateError(f"invalid feedback store {self.path}: {error}") from error
@@ -68,16 +72,13 @@ class FeedbackStore:
     def _save(self, data: dict[str, Any]) -> None:
         self.storage.locks.atomic_write(self.path, json.dumps(data, indent=2) + "\n")
 
-    def evidence(self, task_id: str) -> dict[str, object]:
-        """Stable entry numbers in the append-only transcript, including context."""
-        validate_task_id(task_id)
-        return {
-            "task": task_id,
-            "entries": [
-                {"entry": index, **entry.to_dict()}
-                for index, entry in enumerate(self.log.entries(task_id), start=1)
-            ],
-        }
+    def get(self, identifier: str) -> dict[str, object]:
+        points = self.listing()["points"]
+        assert isinstance(points, list)
+        for point in points:
+            if point["id"] == identifier:
+                return dict(point)
+        raise StateError(f"unknown feedback point {identifier!r}")
 
     def listing(self) -> dict[str, object]:
         data = self._load()
@@ -112,18 +113,16 @@ class FeedbackStore:
         self,
         task_id: str,
         run_id: str | None,
-        step: str,
-        item_id: str | None,
         analysis: object,
+        sources: object,
     ) -> dict[str, object]:
-        """Validate the whole batch before writing; match IDs are agent decisions.
-
-        Each distinct operator entry counts once per candidate. Repeated CLI
-        invocations and two paraphrases of the same evidence cannot inflate it.
-        """
+        """Record deductions with quoted artifact evidence and explicit match IDs."""
+        validate_task_id(task_id)
         if not isinstance(analysis, list):
             raise StateError("feedback analysis must be a JSON array")
-        entries = self.log.entries(task_id)
+        if not isinstance(sources, list):
+            raise StateError("feedback sources must be a list")
+        by_id = {source["id"]: source for source in sources}
         prepared = []
         for raw in analysis:
             if not isinstance(raw, dict):
@@ -134,7 +133,7 @@ class FeedbackStore:
                 "reason",
                 "enforcement",
                 "approach",
-                "entries",
+                "evidence",
             }
             if unknown:
                 raise StateError(
@@ -146,42 +145,50 @@ class FeedbackStore:
                 not isinstance(identifier, str) or not identifier.strip()
             ):
                 raise StateError("feedback id must be a non-empty string")
-            numbers = raw.get("entries")
-            if not isinstance(numbers, list) or not numbers:
-                raise StateError("feedback entries must be a non-empty list")
+            evidence = raw.get("evidence")
+            if not isinstance(evidence, list) or not evidence:
+                raise StateError("feedback evidence must be a non-empty list")
             events = []
-            for number in numbers:
-                if type(number) is not int or not 1 <= number <= len(entries):
-                    raise StateError("feedback entry number is out of range")
-                entry = entries[number - 1]
-                if (
-                    not entry.speaker.startswith("operator")
-                    or entry.run_id != run_id
-                    or entry.step != step
-                    or entry.item_id != item_id
-                ):
+            for supplied in evidence:
+                if not isinstance(supplied, dict) or set(supplied) != {
+                    "source",
+                    "quote",
+                }:
+                    raise StateError("feedback evidence needs source and quote")
+                source_id = _text(supplied, "source")
+                source = by_id.get(source_id)
+                if source is None:
                     raise StateError(
-                        "feedback evidence must be operator words in this step"
+                        "feedback source is not a completed learnable artifact"
                     )
+                quote = _text(supplied, "quote")
+                if quote not in source["content"]:
+                    raise StateError("feedback quote does not occur in its artifact")
                 events.append(
                     {
                         "task": task_id,
-                        "entry": number,
-                        **entry.to_dict(),
-                        "quote": entry.text,
+                        "run_id": run_id,
+                        "source": source_id,
+                        "artifact": source["artifact"],
+                        "step": source["step"],
+                        "quote": quote,
+                        "at": source["encountered_at"],
                     }
                 )
             prepared.append((identifier, fields, events))
         with self._lock():
             data = self._load()
+            if task_id not in data["tasks"]:
+                data["tasks"].append(task_id)
+            if task_id not in data["completed"]:
+                data["completed"].append(task_id)
             for identifier, fields, events in prepared:
                 if identifier is not None and identifier not in data["points"]:
                     raise StateError(
                         f"unknown feedback point {identifier!r}; list first"
                     )
                 if identifier is None:
-                    # Exact normalised wording also makes new-candidate retries safe.
-                    identifier = next(
+                    existing = next(
                         (
                             key
                             for key, point in data["points"].items()
@@ -190,26 +197,41 @@ class FeedbackStore:
                         ),
                         None,
                     )
-                if identifier is None:
-                    identifier = "feedback-" + uuid.uuid4().hex[:12]
+                    if existing is not None:
+                        seen = {
+                            _event_key(event)
+                            for event in data["points"][existing]["events"]
+                        }
+                        if any(_event_key(event) not in seen for event in events):
+                            raise StateError(
+                                f"existing feedback point {existing!r}; "
+                                "pass its id to update"
+                            )
+                        identifier = existing
+                    else:
+                        identifier = "feedback-" + uuid.uuid4().hex[:12]
                 point = data["points"].setdefault(identifier, {"events": []})
-                seen = {(event["task"], event["entry"]) for event in point["events"]}
-                added = False
+                seen = {_event_key(event) for event in point["events"]}
                 for event in events:
-                    if (event["task"], event["entry"]) not in seen:
-                        added = True
+                    key = _event_key(event)
+                    if key not in seen:
                         point["events"].append(event)
-                        seen.add((event["task"], event["entry"]))
+                        seen.add(key)
                 point.update(fields)
-                if added:
-                    point["last_seen"] = len(data["completed"])
-            if task_id not in data["tasks"]:
-                data["tasks"].append(task_id)
+                point["last_seen"] = max(
+                    (
+                        data["completed"].index(event["task"]) + 1
+                        for event in point["events"]
+                        if event["task"] in data["completed"]
+                    ),
+                    default=0,
+                )
+                point["last_encountered_at"] = _last_encountered(point["events"])
             self._save(data)
         return self.listing()
 
     def complete_task(self, task_id: str) -> None:
-        """Count each task once and delete candidates after five unmatched tasks."""
+        """Count completed task exposure once; never deduce or delete candidates."""
         with self._lock():
             data = self._load()
             if task_id in data["completed"]:
@@ -217,15 +239,65 @@ class FeedbackStore:
             if task_id not in data["tasks"]:
                 data["tasks"].append(task_id)
             data["completed"].append(task_id)
-            current = len(data["completed"])
-            for identifier, point in list(data["points"].items()):
-                task_ids = {event["task"] for event in point["events"]}
-                if task_id in task_ids:
-                    point["last_seen"] = current
-                pending = task_ids - set(data["completed"])
-                if not pending and current - point["last_seen"] >= STALE_TASKS:
-                    del data["points"][identifier]
+            for point in data["points"].values():
+                if any(event["task"] == task_id for event in point["events"]):
+                    point["last_seen"] = len(data["completed"])
             self._save(data)
+
+    def prune(
+        self,
+        *,
+        dry_run: bool = False,
+        keep: tuple[str, ...] = (),
+    ) -> dict[str, object]:
+        """Explicit maintenance called by rule review, never by workflow completion."""
+        with self._lock():
+            data = self._load()
+            unknown = set(keep) - set(data["points"])
+            if unknown:
+                raise StateError(
+                    "unknown feedback point(s): " + ", ".join(sorted(unknown))
+                )
+            stale = []
+            for identifier, point in data["points"].items():
+                pending = {event["task"] for event in point["events"]} - set(
+                    data["completed"]
+                )
+                if (
+                    identifier not in keep
+                    and not pending
+                    and len(data["completed"]) - point["last_seen"] >= STALE_TASKS
+                ):
+                    stale.append(identifier)
+            if not dry_run and stale:
+                for identifier in stale:
+                    del data["points"][identifier]
+                self._save(data)
+            return {"dry_run": dry_run, "pruned": stale, "kept": list(keep)}
+
+
+def _event_key(event: dict[str, Any]) -> tuple[object, ...]:
+    # Legacy transcript points remain readable without losing IDs or counts.
+    source = event.get("source", f"interaction:{event.get('entry')}")
+    return event["task"], event.get("run_id"), source, event["quote"]
+
+
+def _timestamp(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise StateError("feedback encounter time must be an ISO timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("timezone is required")
+        return parsed.astimezone(timezone.utc)
+    except ValueError as error:
+        raise StateError(f"invalid feedback encounter time: {value!r}") from error
+
+
+def _last_encountered(events: list[dict[str, Any]]) -> str | None:
+    return (
+        max(events, key=lambda event: _timestamp(event["at"]))["at"] if events else None
+    )
 
 
 def _text(raw: dict[str, Any], key: str) -> str:

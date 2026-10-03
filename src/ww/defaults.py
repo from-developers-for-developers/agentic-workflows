@@ -116,6 +116,7 @@ SKILLS = {
         "ww-solve",
         "ww-rules-from-artifacts",
         "ww-feedback-rules",
+        "ww-deduce-feedback",
         "ww-automate",
         "ww-scriptize",
     )

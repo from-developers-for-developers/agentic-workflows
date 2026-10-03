@@ -1754,27 +1754,26 @@ every file back.
 
 ## Operator feedback learning
 
-Feedback learning keeps observations separate from enforceable rules. ww
-already owns conversation transcripts, but cannot infer their meaning; the
-agent generalises operator feedback, semantically matches existing candidates,
-and assesses whether enforcement can be scripted. Interactive instruction pages
-expose that responsibility only when the default-on `feedback_learning`
-setting is enabled.
+Feedback deduction runs after workflow completion, without introducing plan
+items, assignments or completion gates. A boolean `learnable` flag on a step
+is retained as metadata in the saved plan. It selects artifacts independently
+of whether a step is interactive. The instruction builder suggests the
+`ww-deduce-feedback` skill only on completed runs with eligible artifacts and
+when the default-on `feedback_learning` setting permits it.
 
-The service accepts an injectable feedback store; `MemoryFeedbackStore` keeps
-embedded execution free of candidate-file writes. The default `FeedbackStore`
-persists candidates in `.ww/feedback.json` under a dedicated
-lock with atomic replacement. Supporting transcript entry numbers retain
-provenance and make recording idempotent. Workflow completion records distinct
-task exposure, while candidate views report occurrence counts and task ratios.
-Five subsequently completed tasks without a match retire a candidate; pending
-evidence protects ongoing tasks. These mechanics belong to ww so parallel
-tasks and agent retries cannot independently overwrite counts. Disabling the
-setting freezes learning state without deleting evidence.
+The service's source command reads eligible completed artifacts through the
+task storage boundary, including retained loop rounds. Stable source IDs and
+exact quoted evidence let the agent match meaning while ww owns identifiers,
+counting and persistence. Recording deductions validates completed-run sources
+and does not commit a run transition. Existing-point updates require their ID;
+repeated artifact/quote evidence is idempotent. `last_encountered_at` records
+source completion time rather than analysis time, preserving the chronology
+of feedback even when deduction happens later.
 
-The `feedback` CLI lists candidates, shows numbered transcript evidence and
-records an agent's analysis through a service-authorised interactive task.
-`ww-feedback-rules` reviews the candidates only on operator request and uses
-existing validated rule-writing commands after explicit approval of concrete
-proposals. No observation automatically changes workflow requirements, and
-frequency does not replace judgement about recurrence or rule scope.
+`FeedbackStore` writes candidates under a dedicated lock with atomic replacement;
+`MemoryFeedbackStore` supports embedded execution without candidate-file writes.
+Task completion only counts exposure. Candidate deletion belongs to the
+explicit `feedback prune` command used during the separate `ww-feedback-rules`
+review; it is never a side effect of workflow completion or deduction. Review
+judgement may retain stale candidates using their IDs. Rule installation still
+requires approval of concrete proposals through validated existing rule commands.

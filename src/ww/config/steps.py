@@ -62,6 +62,7 @@ STEP_ONLY_KEYS: set[str] = {
     "role",
     "subagents",
     "interactive",
+    "learnable",
     "choices",
     "profile",
     "items",
@@ -268,6 +269,11 @@ def _parse_step(
             f"{path} is interactive, so the manager holds the conversation; "
             "role: worker contradicts it"
         )
+    learnable = mapping.get("learnable", referenced.learnable if referenced else False)
+    if not isinstance(learnable, bool):
+        raise ConfigurationError(f"{path}.learnable must be true or false")
+    if learnable and not artifact:
+        raise ConfigurationError(f"{path}.learnable requires artifact: true")
     hooks = _parse_step_hooks(mapping, path, referenced)
     rules = _parse_rules(mapping, path, base.name, referenced)
     items = (
@@ -314,6 +320,7 @@ def _parse_step(
         role=role,
         subagents=subagents,
         interactive=interactive,
+        learnable=learnable,
         choices=choices,
         ui=ui,
         profile=profile["profile"],

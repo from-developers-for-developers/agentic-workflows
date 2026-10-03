@@ -158,7 +158,8 @@ The wizard asks a few questions and then sets the project up:
   steps, and the `ww-setup` skill with the skills it guides through
   (`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
   `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`), and
-  `ww-feedback-rules` for proposals from learned operator feedback.
+  `ww-deduce-feedback` and `ww-feedback-rules` for learning from completed
+  artifacts and proposing rules.
 - **Your user configuration directory**, `~/.config/ww/`,
   where settings of your own for every project live.
 
@@ -323,11 +324,12 @@ worker completes its main action and its agent-owned workflow hooks until ww exp
 hands control back. Each started workflow uses a saved plan, so later
 configuration edits cannot alter work already in progress.
 
-Interactive steps also learn recurring operator feedback as candidates, with
-evidence and task frequency. This is enabled by default; set
-`"feedback_learning": false` in `ww.json` to disable it. Invoke
-`/ww-feedback-rules` to review candidates and approve concrete rules. See
-[feedback learning](documentation/features.md#learning-from-operator-feedback)
+After a workflow finishes, ww suggests feedback deduction from artifacts of
+steps marked `learnable: true`. The `ww-deduce-feedback` skill records
+candidates with evidence, counters and encounter times. This is enabled by
+default; set `"feedback_learning": false` in `ww.json` to disable it. Invoke
+`/ww-feedback-rules` separately to review candidates, approve rules and prune
+stale points. See [feedback learning](documentation/features.md#learning-from-operator-feedback)
 for commands and examples.
 
 ### Runtimes: who actually performs a step

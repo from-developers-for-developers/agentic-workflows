@@ -442,6 +442,7 @@ A step accepts every [handler key](#handlers), plus:
 | `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. In `auto` the manager completes a `manager` step with `complete --role manager` (or `loop --role manager`), and `complete` or `loop` with `--role worker` on it is refused. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
 | `interactive` | `true`, `false`, or `page` | `true`: the step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. `page`: the operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends; valid on one per-item stage per `items` step. Defaults to `false`. |
+| `learnable` | boolean | Opts this step's completed artifact into optional feedback deduction after workflow completion. Independent of `interactive`; defaults to `false` and requires `artifact: true`. |
 | `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `steps` | list of steps | Nested ordered steps. |
 | `loop` | non-empty list of steps | Repeats ordinary nested steps until an authorized worker stops it. |
@@ -503,6 +504,16 @@ loop exit.
     - fix: Record each code-review finding as an item.
       items: ~
 ```
+
+### Learnable artifact sources
+
+An artifact-producing step accepts `learnable: true` or `false` (default
+`false`). This is independent of `interactive`; it opts the step's completed
+artifact into post-workflow negative-feedback deduction. `learnable: true`
+requires `artifact: true`. No deduction step or completion gate is compiled
+into the plan. The setting is inherited when referencing a reusable step and
+can be explicitly overridden. Saved plans retain it so completed-source
+selection does not depend on later workflow edits.
 
 ### Children
 

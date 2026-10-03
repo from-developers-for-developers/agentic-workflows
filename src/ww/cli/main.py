@@ -978,10 +978,16 @@ def _feedback(context: _Context) -> _Outcome:
         result["enabled"] = load_project_config(
             context.storage.project_config_path
         ).feedback_learning
-    elif args.feedback_action == "show":
+    elif args.feedback_action == "get":
         if not args.task_id:
-            raise StateError("feedback show needs a task ID")
-        result = store.evidence(args.task_id)
+            raise StateError("feedback get needs a point ID")
+        result = store.get(args.task_id)
+    elif args.feedback_action in {"sources", "show"}:
+        if not args.task_id:
+            raise StateError("feedback sources needs a task ID")
+        result = context.service.feedback_sources(args.task_id, args.run_id)
+    elif args.feedback_action == "prune":
+        result = store.prune(dry_run=args.dry_run, keep=tuple(args.keep))
     else:
         if not args.task_id or not args.analysis:
             raise StateError("feedback record needs a task ID and --analysis PATH")
@@ -990,7 +996,11 @@ def _feedback(context: _Context) -> _Outcome:
         except json.JSONDecodeError as error:
             raise StateError(f"invalid feedback analysis: {error}") from error
         result = context.service.record_feedback(
-            args.task_id, analysis, caller_role=args.role, assignment=args.assignment
+            args.task_id,
+            analysis,
+            run_id=args.run_id,
+            caller_role=args.role,
+            assignment=args.assignment,
         )
     if args.json_output:
         return _Outcome(_json(result))
@@ -1441,7 +1451,10 @@ def main(argv: list[str] | None = None) -> int:
     task_id = cast(str | None, getattr(args, "task_id", None))
     logged = args.command not in _READ_ONLY_COMMANDS and not (
         (args.command == "rules" and args.rules_action is None)
-        or (args.command == "feedback" and args.feedback_action != "record")
+        or (
+            args.command == "feedback"
+            and (args.feedback_action not in {"record", "prune"} or args.dry_run)
+        )
         or (args.command == "onboarding" and not args.assignments)
     )
 

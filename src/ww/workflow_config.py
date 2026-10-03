@@ -561,6 +561,8 @@ class StepDefinition(HandlerDefinition):
     # A conversation with the operator, held by the session that can talk to
     # them; implies ``role: manager``.
     interactive: bool = False
+    # Opt-in artifact source for feedback deduction after workflow completion.
+    learnable: bool = False
     # The options the operator chooses from during an interactive step.
     choices: tuple[ChoiceDefinition, ...] = ()
     # The operator answers this per-item stage on the operator page.

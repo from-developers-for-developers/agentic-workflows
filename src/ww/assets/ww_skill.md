@@ -27,10 +27,10 @@ description: Carry out the user's request through ww, this project's workflow to
    `ww-scriptize` skill builds those checks when they want it.
 4. Follow every ww response exactly: run each displayed command with all
    placeholders replaced, and keep going until ww reports that the workflow
-   is complete or reports an error. When interactive pages enable feedback
-   learning, match and record lasting lessons through their feedback commands.
-   Do not edit the store or install candidate rules automatically;
-   `ww-feedback-rules` reviews them on request and requires operator approval.
+   is complete or reports an error. After completion, relay any optional
+   `ww-deduce-feedback` suggestion; do not insert learning into the plan.
+   Deduction uses ww commands and explicit existing point IDs; rule review
+   and pruning are separate, and rules require operator approval.
 5. Never run a ww-owned handler yourself, edit ww state, or read
    `ww.yaml` or ww's source to work out what to do next. For a handler repair
    assignment, fix the cause and complete with an artifact; ww retries the

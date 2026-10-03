@@ -1038,6 +1038,7 @@ class WorkflowPlanCompiler:
                 role=role,
                 subagents=hints.subagents,
                 interactive=step.interactive and phase == "step",
+                learnable=step.learnable and phase == "step",
                 choices=step.choices if phase == "step" else (),
                 ui=step.ui and phase == "step",
                 # Explicit retained aliases for plan schemas <= 3.

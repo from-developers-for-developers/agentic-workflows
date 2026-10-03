@@ -440,14 +440,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     feedback = subparsers.add_parser(
         "feedback",
-        parents=[json_and_role],
-        help="List feedback candidates, show evidence, or record agent analysis.",
+        parents=[_shared("json", "role", "run")],
+        help="List candidates, read learnable artifacts, record deductions or prune.",
     )
     feedback.add_argument(
-        "feedback_action", choices=["list", "show", "record"], nargs="?", default="list"
+        "feedback_action",
+        choices=["list", "get", "sources", "show", "record", "prune"],
+        nargs="?",
+        default="list",
     )
     feedback.add_argument("task_id", nargs="?")
     feedback.add_argument("--analysis", metavar="PATH")
+    feedback.add_argument("--dry-run", action="store_true")
+    feedback.add_argument("--keep", action="append", default=[], metavar="POINT-ID")
     interact = subparsers.add_parser(
         "interact",
         parents=[json_and_role],
