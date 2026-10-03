@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-03
 
+- Feedback deduction is suggested after workflow completion from `learnable: true` artifacts, with ID-based updates and last-encounter times.
+  Candidate pruning is now explicit during separate rule review. `920e8fe`
 - Interactive steps learn feedback candidates with recurrence tracking and automatic expiry; disable with `feedback_learning: false`.
   The new `ww-feedback-rules` skill proposes rules for explicit operator approval. `220127c`
 - Reusable handlers support ordered `handlers` groups of automated actions, including nested groups and catalog
