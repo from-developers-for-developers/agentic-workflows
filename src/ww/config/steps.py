@@ -182,6 +182,7 @@ _STEP_CONTENT_KEYS = frozenset(
         "action",
         "variables",
         "saves",
+        "handlers",
         "steps",
         "loop",
         "items",
@@ -242,6 +243,8 @@ def _parse_step(
     )
     question, outcomes, base = _parse_assessment(mapping, path, base, handlers_by_name)
     base, referenced = _resolve_handler(mapping, path, base, handlers_by_name)
+    if base.handlers and (base.action is not None or base.operation is not None):
+        raise ConfigurationError(f"{path} cannot combine handlers with an action")
     children = _parse_nested_steps(mapping, "steps", path, handlers_by_name)
     if "steps" not in mapping and referenced is not None:
         children = referenced.child_steps
@@ -278,6 +281,10 @@ def _parse_step(
         bool(value)
         for value in (children, loop_steps, items is not None, child_flow is not None)
     )
+    if base.handlers and containers:
+        raise ConfigurationError(
+            f"{path} cannot combine handlers with steps, loop, items, or children"
+        )
     if containers > 1:
         raise ConfigurationError(
             f"{path} cannot combine steps, loop, items, and children"
@@ -303,6 +310,7 @@ def _parse_step(
         extension_arguments=base.extension_arguments,
         on_failure=base.on_failure,
         on_failure_instruction=base.on_failure_instruction,
+        handlers=base.handlers,
         role=role,
         subagents=subagents,
         interactive=interactive,
@@ -1085,6 +1093,7 @@ def _step_handler_reference(
             local.description if "description" in mapping else referenced.description
         ),
         action=action,
+        handlers=local.handlers if "handlers" in mapping else referenced.handlers,
         operation=local.operation if replaces_action else referenced.operation,
         provide=local.provide if "variables" in mapping else referenced.provide,
         outputs=local.outputs if "variables" in mapping else referenced.outputs,

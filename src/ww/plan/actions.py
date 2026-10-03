@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from ww.actions import (
     ActionPayload,
+    AutomaticAction,
     DefinedAction,
     Extension,
     Prompt,
@@ -21,6 +22,7 @@ from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.workflow_config import (
     HandlerDefinition,
+    StepDefinition,
     WorkflowConfiguration,
 )
 from ww.workspace import Workdir
@@ -63,11 +65,73 @@ class ActionResolver:
                     else registered.on_failure,
                     on_failure_instruction=value.on_failure_instruction
                     or registered.on_failure_instruction,
+                    workdir=value.workdir or registered.workdir,
+                    agent=value.agent or registered.agent,
+                    model=value.model or registered.model,
+                    reasoning=value.reasoning or registered.reasoning,
                 ),
                 registered.name,
                 registered,
             )
         return value, None, None
+
+    def automatic_members(
+        self,
+        value: HandlerDefinition,
+        stack: tuple[str, ...] = (),
+    ) -> tuple[HandlerDefinition, ...]:
+        """Flatten an automated group, resolving references and inheriting defaults."""
+        handler, _, _ = self._handler(value, resolve_reference=True)
+        if handler.handlers:
+            if handler.name != "inline-handlers" and handler.name in stack:
+                raise ConfigurationError(
+                    "handler group cycle: " + " -> ".join((*stack, handler.name))
+                )
+            result: list[HandlerDefinition] = []
+            for member in handler.handlers:
+                resolved, _, _ = self._handler(member, resolve_reference=True)
+                inherited = replace(
+                    resolved,
+                    on_failure=resolved.on_failure
+                    if resolved.on_failure is not None
+                    else handler.on_failure,
+                    on_failure_instruction=resolved.on_failure_instruction
+                    or handler.on_failure_instruction,
+                    workdir=resolved.workdir or handler.workdir,
+                    agent=resolved.agent or handler.agent,
+                    model=resolved.model or handler.model,
+                    reasoning=resolved.reasoning or handler.reasoning,
+                )
+                result.extend(self.automatic_members(inherited, (*stack, handler.name)))
+            return tuple(result)
+        if (
+            handler.operation is not None
+            or isinstance(handler, StepDefinition)
+            and (
+                handler.child_steps
+                or handler.loop_steps
+                or handler.items
+                or handler.children
+                or handler.assessment_outcomes
+                or handler.interactive
+                or handler.hooks
+                or handler.rules
+            )
+        ):
+            raise ConfigurationError(
+                f"handler group member {handler.name!r} must be an automated action"
+            )
+        kind, owner, _ = self._resolve(handler)
+        if (
+            owner != "ww"
+            or not isinstance(actions.get(kind), AutomaticAction)
+            or handler.provide
+        ):
+            raise ConfigurationError(
+                f"handler group member {handler.name!r} must be fully automated "
+                "and require no agent input"
+            )
+        return (handler,)
 
     def _extension_handler(
         self, value: str, arguments: tuple[str, ...] = ()

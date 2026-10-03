@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from types import MappingProxyType
 
-from ww.actions import DefinedAction, Prompt
+from ww.actions import AutomaticAction, DefinedAction, Prompt, actions
 from ww.builtin_workflows import with_builtin_workflows
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
@@ -133,10 +133,100 @@ def validate_configuration(
     _validate_mode_filters(normalized, all_steps, known_workflows)
     _validate_workflow_boundary_hooks(normalized)
     _validate_hook_references(normalized)
+    _validate_automatic_groups(normalized, extensions)
     _validate_recommendations(normalized)
     _validate_hooks_from(normalized)
     _validate_child_tasks(normalized.workflows)
     return normalized
+
+
+def _validate_automatic_groups(
+    configuration: WorkflowConfiguration, extensions: ExtensionRegistry | None
+) -> None:
+    catalog = configuration.handlers_by_name
+
+    def validate(handler: HandlerDefinition, stack: tuple[str, ...] = ()) -> None:
+        if isinstance(handler, StepDefinition) and (
+            handler.child_steps
+            or handler.loop_steps
+            or handler.items
+            or handler.children
+            or handler.assessment_outcomes
+            or handler.interactive
+            or handler.hooks
+            or handler.rules
+        ):
+            raise ConfigurationError(
+                f"handler group member {handler.name!r} cannot be a step container"
+            )
+        if handler.is_reference:
+            if handler.name in stack:
+                raise ConfigurationError(
+                    "handler group cycle: " + " -> ".join((*stack, handler.name))
+                )
+            if handler.name in catalog:
+                validate(catalog[handler.name], (*stack, handler.name))
+                return
+            if is_extension_reference(handler.name) and extensions is not None:
+                extension = extensions.handler(handler.name)
+                if extension.provide:
+                    raise ConfigurationError(
+                        f"handler group member {handler.name!r} requires agent input"
+                    )
+                return
+            raise ConfigurationError(
+                f"handler group member {handler.name!r} must reference an "
+                "automated handler"
+            )
+        if handler.handlers:
+            for member in handler.handlers:
+                validate(member, stack)
+            return
+        if (
+            handler.operation is not None
+            or handler.action is None
+            or not isinstance(actions.get(handler.action.identifier), AutomaticAction)
+            or handler.provide
+        ):
+            raise ConfigurationError(
+                f"handler group member {handler.name!r} must be fully automated "
+                "and require no agent input"
+            )
+        if isinstance(handler, StepDefinition) and (
+            handler.child_steps
+            or handler.loop_steps
+            or handler.items
+            or handler.children
+            or handler.assessment_outcomes
+            or handler.interactive
+            or handler.hooks
+            or handler.rules
+        ):
+            raise ConfigurationError(
+                f"handler group member {handler.name!r} cannot be a step container"
+            )
+
+    candidates = [
+        *configuration.handlers,
+        *(
+            step
+            for workflow in configuration.workflows
+            for step in _walk_steps(workflow.steps)
+        ),
+    ]
+    candidates.extend(hook.handler for hook in _every_hook(configuration))
+    candidates.extend(
+        hook.handler for workflow in configuration.workflows for hook in workflow.hooks
+    )
+    candidates.extend(
+        hook.handler
+        for workflow in configuration.workflows
+        for step in _walk_steps(workflow.steps)
+        for hook in step.hooks
+    )
+    for handler in candidates:
+        if handler.handlers:
+            validate(handler, (handler.name,))
 
 
 def _validate_steps(

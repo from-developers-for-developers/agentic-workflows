@@ -76,6 +76,8 @@ def _parse_handler(
         | (allowed_extra or set()),
         path,
     )
+    if "handlers" in mapping:
+        return _parse_automatic_group(mapping, path, inline=inline)
     if (inline or transition) and "handoff_to" in mapping:
         extra = set(mapping) - {
             "name",
@@ -200,6 +202,49 @@ def _parse_handler(
     )
 
 
+def _parse_automatic_group(
+    mapping: dict[str, Any], path: str, *, inline: bool
+) -> HandlerDefinition:
+    allowed = {
+        "name",
+        "description",
+        "handlers",
+        "workdir",
+        "agent",
+        "model",
+        "reasoning",
+        "on_failure",
+        "on_failure_instruction",
+        "handler",
+        "hooks",
+        "profile",
+        "subagents",
+        "artifact",
+    }
+    extra = set(mapping) - allowed
+    if extra:
+        raise ConfigurationError(
+            f"{path}.handlers cannot combine with: " + ", ".join(sorted(extra))
+        )
+    entries = mapping["handlers"]
+    if not isinstance(entries, list) or not entries:
+        raise ConfigurationError(f"{path}.handlers must be a non-empty list")
+    members = tuple(
+        _parse_hook_handler(entry, f"{path}.handlers[{index}]")
+        for index, entry in enumerate(entries)
+    )
+    return HandlerDefinition(
+        _name(mapping, path) if "name" in mapping else "inline-handlers",
+        description=_description(mapping.get("description"), path),
+        handlers=members,
+        workdir=_optional_workdir(mapping, path),
+        agent=_optional_agent(mapping, "agent", path),
+        model=_optional_string(mapping, "model", path),
+        reasoning=_optional_string(mapping, "reasoning", path),
+        **_failure_policy(mapping, path),
+    )
+
+
 def _failure_policy(mapping: dict[str, Any], path: str) -> dict[str, Any]:
     return {
         "on_failure": _on_failure(mapping, path, "operator")
@@ -226,6 +271,7 @@ def _handler_keys() -> set[str]:
     return {
         "name",
         "description",
+        "handlers",
         "kind",
         "mcp",
         "argv",
@@ -287,7 +333,7 @@ def _parse_hook(
     _optional_string(mapping, "on_failure_instruction", path)
     if "handlers" in mapping:
         action_keys = set(mapping) & (
-            (_handler_keys() - {"on_failure", "on_failure_instruction"})
+            (_handler_keys() - {"handlers", "on_failure", "on_failure_instruction"})
             | {"handoff_to"}
         )
         if action_keys:

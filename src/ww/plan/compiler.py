@@ -761,7 +761,7 @@ class WorkflowPlanCompiler:
         )
         hook_annotations = _merge_annotations(annotations, step_annotations(step))
         produced: list[str] = []
-        for hook in hooks:
+        for hook in self._expanded_hooks(hooks):
             applies = hook.applies_in(
                 workflow,
                 step.name,
@@ -818,6 +818,32 @@ class WorkflowPlanCompiler:
                 phase != "step" or is_extension_reference(reference.name)
             ),
         )
+        if handler.handlers:
+            produced: list[str] = []
+            for member in self.actions.automatic_members(handler):
+                member_hints = (
+                    boundary_hints
+                    or ExecutionHints(self.agent).overlay(workflow).overlay(step)
+                ).overlay(member)
+                produced.extend(
+                    self._append_handler(
+                        items,
+                        workflow,
+                        step,
+                        step_path,
+                        parent,
+                        phase,
+                        source,
+                        member,
+                        (*available_variables, *produced),
+                        summary=summary,
+                        item_template=item_template,
+                        ancestors=ancestors,
+                        boundary_hints=member_hints,
+                        annotations=annotations,
+                    )
+                )
+            return tuple(produced)
         hints = boundary_hints or ExecutionHints(self.agent).overlay(workflow).overlay(
             step
         )
@@ -1187,6 +1213,35 @@ class WorkflowPlanCompiler:
             )
         return rules, tuple(checks)
 
+    def _expanded_hooks(
+        self, hooks: tuple[HookDefinition, ...]
+    ) -> tuple[HookDefinition, ...]:
+        result = []
+        for hook in hooks:
+            catalog = self.configuration.handlers_by_name.get(hook.handler.name)
+            if not hook.handler.handlers and not (
+                hook.handler.is_reference and catalog is not None and catalog.handlers
+            ):
+                result.append(hook)
+                continue
+            handler, _, _ = self.actions._handler(hook.handler, resolve_reference=True)
+            if not handler.handlers:
+                result.append(hook)
+                continue
+            handler = replace(
+                handler,
+                on_failure=hook.on_failure,
+                on_failure_instruction=hook.handler.on_failure_instruction
+                or handler.on_failure_instruction,
+            )
+            result.extend(
+                replace(
+                    hook, handler=member, on_failure=member.on_failure or "operator"
+                )
+                for member in self.actions.automatic_members(handler)
+            )
+        return tuple(result)
+
     def _fix_hooks(
         self,
         workflow: WorkflowDefinition,
@@ -1197,10 +1252,12 @@ class WorkflowPlanCompiler:
         """The ``before_complete`` hooks with ``on_failure: fix`` for one step."""
         return tuple(
             hook
-            for hook in (
-                *self.configuration.global_hooks,
-                *workflow.hooks,
-                *step.hooks,
+            for hook in self._expanded_hooks(
+                (
+                    *self.configuration.global_hooks,
+                    *workflow.hooks,
+                    *step.hooks,
+                )
             )
             if hook.phase == "before_complete"
             and hook.on_failure == "fix"

@@ -313,6 +313,23 @@ lets workflows reuse a named loop or nested sequence without a second execution
 or container abstraction. The parser materializes that tree at the referencing
 step, leaving validation and plan compilation responsible for the same topology
 regardless of whether it was inline or shared.
+`HandlerDefinition.handlers` is a distinct ordered sequence of fully
+automated actions. It gives catalog handlers a reusable command sequence
+without introducing step containers or separate lifecycle boundaries. Shared
+validation rejects empty groups, reference cycles, agent-owned actions,
+agent-supplied inputs, and step-specific policy, including in unused catalog
+groups. Existing hook lists retain their broader action support.
+
+The action resolver flattens nested groups and catalog references, applying
+group defaults while preserving member overrides. The compiler emits one
+ordinary automatic plan item per member under the enclosing step or hook's
+identity. This keeps execution ordering, command evidence, repair assignments,
+and operator recovery on the existing execution path: retrying a failed
+member leaves its successful predecessors completed. Hook references expand
+under their original phase and filters; eligible `before_complete` members
+become ordinary completion checks. No group-specific runtime state machine is
+needed.
+
 A compiled `PlanItem` stores one operation. Ordinary work uses `PlannedAction`
 with a stable registry identifier and action-specific payload; the closed core
 set uses `LoopBoundary`, `WorkflowHandoff`, and `ChildWorkflowRun`. The owner

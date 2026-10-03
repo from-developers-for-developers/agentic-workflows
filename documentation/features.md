@@ -1031,6 +1031,47 @@ Without an explicit action, resolution is deterministic:
 2. A matching project-local slash command is an agent slash-command handler.
 3. Otherwise the name/description becomes an agent prompt.
 
+### Automated handler groups
+
+A reusable handler can contain `handlers`, an ordered sequence of actions
+that ww executes itself. Use `steps` for a sequence that includes agent work
+or needs separate step lifecycles.
+
+```yaml
+handlers:
+  - build: ~
+    shell: npm run build
+  - verify-build: ~
+    on_failure: fix
+    on_failure_instruction: Fix the reported build or output errors.
+    handlers:
+      - build: ~
+      - argv: [test, -d, dist]
+
+workflows:
+  - name: task
+    steps:
+      - verify-build: ~
+```
+
+Members run in order under the enclosing step or hook's lifecycle. They may
+be inline automatic actions, catalog references (including later declarations),
+or nested automated groups. Empty groups, reference cycles, agent-owned
+actions, and actions requiring agent input are rejected. A group cannot also
+declare a direct action or a step container.
+
+Groups supply defaults for the working directory, repair worker guidance,
+failure policy, and failure instruction; members can override them. Each
+member uses normal ww execution and recovery. If a command with
+`on_failure: fix` fails, its agent repairs the cause and ww retries that member,
+preserving successful preceding members.
+
+Hooks can reference these groups and keep their existing phase and filters.
+Eligible `before_complete` members with `on_failure: fix` become completion
+checks. Existing hook `handlers` lists remain compatible, including their
+support for agent actions; reusable automated groups require every member to
+be fully automatic.
+
 ### Outcome-based assessments
 
 Use `assess` when an agent's judgment should route the remainder of a workflow.

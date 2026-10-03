@@ -304,6 +304,8 @@ class HandlerDefinition:
     extension_arguments: tuple[str, ...] = ()
     on_failure: HookFailure | None = None
     on_failure_instruction: str | None = None
+    # An ordered group of ww-owned actions, sharing a logical lifecycle.
+    handlers: tuple[HandlerDefinition, ...] = ()
 
     @property
     def is_reference(self) -> bool:
@@ -314,6 +316,7 @@ class HandlerDefinition:
         """
         return not (
             self.action is not None
+            or self.handlers
             or self.operation is not None
             or self.description
             or self.provide

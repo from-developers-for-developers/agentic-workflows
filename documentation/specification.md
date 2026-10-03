@@ -770,6 +770,7 @@ Each root handler, and each step through the same shared shape, accepts:
 | `description` | string | no | Instruction or explanation. |
 | `kind` | `skill`, `slash_command`, or `prompt` | no | `skill` requires a discovered agent skill with this name, `slash_command` a discovered slash command, and `prompt` selects plain agent work instead of skill or slash-command resolution. |
 | `mcp` | non-empty string | no | MCP connection; `description` supplies its work instruction. |
+| `handlers` | non-empty list of handler mappings | no | Ordered, fully automated actions. Members may reference catalog handlers, use inline commands, or nest automated groups. Agent-owned work and actions requiring agent input are rejected. Exclusive with a direct action or step container. |
 | `argv` | string list | no | Automatic argument-vector action run by `ww`. |
 | `shell` | string | no | Automatic shell action run by `ww`. |
 | `args` | string list | no | Positional arguments for `shell`, or, beside only `name` and `workdir`, for the extension handler that `name` references, which must declare exactly that many. Templates are allowed. |
@@ -785,6 +786,46 @@ Each root handler, and each step through the same shared shape, accepts:
 | `model` | non-empty string | no | Model guidance; `auto` stops inheritance. |
 | `reasoning` | non-empty string | no | Reasoning guidance for this action. |
 | `workdir` | `task`, `project`, or `root` | no | The directory this action works in; see [Working directory](#working-directory). Defaults to `task`. |
+
+### Automated handler groups
+
+Use `handlers` to declare a reusable sequence that ww executes itself:
+
+```yaml
+handlers:
+  - build-frontend: ~
+    shell: npm run build
+  - build-all: ~
+    handlers:
+      - build-frontend: ~
+      - argv: [test, -d, dist]
+
+workflows:
+  - name: task
+    steps:
+      - build-all: ~
+```
+
+Unlike `steps`, which can include agent work, this list accepts only automatic
+actions requiring no agent-supplied inputs. Named references resolve against
+the handler catalog, including later declarations; recursive reference cycles
+are errors. Groups can nest. `handlers` cannot be combined with a command,
+agent action, `steps`, `loop`, `items`, or `children` on the same definition.
+Use `steps` for sequences that contain manual work or step-specific lifecycles.
+
+Members run in declaration order under the enclosing step or hook's identity.
+They do not create nested workflow steps or agent completion assignments.
+The group may provide defaults for `workdir`, worker guidance used for repairs,
+`on_failure`, and `on_failure_instruction`; each member or referenced definition
+can override them. On failure the normal handler policy applies, and a retry
+preserves successful earlier members.
+
+A named automated group can also be referenced by a hook. Its members keep
+that hook phase and filters; a `before_complete` hook with `on_failure: fix`
+compiles eligible members into individual completion checks. Existing hook
+`handlers` groups continue to accept their existing action types, including
+agent actions: the automatic-only requirement belongs to reusable handler
+definitions and inline workflow handler groups.
 
 ### Automatic handler repairs
 
@@ -1079,7 +1120,8 @@ The other phases run in global, workflow, then step order for each matching step
 For one action, put the shared [handler keys](#handlers) directly on the hook.
 A name-only handler references the root catalog; action keys define an inline
 handler. Use `handlers` to apply the same filters to multiple ordered handlers.
-A hook runs a single action, so it cannot reference a root handler that defines
+A hook can reference an automated `handlers` group, expanding its actions in
+order under the same phase and filters. It cannot reference a root handler that defines
 `loop`, `steps`, or `items`; use such a handler as a workflow step instead.
 Every item has exactly the same shape:
 
