@@ -912,9 +912,10 @@ class WorkflowPlanCompiler:
                 f"step {step.name!r} sets role, but ww runs it: role applies to "
                 "agent steps only"
             )
-        if handler.save_metadata and owner != "agent":
+        if handler.save_metadata and owner != "agent" and kind != "cli":
             raise ConfigurationError(
-                f"handler {handler.name!r} can save metadata only when agent-owned"
+                f"handler {handler.name!r} can save metadata only when agent-owned "
+                "or using a shell or argv handler"
             )
         if handler.update_document and owner != "agent":
             raise ConfigurationError(

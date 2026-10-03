@@ -75,7 +75,7 @@ class ProvidedVariable:
 
 @dataclass(frozen=True)
 class SavedMetadata:
-    """A metadata value an agent-owned handler must preserve."""
+    """A metadata value a handler must preserve."""
 
     name: str
     key: str

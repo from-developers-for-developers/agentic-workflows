@@ -793,7 +793,7 @@ Each root handler, and each step through the same shared shape, accepts:
 | `idempotent` | boolean | no | Running the command action again is harmless: an interrupted run is replayed by `next` instead of waiting for an operator. Requires `argv` or `shell`. Defaults to `false`. |
 | `action` | mapping | no | The registry form, `{type: <action>, ...}`: selects a registered action by its identifier, with that action's own keys beside `type`. Extensions' actions use it; it cannot be combined with `kind`, `mcp`, `argv`, `shell`, `args`, `env`, `assert`, or `idempotent`, and the core controls (`loop`, `workflow_transition`, `child_workflow`) are refused as types. |
 | `variables` | list of variables | no | What the step hands back, read later as `{{name}}`; see [Variables](#variables). |
-| `saves` | list of saved values | no | What an agent-owned action writes to metadata, documents, or its item; see [Saves](#saves). |
+| `saves` | list of saved values | no | What an action writes to metadata, documents, or its item; see [Saves](#saves). |
 | `agent` | non-empty string other than `auto` | no | Preferred executor guidance. |
 | `model` | non-empty string | no | Model guidance; `auto` stops inheritance. |
 | `reasoning` | non-empty string | no | Reasoning guidance for this action. |
@@ -1023,7 +1023,7 @@ after it offers one `next --outcome <label>` command per outcome.
 
 ### Saves
 
-`saves` lists what an agent-owned action writes: each entry is a prefixed path
+`saves` lists what an action writes: each entry is a prefixed path
 and the text saying what to put there. The prefix is the kind and scope of the
 value and the rest its storage path; no `ww.` prefix is written, since an
 entry can only name something ww manages.
@@ -1053,7 +1053,26 @@ Within one action, paths must be unique, and metadata paths in the same scope
 cannot overlap (for example `metadata.jira` and `metadata.jira.issue_id`).
 `project_metadata.ww` and every path under it are reserved for ww's own state,
 such as `ww.setup.done`, and rejected.
-Only agent-owned actions can save.
+Agent-owned actions supply metadata through `complete --metadata`. Shell and
+argv handlers automatically save stdout when they declare metadata in `saves`:
+
+```yaml
+handlers:
+  - create-github-pr: ~
+    argv: [gh, pr, create, --fill]
+    saves:
+      - metadata.github.pr_url: The pull request URL.
+```
+
+The saved value is complete stdout with leading and trailing whitespace
+removed; stderr is excluded. Multiline output is one value, and empty output
+saves an empty string. Each metadata entry receives the same whole output;
+`append: true` appends it as one list element with the usual deduplication.
+Metadata is saved only after successful exit and all assertions pass. The
+completion and its publication intents are committed before publication;
+interrupted publication resumes without replaying the successful command.
+`from` is not a supported save option. Documents and item fields remain
+agent-owned.
 
 ## Commands
 

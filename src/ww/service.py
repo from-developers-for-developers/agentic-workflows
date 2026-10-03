@@ -305,6 +305,7 @@ class WorkflowService:
             write_command_output=self.tasks.write_command_output,
             read_command_output=self.tasks.read_command_output,
             task_values=self._runtime_values,
+            metadata_publisher=self.metadata_publisher,
             child_values=self._child_values,
         )
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)

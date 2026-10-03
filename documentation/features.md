@@ -2257,6 +2257,36 @@ ww-agentic-workflows complete TASK-123 --role worker \
   --metadata integrations.jira.issue_id="PROJ-456" --artifact="<result>"
 ```
 
+Shell and argv handlers automatically retain stdout when they declare
+metadata entries in `saves`. For example, this handler finds an existing PR or
+creates one, then stores its URL for later steps:
+
+```yaml
+handlers:
+  - create-github-pr: ~
+    shell: |-
+      set -eu
+      branch=$1
+      base=$2
+      repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+      url=$(gh pr list --repo "$repo" --head "$branch" --base "$base" \
+        --state open --json url --jq '.[0].url // empty')
+      if [ -z "$url" ]; then
+        url=$(gh pr create --repo "$repo" --head "$branch" --base "$base" --fill)
+      fi
+      printf '%s\n' "$url"
+    args: ["{{ww.git.branch}}", "{{ww.git.base_branch}}"]
+    saves:
+      - metadata.github.pr_url: The pull request URL.
+```
+
+Later steps use `{{ww.metadata.github.pr_url}}`. ww saves the full stdout with
+outer whitespace removed only after successful execution and assertions.
+Send diagnostic messages to stderr to keep them out of the saved value.
+`project_metadata.<path>` and `append: true` also work: an append entry receives
+the whole output as one list value. Interrupted publication resumes from the
+committed result without rerunning the command.
+
 Metadata is task-scoped rather than workflow-scoped. `ww` stores it as a nested
 object under `metadata` in `.ww/tasks/<task-id>/metadata.json`; a later run can use the
 same `{{ww.metadata.<path>}}` reference. Metadata leaves are strings. A new value

@@ -438,8 +438,8 @@ class PlanItem:
                 "a verification item is agent-owned and carries no rules, checks, "
                 "or provided values"
             )
-        if self.save_metadata and self.owner != "agent":
-            raise ValueError("only agent-owned plan items can save metadata")
+        if self.save_metadata and self.owner != "agent" and self.kind != "cli":
+            raise ValueError("only agent-owned or CLI plan items can save metadata")
         if self.update_document and self.owner != "agent":
             raise ValueError("only agent-owned plan items can update documents")
         if self.update_item and self.owner != "agent":
