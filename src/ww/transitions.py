@@ -1353,6 +1353,11 @@ def _expand_templates(
                 if template.loop_id is not None
                 else None
             ),
+            assessment_parent=(
+                concrete_path(template.assessment_parent, segment)
+                if template.assessment_parent is not None
+                else None
+            ),
             item_template=False,
             item_id=str(bind["item_id"]) if "item_id" in bind else template.item_id,
             child_number=(

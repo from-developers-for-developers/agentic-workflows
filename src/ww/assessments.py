@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ww.errors import StateError
 from ww.execution_models import ExecutionState
-from ww.plan import WorkflowPlan
+from ww.plan import PlanItem, WorkflowPlan
 
 # The answers every assessment with declared outcomes accepts. One it does not
 # declare runs nothing and continues after the assessment, so a gate declares
@@ -97,7 +98,7 @@ def outcome_region(plan: WorkflowPlan, index: int) -> tuple[int, ...]:
     return tuple(
         position
         for position, candidate in enumerate(plan.items)
-        if candidate.assessment_parent == step
+        if _assessment_parent(candidate) == step
     )
 
 
@@ -115,20 +116,26 @@ def pending_assessment(
     if state.item_executions[state.cursor].status != "pending":
         return None
     item = plan.items[state.cursor]
-    if item.assessment_parent is not None:
+    parent = _assessment_parent(item)
+    if parent is not None:
         group = [
             index
             for index, candidate in enumerate(plan.items)
-            if candidate.assessment_parent == item.assessment_parent
+            if _assessment_parent(candidate) == parent
         ]
         if state.cursor != min(group):
             return None
         index = next(
-            index
-            for index, candidate in enumerate(plan.items)
-            if candidate.step == item.assessment_parent
-            and candidate.assessment_question is not None
+            (
+                index
+                for index, candidate in enumerate(plan.items)
+                if candidate.step == parent
+                and candidate.assessment_question is not None
+            ),
+            None,
         )
+        if index is None:
+            raise StateError(f"assessment outcome has no parent assessment: {parent}")
         return _pending(plan, index, declared=True)
     previous = plan.items[state.cursor - 1]
     if previous.assessment_question is not None and not previous.assessment_outcomes:
@@ -142,3 +149,20 @@ def _pending(plan: WorkflowPlan, index: int, *, declared: bool) -> PendingAssess
     return PendingAssessment(
         index, question, assessment_outcomes(plan, index), declared
     )
+
+
+def _assessment_parent(item: PlanItem) -> str | None:
+    """Resolve template paths retained by previously materialized snapshots.
+
+    Keep the persisted plan unchanged so its digest and completed work remain
+    valid. Concrete paths bind each outcome to its own item or child.
+    """
+    parent = item.assessment_parent
+    if parent is None:
+        return None
+    parts = parent.split("/")
+    step_parts = item.step.split("/")
+    for index, part in enumerate(parts):
+        if part in {"{item}", "{child}"} and index < len(step_parts):
+            parts[index] = step_parts[index]
+    return "/".join(parts)

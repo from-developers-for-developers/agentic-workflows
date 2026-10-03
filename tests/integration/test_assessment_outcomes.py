@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from tests.workflow_helpers import assignment_token
 from ww.config import load_configuration
 from ww.errors import ConfigurationError, StateError
 from ww.instructions import Instruction
+from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -229,3 +231,81 @@ def test_invalid_stops_are_rejected(
 
     with pytest.raises(ConfigurationError, match=message):
         load_configuration(path)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("first_outcome", ["positive", "negative"])
+def test_per_item_assessments_keep_outcomes_in_their_own_item(
+    tmp_path: Path, legacy: bool, first_outcome: str
+) -> None:
+    (tmp_path / "ww.yaml").write_text("""workflows:
+  - task: ~
+    steps:
+      - collect: Collect comments.
+        items:
+          steps:
+            - assess:
+                question: Does this comment need operator input?
+                outcomes:
+                  positive:
+                    steps:
+                      - discuss: Discuss the question.
+                  mixed:
+                    steps:
+                      - clarify: Clarify the question.
+            - resolve: Resolve the comment.
+""")
+    service = WorkflowService(Storage(tmp_path))
+    service.start("task", "TASK-1", agent="codex", init_artifact="Review.")
+    service.next("TASK-1")
+    for item_id in ("one", "two"):
+        service.add_item("TASK-1", WorkItem(item_id, "Comment."))
+    service.complete("TASK-1", artifact="Collected.", summary_for_next="Assess.")
+    state, snapshot = service.load("TASK-1")
+    for item in snapshot.plan.items:
+        if item.assessment_parent is not None:
+            assert "{item}" not in item.assessment_parent
+    if legacy:
+        plan = replace(
+            snapshot.plan,
+            items=tuple(
+                replace(
+                    item,
+                    assessment_parent=(
+                        item.assessment_parent.replace("/item-1/", "/{item}/").replace(
+                            "/item-2/", "/{item}/"
+                        )
+                        if item.assessment_parent is not None
+                        else None
+                    ),
+                )
+                for item in snapshot.plan.items
+            ),
+        )
+        snapshot = replace(snapshot, plan=plan)
+        service.commit(replace(state, plan_digest=snapshot.plan_digest), snapshot)
+    assert service.next("TASK-1").item_name == "assess"
+    choice = service.complete(
+        "TASK-1", artifact="Assessed.", summary_for_next="Choose."
+    )
+    assert choice.choosing_outcome_of == "assess"
+    assert service.status("TASK-1").choosing_outcome_of == "assess"
+    selected = service.next("TASK-1", outcome=first_outcome)
+    if first_outcome == "positive":
+        assert selected.item_name == "discuss"
+        service.complete("TASK-1", artifact="Discussed.", summary_for_next="Resolve.")
+        service.next("TASK-1")
+    assert service.status("TASK-1").item_name == "resolve"
+    service.complete("TASK-1", artifact="Resolved.", summary_for_next="Next comment.")
+    assert service.next("TASK-1").item_name == "assess"
+    service.complete("TASK-1", artifact="Uncertain.", summary_for_next="Clarify.")
+    assert service.next("TASK-1", outcome="mixed").item_name == "clarify"
+    state, snapshot = service.load("TASK-1")
+    active = snapshot.plan.items[state.cursor]
+    assert active.item_id == "two"
+    skipped = [
+        item.item_id
+        for item, record in zip(snapshot.plan.items, state.item_executions, strict=True)
+        if record.result == "skipped: assessment selected negative"
+    ]
+    assert skipped == (["one", "one"] if first_outcome == "negative" else [])
