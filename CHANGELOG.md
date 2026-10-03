@@ -11,6 +11,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-03
 
+- Shell and argv handlers can save successful stdout as task or project metadata with `from: stdout`,
+  including append lists and downstream interpolation. `8817cfc`
+
 - Feedback deduction is suggested after workflow completion from `learnable: true` artifacts, with ID-based updates and last-encounter times.
   Candidate pruning is now explicit during separate rule review. `920e8fe`
 - Interactive steps learn feedback candidates with recurrence tracking and automatic expiry; disable with `feedback_learning: false`.
