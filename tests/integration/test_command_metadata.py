@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Command output metadata is published with durable successful completion."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,9 +19,7 @@ def _config(command: str, extra: str = "") -> str:
     {command}
 {extra}    saves:
       - metadata.github.pr_url: The pull request URL.
-        from: stdout
       - project_metadata.github.urls: Published URLs.
-        from: stdout
         append: true
 workflows:
   - task: ~
@@ -52,7 +51,8 @@ def test_command_saves_stdout_and_interpolates_next_step(
     }
     state, snapshot = service.load("TASK-1")
     publish = next(item for item in snapshot.plan.items if item.name == "publish")
-    assert publish.save_metadata[0].source == "stdout"
+    assert publish.save_metadata[0].key == "github.pr_url"
+    assert publish.save_metadata[0].source is None
     assert not state.pending_task_metadata
     assert state.pending_project_metadata is None
 
@@ -88,45 +88,26 @@ def test_full_output_survives_snapshot_reload(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "command,save,error",
-    [
-        ("argv: [printf, url]", "metadata.url: URL.", "agent-owned"),
-        (
-            "description: Work.",
-            "metadata.url: URL.\n        from: stdout",
-            "shell or argv",
-        ),
-        (
-            "argv: [printf, url]",
-            "metadata.url: URL.\n        from: stderr",
-            "from must be stdout",
-        ),
-        (
-            "argv: [printf, url]",
-            "documents.url: URL.\n        from: stdout",
-            "metadata only",
-        ),
-    ],
-)
+@pytest.mark.parametrize("command", ['argv: [printf, url]', 'description: Work.'])
+@pytest.mark.parametrize("source", ["stdout", "stderr"])
 def test_invalid_command_metadata_mapping(
     tmp_path: Path,
     command: str,
-    save: str,
-    error: str,
+    source: str,
 ) -> None:
     path = tmp_path / "ww.yaml"
     path.write_text(f"""handlers:
   - name: publish
     {command}
     saves:
-      - {save}
+      - metadata.url: URL.
+        from: {source}
 workflows:
   - task: ~
     steps:
       - publish: ~
 """)
-    with pytest.raises(ConfigurationError, match=error):
+    with pytest.raises(ConfigurationError, match="unknown key.*from"):
         compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
 
@@ -160,3 +141,26 @@ def test_publication_resumes_without_replaying_command(
         service.metadata_publisher.values("TASK-1")["ww.project_metadata.github.urls"]
         == "url"
     )
+
+
+
+def test_legacy_stdout_snapshot_roundtrips_and_runs(tmp_path: Path) -> None:
+    service = configured_service(tmp_path, _config("argv: [printf, url]"))
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    state, snapshot = service.load("TASK-1")
+    plan = replace(
+        snapshot.plan,
+        items=tuple(
+            replace(
+                item,
+                save_metadata=tuple(
+                    replace(saved, source="stdout") for saved in item.save_metadata
+                ),
+            )
+            for item in snapshot.plan.items
+        ),
+    )
+    legacy = replace(snapshot, plan=plan)
+    assert PlanSnapshot.from_dict(legacy.to_dict()).to_dict() == legacy.to_dict()
+    service.commit(replace(state, plan_digest=legacy.plan_digest), legacy)
+    assert service.next("TASK-1").action_text == "Review url."

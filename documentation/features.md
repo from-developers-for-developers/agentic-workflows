@@ -2257,7 +2257,7 @@ ww-agentic-workflows complete TASK-123 --role worker \
   --metadata integrations.jira.issue_id="PROJ-456" --artifact="<result>"
 ```
 
-Shell and argv handlers can retain their stdout by adding `from: stdout` to
+Shell and argv handlers automatically retain stdout when they declare
 metadata entries in `saves`. For example, this handler finds an existing PR or
 creates one, then stores its URL for later steps:
 
@@ -2278,7 +2278,6 @@ handlers:
     args: ["{{ww.git.branch}}", "{{ww.git.base_branch}}"]
     saves:
       - metadata.github.pr_url: The pull request URL.
-        from: stdout
 ```
 
 Later steps use `{{ww.metadata.github.pr_url}}`. ww saves the full stdout with

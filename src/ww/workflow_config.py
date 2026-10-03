@@ -84,6 +84,8 @@ class SavedMetadata:
     # An append key holds a list: each completion may add values, none is
     # required, and repeats are dropped.
     append: bool = False
+    # Read/roundtrip older plan snapshots with explicit stdout captures.
+    # New YAML saves infer the source from the handler and leave this unset.
     source: str | None = None
 
     def __post_init__(self) -> None:

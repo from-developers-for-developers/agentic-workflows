@@ -543,13 +543,13 @@ handlers declare captures as `metadata.<path>` or `project_metadata.<path>`
 entries of `saves`; the compiled item retains each agent-facing completion
 name (the path as written, `project_metadata.`-prefixed for project scope),
 dotted storage path, scope, and description so a
-resumed run produces the same instruction. Shell/argv captures additionally
-retain their explicit `stdout` source in the plan snapshot. The automatic
-executor maps successful, assertion-checked full stdout to those captures and
-uses the same `MetadataPublisher` as agent completion: prepare while in
-progress, commit publication intents with completion, then reconcile before
-continuing. Publication interruption leaves durable intents, so recovery does
-not replay the successful external command. Task-scoped references use
+resumed run produces the same instruction. CLI plan items implicitly capture
+successful, assertion-checked full stdout for each metadata save; no source
+property is needed. The automatic executor uses the same `MetadataPublisher`
+as agent completion: prepare while in progress, commit publication intents
+with completion, then reconcile before continuing. Publication interruption
+leaves durable intents, so recovery does not replay the successful command.
+Task-scoped references use
 `{{ww.metadata.<path>}}`, while project-scoped references use
 `{{ww.project_metadata.<path>}}`. Both remain unresolved at compile time because a
 value may be created by an earlier item or another task. Explicit namespaces

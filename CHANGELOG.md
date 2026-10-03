@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-03
 
+- Shell and argv handlers automatically save successful stdout when metadata is declared in `saves`;
+  the redundant `from: stdout` option is removed. `a50a797`
 - Shell and argv handlers can save successful stdout as task or project metadata with `from: stdout`,
   including append lists and downstream interpolation. `8817cfc`
 

@@ -1053,9 +1053,8 @@ Within one action, paths must be unique, and metadata paths in the same scope
 cannot overlap (for example `metadata.jira` and `metadata.jira.issue_id`).
 `project_metadata.ww` and every path under it are reserved for ww's own state,
 such as `ww.setup.done`, and rejected.
-Agent-owned actions supply metadata through `complete --metadata`. A `shell`
-or `argv` handler can save metadata by adding `from: stdout` to every metadata
-entry:
+Agent-owned actions supply metadata through `complete --metadata`. Shell and
+argv handlers automatically save stdout when they declare metadata in `saves`:
 
 ```yaml
 handlers:
@@ -1063,18 +1062,17 @@ handlers:
     argv: [gh, pr, create, --fill]
     saves:
       - metadata.github.pr_url: The pull request URL.
-        from: stdout
 ```
 
-`from` accepts only `stdout` and applies only to metadata entries on shell/argv
-handlers. Without it, saves remain agent-owned. The saved value is the complete
-stdout with leading and trailing whitespace removed; stderr is excluded.
-Multiline output is one value, and empty output saves an empty string. Every
-entry with `from: stdout` receives that same value; `append: true` appends it as
-one list element with the usual deduplication. Save only after successful exit
-and all `assert` conditions pass. The completion and its metadata intent are
-committed before publication, so downstream steps can read the value and
+The saved value is complete stdout with leading and trailing whitespace
+removed; stderr is excluded. Multiline output is one value, and empty output
+saves an empty string. Each metadata entry receives the same whole output;
+`append: true` appends it as one list element with the usual deduplication.
+Metadata is saved only after successful exit and all assertions pass. The
+completion and its publication intents are committed before publication;
 interrupted publication resumes without replaying the successful command.
+`from` is not a supported save option. Documents and item fields remain
+agent-owned.
 
 ## Commands
 

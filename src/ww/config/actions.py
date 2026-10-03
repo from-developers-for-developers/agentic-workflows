@@ -533,7 +533,7 @@ def parse_saves(
     for index, item in enumerate(data):
         item_path = f"{path}.saves[{index}]"
         mapping = _named_entry(_mapping(item, item_path), item_path)
-        _only(mapping, {"name", "description", "append", "from"}, item_path)
+        _only(mapping, {"name", "description", "append"}, item_path)
         target = mapping.get("name")
         if not isinstance(target, str) or not target.startswith(_SAVE_PREFIXES):
             hint = (
@@ -547,15 +547,10 @@ def parse_saves(
             )
         description = _description(mapping.get("description"), item_path)
         append = _optional_bool(mapping, "append", item_path)
-        source = mapping.get("from")
-        if "from" in mapping and source != "stdout":
-            raise ConfigurationError(f"{item_path}.from must be stdout")
         prefix = next(prefix for prefix in _SAVE_PREFIXES if target.startswith(prefix))
         rest = target.removeprefix(prefix)
         if append is not None and prefix not in {"metadata.", "project_metadata."}:
             raise ConfigurationError(f"{item_path}.append applies to metadata only")
-        if source is not None and prefix not in {"metadata.", "project_metadata."}:
-            raise ConfigurationError(f"{item_path}.from applies to metadata only")
         try:
             if prefix in {"metadata.", "project_metadata."}:
                 if not _METADATA_PATH.fullmatch(rest):
@@ -570,7 +565,6 @@ def parse_saves(
                         description,
                         "project" if project else "task",
                         append=append or False,
-                        source=source,
                     )
                 )
             elif prefix == "documents.":
