@@ -11,6 +11,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-03
 
+- Reusable handlers support ordered `handlers` groups of automated actions, including nested groups and catalog
+  references, with normal failure repair and recovery; agent-owned members are rejected. `d762384`
 - Automatic shell/argv handlers support `on_failure: fix` agent repairs with bounded ww retries;
   `on_failure_instruction` adds failure guidance to handlers and hooks. `b15df81`
 
