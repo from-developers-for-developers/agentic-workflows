@@ -438,6 +438,16 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="JSON",
         help="A verification's verdict on one rule, as a JSON object. Repeatable.",
     )
+    feedback = subparsers.add_parser(
+        "feedback",
+        parents=[json_and_role],
+        help="List feedback candidates, show evidence, or record agent analysis.",
+    )
+    feedback.add_argument(
+        "feedback_action", choices=["list", "show", "record"], nargs="?", default="list"
+    )
+    feedback.add_argument("task_id", nargs="?")
+    feedback.add_argument("--analysis", metavar="PATH")
     interact = subparsers.add_parser(
         "interact",
         parents=[json_and_role],

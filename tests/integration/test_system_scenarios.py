@@ -19,6 +19,7 @@ import pytest
 from tests.workflow_helpers import assignment_token
 from ww.config import parse_yaml_text
 from ww.extensions import ExtensionRegistry, ExtensionStore
+from ww.feedback import MemoryFeedbackStore
 from ww.instructions import Instruction
 from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -189,6 +190,7 @@ class Project:
             self.registry,
             configuration_loader=lambda: parse_yaml_text(WORKFLOWS, "scenario"),
             project_metadata=MemoryProjectMetadataStorageAdapter(),
+            feedback_store=MemoryFeedbackStore(Storage(root)),
         )
         self.markdown = MarkdownOutputAdapter()
 

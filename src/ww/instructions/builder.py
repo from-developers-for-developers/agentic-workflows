@@ -32,6 +32,7 @@ from ww.contracts import (
 from ww.control import child_workflow, is_coordinator, loop_control
 from ww.documents import DocumentStore
 from ww.errors import StateError
+from ww.executable import ww_command
 from ww.execution_models import (
     CheckResult,
     ExecutionState,
@@ -42,6 +43,7 @@ from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
+from ww.project_config import load_project_config
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
@@ -908,6 +910,16 @@ class InstructionBuilder:
             summary_required=item.hands_over,
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
+            feedback_learning=(
+                item.interactive
+                and load_project_config(self.root / "ww.json").feedback_learning
+            ),
+            feedback_command=(
+                f"{ww_command()} feedback record {state.task_id} "
+                "--analysis <analysis.json> --role manager"
+                if item.interactive
+                else None
+            ),
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(

@@ -37,6 +37,7 @@ def default_settings() -> dict[str, Any]:
         "enabled": True,
         "runtime": DEFAULT_RUNTIME,
         "update_check": True,
+        "feedback_learning": True,
         "executable": DEFAULT_EXECUTABLE,
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
@@ -114,6 +115,7 @@ SKILLS = {
         "ww-refresh",
         "ww-solve",
         "ww-rules-from-artifacts",
+        "ww-feedback-rules",
         "ww-automate",
         "ww-scriptize",
     )

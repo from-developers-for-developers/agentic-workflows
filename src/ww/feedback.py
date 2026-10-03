@@ -1,0 +1,270 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Agent-generalised feedback candidates; no candidate is an installed rule."""
+
+from __future__ import annotations
+
+import json
+import threading
+import uuid
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
+from copy import deepcopy
+from typing import Any
+
+from ww.errors import StateError
+from ww.interactions import InteractionLog
+from ww.storage import Storage
+from ww.task_ids import validate_task_id
+
+STORE_SCHEMA = 1
+# Five subsequently completed tasks without a match retire a candidate.
+STALE_TASKS = 5
+
+
+class FeedbackStore:
+    """Project-scoped, locked storage shared by tasks and their worktrees."""
+
+    def __init__(self, storage: Storage) -> None:
+        self.storage = storage
+        self.path = storage.runtime_path / "feedback.json"
+        self.log = InteractionLog(storage)
+
+    def _lock(self) -> AbstractContextManager[None]:
+        return self.storage.locks.lock(self.path, purpose="operator feedback")
+
+    def _load(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {"schema": STORE_SCHEMA, "tasks": [], "completed": [], "points": {}}
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("schema") != STORE_SCHEMA:
+                raise ValueError("unsupported feedback store schema")
+            for key in ("tasks", "completed"):
+                if not isinstance(data.get(key), list) or any(
+                    not isinstance(task, str) for task in data[key]
+                ):
+                    raise ValueError(f"{key} must be a list of task IDs")
+            if not isinstance(data.get("points"), dict):
+                raise ValueError("points must be an object")
+            for point in data["points"].values():
+                if not isinstance(point, dict):
+                    raise ValueError("point must be an object")
+                _point_fields(point)
+                if not isinstance(point.get("events"), list):
+                    raise ValueError("events must be a list")
+                if type(point.get("last_seen")) is not int:
+                    raise ValueError("last_seen must be an integer")
+                for event in point["events"]:
+                    if not isinstance(event, dict):
+                        raise ValueError("event must be an object")
+                    _text(event, "task")
+                    _text(event, "quote")
+                    if type(event.get("entry")) is not int:
+                        raise ValueError("event entry must be an integer")
+            return dict(data)
+        except (OSError, ValueError, StateError) as error:
+            raise StateError(f"invalid feedback store {self.path}: {error}") from error
+
+    def _save(self, data: dict[str, Any]) -> None:
+        self.storage.locks.atomic_write(self.path, json.dumps(data, indent=2) + "\n")
+
+    def evidence(self, task_id: str) -> dict[str, object]:
+        """Stable entry numbers in the append-only transcript, including context."""
+        validate_task_id(task_id)
+        return {
+            "task": task_id,
+            "entries": [
+                {"entry": index, **entry.to_dict()}
+                for index, entry in enumerate(self.log.entries(task_id), start=1)
+            ],
+        }
+
+    def listing(self) -> dict[str, object]:
+        data = self._load()
+        total = len(data["tasks"])
+        completed = set(data["completed"])
+        points = []
+        for identifier, point in data["points"].items():
+            task_ids = {event["task"] for event in point["events"]}
+            points.append(
+                {
+                    "id": identifier,
+                    **point,
+                    "occurrences": len(point["events"]),
+                    "task_occurrences": len(task_ids),
+                    "task_ratio": len(task_ids) / total if total else 0,
+                    "occurrence_ratio": len(point["events"]) / total if total else 0,
+                    "completed_task_ratio": (
+                        len(task_ids & completed) / len(completed) if completed else 0
+                    ),
+                    "tasks_since_last_seen": len(data["completed"])
+                    - point["last_seen"],
+                }
+            )
+        return {
+            "total_tasks": total,
+            "completed_tasks": len(completed),
+            "retire_after_tasks": STALE_TASKS,
+            "points": points,
+        }
+
+    def record(
+        self,
+        task_id: str,
+        run_id: str | None,
+        step: str,
+        item_id: str | None,
+        analysis: object,
+    ) -> dict[str, object]:
+        """Validate the whole batch before writing; match IDs are agent decisions.
+
+        Each distinct operator entry counts once per candidate. Repeated CLI
+        invocations and two paraphrases of the same evidence cannot inflate it.
+        """
+        if not isinstance(analysis, list):
+            raise StateError("feedback analysis must be a JSON array")
+        entries = self.log.entries(task_id)
+        prepared = []
+        for raw in analysis:
+            if not isinstance(raw, dict):
+                raise StateError("each feedback point must be an object")
+            unknown = set(raw) - {
+                "id",
+                "summary",
+                "reason",
+                "enforcement",
+                "approach",
+                "entries",
+            }
+            if unknown:
+                raise StateError(
+                    "unknown feedback fields: " + ", ".join(sorted(unknown))
+                )
+            fields = _point_fields(raw)
+            identifier = raw.get("id")
+            if identifier is not None and (
+                not isinstance(identifier, str) or not identifier.strip()
+            ):
+                raise StateError("feedback id must be a non-empty string")
+            numbers = raw.get("entries")
+            if not isinstance(numbers, list) or not numbers:
+                raise StateError("feedback entries must be a non-empty list")
+            events = []
+            for number in numbers:
+                if type(number) is not int or not 1 <= number <= len(entries):
+                    raise StateError("feedback entry number is out of range")
+                entry = entries[number - 1]
+                if (
+                    not entry.speaker.startswith("operator")
+                    or entry.run_id != run_id
+                    or entry.step != step
+                    or entry.item_id != item_id
+                ):
+                    raise StateError(
+                        "feedback evidence must be operator words in this step"
+                    )
+                events.append(
+                    {
+                        "task": task_id,
+                        "entry": number,
+                        **entry.to_dict(),
+                        "quote": entry.text,
+                    }
+                )
+            prepared.append((identifier, fields, events))
+        with self._lock():
+            data = self._load()
+            for identifier, fields, events in prepared:
+                if identifier is not None and identifier not in data["points"]:
+                    raise StateError(
+                        f"unknown feedback point {identifier!r}; list first"
+                    )
+                if identifier is None:
+                    # Exact normalised wording also makes new-candidate retries safe.
+                    identifier = next(
+                        (
+                            key
+                            for key, point in data["points"].items()
+                            if point["summary"].casefold()
+                            == fields["summary"].casefold()
+                        ),
+                        None,
+                    )
+                if identifier is None:
+                    identifier = "feedback-" + uuid.uuid4().hex[:12]
+                point = data["points"].setdefault(identifier, {"events": []})
+                seen = {(event["task"], event["entry"]) for event in point["events"]}
+                added = False
+                for event in events:
+                    if (event["task"], event["entry"]) not in seen:
+                        added = True
+                        point["events"].append(event)
+                        seen.add((event["task"], event["entry"]))
+                point.update(fields)
+                if added:
+                    point["last_seen"] = len(data["completed"])
+            if task_id not in data["tasks"]:
+                data["tasks"].append(task_id)
+            self._save(data)
+        return self.listing()
+
+    def complete_task(self, task_id: str) -> None:
+        """Count each task once and delete candidates after five unmatched tasks."""
+        with self._lock():
+            data = self._load()
+            if task_id in data["completed"]:
+                return
+            if task_id not in data["tasks"]:
+                data["tasks"].append(task_id)
+            data["completed"].append(task_id)
+            current = len(data["completed"])
+            for identifier, point in list(data["points"].items()):
+                task_ids = {event["task"] for event in point["events"]}
+                if task_id in task_ids:
+                    point["last_seen"] = current
+                pending = task_ids - set(data["completed"])
+                if not pending and current - point["last_seen"] >= STALE_TASKS:
+                    del data["points"][identifier]
+            self._save(data)
+
+
+def _text(raw: dict[str, Any], key: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise StateError(f"feedback {key} must be a non-empty string")
+    return value.strip()
+
+
+def _point_fields(raw: dict[str, Any]) -> dict[str, str]:
+    fields = {
+        key: _text(raw, key) for key in ("summary", "reason", "enforcement", "approach")
+    }
+    if fields["enforcement"] not in {"scripted", "reasoning"}:
+        raise StateError("feedback enforcement must be scripted or reasoning")
+    return fields
+
+
+class MemoryFeedbackStore(FeedbackStore):
+    """Injectable candidate storage for embedded services without disk writes."""
+
+    def __init__(self, storage: Storage) -> None:
+        super().__init__(storage)
+        self.data: dict[str, Any] = {
+            "schema": STORE_SCHEMA,
+            "tasks": [],
+            "completed": [],
+            "points": {},
+        }
+        self.guard = threading.RLock()
+
+    @contextmanager
+    def _lock(self) -> Iterator[None]:
+        with self.guard:
+            yield
+
+    def _load(self) -> dict[str, Any]:
+        with self.guard:
+            return deepcopy(self.data)
+
+    def _save(self, data: dict[str, Any]) -> None:
+        self.data = deepcopy(data)

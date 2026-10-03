@@ -157,7 +157,8 @@ The wizard asks a few questions and then sets the project up:
   out, a `ww-rule` skill, which turns your own words into rules for ww's
   steps, and the `ww-setup` skill with the skills it guides through
   (`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
-  `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`).
+  `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`), and
+  `ww-feedback-rules` for proposals from learned operator feedback.
 - **Your user configuration directory**, `~/.config/ww/`,
   where settings of your own for every project live.
 
@@ -321,6 +322,13 @@ command shown by the CLI. One manager `next` dispatches a step lifecycle; the
 worker completes its main action and its agent-owned workflow hooks until ww explicitly
 hands control back. Each started workflow uses a saved plan, so later
 configuration edits cannot alter work already in progress.
+
+Interactive steps also learn recurring operator feedback as candidates, with
+evidence and task frequency. This is enabled by default; set
+`"feedback_learning": false` in `ww.json` to disable it. Invoke
+`/ww-feedback-rules` to review candidates and approve concrete rules. See
+[feedback learning](documentation/features.md#learning-from-operator-feedback)
+for commands and examples.
 
 ### Runtimes: who actually performs a step
 

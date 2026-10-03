@@ -1751,3 +1751,30 @@ the project, and only a change that loads is ever shown. The files are written
 once, after confirmation, in a `Transaction` that writes through symbolic links,
 keeps file permissions, and turns an `OSError` into a ww error after putting
 every file back.
+
+## Operator feedback learning
+
+Feedback learning keeps observations separate from enforceable rules. ww
+already owns conversation transcripts, but cannot infer their meaning; the
+agent generalises operator feedback, semantically matches existing candidates,
+and assesses whether enforcement can be scripted. Interactive instruction pages
+expose that responsibility only when the default-on `feedback_learning`
+setting is enabled.
+
+The service accepts an injectable feedback store; `MemoryFeedbackStore` keeps
+embedded execution free of candidate-file writes. The default `FeedbackStore`
+persists candidates in `.ww/feedback.json` under a dedicated
+lock with atomic replacement. Supporting transcript entry numbers retain
+provenance and make recording idempotent. Workflow completion records distinct
+task exposure, while candidate views report occurrence counts and task ratios.
+Five subsequently completed tasks without a match retire a candidate; pending
+evidence protects ongoing tasks. These mechanics belong to ww so parallel
+tasks and agent retries cannot independently overwrite counts. Disabling the
+setting freezes learning state without deleting evidence.
+
+The `feedback` CLI lists candidates, shows numbered transcript evidence and
+records an agent's analysis through a service-authorised interactive task.
+`ww-feedback-rules` reviews the candidates only on operator request and uses
+existing validated rule-writing commands after explicit approval of concrete
+proposals. No observation automatically changes workflow requirements, and
+frequency does not replace judgement about recurrence or rule scope.

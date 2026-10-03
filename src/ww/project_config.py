@@ -269,6 +269,8 @@ class ProjectConfig:
     runtime: str = DEFAULT_RUNTIME
     # ``false`` silences the notice that the ww checkout is behind its remote.
     update_check: bool = True
+    # Analyse operator feedback into candidates, never automatic rules.
+    feedback_learning: bool = True
     # Built-in workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
     # The ww binary this project runs: a command on PATH or a path. ``None``
@@ -454,6 +456,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "agent_hooks",
         "projects",
         "update_check",
+        "feedback_learning",
         "workflows",
         "executable",
         "task_format",
@@ -468,6 +471,9 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     update_check = raw.get("update_check", True)
     if not isinstance(update_check, bool):
         raise ConfigurationError(f"{path}.update_check must be true or false")
+    feedback_learning = raw.get("feedback_learning", True)
+    if not isinstance(feedback_learning, bool):
+        raise ConfigurationError(f"{path}.feedback_learning must be true or false")
     runtime = raw.get("runtime", DEFAULT_RUNTIME)
     if runtime not in RUNTIME_INSTRUCTIONS:
         raise ConfigurationError(
@@ -508,6 +514,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         projects=_parse_projects(raw.get("projects"), path),
         runtime=runtime,
         update_check=update_check,
+        feedback_learning=feedback_learning,
         disabled_workflows=disabled_workflows,
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),

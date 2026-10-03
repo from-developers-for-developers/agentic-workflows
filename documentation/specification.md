@@ -294,6 +294,7 @@ with its default, as `init` writes it:
   "enabled": true,
   "runtime": "single",
   "update_check": true,
+  "feedback_learning": true,
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3},

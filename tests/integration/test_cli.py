@@ -595,6 +595,7 @@ def test_init_writes_every_setting_with_its_default(tmp_path: Path, capsys) -> N
         "enabled",
         "runtime",
         "update_check",
+        "feedback_learning",
         "executable",
         "task_format",
         "limits",

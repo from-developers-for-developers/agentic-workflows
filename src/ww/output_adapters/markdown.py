@@ -1179,6 +1179,33 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
     commands = instruction.interact_commands
     if commands is None:  # pragma: no cover - the builder sets them together
         raise ValueError("an interactive step needs its interact commands")
+    if instruction.feedback_learning:
+        _append_section(lines, "Learn from operator feedback")
+        lines.extend(
+            [
+                "Analyse every operator feedback point for a lasting lesson, including "
+                "requirement gaps. Reason about recurrence; do not predict it. Read "
+                f"`{ww_command()} feedback --json` and match by meaning "
+                "before creating a candidate. "
+                "Assess scripted versus reasoning enforcement immediately. These are "
+                "candidates, not rules; never install one without operator approval.",
+                "",
+                "After recording this round, before completion, run "
+                f"`{ww_command()} feedback show {instruction.task_id} --json` "
+                "for numbered evidence. Write a JSON array "
+                'of {"id": "existing-id or omit for new", "summary": "general lesson", '
+                '"reason": "why it can recur", "enforcement": "scripted or reasoning", '
+                '"approach": "check idea or reasoning guidance", "entries": [1]} to '
+                "analysis.json, then record it (an empty array is valid "
+                "when no lasting "
+                "lesson exists). Use operator entry numbers as evidence; do not edit "
+                "the store yourself. Repeating the same evidence does not add counts.",
+                "",
+                "```console",
+                instruction.feedback_command or "",
+                "```",
+            ]
+        )
     if instruction.ui:
         _operator_page(lines, instruction, commands)
         return

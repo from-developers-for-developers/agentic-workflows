@@ -4061,3 +4061,89 @@ error instead, so standard output stays parseable.
 To switch the check off for a project, set `"update_check": false` in
 `ww.json`. `WW_UPDATE_CHECK=0` switches it off everywhere,
 and `WW_UPDATE_CHECK_INTERVAL` sets the seconds between checks.
+
+## Learning from operator feedback
+
+`feedback_learning` in `ww.json` is a boolean, default `true`. When enabled,
+interactive step pages ask the agent to analyse all recorded operator feedback,
+match generalisations by meaning, and assess scripted versus reasoning
+enforcement. This includes requirement gaps and preferences as well as mistakes.
+The agent records its judgement through `ww feedback record TASK --analysis
+analysis.json --role manager`; ww validates operator evidence from the current
+run, step and work item. The JSON file is an array of points with `summary`,
+`reason`, `enforcement` (`scripted` or `reasoning`), `approach`, and `entries`
+(operator entry numbers from `ww feedback show TASK --json`). To match an
+existing point, supply its `id` from `ww feedback --json`. An empty array
+records that no generalisable feedback was found. The transcript remains the
+source of truth. A candidate does not become an obligation for future work.
+
+The dedicated `.ww/feedback.json` store is updated under a project-scoped lock
+and written atomically. Repeating an analysis with the same supporting entry
+and candidate does not increment its count; retries creating a point with the
+same normalised wording reuse that point. Semantic matching of different
+wording remains the agent's responsibility. One candidate occurrence is one
+supporting operator entry, which can contain several related corrections.
+Task frequency counts distinct tasks, so multiple comments in one task cannot
+inflate the task ratio. `task_ratio` divides the number of tasks with matches
+by tracked tasks (completed tasks plus tasks with recorded analysis).
+`occurrence_ratio` divides supporting entry occurrences by tracked tasks and
+can exceed one when several comments occur in a task.
+`completed_task_ratio` includes only completed tasks on both sides. Tracking
+starts when this feature is enabled; it does not scan historical tasks.
+
+Each completed task counts once, even across workflow runs. A candidate is
+automatically deleted after five subsequently completed tasks without a match.
+Unfinished tasks with supporting evidence protect their candidates until they
+complete. Duplicate analysis does not refresh recency. Deletion removes the
+candidate, never its original transcript. Setting `feedback_learning: false`
+suppresses learning instructions, rejects recording, and stops completion
+tracking and retirement; existing evidence remains readable. Re-enabling
+resumes tracking without backfilling tasks completed while disabled.
+
+`ww-feedback-rules`, available through skill installation, reviews every
+candidate on the operator's request, compares existing rules, and proposes
+scope and enforcement with concrete wording. A single occurrence can warrant
+a proposal; neither count nor ratio imposes a minimum threshold or predicts
+future failures. The operator must approve the concrete proposals before the
+skill installs them using existing validated `ww rules` commands. Scripted
+approaches require proven checks; reasoning approaches remain verifier duties.
+
+For example, after the operator asks for English identifiers, record the
+conversation through the interactive step's normal `interact` command and
+inspect it with:
+
+```console
+./ww feedback --json
+./ww feedback show TASK-42 --json
+```
+
+If operator entry 2 supports a lasting lesson, write `analysis.json`:
+
+```json
+[
+  {
+    "summary": "Use English variable names.",
+    "reason": "Unspecified naming language can cause the same issue in new code.",
+    "enforcement": "reasoning",
+    "approach": "Review identifier language; dictionary checks have false positives.",
+    "entries": [2]
+  }
+]
+```
+
+Then record it while that interactive step is active:
+
+```console
+./ww feedback record TASK-42 --analysis analysis.json --role manager
+```
+
+For a subsequent match, include the existing candidate's `id` instead of
+creating another point. To disable learning, add this setting in `ww.json`:
+
+```json
+{"feedback_learning": false}
+```
+
+Invoke `/ww-feedback-rules` when you want proposals for lasting rules. The
+agent shows the wording, scope, evidence and enforcement rationale and waits
+for approval before writing any of them.

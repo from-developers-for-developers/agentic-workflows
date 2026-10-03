@@ -1,7 +1,6 @@
 # Working with ww
 
-This project coordinates work through ww: it saves progress, runs automatic
-handlers, and tells you which role acts next. Where ww is used by default, use
+ww saves progress, runs handlers, and names the next role. Where used by default, use
 it for requests to implement, fix, investigate, review, or otherwise carry out
 project work unless the user asks you not to, and every change to files goes
 through ww: when no workflow fits, run `./ww lookup [<task>] --agent <agent>`
@@ -31,10 +30,9 @@ To continue an existing task instead of starting another, run
 uses `--role worker`. `./ww status <task-id>` is a quick state check.
 
 ## Rules
-- Each ww response is authoritative. Run the displayed commands with every
-  placeholder replaced, supply what they ask for, and continue until ww
-  reports the workflow complete, an error, or that your assignment ended,
-  then stop. One completion rarely finishes the task.
+- Follow each authoritative ww page: replace command placeholders and supply
+  requested values until the workflow completes, errors, or your assignment
+  ends, then stop. One completion rarely finishes the task.
 - Perform only agent-owned work. Never run or work around a ww-owned handler,
   edit ww state, or read `ww.yaml` or ww's source to reconstruct what happens next.
 - On a handler repair assignment, fix the cause and complete with an artifact;
@@ -47,3 +45,5 @@ uses `--role worker`. `./ww status <task-id>` is a quick state check.
   `operator_reason` and the exact error to the user, and run only the `./ww next`
   option they pick (`--retry`, `--force`, `--replan`, `--keep-plan`, `--yes`
   once they said so); never reset unasked.
+- Follow enabled interactive feedback commands; never edit the feedback store.
+  Candidates become rules only on operator-requested review and explicit approval.

@@ -14,6 +14,16 @@ Add a --verbose flag to the CLI.
 
 Confirm the result with the operator.
 
+### Learn from operator feedback
+
+Analyse every operator feedback point for a lasting lesson, including requirement gaps. Reason about recurrence; do not predict it. Read `./ww feedback --json` and match by meaning before creating a candidate. Assess scripted versus reasoning enforcement immediately. These are candidates, not rules; never install one without operator approval.
+
+After recording this round, before completion, run `./ww feedback show TASK-1 --json` for numbered evidence. Write a JSON array of {"id": "existing-id or omit for new", "summary": "general lesson", "reason": "why it can recur", "enforcement": "scripted or reasoning", "approach": "check idea or reasoning guidance", "entries": [1]} to analysis.json, then record it (an empty array is valid when no lasting lesson exists). Use operator entry numbers as evidence; do not edit the store yourself. Repeating the same evidence does not add counts.
+
+```console
+./ww feedback record TASK-1 --analysis <analysis.json> --role manager
+```
+
 ### Interaction with the operator
 
 Hold this conversation with the operator in this session, because a delegated worker cannot talk to them: present the matter, ask, listen, and clarify. Record nothing while you talk. Open by telling the operator: say `ww done` when you are finished with this; I will then record our conversation and move on. When you judge the conversation has covered what the step needs, ask the operator with your question tool, or as a numbered list in the chat where you have none: `Move on` or `I have more`; on `Move on`, or an unmistakable "we're done", end it.

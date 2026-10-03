@@ -63,6 +63,7 @@ from ww.execution_models import (
     operation_scope_for,
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
+from ww.feedback import FeedbackStore
 from ww.handler_repairs import close_assignment, needs_repair, request_repair
 from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
@@ -80,6 +81,7 @@ from ww.plan import (
     WorkflowPlan,
     compile_workflow_plan,
 )
+from ww.project_config import load_project_config
 from ww.recovery import RecoveryCoordinator
 from ww.replanning import PlanChange, plan_change
 from ww.replanning import keep_plan as keep_plan_
@@ -258,6 +260,7 @@ class WorkflowService:
         extensions: ExtensionRegistry | None = None,
         configuration_loader: ConfigurationLoader | None = None,
         project_metadata: ProjectMetadataStorage | None = None,
+        feedback_store: FeedbackStore | None = None,
     ) -> None:
         self.storage = storage
         self.tasks = task_persistence or storage.task_persistence
@@ -268,6 +271,7 @@ class WorkflowService:
         )
         self.documents = DocumentStore(self.storage)
         self.interactions = InteractionLog(self.storage)
+        self.feedback = feedback_store or FeedbackStore(self.storage)
         self.hook_records = HookRecords(self.storage, self.tasks)
         self.rule_store = RuleStore(self.storage.root)
         self.rule_disputes = DisputeLog(self.storage.root)
@@ -692,6 +696,36 @@ class WorkflowService:
             handoff=handoff,
             bootstrap_request_id=bootstrap_request_id,
         )
+        if (
+            state.status == "completed"
+            and load_project_config(self.storage.project_config_path).feedback_learning
+        ):
+            self.feedback.complete_task(state.task_id)
+
+    def record_feedback(
+        self,
+        task_id: str,
+        analysis: object,
+        *,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+    ) -> dict[str, object]:
+        """Persist agent generalisations supported by this interactive round."""
+        self._validate_caller_role(caller_role)
+        validate_task_id(task_id)
+        if not load_project_config(self.storage.project_config_path).feedback_learning:
+            raise StateError("feedback learning is disabled in ww.json")
+        with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
+            state, snapshot = self.load(task_id)
+            if state.cursor >= len(snapshot.plan.items):
+                raise StateError("feedback record requires an active interactive step")
+            item = snapshot.plan.items[state.cursor]
+            if not item.interactive:
+                raise StateError("feedback record requires an interactive step")
+            return self.feedback.record(
+                task_id, state.run_id, item.name, item.item_id, analysis
+            )
 
     def _commit_runs(
         self,
