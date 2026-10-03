@@ -784,7 +784,7 @@ class WorkflowPlanCompiler:
                     parent,
                     phase,
                     hook.scope,
-                    hook.handler,
+                    replace(hook.handler, on_failure=hook.on_failure),
                     (*available, *produced),
                     item_template=item_template,
                     ancestors=ancestors,
@@ -916,6 +916,18 @@ class WorkflowPlanCompiler:
             assert action is not None
             planned_payload = self.actions.plan_action(action, allowed, workdir)
             compiled_operation = PlannedAction(kind, planned_payload)
+        if (
+            handler.on_failure == "fix" or handler.on_failure_instruction is not None
+        ) and kind != "cli":
+            raise ConfigurationError(
+                f"handler {handler.name!r}: on_failure repair requires "
+                "a command handler using shell/argv"
+            )
+        failure_instruction = (
+            self.actions._interpolate(handler.on_failure_instruction, allowed)
+            if handler.on_failure_instruction is not None
+            else None
+        )
         description = (
             self.actions._interpolate(handler.description, allowed)
             if handler.description
@@ -936,6 +948,7 @@ class WorkflowPlanCompiler:
                         else ()
                     ),
                     handler.description,
+                    handler.on_failure_instruction,
                 )
                 if value is not None
                 for name in dependencies(value)
@@ -975,6 +988,9 @@ class WorkflowPlanCompiler:
                 name=handler.name,
                 description=description,
                 operation=compiled_operation,
+                on_failure=handler.on_failure or "operator",
+                on_failure_instruction=failure_instruction,
+                max_handler_fixes=self.project_config.limits.fixes,
                 owner=owner,
                 execution=execution,
                 requires_agent_input=execution == "automatic" and bool(handler.provide),
@@ -1160,6 +1176,13 @@ class WorkflowPlanCompiler:
                         action.payload, allowed, workdir, check_id
                     ),
                     max_fixes=default_fixes,
+                    on_failure_instruction=(
+                        self.actions._interpolate(
+                            handler.on_failure_instruction, allowed
+                        )
+                        if handler.on_failure_instruction is not None
+                        else None
+                    ),
                 )
             )
         return rules, tuple(checks)

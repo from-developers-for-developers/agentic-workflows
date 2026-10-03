@@ -1585,6 +1585,37 @@ keeps out of version control, merging ww's entries and recognising them by
 their command. `init` offers it per agent and treats a failure as a manual
 action, never as an init failure.
 
+## Automatic handler repairs
+
+Command handlers retain ww ownership throughout execution and repair. A known
+failure with `on_failure: fix` creates a persisted repair assignment on the
+existing execution record, rather than inserting a synthetic plan step. This
+keeps plan identity and lifecycle hooks stable: the agent repairs the cause,
+while ww alone retries the command and decides when its step can advance.
+
+`handler_repairs.py` owns the transition from a known failure to repair,
+including the failure budget and closure of the previous assignment's token.
+The execution record retains pending repair state, failure counts and repair
+artifacts. The service routes dispatch and completion explicitly for these
+assignments; instruction building presents agent work even though the plan
+item remains automated. In `auto`, a repair has a scoped worker token and the
+handler's worker guidance; repeated failures stay with that worker. In
+`single`, the current session receives repair work immediately. Submission
+persists the repair artifact before ww retries through the existing command
+ledger, preserving prior attempts and completed predecessor items.
+
+The same `limits.fixes` policy escalates exhausted repairs to the operator.
+Operator retries renew the budget; forcing skips the failed automated item.
+Interrupted operations keep their existing recovery boundary because their
+external outcome is unknown. `on_failure: fix` authorizes retry of a known
+failure, while `idempotent: true` independently permits replay after interruption.
+
+Existing `before_complete` checks retain their original rejection loop with
+the step's worker. The compiler freezes optional `on_failure_instruction`
+guidance into either the handler plan item or the completion check, so failures
+can be explained without embedding retry instructions in an ordinary step's
+work description.
+
 ## Rules and checks
 
 A rule is knowledge given to a step; a check is evidence collected after it.

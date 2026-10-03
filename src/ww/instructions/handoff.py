@@ -91,14 +91,19 @@ def _step(
     return HandoffStep(
         name=item.name,
         outcome=outcome,
-        artifact=str((root / record.artifact).resolve()) if record.artifact else None,
+        artifact=str((root / record.repair_artifacts[-1]).resolve())
+        if record.repair_artifacts
+        else str((root / record.artifact).resolve())
+        if record.artifact
+        else None,
         checks=(
             tuple((result.id, result.status) for result in last.results)
             if last is not None
             else ()
         ),
         checks_waived=tuple(check_id for check_id, _ in record.checks_waived),
-        fix_rounds=sum(1 for report in record.check_reports if report.failed),
+        fix_rounds=record.repair_failures
+        or sum(1 for report in record.check_reports if report.failed),
         error=record.error if record.status == "failed" else None,
     )
 

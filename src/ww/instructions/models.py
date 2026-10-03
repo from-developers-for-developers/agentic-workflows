@@ -505,6 +505,7 @@ class Instruction:
     # automatic ones whose filters admit the step.
     modes: tuple[PlannedMode, ...] = ()
     fix_required: FixRequired | None = None
+    handler_repair: dict[str, object] | None = None
     checks_waived: tuple[tuple[str, str], ...] = ()
     dispute: DisputeView | None = None
     # A worker asked for an item the manager performs itself (``role:
@@ -637,6 +638,11 @@ class Instruction:
             "result_saved": self.result_saved,
             "rules": [rule.to_dict() for rule in self.rules],
             "modes": [mode.to_dict() for mode in self.modes],
+            **(
+                {"handler_repair": self.handler_repair}
+                if self.handler_repair is not None
+                else {}
+            ),
             "fix_required": (
                 self.fix_required.to_dict() if self.fix_required else None
             ),

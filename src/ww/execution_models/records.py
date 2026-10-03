@@ -543,6 +543,10 @@ class PlanItemExecution:
     error: str | None = None
     commands: tuple[CommandExecution, ...] = ()
     artifact: str | None = None
+    # Repairs belong to this execution, without inserting items into the plan.
+    repair_pending: bool = False
+    repair_failures: int = 0
+    repair_artifacts: tuple[str, ...] = ()
     # The short handover a step's worker wrote for the next step.
     summary_for_next: str | None = None
     # An interactive step's conversation with the operator, as recorded by
@@ -612,6 +616,9 @@ class PlanItemExecution:
             "error": self.error,
             "commands": [item.to_dict() for item in self.commands],
             "artifact": self.artifact,
+            "repair_pending": self.repair_pending,
+            "repair_failures": self.repair_failures,
+            "repair_artifacts": list(self.repair_artifacts),
             "summary_for_next": self.summary_for_next,
             "interaction_entries": self.interaction_entries,
             "interaction_ended": self.interaction_ended,
@@ -672,6 +679,16 @@ class PlanItemExecution:
             error=expect_optional_string(data["error"], "error"),
             commands=tuple(CommandExecution.from_dict(item) for item in commands),
             artifact=expect_optional_string(data["artifact"], "artifact"),
+            repair_pending=expect_bool(
+                data.get("repair_pending", False), "repair pending"
+            ),
+            repair_failures=expect_nonnegative_int(
+                data.get("repair_failures", 0), "repair failures"
+            ),
+            repair_artifacts=tuple(
+                expect_string(value, "repair artifact")
+                for value in _list(data.get("repair_artifacts", []), "repair artifacts")
+            ),
             summary_for_next=expect_optional_string(
                 data.get("summary_for_next"), "summary for next step"
             ),

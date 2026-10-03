@@ -189,6 +189,7 @@ def _instruction_outcome(
     instruction: Instruction, json_output: bool, *, completing: bool = False
 ) -> _Outcome:
     failed = instruction.status in {"failed", "interrupted"}
+    repairing = completing and instruction.handler_repair is not None
     # A rejected completion exits non-zero too, so the worker reads the page;
     # showing the fix page again later is no failure of that command.
     rejected = completing and instruction.fix_required is not None and not failed
@@ -198,12 +199,12 @@ def _instruction_outcome(
         instruction.task_id,
         error=(
             instruction.error
-            if failed
+            if failed or repairing
             else _rejection(instruction)
             if rejected
             else None
         ),
-        exit_code=1 if failed or rejected else 0,
+        exit_code=1 if failed or rejected or repairing else 0,
     )
 
 

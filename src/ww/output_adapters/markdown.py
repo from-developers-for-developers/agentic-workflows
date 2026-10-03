@@ -480,7 +480,10 @@ def _heading(lines: Lines, instruction: Instruction) -> None:
         # the worker it selects is the one who provides the input.
         heading = f"{_role(instruction)}: provide required input"
     if instruction.operator_reason is not None:
-        heading = f"Operator decision: {_OPERATOR_REASONS[instruction.operator_reason]}"
+        reason = _OPERATOR_REASONS[instruction.operator_reason]
+        if instruction.operator_reason == "fix_limit" and instruction.handler_repair:
+            reason = "the handler repair reached its fix limit"
+        heading = f"Operator decision: {reason}"
     if instruction.operation_id and instruction.item_status == "in_progress":
         heading = "Manager: resolve the active automatic handler"
     lines.extend([f"## {heading}", ""])
@@ -1969,6 +1972,12 @@ def _outcome_commands(lines: Lines, instruction: Instruction) -> None:
 def _action_heading(instruction: Instruction) -> str:
     name = instruction.item_name or "workflow"
     reader = audience(instruction)
+    if instruction.handler_repair is not None:
+        return (
+            f"repair `{name}`"
+            if instruction.item_status != "pending"
+            else f"dispatch repair of `{name}`"
+        )
     if instruction.choosing_outcome_of is not None:
         # Choosing is the manager's; the worker that assessed hands back.
         if reader is Audience.WORKER_RETURNING:

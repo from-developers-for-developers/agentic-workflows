@@ -31,14 +31,14 @@ To continue an existing task instead of starting another, run
 uses `--role worker`. `./ww status <task-id>` is a quick state check.
 
 ## Rules
-
 - Each ww response is authoritative. Run the displayed commands with every
   placeholder replaced, supply what they ask for, and continue until ww
   reports the workflow complete, an error, or that your assignment ended,
   then stop. One completion rarely finishes the task.
 - Perform only agent-owned work. Never run or work around a ww-owned handler,
-  edit ww state, or read `ww.yaml` or ww's source to reconstruct what
-  happens next.
+  edit ww state, or read `ww.yaml` or ww's source to reconstruct what happens next.
+- On a handler repair assignment, fix the cause and complete with an artifact;
+  ww retries the command. In `auto`, the manager dispatches repairs with `next`.
 - On a nonzero exit, read the whole response. On "Fix required", fix the causes
   and complete again (`./ww check <task-id>` previews checks) or `./ww dispute`
   a wrong check; `./ww fail` with the page's `--role` and `--assignment`

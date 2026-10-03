@@ -38,6 +38,7 @@ from ww.execution_models import (
     PlanItemExecution,
     PlanSnapshot,
 )
+from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
@@ -169,18 +170,27 @@ class InstructionBuilder:
             and record is not None
             and item.owner == "ww"
             and record.status == "in_progress"
+            and not needs_repair(state)
         )
         assignment = _current_assignment(state, plan, item)
         # A hook shares its assignment with its step, so the worker shape and
         # the delegate heading come from the step that drives selection, not
         # from whichever item the cursor happens to be on.
-        driver = selection_item(plan, assignment) if assignment is not None else None
+        driver = (
+            item
+            if needs_repair(state)
+            else selection_item(plan, assignment)
+            if assignment is not None
+            else None
+        )
         shape = driver or item
         span = plan.items[assignment.start : assignment.stop] if assignment else ()
         covered = tuple(
             entry
             for entry in span
-            if entry.owner == "agent" or entry.requires_agent_input
+            if entry.owner == "agent"
+            or entry.requires_agent_input
+            or needs_repair(state)
         )
         built = self._build(state, snapshot)
         choosing = pending_assessment(state, plan)
@@ -283,6 +293,8 @@ class InstructionBuilder:
             )
         item = plan.items[state.cursor]
         record = state.item_executions[state.cursor]
+        if needs_repair(state):
+            return self._repair(state, plan, item, record)
         if child_workflow(item) is not None:
             return self._child_control(state, item, record)
         loop = loop_control(item)
@@ -295,6 +307,75 @@ class InstructionBuilder:
         return replace(
             _base(state, item, item_status="pending"),
             continuation_command=next_command(state.task_id),
+        )
+
+    def _repair(
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        record: PlanItemExecution,
+    ) -> Instruction:
+        active = state.active_item_id == item.id
+        workspace, values = item_workspace_values(
+            self.root,
+            item.workdir,
+            state.working_directory,
+            {**dict(state.workflow_values), **self.task_values(state, plan)},
+        )
+        commands = (
+            tuple(command for command in record.commands if command.status == "failed")
+            or record.commands
+        )
+        references = tuple(
+            dict.fromkeys(
+                reference
+                for command in commands
+                for reference in (command.stdout_ref, command.stderr_ref)
+                if reference
+            )
+        )
+        text = (
+            f"Repair attempt {record.repair_failures} of {item.max_handler_fixes}.\n\n"
+            f"Repair the cause of the failed automatic handler `{item.name}`.\n\n"
+            "Do not independently execute the handler command. Submit your repair "
+            "with ww complete; "
+            "ww retries the handler and advances only when it succeeds."
+        )
+        if item.on_failure_instruction:
+            text += "\n\n" + item.on_failure_instruction
+        text += "\n\n" + action_text(item, values, state.task_id, ContainerArtifact())
+        text += "\n\nFailure:\n\n" + (
+            record.error or state.last_error or "Unknown command failure"
+        )
+        if references:
+            text += "\n\nFull command output:\n" + "\n".join(
+                f"- `{self.root / reference}`" for reference in references
+            )
+        return replace(
+            _base(state, item, item_status="in_progress" if active else "pending"),
+            action_text=text,
+            task_requirements=self._requirements(state, plan),
+            working_directory=str(workspace or self.root),
+            profile_instruction=profile_instruction(item, self.root),
+            handler_repair={
+                "item_id": item.id,
+                "attempt": record.repair_failures,
+                "max_fixes": item.max_handler_fixes,
+                "instruction": item.on_failure_instruction,
+                "output_refs": list(references),
+                "artifacts": list(record.repair_artifacts),
+            },
+            continuation_command=complete_command(
+                state.task_id,
+                (),
+                True,
+                (),
+                role="worker",
+                assignment=worker_token(state),
+            )
+            if active
+            else next_command(state.task_id),
         )
 
     def _awaiting_input(self, state: ExecutionState, plan: WorkflowPlan) -> Instruction:
@@ -592,7 +673,15 @@ class InstructionBuilder:
             _base(
                 state, current, item_status="interrupted" if interrupted else "failed"
             ),
-            error=state.last_error,
+            error=(
+                f"Handler repair reached its fix limit ({record.repair_failures} of "
+                f"{current.max_handler_fixes}).\n\n{state.last_error}"
+                if record is not None
+                and current is not None
+                and needs_repair(state)
+                and state.failure_kind == "fix_limit"
+                else state.last_error
+            ),
             child_tasks=(
                 self.tasks.read_children(state.task_id, state.run_id)
                 if current is not None and child_workflow(current) is not None
@@ -944,6 +1033,13 @@ def fix_failures(
 ) -> tuple[FixFailure, ...]:
     """Failed check results as the fix page shows them, with their rules' texts."""
     texts = {rule.id: rule.text for rule in item.rules}
+    texts.update(
+        {
+            check.id: check.on_failure_instruction
+            for check in item.checks
+            if check.on_failure_instruction is not None
+        }
+    )
     covers = {check.id: check.covers for check in record.resolved_checks}
     return tuple(
         FixFailure(
@@ -1127,6 +1223,8 @@ def _current_assignment(
         return None
     if state.status in {"completed", "failed", "interrupted"}:
         return None
+    if needs_repair(state):
+        return Assignment(item.id, state.cursor, state.cursor + 1)
     active = active_assignment(
         plan, state.assignment_item_id, runtime=state.workflow_runtime
     )
@@ -1179,6 +1277,19 @@ def _assignment_preview(
     if state.status == "awaiting_input":
         # The manager is already inside this assignment, supplying its values.
         return None
+    if needs_repair(state) and item is not None:
+        return {
+            "first_item_id": item.id,
+            "start": state.cursor,
+            "stop": state.cursor + 1,
+            "selection_item_id": item.id,
+            "selection_item_name": item.name,
+            "requested_agent": item.requested_agent,
+            "requested_model": item.requested_model,
+            "requested_reasoning": item.requested_reasoning,
+            "requested_profile": item.profile,
+            "repair": True,
+        }
     assignment = assignment_at(plan, state.cursor, runtime=state.workflow_runtime)
     if assignment is not None and input_only(plan, assignment):
         return {

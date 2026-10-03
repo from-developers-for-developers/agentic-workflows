@@ -136,6 +136,7 @@ class PlannedCheck:
     paths: tuple[str, ...] = ()
     max_fixes: int = 1
     covers: tuple[str, ...] = ()
+    on_failure_instruction: str | None = None
 
     def __post_init__(self) -> None:
         if self.source not in {"rule", "hook", "derived"}:
@@ -156,6 +157,8 @@ class PlannedCheck:
         }
         if self.covers:
             data["covers"] = list(self.covers)
+        if self.on_failure_instruction is not None:
+            data["on_failure_instruction"] = self.on_failure_instruction
         return data
 
 
@@ -284,6 +287,9 @@ class PlanItem:
     # Set on a verification item ww inserts before an agent step whose rules
     # without a command need a verifier; never compiled from configuration.
     verifies: VerificationTarget | None = None
+    on_failure: str = "operator"
+    on_failure_instruction: str | None = None
+    max_handler_fixes: int = 3
 
     @property
     def kind(self) -> PlanItemKind:
@@ -330,6 +336,14 @@ class PlanItem:
         return payload
 
     def __post_init__(self) -> None:
+        if self.on_failure not in {"operator", "fix"}:
+            raise ValueError("invalid handler failure policy")
+        if not is_positive_int(self.max_handler_fixes):
+            raise ValueError("handler fix limit must be positive")
+        if (self.on_failure == "fix" or self.on_failure_instruction is not None) and (
+            self.kind != "cli" or self.owner != "ww"
+        ):
+            raise ValueError("handler repair requires an automatic command")
         if self.phase not in {
             "before_start_workflow",
             "before_start",
@@ -445,6 +459,11 @@ class PlanItem:
 
     def to_dict(self) -> dict[str, object]:
         data = self._to_dict()
+        if self.on_failure != "operator":
+            data["on_failure"] = self.on_failure
+            data["max_handler_fixes"] = self.max_handler_fixes
+        if self.on_failure_instruction is not None:
+            data["on_failure_instruction"] = self.on_failure_instruction
         # Loop membership is written only where it applies, so plans saved
         # before it existed re-serialize byte for byte and keep their digest.
         if self.loop_id is None:

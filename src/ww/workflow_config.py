@@ -302,6 +302,8 @@ class HandlerDefinition:
     # ``args`` of a reference to an extension handler: the positional
     # arguments it is run with, templates allowed.
     extension_arguments: tuple[str, ...] = ()
+    on_failure: HookFailure | None = None
+    on_failure_instruction: str | None = None
 
     @property
     def is_reference(self) -> bool:

@@ -55,7 +55,18 @@ class ActionResolver:
             return replace(definition), value.name, definition
         registered = self.configuration.handlers_by_name.get(value.name)
         if registered is not None:
-            return replace(registered), registered.name, registered
+            return (
+                replace(
+                    registered,
+                    on_failure=value.on_failure
+                    if value.on_failure is not None
+                    else registered.on_failure,
+                    on_failure_instruction=value.on_failure_instruction
+                    or registered.on_failure_instruction,
+                ),
+                registered.name,
+                registered,
+            )
         return value, None, None
 
     def _extension_handler(

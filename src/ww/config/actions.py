@@ -147,6 +147,7 @@ def _parse_handler(
             name=name,
             description=description,
             action=action,
+            **_failure_policy(mapping, path),
             **handler_values(mapping, f"handler {name!r}"),
             agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
             model=_optional_string(mapping, "model", f"handler {name!r}"),
@@ -190,12 +191,24 @@ def _parse_handler(
         name=name,
         description=description,
         action=typed_action,
+        **_failure_policy(mapping, path),
         **handler_values(mapping, f"handler {name!r}"),
         agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
         model=_optional_string(mapping, "model", f"handler {name!r}"),
         reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
         workdir=_optional_workdir(mapping, f"handler {name!r}"),
     )
+
+
+def _failure_policy(mapping: dict[str, Any], path: str) -> dict[str, Any]:
+    return {
+        "on_failure": _on_failure(mapping, path, "operator")
+        if "on_failure" in mapping
+        else None,
+        "on_failure_instruction": _optional_string(
+            mapping, "on_failure_instruction", path
+        ),
+    }
 
 
 def _optional_workdir(mapping: dict[str, Any], path: str) -> Workdir | None:
@@ -221,6 +234,8 @@ def _handler_keys() -> set[str]:
         "env",
         "assert",
         "idempotent",
+        "on_failure",
+        "on_failure_instruction",
         "agent",
         "variables",
         "saves",
@@ -265,12 +280,16 @@ def _parse_hook(
         mapping,
         path,
         allowed=allowed,
-        ignored={"workflows", "steps", "on_failure"},
+        ignored={"workflows", "steps", "on_failure", "on_failure_instruction"},
     )
     _only(mapping, allowed, path)
     on_failure = _on_failure(mapping, path, "operator")
+    _optional_string(mapping, "on_failure_instruction", path)
     if "handlers" in mapping:
-        action_keys = set(mapping) & (_handler_keys() | {"handoff_to"})
+        action_keys = set(mapping) & (
+            (_handler_keys() - {"on_failure", "on_failure_instruction"})
+            | {"handoff_to"}
+        )
         if action_keys:
             raise ConfigurationError(
                 f"{path} cannot combine handlers with handler key(s): "
@@ -280,7 +299,12 @@ def _parse_hook(
         if not isinstance(raw_handlers, list) or not raw_handlers:
             raise ConfigurationError(f"{path}.handlers must be a non-empty list")
         references = tuple(
-            _parse_hook_member(item, f"{path}.handlers[{index}]", on_failure)
+            _parse_hook_member(
+                item,
+                f"{path}.handlers[{index}]",
+                on_failure,
+                mapping.get("on_failure_instruction"),
+            )
             for index, item in enumerate(raw_handlers)
         )
     else:
@@ -323,7 +347,10 @@ def _on_failure(
 
 
 def _parse_hook_member(
-    data: Any, path: str, group_failure: HookFailure
+    data: Any,
+    path: str,
+    group_failure: HookFailure,
+    group_instruction: str | None = None,
 ) -> tuple[HandlerDefinition, HookFailure]:
     """One member of a hook's ``handlers`` list and its own ``on_failure``."""
     mapping = _named_entry(
@@ -334,6 +361,8 @@ def _parse_hook_member(
     )
     failure = _on_failure(mapping, path, group_failure)
     handler = {key: value for key, value in mapping.items() if key != "on_failure"}
+    if "on_failure_instruction" not in handler and group_instruction is not None:
+        handler["on_failure_instruction"] = group_instruction
     return _parse_hook_handler(handler, path), failure
 
 

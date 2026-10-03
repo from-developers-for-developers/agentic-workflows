@@ -115,6 +115,13 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         position=expect_positive_int(raw.get("position"), "plan position"),
         name=expect_string(raw.get("name"), "plan item name"),
         description=expect_string(raw.get("description", ""), "description"),
+        on_failure=expect_string(raw.get("on_failure", "operator"), "on_failure"),
+        on_failure_instruction=expect_optional_string(
+            raw.get("on_failure_instruction"), "on_failure_instruction"
+        ),
+        max_handler_fixes=expect_positive_int(
+            raw.get("max_handler_fixes", 3), "max_handler_fixes"
+        ),
         operation=decode_operation(raw.get("operation")),
         owner=_plan_item_owner(raw.get("owner")),
         execution=_execution_kind(raw.get("execution")),
@@ -324,6 +331,9 @@ def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck,
                 summary=expect_string(raw["summary"], f"{path}.summary"),
                 command=decoded,
                 paths=_string_list(raw["paths"], f"{path}.paths"),
+                on_failure_instruction=expect_optional_string(
+                    raw.get("on_failure_instruction"), "check failure instruction"
+                ),
                 max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
                 covers=_string_list(raw.get("covers", []), f"{path}.covers"),
             )

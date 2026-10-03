@@ -775,6 +775,8 @@ Each root handler, and each step through the same shared shape, accepts:
 | `args` | string list | no | Positional arguments for `shell`, or, beside only `name` and `workdir`, for the extension handler that `name` references, which must declare exactly that many. Templates are allowed. |
 | `env` | string mapping | no | Environment values for `shell`. |
 | `assert` | list of conditions | no | Conditions the command output must all meet; see [Commands](#commands). |
+| `on_failure` | `fix` or `operator` | no | Automatic shell/argv handlers only. `fix` opens an agent repair assignment after a known failure; completing the repair asks ww to retry the handler. Default `operator` stops for an operator decision. |
+| `on_failure_instruction` | non-empty string | no | Optional guidance for shell/argv handlers, included in the repair assignment or a hook failure page. Templates are allowed. |
 | `idempotent` | boolean | no | Running the command action again is harmless: an interrupted run is replayed by `next` instead of waiting for an operator. Requires `argv` or `shell`. Defaults to `false`. |
 | `action` | mapping | no | The registry form, `{type: <action>, ...}`: selects a registered action by its identifier, with that action's own keys beside `type`. Extensions' actions use it; it cannot be combined with `kind`, `mcp`, `argv`, `shell`, `args`, `env`, `assert`, or `idempotent`, and the core controls (`loop`, `workflow_transition`, `child_workflow`) are refused as types. |
 | `variables` | list of variables | no | What the step hands back, read later as `{{name}}`; see [Variables](#variables). |
@@ -783,6 +785,47 @@ Each root handler, and each step through the same shared shape, accepts:
 | `model` | non-empty string | no | Model guidance; `auto` stops inheritance. |
 | `reasoning` | non-empty string | no | Reasoning guidance for this action. |
 | `workdir` | `task`, `project`, or `root` | no | The directory this action works in; see [Working directory](#working-directory). Defaults to `task`. |
+
+### Automatic handler repairs
+
+An automatic command step runs when ww reaches it, records its own success,
+and advances without an agent completion for that step. With `on_failure: fix`,
+a known failure pauses that execution and opens a repair assignment:
+
+```yaml
+- build-root-assets: ~
+  shell: docker compose exec -T -w /var/www/html/frontend requesttool npm run build
+  on_failure: fix
+  on_failure_instruction: Fix the reported build errors.
+```
+
+The repair page includes the command, failure diagnostics, full output artifact
+references, and the optional instruction. The agent fixes the cause and calls
+the displayed `complete` command with a repair artifact. ww retries the failed
+handler; only its success completes the automated step. Completed preceding
+steps stay completed. Repair assignments are attached to the execution; they
+create no extra workflow steps and invoke no step hooks of their own.
+
+In the `single` runtime the same session receives the repair immediately. In
+`auto`, ww ends the previous assignment and the manager dispatches the repair
+with `next`; successive failures of the same handler stay with that repair
+worker. The handler's agent/model/reasoning/profile guidance applies to its
+repair assignment. Repair artifacts and command output survive reloads and are
+available through `artifacts`. JSON repair pages include `handler_repair` with
+the item ID, attempt count, limit, instruction, output references and artifacts.
+
+The handler stops for the operator with `operator_reason: fix_limit` after
+`limits.fixes` failures (default 3), using the same counting policy as checks.
+An operator-authorized `next --retry` starts a fresh budget and retries the
+handler; `next --force --reason "..."` skips it. An agent that cannot repair it
+can use the displayed `fail` command to request an operator decision.
+
+`on_failure: fix` authorizes retry after a known failure without requiring
+`idempotent: true`. An interruption with an unknown outcome still follows the
+usual automatic-handler recovery rules: only `idempotent: true` permits
+implicit replay. These settings apply to automatic steps as well as commands
+used in hooks. Existing `before_complete` checks return failures to their
+step's worker rather than opening a separate repair assignment.
 
 ### Working directory
 
@@ -1014,6 +1057,7 @@ Each hook entry accepts one handler form and optional filters:
 | `handlers` | non-empty list of handler mappings | All scopes; used only for multiple actions. |
 | `steps` | `"*"` or list of step names or paths | Global and workflow step-lifecycle hooks only; unavailable to workflow-boundary hooks. |
 | `workflows` | `"*"` or list of workflow names | Global hooks only. |
+| `on_failure_instruction` | non-empty string | Optional failure guidance, also accepted on each member of `handlers`; a member inherits the group instruction unless it overrides it. |
 | `on_failure` | `fix` or `operator` | `before_complete` hooks only, and not on a workflow transition. `fix` makes the hook a check of the step: a failure rejects the step's completion and returns the step to its worker; see [Rules](#rules). Default `operator`: a failure stops the task for the operator. Also accepted on each member of `handlers`, which inherits the group's value. |
 
 The filter forms are described in

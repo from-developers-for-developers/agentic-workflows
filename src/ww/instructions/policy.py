@@ -18,6 +18,7 @@ from ww.contracts import (
 from ww.control import child_workflow, loop_control, replays_harmlessly
 from ww.errors import StateError
 from ww.execution_models import ExecutionState
+from ww.handler_repairs import needs_repair
 from ww.plan import WorkflowPlan
 from ww.transitions import loop_limit_reached
 from ww.validation import expect_literal
@@ -137,6 +138,12 @@ def _control(state: ExecutionState, plan: WorkflowPlan) -> tuple[Control, NextRo
         return "blocked", "manager"
     if state.status in {"completed", "abandoned"}:
         return "handoff_manager", "manager"
+    if needs_repair(state):
+        return (
+            ("continue_worker", "worker")
+            if state.active_item_id
+            else ("handoff_manager", "manager")
+        )
     if state.status == "awaiting_input":
         assignment = active_assignment(
             plan, state.assignment_item_id, runtime=state.workflow_runtime

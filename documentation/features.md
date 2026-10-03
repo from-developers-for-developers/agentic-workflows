@@ -3768,9 +3768,38 @@ ww-agentic-workflows reset TASK-123 --yes
 
 ## When an automatic handler fails
 
-ww stops the task and hands the decision to the operator. It never retries on
-its own and never works around the failure, because both would hide a real
-problem behind a green workflow.
+By default, ww stops the task and hands the decision to the operator. An
+automatic shell/argv handler can instead declare `on_failure: fix` to request
+an agent repair before ww retries it:
+
+```yaml
+- build: ~
+  shell: npm run build
+  on_failure: fix
+  on_failure_instruction: Fix the build errors reported by the command.
+```
+
+ww runs the handler until it fails, then gives an agent a repair assignment
+containing the command, diagnostics, full output references, and optional
+failure instruction. The agent fixes the cause and submits `complete` with an
+artifact; ww retries the handler and advances only on success. Completed
+preceding handlers stay completed. The repair belongs to the failed execution
+and creates no workflow step or hooks.
+
+In `auto`, the manager dispatches the repair and repeated failures stay with
+that worker; in `single`, the session receives it directly. Repair artifacts
+survive reloads and are available through `artifacts`. Repeated failures reach
+the existing `limits.fixes` operator stop (default 3). An operator retry renews
+the budget, and an operator force skips the handler. Known failure retries
+need no `idempotent: true`; unknown outcomes after interruption still use the
+existing recovery rules.
+
+Optional `on_failure_instruction` also adds guidance to hook failures.
+`before_complete` hooks with `on_failure: fix` keep the step's existing check
+loop with its worker; see [The fix loop](#the-fix-loop).
+
+For the default `on_failure: operator` policy, the failure page hands the
+decision to the operator as follows.
 
 The page the agent receives names the command and shows what it printed:
 

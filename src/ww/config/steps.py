@@ -301,6 +301,8 @@ def _parse_step(
         reasoning=base.reasoning,
         workdir=base.workdir,
         extension_arguments=base.extension_arguments,
+        on_failure=base.on_failure,
+        on_failure_instruction=base.on_failure_instruction,
         role=role,
         subagents=subagents,
         interactive=interactive,
@@ -1099,4 +1101,12 @@ def _step_handler_reference(
         model=local.model if "model" in mapping else referenced.model,
         reasoning=(local.reasoning if "reasoning" in mapping else referenced.reasoning),
         workdir=local.workdir if "workdir" in mapping else referenced.workdir,
+        on_failure=local.on_failure
+        if "on_failure" in mapping
+        else referenced.on_failure,
+        on_failure_instruction=(
+            local.on_failure_instruction
+            if "on_failure_instruction" in mapping
+            else referenced.on_failure_instruction
+        ),
     )

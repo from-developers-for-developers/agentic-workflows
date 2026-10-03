@@ -72,6 +72,10 @@ def retry_failed_item(
             record,
             status="pending",
             error=None,
+            repair_pending=False,
+            repair_failures=0
+            if state.failure_kind == "fix_limit"
+            else record.repair_failures,
             supplied_values=supplied,
             # A retry after the fix limit gives the worker a fresh count; the
             # rejected attempts stay in the history record. A retry after a
@@ -1429,7 +1433,11 @@ def project_steps(
     """Rebuild human-facing step status from authoritative item records."""
     by_path: dict[str, list[str]] = {}
     for item, record in zip(plan.items, state.item_executions, strict=True):
-        by_path.setdefault(item.step, []).append(record.status)
+        by_path.setdefault(item.step, []).append(
+            "in_progress"
+            if record.repair_pending and state.status != "failed"
+            else record.status
+        )
 
     def refresh(node: StepProgress) -> StepProgress:
         children = tuple(refresh(child) for child in node.children)

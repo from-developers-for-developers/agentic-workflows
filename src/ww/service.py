@@ -63,6 +63,7 @@ from ww.execution_models import (
     operation_scope_for,
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
+from ww.handler_repairs import close_assignment, needs_repair, request_repair
 from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
@@ -878,7 +879,11 @@ class WorkflowService:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
         if state.status == "failed":
-            if force and state.failure_kind in {"fix_limit", "check_disputed"}:
+            if (
+                force
+                and state.failure_kind in {"fix_limit", "check_disputed"}
+                and not needs_repair(state)
+            ):
                 # Forcing past a step at its fix limit completes it without
                 # its checks, and past a dispute without the disputed one;
                 # never without its work.
@@ -906,6 +911,10 @@ class WorkflowService:
             self.commit(state, snapshot)
         if state.status == "awaiting_input":
             return self.render(state, snapshot)
+        if needs_repair(state):
+            return self._dispatch_repair(
+                state, snapshot, model, reasoning, selected_agent
+            )
         if state.active_item_id:
             if child_workflow(snapshot.plan.items[state.cursor]) is not None:
                 return self.render(state, snapshot)
@@ -982,6 +991,10 @@ class WorkflowService:
             break
         else:  # pragma: no cover - every pass consumes a boundary
             raise StateError("next did not reach an agent item")
+        if needs_repair(state):
+            return self._dispatch_repair(
+                state, snapshot, model, reasoning, selected_agent
+            )
         item = snapshot.plan.items[state.cursor]
         if item.owner != "agent":
             raise StateError("executor stopped on a non-agent item")
@@ -1020,7 +1033,11 @@ class WorkflowService:
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         items = snapshot.plan.items
-        if state.status == "failed" and state.failure_kind == "fix_limit":
+        if (
+            state.status == "failed"
+            and state.failure_kind == "fix_limit"
+            and not needs_repair(state)
+        ):
             return (
                 f"waive the failed checks of `{items[state.cursor].name}`: its "
                 "worker completes it again without them, and the artifact "
@@ -1321,6 +1338,12 @@ class WorkflowService:
         if not state.active_item_id or state.cursor >= len(snapshot.plan.items):
             raise StateError("no agent item is in progress; use next")
         item = snapshot.plan.items[state.cursor]
+        if needs_repair(state):
+            state = replace(
+                state, status="failed", failure_kind="work_failed", last_error=error
+            )
+            self.commit(state, snapshot)
+            return self.render(state, snapshot)
         if item.id != state.active_item_id or item.owner != "agent":
             raise StateError("active plan item does not match the execution cursor")
         state = fail_agent_item(state, snapshot.plan, item, error, _now)
@@ -1471,6 +1494,18 @@ class WorkflowService:
         state, snapshot = self.metadata_publisher.reconcile(state, snapshot)
         if state.status == "failed":
             return self.render(state, snapshot)
+        if needs_repair(state):
+            if (
+                variables
+                or metadata_values
+                or rule_results
+                or stopping_loop
+                or continuing_loop
+            ):
+                raise StateError(
+                    "repair completion accepts only an artifact and summary"
+                )
+            return self._complete_repair(state, snapshot, artifact, summary_for_next)
         supplied = validate_values(variables)
         supplied_metadata = group_metadata_values(metadata_values)
         if "task_id" in supplied:
@@ -2442,18 +2477,28 @@ class WorkflowService:
                 recorded is None
             ):  # pragma: no cover - aggregate validation prevents this
                 continue
+            for repair_reference in record.repair_artifacts:
+                if repair_reference not in listed_checks:
+                    listed_checks.add(repair_reference)
+                    artifacts.append(
+                        {
+                            "step": recorded.step,
+                            "repair_artifact": repair_reference,
+                            "path": str(self.storage.root / repair_reference),
+                        }
+                    )
             for command in record.commands:
-                for stream, reference in (
+                for stream, command_reference in (
                     ("stdout", command.stdout_ref),
                     ("stderr", command.stderr_ref),
                 ):
-                    if reference is None:
+                    if command_reference is None:
                         continue
                     artifacts.append(
                         {
                             "step": recorded.step,
-                            "command_output": reference,
-                            "path": str(self.storage.root / reference),
+                            "command_output": command_reference,
+                            "path": str(self.storage.root / command_reference),
                             "stream": stream,
                             "operation_id": command.operation_id or "unknown",
                             "attempt": str(command.attempts),
@@ -2461,19 +2506,19 @@ class WorkflowService:
                     )
             for report in record.check_reports:
                 for result in report.results:
-                    for stream, reference in (
+                    for stream, check_reference in (
                         ("stdout", result.stdout_ref),
                         ("stderr", result.stderr_ref),
                     ):
                         # A retried record's copy in the history repeats them.
-                        if reference is None or reference in listed_checks:
+                        if check_reference is None or check_reference in listed_checks:
                             continue
-                        listed_checks.add(reference)
+                        listed_checks.add(check_reference)
                         artifacts.append(
                             {
                                 "step": recorded.step,
-                                "command_output": reference,
-                                "path": str(self.storage.root / reference),
+                                "command_output": check_reference,
+                                "path": str(self.storage.root / check_reference),
                                 "stream": stream,
                                 "check": result.id,
                                 "attempt": str(report.attempt),
@@ -2813,6 +2858,8 @@ class WorkflowService:
                     self.commit(state, snapshot)
                     return state, snapshot
             record = state.item_executions[state.cursor]
+            if needs_repair(state):
+                return state, snapshot
             if record.status == "completed":
                 state = advance_completed_item(state, _now)
                 self.commit(state, snapshot)
@@ -2881,6 +2928,9 @@ class WorkflowService:
                 return state, snapshot
             state = self.actions.run(state, snapshot, item)
             if state.status == "failed":
+                if item.on_failure == "fix":
+                    state = request_repair(state, plan, item, _now)
+                    self.commit(state, snapshot)
                 return state, snapshot
         state = complete_run(state, plan, _now)
         self.commit(state, snapshot)
@@ -3099,6 +3149,8 @@ class WorkflowService:
         if assignment_id is None:
             return state, snapshot
         state, snapshot = self.drain(state, snapshot, assignment_id)
+        if needs_repair(state):
+            return state, snapshot
         if state.status in {"failed", "interrupted", "awaiting_input"}:
             return state, snapshot
         assignment = active_assignment(
@@ -3202,6 +3254,105 @@ class WorkflowService:
             ),
             artifact,
         )
+
+    def _dispatch_repair(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        model: str = "auto",
+        reasoning: str = "auto",
+        selected_agent: str | None = None,
+    ) -> Instruction:
+        item = snapshot.plan.items[state.cursor]
+        if state.active_item_id is not None:
+            return self.render(state, snapshot)
+        records = list(state.item_executions)
+        records[state.cursor] = replace(
+            records[state.cursor],
+            selected_agent=selected_agent,
+            selected_model=model if model != "auto" else None,
+            selected_reasoning=reasoning if reasoning != "auto" else None,
+        )
+        state = replace(
+            close_assignment(state),
+            item_executions=tuple(records),
+            status="in_progress",
+            active_item_id=item.id,
+            assignment_item_id=item.id if state.workflow_runtime == "auto" else None,
+            assignment_token=secrets.token_hex(4)
+            if state.workflow_runtime == "auto"
+            else None,
+            assignment_model=model if model != "auto" else item.model or state.model,
+            assignment_reasoning=reasoning
+            if reasoning != "auto"
+            else item.reasoning or state.reasoning,
+            assignment_selected_agent=selected_agent,
+            assignment_selected_model=model if model != "auto" else None,
+            assignment_selected_reasoning=reasoning if reasoning != "auto" else None,
+            updated_at=_now(),
+        )
+        self.commit(state, snapshot)
+        return self.render(state, snapshot)
+
+    def _complete_repair(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        artifact: str | None,
+        summary: str | None,
+    ) -> Instruction:
+        item = snapshot.plan.items[state.cursor]
+        if state.active_item_id != item.id:
+            raise StateError("no repair assignment is in progress; use next")
+        if artifact is None or not artifact.strip():
+            raise StateError(
+                "repair completion requires an artifact describing the fix"
+            )
+        record = state.item_executions[state.cursor]
+        reference = self.tasks.write_command_output(
+            CommandOutputAddress(
+                state.task_id,
+                state.run_id,
+                item.id,
+                f"{record.operation_id or item.id}:repair",
+                max(1, record.repair_failures),
+                1,
+                "stdout",
+            ),
+            artifact,
+        )
+        previous_assignment = state
+        records = list(state.item_executions)
+        records[state.cursor] = replace(
+            record,
+            repair_artifacts=(*record.repair_artifacts, reference),
+            summary_for_next=summary,
+        )
+        state = replace(state, item_executions=tuple(records))
+        state = close_assignment(retry_failed_item(state, snapshot.plan, _now))
+        self.commit(state, snapshot)
+        state, snapshot = self.drain(state, snapshot)
+        if (
+            needs_repair(state)
+            and state.status != "failed"
+            and state.workflow_runtime == "auto"
+            and snapshot.plan.items[state.cursor].id == item.id
+        ):
+            # The same repair worker retains its assignment for another attempt.
+            state = replace(
+                state,
+                status="in_progress",
+                active_item_id=item.id,
+                assignment_item_id=item.id,
+                assignment_token=previous_assignment.assignment_token,
+                assignment_model=previous_assignment.assignment_model,
+                assignment_reasoning=previous_assignment.assignment_reasoning,
+                assignment_selected_agent=previous_assignment.assignment_selected_agent,
+                assignment_selected_model=previous_assignment.assignment_selected_model,
+                assignment_selected_reasoning=previous_assignment.assignment_selected_reasoning,
+            )
+            self.commit(state, snapshot)
+        return self.render(state, snapshot)
 
     def _complete_verification(
         self,
@@ -3477,6 +3628,12 @@ class WorkflowService:
         state, snapshot = self.load(task_id)
         if state.workflow_runtime != "auto" or state.assignment_token is None:
             return None
+        if needs_repair(state):
+            return OpenAssignment(
+                state.assignment_token,
+                (snapshot.plan.items[state.cursor].id,),
+                state.active_item_id,
+            )
         assignment = active_assignment(
             snapshot.plan, state.assignment_item_id, runtime=state.workflow_runtime
         )
