@@ -226,7 +226,8 @@ def _validate_automatic_groups(
     )
     for handler in candidates:
         if handler.handlers:
-            validate(handler, (handler.name,))
+            for member in handler.handlers:
+                validate(member, (handler.name,))
 
 
 def _validate_steps(

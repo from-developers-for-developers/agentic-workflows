@@ -77,6 +77,35 @@ workflows:
     assert all(item.owner == "ww" for item in members)
 
 
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+@pytest.mark.parametrize("catalog", [False, True])
+def test_group_completion_hook_runs_after_all_members(
+    tmp_path: Path, runtime: str, catalog: bool
+) -> None:
+    group = """  - checks: ~
+    handlers:
+      - shell: echo type-check >> order
+        on_failure: fix
+      - shell: echo eslint >> order
+        on_failure: fix
+    hooks:
+      before_complete:
+        - shell: echo commit >> order
+"""
+    configuration = (
+        "handlers:\n"
+        + group
+        + "workflows:\n  - name: task\n    steps:\n      - checks: ~\n"
+        if catalog
+        else "workflows:\n  - name: task\n    steps:\n"
+        + "".join("    " + line + "\n" for line in group.splitlines())
+    )
+    service = configured_service(tmp_path, configuration)
+    service.start("task", "T", workflow_runtime=runtime)
+    service.next("T", caller_role="manager")
+    assert (tmp_path / "order").read_text() == "type-check\neslint\ncommit\n"
+
+
 def test_nested_groups_and_multiple_reuses_keep_order(tmp_path: Path) -> None:
     service = configured_service(
         tmp_path,
