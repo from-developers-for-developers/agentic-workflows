@@ -9,6 +9,11 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-03
+
+- Automatic shell/argv handlers support `on_failure: fix` agent repairs with bounded ww retries;
+  `on_failure_instruction` adds failure guidance to handlers and hooks. `b15df81`
+
 ## 2026-10-02
 
 - Completion hooks sharing a variable now request it once instead of blocking the transition;
