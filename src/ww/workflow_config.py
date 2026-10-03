@@ -75,7 +75,7 @@ class ProvidedVariable:
 
 @dataclass(frozen=True)
 class SavedMetadata:
-    """A metadata value an agent-owned handler must preserve."""
+    """A metadata value a handler must preserve."""
 
     name: str
     key: str
@@ -84,6 +84,7 @@ class SavedMetadata:
     # An append key holds a list: each completion may add values, none is
     # required, and repeats are dropped.
     append: bool = False
+    source: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _SAVED_NAME.fullmatch(self.name):
@@ -102,6 +103,8 @@ class SavedMetadata:
                 f"project metadata under {WW_METADATA_NAMESPACE}. is ww's own "
                 "state, such as its onboarding; save under another path"
             )
+        if self.source is not None and self.source != "stdout":
+            raise ValueError("saved metadata source must be stdout")
         if type(self.append) is not bool:
             raise ValueError("saved metadata append must be a bool")
 
@@ -112,6 +115,8 @@ class SavedMetadata:
             "description": self.description,
             "scope": self.scope,
         }
+        if self.source is not None:
+            data["source"] = self.source
         if self.append:
             data["append"] = True
         return data

@@ -428,6 +428,7 @@ def _saved_metadata_from_list(value: Any, item_path: str) -> tuple[SavedMetadata
             or "",
             _metadata_scope(item.get("scope", "task")),
             append=expect_bool(item.get("append", False), "saved metadata append"),
+            source=expect_optional_string(item.get("source"), "saved metadata source"),
         )
         for item in value
     )

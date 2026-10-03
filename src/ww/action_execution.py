@@ -43,6 +43,7 @@ from ww.extensions import (
     parse_reference,
 )
 from ww.interpolation import dependencies, interpolate
+from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
 from ww.storage_adapters import CommandOutputAddress
 from ww.variables import PROJECT, item_workspace_values
@@ -473,6 +474,7 @@ class ActionExecutor:
         write_command_output: WriteCommandOutput,
         read_command_output: ReadCommandOutput,
         task_values: TaskValues,
+        metadata_publisher: MetadataPublisher,
         child_values: ChildValues = _no_child_values,
     ) -> None:
         self.root = root
@@ -483,6 +485,7 @@ class ActionExecutor:
         self.write_command_output = write_command_output
         self.read_command_output = read_command_output
         self.task_values = task_values
+        self.metadata_publisher = metadata_publisher
         self.child_values = child_values
 
     def item_settings(
@@ -555,6 +558,22 @@ class ActionExecutor:
                 result.error,
                 result=result.output or None,
             )
+        try:
+            task_metadata, project_metadata = validate_metadata_values(
+                {saved.name: (result.output.strip(),) for saved in item.save_metadata},
+                item.save_metadata,
+            )
+            updated_metadata, project_publication = self.metadata_publisher.prepare(
+                dispatch.state.task_id,
+                dispatch.state,
+                item,
+                task_metadata,
+                project_metadata,
+            )
+        except StateError as error:
+            return self._fail_item(
+                dispatch.state, snapshot, item, str(error), result=result.output
+            )
         records = list(dispatch.state.item_executions)
         records[dispatch.state.cursor] = replace(
             records[dispatch.state.cursor],
@@ -577,8 +596,12 @@ class ActionExecutor:
                 else dispatch.state.working_directory
             ),
             workflow_values=tuple(values.items()),
+            pending_task_metadata=updated_metadata.values if updated_metadata else (),
+            pending_project_metadata=project_publication,
         )
-        return self._commit_projected(completed, snapshot)
+        completed = self._commit_projected(completed, snapshot)
+        completed, _ = self.metadata_publisher.reconcile(completed, snapshot)
+        return completed
 
     def validate_inputs(self, item: PlanItem, values: Mapping[str, str]) -> str | None:
         """Ask an automatic item's action whether it would accept these inputs.
