@@ -254,8 +254,9 @@ interruption notice, and `unfinished_tasks` in the JSON carries each one's
 suggestion is not part of the Markdown; `rules_notice` in the JSON and the
 first page of `start` carry it, see
 [How a rule becomes a check](#how-a-rule-becomes-a-check). The JSON keeps every
-field, including the built-in catalogs, the roles and the guidance texts.
-`discover` is read-only and leaves no audit record.
+field, including the built-in catalogs, the roles and the guidance texts, which
+are the same concise texts the Markdown shows; `explicit_task_id` states
+whether the project requires a task ID. `discover` is read-only and leaves no audit record.
 
 In JSON, each workflow entry also carries `source` and `source_level`, naming
 the winning YAML definition and whether it came from the global user config,

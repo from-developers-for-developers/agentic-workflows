@@ -59,42 +59,6 @@ ROLE_DESCRIPTIONS = {
         "Performs one assignment and runs only the --role worker commands ww shows it."
     ),
 }
-MODEL_GUIDANCE = (
-    "Optional. The model and reasoning level of your own session. Omit them "
-    "(auto) unless you know them or the user asks for specific values; any "
-    "value your agent understands is accepted as guidance."
-)
-TASK_ID_GUIDANCE = (
-    "When the request names an external ticket, such as a Jira key, use that "
-    "key as <TASK-ID> so the task matches the issue it works on. Omit <TASK-ID> "
-    "only when the request names none, or when the workflow obtains its own ID "
-    "in its first step; ww then assigns one."
-)
-EXPLICIT_ID_GUIDANCE = (
-    "This project requires an explicit <TASK-ID>: use the external ticket key "
-    "named in the request, such as a Jira key. Omit it only for a workflow "
-    "that obtains its own ID in its first step; ww never generates one here."
-)
-RUNTIME_GUIDANCE = (
-    "Choose deliberately rather than defaulting. Use `auto` when the workflow "
-    "requests an agent, model, reasoning, or profile for any step — those "
-    "requests only take effect when the manager delegates, and the list above "
-    "marks the workflows that carry them. Use `single` when nothing is "
-    "requested, when delegation is unavailable or not permitted, or when the "
-    "user asked you to do the work yourself."
-)
-CATCHALL_GUIDANCE = (
-    "Use it only when no workflow above fits and you are about to change "
-    "files. Questions, explanations, reviews, and other read-only work need "
-    "no task: answer them directly, and turn to it only once the conversation "
-    "reaches a change. Do not start it directly. Run `lookup` with the task "
-    "this conversation works on, or with what the operator called the task, "
-    "as they wrote it, such as `12345`; run it without one when there is "
-    "none. It maps the reference onto this project's task IDs and answers "
-    "with the next step: continue an unfinished run, start the catch-all on "
-    "the task it found, or ask the operator, through your choice menu, before "
-    "a task ww has never seen is created."
-)
 # Under ``"on_request"`` an unasked change never reaches the catch-all.
 ON_REQUEST_CATCHALL_PREFIX = (
     "Only when the user has asked for ww; otherwise make the change without ww. "
@@ -123,12 +87,6 @@ UNREADABLE_GUIDANCE = (
     "fail with the error shown; ask the operator, whose choice it is to repair, "
     "reset, or delete each task directory."
 )
-MODES_GUIDANCE = (
-    "Optional and repeatable. Explicit modes replace the workflow's default "
-    "modes, so repeat any default you want to keep. Select a mode only when "
-    "the user's request matches its description. A mode marked always on "
-    "applies by itself where it says; never select it."
-)
 
 ENABLED_SHORT = "ww is enabled for this project."
 ON_REQUEST_START = (
@@ -144,7 +102,7 @@ BUILTIN_POINTER = (
     "`{command} workflows` lists every workflow. Start one when the operator asks "
     "for what it does or a ww skill says to."
 )
-CATCHALL_SHORT = (
+CATCHALL_GUIDANCE = (
     "Use it only when no workflow above fits and you are about to change files; "
     "read-only work needs no task. Do not start it directly: run `lookup` with "
     "the task this conversation works on, as the operator wrote it, such as "
@@ -157,29 +115,29 @@ PROJECTS_GUIDANCE = (
     "works in the root. A project's own `ww.json` may add `extensions` and a "
     "`task_format` that apply there."
 )
-TASK_ID_SHORT = (
+TASK_ID_GUIDANCE = (
     "When the request names an external ticket, such as a Jira key, use it as "
     "the task ID so the task matches the issue. Omit the task ID only when the "
     "request names none, or when the workflow obtains its own in its first "
     "step; ww then assigns one."
 )
-EXPLICIT_ID_SHORT = (
+EXPLICIT_ID_GUIDANCE = (
     "This project requires an explicit task ID: use the external ticket key "
     "named in the request. Omit it only for a workflow that obtains its own ID "
     "in its first step; ww never generates one here."
 )
-MODES_SHORT = (
+MODES_GUIDANCE = (
     "Explicit `--mode` values replace the workflow's default modes, so repeat "
     "any default you want to keep. Select a mode only when the request matches "
     "its description; a mode marked always on applies by itself."
 )
-RUNTIME_SHORT = (
+RUNTIME_GUIDANCE = (
     "Use `auto` when the workflow requests specific workers (marked above); "
     "`single` when nothing is requested, delegation is unavailable, or the user "
     "asked you to do the work yourself. Omitted, the workflow's own runtime "
     "applies, then the project default `{default}`."
 )
-MODEL_SHORT = (
+MODEL_GUIDANCE = (
     "`--model` and `--reasoning` describe your own session; omit them unless "
     "you know them or the user asks."
 )
@@ -291,8 +249,10 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
         "agents": [*AGENT_DIRECTORIES, f"{CUSTOM_AGENT_PREFIX}<name>"],
         "branch_strategies": list(extensions.branch_strategies()),
         "model_and_reasoning": MODEL_GUIDANCE,
-        "runtime_guidance": RUNTIME_GUIDANCE,
+        "runtime_guidance": RUNTIME_GUIDANCE.format(default=default_runtime),
         "task_id": (EXPLICIT_ID_GUIDANCE if explicit_ids else TASK_ID_GUIDANCE),
+        # Whether the project requires the task ID; the guidance above is prose.
+        "explicit_task_id": explicit_ids,
         "modes_guidance": MODES_GUIDANCE,
         "commands": {
             "start": f"{ww_command()} {START_ARGUMENTS}",
@@ -431,7 +391,7 @@ def _markdown(report: dict[str, object], days: int, unfinished: list[str]) -> li
                 "",
                 f"- `{catchall['name']}` — {catchall['description']}",
                 "",
-                (ON_REQUEST_CATCHALL_PREFIX if on_request else "") + CATCHALL_SHORT,
+                str(catchall["guidance"]),
                 "",
                 "```console",
                 str(catchall["start"]),
@@ -456,11 +416,7 @@ def _markdown(report: dict[str, object], days: int, unfinished: list[str]) -> li
             *_start_synopsis(report, runtimes, projects, strategies),
             "```",
             "",
-            str(
-                EXPLICIT_ID_SHORT
-                if report["task_id"] == EXPLICIT_ID_GUIDANCE
-                else TASK_ID_SHORT
-            ),
+            str(report["task_id"]),
             "",
             *_start_notes(report, runtimes),
             "",
@@ -557,9 +513,7 @@ def _start_synopsis(
     projects: list[dict[str, object]],
     strategies: list[str],
 ) -> list[str]:
-    task_id = (
-        "<task-id>" if report["task_id"] == EXPLICIT_ID_GUIDANCE else "[<task-id>]"
-    )
+    task_id = "<task-id>" if report["explicit_task_id"] else "[<task-id>]"
     runtime_names = "|".join(str(runtime["name"]) for runtime in runtimes)
     optional = [
         "[--mode <mode>]",
@@ -585,19 +539,18 @@ def _start_notes(
     report: dict[str, object], runtimes: list[dict[str, object]]
 ) -> list[str]:
     *named, custom = (f"`{agent}`" for agent in _strings(report["agents"]))
-    default = next(r for r in runtimes if r["default"])
     return [
         f"- Agent: {', '.join(named)}, or {custom}.",
-        "- " + MODES_SHORT,
+        f"- {report['modes_guidance']}",
         "- Runtimes: "
         + "; ".join(
             f"`{runtime['name']}`"
             + (" (project default)" if runtime["default"] else "")
-            + f" — {str(runtime['description']).split('. ')[0].rstrip('.')}"
+            + f" — {str(runtime['description']).rstrip('.')}"
             for runtime in runtimes
         )
-        + f". {RUNTIME_SHORT.format(default=default['name'])}",
-        "- " + MODEL_SHORT,
+        + f". {report['runtime_guidance']}",
+        f"- {report['model_and_reasoning']}",
     ]
 
 

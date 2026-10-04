@@ -863,8 +863,8 @@ def _parse_items(
         if "description" in value
         else None
     )
-    persistent = value.get("persistent", False)
-    if not isinstance(persistent, bool):
+    persistent = value.get("persistent")
+    if "persistent" in value and not isinstance(persistent, bool):
         raise ConfigurationError(f"{items_path}.persistent must be true or false")
     identity = value.get("identity")
     if identity is not None and (
@@ -876,7 +876,11 @@ def _parse_items(
         isinstance(name, str) and FIELD_NAME.fullmatch(name) for name in unique_raw
     ):
         raise ConfigurationError(f"{items_path}.unique must be a list of field names")
-    unique = tuple(dict.fromkeys(([identity] if identity else []) + unique_raw))
+    unique = (
+        tuple(dict.fromkeys(([identity] if identity else []) + unique_raw))
+        if identity or "unique" in value
+        else None
+    )
     assignment = cast(
         ItemAssignment,
         _assignment(

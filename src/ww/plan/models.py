@@ -241,6 +241,16 @@ class PlanItem:
     item_operation: ItemOperation | None = None
     item_template: bool = False
     item_id: str | None = None
+    # The stable identity of the ``items`` declaration this item belongs to: its
+    # logical step path.  Carried by the collection item and by every per-item
+    # stage and hook (templates and their concrete copies), and by nothing
+    # else.  It is plan data, independent of display names and work-item IDs,
+    # so a later pass can expand exactly its own templates.  Not
+    # ``child_stage``, which belongs to ``children``.
+    item_pass: str | None = None
+    # On a collection item: this pass only collects or reconciles items and
+    # has no per-item stages (explicit ``items: {steps: []}``).
+    item_collect_only: bool = False
     item_assignment: ItemAssignment = "per_step"
     # Set on every body step and hook of the nearest enclosing ``loop``.
     loop_id: str | None = None
@@ -459,8 +469,15 @@ class PlanItem:
             ):
                 raise ValueError("plan item has overlapping saved metadata keys")
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, item_passes: bool = True) -> dict[str, object]:
+        """The persisted form; ``item_passes=False`` is the pre-pass schema."""
         data = self._to_dict()
+        # Pass identity is written only where it applies; the pre-pass schema
+        # never had it, so its snapshots keep their bytes and their digest.
+        if item_passes and self.item_pass is not None:
+            data["item_pass"] = self.item_pass
+        if item_passes and self.item_collect_only:
+            data["item_collect_only"] = True
         if self.on_failure != "operator":
             data["on_failure"] = self.on_failure
             data["max_handler_fixes"] = self.max_handler_fixes
@@ -630,7 +647,7 @@ class WorkflowPlan:
         """The workflow extensions key their settings by: the lane, else this."""
         return self.hooks_from or self.workflow
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, item_passes: bool = True) -> dict[str, object]:
         data: dict[str, object] = {
             "workflow": self.workflow,
             "workflow_description": self.workflow_description,
@@ -638,7 +655,7 @@ class WorkflowPlan:
             "task_id": self.task_id,
             "modes": list(self.modes),
             "handoff": self.handoff,
-            "items": [item.to_dict() for item in self.items],
+            "items": [item.to_dict(item_passes) for item in self.items],
         }
         if self.documents:
             data["documents"] = [document.to_dict() for document in self.documents]

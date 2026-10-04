@@ -568,9 +568,17 @@ class WorkflowPlanCompiler:
                 region_annotations: ItemAnnotations,
             ) -> tuple[str, ...]:
                 start = len(items)
+                # A region's own tags replace the scope's, except that an
+                # outcome inside a per-item stage still belongs to its pass.
                 result = compile_nested(
                     nested_steps,
-                    replace(nested_scope, annotations=region_annotations),
+                    replace(
+                        nested_scope,
+                        annotations=replace(
+                            region_annotations,
+                            item_pass=nested_scope.annotations.item_pass,
+                        ),
+                    ),
                 )
                 for index in range(start, len(items)):
                     items[index] = _with_annotations(items[index], region_annotations)
@@ -724,6 +732,7 @@ class WorkflowPlanCompiler:
                 registered_handler=None,
                 artifact=request.artifact,
                 item_template=item_template,
+                item_pass=annotations.item_pass,
                 child_stage=annotations.child_stage,
                 ancestors=ancestors,
                 loop_break=None,
@@ -1065,6 +1074,8 @@ class WorkflowPlanCompiler:
                 summary=summary,
                 item_operation=annotations.item_operation,
                 item_template=item_template,
+                item_pass=annotations.item_pass,
+                item_collect_only=annotations.item_collect_only,
                 item_assignment=annotations.item_assignment or "per_step",
                 loop_id=annotations.loop_id,
                 loop_assignment=annotations.loop_assignment,
@@ -1376,6 +1387,10 @@ def _merge_annotations(
             if emitted.item_assignment is not None
             else inherited.item_assignment
         ),
+        item_pass=(
+            emitted.item_pass if emitted.item_pass is not None else inherited.item_pass
+        ),
+        item_collect_only=emitted.item_collect_only,
         loop_id=emitted.loop_id if emitted.loop_id is not None else inherited.loop_id,
         child_stage=(
             emitted.child_stage

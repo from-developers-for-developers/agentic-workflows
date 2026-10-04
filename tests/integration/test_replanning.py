@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -249,6 +250,35 @@ def test_a_change_to_expanded_item_stages_is_refused(tmp_path: Path) -> None:
     with pytest.raises(StateError, match="cannot replan"):
         service.next("TASK-1", caller_role="manager", replan=True)
     assert service.next("TASK-1", caller_role="manager", keep_plan=True)
+
+
+def test_a_schema_1_items_run_replans_only_the_real_change(tmp_path: Path) -> None:
+    service = _started(tmp_path, ITEMS.format(guidance="Look closely."))
+    state, snapshot = service.load("TASK-1")
+    old = replace(snapshot, schema_version=1)
+    service.commit(replace(state, plan_digest=old.plan_digest), old)
+    legacy = service.load("TASK-1")[1]
+    assert legacy.schema_version == 1
+    assert legacy.plan == snapshot.plan
+
+    unrelated = (
+        ITEMS.format(guidance="Look closely.")
+        + "  - name: x\n    steps:\n      - y: Y.\n"
+    )
+    assert (
+        _write(tmp_path, unrelated).next("TASK-1", caller_role="manager").plan_change
+        is None
+    )
+
+    service = _write(tmp_path, ITEMS.format(guidance="Look harder."))
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    assert {
+        field.name for change in stop.plan_change.changes for field in change.fields
+    } == {"description"}
+    service.next("TASK-1", caller_role="manager", replan=True)
+    assert service.load("TASK-1")[1].schema_version == PLAN_SCHEMA_VERSION
 
 
 def test_a_worker_page_is_not_stopped(tmp_path: Path) -> None:

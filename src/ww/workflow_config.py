@@ -640,13 +640,27 @@ class ItemFlow:
     steps: tuple[StepDefinition, ...] = ()
     description: str | None = None
     assignment: ItemAssignment = "together"
-    # The items outlive the run: every run of the task reuses them, and the
-    # collection stage reconciles them instead of splitting anew.
-    persistent: bool = False
+    # Collection-wide settings.  ``None`` / ``()`` means this declaration did
+    # not set them: the first declaration of a workflow establishes them, so a
+    # later declaration that omits one must not be read as choosing the
+    # default.  ``unique`` folds ``identity`` in, as it always has.
+    #
+    # ``persistent``: the items outlive the run: every run of the task reuses
+    # them, and the collection stage reconciles them instead of splitting anew.
+    persistent: bool | None = None
     # The custom field a new item must carry, and the fields whose values
     # form one pool in which each value may appear once across all items.
     identity: str | None = None
-    unique: tuple[str, ...] = ()
+    unique: tuple[str, ...] | None = None
+
+    @property
+    def collect_only(self) -> bool:
+        """Whether this pass only collects or reconciles items.
+
+        Explicit ``steps: []`` (or ``steps: ~``) is the one way to be true; the
+        bare ``items: ~`` shorthand resolves to the built-in handle-item stage.
+        """
+        return not self.steps
 
 
 @dataclass(frozen=True)

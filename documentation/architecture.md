@@ -805,6 +805,14 @@ execution index.
 Reads recognize the document by its `ww.task-state` format discriminator.
 The document carries one schema version, and so do the plan snapshots and
 execution states inside it; a reader rejects any version but the current one.
+The one exception is the plan snapshot, whose schema 2 adds `items` pass
+identity (`item_pass`, `item_collect_only`) to plan items. A schema 1 snapshot
+had a single implicit pass, so the codec derives that pass from the plan on load
+(refusing a plan that holds several collections or inconsistent fields), keeps
+the snapshot at schema 1, and serializes and digests it without the pass fields
+so the stored plan digest still matches; a replan, which writes a new plan,
+upgrades it to schema 2. A schema 2 plan whose collection or templates lack a
+pass is refused rather than guessed at.
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
 Scoped cleanup of obsolete regular files follows. Cleanup failures are

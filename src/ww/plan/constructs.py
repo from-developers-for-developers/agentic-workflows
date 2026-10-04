@@ -45,6 +45,11 @@ class ItemAnnotations:
     assessment_outcome: str | None = None
     # Carried by every per-item stage and hook of an ``items`` step.
     item_assignment: ItemAssignment | None = None
+    # Carried by the collection item and every per-item stage and hook: the
+    # stable identity (logical step path) of their ``items`` declaration.
+    item_pass: str | None = None
+    # Carried only by the collection item of an explicit ``steps: []`` pass.
+    item_collect_only: bool = False
     # Carried by every body step and hook of the nearest enclosing ``loop``.
     loop_id: str | None = None
     loop_assignment: LoopAssignment | None = None
@@ -291,10 +296,12 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
                 definition.step,
                 annotations=ItemAnnotations(
                     item_operation="collect",
+                    item_pass=context.scope.path,
+                    item_collect_only=flow.collect_only,
                     split_instruction=flow.description,
-                    shared_items=flow.persistent,
+                    shared_items=bool(flow.persistent),
                     item_identity=flow.identity,
-                    item_unique=flow.unique,
+                    item_unique=flow.unique or (),
                 ),
             )
         )
@@ -306,7 +313,11 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
             )
             scope = replace(
                 scope,
-                annotations=replace(scope.annotations, item_assignment=flow.assignment),
+                annotations=replace(
+                    scope.annotations,
+                    item_assignment=flow.assignment,
+                    item_pass=context.scope.path,
+                ),
             )
             context.compile_steps(flow.steps, scope)
         return ExpansionResult(outputs=outputs)

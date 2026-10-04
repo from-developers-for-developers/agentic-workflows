@@ -11,6 +11,16 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- Groundwork for several sequential `items` passes over one collection; a workflow still may
+  hold only one `items` step. Every `items` declaration is now a pass with a stable identity (its
+  step path) carried by its collection item and per-item stages in the plan. `persistent`,
+  `identity` and `unique` are modeled as unset until declared, and `items: {steps: []}` is
+  recorded in the plan as collect-only, apart from the `items: ~` shorthand. Plan snapshots are
+  schema 2; schema 1 snapshots still load, with their one pass derived and their digest unchanged,
+  and a replan upgrades them. Older ww builds cannot read schema 2 snapshots.
+- `discover` JSON guidance fields (`task_id`, `runtime_guidance`, `modes_guidance`,
+  `model_and_reasoning`, the catch-all `guidance`, runtime descriptions) now carry the same concise
+  text the Markdown shows, and `explicit_task_id` states whether the project requires a task ID.
 - `discover` Markdown is concise: a start synopsis with optional arguments in brackets, project
   workflows labeled and sorted local, then project, then global, and a pointer to `ww workflows`
   for ww's own. Its JSON is unchanged. A layered `workflows: null` no longer breaks composition,
