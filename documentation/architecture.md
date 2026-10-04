@@ -1760,7 +1760,7 @@ placement, wording, one confirmation); `rule_writes.py` holds the writes, each
 planned as a set of file contents and applied together, then validated by
 loading the configuration as any command would, and restored whole when that
 fails. Rule files are edited in place, keeping every line a change does not
-concern; the repo YAML is never rewritten, because PyYAML cannot round-trip
+concern; the repo YAML is never rewritten whole, because PyYAML cannot round-trip
 comments, so new groups go into `ww-rules.yaml`, a ww-owned import, and the
 repo file gains only its `imports` entry, checked by reading it back.
 `rules promote` is the one write that also changes the store, after the rule
@@ -1794,6 +1794,22 @@ the project, and only a change that loads is ever shown. The files are written
 once, after confirmation, in a `Transaction` that writes through symbolic links,
 keeps file permissions, and turns an `OSError` into a ww error after putting
 every file back.
+
+`ww setup update` (`../src/ww/workflow_update.py`) is the one write path for a
+workflow the configuration already defines. `config.composition.workflow_sites`
+lists every applied file that defines the name, in fold order, so the last is
+the definition in force; the target is that one, or, with `--level`, the
+last at that level, refused when it is not the winner (an edit there would
+change nothing). The write replaces only the target list item's lines, found
+with PyYAML's node marks (trailing blank and comment lines stay with the file);
+it is checked to reload as the old data with that entry swapped, validated in
+memory with `staged_files` like `setup apply`, and must leave the workflow's
+provenance pointing at the file written before the operator sees a diff.
+Comments inside the replaced entry are the disclosed loss; nothing else in the
+file moves. It is written through the same `Transaction`. `--inspect` on both
+setup commands compiles a workflow under the staged contents and prints its
+plan. The `ww-wizard` skill orchestrates these commands, `discover`'s
+provenance and the rules skills; it holds no engine of its own.
 
 ## Operator feedback learning
 

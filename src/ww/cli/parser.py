@@ -808,7 +808,7 @@ def _setup_parser(
     subparsers: argparse._SubParsersAction[_Parser],
     json_output: _Parser,
 ) -> None:
-    """``setup apply``: place a proposed configuration fragment for me or the team."""
+    """``setup apply`` and ``setup update``: place or change configuration."""
     setup = subparsers.add_parser(
         "setup",
         parents=[json_output],
@@ -842,6 +842,53 @@ def _setup_parser(
         help="Validate and show the change, then put every file back.",
     )
     apply.add_argument(
+        "--inspect",
+        metavar="WORKFLOW",
+        help=(
+            "With --dry-run, also compile this workflow as the change would "
+            "leave it and print its execution plan (needs --agent)."
+        ),
+    )
+    apply.add_argument("--agent", help="The agent the inspected plan is compiled for.")
+    apply.add_argument(
+        "--yes",
+        action="store_true",
+        help="Write without the y/N prompt, on the operator's word.",
+    )
+    update = actions.add_parser(
+        "update",
+        parents=[after],
+        help=(
+            "Replace one workflow the configuration already defines, in the "
+            "file where it is written, with the one workflow a YAML fragment "
+            "holds; unrelated lines stay."
+        ),
+    )
+    update.add_argument("workflow", metavar="NAME")
+    update.add_argument("fragment", type=Path, metavar="FILE")
+    update.add_argument(
+        "--level",
+        choices=("local", "project", "global"),
+        help=(
+            "Edit the definition at this level; refused when a higher level "
+            "hides it. Without it, the definition in force is edited."
+        ),
+    )
+    update.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and show the change, then put every file back.",
+    )
+    update.add_argument(
+        "--inspect",
+        metavar="WORKFLOW",
+        help=(
+            "With --dry-run, also compile this workflow as the change would "
+            "leave it and print its execution plan (needs --agent)."
+        ),
+    )
+    update.add_argument("--agent", help="The agent the inspected plan is compiled for.")
+    update.add_argument(
         "--yes",
         action="store_true",
         help="Write without the y/N prompt, on the operator's word.",

@@ -68,7 +68,8 @@ configuration files yourself: ww's workflows place changes with
 
    When setup is already done, offer: refresh what ww learned (the
    `ww-refresh` skill), `ww-suggest` again (for example to share your setup
-   with the team), `ww-solve` for a problem, `ww-rules-from-artifacts`,
+   with the team), `ww-wizard` to create or change a workflow or rules,
+   `ww-solve` for a problem, `ww-rules-from-artifacts`,
    `ww-automate`, or `ww-scriptize` to turn the rules that have no check yet
    into checks.
 4. **Run each chosen workflow**, in the chosen path's order, with the start command

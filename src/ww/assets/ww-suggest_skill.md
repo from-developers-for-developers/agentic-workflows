@@ -11,7 +11,7 @@ process (skipped for an express setup, which derives defaults from the
 project), settles in one set of questions whose defaults come from the
 project's profile what the setup turns on and for whom, shows the proposal section by section with the
 evidence for each piece and a walkthrough of the main lane, and places it
-with `./ww setup apply`; this skill starts it. Running it again later can share a setup tried alone with the team.
+with `./ww setup apply`; this skill starts it. Running it again later can share a setup tried alone with the team. For each workflow it proposes it states the trigger, the result and where the operator is involved, picks the smallest structure, shows YAML with a walkthrough (and a failure path where effects are external), validates and inspects the compiled plan before asking, and takes test commands from repository evidence only. To change a workflow that already exists, or to pick between branches of work, the `ww-wizard` skill is the better start.
 
 1. Run `./ww onboarding --json`. If `user.explain` is `true`, add
    `--mode ww-narrate` below. If the project was not learned yet (no `learned.project`

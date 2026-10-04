@@ -100,7 +100,9 @@ AGENT_INSTRUCTIONS = (
 # ``ww-setup`` with the skills it guides through, each starting one of ww's
 # learning and setup workflows (``ww-refresh`` reruns the project learning;
 # express setup is ``ww-suggest`` told to derive defaults, with no skill of
-# its own), and ``ww-scriptize``, which starts ``ww-scriptize-rules``.
+# its own), ``ww-scriptize``, which starts ``ww-scriptize-rules``, and
+# ``ww-wizard``, which shapes workflows and rules with the operator through
+# ``setup apply``/``setup update`` and the rules skills.
 WW_SKILL_NAME = "ww"
 SKILLS = {
     name: files("ww.assets").joinpath(f"{name}_skill.md").read_text(encoding="utf-8")
@@ -118,6 +120,7 @@ SKILLS = {
         "ww-deduce-feedback",
         "ww-automate",
         "ww-scriptize",
+        "ww-wizard",
     )
 }
 

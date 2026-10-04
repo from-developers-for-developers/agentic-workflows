@@ -12,6 +12,7 @@ import pytest
 from tests.workflow_helpers import start_after_init
 from ww.builtin_workflows import builtin_workflow, is_builtin
 from ww.cli import main
+from ww.cli.parser import build_parser
 from ww.config import load_configuration
 from ww.config_files import SHARED_RUNTIME_FILES
 from ww.defaults import SKILLS
@@ -45,6 +46,7 @@ NEW_SKILLS = (
     "ww-solve",
     "ww-rules-from-artifacts",
     "ww-automate",
+    "ww-wizard",
 )
 
 pytestmark = pytest.mark.usefixtures("shipped_builtins")
@@ -292,6 +294,55 @@ def test_each_skill_starts_its_workflow(skill: str, workflow: str) -> None:
     assert "--mode ww-narrate" in SKILLS[skill]
 
 
+def test_the_wizard_skill_reaches_every_branch_through_real_commands() -> None:
+    text = SKILLS["ww-wizard"]
+
+    # The four entry choices, and the skills the rules branch hands over to.
+    for branch in (
+        "Create a workflow.",
+        "Change an existing workflow.",
+        "Create or improve rules.",
+        "Help me choose an approach.",
+    ):
+        assert branch in text
+    for skill in ("ww-rule", "ww-rules-from-artifacts", "ww-scriptize"):
+        assert f"`{skill}`" in text
+        assert skill in SKILLS
+    # Every ww command it relies on exists with the options it names.
+    parser = build_parser()
+    parser.parse_args(
+        [
+            "setup",
+            "update",
+            "wf",
+            "f.yaml",
+            "--level",
+            "project",
+            "--dry-run",
+            "--inspect",
+            "wf",
+            "--agent",
+            "codex",
+        ]
+    )
+    parser.parse_args(
+        [
+            "setup",
+            "apply",
+            "f.yaml",
+            "--for",
+            "me",
+            "--dry-run",
+            "--inspect",
+            "wf",
+            "--agent",
+            "codex",
+        ]
+    )
+    parser.parse_args(["docs", "features"])
+    parser.parse_args(["discover", "--json"])
+
+
 def test_the_setup_skill_guides_and_records_the_state() -> None:
     text = SKILLS["ww-setup"]
 
@@ -445,7 +496,7 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
     ):
         assert piece in description, piece
     # The proposal reads as paragraphs, not one block.
-    assert description.count("\n\n") == 4
+    assert description.count("\n\n") == 5
     apply = _step("ww-suggest", "apply").description
     assert "--for <me or team, as chosen in design> --yes" in apply
     assert "plan --workflow <the main lane>" in apply
@@ -513,6 +564,33 @@ def test_generated_checks_follow_the_check_guidance(workflow: str, step: str) ->
     description = _step(workflow, step).description
     assert "`check_guidance`" in description
     assert "rules --json" in description
+
+
+def test_ww_suggest_follows_the_five_point_method_and_validates_before_asking() -> None:
+    gather = " ".join(_step("ww-suggest", "gather").description.split())
+    propose = " ".join(_step("ww-suggest", "propose").description.split())
+
+    assert "only from repository evidence" in gather
+    assert "rather than inventing one" in gather
+    for point in (
+        "(1) state its trigger",
+        "(2) choose the smallest structure",
+        "(3) show concise YAML",
+        "failure and retry path",
+        "(4) validate and inspect",
+        "(5) ask to apply it",
+    ):
+        assert point in propose, point
+    assert propose.index("--dry-run --inspect") < propose.index("Ask whether to apply")
+    assert "automation is ww-owned" in propose
+    assert "do not ask again before applying" in propose
+
+
+def test_ww_solve_changes_a_defined_workflow_with_setup_update() -> None:
+    propose = " ".join(_step("ww-solve", "propose").description.split())
+
+    assert "setup update <name> <fragment>" in propose
+    assert "update" in [c.label for c in _step("ww-solve", "propose").choices]
 
 
 def test_ww_suggest_proposes_check_guidance_for_a_wrapper() -> None:

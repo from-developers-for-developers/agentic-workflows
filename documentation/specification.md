@@ -166,7 +166,12 @@ machine; see the features guide.
 ## Setup fragments
 
 `ww setup apply <file> --for me|team` places configuration a setup skill
-proposes; see the features guide for the command. The file is a YAML
+proposes; see the features guide for the command. `ww setup update <name>
+<file> [--level local|project|global]` replaces one workflow the
+configuration already defines, in the file that defines it: the fragment holds
+only `workflows` with that one entry, the edit goes to the definition that
+wins (or, with `--level`, is refused when a higher-precedence definition hides
+that level's), and only that list item's lines change. The file is a YAML
 fragment with any of the root keys `workflows`, `modes`, `profiles`,
 `documents`, `handlers`, `hooks`, and `rules`, in this notation, plus an
 optional `settings` mapping of `ww.json` keys:
@@ -363,7 +368,7 @@ The built-in workflows:
 | `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
 | `ww-learn-project` | `onboarding.yaml` | Learns the repository (purpose, stack, verify commands, CI, review and release process, conventions, pitfalls) into `project`, refreshing an existing file. |
 | `ww-suggest` | `onboarding.yaml` | Asks a few process questions (express setup skips them), designs a minimal setup with the operator, proposes it in full, and places it with `setup apply`. |
-| `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |
+| `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes; a workflow already defined is changed with `setup update`. |
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 | `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own from the required `ww/git` default base, following its worktree settings; automatic Git hooks, `restartable`. |

@@ -13,7 +13,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # Skills init installs: the setup guide with the project learning it starts.
-RETAINED_SKILLS = ("ww-setup", "ww-learn-project", "ww-suggest", "ww-refresh")
+RETAINED_SKILLS = (
+    "ww-setup",
+    "ww-learn-project",
+    "ww-suggest",
+    "ww-refresh",
+    "ww-wizard",
+)
 # Retired managed assets must not ship again.
 RETIRED_ASSETS = ("ww/assets/ww-learn_skill.md",)
 DESIGN_DOCUMENTS = ("specification", "features", "examples")
