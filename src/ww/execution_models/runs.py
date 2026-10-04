@@ -26,11 +26,8 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-# Schema 2 adds explicit ``items`` pass identity to plan items.  Schema 1
-# snapshots (a single implicit pass) still load, and are written back as
-# schema 1 so their plan digest does not change under a running task.
+# Schema 2 records explicit ``items`` pass identity on plan items.
 PLAN_SCHEMA_VERSION = 2
-LEGACY_PLAN_SCHEMA_VERSION = 1
 # Recorded on every snapshot; informational until a reader needs to branch on it.
 PLAN_COMPILER_VERSION = "plan-v10"
 
@@ -137,14 +134,9 @@ class PlanSnapshot:
             object.__setattr__(self, "template_plan", self.plan)
 
     @property
-    def item_passes(self) -> bool:
-        """Whether this snapshot's schema records ``items`` pass identity."""
-        return self.schema_version >= PLAN_SCHEMA_VERSION
-
-    @property
     def plan_digest(self) -> str:
         canonical = json.dumps(
-            self.plan.to_dict(self.item_passes), sort_keys=True, separators=(",", ":")
+            self.plan.to_dict(), sort_keys=True, separators=(",", ":")
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -155,9 +147,9 @@ class PlanSnapshot:
             "compiler_version": self.compiler_version,
             "configuration_digest": self.configuration_digest,
             "compiled_at": self.compiled_at,
-            "plan": self.plan.to_dict(self.item_passes),
+            "plan": self.plan.to_dict(),
             "plan_revision": self.plan_revision,
-            "template_plan": template.to_dict(self.item_passes),
+            "template_plan": template.to_dict(),
             **(
                 {"bootstrap_step": self.bootstrap_step}
                 if self.bootstrap_step is not None
@@ -178,24 +170,12 @@ class PlanSnapshot:
         }
         require_keys(data, required, "plan snapshot")
         schema_version = data["schema_version"]
-        if not is_strict_int(schema_version) or schema_version not in (
-            LEGACY_PLAN_SCHEMA_VERSION,
-            PLAN_SCHEMA_VERSION,
-        ):
+        if not is_strict_int(schema_version) or schema_version != PLAN_SCHEMA_VERSION:
             raise ValueError(f"unsupported plan snapshot schema: {schema_version!r}")
-        item_passes = schema_version >= PLAN_SCHEMA_VERSION
         template = (
-            _plan_from_dict(data["template_plan"], item_passes)
-            if "template_plan" in data
-            else None
+            _plan_from_dict(data["template_plan"]) if "template_plan" in data else None
         )
-        # A schema 1 template keeps its per-item templates, so it alone knows
-        # whether an expanded pass that collected nothing had stages.
-        plan = _plan_from_dict(
-            data["plan"],
-            item_passes,
-            None if template is None else _legacy_collect_only(template),
-        )
+        plan = _plan_from_dict(data["plan"])
         return cls(
             schema_version=schema_version,
             compiler_version=expect_string(
@@ -214,18 +194,6 @@ class PlanSnapshot:
                 data.get("bootstrap_step"), "plan snapshot.bootstrap_step"
             ),
         )
-
-
-def _legacy_collect_only(template: WorkflowPlan) -> bool | None:
-    """Whether the template's one ``items`` pass only collects, if it has one."""
-    return next(
-        (
-            item.item_collect_only
-            for item in template.items
-            if item.item_operation == "collect" and item.child_operation is None
-        ),
-        None,
-    )
 
 
 def validate_task_runs(task_id: str, runs: tuple[TaskRunAggregate, ...]) -> None:

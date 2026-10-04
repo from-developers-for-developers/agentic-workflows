@@ -469,14 +469,13 @@ class PlanItem:
             ):
                 raise ValueError("plan item has overlapping saved metadata keys")
 
-    def to_dict(self, item_passes: bool = True) -> dict[str, object]:
-        """The persisted form; ``item_passes=False`` is the pre-pass schema."""
+    def to_dict(self) -> dict[str, object]:
+        """The persisted form."""
         data = self._to_dict()
-        # Pass identity is written only where it applies; the pre-pass schema
-        # never had it, so its snapshots keep their bytes and their digest.
-        if item_passes and self.item_pass is not None:
+        # Pass identity is written only where it applies.
+        if self.item_pass is not None:
             data["item_pass"] = self.item_pass
-        if item_passes and self.item_collect_only:
+        if self.item_collect_only:
             data["item_collect_only"] = True
         if self.on_failure != "operator":
             data["on_failure"] = self.on_failure
@@ -647,7 +646,7 @@ class WorkflowPlan:
         """The workflow extensions key their settings by: the lane, else this."""
         return self.hooks_from or self.workflow
 
-    def to_dict(self, item_passes: bool = True) -> dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
             "workflow": self.workflow,
             "workflow_description": self.workflow_description,
@@ -655,7 +654,7 @@ class WorkflowPlan:
             "task_id": self.task_id,
             "modes": list(self.modes),
             "handoff": self.handoff,
-            "items": [item.to_dict(item_passes) for item in self.items],
+            "items": [item.to_dict() for item in self.items],
         }
         if self.documents:
             data["documents"] = [document.to_dict() for document in self.documents]

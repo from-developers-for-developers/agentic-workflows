@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Real runs of `items` passes: scoped expansion, pass gates, loops, schema 1."""
+"""Real runs of `items` passes: scoped expansion, pass gates, loops."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,7 +10,6 @@ import pytest
 from tests.workflow_helpers import start_after_init
 from ww.cli import main
 from ww.errors import StateError
-from ww.execution_models import PLAN_SCHEMA_VERSION, PlanSnapshot
 from ww.items import WorkItem
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -57,24 +54,6 @@ def test_expansion_keeps_the_pass_on_every_concrete_stage(tmp_path: Path) -> Non
     assert {
         item.item_pass for item in snapshot.template_plan.items if item.item_template
     } == {"collect"}
-
-
-def test_a_running_schema_1_snapshot_resumes_with_the_same_plan(
-    tmp_path: Path,
-) -> None:
-    _, snapshot = _expanded(tmp_path).load(TASK)
-    raw = json.loads(json.dumps(snapshot.to_dict()))
-    raw["schema_version"] = 1
-    for name in ("plan", "template_plan"):
-        for item in raw[name]["items"]:
-            item.pop("item_pass", None)
-            item.pop("item_collect_only", None)
-
-    legacy = PlanSnapshot.from_dict(raw)
-
-    assert legacy.plan == snapshot.plan
-    assert legacy.template_plan == snapshot.template_plan
-    assert legacy.to_dict() == raw
 
 
 # --- sequential passes over one collection ---------------------------------
@@ -496,35 +475,6 @@ def test_a_later_pass_still_replans_while_an_earlier_one_is_expanded(
         for item in snapshot.plan.items
         if item.name == "report" and item.item_template
     ] == ["Reply with the result for this original comment."]
-
-
-def test_a_schema_1_run_is_upgraded_when_its_pass_expands(tmp_path: Path) -> None:
-    service = _service(
-        tmp_path,
-        """workflows:
-  - name: review
-    steps:
-      - collect: Collect.
-        items:
-          steps:
-            - analyze: Analyze it.
-              item_phase: analyze
-""",
-    )
-    service.next(TASK)
-    service.add_item(TASK, WorkItem("c1", "First comment"))
-    state, snapshot = service.load(TASK)
-    legacy = replace(snapshot, schema_version=1)
-    service.commit(replace(state, plan_digest=legacy.plan_digest), legacy)
-    service = _resumed(tmp_path)
-    assert service.load(TASK)[1].schema_version == 1
-
-    service.complete(TASK, artifact="Collected.", summary_for_next="Done.")
-
-    state, snapshot = _resumed(tmp_path).load(TASK)
-    assert snapshot.schema_version == PLAN_SCHEMA_VERSION
-    assert state.plan_digest == snapshot.plan_digest
-    assert _stages(service) == [("analyze", "c1", "collect")]
 
 
 def test_the_first_declaration_holds_the_collection_settings(

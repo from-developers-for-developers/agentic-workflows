@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- Breaking: saved plans from before `items` pass identity (snapshot schema 1) are no longer read; finish or
+  reset in-flight tasks before upgrading.
+- Retired onboarding keys (`learned.me|myrole|team|company`) and retired built-in workflow names (`ww-learn`,
+  `ww-express`) now get the plain unknown-key and unknown-workflow errors, with no replacement message.
 - Validation and `lint` now reject `item_phase` where it would silently do nothing: on an `assess` step
   itself (an assessment compiles no item operation, so the pass gate and automatic reporting never saw
   it) and on any step outside a per-item stage, including through a reusable handler used there. Put

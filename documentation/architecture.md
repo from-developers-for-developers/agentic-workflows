@@ -143,9 +143,7 @@ documents, lives below `../.ww` so projects can exclude one directory as a unit;
 the `.gitignore` lines `init` writes (`RUNTIME_IGNORE_LINES` in
 `../src/ww/config_files.py`) ignore that directory's contents rather than the
 directory, because Git cannot re-include a file under an ignored directory, and
-then re-include the shared learning file `project.md` (older versions also
-re-included `team.md` and `company.md`; existing lines for them stay and the
-files are never touched). Agent instructions remain at the project root because
+then re-include the shared learning file `project.md`; existing lines are never touched. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
 The interactive answers are remembered in `.ww/init-choices.json` so a repeat
 run asks nothing already decided; `init --force` reads none of them back (it
@@ -191,12 +189,7 @@ Onboarding state (`../src/ww/onboarding.py`) is split by what it describes:
 the operator's optional `explain` preference lives in `state.json` in the user
 directory, shared by every project, and the project's `setup.done` and
 `learned.project` timestamp live in project metadata under the `ww.` namespace.
-The retired profile keys (`learned.me`, `learned.myrole`, `learned.team`,
-`learned.company`) are neither read nor written: old values stay in the files
-untouched, other keys are preserved, and setting one is refused with a message
-saying so. A built-in workflow that was retired (`ww-learn`, `ww-express`,
-`../src/ww/retired.py`) is answered with its replacement when started; plans
-frozen into old tasks stay readable. That namespace is reserved in `SavedMetadata` itself, so no workflow
+Another key is an unknown onboarding key. That namespace is reserved in `SavedMetadata` itself, so no workflow
 can save into it, and the storage port stays the one writer of
 `.ww/metadata.json`. `discover` reads the state to add its onboarding guidance;
 `ww onboarding` is the only command that sets it, and records only the
@@ -811,15 +804,9 @@ execution index.
 Reads recognize the document by its `ww.task-state` format discriminator.
 The document carries one schema version, and so do the plan snapshots and
 execution states inside it; a reader rejects any version but the current one.
-The one exception is the plan snapshot, whose schema 2 adds `items` pass
-identity (`item_pass`, `item_collect_only`) to plan items. A schema 1 snapshot
-had a single implicit pass, so the codec derives that pass from the plan on load
-(refusing a plan that holds several collections or inconsistent fields), keeps
-the snapshot at schema 1, and serializes and digests it without the pass fields
-so the stored plan digest still matches; a replan, which writes a new plan,
-and the expansion of an items pass (`materialize_item_plan`), which writes the
-expanded plan in the current schema, upgrade it to schema 2. A schema 2 plan whose collection or templates lack a
-pass is refused rather than guessed at.
+The plan snapshot is schema 2: it records `items` pass identity (`item_pass`,
+`item_collect_only`) on plan items, and a plan whose collection or templates
+lack a pass is refused rather than guessed at.
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
 Scoped cleanup of obsolete regular files follows. Cleanup failures are

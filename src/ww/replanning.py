@@ -28,7 +28,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from ww.control import child_workflow, loop_control
-from ww.execution_models import PLAN_SCHEMA_VERSION, ExecutionState, PlanSnapshot
+from ww.execution_models import ExecutionState, PlanSnapshot
 from ww.execution_models.construction import (
     build_step_projection,
     new_item_execution,
@@ -176,9 +176,6 @@ def replan(
     )
     revised = replace(
         snapshot,
-        # The kept items were decoded with their derived pass identity, so the
-        # revised plan is complete in the current schema.
-        schema_version=PLAN_SCHEMA_VERSION,
         plan=plan,
         template_plan=change.template,
         plan_revision=revision,

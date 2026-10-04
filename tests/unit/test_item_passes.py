@@ -5,15 +5,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from ww.config import load_configuration
 from ww.execution_models import PLAN_SCHEMA_VERSION, PlanSnapshot
 from ww.plan import WorkflowPlan, compile_workflow_plan
-
-PASS_FIELDS = ("item_pass", "item_collect_only")
 
 
 def _config(tmp_path: Path, steps: str):  # type: ignore[no-untyped-def]
@@ -37,25 +34,14 @@ def _plan(tmp_path: Path, steps: str) -> WorkflowPlan:
     return compile_workflow_plan(_config(tmp_path, steps), tmp_path, "task", "codex")
 
 
-def _snapshot(plan: WorkflowPlan, version: int = PLAN_SCHEMA_VERSION) -> PlanSnapshot:
+def _snapshot(plan: WorkflowPlan) -> PlanSnapshot:
     return PlanSnapshot(
-        schema_version=version,
+        schema_version=PLAN_SCHEMA_VERSION,
         compiler_version="test",
         configuration_digest="digest",
         compiled_at="2026-01-01T00:00:00Z",
         plan=plan,
     )
-
-
-def _legacy_json(snapshot: PlanSnapshot) -> dict[str, Any]:
-    """What a ww before pass identity saved: schema 1, no pass keys."""
-    raw = json.loads(json.dumps(snapshot.to_dict()))
-    raw["schema_version"] = 1
-    for name in ("plan", "template_plan"):
-        for item in raw[name]["items"]:
-            for field in PASS_FIELDS:
-                item.pop(field, None)
-    return raw
 
 
 ONE_PASS = """      - collect: Collect.
@@ -304,166 +290,9 @@ def test_a_current_schema_plan_without_pass_identity_is_refused(
         PlanSnapshot.from_dict(raw)
 
 
-def test_plans_without_items_serialize_the_same_in_both_schemas(
-    tmp_path: Path,
-) -> None:
-    plan = _plan(tmp_path, "      - only: Do it.\n")
-    current = _snapshot(plan)
-    legacy = _snapshot(plan, 1)
+def test_a_schema_1_snapshot_is_rejected(tmp_path: Path) -> None:
+    raw = json.loads(json.dumps(_snapshot(_plan(tmp_path, ONE_PASS)).to_dict()))
+    raw["schema_version"] = 1
 
-    assert current.plan_digest == legacy.plan_digest
-
-
-# --- codec: legacy (schema 1) snapshots -------------------------------------
-
-
-def test_a_legacy_snapshot_loads_with_the_derived_pass_and_the_same_digest(
-    tmp_path: Path,
-) -> None:
-    plan = _plan(tmp_path, ONE_PASS)
-    raw = _legacy_json(_snapshot(plan))
-
-    loaded = PlanSnapshot.from_dict(raw)
-
-    assert loaded.schema_version == 1
-    assert loaded.plan == plan  # same identity the compiler assigns today
-    assert loaded.template_plan == plan
-    # Written back unchanged: no pass keys, so the stored digest still matches.
-    assert loaded.to_dict() == raw
-    assert loaded.plan_digest == PlanSnapshot.from_dict(raw).plan_digest
-    assert loaded.plan_digest != _snapshot(plan).plan_digest
-
-
-def test_a_legacy_collect_only_plan_is_collect_only(tmp_path: Path) -> None:
-    plan = _plan(tmp_path, "      - collect: C.\n        items:\n          steps: []\n")
-
-    loaded = PlanSnapshot.from_dict(_legacy_json(_snapshot(plan)))
-
-    assert loaded.plan == plan
-
-
-def test_a_legacy_expanded_plan_keeps_its_pass_on_concrete_items(
-    tmp_path: Path,
-) -> None:
-    from dataclasses import replace
-
-    template = _plan(tmp_path, ONE_PASS)
-    expanded = tuple(
-        replace(item, item_template=False, item_id=f"c{n}", id=f"{item.id}:item:{n}")
-        if item.item_template
-        else item
-        for item in template.items
-        for n in ((1, 2) if item.item_template else (0,))
-    )
-    plan = replace(template, items=expanded)
-    raw = _legacy_json(_snapshot(plan))
-
-    loaded = PlanSnapshot.from_dict(raw)
-
-    assert loaded.plan == plan
-    concrete = [item for item in loaded.plan.items if item.item_id]
-    assert len(concrete) == 4
-    assert {item.item_pass for item in concrete} == {"collect"}
-    assert [i.item_collect_only for i in loaded.plan.items if i.name == "collect"] == [
-        False
-    ]
-
-
-def test_a_legacy_snapshot_with_several_collections_is_refused_actionably(
-    tmp_path: Path,
-) -> None:
-    plan = _plan(tmp_path, ONE_PASS)
-    raw = _legacy_json(_snapshot(plan))
-    collector = next(i for i in raw["plan"]["items"] if i["name"] == "collect")
-    raw["plan"]["items"].append({**collector, "id": "task:other:step:1"})
-
-    with pytest.raises(ValueError, match="several items collection steps.*reset"):
+    with pytest.raises(ValueError, match="unsupported plan snapshot schema: 1"):
         PlanSnapshot.from_dict(raw)
-
-
-def test_a_legacy_snapshot_that_claims_pass_identity_is_refused(
-    tmp_path: Path,
-) -> None:
-    raw = _legacy_json(_snapshot(_plan(tmp_path, ONE_PASS)))
-    raw["plan"]["items"][0]["item_pass"] = "collect"
-
-    with pytest.raises(ValueError, match="schema 1 plan item carries item_pass"):
-        PlanSnapshot.from_dict(raw)
-
-
-def test_a_legacy_plan_with_stages_but_no_collection_is_refused(
-    tmp_path: Path,
-) -> None:
-    raw = _legacy_json(_snapshot(_plan(tmp_path, ONE_PASS)))
-    raw["plan"]["items"] = [
-        i for i in raw["plan"]["items"] if i.get("item_operation") != "collect"
-    ]
-
-    with pytest.raises(ValueError, match="no items collection step"):
-        PlanSnapshot.from_dict(raw)
-
-
-def _materialized(
-    tmp_path: Path, steps: str, count: int, version: int = PLAN_SCHEMA_VERSION
-) -> PlanSnapshot:
-    """A snapshot of ``steps`` expanded by ww for ``count`` items."""
-    from ww.execution_models import initial_state
-    from ww.items import WorkItem
-    from ww.transitions import materialize_item_plan
-
-    snapshot = _snapshot(_plan(tmp_path, steps), version)
-    collector = next(i for i in snapshot.plan.items if i.item_operation == "collect")
-    _, expanded = materialize_item_plan(
-        initial_state(snapshot, (), "2026-01-01T00:00:00Z", run_id="01-task"),
-        snapshot,
-        collector,
-        tuple(WorkItem(f"c{n}", f"Comment {n}.") for n in range(1, count + 1)),
-        lambda: "2026-01-01T00:00:00Z",
-    )
-    return expanded
-
-
-@pytest.mark.parametrize("count", [0, 3])
-def test_an_expanded_legacy_plan_takes_collect_only_from_its_template(
-    tmp_path: Path, count: int
-) -> None:
-    expanded = _materialized(tmp_path, ONE_PASS, count)
-    concrete = [item for item in expanded.plan.items if item.item_id]
-    assert len(concrete) == 2 * count
-    assert not any(item.item_template for item in expanded.plan.items)
-
-    loaded = PlanSnapshot.from_dict(_legacy_json(expanded))
-
-    # With no items the plan holds no stages; the pass still had them.
-    assert [i.item_collect_only for i in loaded.plan.items if i.name == "collect"] == [
-        False
-    ]
-    assert loaded.plan == expanded.plan
-    assert loaded.template_plan == expanded.template_plan
-
-
-def test_an_expanded_legacy_collect_only_plan_stays_collect_only(
-    tmp_path: Path,
-) -> None:
-    expanded = _materialized(
-        tmp_path, "      - collect: C.\n        items:\n          steps: []\n", 2
-    )
-
-    loaded = PlanSnapshot.from_dict(_legacy_json(expanded))
-
-    assert [i.item_collect_only for i in loaded.plan.items if i.name == "collect"] == [
-        True
-    ]
-
-
-def test_expanding_a_legacy_snapshot_writes_the_current_schema(
-    tmp_path: Path,
-) -> None:
-    expanded = _materialized(tmp_path, ONE_PASS, 2, version=1)
-
-    assert expanded.schema_version == PLAN_SCHEMA_VERSION
-    raw = json.loads(json.dumps(expanded.to_dict()))
-    assert {
-        item.get("item_pass") for item in raw["plan"]["items"] if item["name"] != "wrap"
-    } >= {"collect"}
-    assert PlanSnapshot.from_dict(raw) == expanded

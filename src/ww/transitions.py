@@ -18,7 +18,6 @@ from ww.contracts import StepStatus
 from ww.control import loop_control
 from ww.errors import StateError
 from ww.execution_models import (
-    PLAN_SCHEMA_VERSION,
     CheckReport,
     CommandExecution,
     Dispute,
@@ -1301,9 +1300,7 @@ def materialize_item_plan(
         raise StateError(f"items step {collector.name!r} is not in the plan")
     return _expand_templates(
         state,
-        replace(
-            snapshot, schema_version=max(snapshot.schema_version, PLAN_SCHEMA_VERSION)
-        ),
+        snapshot,
         templates,
         "{item}",
         tuple(
