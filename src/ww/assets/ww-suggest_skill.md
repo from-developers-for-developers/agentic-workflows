@@ -1,12 +1,12 @@
 ---
 name: ww-suggest
-description: Design a ww setup with the operator from what ww learned about the project, and propose it in full (git branching, handlers with the project's verify commands, workflows per lane, modes, rules only for what a command cannot check), placed for the operator alone or shared with the team. Use when the operator invokes /ww-suggest, asks what ww setup would suit them, or wants to share their own ww setup with the team.
+description: Design a ww setup with the operator from what ww learned about the project, and propose it in full, following ww's design guidance, placed for the operator alone or shared with the team. Use when the operator invokes /ww-suggest, asks what ww setup would suit them, or wants to share their own ww setup with the team.
 ---
 
 # Suggest a ww setup
 
-The `ww-suggest` workflow reads `project.md` and ww's specification,
-features and examples, asks the operator a few questions about their
+The `ww-suggest` workflow reads `project.md` and ww's design documents
+(`./ww docs specification`, `./ww docs features`, `./ww docs examples`), asks the operator a few questions about their
 process (skipped for an express setup, which derives defaults from the
 project), settles in one set of questions whose defaults come from the
 project's profile what the setup turns on and for whom, shows the proposal section by section with the

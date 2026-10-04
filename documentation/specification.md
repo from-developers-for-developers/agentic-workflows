@@ -3,6 +3,11 @@
 `../ww.yaml` defines what `ww` workflows do. The file is strict: unknown
 keys, invalid types, and invalid references are errors.
 
+This is the exact reference; [the features guide](features.md) says when to use
+what, and [the examples](examples.md) are runnable. An installation prints
+its own same-version copies with `ww docs specification`, `ww docs features`
+and `ww docs examples` (`docs` is read-only and takes no project state).
+
 ## Common types
 
 - **Name:** a non-empty string matching `[A-Za-z_][A-Za-z0-9_.-]*`.
@@ -1177,8 +1182,9 @@ arguments:
     - "{{ww.item.field.reply_id}}"
 ```
 
-`scripts/reply-to-comment.py` is the project's own script, not part of ww.
-Saving the command's result into the item is not available yet.
+`scripts/reply-to-comment.py` is the project's own script, not part of ww. A
+command in a per-item stage can save its output into an item field; see
+[Automatic item saves](#automatic-item-saves).
 
 ### Assessments
 
@@ -1793,20 +1799,13 @@ rule-automation store is not touched by a dispute.
 ## Minimal example
 
 ```yaml
-handlers:
-  - name: test
-    argv: [python, -m, pytest, -q]
-
-hooks:
-  before_complete_workflow:
-    - workflows: [task]
-      name: test
-
 workflows:
   - name: task
     steps:
-      - name: develop
-        description: Implement and verify the requested change.
+      - develop: Implement the requested change.
+      - verify: ~
+        argv: [python, -m, pytest, -q]
+        on_failure: fix
 ```
 
 Use `ww-agentic-workflows lint` to validate the complete configuration; it also

@@ -484,3 +484,38 @@ workflows:
         "assess"
     )
     assert service.next("TASK-DIRECT-LOOP", outcome="positive").item_name == "positive"
+
+
+AUTOMATIC = """workflows:
+  - name: merge
+    steps:
+      - merge: Merge.
+      - assess:
+          question: Is the merge clean?
+          outcomes:
+            clean:
+              argv: [python3, -c, "open('ran', 'w')"]
+            messy:
+              steps:
+                - resolve: Resolve the conflicts.
+      - tests: Run the tests.
+"""
+
+
+def test_an_outcome_with_automatic_work_waits_for_the_answer(tmp_path: Path) -> None:
+    service, _, after = _assessed(tmp_path, AUTOMATIC)
+
+    assert after.choosing_outcome_of == "assess"
+    assert not (tmp_path / "ran").exists()
+    resolved = service.next("TASK-1", outcome="messy", caller_role="manager")
+    assert resolved.item_name == "resolve"
+    assert not (tmp_path / "ran").exists()
+
+
+def test_a_chosen_outcome_runs_its_automatic_work(tmp_path: Path) -> None:
+    service, _, _ = _assessed(tmp_path, AUTOMATIC)
+
+    tests = service.next("TASK-1", outcome="clean")
+
+    assert (tmp_path / "ran").exists()
+    assert tests.item_name == "tests"

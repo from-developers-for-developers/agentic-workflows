@@ -27,7 +27,9 @@ def test_suggested_checks_run_once_without_a_verification_assignment(
     tmp_path: Path, workflow: str, step: str, failing: bool
 ) -> None:
     examples = Path(__file__).parents[2] / "documentation/examples.md"
-    section = examples.read_text(encoding="utf-8").split("## 18.", 1)[1]
+    section = examples.read_text(encoding="utf-8").split(
+        "## 21. What ww-suggest proposes", 1
+    )[1]
     fragment = section.split("```yaml\n", 1)[1].split("```", 1)[0]
     setup = yaml.safe_load(fragment)
     # Exercise the shipped example's check wiring without its Git lifecycle

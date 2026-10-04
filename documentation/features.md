@@ -1,9 +1,16 @@
 # ww feature reference
 
-This document is the developer-facing guide to the features available in
-`ww-agentic-workflows`. For a short introduction and one end-to-end example,
-start with [README.md](../README.md). For internal design, component boundaries,
-and persistence invariants, see [architecture.md](architecture.md).
+This document is the design guide and feature reference for
+`ww-agentic-workflows`. It is one of three authorities for designing workflows:
+the [specification](specification.md) says exactly what the syntax, defaults and
+failure semantics are, this guide says when to use what and why, and the
+[examples](examples.md) are runnable. Start with [Designing a
+workflow](#designing-a-workflow). For a short introduction, see
+[README.md](../README.md); for internal design, component boundaries, and
+persistence invariants, see [architecture.md](architecture.md).
+
+An installation carries the same-version copies of all three: read them with
+`ww docs specification`, `ww docs features` and `ww docs examples`.
 
 ## Feature overview
 
@@ -38,6 +45,131 @@ and persistence invariants, see [architecture.md](architecture.md).
   automation.
 - Atomic persistence, task-level concurrency control, interruption recovery,
   execution logs, and lock cleanup.
+
+## Designing a workflow
+
+Start with the smallest workflow that does the job and add structure only for a
+concrete reason. This section is the guidance; the
+[specification](specification.md) has the exact syntax and the
+[examples](examples.md) have runnable versions of everything named here.
+
+### Start linear
+
+A workflow is a list of steps in order. Write the work as steps, give them the
+defaults, and stop there until something real asks for more. Items, several
+item passes, loops, assessments, persistence, modes and reusable groups each
+cost the reader something, so each needs a concrete reason: the work really
+splits into independent pieces, a judgment really routes what follows, the
+same list really returns every round, a preference really varies per task.
+When `items: ~` is enough, do not write item stages; when one pass is enough,
+do not add a second. [Example 1](examples.md#1-a-linear-workflow-with-an-automatic-check)
+is a complete workflow.
+
+### Steps, handlers and hooks
+
+- An **ordinary step** is the place for anything the workflow visibly does,
+  including a command ww runs itself (`argv` or `shell`). It appears in the
+  plan, in `status` and in the artifacts, it can fail and be repaired
+  (`on_failure: fix`), and readers find it where the work happens. Verifying a
+  change is such an operation: write it as a step, after the step that
+  changes the code.
+- A **handler** is a named definition worth reusing: the same command in
+  several workflows, a reusable group of automatic commands, a loop used
+  by several workflows. Define one when the second use appears, not before. A step uses it
+  with `handler: <name>`.
+- A **hook** attaches work to a lifecycle point of steps or workflows
+  without appearing as a step: it exists for invariants, things that must
+  hold around every matching step or workflow whatever the steps say, such as a
+  clean tree before any task starts or a commit when a workflow completes, or
+  a check that must pass whenever a code-changing step completes
+  (`before_complete` with `on_failure: fix`). A command being automatic does
+  not make it a hook, and putting visible operations in hooks hides the
+  workflow from the people who read it.
+
+### Conversation or assessment
+
+Both involve a judgment but they belong to different people. An
+**interactive step** is a conversation with the operator: discussing a design,
+reviewing a change, performing a manual test. The operator talks and decides;
+the step ends when their intent is clear, and `choices` only lists the answers
+worth offering (`{{ww.choices}}` shows their labels in the instruction; it
+guides, it never validates). An **assessment** (`assess`) is the agent's own
+evaluation: it looks at the evidence, picks `positive`, `negative` or `mixed`
+(or a label you declare) and the workflow routes on that. Use an assessment
+to gate or branch on something the agent can decide; use an interactive step
+where the operator's say matters. Prefer the compact and standard-branch
+forms, and custom labels in `outcomes` only when positive and negative do not
+say it.
+
+### Items: independent pieces of work
+
+Use `items` when the work splits into pieces that are independently
+completed, checked or reported: review comments, test cases, files to migrate.
+`items: ~` gives every item one stage that analyzes, resolves and reports it.
+Choose per-item stages (`items.steps`) only when the stages differ. When
+several pieces are cheaper analyzed or fixed together but each still has to be
+reported on its own, use a shared analysis or fix with one item per
+independently reportable source: the workflow has one collection and several
+passes over it, and ordinary steps between the passes run once for everyone
+([Several passes over the same items](#several-passes-over-the-same-items),
+[example 4](examples.md#4-one-analysis-one-fix-one-report-per-comment)).
+Make the item the unit that is reported: one item per source comment, even
+when a hundred comments get one fix.
+
+### External items: IDs, reconciliation and restarts
+
+When items mirror something outside ww, such as review comments on a pull
+request, design for being run again:
+
+- Give each item the source's own stable ID, as the item ID or in a field
+  that `identity` requires and `unique` keeps single. A rerun then recognizes
+  its comments instead of creating copies.
+- Declare `persistent: true` when the same list returns every round. The
+  collection step then reconciles the stored items against the source
+  (`add-item`, `update-item --text`, `remove-item`) instead of splitting
+  again. Identity, text, references and custom fields carry over to the next
+  run; analysis, solution, `resolved` and `reported` start clear.
+- Keep remote results in item fields, such as the reply ID. Pass the saved
+  value to the command that posts, `"{{ww.item.field.reply_id}}"`, so a
+  project-owned script can update the reply it already made instead of
+  creating another. A per-item command stage that declares
+  `saves: item.field.reply_id` stores the command's whole trimmed output
+  there, and the last report-stage item is marked `reported` in the same
+  commit, only after a zero exit.
+- ww makes no exactly-once promise about remote effects. If the process dies
+  after a remote reply but before the result is saved, the next attempt runs
+  the command again. The handler or script owns idempotency, which is why it
+  takes the saved ID.
+- `next --retry` after a failed stage, or `start --fresh-items` to forget the
+  stored list, are the restart tools; see
+  [Items that persist across runs](#items-that-persist-across-runs).
+
+### What needs the agent and what ww does itself
+
+A shell or argv step runs without agent work. Values ww owns, such as
+`{{ww.task.id}}`, `{{ww.git.branch}}` and `{{ww.item.field.<name>}}`, are
+read by ww when the command runs, so using them never asks the agent for
+anything. Only a required agent variable, a `variables` entry of the
+`name: description` form, means input is needed: the agent supplies it with
+`complete --variable`, and then ww runs the command. Dynamic values go to
+commands as `args`, `env` or `argv` entries, never into shell source.
+
+### Modes and rules
+
+Add a mode only for a preference that changes how an agent works, such as
+brief updates or asking first, and a rule only for a convention no command
+checks, on the steps it governs, with a one-line check where one exists. A
+rule never restates its step, a preference or a command, and a step that
+needs none gets none. Never redefine a workflow ww ships (`catchall`, `ww-*`).
+
+### Where to put workflows
+
+Personal defaults belong in your global file, the team's in the project's
+`ww.yaml`, and your own variation of a project workflow in `ww.local.yaml`; a
+lower level replaces a same-named definition. `discover` names each
+workflow's source, and where several fit, prefer local over project over
+global unless the operator named one
+([example 6](examples.md#6-global-project-and-local-variants)).
 
 ## Initialize a project
 
@@ -514,29 +646,26 @@ the process answers become modes or operator stops, `projects` when the
 layout found candidates (it asks for the sibling repositories' paths and never
 scans them), a rule for a fix-prone path only when the fixes show a repeated
 cause, and whether the setup is for the operator alone or the team. The proposal then
-follows the project: `ww/git` settings for the branching and commit format and
-its handlers as hooks, one automatic `argv` or `shell` handler per verify
-command, attached as an ordered `before_complete` check with `on_failure: fix`
-to the steps that change code. ww runs these commands without an agent prompt;
-only failures return their output to the worker for fixes, and ww checks again
-on completion. No agent step asks for the same command, and no workflow-boundary
-hook duplicates it. There is one workflow per
-lane, with `inherit` where lanes differ only in their
-base branch; modes for preferences; and rules only for conventions no command
-can check. A workflow is fitted to its kind of work without the operator
-asking: a manual-testing workflow, for example, collects the test cases as
-an `items` step, puts each case before the operator on the operator page
+follows the project, within what this guide and the [specification](specification.md)
+describe: `ww/git` settings for the branching and commit format, and one workflow
+per lane, with `inherit` where lanes differ only in their base branch. The
+verify commands become visible command steps of the workflow by default, as
+[Designing a workflow](#designing-a-workflow) says; a check on every completion
+of a step is proposed only where the project treats it as an invariant. Modes
+are for preferences, and rules only for conventions no command can check. The
+step features a workflow needs follow its kind of work and are added only for a
+concrete reason: a manual-testing workflow, for example, collects the test cases
+as an `items` step, puts each case before the operator on the operator page
 (`interactive: page` with `pass` and `fail` choices), and keeps the test case
-template as a document the steps save, with per-case values as item fields;
-work repeated until a condition holds is a `loop` with a `break`. Every
-command the proposal carries, in a handler, a hook, a rule's check or a
-script, is written for the directory ww runs it from, the task's worktree
-when worktrees are on, through the wrapper `project.md` records for the
+template as a document the steps save, with per-case values as item fields.
+Every command the proposal carries, in a handler, a step, a hook, a rule's
+check or a script, is written for the directory ww runs it from, the task's
+worktree when worktrees are on, through the wrapper `project.md` records for the
 project's commands, and never names the main checkout. `ww-solve`,
 `ww-automate`, `ww-rules-from-artifacts` and the `ww-rule` skill follow the
 same convention. A small project gets one lane and a handler or two. [Example
-18](examples.md#18-what-ww-suggest-proposes-for-a-node-project-with-devmain-and-a-jira-like-tracker)
-shows the shape to expect. It is presented section by section, changed as the
+21](examples.md#21-what-ww-suggest-proposes-for-a-node-project-with-devmain-and-a-jira-like-tracker)
+shows one realistic shape. It is presented section by section, changed as the
 operator asks for up to three rounds, and placed only on "apply".
 
 Every piece of the proposal carries its evidence in one clause, so the

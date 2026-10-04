@@ -3126,6 +3126,12 @@ class WorkflowService:
                 )
                 self.commit(state, snapshot)
                 return state, snapshot
+            if pending_assessment(state, plan) is not None:
+                # An outcome's automatic work waits for the chosen outcome,
+                # as an outcome's agent work does.
+                state = pause_for_agent(state, _now)
+                self.commit(state, snapshot)
+                return state, snapshot
             if not (item.execution == "automatic" and item.owner == "ww"):
                 raise StateError(f"invalid automatic plan item {item.id!r}")
             missing = [

@@ -203,6 +203,19 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[json_output],
         help="Show the workflows, modes, options, and commands for starting a task.",
     )
+    docs = subparsers.add_parser(
+        "docs",
+        help=(
+            "Print one of ww's design documents, the same version as this "
+            "installation: specification, features or examples."
+        ),
+    )
+    docs.add_argument(
+        "document",
+        choices=("specification", "features", "examples"),
+        help="specification: exact syntax; features: design guidance; "
+        "examples: runnable examples.",
+    )
     inspect = subparsers.add_parser(
         "inspect",
         parents=[json_output],

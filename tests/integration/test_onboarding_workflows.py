@@ -429,15 +429,13 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
 
     assert propose.interactive
     assert [choice.label for choice in propose.choices] == ["apply", "cancel"]
-    assert "documentation's examples" in description
+    assert "`{{ww.executable}} docs examples`" in description
     for piece in (
         "`base_branches`",
         "`branch_name_formats`",
         "`commit_format`",
-        "`on_failure: fix`",
         "`inherit`",
         "`recommended_next_workflow`",
-        "ext/ww/git/handlers:is-git-clean",
         "--dry-run",
         "intent to finish is clear",
         "each piece with its evidence in one clause",
@@ -447,7 +445,7 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
     ):
         assert piece in description, piece
     # The proposal reads as paragraphs, not one block.
-    assert description.count("\n\n") == 5
+    assert description.count("\n\n") == 4
     apply = _step("ww-suggest", "apply").description
     assert "--for <me or team, as chosen in design> --yes" in apply
     assert "plan --workflow <the main lane>" in apply
@@ -465,16 +463,16 @@ def test_the_project_scan_records_how_and_where_commands_run() -> None:
     assert "how and where commands run" in project.instruction
 
 
-def test_setup_verification_runs_automatically_without_duplicate_agent_work() -> None:
-    description = _step("ww-suggest", "propose").description
+def test_proposals_defer_command_placement_to_the_design_documents() -> None:
+    description = " ".join(_step("ww-suggest", "propose").description.split())
 
-    assert "automatic handler with the exact `argv` or `shell`" in description
-    assert "no agent prompt or command-running loop" in description
-    assert "ordered `before_complete` hooks with `on_failure: fix`" in description
-    assert "only a failed check sends its output back" in description
-    assert "Never also ask the agent to run these commands" in description
-    assert "never repeat a step's check at `before_complete_workflow`" in description
-    assert "handlers as steps (`- run-tests: ~`)" not in description
+    assert "`{{ww.executable}} docs features`" in description
+    assert "`{{ww.executable}} docs specification`" in description
+    assert "an ordinary step, a reusable handler or a hook" in description
+    # No competing recipe: the documents decide where verification goes.
+    assert "`before_complete` hooks" not in description
+    assert "Never also ask the agent to run these commands" not in description
+    assert "never repeat a step's check" not in description
 
 
 @pytest.mark.parametrize(
@@ -535,25 +533,20 @@ def test_the_rule_skill_follows_the_rules_settings() -> None:
     assert "judges it until `ww-scriptize-rules`" in skill
 
 
-def test_proposals_use_the_step_features_the_work_calls_for() -> None:
+def test_proposals_take_step_features_from_the_design_guide() -> None:
     design = _step("ww-suggest", "design").description
-    assert "such as manual testing, the step features it" in design
-    assert "an `items` step for work that splits into cases" in design
+    assert "such as manual testing, which step features it" in design
+    assert '"Designing a workflow"' in design
     assert "(11) last" in design
     assert "manual testing" in _step("ww-suggest", "gather").description
 
     for workflow in ("ww-suggest", "ww-solve"):
-        propose = _step(workflow, "propose").description
-        for feature in (
-            "`items` step",
-            "`interactive: true`",
-            "`interactive: page` with `choices`",
-            "`documents` entry",
-            "`item.field.<name>`",
-            "`loop` with a `break`",
-        ):
-            assert feature in propose, (workflow, feature)
-    assert "without waiting to be asked" in _step("ww-suggest", "propose").description
+        propose = " ".join(_step(workflow, "propose").description.split())
+        assert '"Designing a workflow"' in propose, workflow
+        assert "`{{ww.executable}} docs features`" in propose, workflow
+        # The guide owns the feature catalog; the prompt does not repeat it.
+        for feature in ("`interactive: page` with `choices`", "`loop` with a `break`"):
+            assert feature not in propose, (workflow, feature)
 
 
 def test_the_setup_skill_recommends_learning_the_project_when_it_is_missing() -> None:
