@@ -170,6 +170,23 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
         )
         if item.parent:
             lines.extend([f"**Parent step:** `{item.parent}`", ""])
+        if item.owner == "ww" and item.execution == "automatic":
+            if not item.requires_agent_input:
+                lines.extend(
+                    [
+                        "> **Fully automated by ww:** ww executes this operation "
+                        "without asking the agent to act. Commands below are shown "
+                        "for inspection.",
+                        "",
+                    ]
+                )
+            failure_instruction = (
+                "ww explicitly assigns the agent to fix the cause, then ww retries "
+                "the command."
+                if item.on_failure == "fix"
+                else "ww explicitly instructs the agent to hand over to the operator."
+            )
+            lines.extend([f"> **On failure:** {failure_instruction}", ""])
         lines.extend(_item_flow_lines(item))
         lines.extend(
             [
