@@ -8,8 +8,9 @@ consumes a compiled plan rather than independently deciding which hooks apply.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
+WorkflowConfigLevel = Literal["global", "project", "local"]
 # A document also has the user scope: one file per user, in the user
 # configuration directory, shared by every project.
 DocumentScope = Literal["task", "project", "user"]
@@ -712,6 +714,14 @@ class WorkflowDefinition:
         )
 
 
+@dataclass(frozen=True)
+class WorkflowProvenance:
+    """The physical configured source and level that defined a workflow."""
+
+    source: str
+    level: WorkflowConfigLevel
+
+
 def binds_task_identity(workflow: WorkflowDefinition) -> bool:
     """Whether a workflow's first step supplies the task's external ID.
 
@@ -774,6 +784,18 @@ class WorkflowConfiguration:
     documents: tuple[DocumentDefinition, ...] = ()
     # Root rule groups, extension groups first, then YAML order.
     rule_groups: tuple[RuleGroup, ...] = ()
+    # Effective YAML workflow definitions only. Built-ins and extension
+    # contributions have no configured source and are absent from this map.
+    workflow_provenance: Mapping[str, WorkflowProvenance] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "workflow_provenance",
+            MappingProxyType(dict(self.workflow_provenance)),
+        )
 
     @property
     def rule_groups_by_name(self) -> dict[str, RuleGroup]:

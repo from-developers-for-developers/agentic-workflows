@@ -252,7 +252,8 @@ class InstructionBuilder:
                 dict.fromkeys(
                     entry.step
                     for entry in covered
-                    if entry.explicit and entry.owner == "agent"
+                    if entry.explicit
+                    and (entry.owner == "agent" or needs_repair(state))
                 )
             ),
             assignment_continues=(
@@ -400,6 +401,7 @@ class InstructionBuilder:
             )
             if active
             else next_command(state.task_id),
+            explicit=item.explicit,
         )
 
     def _awaiting_input(self, state: ExecutionState, plan: WorkflowPlan) -> Instruction:
@@ -1319,7 +1321,9 @@ def _assignment_preview(
             "requested_profile": item.profile,
             "explicit": item.explicit,
             "explicit_steps": (
-                [item.step] if item.explicit and item.owner == "agent" else []
+                [item.step]
+                if item.explicit and (item.owner == "agent" or needs_repair(state))
+                else []
             ),
             "repair": True,
         }

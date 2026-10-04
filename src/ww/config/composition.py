@@ -38,9 +38,11 @@ written to disk.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, cast
 
 import yaml
 
@@ -52,6 +54,7 @@ from ww.config_files import (
     workflow_levels,
 )
 from ww.errors import ConfigurationError
+from ww.workflow_config import WorkflowConfigLevel, WorkflowProvenance
 
 IMPORTS_KEY = "imports"
 EXTENDS_KEY = "extends"
@@ -98,6 +101,9 @@ class ComposedConfiguration:
     # One notice per absolute rule path, and per manager step that also asks
     # for worker settings, in the files folded in.
     rule_notices: tuple[str, ...] = ()
+    workflow_provenance: Mapping[str, WorkflowProvenance] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     @property
     def notices(self) -> tuple[str, ...]:
@@ -117,6 +123,7 @@ class _Level:
 
     files: tuple[tuple[str, dict[str, Any], Path], ...]
     extends: bool
+    name: str
 
 
 def compose_configuration(path: Path) -> ComposedConfiguration:
@@ -144,6 +151,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
                 text,
                 raw,
                 sources=(label,),
+                workflow_provenance=_workflow_provenance(raw, label, "project"),
                 rule_notices=(
                     *_absolute_rule_notices(raw, label),
                     *_manager_setting_notices(raw, label),
@@ -155,30 +163,33 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
         (index for index, level in enumerate(levels) if not level.extends),
         default=0,
     )
-    applied = [file for level in levels[start:] for file in level.files]
+    applied = [(*file, level.name) for level in levels[start:] for file in level.files]
     group_names = {
         name
-        for _, raw, _ in applied
+        for _, raw, _, _ in applied
         if isinstance(raw.get("rules"), dict)
         for name in raw["rules"]
     }
     composer = _Composer()
     notices: list[str] = []
-    for file_label, raw, file in applied:
+    for file_label, raw, file, level_name in applied:
         notices.extend(_absolute_rule_notices(raw, file_label))
         notices.extend(_manager_setting_notices(raw, file_label))
         composer.apply(
-            _rebase_rule_paths(raw, file.parent, base, group_names), file_label
+            _rebase_rule_paths(raw, file.parent, base, group_names),
+            file_label,
+            _public_level(level_name),
         )
     return ComposedConfiguration(
         yaml.safe_dump(composer.raw, sort_keys=False, allow_unicode=True),
         composer.raw,
         tuple(composer.overrides),
-        tuple(file_label for file_label, _, _ in applied),
+        tuple(file_label for file_label, _, _, _ in applied),
         tuple(
             file_label for level in levels[:start] for file_label, _, _ in level.files
         ),
         tuple(notices),
+        MappingProxyType(dict(composer.workflow_provenance)),
     )
 
 
@@ -198,7 +209,30 @@ def _read_level(level: ConfigurationLevel, base: Path, seen: set[Path]) -> _Leve
     ]
     files.append((root_label, root, level.path))
     extends = [_extends(raw, file_label) for file_label, raw, _ in files]
-    return _Level(tuple(files), False not in extends)
+    return _Level(tuple(files), False not in extends, level.name)
+
+
+def _public_level(level: str) -> WorkflowConfigLevel:
+    """Translate config_files' internal level names to the public vocabulary."""
+    return cast(
+        WorkflowConfigLevel,
+        {"user": "global", "repo": "project", "local": "local"}[level],
+    )
+
+
+def _workflow_provenance(
+    raw: dict[str, Any], source: str, level: WorkflowConfigLevel
+) -> Mapping[str, WorkflowProvenance]:
+    workflows = raw.get("workflows", [])
+    if not isinstance(workflows, list):
+        return MappingProxyType({})
+    return MappingProxyType(
+        {
+            name: WorkflowProvenance(source, level)
+            for entry in workflows
+            if (name := entry_name(entry)) is not None
+        }
+    )
 
 
 def _extends(raw: dict[str, Any], label: str) -> bool | None:
@@ -270,16 +304,21 @@ class _Composer:
         self.overrides: list[Override] = []
         # Which file supplied each definition, for override notices.
         self._origins: dict[tuple[str, str | None], str] = {}
+        self.workflow_provenance: dict[str, WorkflowProvenance] = {}
 
-    def apply(self, raw: dict[str, Any], label: str) -> None:
+    def apply(
+        self, raw: dict[str, Any], label: str, level: WorkflowConfigLevel
+    ) -> None:
         for key, value in raw.items():
             current = self.raw.get(key)
             match key, current, value:
                 case _, None, _:
                     self.raw[key] = value
                     self._note_origins(key, value, label)
+                    if key == "workflows":
+                        self._set_workflow_provenance(value, label, level)
                 case str(), list(), list() if key in _NAMED_CATALOGS:
-                    self._merge_named(key, current, value, label)
+                    self._merge_named(key, current, value, label, level)
                 case "profiles", dict(), dict():
                     self._merge_profiles(current, value, label)
                 case "hooks", dict(), dict():
@@ -291,6 +330,13 @@ class _Composer:
                     self.raw[key] = value
                     self._note_origins(key, value, label)
 
+    def _set_workflow_provenance(
+        self, entries: list[Any], label: str, level: WorkflowConfigLevel
+    ) -> None:
+        for entry in entries:
+            if (name := entry_name(entry)) is not None:
+                self.workflow_provenance[name] = WorkflowProvenance(label, level)
+
     def _note_origins(self, key: str, value: Any, label: str) -> None:
         self._origins[(key, None)] = label
         if key in _NAMED_CATALOGS and isinstance(value, list):
@@ -301,7 +347,12 @@ class _Composer:
                 self._origins[(key, name)] = label
 
     def _merge_named(
-        self, key: str, merged: list[Any], entries: list[Any], label: str
+        self,
+        key: str,
+        merged: list[Any],
+        entries: list[Any],
+        label: str,
+        level: WorkflowConfigLevel,
     ) -> None:
         """Replace same-named entries in place and append the rest.
 
@@ -321,6 +372,8 @@ class _Composer:
             else:
                 merged.append(entry)
             self._origins[(key, name)] = label
+            if key == "workflows" and name is not None:
+                self.workflow_provenance[name] = WorkflowProvenance(label, level)
 
     def _merge_profiles(
         self, merged: dict[str, Any], profiles: dict[str, Any], label: str

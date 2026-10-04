@@ -236,6 +236,12 @@ When declared rules have no check yet, a short "Rules" section, and
 skill; see [How a rule becomes a check](#how-a-rule-becomes-a-check).
 `discover` is read-only and leaves no audit record.
 
+In JSON, each workflow entry also carries `source` and `source_level`, naming
+the winning YAML definition and whether it came from the global user config,
+project config, or local config. Imported files keep the level of the config
+that imported them. Built-in workflow entries and the catch-all use `null` for
+both fields.
+
 A task whose state ww cannot read, such as one written by a build with another
 state schema, does not break `discover`. It is listed
 under "Unreadable tasks" with the error, and `unreadable_tasks` in the JSON

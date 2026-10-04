@@ -186,6 +186,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             {
                 "name": workflow.name,
                 "description": workflow.description,
+                **_workflow_source_fields(configuration, workflow.name),
                 "default_modes": list(workflow.modes),
                 "runtime": workflow.runtime,
                 "inherits": workflow.inherits,
@@ -198,7 +199,11 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
         # ww's own workflows, such as its learning ones; the catch-all is
         # listed apart below.
         "builtin_workflows": [
-            {"name": workflow.name, "description": workflow.description}
+            {
+                "name": workflow.name,
+                "description": workflow.description,
+                **_workflow_source_fields(configuration, workflow.name),
+            }
             for workflow in configuration.workflows
             if workflow is not catchall and is_builtin(workflow)
         ],
@@ -206,6 +211,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             {
                 "name": catchall.name,
                 "description": catchall.description,
+                **_workflow_source_fields(configuration, catchall.name),
                 "guidance": (
                     ON_REQUEST_CATCHALL_PREFIX + CATCHALL_GUIDANCE
                     if config.on_request
@@ -259,6 +265,17 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             "status": f"{ww_command()} status {TASK_PLACEHOLDER}",
             "plan": f"{ww_command()} plan --workflow <workflow> --agent <agent>",
         },
+    }
+
+
+def _workflow_source_fields(
+    configuration: WorkflowConfiguration, name: str
+) -> dict[str, str | None]:
+    """Additive JSON provenance; null means a non-configured workflow source."""
+    provenance = configuration.workflow_provenance.get(name)
+    return {
+        "source": provenance.source if provenance is not None else None,
+        "source_level": provenance.level if provenance is not None else None,
     }
 
 

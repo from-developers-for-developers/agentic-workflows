@@ -186,6 +186,54 @@ def test_successful_automated_steps_do_not_create_repair_assignments(
     assert b_record.status == "completed"
 
 
+def test_explicit_automatic_handler_gets_visibility_guidance_only_for_repair(
+    tmp_path: Path,
+):
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    explicit: true
+    steps:
+      - A0: Do the manual work.
+        kind: prompt
+      - B: ~
+        shell: test -e fixed || { echo broken; exit 1; }
+        on_failure: fix
+      - C: Continue the manual work.
+        kind: prompt
+""",
+    )
+    failed = complete_manual(service, "auto")
+    assert failed.handler_repair is not None
+    assert failed.assignment_explicit_steps == ("B",)
+
+    repair = failed
+    rendered = MarkdownOutputAdapter().render_instruction(repair)
+
+    assert repair.explicit is True
+    assert "Explicit work guidance applies to: `B`." in rendered
+    assert "Do not independently execute the handler command" in repair.action_text
+    assert "ww complete TASK-1" in repair.continuation_command
+    state, snapshot = service.load("TASK-1")
+    assert snapshot.plan.items[state.cursor].owner == "ww"
+
+    (tmp_path / "fixed").touch()
+    result = service.complete(
+        "TASK-1",
+        artifact="Created fixed input.",
+        caller_role="worker",
+        assignment=repair.assignment_token,
+    )
+    assert result.item_name == "C"
+    assert result.handler_repair is None
+    state, snapshot = service.load("TASK-1")
+    item = snapshot.plan.items[state.cursor - 1]
+    record = state.item_executions[state.cursor - 1]
+    assert item.name == "B" and item.owner == "ww"
+    assert record.status == "completed" and not record.repair_pending
+
+
 def test_repair_completion_requires_active_assignment_and_artifact(tmp_path: Path):
     service = configured_service(tmp_path, workflow('shell: "false"'))
     repair = complete_manual(service, "auto")

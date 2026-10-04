@@ -82,13 +82,18 @@ def parse_yaml_configuration(
     """
     if not configuration_file_exists(path):
         raise ConfigurationError(f"workflow configuration not found: {path}")
-    return parse_yaml_text(
-        compose_configuration(path).text,
+    composed = compose_configuration(path)
+    configuration = parse_yaml_text(
+        composed.text,
         str(path),
         base=path.parent,
         extension_rule_groups=(
             extensions.rule_groups() if extensions is not None else ()
         ),
+    )
+    return replace(
+        configuration,
+        workflow_provenance=composed.workflow_provenance,
     )
 
 

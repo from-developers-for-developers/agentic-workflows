@@ -88,7 +88,12 @@ and writes nothing to disk. The other
 readers of the raw file, `init`'s checks in `../src/ww/cli/initialization.py`
 and the storage's missing-key and setup checks in `../src/ww/storage.py`, read
 the composed mapping too, so a definition in an imported file counts as
-present everywhere.
+present everywhere. The same fold records each winning workflow definition's
+physical source label and public level (`global`, `project`, or `local`). The
+normalized `WorkflowConfiguration` owns this immutable metadata, so imports
+inherit their importing level, overrides follow the winning definition, and
+the discovery catalog reads the same source of truth. Built-in workflows have
+no configured provenance.
 
 Explicit `argv` and `shell` action fields are the canonical YAML command
 notation. `CommandAction` rejects string commands and emits typed

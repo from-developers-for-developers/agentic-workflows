@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Parsing and validating the ww.yaml workflow configuration."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1536,9 +1537,9 @@ workflows:
 def test_yaml_text_parses_like_a_file(tmp_path: Path) -> None:
     text = "workflows:\n  - name: task\n    steps:\n      - work: Work.\n"
 
-    assert parse_yaml_text(text) == parse_yaml_configuration(
-        _write(tmp_path / "ww.yaml", text)
-    )
+    parsed_file = parse_yaml_configuration(_write(tmp_path / "ww.yaml", text))
+    assert parse_yaml_text(text) == replace(parsed_file, workflow_provenance={})
+    assert parsed_file.workflow_provenance["task"].source == "ww.yaml"
     with pytest.raises(ConfigurationError, match="invalid YAML in scenario: "):
         parse_yaml_text("workflows: [", "scenario")
     with pytest.raises(ConfigurationError, match="workflow configuration not found"):
