@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Semantic validation shared by parsed and programmatic workflows."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,41 @@ def test_init_is_a_reserved_step_name() -> None:
 
     with pytest.raises(ConfigurationError, match="'init' is reserved"):
         validate_configuration(configuration)
+
+
+@pytest.mark.parametrize(
+    "container",
+    [
+        StepDefinition("group", child_steps=(StepDefinition("child"),)),
+        StepDefinition("loop", loop_steps=(StepDefinition("child"),)),
+    ],
+)
+def test_interactive_is_rejected_on_pure_structural_containers(
+    container: StepDefinition,
+) -> None:
+    configuration = _configuration(
+        workflows=(
+            WorkflowDefinition("task", steps=(replace(container, interactive=True),)),
+        )
+    )
+
+    with pytest.raises(ConfigurationError, match="cannot be interactive"):
+        validate_configuration(configuration)
+
+
+def test_interactive_item_collector_remains_valid() -> None:
+    from ww.workflow_config import ItemFlow
+
+    configuration = _configuration(
+        workflows=(
+            WorkflowDefinition(
+                "task",
+                steps=(StepDefinition("collect", interactive=True, items=ItemFlow()),),
+            ),
+        )
+    )
+
+    validate_configuration(configuration)
 
 
 def test_rejects_workflow_boundary_hook_filtered_by_step() -> None:

@@ -29,9 +29,8 @@ PLAIN_TEXT = ChoiceMechanism(
     "order, and ask the operator to answer with the number or the label.",
 )
 
-# Some agents offer their question tool only in some modes (Codex in Plan mode,
-# most agents not in a non-interactive print mode), so each instruction ends in
-# the fallback every agent can honour.
+# Question-tool availability varies by host and session, so each instruction
+# ends in the fallback every agent can honour.
 _FALLBACK = (
     " If the tool is not available in this session, present the choices as a "
     "numbered list instead and ask the operator to answer with the number or "
@@ -60,9 +59,15 @@ CHOICE_MECHANISMS: dict[str, ChoiceMechanism] = {
         "The operator picks with the keyboard; a free-form answer through "
         '"Other" is a comment, not a choice.',
     ),
-    "codex": _tool(
-        "request_user_input",
-        "The operator picks a number; a free-form answer is a comment, not a choice.",
+    "codex": ChoiceMechanism(
+        "host question tool",
+        "Present the matter in your reply first. Inspect the host's available "
+        "question-tool schema and follow its supported fields, using structured "
+        "options when offered and a text-only question only when required. "
+        "Keep the choice pending until the operator explicitly answers; a "
+        "timeout, dismissal, or preselected value is not an answer. If no "
+        "suitable question tool is available, present the choices as a numbered "
+        "list and ask for the number or label.",
     ),
     "gemini": _tool(
         "ask_user",

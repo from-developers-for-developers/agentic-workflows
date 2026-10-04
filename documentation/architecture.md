@@ -88,7 +88,12 @@ and writes nothing to disk. The other
 readers of the raw file, `init`'s checks in `../src/ww/cli/initialization.py`
 and the storage's missing-key and setup checks in `../src/ww/storage.py`, read
 the composed mapping too, so a definition in an imported file counts as
-present everywhere.
+present everywhere. The same fold records each winning workflow definition's
+physical source label and public level (`global`, `project`, or `local`). The
+normalized `WorkflowConfiguration` owns this immutable metadata, so imports
+inherit their importing level, overrides follow the winning definition, and
+the discovery catalog reads the same source of truth. Built-in workflows have
+no configured provenance.
 
 Explicit `argv` and `shell` action fields are the canonical YAML command
 notation. `CommandAction` rejects string commands and emits typed
@@ -138,8 +143,7 @@ documents, lives below `../.ww` so projects can exclude one directory as a unit;
 the `.gitignore` lines `init` writes (`RUNTIME_IGNORE_LINES` in
 `../src/ww/config_files.py`) ignore that directory's contents rather than the
 directory, because Git cannot re-include a file under an ignored directory, and
-then re-include the shared learning files `team.md`, `company.md` and
-`project.md`. Agent instructions remain at the project root because
+then re-include the shared learning file `project.md`; existing lines are never touched. Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
 The interactive answers are remembered in `.ww/init-choices.json` so a repeat
 run asks nothing already decided; `init --force` reads none of them back (it
@@ -168,7 +172,8 @@ but runs its checks on the composed result, and adds the local-file patterns to
 That file is deliberately short. It states when to use ww and the rules for
 following its responses, and it sends agents to `discover`
 (`../src/ww/cli/discover.py`), which renders the project's current workflows,
-modes, runtimes, roles, start options, and commands. Keeping the choices in a
+modes, a start synopsis, and resume commands. ww's own workflows stay in the
+`workflows` catalog; the JSON keeps the full lists. Keeping the choices in a
 command rather than in copied prose means the guidance cannot drift from the
 configuration. Branch strategies are the one option core cannot know itself:
 an extension that names branches declares `branch_strategies`, and the registry
@@ -181,10 +186,10 @@ Potentially project-opinionated edits such as `../.gitignore` remain explicit us
 choices.
 
 Onboarding state (`../src/ww/onboarding.py`) is split by what it describes:
-the operator's `explain` preference and when ww learned about them live in
-`state.json` in the user directory, shared by every project, and the project's
-`setup.done` and learning timestamps live in project metadata under the `ww.`
-namespace. That namespace is reserved in `SavedMetadata` itself, so no workflow
+the operator's optional `explain` preference lives in `state.json` in the user
+directory, shared by every project, and the project's `setup.done` and
+`learned.project` timestamp live in project metadata under the `ww.` namespace.
+Another key is an unknown onboarding key. That namespace is reserved in `SavedMetadata` itself, so no workflow
 can save into it, and the storage port stays the one writer of
 `.ww/metadata.json`. `discover` reads the state to add its onboarding guidance;
 `ww onboarding` is the only command that sets it, and records only the
@@ -439,6 +444,14 @@ new YAML plugin surface: a new built-in construct needs a normalized input,
 planner, registration, and a test that demonstrates shared lifecycle behavior.
 Runtime loop transitions, child coordination, and handoff execution deliberately
 remain consumers of the saved plan rather than construct-planner concerns.
+
+The `explicit` visibility setting is resolved while configuration is
+normalized: workflow inheritance runs first, then each structural group,
+loop, item stage, and child stage inherits its nearest setting while preserving
+an explicit `false`. The compiler stores the effective value on each plan
+item; legacy snapshots decode a missing field as `false`. Instruction pages
+render operation and per-file diff guidance from that saved value, while
+ww-owned automatic work keeps its existing command and result output.
 
 An automatic action may override the `preflight` hook. Core runs it before
 recording the durable `in_progress` boundary; for extensions this verifies the
@@ -791,6 +804,9 @@ execution index.
 Reads recognize the document by its `ww.task-state` format discriminator.
 The document carries one schema version, and so do the plan snapshots and
 execution states inside it; a reader rejects any version but the current one.
+The plan snapshot is schema 2: it records `items` pass identity (`item_pass`,
+`item_collect_only`) on plan items, and a plan whose collection or templates
+lack a pass is refused rather than guessed at.
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
 Scoped cleanup of obsolete regular files follows. Cleanup failures are
@@ -1351,7 +1367,7 @@ including its `after_complete` hooks and built-in workflow summary. A failed
 child instead marks that coordinator failed so the parent does not appear done.
 
 Child publication and parent notification are separate task commits, so terminal
-reconciliation is repeatable. A child `next` or `recover` retries notification,
+reconciliation is repeatable. A child `next` retries notification,
 and a waiting parent's ordinary `next` refreshes every child outcome from the
 authoritative child aggregates before deciding whether to keep waiting. Repeating
 that refresh after the parent has advanced or completed is safe.
@@ -1465,10 +1481,15 @@ at render time.
 
 Some work is only enumerable after an agent has inspected an external source,
 such as the comments on a pull request. Items are therefore durable, run-local
-records rather than configuration-time loop values. One `items` step owns the
-whole flow: its own action is the collection, annotated `collect` and carrying
-any splitting guidance, and its completion expands the saved per-item templates
-into concrete plan items. A bare `items` step compiles one built-in
+records rather than configuration-time loop values. A workflow has one item
+collection and may hold several sequential `items` passes over it. Each `items`
+declaration is a pass with a stable identity (its step path): its own action is
+the collection step (the first pass records the items; later passes reuse them),
+annotated `collect` and carrying any splitting guidance, and its completion
+expands only that pass's saved per-item templates into concrete plan items, for
+the items recorded by then. Membership is frozen for the pass, so an item added
+meanwhile joins the next pass, or the next round of a loop, whose passes expand
+again each round. A bare `items` step compiles one built-in
 `handle-item` template with the combined `handle_item` operation. This
 preserves the executor's ordinary retry, artifact, and status rules while making
 each item's progress independently visible.
@@ -1478,9 +1499,9 @@ so the compiler sees ordinary steps; where stages still differ, the assignment
 bound splits at run time rather than the compiler rejecting the flow. Only the
 collection item carries `collect`: the `items`
 step's hooks wrap the entire flow, and a completion hook tagged `collect` would
-re-trigger expansion after the last item. Each workflow allows one `items` step,
-because collected items are run-scoped and every template expands at the first
-template position.
+re-trigger expansion after the last item. A pass's templates expand at its own
+collection step rather than at the first template position, and an `items` step
+nested in another's per-item stages is rejected.
 
 Per-item templates are full steps, not merely work handlers. Their applicable
 global, workflow, and step hooks are compiled into the template segment and
@@ -1493,8 +1514,16 @@ Each record retains both the source text and its analysis, proposed and actual
 solution, resolution/reporting flags, and an optional canonical-item reference.
 Related source comments can share work without disappearing from reporting.
 The item commands are the only mutation boundary, which keeps external agents
-from editing task files directly. The executor refuses to leave an item phase
-until every collected item is both resolved and reported.
+from editing task files directly. Leaving a pass requires only what its
+stages declare: an `analyze` stage needs `processed_item`, a `resolve` stage
+`actual_solution` and `resolved`, a `report` stage `reported`, so an analysis
+pass can lead into one batch fix. An unmet pass stops with `pass_incomplete`;
+the missing values are recorded with `update-item` and `next --retry` checks
+again. Per-item stages read the item's current record through `ww.item.*`
+values, and an automatic shell or argv stage can save its whole stdout into an
+item field (`saves: item.field.<name>`), after which a `report` stage marks only
+that item reported in the same commit as the save; the project's handler owns
+the idempotency of any remote effect.
 
 A flow declared `persistent` adds one task-level store beside the per-run copies,
 through the storage adapter like metadata. The run's copy stays the working
@@ -1732,7 +1761,7 @@ placement, wording, one confirmation); `rule_writes.py` holds the writes, each
 planned as a set of file contents and applied together, then validated by
 loading the configuration as any command would, and restored whole when that
 fails. Rule files are edited in place, keeping every line a change does not
-concern; the repo YAML is never rewritten, because PyYAML cannot round-trip
+concern; the repo YAML is never rewritten whole, because PyYAML cannot round-trip
 comments, so new groups go into `ww-rules.yaml`, a ww-owned import, and the
 repo file gains only its `imports` entry, checked by reading it back.
 `rules promote` is the one write that also changes the store, after the rule
@@ -1766,6 +1795,22 @@ the project, and only a change that loads is ever shown. The files are written
 once, after confirmation, in a `Transaction` that writes through symbolic links,
 keeps file permissions, and turns an `OSError` into a ww error after putting
 every file back.
+
+`ww setup update` (`../src/ww/workflow_update.py`) is the one write path for a
+workflow the configuration already defines. `config.composition.workflow_sites`
+lists every applied file that defines the name, in fold order, so the last is
+the definition in force; the target is that one, or, with `--level`, the
+last at that level, refused when it is not the winner (an edit there would
+change nothing). The write replaces only the target list item's lines, found
+with PyYAML's node marks (trailing blank and comment lines stay with the file);
+it is checked to reload as the old data with that entry swapped, validated in
+memory with `staged_files` like `setup apply`, and must leave the workflow's
+provenance pointing at the file written before the operator sees a diff.
+Comments inside the replaced entry are the disclosed loss; nothing else in the
+file moves. It is written through the same `Transaction`. `--inspect` on both
+setup commands compiles a workflow under the staged contents and prints its
+plan. The `ww-wizard` skill orchestrates these commands, `discover`'s
+provenance and the rules skills; it holds no engine of its own.
 
 ## Operator feedback learning
 

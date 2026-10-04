@@ -149,28 +149,89 @@ def test_repair_attempts_retain_worker_token_and_stop_at_limit(
     assert retried.operator_reason is None
 
 
-def test_operator_policy_stops_without_repair(tmp_path: Path):
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+def test_operator_policy_stops_without_repair(tmp_path: Path, runtime: str):
     service = configured_service(
         tmp_path, workflow("shell: echo failure; exit 1", "operator")
     )
-    failed = complete_manual(service, "single")
+    failed = complete_manual(service, runtime)
     assert failed.control == "awaiting_operator"
     assert failed.operator_reason == "handler_failed"
     assert failed.handler_repair is None
     assert "failure" in failed.error
 
 
-def test_successful_automated_steps_do_not_create_repair_assignments(tmp_path: Path):
-    service = configured_service(tmp_path, workflow('shell: "true"'))
-    result = complete_manual(service, "single")
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+@pytest.mark.parametrize(
+    "command",
+    ['shell: "true"', f"argv: {json.dumps([sys.executable, '-c', 'pass'])}"],
+)
+def test_successful_automated_steps_do_not_create_repair_assignments(
+    tmp_path: Path, runtime: str, command: str
+):
+    service = configured_service(tmp_path, workflow(command))
+    result = complete_manual(service, runtime)
     assert result.item_name == "C"
-    assert result.item_status == "in_progress"
+    assert result.item_status == ("in_progress" if runtime == "single" else "pending")
     assert result.handler_repair is None
     state, _ = service.load("TASK-1")
     assert not any(
         record.repair_pending or record.repair_failures
         for record in state.item_executions
     )
+    state, snapshot = service.load("TASK-1")
+    b_item = next(item for item in snapshot.plan.items if item.name == "B")
+    b_record = state.item_executions[snapshot.plan.items.index(b_item)]
+    assert b_item.owner == "ww"
+    assert b_record.status == "completed"
+
+
+def test_explicit_automatic_handler_gets_visibility_guidance_only_for_repair(
+    tmp_path: Path,
+):
+    service = configured_service(
+        tmp_path,
+        """workflows:
+  - name: task
+    explicit: true
+    steps:
+      - A0: Do the manual work.
+        kind: prompt
+      - B: ~
+        shell: test -e fixed || { echo broken; exit 1; }
+        on_failure: fix
+      - C: Continue the manual work.
+        kind: prompt
+""",
+    )
+    failed = complete_manual(service, "auto")
+    assert failed.handler_repair is not None
+    assert failed.assignment_explicit_steps == ("B",)
+
+    repair = failed
+    rendered = MarkdownOutputAdapter().render_instruction(repair)
+
+    assert repair.explicit is True
+    assert "Explicit work guidance applies to: `B`." in rendered
+    assert "Do not independently execute the handler command" in repair.action_text
+    assert "ww complete TASK-1" in repair.continuation_command
+    state, snapshot = service.load("TASK-1")
+    assert snapshot.plan.items[state.cursor].owner == "ww"
+
+    (tmp_path / "fixed").touch()
+    result = service.complete(
+        "TASK-1",
+        artifact="Created fixed input.",
+        caller_role="worker",
+        assignment=repair.assignment_token,
+    )
+    assert result.item_name == "C"
+    assert result.handler_repair is None
+    state, snapshot = service.load("TASK-1")
+    item = snapshot.plan.items[state.cursor - 1]
+    record = state.item_executions[state.cursor - 1]
+    assert item.name == "B" and item.owner == "ww"
+    assert record.status == "completed" and not record.repair_pending
 
 
 def test_repair_completion_requires_active_assignment_and_artifact(tmp_path: Path):

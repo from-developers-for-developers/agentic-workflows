@@ -3,20 +3,19 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
+from tests.example_documents import FILE_MARKER, examples
+from ww.cli import main
 from ww.config import load_configuration
 from ww.extensions import ExtensionRegistry
 from ww.plan import compile_workflow_plan
 from ww.project_config import load_project_config
 
-EXAMPLES = Path(__file__).parents[2] / "documentation/examples.md"
-_BLOCK = re.compile(
-    r"^## (\d+)\. .*?$|^```(yaml|json|markdown)\n(.*?)^```$", re.S | re.M
-)
 # A Markdown block whose first line names a file is a file the example uses,
 # such as a rule file; it is written into the project before loading.
 _FILE_HEADER = re.compile(r"<!-- (\S+) -->\n")
@@ -26,21 +25,55 @@ SKILLS = ("review-code",)
 SLASH_COMMANDS = ("ship",)
 
 
-def _examples() -> list[tuple[str, list[tuple[str, str]]]]:
-    sections: list[tuple[str, list[tuple[str, str]]]] = []
-    for match in _BLOCK.finditer(EXAMPLES.read_text(encoding="utf-8")):
-        if match.group(1):
-            sections.append((match.group(1), []))
-        elif sections:
-            sections[-1][1].append((match.group(2), match.group(3)))
-    return sections
+def _check_layered(
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    blocks: list[str],
+) -> None:
+    """Write each ``# file:`` block where its level reads it, then lint and plan."""
+    user = root / "user"
+    user.mkdir()
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(user))
+    project = root / "project"
+    project.mkdir()
+    for text in blocks:
+        marker = FILE_MARKER.match(text)
+        assert marker is not None, "every block of a layered example names its file"
+        name = marker.group(1)
+        target = user / "ww.yaml" if name.startswith("~") else project / name
+        target.write_text(text[marker.end() :], encoding="utf-8")
+    assert main(["--root", str(project), "lint"]) == 0
+    capsys.readouterr()
+    assert main(["--root", str(project), "discover", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    for workflow in report["workflows"]:
+        assert (
+            main(
+                [
+                    "--root",
+                    str(project),
+                    "plan",
+                    "--workflow",
+                    workflow["name"],
+                    "--agent",
+                    "codex",
+                ]
+            )
+            == 0
+        )
+        capsys.readouterr()
 
 
 @pytest.mark.parametrize(
-    ("number", "blocks"), _examples(), ids=[number for number, _ in _examples()]
+    ("number", "blocks"), examples(), ids=[number for number, _ in examples()]
 )
 def test_example_loads_and_compiles(
-    tmp_path: Path, number: str, blocks: list[tuple[str, str]]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    number: str,
+    blocks: list[tuple[str, str]],
 ) -> None:
     yaml_blocks = [text for kind, text in blocks if kind == "yaml"]
     json_blocks = [text for kind, text in blocks if kind == "json"]
@@ -51,6 +84,9 @@ def test_example_loads_and_compiles(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text[header.end() :], encoding="utf-8")
     assert yaml_blocks or json_blocks, f"example {number} has no configuration"
+    if any(FILE_MARKER.match(text) for text in yaml_blocks):
+        _check_layered(tmp_path, monkeypatch, capsys, yaml_blocks)
+        return
     skills = tmp_path / ".codex/skills"
     for name in SKILLS:
         (skills / name).mkdir(parents=True)
@@ -77,6 +113,6 @@ def test_example_loads_and_compiles(
 
 
 def test_examples_are_numbered_consecutively() -> None:
-    numbers = [int(number) for number, _ in _examples()]
+    numbers = [int(number) for number, _ in examples()]
 
     assert numbers == list(range(1, len(numbers) + 1))

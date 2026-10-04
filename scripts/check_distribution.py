@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tarfile
@@ -12,12 +13,16 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+DESIGN_DOCUMENTS = ("specification", "features", "examples")
 REQUIRED_WHEEL_PATHS = {
+    *(f"ww/assets/docs/{name}.md" for name in DESIGN_DOCUMENTS),
     "ww/assets/agent_instructions.md",
     "ww/assets/ww_skill.md",
+    "ww/assets/workflows/onboarding.yaml",
     "ww/_bundled_extensions/ww/git/extension.py",
 }
 REQUIRED_SDIST_PATHS = {
+    *(f"documentation/{name}.md" for name in DESIGN_DOCUMENTS),
     "src/ww/assets/agent_instructions.md",
     "src/ww/assets/ww_skill.md",
     "ext/ww/git/extension.py",
@@ -44,6 +49,51 @@ def _require_members(path: Path, required: set[str]) -> None:
         raise RuntimeError(f"{path.name} is missing required files: {detail}")
 
 
+def _skill_names(path: Path) -> set[str]:
+    """The skills an archive ships, from its ``*_skill.md`` asset files."""
+    suffix = "_skill.md"
+    prefix = "ww/assets/" if path.suffix == ".whl" else "src/ww/assets/"
+    return {
+        name.removeprefix(prefix).removesuffix(suffix)
+        for name in _archive_members(path)
+        if name.startswith(prefix)
+        and name.endswith(suffix)
+        and "/" not in name[len(prefix) :]
+    }
+
+
+def _require_exact_skills(path: Path, expected: set[str]) -> None:
+    """The shipped skill set is exactly ``defaults.SKILLS``."""
+    shipped = _skill_names(path)
+    if shipped != expected:
+        extra = ", ".join(sorted(shipped - expected)) or "none"
+        missing = ", ".join(sorted(expected - shipped)) or "none"
+        raise RuntimeError(
+            f"{path.name} ships the wrong skills: extra {extra}; missing {missing}"
+        )
+
+
+def _read_member(path: Path, name: str) -> bytes:
+    if path.suffix == ".whl":
+        with zipfile.ZipFile(path) as archive:
+            return archive.read(name)
+    with tarfile.open(path) as archive:
+        for member in archive.getmembers():
+            if member.name.split("/", 1)[-1] == name:
+                extracted = archive.extractfile(member)
+                assert extracted is not None
+                return extracted.read()
+    raise RuntimeError(f"{path.name} is missing {name}")
+
+
+def _require_document_parity(wheel: Path) -> None:
+    """The packaged design documents are the canonical files, byte for byte."""
+    for name in DESIGN_DOCUMENTS:
+        canonical = (ROOT / "documentation" / f"{name}.md").read_bytes()
+        if _read_member(wheel, f"ww/assets/docs/{name}.md") != canonical:
+            raise RuntimeError(f"{wheel.name} ships a stale copy of {name}.md")
+
+
 def _require_license(path: Path) -> None:
     members = _archive_members(path)
     has_license = any(
@@ -64,6 +114,7 @@ def main() -> int:
         (sdist,) = dist.glob("*.tar.gz")
         _require_members(wheel, REQUIRED_WHEEL_PATHS)
         _require_license(wheel)
+        _require_document_parity(wheel)
         _require_members(sdist, REQUIRED_SDIST_PATHS)
         _require_license(sdist)
 
@@ -80,6 +131,17 @@ def main() -> int:
             str(wheel),
             cwd=temporary_root,
         )
+        listing = subprocess.run(
+            (sys.executable, "-c", "from ww.defaults import SKILLS; print(*SKILLS)"),
+            cwd=ROOT,
+            env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        expected_skills = set(listing.stdout.split())
+        _require_exact_skills(wheel, expected_skills)
+        _require_exact_skills(sdist, expected_skills)
         _run(
             str(python),
             "-c",
@@ -89,6 +151,9 @@ def main() -> int:
                 "import ww\n"
                 "asset = files('ww.assets').joinpath('agent_instructions.md')\n"
                 "assert asset.is_file()\n"
+                "from ww.design_docs import read_design_document\n"
+                "for name in ('specification', 'features', 'examples'):\n"
+                "    assert read_design_document(name).startswith('# ')\n"
                 "assert Path(ww.__file__).parent.joinpath("
                 "'_bundled_extensions/ww/git/extension.py').is_file()\n"
             ),

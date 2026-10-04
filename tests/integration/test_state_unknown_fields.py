@@ -27,11 +27,11 @@ def _started_by_an_other_version(
     (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     original = PlanItem.to_dict
 
-    def with_retired_field(item: PlanItem) -> dict[str, object]:
-        return {**original(item), "retired_field": "set by another ww"}
+    def with_extra_field(item: PlanItem, *args: bool) -> dict[str, object]:
+        return {**original(item, *args), "extra_field": "set by another ww"}
 
     with monkeypatch.context() as patch:
-        patch.setattr(PlanItem, "to_dict", with_retired_field)
+        patch.setattr(PlanItem, "to_dict", with_extra_field)
         WorkflowService(Storage(tmp_path)).start(
             "task", "TASK-1", agent="codex", init_artifact="Do it."
         )
@@ -43,7 +43,7 @@ def test_a_plan_with_a_field_ww_does_not_know_loads(
 ) -> None:
     service = _started_by_an_other_version(tmp_path, monkeypatch)
     stored = (tmp_path / ".ww/tasks/TASK-1/state.json").read_text(encoding="utf-8")
-    assert '"retired_field"' in stored
+    assert '"extra_field"' in stored
 
     assert service.status("TASK-1").workflow == "task"
     # It keeps working: advance, save, and load again.

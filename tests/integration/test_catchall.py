@@ -146,7 +146,7 @@ def test_lookup_asks_the_operator_before_a_never_seen_task(
     report = _lookup(root, capsys, "99", "--agent", "codex")
 
     assert report["outcome"] == "confirm"
-    assert report["choice_mechanism"] == "request_user_input"
+    assert report["choice_mechanism"] == "host question tool"
     assert [choice["label"] for choice in report["choices"]] == [
         "Create FOOBAR-99",
         "Work without ww",

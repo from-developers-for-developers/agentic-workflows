@@ -631,9 +631,13 @@ def _task_branch(
         context.workflow == "ww-scriptize-rules"
         and "default" not in settings.base_branches
     ):
-        return None, None, (
-            "ww-scriptize-rules requires extensions.ww/git.base_branches.default "
-            "in ww.json"
+        return (
+            None,
+            None,
+            (
+                "ww-scriptize-rules requires extensions.ww/git.base_branches.default "
+                "in ww.json"
+            ),
         )
     strategy = context.values.get(BRANCH_NAMING_STRATEGY)
     branch_format = settings.branch_format(_lane(context), strategy)

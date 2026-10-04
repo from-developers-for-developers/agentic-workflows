@@ -145,10 +145,8 @@ The wizard asks a few questions and then sets the project up:
 - **Git setup**, in a Git repository: it enables the bundled `ww/git`
   extension and asks about worktrees and branch formats, and offers to keep
   `.ww/` out of Git (`.ww/*` in `.gitignore`), except the files where ww
-  records what it learned about your team, company and project
-  (`.ww/team.md`, `.ww/company.md`, `.ww/project.md`), which are meant to be
-  committed; `.ww/myrole.md`, your role in the project, stays ignored as
-  personal to the checkout. It also keeps local configuration files
+  records what it learned about the project (`.ww/project.md`), which is
+  meant to be committed. It also keeps local configuration files
   (`*ww.local.yaml`, `*ww.local.json`,
   `ww-setup.local.yaml`) out of Git.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
@@ -156,8 +154,10 @@ The wizard asks a few questions and then sets the project up:
   work through ww by name, a `noww` skill, so you can tell it to leave ww
   out, a `ww-rule` skill, which turns your own words into rules for ww's
   steps, and the `ww-setup` skill with the skills it guides through
-  (`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
-  `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`), and
+  (`ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
+  `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`), a `ww-wizard`
+  skill that helps you create or change a workflow, improve rules or pick an
+  approach (changes to an existing workflow go through `ww setup update`), and
   `ww-deduce-feedback` and `ww-feedback-rules` for learning from completed
   artifacts and proposing rules.
 - **Your user configuration directory**, `~/.config/ww/`,
@@ -167,13 +167,14 @@ It finishes by printing any manual additions you still need in `AGENTS.md` or
 `CLAUDE.md`, the exact permission entries that let your agents run ww without
 asking each time (for Claude Code, the lines to add to
 `.claude/settings.json`), a reminder to define a workflow, and the next step:
-run the `ww-setup` skill to set ww up for you, your team and this project.
-That skill interviews you briefly about how you and your team work, reads how
-the project is organised (its tooling, tracker, conventions and recurring
-pitfalls, not its features), and proposes a complete setup shaped by the
-project's own branches, commands and history, each piece with the evidence
-for it, which you try alone first and share with the team if you like. Each
-part is optional and shows you every change before ww places it; see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
+run the `ww-setup` skill to set ww up for this project.
+That skill learns the repository (what it is for, its stack, commands, CI,
+review and release process, conventions and recurring pitfalls), asks a few
+questions about your process (express setup skips them and derives defaults
+from the project), and proposes a minimal setup shaped by the project's own
+branches, commands and history, each piece with the evidence for it, which
+you try alone first and share with the team if you like. It never interviews
+you about who you are, your role, your team or your company. Each part is optional and shows you every change before ww places it; see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
 
 `init` takes flags for every prompt if you would rather not answer them
 interactively — `--no-input` accepts all defaults, and
@@ -222,8 +223,8 @@ Check it before you run anything:
 exact, ordered plan that would run — every step, hook, and handler — without
 creating any task state.
 
-[documentation/examples.md](documentation/examples.md) has fifteen complete,
-tested `ww.yaml` files, from this one up to loops, per-item work,
+[documentation/examples.md](documentation/examples.md) has twenty-one complete,
+tested `ww.yaml` examples, from this one up to loops, per-item work,
 child tasks, and Git integration.
 
 ### 4. Ask your agent to do the work
@@ -237,8 +238,8 @@ usual way, and it runs ww for you:
 `WW_AGENT_INSTRUCTIONS.md` tells it to route project work through ww, and the
 installed `ww` skill lets you name the tool explicitly. From there the agent
 starts at `./ww discover`, which tells it whether to use ww in this project
-by default, only when you ask for it, or not at all, and lists the workflows,
-modes, runtimes, start options, and the exact commands to run. It picks the workflow matching your request and opens the
+by default, only when you ask for it, or not at all, and lists the project's workflows,
+modes, and the exact commands to start and resume work. It picks the workflow matching your request and opens the
 task:
 
 ```console
@@ -306,7 +307,9 @@ own chat, or opens a local operator page for a per-item answer sheet, and the
 task waits. An **automatic handler failing** — a test suite that will not pass,
 a commit that is rejected — stops the task and reports the error, because
 recovery is your decision, not the agent's: retry the handler, or force past it
-with a recorded reason.
+with a recorded reason. A stop for an incomplete item pass (`pass_incomplete`)
+is cleared by recording the missing values with `update-item` and then
+`next --retry`; forcing is refused there.
 
 If the agent's own work genuinely cannot be finished, it records that rather
 than leaving the task open:
@@ -457,8 +460,8 @@ only the documented public extension API.
 
 ## Sensitive runtime data
 
-Treat `.ww/` as private runtime data, apart from the shared learning files
-`team.md`, `company.md` and `project.md`, which are meant for the repository. It can contain task errors, worker
+Treat `.ww/` as private runtime data, apart from the shared learning file
+`project.md`, which is meant for the repository. It can contain task errors, worker
 artifacts, command stdout/stderr, metadata, and configured extension settings;
 any of those may include credentials or other sensitive values supplied to a
 workflow. The audit file `.ww/executions.jsonl` is owner-readable only and
@@ -574,10 +577,12 @@ ww-agentic-workflows complete TASK-123 --role worker \
 
 ## Documentation
 
-- [specification.md](documentation/specification.md) is the concise `ww.yaml`
-  specification, including allowed keys, value types, and constraints.
-- [features.md](documentation/features.md) is the complete user/developer feature reference,
-  with configuration and command examples.
+- [specification.md](documentation/specification.md) is the exact `ww.yaml`
+  specification: keys, value types, defaults, scopes and failure semantics.
+- [features.md](documentation/features.md) is the design guide and feature
+  reference: when to use what, with configuration and command examples.
+- Both, with the examples below, are the authorities for designing workflows.
+  An installed ww prints its own copies: `ww docs specification|features|examples`.
 - [architecture.md](documentation/architecture.md) describes internals, boundaries, state, and
   design decisions.
 - [agent-hooks.md](documentation/agent-hooks.md) covers the agent's own hooks
@@ -601,8 +606,10 @@ scripts/test
 .venv/bin/python scripts/check_distribution.py
 ```
 
-`scripts/test` creates or reuses `.venv` and runs ruff, mypy and the test
-suite, in parallel.
+`scripts/test` creates or reuses `.venv` with a Python version supported by
+`pyproject.toml`, repairs a partial development install, then runs ruff, mypy
+and the test suite. Set `WW_PYTHON` to choose the interpreter for a new
+environment. It preserves existing environments when setup fails.
 
 ## License
 

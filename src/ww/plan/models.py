@@ -222,6 +222,7 @@ class PlanItem:
     # A conversation with the operator; performed by the session that can
     # talk to them, so ``role`` is ``manager`` as well.
     interactive: bool = False
+    explicit: bool = False
     learnable: bool = False
     choices: tuple[ChoiceDefinition, ...] = ()
     # A per-item stage the operator answers on the operator page.
@@ -240,6 +241,16 @@ class PlanItem:
     item_operation: ItemOperation | None = None
     item_template: bool = False
     item_id: str | None = None
+    # The stable identity of the ``items`` declaration this item belongs to: its
+    # logical step path.  Carried by the collection item and by every per-item
+    # stage and hook (templates and their concrete copies), and by nothing
+    # else.  It is plan data, independent of display names and work-item IDs,
+    # so a later pass can expand exactly its own templates.  Not
+    # ``child_stage``, which belongs to ``children``.
+    item_pass: str | None = None
+    # On a collection item: this pass only collects or reconciles items and
+    # has no per-item stages (explicit ``items: {steps: []}``).
+    item_collect_only: bool = False
     item_assignment: ItemAssignment = "per_step"
     # Set on every body step and hook of the nearest enclosing ``loop``.
     loop_id: str | None = None
@@ -442,8 +453,8 @@ class PlanItem:
             raise ValueError("only agent-owned or CLI plan items can save metadata")
         if self.update_document and self.owner != "agent":
             raise ValueError("only agent-owned plan items can update documents")
-        if self.update_item and self.owner != "agent":
-            raise ValueError("only agent-owned plan items can update items")
+        if self.update_item and self.owner != "agent" and self.kind != "cli":
+            raise ValueError("only agent-owned or CLI plan items can save item fields")
         metadata_names = [item.name for item in self.save_metadata]
         metadata_keys = [(item.scope, item.key) for item in self.save_metadata]
         if len(metadata_names) != len(set(metadata_names)):
@@ -459,7 +470,13 @@ class PlanItem:
                 raise ValueError("plan item has overlapping saved metadata keys")
 
     def to_dict(self) -> dict[str, object]:
+        """The persisted form."""
         data = self._to_dict()
+        # Pass identity is written only where it applies.
+        if self.item_pass is not None:
+            data["item_pass"] = self.item_pass
+        if self.item_collect_only:
+            data["item_collect_only"] = True
         if self.on_failure != "operator":
             data["on_failure"] = self.on_failure
             data["max_handler_fixes"] = self.max_handler_fixes
@@ -477,6 +494,8 @@ class PlanItem:
             del data["update_document"]
         if not self.interactive:
             del data["interactive"]
+        if not self.explicit:
+            del data["explicit"]
         if not self.learnable:
             del data["learnable"]
         if not self.choices:
@@ -530,6 +549,7 @@ class PlanItem:
             "role": self.role,
             "subagents": self.subagents,
             "interactive": self.interactive,
+            "explicit": self.explicit,
             "learnable": self.learnable,
             "choices": [choice.to_dict() for choice in self.choices],
             "ui": self.ui,

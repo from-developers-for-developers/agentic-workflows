@@ -555,6 +555,9 @@ class PlanItemExecution:
     interaction_ended: bool = False
     # The option the operator chose, when the step offered choices.
     chosen: str | None = None
+    # On an assessment's record: the outcome ``next --outcome`` chose, once
+    # chosen.  Until then the assessment is waiting for its answer.
+    assessment_outcome: str | None = None
     # Stable across retries of this plan item.  It identifies the external
     # operation whose outcome may be checked after an interrupted process.
     operation_id: str | None = None
@@ -640,6 +643,11 @@ class PlanItemExecution:
                 self.held_completion.to_dict() if self.held_completion else None
             ),
             "verification": [rule.to_dict() for rule in self.verification],
+            **(
+                {"assessment_outcome": self.assessment_outcome}
+                if self.assessment_outcome is not None
+                else {}
+            ),
         }
 
     @classmethod
@@ -699,6 +707,9 @@ class PlanItemExecution:
                 data.get("interaction_ended", False), "interaction ended"
             ),
             chosen=expect_optional_string(data.get("chosen"), "chosen option"),
+            assessment_outcome=expect_optional_string(
+                data.get("assessment_outcome"), "assessment outcome"
+            ),
             operation_id=expect_optional_string(
                 data.get("operation_id"), "operation_id"
             ),

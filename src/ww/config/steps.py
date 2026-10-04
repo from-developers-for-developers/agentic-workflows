@@ -62,6 +62,7 @@ STEP_ONLY_KEYS: set[str] = {
     "role",
     "subagents",
     "interactive",
+    "explicit",
     "learnable",
     "choices",
     "profile",
@@ -73,6 +74,9 @@ STEP_ONLY_KEYS: set[str] = {
     "handler",
     "question",
     "outcomes",
+    "positive",
+    "negative",
+    "mixed",
     "rules",
 }
 
@@ -188,9 +192,13 @@ _STEP_CONTENT_KEYS = frozenset(
         "loop",
         "items",
         "children",
+        "explicit",
         "handoff_to",
         "question",
         "outcomes",
+        "positive",
+        "negative",
+        "mixed",
         "item_phase",
         "rules",
     }
@@ -264,6 +272,11 @@ def _parse_step(
     artifact, artifact_from = _parse_artifact(mapping, path, referenced)
     role, subagents, profile = _parse_performer(mapping, path, referenced)
     interactive, ui, choices = _parse_interactive(mapping, path, referenced, item_stage)
+    explicit = mapping.get(
+        "explicit", referenced.explicit if referenced is not None else None
+    )
+    if "explicit" in mapping and not isinstance(explicit, bool):
+        raise ConfigurationError(f"{path}.explicit must be true or false")
     if interactive and role == "worker":
         raise ConfigurationError(
             f"{path} is interactive, so the manager holds the conversation; "
@@ -320,6 +333,7 @@ def _parse_step(
         role=role,
         subagents=subagents,
         interactive=interactive,
+        explicit=explicit,
         learnable=learnable,
         choices=choices,
         ui=ui,
@@ -379,7 +393,20 @@ def _step_mapping(
         # the handler, exactly as a bare hook entry does; settings such as
         # ``profile`` or ``model`` on the step still override the copy.
         mapping = {**mapping, "handler": mapping["name"]}
-    _only(mapping, _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}, path)
+    allowed = _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}
+    if mapping.get("name") == "assess":
+        unknown_branches = {
+            key
+            for key, value in mapping.items()
+            if key not in allowed and isinstance(value, dict)
+        }
+        if unknown_branches:
+            label = sorted(unknown_branches)[0]
+            raise ConfigurationError(
+                f"{path}.{label} is not a direct assessment branch; "
+                "use positive, negative, mixed, or outcomes"
+            )
+    _only(mapping, allowed, path)
     return mapping
 
 
@@ -395,9 +422,26 @@ def _parse_assessment(
     )
     if question is not None and mapping["name"] != "assess":
         raise ConfigurationError(f"{path}.question is only valid for an assess step")
+    direct = {
+        label: mapping[label]
+        for label in ("positive", "negative", "mixed")
+        if label in mapping
+    }
+    if direct and question is None:
+        raise ConfigurationError(
+            f"{path}.{next(iter(direct))} requires an assess question"
+        )
+    if direct and "outcomes" in mapping:
+        raise ConfigurationError(
+            f"{path}.outcomes cannot be combined with direct assessment branches"
+        )
     if "outcomes" in mapping and question is None:
         raise ConfigurationError(f"{path}.outcomes requires an assess question")
-    outcomes = _parse_assessment_outcomes(mapping, path, handlers_by_name)
+    outcomes = (
+        _parse_assessment_branches(direct, path, handlers_by_name, "")
+        if direct
+        else _parse_assessment_outcomes(mapping, path, handlers_by_name)
+    )
     if question is None:
         return None, outcomes, base
     if any(
@@ -819,8 +863,8 @@ def _parse_items(
         if "description" in value
         else None
     )
-    persistent = value.get("persistent", False)
-    if not isinstance(persistent, bool):
+    persistent = value.get("persistent")
+    if "persistent" in value and not isinstance(persistent, bool):
         raise ConfigurationError(f"{items_path}.persistent must be true or false")
     identity = value.get("identity")
     if identity is not None and (
@@ -832,7 +876,7 @@ def _parse_items(
         isinstance(name, str) and FIELD_NAME.fullmatch(name) for name in unique_raw
     ):
         raise ConfigurationError(f"{items_path}.unique must be a list of field names")
-    unique = tuple(dict.fromkeys(([identity] if identity else []) + unique_raw))
+    unique = tuple(dict.fromkeys(unique_raw)) if "unique" in value else None
     assignment = cast(
         ItemAssignment,
         _assignment(
@@ -997,22 +1041,36 @@ def _parse_assessment_outcomes(
     mapping: dict[str, Any], path: str, handlers_by_name: dict[str, HandlerDefinition]
 ) -> tuple[StepDefinition, ...]:
     raw = mapping.get("outcomes", {})
+    return _parse_assessment_branches(raw, path, handlers_by_name, ".outcomes")
+
+
+def _parse_assessment_branches(
+    raw: Any,
+    path: str,
+    handlers_by_name: dict[str, HandlerDefinition],
+    field_path: str,
+) -> tuple[StepDefinition, ...]:
+    """Normalize wrapped outcomes or sibling standard branches to steps."""
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
-        raise ConfigurationError(f"{path}.outcomes must be a mapping")
+        raise ConfigurationError(f"{path}{field_path} must be a mapping")
     result = []
     for label, value in raw.items():
         if not isinstance(label, str) or not _NAME.fullmatch(label):
-            raise ConfigurationError(f"{path}.outcomes keys must be normalized names")
+            raise ConfigurationError(
+                f"{path}{field_path} keys must be normalized names"
+            )
         if not isinstance(value, dict):
-            raise ConfigurationError(f"{path}.outcomes.{label} must be a step mapping")
+            raise ConfigurationError(
+                f"{path}{field_path}.{label} must be a step mapping"
+            )
         if "name" in value:
-            raise ConfigurationError(f"{path}.outcomes.{label} must not set name")
+            raise ConfigurationError(f"{path}{field_path}.{label} must not set name")
         if "stop_workflow" in value:
             if value != {"stop_workflow": True}:
                 raise ConfigurationError(
-                    f"{path}.outcomes.{label}.stop_workflow must be true and "
+                    f"{path}{field_path}.{label}.stop_workflow must be true and "
                     "stand alone: the outcome ends the workflow and runs nothing"
                 )
             result.append(StepDefinition(label, stop_workflow=True))
@@ -1020,7 +1078,7 @@ def _parse_assessment_outcomes(
         result.append(
             _parse_step(
                 {"name": label, **value},
-                f"{path}.outcomes.{label}",
+                f"{path}{field_path}.{label}",
                 handlers_by_name,
             )
         )

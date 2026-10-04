@@ -96,6 +96,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _assignment_preview(lines, instruction)
         delegating = audience(instruction) is Audience.MANAGER_DELEGATING
         if delegating and instruction.role == "worker":
+            _assignment_explicit_guidance(lines, instruction)
             _worker_bootstrap(lines, instruction)
             return _document(lines)
         _assignment_scope(lines, instruction)
@@ -104,6 +105,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _task_requirements(lines, instruction)
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
+        _explicit_guidance(lines, instruction)
         _modes(lines, instruction)
         _rules(lines, instruction)
         _verification(lines, instruction)
@@ -515,6 +517,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "fix_limit": "the step's checks reached their fix limit",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
+    "pass_incomplete": "an items pass is missing item records",
 }
 
 
@@ -607,6 +610,17 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
                     if value is not None
                 ),
                 f"Requested profile: `{preview['requested_profile'] or 'none'}`",
+                *(
+                    [
+                        "Explicit work guidance applies to: "
+                        + ", ".join(
+                            f"`{step}`" for step in _strings(preview["explicit_steps"])
+                        )
+                        + "."
+                    ]
+                    if preview.get("explicit_steps")
+                    else []
+                ),
             ]
         )
         scope = preview.get("item_scope") or preview.get("loop_scope")
@@ -654,6 +668,20 @@ def _assignment_scope(lines: Lines, instruction: Instruction) -> None:
             "says control returns to the manager.",
         ]
     )
+    _assignment_explicit_guidance(lines, instruction)
+
+
+def _assignment_explicit_guidance(lines: Lines, instruction: Instruction) -> None:
+    if not instruction.assignment_explicit_steps:
+        return
+    lines.extend(
+        [
+            "",
+            "Explicit work guidance applies to: "
+            + ", ".join(f"`{step}`" for step in instruction.assignment_explicit_steps)
+            + ". Their own pages carry the operation and per-file diff details.",
+        ]
+    )
 
 
 def _continues_assignment(instruction: Instruction) -> bool:
@@ -681,6 +709,7 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
         ]
     )
     _work(lines, instruction)
+    _explicit_guidance(lines, instruction)
     _modes(lines, instruction)
     _rules(lines, instruction)
     _documents(lines, instruction)
@@ -781,6 +810,21 @@ def _work(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", f"> **No subagents.** {NO_SUBAGENTS}"])
     _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
+
+
+def _explicit_guidance(lines: Lines, instruction: Instruction) -> None:
+    if not instruction.explicit or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Visible work")
+    lines.extend(
+        [
+            "Before each meaningful operation, describe what you are about to do. "
+            "After changing each file, show its concrete edits or a focused diff. "
+            "For large changes, provide a concrete diff artifact. Name every "
+            "changed file, and redact secrets. You may group related files into "
+            "batches, but do not hide edits behind a vague summary.",
+        ]
+    )
 
 
 def _modes(lines: Lines, instruction: Instruction) -> None:
@@ -1225,12 +1269,13 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
             "Hold this conversation with the operator in this session, "
             "because a delegated worker cannot talk to them: present the matter, "
             "ask, listen, and clarify. Record nothing while you talk. "
-            "Open by telling the operator: say `ww done` when you are finished "
-            "with this; I will then record our conversation and move on. "
-            "When you judge the conversation has covered what the step needs, "
-            "ask the operator with your question tool, or as a numbered list "
-            "in the chat where you have none: `Move on` or `I have more`; on "
-            '`Move on`, or an unmistakable "we\'re done", end it.',
+            "Respond to the operator's questions and corrections until the "
+            "conversation covers what this step needs. Treat clear contextual "
+            "completion, such as `done`, `I'm done`, `looks good, continue`, "
+            "or an appropriate final choice, as permission to end; if it is "
+            "ambiguous, ask naturally whether they want to continue or finish. "
+            "`Done for today` means pause: record the conversation and use the "
+            "pause command, leaving the interaction open to resume later.",
             "",
             "When it ends, record both sides verbatim and end the interaction "
             "in one command, then complete the step; completion is refused "
@@ -1483,6 +1528,9 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.operator_reason == "value_unavailable":
         _value_unavailable(lines, instruction)
         return
+    if instruction.operator_reason == "pass_incomplete":
+        _pass_incomplete(lines, instruction)
+        return
     child = _failed_child(instruction)
     if child is None:
         lines.extend(["", *_failed_handler_guidance(instruction)])
@@ -1726,6 +1774,36 @@ def _value_unavailable(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]
         )
+
+
+def _pass_incomplete(lines: Lines, instruction: Instruction) -> None:
+    """A pass gate: the pass's items lack records; nothing failed or ran."""
+    lines.extend(
+        [
+            "",
+            "The items pass has finished its stages, but the items named in "
+            "the error above lack what those stages declare. No handler "
+            "failed, and the next step has not started.",
+        ]
+    )
+    if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
+        lines.extend(
+            [
+                "",
+                f"Stop here. {_return_phrase(instruction)}: the operator decides "
+                "how to go on.",
+            ]
+        )
+        return
+    _append_section(lines, "Operator recovery")
+    lines.append(
+        "Nothing else runs until the user, who is the `ww` operator, decides. "
+        "Show them what each item lacks. Once the missing values are recorded "
+        "with `update-item`, by them or by you at their request, check the "
+        "items again:"
+    )
+    for command in instruction.recovery_commands:
+        lines.extend(["", "```console", command.command, "```"])
 
 
 def _interrupted(lines: Lines, instruction: Instruction) -> None:

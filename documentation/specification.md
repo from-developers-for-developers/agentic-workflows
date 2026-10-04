@@ -3,6 +3,11 @@
 `../ww.yaml` defines what `ww` workflows do. The file is strict: unknown
 keys, invalid types, and invalid references are errors.
 
+This is the exact reference; [the features guide](features.md) says when to use
+what, and [the examples](examples.md) are runnable. An installation prints
+its own same-version copies with `ww docs specification`, `ww docs features`
+and `ww docs examples` (`docs` is read-only and takes no project state).
+
 ## Common types
 
 - **Name:** a non-empty string matching `[A-Za-z_][A-Za-z0-9_.-]*`.
@@ -18,8 +23,8 @@ keys, invalid types, and invalid references are errors.
   printed commands invoke ww: `./ww` or the configured `executable`),
   `{{ww.documents.<name>}}`,
   `{{ww.metadata.<path>}}`, `{{ww.project_metadata.<path>}}`, on a per-item
-  stage `{{ww.item.id}}`, `{{ww.item.text}}`, and `{{ww.item.field.<name>}}`
-  for the stage's own item, and on a per-child stage `{{ww.child.*}}`. A
+  stage the `{{ww.item.*}}` values of the stage's own item (see
+  [Item values](#item-values)), and on a per-child stage `{{ww.child.*}}`. A
   configured extension may add values under `{{ww.<namespace>.<name>}}`:
   with `ww/git` listed in the settings, `{{ww.git.branch}}` (the task's
   branch), `{{ww.git.base_branch}}` (the branch it was created from) and
@@ -120,6 +125,23 @@ directory when it is missing.
 - `lint` lists the configuration files it read, and `plan` ends with the same
   list; `lint` notices name the file of the level that overrode a definition.
 
+The `discover --json` entries in `workflows`, `builtin_workflows`, and
+`catchall` include additive `source` and `source_level` fields. Configured
+workflows report the winning YAML definition's physical source label and its
+public level (`global`, `project`, or `local`); imported definitions keep the
+level of the file that imported them. A workflow with no configured
+YAML definition, such as an unconfigured built-in or the unconfigured
+catch-all, reports `null` for both fields; a built-in or the catch-all that a
+configuration file defines has that file as its origin. Existing workflow
+fields keep their meanings. The Markdown shows each project workflow as
+`name — [level: path] description`, sorted local, then project, then global,
+stable within a level, with the home directory written `~` and an honest
+`other` label, never `local`, for a workflow without a configured source. The
+ordering is only guidance for choosing between workflows that fit, never
+overriding an explicit request, and does not change configuration or execution
+order. `discover` Markdown omits the rules notice (`rules_notice` stays in
+JSON and in task instructions).
+
 ```yaml
 # ~/.config/ww/ww.yaml
 handlers:
@@ -144,7 +166,12 @@ machine; see the features guide.
 ## Setup fragments
 
 `ww setup apply <file> --for me|team` places configuration a setup skill
-proposes; see the features guide for the command. The file is a YAML
+proposes; see the features guide for the command. `ww setup update <name>
+<file> [--level local|project|global]` replaces one workflow the
+configuration already defines, in the file that defines it: the fragment holds
+only `workflows` with that one entry, the edit goes to the definition that
+wins (or, with `--level`, is refused when a higher-precedence definition hides
+that level's), and only that list item's lines change. The file is a YAML
 fragment with any of the root keys `workflows`, `modes`, `profiles`,
 `documents`, `handlers`, `hooks`, and `rules`, in this notation, plus an
 optional `settings` mapping of `ww.json` keys:
@@ -240,6 +267,7 @@ Each item in `workflows` accepts:
 | `subagents` | boolean | no | `false`: no step's performer spawns subagents, unless a step sets `true`; see the step key. |
 | `handoff` | — | — | Removed; rejected with a message. A workflow transition (`handoff_to` on the last step) makes a handoff workflow; see the step key `handoff_to`. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww.json`, and the flag outranks it. |
+| `explicit` | boolean | no | Default `false`; every step inherits it unless it or an enclosing step sets its own; see the step key. |
 | `hooks_from` | string | no | The workflow whose global hooks this one runs with: a global hook filtered with `workflows` applies here when its filter admits this workflow's own name or the named workflow, so this workflow takes that lane's branch, worktree and commit handling. Extensions receive the lane as `ExtensionContext.lane` and key per-workflow settings by it: `ww/git` takes the lane's `branch_name_formats` and `base_branches` entries, while its records and `{{ww.task.workflow}}` keep the workflow's own name and `{{ww.task.lane}}` gives its formats and argv base-branch commands the lane. Rule groups and modes filtered with `workflows` keep matching the workflow's own name only: they are the lane's conventions, not its handling. Must name another workflow that has no `hooks_from` of its own. Set it in the workflow definition in `ww.yaml`. The plan freezes it, so a run keeps its lane. |
 | `needs_hooks_from` | boolean | no | The workflow refuses to run until `hooks_from` is set: `start` (before a bootstrap request is opened), a handoff to it, and a replan of a run whose recompiled workflow lacks it (a `plan_changed` refusal). The message names `hooks_from` in the workflow definition in `ww.yaml`. Defaults to `false`. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
@@ -258,7 +286,7 @@ the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 syntax. `enabled` is `true` (the default: agents use ww for project work),
 `false` (agents do not use ww, `discover` says only that, and `start` refuses),
 or `"on_request"` (ww stays available, but agents use it only when the user
-explicitly asks for it; `discover` says so before its full catalog and reports
+explicitly asks for it; `discover` says so before its workflows and reports
 `"enabled": "on_request"` in JSON); any other value is an error naming the three.
 `limits` holds two positive integers, each defaulting to `3`: `rounds`, the
 round limit of a step `loop` without its own `max_rounds`, and `fixes`, the
@@ -328,9 +356,9 @@ user level:
   nothing.
 - Built-in workflows follow the configured ones. They are added after the
   levels are composed, so `extends: false` never removes them.
-- `discover` lists `catchall` under its own heading, and the other
-  built-in workflows under "ww's own workflows" (`builtin_workflows` in JSON),
-  apart from the project's.
+- `discover` lists `catchall` under its own heading. Its Markdown leaves the
+  other built-in workflows to the `workflows` catalog, which it points at;
+  `builtin_workflows` in JSON still lists them apart from the project's.
 - A built-in's `recommended_next_workflow` naming a workflow that is switched
   off is dropped.
 
@@ -339,18 +367,15 @@ The built-in workflows:
 | Workflow | File | Purpose |
 | --- | --- | --- |
 | `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
-| `ww-learn` | `onboarding.yaml` | Interviews the operator into the documents `me`, `myrole`, `team` and `company`. |
-| `ww-express` | `onboarding.yaml` | Infers the documents `me`, `myrole`, `team` and `company` from the repository and writes them once the operator confirms. |
-| `ww-learn-project` | `onboarding.yaml` | Scans how the project's work is organised into `project`. |
-| `ww-suggest` | `onboarding.yaml` | Designs a setup with the operator, proposes it in full, and places it with `setup apply`. |
-| `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |
+| `ww-learn-project` | `onboarding.yaml` | Learns the repository (purpose, stack, verify commands, CI, review and release process, conventions, pitfalls) into `project`, refreshing an existing file. |
+| `ww-suggest` | `onboarding.yaml` | Asks a few process questions (express setup skips them), designs a minimal setup with the operator, proposes it in full, and places it with `setup apply`. |
+| `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes; a workflow already defined is changed with `setup update`. |
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 | `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own from the required `ww/git` default base, following its worktree settings; automatic Git hooks, `restartable`. |
 
-`onboarding.yaml` also declares the documents `me` (`scope: user`), `myrole`,
-`team`, `company` and `project` (`scope: project`, `path: .ww/<name>.md`;
-`myrole.md` stays git-ignored, personal to the checkout),
+`onboarding.yaml` also declares the documents `project` (`scope: project`,
+`path: .ww/project.md`) and
 `setup_proposal` (a task document at `.ww/tasks/{{ww.task.id}}/setup-proposal.yaml`),
 and the mode `ww-narrate`. See the features guide,
 [Setting ww up](features.md#setting-ww-up-learning-and-suggestions).
@@ -441,9 +466,10 @@ A step accepts every [handler key](#handlers), plus:
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, loop bodies, and per-item stages inherit it in turn. |
 | `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. In `auto` the manager completes a `manager` step with `complete --role manager` (or `loop --role manager`), and `complete` or `loop` with `--role worker` on it is refused. Inherited from the workflow and every enclosing step, like `profile`; nested steps, loop bodies, and per-item stages inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
-| `interactive` | `true`, `false`, or `page` | `true`: the step is a conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. Its completion is refused until the conversation was recorded with `interact` and ended. `page`: the operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends; valid on one per-item stage per `items` step. Defaults to `false`. |
+| `explicit` | boolean | Requires the agent to describe each meaningful operation before doing it and show concrete edits or a focused diff after each changed file. Large changes may use a concrete diff artifact; changed files must remain individually named and secrets redacted. Inherited from the workflow and structural groups, loops, item stages, and child stages; a child may set `false` to opt out. Defaults to `false`. |
+| `interactive` | `true`, `false`, or `page` | `true`: the step is a normal conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. The agent responds to questions and corrections and treats clear contextual completion as permission to finish, asking naturally if the intent is ambiguous. `Done for today` may mean pause and resume later. Completion is refused until the conversation was recorded with `interact` and ended; an open interaction cannot be completed. `page`: the operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends; valid on one per-item stage per `items` step. Defaults to `false`. |
 | `learnable` | boolean | Opts this step's completed artifact into optional feedback deduction after workflow completion. Independent of `interactive`; defaults to `false` and requires `artifact: true`. |
-| `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent offers them through its own question tool, `AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, `ask_user_question` in Grok CLI, and a numbered list elsewhere or where the tool is unavailable, and the pick must be recorded before the interaction ends. Requires `interactive: true`. |
+| `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent follows the host's actual question-tool schema, using structured options when offered and a text-only question only when required, and otherwise presents a numbered list in chat. An asynchronous answer remains pending until the operator explicitly answers; timeout, dismissal, or preselection is not an answer. The pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `steps` | list of steps | Nested ordered steps. |
 | `loop` | non-empty list of steps | Repeats ordinary nested steps until an authorized worker stops it. |
 | `max_rounds` | positive integer | Overrides the project-wide maximum number of rounds for this loop. Valid only beside `loop`. |
@@ -454,14 +480,19 @@ A step accepts every [handler key](#handlers), plus:
 | `artifact_from` | name | Earlier artifact-producing step whose artifact is supplied to this step: an earlier sibling, or an earlier step of an enclosing level, the nearest one first. Inside assessment outcomes the assessment itself is eligible, and inside per-item stages the `items` step, each supplying its own artifact; an enclosing loop or group is not. A plain group, or an assessment named after its outcomes, supplies the artifact of the latest step inside it (inside the chosen outcome) that saved one in its current round (inside a loop, the loop's current iteration only), and needs some step inside that can save one; when none did, an assessment supplies its own artifact if it saved one, and otherwise the step is told that no artifact is available. An assessment whose outcomes cannot save an artifact supplies its own. |
 | `items` | `null`, string, or mapping | Collects work items, then runs per-item stages for each; see [Items](#items). |
 | `handoff_to` | workflow name or `{{variable}}` | Makes the workflow a handoff workflow and ends it by starting that workflow as the task's next run. A workflow has at most one transition, and nothing may follow it: valid only on the last top-level step (with no completion hook applying to it), with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). `workflow` only runs a child, under `children`. |
-| `item_phase` | `analyze`, `resolve`, or `report` | On a per-item stage: the standard item fields the stage fills, the analysis (`processed_item`), the solution and `resolved`, or `reported`. |
+| `item_phase` | `analyze`, `resolve`, or `report` | Only on an acting step of a per-item stage, at any depth inside its loops, groups, and assessment outcomes: the standard item fields the stage fills, the analysis (`processed_item`), the solution and `resolved`, or `reported`. It is rejected on an assessment step itself (put it on the outcome steps that do the work) and on any step outside a per-item stage, including through a handler used there. |
 | `children` | mapping | Collects child tasks with the step's own action, then runs every child with one workflow, or runs the parent's own stages once per child; see [Children](#children). |
 | `handler` | handler name | Copies a root handler definition into this step; the step keeps its own name and any explicit step fields override the copied values. A step with no content of its own, `- fetch_requirements: ~`, and a root handler of the same name copies that handler implicitly. |
 
 `steps`, `loop`, `items`, and `children` are alternatives. A loop wrapper cannot
 also declare an action or collection; its `loop` entries are ordinary steps and
 may use hooks, profiles, item collection, nested steps, and the other step
-features. `item_phase` is invalid together with `items`.
+features. A pure `steps` group or loop wrapper cannot be `interactive: true`
+because it does not execute its own conversation; make an executed child step
+interactive instead. An item or child collector remains a real step and may be
+interactive. `item_phase` is invalid together with `items`, on an assessment
+step, and outside a per-item stage; validation and `lint` reject each, because
+the phase would silently have no effect there.
 
 The manager enters a loop and dispatches its body. With the default
 `assignment: per_round`, one worker carries consecutive body steps of
@@ -730,11 +761,11 @@ The mapping form accepts these keys, all optional:
 | `saves` | list of saved values | Metadata, documents, or item fields the built-in `handle-item` stage saves on each item's completion. Invalid together with `steps`. |
 | `interactive` | `true` or `page` | `true` makes the built-in `handle-item` stage a conversation with the operator, for example a manual test the operator performs and reports; `page` has the operator answer it on the operator page, and `interact --await` completes it from the answer. Invalid together with `steps`. |
 | `choices` | list of choices | Options the operator picks from in the built-in `handle-item` stage. Invalid together with `steps`. |
-| `steps` | list of steps | The per-item stages. Omitted, one built-in `handle-item` stage runs per item. `[]` collects items without processing them. |
+| `steps` | list of steps | The per-item stages. Omitted, one built-in `handle-item` stage runs per item. An explicit `[]` (or `~`) collects or reconciles items only and never expands the default `handle-item` stage; `items: ~` is the full-lifecycle shorthand. |
 | `assignment` | `together`, `per_item`, or `per_step` | How per-item stages are split into worker assignments in the `auto` runtime; default `together`. |
-| `persistent` | boolean | The items outlive the run: every run of the task starts from the task's stored items with their outcomes cleared, and the collection step reconciles that list against the source instead of splitting again. Defaults to `false`. |
-| `identity` | field name | The custom field every new item must carry; `add-item` refuses one without it. Implied in `unique`. |
-| `unique` | list of field names | One pool of values across the listed fields: a value may appear once over all items, in the run and in the task's stored items. `add-item` and `update-item` refuse a duplicate and name the item that holds it. |
+| `persistent` | boolean | The items outlive the run: every run of the task starts from the task's stored items with their outcomes cleared, and the collection step reconciles that list against the source instead of splitting again. Defaults to `false`. A collection setting: see [Several passes over one collection](#several-passes-over-one-collection). |
+| `identity` | field name | The custom field every new item must carry; `add-item` refuses one without it. Implied in `unique`. A collection setting. |
+| `unique` | list of field names | One pool of values across the listed fields: a value may appear once over all items, in the run and in the task's stored items. `add-item` and `update-item` refuse a duplicate and name the item that holds it. A collection setting. |
 | `agent` | non-empty string other than `auto` | Agent for the per-item stages. |
 | `model` | non-empty string | Model for the per-item stages. |
 | `reasoning` | non-empty string | Reasoning for the per-item stages. |
@@ -786,10 +817,125 @@ The step's `before_start` hooks run before collection, and its completion
 hooks run after the last item. Each stage keeps its own hooks. Collection does
 not require an artifact, because its result is the recorded items.
 
-A workflow may contain at most one `items` step, at any nesting level. This is
-an intentional limitation: collected items belong to the workflow run, and ww
-expands every per-item stage in one place when collection completes. An `items`
-step cannot also declare `steps`, `loop`, `item_phase`, or child
+Each `items` declaration is a pass with a stable identity, its logical step
+path, recorded in the plan on its collection item and per-item stages; it does
+not depend on descriptions or work-item IDs.
+
+#### Several passes over one collection
+
+A workflow has one item collection, and every `items` step is a pass over it.
+Passes are sequential steps, at any level and inside loops; ordinary steps
+between them, such as one batch analysis or fix for all items, run once.
+A pass with `steps: []` only collects or reconciles items; `items: ~` remains
+the shorthand for one pass with the whole built-in lifecycle:
+
+```yaml
+- collect: Record one item per comment with its stable source ID.
+  items:
+    steps: []
+- analyze-together: Analyze all collected comments together.
+- confirm-analysis: Reuse the collected items.
+  items:
+    steps:
+      - analyze: Reuse the shared analysis; confirm and fill gaps.
+        item_phase: analyze
+- fix-together: Implement and verify the fixes for all analyzed items.
+- finish: Reuse the collected items.
+  items:
+    steps:
+      - verify-resolution: Verify the result and record actual_solution.
+        item_phase: resolve
+      - report: Report the result for this original comment.
+        item_phase: report
+```
+
+- **Expansion.** A pass's stages are expanded, right after its collection
+  step, when that step completes, once for every item recorded by then; no
+  other pass is expanded or changed. `steps: []` expands nothing, and a pass
+  whose collection is empty finishes without stages.
+- **Membership.** The collection step of each pass may add or reconcile
+  items; a later pass's step is told to reuse the items rather than split
+  the source again. An item added after a pass expanded is kept and joins
+  the next pass (or the next round of the same pass); a running pass never
+  changes its items.
+- **Records.** Passes share one record per item. A pass never clears its
+  analysis, solution, custom fields, references, or reported state, and no
+  stage is skipped because an earlier pass resolved or reported its item.
+- **Loops.** A pass inside a loop is expanded anew in every round, for the
+  items recorded by then, with fresh stage records; nested loops and
+  nearest-loop `break` behave as for any other step.
+- **Settings.** `persistent`, `identity`, and `unique` belong to the
+  collection. The first `items` declaration in plan order decides them, with
+  the defaults for what it omits, and they apply to every pass. A later pass
+  may omit them or repeat the same values; one that sets a different value is
+  a configuration error naming both steps, for example `workflow 'review'
+  step 'finish' sets items.persistent to true, but the collection's first
+  items step 'collect' leaves it unset`. `unique` is compared as a set, with
+  `identity` in it.
+- An `items` step inside another `items` step's per-item stages is an
+  error; declare later passes as sequential steps instead.
+
+#### Pass gates
+
+When the run leaves a pass, after its last stage and before the next item
+starts, every item of the pass must hold what the pass's stages declare, for
+each stage that ran:
+
+| Stage | Requires on the item |
+| --- | --- |
+| `item_phase: analyze` | `processed_item` |
+| `item_phase: resolve` | `actual_solution` and `resolved` |
+| `item_phase: report` | `reported` |
+| built-in `handle-item` | `resolved` and `reported` |
+
+A stage with `item_phase` also requires the item fields it saves (`saves:
+item.field.*`). A stage without `item_phase` keeps only its ordinary
+completion contract, whatever its name. A stage that never ran, because an
+assessment outcome, a `break`, or a stopped workflow skipped it, requires
+nothing, and ww never marks an item resolved or reported by itself. A linked
+item (`--refers-to`) shares the analysis, solution, and `resolved` state of the
+item it refers to, so a duplicate comment needs no duplicate fix, but it is
+reported for its own source.
+
+An assessment outcome inside a per-item stage belongs to its pass. When an
+assessment is a pass's last stage, the pass ends once its outcome is chosen:
+the chosen outcome's work runs first and is gated with the rest, an outcome
+that skips that work requires nothing of it, and an outcome that stops the
+workflow ends the run without a gate. The chosen outcome is recorded on the
+assessment, so a stop after it never asks for it again.
+
+A pass that is not satisfied stops the run for the operator with
+`operator_reason: pass_incomplete` and each item's missing values; the next
+step has not started. Once the items are updated with `update-item`, `next
+--retry` checks them again. The gate cannot be forced: `next --force` there is
+refused, because it would skip the next step rather than the missing records.
+
+#### Item field saves
+
+`saves: item.field.<name>` binds to an item, so it is valid only where there
+is one:
+
+- on an `items` step itself, for every item it collects or reconciles;
+- on a step inside a per-item stage, at any depth (nested steps, loops,
+  assessment outcomes), and on a hook or handler that runs for such a step,
+  for the stage's current item.
+
+Anywhere else, such as an ordinary batch step between passes, a hook of the
+collection step, or a workflow-boundary hook, it is a configuration error
+that names the step and the field; such a step updates items with
+`update-item`. Reusable handlers are checked where they are used: as a step's
+`handler`, as a hook, or through a handler group. A catalog handler with item
+saves that no step uses unbound is valid. Metadata and document saves are
+valid anywhere.
+
+A shell or argv handler in a per-item stage may declare `item.field.<name>`
+saves too, and ww then records them automatically; see
+[Automatic item saves](#automatic-item-saves). An automatic command on an
+`items` step cannot save item fields: one output cannot be distributed among
+several items, so that is a configuration error. An agent still records
+collection fields with `update-item`.
+
+An `items` step cannot also declare `steps`, `loop`, `item_phase`, or child
 tasks.
 
 ## Handlers
@@ -990,16 +1136,75 @@ Names must be unique in the list and may not start with `ww` as their first
 dot-separated segment, or with `__`: those are ww's own values. Dots are
 allowed in a name.
 
+`{{ww.choices}}` is scoped to the effective current step after reuse and
+compilation. Its value is a JSON array of configured choice labels in order,
+or `[]` when the step has no choices. It is read-only guidance for instructions
+and provided-variable descriptions; it does not validate the value supplied.
+
 Within one completion window, matching supplied-variable declarations (the
 same name and description) share one input across handlers, in first-request
 order. Conflicting declarations for a name are an error identifying that name
 and both plan items. Repeating a supplied `--variable` remains an error.
+
+### Item values
+
+On a per-item stage, agent instructions and automatic `argv`/`shell` actions
+read the stage's own work item through the same mapping:
+
+| Value | Meaning and representation |
+| --- | --- |
+| `{{ww.item.id}}` | The item's stable ID. |
+| `{{ww.item.text}}` | The collected item text. |
+| `{{ww.item.processed_item}}` | The recorded analysis text; empty when unset. |
+| `{{ww.item.proposed_solution}}` | The proposed solution text; empty when unset. |
+| `{{ww.item.actual_solution}}` | The recorded solution, the item's resolution text; empty when unset. There is no separate resolution-text field or alias. |
+| `{{ww.item.resolved}}` | `true` or `false`. |
+| `{{ww.item.reported}}` | `true` or `false`. |
+| `{{ww.item.reference_to_id}}` | The ID of the item this one links to; empty when it links to none. |
+| `{{ww.item.field.<name>}}` | A custom field's string value; empty when the item has not set it. |
+
+Values are read from the run's current item record each time an instruction
+is rendered and immediately before each command runs, never frozen when the
+plan is compiled. They therefore show changes from earlier passes and from
+`update-item` after a pass-gate stop followed by `next --retry`, and each item
+assignment sees only its own item. Unset values render as the empty string.
+
+Using `{{ww.item.*}}` in a step with no bound item (outside the stages of an
+`items` step) is a context error: an automatic handler fails naming the item
+variables and saying no work item is bound, and no other item's value is
+substituted.
+
+Rendered values are data. `argv` entries and shell `args` or `env` receive
+quotes, newlines, Unicode, `$`, and backticks unchanged; shell source itself
+may not contain interpolation. A project-owned script can take values as
+arguments:
+
+```yaml
+- reply: ~
+  item_phase: report
+  argv:
+    - python3
+    - scripts/reply-to-comment.py
+    - "{{ww.item.field.comment_id}}"
+    - "{{ww.item.actual_solution}}"
+    - "{{ww.item.field.reply_id}}"
+```
+
+`scripts/reply-to-comment.py` is the project's own script, not part of ww. A
+command in a per-item stage can save its output into an item field; see
+[Automatic item saves](#automatic-item-saves).
 
 ### Assessments
 
 `assess` asks the agent to choose a named outcome before work continues. Prefer
 `positive` or `negative` when the evidence supports either; reserve `mixed` for
 material uncertainty. Select the result with `next --outcome <label>`.
+
+The standard branches may be written beside `question` as `positive`,
+`negative`, and `mixed`, using the same ordinary step shapes as entries under
+`outcomes`. Do not combine these direct branches with `outcomes`; use
+`outcomes` when custom labels are needed. Omitted standard outcomes retain the
+existing behavior of doing no branch work and continuing after the assessment.
 
 ```yaml
 - assess:
@@ -1039,7 +1244,9 @@ negative completes the workflow, like an outcome with `stop_workflow: true`.
 ```
 
 The assessment's page lists every outcome with what it does, and the page
-after it offers one `next --outcome <label>` command per outcome.
+after it offers one `next --outcome <label>` command per outcome. An outcome
+made of an automatic command runs only after the outcome is chosen: the run
+pauses at a pending assessment and no branch executes before then.
 
 ### Saves
 
@@ -1053,7 +1260,7 @@ entry can only name something ww manages.
 | `metadata.<path>` | task metadata at `<path>`, read as `{{ww.metadata.<path>}}` | `complete --metadata <path>=<value>` |
 | `project_metadata.<path>` | project metadata shared by every task, read as `{{ww.project_metadata.<path>}}` | `complete --metadata project_metadata.<path>=<value>` |
 | `documents.<name>` | a root document, created or edited in place; see [Documents](#documents) | the file itself |
-| `item.field.<name>` | a custom field of the step's item; on the collection step, of every collected item. Completion is refused while any is empty. | `update-item --field <name>=<value>`, several per call |
+| `item.field.<name>` | a custom field of the step's item; on the collection step, of every collected item. Completion is refused while any is empty. Valid only on an `items` step or within a per-item stage; see [Item field saves](#item-field-saves). | `update-item --field <name>=<value>`, several per call; a shell or argv handler in a per-item stage saves its stdout, see [Automatic item saves](#automatic-item-saves) |
 
 A metadata entry may add `append: true`: the path holds a list, each
 completion may pass it once per value or omit it, values are appended to what
@@ -1091,8 +1298,51 @@ saves an empty string. Each metadata entry receives the same whole output;
 Metadata is saved only after successful exit and all assertions pass. The
 completion and its publication intents are committed before publication;
 interrupted publication resumes without replaying the successful command.
-`from` is not a supported save option. Documents and item fields remain
-agent-owned.
+`from` is not a supported save option. Documents remain agent-owned.
+
+#### Automatic item saves
+
+A shell or argv handler in a per-item stage (`item_phase`, or any stage of an
+`items` pass, including its hooks and handler groups) may declare
+`item.field.<name>` saves. With exactly one current item, the same whole
+trimmed stdout convention applies: no `from`, no splitting, no structured
+extraction. When several fields (or metadata entries) are declared, each
+receives the same whole output; this is not a way to extract different fields.
+Every declared field is required, so empty output fails the stage.
+
+```yaml
+- reply:
+  item_phase: report
+  argv:
+    - python3
+    - scripts/reply-to-comment.py   # a project-owned script, not part of ww
+    - "{{ww.item.field.comment_id}}"
+    - "{{ww.item.actual_solution}}"
+    - "{{ww.item.field.reply_id}}"
+  saves:
+    - item.field.reply_id: The confirmed reply ID printed by the command.
+```
+
+After a zero exit and passing assertions, the field values and the stage
+completion are committed together; a `report` stage marks its item `reported`
+in that same commit, but only with the last plan item of the report stage's
+lifecycle (its step, handler-group members and completion hooks), whoever owns
+that item, and only that item. A report stage in which ww runs nothing is still
+reported by its agent with `update-item --reported=true`. A nonzero exit, a failed assertion, or an empty
+required value never reports the item, and the failed stage can be retried.
+ww does not derive `processed_item` or `actual_solution` from stdout; analysis
+and resolution commands rely on `update-item` or existing records, and the
+pass gate names whatever is missing. Saved field values stay on the item
+across passes.
+
+Publication of task or project metadata declared by the same handler is
+recorded as an intent in the completion and resumes after an interruption
+without rerunning the successful command. ww cannot make a remote effect
+exactly-once: if the process dies after a remote reply but before the result is
+saved locally, the next attempt runs the command again. The project's handler
+owns that reconciliation, for example by reusing the saved reply ID passed as
+an argument (`{{ww.item.field.reply_id}}`) to update the reply instead of
+creating another.
 
 ## Commands
 
@@ -1392,7 +1642,7 @@ A failing verdict rejects the held completion as a failed check would, under
 the rule's `max_fixes`. Once every rule of the round passed, ww records the
 held completion as submitted.
 
-`discover` (a "Rules" section; JSON: `rules_notice`) and the first page of
+`discover` (JSON only: `rules_notice`) and the first page of
 `start` (JSON: `rules_notice`) say how many declared rules are
 `unscriptized` and suggest the `ww-scriptize` skill, which starts
 `ww-scriptize-rules`. The notice is left out while
@@ -1410,7 +1660,7 @@ suggests `ww-scriptize-rules` only while it is switched on.
 | --- | --- | --- | --- |
 | `check_guidance` | string | none | The operator's guidance for building checks, carried as written by `rules --json` (`check_guidance`) for `ww-scriptize-rules` and ww's rule-writing skills; blank text is unset. |
 
-`rules` takes no other key; another key, such as the retired `scripting`, or
+`rules` takes no other key; another key, such as `scripting`, or
 a non-string `check_guidance` is an error. Every check is recorded by the
 operator, through `rules convert`, with `approved_by: operator`; a store
 written by an earlier ww may still hold `auto`.
@@ -1559,20 +1809,13 @@ rule-automation store is not touched by a dispute.
 ## Minimal example
 
 ```yaml
-handlers:
-  - name: test
-    argv: [python, -m, pytest, -q]
-
-hooks:
-  before_complete_workflow:
-    - workflows: [task]
-      name: test
-
 workflows:
   - name: task
     steps:
-      - name: develop
-        description: Implement and verify the requested change.
+      - develop: Implement the requested change.
+      - verify: ~
+        argv: [python, -m, pytest, -q]
+        on_failure: fix
 ```
 
 Use `ww-agentic-workflows lint` to validate the complete configuration; it also

@@ -88,7 +88,7 @@ def test_full_output_survives_snapshot_reload(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("command", ['argv: [printf, url]', 'description: Work.'])
+@pytest.mark.parametrize("command", ["argv: [printf, url]", "description: Work."])
 @pytest.mark.parametrize("source", ["stdout", "stderr"])
 def test_invalid_command_metadata_mapping(
     tmp_path: Path,
@@ -141,7 +141,6 @@ def test_publication_resumes_without_replaying_command(
         service.metadata_publisher.values("TASK-1")["ww.project_metadata.github.urls"]
         == "url"
     )
-
 
 
 def test_legacy_stdout_snapshot_roundtrips_and_runs(tmp_path: Path) -> None:

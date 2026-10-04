@@ -22,12 +22,17 @@ description: Carry out the user's request through ww, this project's workflow to
    task the conversation works on or the request names, as written, and
    follow its answer, then do the work as you would without ww. Questions and
    other read-only work need no task.
-   When `discover` or the first page of `start` says rules have no check
+   When the first page of `start` says rules have no check
    yet, tell the user once and carry on: it never blocks the task, and the
    `ww-scriptize` skill builds those checks when they want it.
 4. Follow every ww response exactly: run each displayed command with all
    placeholders replaced, and keep going until ww reports that the workflow
-   is complete or reports an error. After completion, relay any optional
+   is complete or reports an error. On `interactive: true` steps, converse
+   naturally until intent to finish is clear, ask if ambiguous, and treat
+   "done for today" as a pause. Record and end the interaction before
+   completing it. Use the host choice tool when available; keep asynchronous
+   choices pending until an answer arrives, and do not treat timeouts or
+   preselection as answers. After completion, relay any optional
    `ww-deduce-feedback` suggestion; do not insert learning into the plan.
    Deduction uses ww commands and explicit existing point IDs; rule review
    and pruning are separate, and rules require operator approval.
@@ -40,4 +45,6 @@ description: Carry out the user's request through ww, this project's workflow to
    `operator_reason` and the exact error to the user; when they decide, run
    the recovery command ww showed, `./ww next <task-id> --retry` to run the
    handler again, `--force --reason` to skip it or leave the loop, or
-   `--replan` / `--keep-plan` for a changed workflow.
+   `--replan` / `--keep-plan` for a changed workflow. A `pass_incomplete`
+   stop is cleared by recording what it names with `./ww update-item`, then
+   `./ww next <task-id> --retry`; `--force` is refused there.

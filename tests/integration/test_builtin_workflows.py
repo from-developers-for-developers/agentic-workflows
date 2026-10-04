@@ -90,7 +90,8 @@ def test_every_shipped_file_parses_with_unique_names() -> None:
     names = [workflow.name for item in builtin_files() for workflow in item.workflows]
 
     assert CATCHALL in names
-    assert "ww-learn" in names
+    assert "ww-learn-project" in names
+    assert "ww-learn" not in names
     assert len(names) == len(set(names))
 
 
@@ -192,11 +193,21 @@ def test_discover_lists_ww_own_workflows_apart(
     report = json.loads(capsys.readouterr().out)
     assert [workflow["name"] for workflow in report["workflows"]] == ["task"]
     assert report["builtin_workflows"] == [
-        {"name": "learn", "description": "Learns who the operator is."}
+        {
+            "name": "learn",
+            "description": "Learns who the operator is.",
+            "source": None,
+            "source_level": None,
+        }
     ]
     assert report["catchall"]["name"] == CATCHALL
+    assert report["catchall"]["source"] is None
+    assert report["catchall"]["source_level"] is None
 
     assert main(["--root", str(root), "discover"]) == 0
     output = capsys.readouterr().out
-    assert "## ww's own workflows\n\n- `learn` — Learns who the operator is." in output
+    # ww's own workflows stay out of the Markdown and behind the catalog.
+    assert "Learns who the operator is." not in output
+    assert "ww's own workflows" in output
+    assert "workflows` lists every workflow" in output
     assert "## Changes no workflow covers" in output

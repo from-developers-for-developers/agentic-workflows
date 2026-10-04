@@ -78,7 +78,7 @@ def test_printed_commands_use_the_configured_executable(
 
     assert "ww-agentic-workflows-dev next TASK-1 --role manager" in page
     assert "./ww " not in page
-    assert "ww-agentic-workflows-dev start <TASK-ID>" in discover
+    assert "ww-agentic-workflows-dev start [<task-id>]" in discover
     assert "ww-agentic-workflows-dev status <task-id>" in discover
     assert "./ww " not in discover
 

@@ -34,7 +34,9 @@ CheckStatus = Literal["passed", "failed", "not_applicable"]
 # verdict on a rule without a command.
 CheckSource = Literal["rule", "hook", "derived", "judged"]
 # Why a failed run failed, when the reason is not the item's own error.
-FailureKind = Literal["fix_limit", "check_disputed", "value_unavailable", "work_failed"]
+FailureKind = Literal[
+    "fix_limit", "check_disputed", "value_unavailable", "work_failed", "pass_incomplete"
+]
 # A rule's standing in the rule-automation store, keyed by its text hash.
 RuleAutomationStatus = Literal[
     "approach_proposed",
@@ -141,6 +143,7 @@ OperatorReason = Literal[
     "fix_limit",
     "check_disputed",
     "value_unavailable",
+    "pass_incomplete",
     "plan_changed",
 ]
 CALLER_ROLES: tuple[CallerRole, ...] = ("manager", "worker")

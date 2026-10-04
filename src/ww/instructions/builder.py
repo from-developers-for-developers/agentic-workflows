@@ -41,10 +41,12 @@ from ww.execution_models import (
 )
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
+from ww.item_passes import item_collection
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
 from ww.runtimes import runtime_instruction
+from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
     enclosing_loop_entry_index,
@@ -53,9 +55,6 @@ from ww.transitions import (
     loop_limit_reached,
 )
 from ww.variables import (
-    ITEM_FIELD_PREFIX,
-    ITEM_ID,
-    ITEM_TEXT,
     item_workspace_values,
 )
 from ww.workflow_config import INIT_STEP_NAME, ProvidedVariable
@@ -98,14 +97,6 @@ from .policy import (
 from .text import NO_SUBAGENTS, ContainerArtifact, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
-# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
-ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
-
-
-def _no_child_values(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-) -> dict[str, str]:
-    return {}
 
 
 @dataclass(frozen=True)
@@ -141,9 +132,11 @@ class InstructionBuilder:
         root: Path,
         documents: DocumentStore,
         interactions: InteractionLog,
-        child_values: ChildValues = _no_child_values,
+        child_values: StepValues = no_step_values,
+        item_values: StepValues = no_step_values,
     ) -> None:
         self.tasks = tasks
+        self.item_values = item_values
         self.child_values = child_values
         self.documents = documents
         self.interactions = interactions
@@ -248,6 +241,14 @@ class InstructionBuilder:
             ),
             assignment_step=driver.name if driver else None,
             assignment_items=tuple(entry.name for entry in covered),
+            assignment_explicit_steps=tuple(
+                dict.fromkeys(
+                    entry.step
+                    for entry in covered
+                    if entry.explicit
+                    and (entry.owner == "agent" or needs_repair(state))
+                )
+            ),
             assignment_continues=(
                 item is not None
                 and bool(covered)
@@ -259,8 +260,11 @@ class InstructionBuilder:
             control=control,
             operator_reason=operator_reason(state, plan),
             result_saved=(
+                # A pass gate stops before the next step: there is no result.
+                None
+                if state.failure_kind == "pass_incomplete"
                 # A rejected or held completion keeps only a draft of the result.
-                False
+                else False
                 if state.failure_kind is not None
                 else _result_saved(state, plan)
                 if state.status in {"failed", "interrupted"} or automatic_running
@@ -393,6 +397,7 @@ class InstructionBuilder:
             )
             if active
             else next_command(state.task_id),
+            explicit=item.explicit,
         )
 
     def _awaiting_input(self, state: ExecutionState, plan: WorkflowPlan) -> Instruction:
@@ -601,26 +606,6 @@ class InstructionBuilder:
             == (state.run_id, item.name, item.item_id)
         )
 
-    def _item_values(self, state: ExecutionState, item: PlanItem) -> dict[str, str]:
-        """``{{ww.item.*}}`` for a per-item stage's own work item."""
-        if item.item_id is None:
-            return {}
-        work = next(
-            (
-                entry
-                for entry in self.tasks.read_items(state.task_id, state.run_id)
-                if entry.id == item.item_id
-            ),
-            None,
-        )
-        if work is None:
-            return {}
-        return {
-            ITEM_ID: work.id,
-            ITEM_TEXT: work.item,
-            **{f"{ITEM_FIELD_PREFIX}{name}": value for name, value in work.fields},
-        }
-
     def _current_child(self, state: ExecutionState, item: PlanItem) -> str:
         """Name a per-child stage's child, and how to refine it before it runs."""
         if item.child_number is None:
@@ -705,7 +690,16 @@ class InstructionBuilder:
                 else ()
             ),
             operation_id=record.operation_id if record else None,
-            recovery_commands=recovery_commands(state.task_id) if current else (),
+            recovery_commands=(
+                ()
+                if current is None
+                # A pass gate is passed by recording the items, never skipped.
+                else (
+                    RecoveryCommand("retry", next_command(state.task_id, retry=True)),
+                )
+                if state.failure_kind == "pass_incomplete"
+                else recovery_commands(state.task_id)
+            ),
             # At the fix limit the operator decides on what the checks said.
             fix_required=(
                 fix_required(current, record)
@@ -801,7 +795,9 @@ class InstructionBuilder:
             text = (
                 f"Start pending child `{pending.id}` with:\n\n```console\n"
                 f"{start_child_command(state.task_id, pending.id)}\n```\n\n"
-                "Optionally add `--runtime`, `--model`, and `--reasoning` to "
+                "Optionally add `--workflow <name>` to run the child under a "
+                "workflow other than the parent's configured child workflow, and "
+                "`--runtime`, `--model`, and `--reasoning` to "
                 "choose the child's session settings; omitted values inherit "
                 "from the parent, except a different model resets omitted "
                 "reasoning to `auto`. These settings are fixed once launch begins. "
@@ -880,6 +876,9 @@ class InstructionBuilder:
                 else plan.items[enclosing_loop_entry_index(plan, state.cursor)].artifact
             )
             loop_break_command = completion(item.artifact or wrapper_artifact, "break")
+        later_pass = _later_item_pass(plan, item)
+        # A collection step's identity and unique fields are the collection's.
+        collection = item_collection(plan) if item.item_operation == "collect" else None
         workspace, values = item_workspace_values(
             self.root,
             item.workdir,
@@ -892,11 +891,12 @@ class InstructionBuilder:
                 item,
                 {
                     **values,
-                    **self._item_values(state, item),
+                    **self.item_values(state, plan, item),
                     **self.child_values(state, plan, item),
                 },
                 state.task_id,
                 self._container_artifact(state, plan, item),
+                later_pass=later_pass,
             )
             + self._current_child(state, item),
             required_values=required,
@@ -929,6 +929,7 @@ class InstructionBuilder:
             summary_required=item.hands_over,
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
+            explicit=item.explicit and item.owner == "agent",
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(
@@ -949,16 +950,16 @@ class InstructionBuilder:
             operator_paused=state.operator_paused,
             conversation=(self._conversation(state, item) if item.interactive else ()),
             ui=item.ui,
-            shared_items=item.shared_items,
+            shared_items=item.shared_items and not later_pass,
             stored_items=(
                 self.tasks.read_items(state.task_id, state.run_id)
-                if item.shared_items
+                if item.shared_items and not later_pass
                 else ()
             ),
             required_item_fields=item.update_item,
             collects_items=item.item_operation == "collect",
-            item_identity=item.item_identity,
-            item_unique=item.item_unique,
+            item_identity=collection.item_identity if collection else None,
+            item_unique=collection.item_unique if collection else (),
             run_handovers=(
                 tuple(
                     StepHandover(
@@ -1309,6 +1310,12 @@ def _assignment_preview(
             "requested_model": item.requested_model,
             "requested_reasoning": item.requested_reasoning,
             "requested_profile": item.profile,
+            "explicit": item.explicit,
+            "explicit_steps": (
+                [item.step]
+                if item.explicit and (item.owner == "agent" or needs_repair(state))
+                else []
+            ),
             "repair": True,
         }
     assignment = assignment_at(plan, state.cursor, runtime=state.workflow_runtime)
@@ -1350,6 +1357,12 @@ def _assignment_preview(
             "requested_model": driver.requested_model,
             "requested_reasoning": driver.requested_reasoning,
             "requested_profile": driver.profile,
+            "explicit": driver.explicit,
+            "explicit_steps": [
+                entry.step
+                for entry in plan.items[assignment.start : assignment.stop]
+                if entry.explicit and entry.owner == "agent"
+            ],
             **(
                 {"item_scope": span.to_dict()}
                 if isinstance(span, ItemSpan)
@@ -1531,3 +1544,11 @@ def _bootstrap_modes(request: dict[str, object]) -> tuple[PlannedMode, ...]:
         PlannedMode.from_dict(entry, f"bootstrap request step_modes[{index}]")
         for index, entry in enumerate(entries)
     )
+
+
+def _later_item_pass(plan: WorkflowPlan, item: PlanItem) -> bool:
+    """Whether ``item`` collects for an ``items`` pass after the workflow's first."""
+    if item.item_operation != "collect" or item.child_operation is not None:
+        return False
+    first = item_collection(plan)
+    return first is not None and item.item_pass != first.item_pass

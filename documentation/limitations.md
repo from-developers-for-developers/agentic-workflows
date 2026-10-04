@@ -92,10 +92,10 @@ always uses the filesystem one.
 
 ## Workflow modelling
 
-- A workflow may contain at most one `items` step, at any nesting level.
-  Collected items belong to the workflow run, and ww expands every per-item
-  stage in one place when collection completes. An `items` step cannot also
-  declare `steps`, `loop`, an item operation marker, or child tasks.
+- A workflow has one item collection. Several `items` steps are sequential
+  passes over it; an `items` step inside another's per-item stages is
+  rejected. An `items` step cannot also declare `steps`, `loop`, an item
+  operation marker, or child tasks.
 - Each started run executes from its saved plan snapshot. An edit to
   `ww.yaml` reaches a running task only when the operator takes it at the
   `plan_changed` stop (`next --replan`); it cannot reach per-item or
@@ -138,13 +138,12 @@ collects the limitations, so it is not repeated there.
   change with any release, so recovery is best effort. For other agents the
   conversation is not recorded, and a crash or a closed tab runs no hook at
   all.
-- Codex offers its blocking question tool, `request_user_input`, only in
-  plan mode. In its default mode the model has `request_user_input_async`,
-  whose parked form ("Queued follow-up inputs") belongs to the running turn
-  and disappears when the turn ends, and whose `shift+←` chord many
-  terminals swallow. ww's skills therefore have the agent ask in the chat
-  there, as a numbered list; in plan mode and in Claude Code the question is
-  an inline prompt.
+- Question-tool availability and supported fields vary by host session. ww
+  instructs agents to inspect the available schema, use structured options
+  when offered, and use a text-only question only when the tool requires it.
+  When an asynchronous answer is pending, the workflow waits for the
+  operator's explicit answer; a timeout, dismissal, or preselected value does
+  not complete the choice.
 - Editing its own workflow files: some agents' safety layers, such as Claude
   Code's auto mode, refuse an agent's edits to the workflow files it runs
   under (`ww.yaml` and `.json`) as self-modification, even

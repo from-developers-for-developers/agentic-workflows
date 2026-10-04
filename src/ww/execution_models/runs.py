@@ -26,9 +26,10 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 1
+# Schema 2 records explicit ``items`` pass identity on plan items.
+PLAN_SCHEMA_VERSION = 2
 # Recorded on every snapshot; informational until a reader needs to branch on it.
-PLAN_COMPILER_VERSION = "plan-v9"
+PLAN_COMPILER_VERSION = "plan-v10"
 
 
 @dataclass(frozen=True)
@@ -171,6 +172,9 @@ class PlanSnapshot:
         schema_version = data["schema_version"]
         if not is_strict_int(schema_version) or schema_version != PLAN_SCHEMA_VERSION:
             raise ValueError(f"unsupported plan snapshot schema: {schema_version!r}")
+        template = (
+            _plan_from_dict(data["template_plan"]) if "template_plan" in data else None
+        )
         plan = _plan_from_dict(data["plan"])
         return cls(
             schema_version=schema_version,
@@ -185,11 +189,7 @@ class PlanSnapshot:
             plan_revision=expect_positive_int(
                 data.get("plan_revision", 1), "plan snapshot.plan_revision"
             ),
-            template_plan=(
-                _plan_from_dict(data["template_plan"])
-                if "template_plan" in data
-                else plan
-            ),
+            template_plan=template if template is not None else plan,
             bootstrap_step=expect_optional_string(
                 data.get("bootstrap_step"), "plan snapshot.bootstrap_step"
             ),

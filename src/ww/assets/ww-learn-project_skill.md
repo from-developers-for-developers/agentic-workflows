@@ -1,6 +1,6 @@
 ---
 name: ww-learn-project
-description: Let ww learn how this project's work is organised - the setup facts (branching, exact verify commands, tracker key format, commit convention, CI gates), agent tooling and MCP servers, issue trackers, infrastructure and stack, conventions, and recurring pitfalls from history and reviews - into .ww/project.md, not what the software does. Use when the operator invokes /ww-learn-project or asks ww to learn, or relearn, the project.
+description: Let ww learn how this project's work is organised - the setup facts (branching, exact verify commands, tracker key format, commit convention, CI gates), agent tooling and MCP servers, issue trackers, infrastructure and stack, conventions, and recurring pitfalls from history and reviews - and its purpose, into .ww/project.md; an existing file is refreshed, not replaced. Use when the operator invokes /ww-learn-project or asks ww to learn, or relearn, the project.
 ---
 
 # Let ww learn how the project works

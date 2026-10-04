@@ -11,13 +11,67 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-# A failed install removes the half-made .venv, so the next run starts over
-# rather than reusing it. Editable installs of this project need a recent pip.
-if [ ! -x .venv/bin/python ]; then
-    python3 -m venv .venv
-    if ! { .venv/bin/python -m pip install -q --upgrade pip &&
-        .venv/bin/python -m pip install -q -e '.[dev]'; }; then
+MINIMUM_PYTHON=$(sed -n 's/^[[:space:]]*requires-python[[:space:]]*=[[:space:]]*">=\([0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' pyproject.toml)
+if [ -z "$MINIMUM_PYTHON" ]; then
+    printf '%s\n' "Cannot read a simple >= Python requirement from pyproject.toml." >&2
+    exit 1
+fi
+MINIMUM_MAJOR=${MINIMUM_PYTHON%.*}
+MINIMUM_MINOR=${MINIMUM_PYTHON#*.}
+VENV_PYTHON=.venv/bin/python
+created_venv=0
+
+supports_project_python() {
+    candidate=$1
+    [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1 || return 1
+    "$candidate" -c "import sys; raise SystemExit(sys.version_info < ($MINIMUM_MAJOR, $MINIMUM_MINOR))" \
+        >/dev/null 2>&1
+}
+
+if [ -e "$VENV_PYTHON" ]; then
+    if ! supports_project_python "$VENV_PYTHON"; then
+        printf '%s\n' "Existing $VENV_PYTHON is unsupported and was left untouched. Move or remove .venv yourself, then set WW_PYTHON to a Python >= $MINIMUM_PYTHON and rerun." >&2
+        exit 1
+    fi
+    selected_python=$VENV_PYTHON
+else
+    if [ -n "${WW_PYTHON:-}" ]; then
+        if ! supports_project_python "$WW_PYTHON"; then
+            printf '%s\n' "WW_PYTHON must name an executable Python >= $MINIMUM_PYTHON: $WW_PYTHON" >&2
+            exit 1
+        fi
+        selected_python=$WW_PYTHON
+    else
+        selected_python=
+        for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+            if supports_project_python "$candidate"; then
+                selected_python=$candidate
+                break
+            fi
+        done
+    fi
+    if [ -z "$selected_python" ]; then
+        printf '%s\n' "Python >= $MINIMUM_PYTHON is required. Install one or set WW_PYTHON to its executable." >&2
+        exit 1
+    fi
+    if [ -e .venv ]; then
+        printf '%s\n' "Cannot create .venv because that path already exists without $VENV_PYTHON; preserve it and repair or move it yourself." >&2
+        exit 1
+    fi
+    if ! "$selected_python" -m venv .venv; then
         rm -rf .venv
+        exit 1
+    fi
+    created_venv=1
+fi
+
+# Install only when setting up a new environment or repairing a partial one.
+if ! "$VENV_PYTHON" -c 'import importlib.util, sys; sys.exit(any(importlib.util.find_spec(name) is None for name in ("build", "mypy", "pytest", "xdist", "ruff")))' >/dev/null 2>&1; then
+    if ! { "$VENV_PYTHON" -m pip install -q --upgrade pip &&
+        "$VENV_PYTHON" -m pip install -q -e '.[dev]'; }; then
+        if [ "$created_venv" -eq 1 ]; then
+            rm -rf .venv
+        fi
         exit 1
     fi
 fi

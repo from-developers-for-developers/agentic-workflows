@@ -50,15 +50,11 @@ def test_nothing_is_set_at_first(
         "user": {
             "file": str(user / "state.json"),
             "explain": None,
-            "learned.me": None,
         },
         "project": {
             "file": str(root / ".ww/metadata.json"),
             "setup.done": False,
-            "learned.team": None,
-            "learned.company": None,
             "learned.project": None,
-            "learned.myrole": None,
         },
     }
     text = _run(root, capsys, "onboarding")
@@ -79,30 +75,22 @@ def test_set_records_each_key_at_its_level(
         "--set",
         "explain=false",
         "--set",
-        "learned.me=2026-09-30T10:00:00Z",
-        "--set",
         "setup.done=true",
         "--set",
         "learned.project=now",
-        "--set",
-        "learned.myrole=2026-09-30T11:00:00Z",
     )
 
     state = _state(root, capsys)
     assert state["user"] == {
         "file": str(user / "state.json"),
         "explain": False,
-        "learned.me": "2026-09-30T10:00:00Z",
     }
     project = state["project"]
     assert isinstance(project, dict)
     assert project["setup.done"] is True
     assert str(project["learned.project"]).endswith("Z")
-    # The operator's role in this project is recorded per checkout.
-    assert project["learned.myrole"] == "2026-09-30T11:00:00Z"
     assert json.loads((user / "state.json").read_text(encoding="utf-8")) == {
-        "explain": False,
-        "learned": {"me": "2026-09-30T10:00:00Z"},
+        "explain": False
     }
     metadata = json.loads((root / ".ww/metadata.json").read_text(encoding="utf-8"))
     assert metadata["ww"]["setup"] == {"done": "true"}
@@ -117,7 +105,7 @@ def test_set_records_each_key_at_its_level(
         ("colour=blue", "unknown onboarding key 'colour'; the keys are explain"),
         ("explain", "--set takes KEY=VALUE"),
         ("explain=maybe", "explain takes true or false"),
-        ("learned.team=yesterday", "learned.team takes `now` or an ISO timestamp"),
+        ("learned.project=yesterday", "learned.project takes `now` or an ISO"),
     ],
 )
 def test_a_wrong_assignment_writes_nothing(
@@ -135,6 +123,74 @@ def test_a_wrong_assignment_writes_nothing(
     assert _state(root, capsys)["project"]["setup.done"] is False  # type: ignore[index]
 
 
+@pytest.mark.parametrize("key", ["learned.other", "other"])
+def test_an_unknown_key_cannot_be_set(
+    user: Path, root: Path, capsys: pytest.CaptureFixture[str], key: str
+) -> None:
+    arguments = [
+        "onboarding",
+        "--set",
+        "setup.done=true",
+        "--set",
+        f"{key}=now",
+    ]
+
+    assert main(["--root", str(root), *arguments]) == 1
+
+    error = capsys.readouterr().err
+    assert f"unknown onboarding key {key!r}" in error
+    assert _state(root, capsys)["project"]["setup.done"] is False  # type: ignore[index]
+
+
+def test_unrelated_values_stay_on_disk_and_are_ignored(
+    user: Path, root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    user.mkdir()
+    (user / "state.json").write_text(
+        json.dumps(
+            {"explain": True, "learned": {"extra": "2026-01-01T00:00:00Z"}, "other": 1}
+        ),
+        encoding="utf-8",
+    )
+    (root / ".ww").mkdir()
+    (root / ".ww/metadata.json").write_text(
+        json.dumps(
+            {
+                "ww": {
+                    "learned": {
+                        "extra": "2026-01-01T00:00:00Z",
+                        "project": "2026-02-01T00:00:00Z",
+                    }
+                },
+                "keep": {"me": "x"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = _state(root, capsys)
+    assert state["user"] == {"file": str(user / "state.json"), "explain": True}
+    assert state["project"] == {
+        "file": str(root / ".ww/metadata.json"),
+        "setup.done": False,
+        "learned.project": "2026-02-01T00:00:00Z",
+    }
+
+    _run(
+        root, capsys, "onboarding", "--set", "explain=false", "--set", "setup.done=true"
+    )
+
+    saved = json.loads((user / "state.json").read_text(encoding="utf-8"))
+    assert saved == {
+        "explain": False,
+        "learned": {"extra": "2026-01-01T00:00:00Z"},
+        "other": 1,
+    }
+    metadata = json.loads((root / ".ww/metadata.json").read_text(encoding="utf-8"))
+    assert metadata["ww"]["learned"]["extra"] == "2026-01-01T00:00:00Z"
+    assert metadata["keep"] == {"me": "x"}
+
+
 def test_workflows_cannot_save_into_ww_own_project_metadata() -> None:
     body = (
         "workflows:\n  - task:\n    steps:\n      - work: Work.\n"
@@ -148,24 +204,19 @@ def test_workflows_cannot_save_into_ww_own_project_metadata() -> None:
     parse_yaml_text(body.replace("project_metadata.ww.", "project_metadata.www."))
 
 
-def test_discover_offers_setup_and_asks_about_explaining_once(
+def test_discover_mentions_setup_once_without_interrupting_or_interviewing(
     user: Path, root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     output = _run(root, capsys, "discover")
     assert "## Onboarding" in output
-    assert "first use of ww in this project" in output
+    assert "has not been set up in this project" in output
+    assert "never blocks ordinary work" in output
     assert "`ww-setup` skill" in output
-    assert "onboarding --set explain=true" in output
+    for word in ("explain", "interview"):
+        assert word not in output.split("## Onboarding")[1].split("##")[0]
     report = json.loads(_run(root, capsys, "discover", "--json"))
     assert report["onboarding"]["setup_done"] is False
-    assert report["onboarding"]["explain"] is None
-    assert len(report["onboarding"]["guidance"]) == 2
-
-    _run(root, capsys, "onboarding", "--set", "explain=true")
-    report = json.loads(_run(root, capsys, "discover", "--json"))
-    assert report["onboarding"]["explain"] is True
-    (guidance,) = report["onboarding"]["guidance"]
-    assert "ww-setup" in guidance
+    assert len(report["onboarding"]["guidance"]) == 1
 
     _run(root, capsys, "onboarding", "--set", "setup.done=true")
     report = json.loads(_run(root, capsys, "discover", "--json"))
@@ -183,5 +234,4 @@ def test_on_request_discover_mentions_onboarding_only_as_information(
     output = _run(root, capsys, "discover")
 
     assert "For information: ww has not been set up" in output
-    assert "Offer the operator" not in output
-    assert "Ask them once" not in output
+    assert "Setup is optional" not in output

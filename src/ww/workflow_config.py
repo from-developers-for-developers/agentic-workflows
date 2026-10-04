@@ -8,8 +8,9 @@ consumes a compiled plan rather than independently deciding which hooks apply.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
+WorkflowConfigLevel = Literal["global", "project", "local"]
 # A document also has the user scope: one file per user, in the user
 # configuration directory, shared by every project.
 DocumentScope = Literal["task", "project", "user"]
@@ -266,7 +268,7 @@ class ProfileDefinition:
 
 @dataclass(frozen=True)
 class ItemFieldUpdate:
-    """An agent-owned action's promise to set a custom field on its item.
+    """A promise to set a custom field on an item, by an agent or a command.
 
     On a per-item stage the stage's item must carry the field when the stage
     completes; on the collection step every collected item must.
@@ -568,6 +570,9 @@ class StepDefinition(HandlerDefinition):
     # A conversation with the operator, held by the session that can talk to
     # them; implies ``role: manager``.
     interactive: bool = False
+    # Describe each operation and show concrete edits when enabled. ``None``
+    # inherits from the enclosing workflow or structural step.
+    explicit: bool | None = None
     # Opt-in artifact source for feedback deduction after workflow completion.
     learnable: bool = False
     # The options the operator chooses from during an interactive step.
@@ -635,13 +640,38 @@ class ItemFlow:
     steps: tuple[StepDefinition, ...] = ()
     description: str | None = None
     assignment: ItemAssignment = "together"
-    # The items outlive the run: every run of the task reuses them, and the
-    # collection stage reconciles them instead of splitting anew.
-    persistent: bool = False
+    # Collection-wide settings, exactly as this declaration wrote them.
+    # ``None`` means it did not set one: the first declaration of a workflow
+    # establishes them, so a later declaration that omits one must not be
+    # read as choosing the default.  ``identity`` is folded into the unique
+    # pool only by ``effective_unique``, so an explicit ``unique`` stays
+    # distinguishable from an omitted one.
+    #
+    # ``persistent``: the items outlive the run: every run of the task reuses
+    # them, and the collection stage reconciles them instead of splitting anew.
+    persistent: bool | None = None
     # The custom field a new item must carry, and the fields whose values
     # form one pool in which each value may appear once across all items.
     identity: str | None = None
-    unique: tuple[str, ...] = ()
+    unique: tuple[str, ...] | None = None
+
+    @property
+    def effective_unique(self) -> tuple[str, ...]:
+        """The unique pool a run applies: ``identity`` first, then ``unique``."""
+        return tuple(
+            dict.fromkeys(
+                (*((self.identity,) if self.identity else ()), *(self.unique or ()))
+            )
+        )
+
+    @property
+    def collect_only(self) -> bool:
+        """Whether this pass only collects or reconciles items.
+
+        Explicit ``steps: []`` (or ``steps: ~``) is the one way to be true; the
+        bare ``items: ~`` shorthand resolves to the built-in handle-item stage.
+        """
+        return not self.steps
 
 
 @dataclass(frozen=True)
@@ -660,6 +690,8 @@ class WorkflowDefinition:
     role: StepRole | None = None
     # Whether the performers of its steps may spawn subagents, inherited.
     subagents: bool | None = None
+    # Default visibility guidance for steps; individual steps can override it.
+    explicit: bool | None = None
     # The runtime ``start`` uses for this workflow when ``--runtime`` is
     # omitted; it outranks the project default, and the flag outranks it.
     runtime: str | None = None
@@ -705,6 +737,14 @@ class WorkflowDefinition:
             )
             for step in step_tree(self.steps)
         )
+
+
+@dataclass(frozen=True)
+class WorkflowProvenance:
+    """The physical configured source and level that defined a workflow."""
+
+    source: str
+    level: WorkflowConfigLevel
 
 
 def binds_task_identity(workflow: WorkflowDefinition) -> bool:
@@ -769,6 +809,18 @@ class WorkflowConfiguration:
     documents: tuple[DocumentDefinition, ...] = ()
     # Root rule groups, extension groups first, then YAML order.
     rule_groups: tuple[RuleGroup, ...] = ()
+    # Effective YAML workflow definitions only. Built-ins and extension
+    # contributions have no configured source and are absent from this map.
+    workflow_provenance: Mapping[str, WorkflowProvenance] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "workflow_provenance",
+            MappingProxyType(dict(self.workflow_provenance)),
+        )
 
     @property
     def rule_groups_by_name(self) -> dict[str, RuleGroup]:

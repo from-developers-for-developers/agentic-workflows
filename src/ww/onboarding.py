@@ -5,17 +5,14 @@ Two places hold it, each for what it describes:
 
 - the user level, ``state.json`` in the user configuration directory:
   ``explain``, whether the operator wants the agent to narrate what ww does
-  while it learns (absent until they answer), and ``learned.me``, when ww last
-  learned about the operator;
+  while it learns (absent until they say so);
 - the project, in ``.ww/metadata.json`` under ww's own ``ww.`` namespace, which
-  no workflow can save into: ``setup.done``, and when ww last learned about the
-  team, the company, the project and the operator's role in it
-  (``learned.team``, ``learned.company``, ``learned.project``,
-  ``learned.myrole``). The role is per checkout, like the rest of that file.
+  no workflow can save into: ``setup.done``, and when ww last learned about
+  the project (``learned.project``).
 
 ``ww onboarding`` shows both and sets a known key; it records the operator's
 stated preference, so it asks for no confirmation. ``discover`` reads it to
-tell an agent what to offer on a first use.
+tell an agent whether to mention setup on a first use.
 """
 
 from __future__ import annotations
@@ -37,8 +34,8 @@ EXPLAIN = "explain"
 SETUP_DONE = "setup.done"
 LEARNED = "learned"
 # What ww learns about, and at which level it records when it did.
-LEARNED_USER = ("me",)
-LEARNED_PROJECT = ("team", "company", "project", "myrole")
+LEARNED_USER: tuple[str, ...] = ()
+LEARNED_PROJECT = ("project",)
 USER_KEYS = (EXPLAIN, *(f"{LEARNED}.{name}" for name in LEARNED_USER))
 PROJECT_KEYS = (SETUP_DONE, *(f"{LEARNED}.{name}" for name in LEARNED_PROJECT))
 KEYS = (*USER_KEYS, *PROJECT_KEYS)

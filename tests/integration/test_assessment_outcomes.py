@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import assignment_token
+from tests.workflow_helpers import assignment_token, start_after_init
 from ww.config import load_configuration
 from ww.errors import ConfigurationError, StateError
 from ww.instructions import Instruction
@@ -35,6 +35,18 @@ COMPACT = """workflows:
   - name: merge
     steps:
       - assess: Is the merge worth reviewing?
+      - tests: Run the tests.
+"""
+DIRECT = """workflows:
+  - name: merge
+    steps:
+      - assess:
+          question: Were conflicts resolved in non-trivial code?
+          positive:
+            steps:
+              - review-conflicts: Review the conflicts.
+          negative:
+            stop_workflow: true
       - tests: Run the tests.
 """
 md = MarkdownOutputAdapter()
@@ -157,6 +169,73 @@ def test_the_compact_form_gets_the_same_pages(tmp_path: Path) -> None:
     assert "--outcome negative" in md.render_instruction(after)
     with pytest.raises(StateError, match="pending assess requires --outcome"):
         service.next("TASK-1", caller_role="manager")
+
+
+def test_direct_standard_branches_use_the_existing_outcome_transitions(
+    tmp_path: Path,
+) -> None:
+    service, page, _ = _assessed(tmp_path, DIRECT)
+
+    assert [outcome.label for outcome in page.assessment_outcomes] == [
+        "positive",
+        "negative",
+        "mixed",
+    ]
+    assert "continues with `review-conflicts`" in md.render_instruction(page)
+    assert service.status("TASK-1").choosing_outcome_of == "assess"
+    assert service.resume(*service.load("TASK-1")).choosing_outcome_of == "assess"
+    chosen = service.next("TASK-1", outcome="positive", caller_role="manager")
+    assert chosen.item_name == "review-conflicts"
+    assert chosen.choosing_outcome_of is None
+    assert "--outcome" not in md.render_instruction(chosen)
+
+
+@pytest.mark.parametrize(
+    ("branch", "message"),
+    [
+        (
+            "          positive:\n"
+            "            steps:\n"
+            "              - review: Review it.\n"
+            "          outcomes:\n"
+            "            negative:\n"
+            "              stop_workflow: true\n",
+            ".outcomes cannot be combined with direct",
+        ),
+        (
+            "          positiv:\n"
+            "            steps:\n"
+            "              - review: Review it.\n",
+            ".positiv is not a direct assessment branch",
+        ),
+    ],
+)
+def test_invalid_direct_assessment_branches_report_their_paths(
+    tmp_path: Path, branch: str, message: str
+) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        "workflows:\n  - name: m\n    steps:\n      - assess:\n"
+        "          question: Q?\n" + branch,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match=message):
+        load_configuration(path)
+
+
+def test_direct_assessment_branches_require_a_question(tmp_path: Path) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        "workflows:\n  - name: m\n    steps:\n      - assess:\n"
+        "          positive:\n            stop_workflow: true\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ConfigurationError, match=r"\.positive requires an assess question"
+    ):
+        load_configuration(path)
 
 
 def test_a_delegating_manager_chooses_without_a_worker_preview(
@@ -309,3 +388,170 @@ def test_per_item_assessments_keep_outcomes_in_their_own_item(
         if record.result == "skipped: assessment selected negative"
     ]
     assert skipped == (["one", "one"] if first_outcome == "negative" else [])
+
+
+def test_direct_assessment_branches_resume_inside_item_stages(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        """handlers:
+  - discuss: Discuss this item.
+workflows:
+  - task: ~
+    steps:
+      - collect: Collect items.
+        items:
+          steps:
+            - assess:
+                question: Does this need discussion?
+                positive:
+                  handler: discuss
+                mixed:
+                  handlers:
+                    - argv: [printf, recorded]
+            - resolve: Resolve the item.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(service, "task", "TASK-DIRECT-ITEM", agent="codex")
+    service.next("TASK-DIRECT-ITEM")
+    for item_id in ("one", "two"):
+        service.add_item("TASK-DIRECT-ITEM", WorkItem(item_id, "Item."))
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Collected.", summary_for_next="Assess."
+    )
+
+    assert service.next("TASK-DIRECT-ITEM").item_name == "assess"
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Positive.", summary_for_next="Choose."
+    )
+    waiting = service.status("TASK-DIRECT-ITEM")
+    assert waiting.choosing_outcome_of == "assess"
+    assert service.resume(*service.load("TASK-DIRECT-ITEM")).choosing_outcome_of == (
+        "assess"
+    )
+    assert "--outcome positive" in md.render_instruction(
+        service.instruction("TASK-DIRECT-ITEM")
+    )
+    assert service.next("TASK-DIRECT-ITEM", outcome="positive").item_name == "positive"
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Discussed.", summary_for_next="Resolve."
+    )
+    assert service.next("TASK-DIRECT-ITEM").item_name == "resolve"
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Resolved.", summary_for_next="Next item."
+    )
+
+    assert service.next("TASK-DIRECT-ITEM").item_name == "assess"
+    service.complete("TASK-DIRECT-ITEM", artifact="Mixed.", summary_for_next="Choose.")
+    assert service.status("TASK-DIRECT-ITEM").choosing_outcome_of == "assess"
+    assert service.next("TASK-DIRECT-ITEM", outcome="mixed").item_name == "resolve"
+
+
+def test_direct_assessment_branches_resume_inside_a_loop(tmp_path: Path) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        """handlers:
+  - discuss: Discuss this round.
+workflows:
+  - task: ~
+    steps:
+      - reconsider: ~
+        loop:
+          - assess:
+              question: Did the round resolve the issue?
+              positive:
+                handler: discuss
+              negative:
+                handlers:
+                  - argv: [printf, recorded]
+          - review: Review the result.
+            break: The round is complete.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    entry = start_after_init(service, "task", "TASK-DIRECT-LOOP", agent="codex")
+    assert entry.action_kind == "loop"
+
+    assert service.next("TASK-DIRECT-LOOP").item_name == "assess"
+    service.complete(
+        "TASK-DIRECT-LOOP", artifact="Positive.", summary_for_next="Choose."
+    )
+    waiting = service.status("TASK-DIRECT-LOOP")
+    assert waiting.choosing_outcome_of == "assess"
+    assert service.resume(*service.load("TASK-DIRECT-LOOP")).choosing_outcome_of == (
+        "assess"
+    )
+    assert service.next("TASK-DIRECT-LOOP", outcome="positive").item_name == "positive"
+
+
+AUTOMATIC = """workflows:
+  - name: merge
+    steps:
+      - merge: Merge.
+      - assess:
+          question: Is the merge clean?
+          outcomes:
+            clean:
+              argv: [python3, -c, "open('ran', 'w')"]
+            messy:
+              steps:
+                - resolve: Resolve the conflicts.
+      - tests: Run the tests.
+"""
+
+
+def test_an_outcome_with_automatic_work_waits_for_the_answer(tmp_path: Path) -> None:
+    service, _, after = _assessed(tmp_path, AUTOMATIC)
+
+    assert after.choosing_outcome_of == "assess"
+    assert not (tmp_path / "ran").exists()
+    resolved = service.next("TASK-1", outcome="messy", caller_role="manager")
+    assert resolved.item_name == "resolve"
+    assert not (tmp_path / "ran").exists()
+
+
+def test_a_chosen_outcome_runs_its_automatic_work(tmp_path: Path) -> None:
+    service, _, _ = _assessed(tmp_path, AUTOMATIC)
+
+    tests = service.next("TASK-1", outcome="clean")
+
+    assert (tmp_path / "ran").exists()
+    assert tests.item_name == "tests"
+
+
+def test_a_manager_choosing_an_automatic_outcome_skips_the_other_branch(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _assessed(tmp_path, AUTOMATIC)
+
+    page = service.next("TASK-1", outcome="clean", caller_role="manager")
+
+    assert (tmp_path / "ran").exists()
+    assert page.item_name == "tests"
+    assert service.status("TASK-1").item_name == "tests"
+    assert service.instruction("TASK-1").item_name == "tests"
+    skipped = [
+        record.status
+        for item, record in zip(*_plan_and_records(service), strict=True)
+        if item.name == "resolve"
+    ]
+    assert skipped == ["completed"]
+
+
+def test_a_manager_choosing_the_agent_outcome_does_not_run_the_automatic_one(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _assessed(tmp_path, AUTOMATIC)
+
+    page = service.next("TASK-1", outcome="messy", caller_role="manager")
+
+    assert page.item_name == "resolve"
+    assert not (tmp_path / "ran").exists()
+    assert service.status("TASK-1").item_name == "resolve"
+
+
+def _plan_and_records(service: WorkflowService):  # noqa: ANN202
+    state, snapshot = service.load("TASK-1")
+    return snapshot.plan.items, state.item_executions

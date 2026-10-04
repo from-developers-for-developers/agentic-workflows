@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ww.executable import ww_command
+from ww.items import WorkItem
 from ww.workspace import Workdir, item_workspace, resolve_workspace
 
 TASK_ID = "ww.task.id"
@@ -31,11 +32,16 @@ DOCUMENTS_PREFIX = "ww.documents."
 ITEM_ID = "ww.item.id"
 ITEM_TEXT = "ww.item.text"
 ITEM_FIELD_PREFIX = "ww.item.field."
+ITEM_PREFIX = "ww.item."
+# Kept in a step's values to say which work item the plan binds it to; never a
+# template name of its own.
+ITEM_BINDING = "__item_binding"
+CHOICES = "ww.choices"
 # Values resolved while the task runs rather than when its plan is compiled.
 RUNTIME_PREFIXES = (
     METADATA_PREFIX,
     PROJECT_METADATA_PREFIX,
-    "ww.item.",
+    ITEM_PREFIX,
     "ww.child.",
 )
 
@@ -47,6 +53,7 @@ CORE_VARIABLE_NAMES = (
     PROJECT_DIR,
     PROJECTS,
     EXECUTABLE,
+    CHOICES,
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
 
@@ -69,6 +76,7 @@ RESERVED_NAMESPACES = (
     "project_metadata",
     "item",
     "child",
+    "choices",
 )
 
 
@@ -79,6 +87,82 @@ RESERVED_NAMESPACES = (
 CHILD_VALUE_PREFIX = "ww.child."
 CHILD_FIELD_PREFIX = "ww.child.field."
 CHILD_VALUE_NAMES = ("ww.child.id", "ww.child.text", "ww.child.project")
+
+
+def item_variable_values(
+    work: WorkItem, referenced: tuple[str, ...] = ()
+) -> dict[str, str]:
+    """``{{ww.item.*}}`` for a bound work item, the one mapping everything uses.
+
+    Agent instructions and automatic actions both read it, so they render the
+    same values.  Representations are stable strings: text fields as stored,
+    booleans as ``true`` or ``false``, and a value never set (an empty text
+    field, no ``reference_to_id``, a custom field the item lacks) as the empty
+    string, the same convention as an unset metadata list.  ``referenced``
+    names the ``ww.item.field.*`` values the caller's templates read, so one
+    the item lacks renders empty rather than as a missing variable.
+    ``ww.item.actual_solution`` is the item's resolution text.
+    """
+    values = {
+        ITEM_ID: work.id,
+        ITEM_TEXT: work.item,
+        "ww.item.processed_item": work.processed_item,
+        "ww.item.proposed_solution": work.proposed_solution,
+        "ww.item.actual_solution": work.actual_solution,
+        "ww.item.resolved": "true" if work.resolved else "false",
+        "ww.item.reported": "true" if work.reported else "false",
+        "ww.item.reference_to_id": work.reference_to_id or "",
+    }
+    values.update(
+        {name: "" for name in referenced if name.startswith(ITEM_FIELD_PREFIX)}
+    )
+    values.update({f"{ITEM_FIELD_PREFIX}{name}": value for name, value in work.fields})
+    return values
+
+
+def item_binding_values(
+    item_id: str | None, work: WorkItem | None, referenced: tuple[str, ...] = ()
+) -> dict[str, str]:
+    """The item values of a step, with how the step is bound to its item.
+
+    ``item_id`` is the work item the plan binds the step to and ``work`` its
+    current record.  Nothing is bound for a step without ``item_id``; a bound
+    step whose item is gone keeps only the binding, so a read of an item value
+    can say which of those it is (see ``item_context_error``).
+    """
+    if item_id is None:
+        return {}
+    values = {ITEM_BINDING: item_id}
+    if work is not None:
+        values.update(item_variable_values(work, referenced))
+    return values
+
+
+def item_context_error(missing: Iterable[str], values: Mapping[str, str]) -> str | None:
+    """The context error for ``ww.item.*`` names ``values`` cannot give, if any.
+
+    The one wording for a command's arguments and an extension handler's:
+    no item bound to the step, the bound item no longer in the run, or a
+    ``ww.item`` name that does not exist.
+    """
+    names = sorted(name for name in missing if name.startswith(ITEM_PREFIX))
+    if not names:
+        return None
+    listed = ", ".join(names)
+    if ITEM_BINDING not in values:
+        return (
+            f"item variable(s) used where no work item is bound: {listed}; "
+            "ww.item.* is available only in the stages of an `items` step"
+        )
+    if ITEM_ID not in values:
+        return (
+            f"item variable(s) {listed} read the work item "
+            f"{values[ITEM_BINDING]!r}, which is no longer in the run's items"
+        )
+    valid = sorted(
+        (*item_variable_values(WorkItem("x", "x")), f"{ITEM_FIELD_PREFIX}<name>")
+    )
+    return f"unknown item variable(s): {listed}; valid names are " + ", ".join(valid)
 
 
 def child_value_name(name: str) -> str:

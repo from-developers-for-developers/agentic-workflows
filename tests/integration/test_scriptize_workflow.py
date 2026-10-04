@@ -202,7 +202,7 @@ def test_record_transition_shares_commit_message_with_project_hook(
         if name in {"approaches", "checks"}:
             service.interact(
                 "S-1",
-                transcript="Agent: Approve?\nOperator: Approved. ww done",
+                transcript="Agent: Approve?\nOperator: Looks good, continue.",
                 choice="build" if name == "approaches" else "record",
                 end=True,
             )
@@ -253,12 +253,17 @@ def test_the_skill_starts_the_workflow() -> None:
     assert "Never edit ww's configuration files yourself" in " ".join(skill.split())
 
 
-def test_discover_lists_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_discover_and_the_catalog_list_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = _project(tmp_path)
 
-    assert main(["--root", str(root), "discover"]) == 0
-
-    assert f"`{NAME}`" in capsys.readouterr().out
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert NAME in [w["name"] for w in report["builtin_workflows"]]
+    assert main(["--root", str(root), "workflows"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    assert NAME in [w["name"] for w in catalog["workflows"]]
 
 
 CHORES = """hooks:
@@ -517,17 +522,18 @@ def test_discover_and_start_name_the_rules_without_a_check(
     discovered = _discover(root, capsys)
     page = _first_page(root, "task", capsys)
 
-    for text in (discovered, page):
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    # Concise discovery leaves the suggestion to the JSON and the step pages.
+    assert "declared rule" not in discovered
+    assert "## Rules" not in discovered
+    for text in (report["rules_notice"], page):
         assert NOTICE in text
         assert (
             f"The `ww-scriptize` skill starts `{NAME}`, which builds checks for "
             "them with the operator."
         ) in text
         assert "hooks_from" not in text
-    assert discovered.index("## Rules") < discovered.index("## Workflows")
-    assert main(["--root", str(root), "discover", "--json"]) == 0
-    report = json.loads(capsys.readouterr().out)
-    assert report["rules_notice"].startswith(NOTICE)
     assert main(["--root", str(root), "next", "S-1", "--role", "manager"]) == 0
     assert NOTICE not in capsys.readouterr().out
 
@@ -610,7 +616,8 @@ def test_the_notice_follows_the_count_of_one_rule(
     )
     capsys.readouterr()
 
-    discovered = _discover(root, capsys)
+    assert main(["--root", str(root), "discover", "--json"]) == 0
+    discovered = json.loads(capsys.readouterr().out)["rules_notice"]
 
     assert (
         "1 declared rule has no check yet, so a verifier judges it in every "

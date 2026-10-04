@@ -55,6 +55,7 @@ from ww.workspace import Workdir
 
 
 def _plan_from_dict(data: Any) -> WorkflowPlan:
+    """Decode a persisted plan."""
     if not isinstance(data, dict):
         raise ValueError("plan must be a mapping")
     required = {
@@ -77,6 +78,7 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         raise ValueError("plan modes must be strings")
     if not isinstance(data["handoff"], bool):
         raise ValueError("plan handoff must be a boolean")
+    items = _checked_item_passes(items)
     return WorkflowPlan(
         workflow=expect_string(data["workflow"], "workflow"),
         workflow_description=expect_string(
@@ -93,6 +95,39 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         ),
         hooks_from=expect_optional_string(data.get("hooks_from"), "hooks_from"),
     )
+
+
+def _is_item_flow_member(item: PlanItem) -> bool:
+    """Whether a per-item stage or hook of an ``items`` step, never a child's."""
+    return item.child_stage is None and (item.item_template or item.item_id is not None)
+
+
+def _checked_item_passes(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:
+    """Refuse a plan whose ``items`` declarations lack their pass identity.
+
+    The collection item and every per-item template must already carry
+    ``item_pass``; a plan missing it was not written by a compatible ww and is
+    refused rather than guessed at.
+    """
+    collectors = [
+        item
+        for item in items
+        if item.item_operation == "collect" and item.child_operation is None
+    ]
+    members = [item for item in items if _is_item_flow_member(item)]
+    missing = [
+        item
+        for item in (*collectors, *(m for m in members if m.item_template))
+        if item.item_pass is None
+    ]
+    if missing:
+        raise ValueError(
+            f"plan item {missing[0].id!r} belongs to an items step but has "
+            "no item_pass; the snapshot was not written by a compatible ww, "
+            "so it cannot be resumed safely. Finish the run with the ww "
+            "that started it, or reset the task and start it again"
+        )
+    return items
 
 
 def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanItem:
@@ -168,6 +203,7 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         interactive=expect_bool(
             raw.get("interactive", False), f"{item_path}.interactive"
         ),
+        explicit=expect_bool(raw.get("explicit", False), f"{item_path}.explicit"),
         learnable=expect_bool(raw.get("learnable", False), f"{item_path}.learnable"),
         choices=_choices_from_list(raw.get("choices", []), item_path),
         ui=expect_bool(raw.get("ui", False), f"{item_path}.ui"),
@@ -185,6 +221,12 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             raw.get("item_template", False), f"{item_path}.item_template"
         ),
         item_id=expect_optional_string(raw.get("item_id"), "item ID"),
+        item_pass=expect_optional_string(
+            raw.get("item_pass"), f"{item_path}.item_pass"
+        ),
+        item_collect_only=expect_bool(
+            raw.get("item_collect_only", False), f"{item_path}.item_collect_only"
+        ),
         item_assignment=_item_assignment(raw.get("item_assignment", "per_step")),
         loop_id=expect_optional_string(raw.get("loop_id"), "loop ID"),
         loop_assignment=_loop_assignment(raw.get("loop_assignment")),

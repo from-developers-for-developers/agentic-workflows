@@ -54,7 +54,8 @@ def test_group_runs_in_order_without_agent_completions(
     assert all(item.step == "bundle" and item.phase == "step" for item, _ in members)
 
 
-def test_named_automated_group_can_run_as_a_hook(tmp_path: Path) -> None:
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+def test_named_automated_group_can_run_as_a_hook(tmp_path: Path, runtime: str) -> None:
     service = configured_service(
         tmp_path,
         CATALOG
@@ -67,7 +68,7 @@ workflows:
       - work: Manual work.
 """,
     )
-    service.start("task", "T")
+    service.start("task", "T", workflow_runtime=runtime)
     assert (tmp_path / "order").read_text() == "first\nsecond\nthird\n"
     _, snapshot = service.load("T")
     members = [
@@ -86,7 +87,7 @@ def test_group_completion_hook_runs_after_all_members(
     handlers:
       - shell: echo type-check >> order
         on_failure: fix
-      - shell: echo eslint >> order
+      - argv: [sh, -c, 'echo eslint >> order']
         on_failure: fix
     hooks:
       before_complete:

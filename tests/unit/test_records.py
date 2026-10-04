@@ -285,7 +285,7 @@ def test_project_metadata_scope_round_trips_through_persisted_plan() -> None:
     assert loaded.plan.items[0].save_metadata[0].scope == "project"
 
 
-@pytest.mark.parametrize("version", [2, 0, True, "1"])
+@pytest.mark.parametrize("version", [3, 0, True, "1"])
 def test_a_plan_at_another_schema_version_is_not_loaded(version: object) -> None:
     snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
     snapshot["schema_version"] = version

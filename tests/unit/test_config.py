@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Parsing and validating the ww.yaml workflow configuration."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1536,9 +1537,9 @@ workflows:
 def test_yaml_text_parses_like_a_file(tmp_path: Path) -> None:
     text = "workflows:\n  - name: task\n    steps:\n      - work: Work.\n"
 
-    assert parse_yaml_text(text) == parse_yaml_configuration(
-        _write(tmp_path / "ww.yaml", text)
-    )
+    parsed_file = parse_yaml_configuration(_write(tmp_path / "ww.yaml", text))
+    assert parse_yaml_text(text) == replace(parsed_file, workflow_provenance={})
+    assert parsed_file.workflow_provenance["task"].source == "ww.yaml"
     with pytest.raises(ConfigurationError, match="invalid YAML in scenario: "):
         parse_yaml_text("workflows: [", "scenario")
     with pytest.raises(ConfigurationError, match="workflow configuration not found"):
@@ -1784,7 +1785,7 @@ workflows:
       - manual_tests: Split the test cases into items.
         items:
           interactive: true
-""",
+        """,
         )
     )
 
@@ -1801,6 +1802,58 @@ workflows:
                 tmp_path / "ww.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - a: A.\n"
                 "        interactive: maybe\n",
+            )
+        )
+
+
+def test_explicit_is_inherited_from_a_reusable_step_handler(tmp_path: Path) -> None:
+    configuration = load_configuration(
+        _write(
+            tmp_path / "ww.yaml",
+            """handlers:
+  - name: inspect
+    description: Inspect the change.
+    explicit: true
+  - name: plain-group
+    steps:
+      - child: Child work.
+workflows:
+  - name: task
+    steps:
+      - name: first
+        handler: inspect
+        explicit: false
+      - name: second
+        handler: inspect
+""",
+        )
+    )
+
+    first, second = configuration.workflows_by_name["task"].steps
+    assert first.explicit is False
+    assert second.explicit is True
+    assert configuration.handlers_by_name["plain-group"].explicit is False
+
+
+def test_reusing_an_interactive_structural_handler_does_not_bypass_validation(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ConfigurationError, match="cannot be interactive"):
+        load_configuration(
+            _write(
+                tmp_path / "ww.yaml",
+                """handlers:
+  - name: group
+    interactive: true
+    role: manager
+    steps:
+      - actual: Actual work.
+workflows:
+  - task: ~
+    steps:
+      - name: reused
+        handler: group
+""",
             )
         )
 

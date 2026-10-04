@@ -43,10 +43,17 @@ from ww.extensions import (
     parse_reference,
 )
 from ww.interpolation import dependencies, interpolate
+from ww.item_passes import reports_item_on_completion
+from ww.items import WorkItem
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
+from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import CommandOutputAddress
-from ww.variables import PROJECT, item_workspace_values
+from ww.variables import (
+    PROJECT,
+    item_context_error,
+    item_workspace_values,
+)
 from ww.workspace import relative_workspace
 
 _OUTPUT_LIMIT = 16_000
@@ -56,19 +63,13 @@ STATE_OUTPUT_PREVIEW_LIMIT = 1_000
 # stable, local seam for simulating an interrupted launch.
 _PROCESS = subprocess
 CommitRun = Callable[[ExecutionState, PlanSnapshot], None]
+ReadItems = Callable[[ExecutionState], tuple[WorkItem, ...]]
+CommitItems = Callable[[ExecutionState, PlanSnapshot, tuple[WorkItem, ...]], None]
 ProjectState = Callable[[ExecutionState, WorkflowPlan], ExecutionState]
 Clock = Callable[[], str]
 WriteCommandOutput = Callable[[CommandOutputAddress, str], str]
 ReadCommandOutput = Callable[[str], str]
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
-# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
-ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
-
-
-def _no_child_values(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-) -> dict[str, str]:
-    return {}
 
 
 @dataclass
@@ -263,6 +264,9 @@ class _ExtensionService:
                 if name not in values
             }
         )
+        context_error = item_context_error(missing, values)
+        if context_error is not None:
+            raise StateError(context_error)
         if missing:
             raise StateError(
                 "extension handler arguments are missing variable(s): "
@@ -475,9 +479,15 @@ class ActionExecutor:
         read_command_output: ReadCommandOutput,
         task_values: TaskValues,
         metadata_publisher: MetadataPublisher,
-        child_values: ChildValues = _no_child_values,
+        child_values: StepValues = no_step_values,
+        item_values: StepValues = no_step_values,
+        read_items: ReadItems = lambda state: (),
+        commit_items: CommitItems | None = None,
     ) -> None:
         self.root = root
+        self.read_items = read_items
+        self.commit_items = commit_items
+        self.item_values = item_values
         self.extensions = extensions
         self.commit = commit
         self.project_state = project_state
@@ -519,6 +529,7 @@ class ActionExecutor:
                 **dict(state.workflow_values),
                 **self.task_values(state, plan),
                 **self.child_values(state, plan, item),
+                **self.item_values(state, plan, item),
             },
         )
 
@@ -563,6 +574,9 @@ class ActionExecutor:
                 {saved.name: (result.output.strip(),) for saved in item.save_metadata},
                 item.save_metadata,
             )
+            updated_items = self._item_completion(
+                dispatch.state, snapshot, item, result
+            )
             updated_metadata, project_publication = self.metadata_publisher.prepare(
                 dispatch.state.task_id,
                 dispatch.state,
@@ -599,9 +613,70 @@ class ActionExecutor:
             pending_task_metadata=updated_metadata.values if updated_metadata else (),
             pending_project_metadata=project_publication,
         )
-        completed = self._commit_projected(completed, snapshot)
+        completed = self.project_state(completed, snapshot.plan)
+        if updated_items is None:
+            self.commit(completed, snapshot)
+        else:
+            # Item records and the completion are one atomic commit: a stage
+            # is never complete without its saved fields, and the item is
+            # never reported without a confirmed completion.
+            assert self.commit_items is not None
+            self.commit_items(completed, snapshot, updated_items)
         completed, _ = self.metadata_publisher.reconcile(completed, snapshot)
         return completed
+
+    def _item_completion(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        item: PlanItem,
+        result: ActionResult,
+    ) -> tuple[WorkItem, ...] | None:
+        """The item records a successful per-item command leaves behind.
+
+        Declared ``item.field.*`` saves take the command's whole trimmed
+        output, the same value every declared field receives, never a
+        selection from it.  They are valid only for exactly one concrete
+        current item.  A report-phase stage marks its item reported only
+        with its last report-phase stage, after this completion commits.
+        Returns ``None`` when the command changes no item.
+        """
+        reports = reports_item_on_completion(snapshot.plan, state.cursor)
+        if not item.update_item and not reports:
+            return None
+        if item.item_id is None or self.commit_items is None:
+            raise StateError(
+                "item field saves need exactly one current item; an automatic "
+                "command cannot distribute one output among several items"
+            )
+        items = list(self.read_items(state))
+        index = next(
+            (i for i, entry in enumerate(items) if entry.id == item.item_id), None
+        )
+        if index is None:
+            raise StateError(
+                f"item {item.item_id!r} is gone; its saves cannot be recorded"
+            )
+        updated = items[index]
+        if item.update_item:
+            value = result.output.strip()
+            if not value:
+                raise StateError(
+                    "missing required item field value(s): "
+                    + ", ".join(
+                        f"item.field.{field.name}" for field in item.update_item
+                    )
+                    + "; the command printed nothing"
+                )
+            updated = updated.with_fields(
+                {field.name: value for field in item.update_item}
+            )
+        if reports:
+            updated = replace(updated, reported=True)
+        if updated == items[index]:
+            return None
+        items[index] = updated
+        return tuple(items)
 
     def validate_inputs(self, item: PlanItem, values: Mapping[str, str]) -> str | None:
         """Ask an automatic item's action whether it would accept these inputs.

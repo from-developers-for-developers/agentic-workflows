@@ -745,6 +745,63 @@ def test_per_round_gives_one_worker_the_whole_round(tmp_path: Path) -> None:
     assert dict(state.loop_iterations) == {"review-and-fix": 2}
 
 
+def test_explicit_visibility_is_scoped_across_a_delegated_loop_round(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        """workflows:
+  - name: task
+    runtime: auto
+    explicit: true
+    steps:
+      - review-and-fix: ~
+        assignment: per_round
+        loop:
+          - quick: Make a quick review.
+            explicit: false
+          - detailed: Show each operation and changed file.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    entry = start_after_init(
+        service,
+        "task",
+        "TASK-EXPLICIT-ROUND",
+        agent="codex",
+        workflow_runtime="auto",
+        caller_role="manager",
+    )
+    assert entry.action_kind == "loop"
+
+    dispatched = service.next("TASK-EXPLICIT-ROUND", caller_role="manager")
+    manager_page = MarkdownOutputAdapter().render_instruction(dispatched)
+    assert "Explicit work guidance applies to:" in manager_page
+    assert "review-and-fix/detailed" in manager_page
+
+    assignment = assignment_token(service, "TASK-EXPLICIT-ROUND")
+    quick = service.status(
+        "TASK-EXPLICIT-ROUND", caller_role="worker", assignment=assignment
+    )
+    quick_page = MarkdownOutputAdapter().render_instruction(quick)
+    assert "Visible work" not in quick_page
+    assert "Explicit work guidance applies to:" in quick_page
+    assert "review-and-fix/detailed" in quick_page
+
+    detailed = service.complete(
+        "TASK-EXPLICIT-ROUND",
+        artifact="Quick review complete.",
+        caller_role="worker",
+        assignment=assignment,
+        summary_for_next="Inspect details.",
+    )
+    detailed_page = MarkdownOutputAdapter().render_instruction(detailed)
+    assert "## Worker: next stage" in detailed_page
+    assert "detailed" in detailed_page
+    assert "### Visible work" in detailed_page
+    assert "Before each meaningful operation" in detailed_page
+
+
 def test_a_later_round_sees_the_previous_round_last_step(tmp_path: Path) -> None:
     service = _service(tmp_path)
     start_after_init(service, "task", "TASK-PREV", agent="codex", caller_role="manager")
