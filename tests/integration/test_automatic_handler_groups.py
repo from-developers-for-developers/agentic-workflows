@@ -55,9 +55,7 @@ def test_group_runs_in_order_without_agent_completions(
 
 
 @pytest.mark.parametrize("runtime", ["single", "auto"])
-def test_named_automated_group_can_run_as_a_hook(
-    tmp_path: Path, runtime: str
-) -> None:
+def test_named_automated_group_can_run_as_a_hook(tmp_path: Path, runtime: str) -> None:
     service = configured_service(
         tmp_path,
         CATALOG

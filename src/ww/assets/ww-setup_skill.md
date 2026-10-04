@@ -13,16 +13,13 @@ for the setup, until the operator's intent to finish is clear; respond to
 corrections and questions, and ask naturally if that intent is ambiguous. Only
 then record it, once, with the transcript command the step's page shows, and
 go on. A single choice, as in the `choose` steps, goes through your native
-choice tool where available (`AskUserQuestion` in Claude Code;
-`request_user_input` in Codex Plan mode). If the only available question tool
-is asynchronous (for example, a host-provided
-`request_user_input_async`), put the choices in its question text and ask for
-a label or number. Keep the choice
-pending until the operator answers; a timeout,
-dismissal, or preselected value is not an answer, and no dependent step may
-proceed. If there is no suitable question tool, ask in the chat as a numbered
-list of options. End your turn after asking and resume only when the operator
-answers. The operator sees every
+choice tool where available. Inspect the host's available question-tool schema
+and follow its supported fields, using structured options when offered and a
+text-only question only when required. Keep the choice pending until the
+operator explicitly answers; a timeout, dismissal, or preselected value is not
+an answer, and no dependent step may proceed. If there is no suitable question
+tool, ask in the chat as a numbered list of options. End your turn after
+asking and resume only when the operator answers. The operator sees every
 file ww writes, the setup before it is placed, and you never edit ww's
 configuration files yourself: ww's workflows place changes with
 `./ww setup apply`.

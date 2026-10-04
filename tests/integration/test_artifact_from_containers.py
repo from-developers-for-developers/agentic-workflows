@@ -9,8 +9,11 @@ import pytest
 
 from tests.workflow_helpers import assignment_token, start_after_init
 from ww.instructions import Instruction
+from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
 from ww.storage import Storage
+
+md = MarkdownOutputAdapter()
 
 ANALYSIS = """handlers:
   - name: investigate
@@ -244,7 +247,14 @@ def test_a_container_in_a_loop_offers_only_its_current_rounds_artifact(
     service = _service(tmp_path, LOOPED.format(container=container, target=target))
     start_after_init(service, "task", "TASK-1", agent="codex")
     assert _open(service).item_name == "assess"
-    _complete_bare(service)
+    choosing = _complete_bare(service)
+    assert choosing.choosing_outcome_of == "assess"
+    assert "--outcome positive" in md.render_instruction(choosing)
+    restarted = _service(tmp_path, LOOPED.format(container=container, target=target))
+    assert restarted.status("TASK-1").choosing_outcome_of == "assess"
+    choosing = restarted.instruction("TASK-1")
+    assert choosing.choosing_outcome_of == "assess"
+    service = restarted
     assert _open(service, "positive").item_name == "investigate"
     _complete(service, "Investigated in round one.")
     first = _open(service)

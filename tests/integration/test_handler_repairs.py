@@ -101,9 +101,7 @@ def test_repair_is_persistent_and_retries_only_failed_handler(
         assignment=repair.assignment_token,
     )
     assert result.item_name == "C"
-    assert result.item_status == (
-        "in_progress" if runtime == "single" else "pending"
-    )
+    assert result.item_status == ("in_progress" if runtime == "single" else "pending")
     assert (tmp_path / "executions").read_text() == "A\n"
     state, snapshot = service.load("TASK-1")
     record = next(

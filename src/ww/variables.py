@@ -31,6 +31,7 @@ DOCUMENTS_PREFIX = "ww.documents."
 ITEM_ID = "ww.item.id"
 ITEM_TEXT = "ww.item.text"
 ITEM_FIELD_PREFIX = "ww.item.field."
+CHOICES = "ww.choices"
 # Values resolved while the task runs rather than when its plan is compiled.
 RUNTIME_PREFIXES = (
     METADATA_PREFIX,
@@ -47,6 +48,7 @@ CORE_VARIABLE_NAMES = (
     PROJECT_DIR,
     PROJECTS,
     EXECUTABLE,
+    CHOICES,
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
 
@@ -69,6 +71,7 @@ RESERVED_NAMESPACES = (
     "project_metadata",
     "item",
     "child",
+    "choices",
 )
 
 
