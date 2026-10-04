@@ -519,3 +519,39 @@ def test_a_chosen_outcome_runs_its_automatic_work(tmp_path: Path) -> None:
 
     assert (tmp_path / "ran").exists()
     assert tests.item_name == "tests"
+
+
+def test_a_manager_choosing_an_automatic_outcome_skips_the_other_branch(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _assessed(tmp_path, AUTOMATIC)
+
+    page = service.next("TASK-1", outcome="clean", caller_role="manager")
+
+    assert (tmp_path / "ran").exists()
+    assert page.item_name == "tests"
+    assert service.status("TASK-1").item_name == "tests"
+    assert service.instruction("TASK-1").item_name == "tests"
+    skipped = [
+        record.status
+        for item, record in zip(*_plan_and_records(service), strict=True)
+        if item.name == "resolve"
+    ]
+    assert skipped == ["completed"]
+
+
+def test_a_manager_choosing_the_agent_outcome_does_not_run_the_automatic_one(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _assessed(tmp_path, AUTOMATIC)
+
+    page = service.next("TASK-1", outcome="messy", caller_role="manager")
+
+    assert page.item_name == "resolve"
+    assert not (tmp_path / "ran").exists()
+    assert service.status("TASK-1").item_name == "resolve"
+
+
+def _plan_and_records(service: WorkflowService):  # noqa: ANN202
+    state, snapshot = service.load("TASK-1")
+    return snapshot.plan.items, state.item_executions

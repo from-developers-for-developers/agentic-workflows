@@ -3416,6 +3416,13 @@ class WorkflowService:
             or assignment is None
             or state.cursor >= assignment.stop
         ):
+            # Records an assessment skipped sit right after the assignment's
+            # last item; the next dispatch starts beyond them, not on one.
+            while (
+                state.cursor < len(snapshot.plan.items)
+                and state.item_executions[state.cursor].status == "completed"
+            ):
+                state = advance_completed_item(state, _now)
             state = replace(
                 state,
                 assignment_item_id=None,
