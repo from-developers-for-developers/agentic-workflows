@@ -205,3 +205,65 @@ def test_an_automatic_collection_save_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="one output cannot be distributed"):
         load_configuration(path)
+
+
+HOOKED = WORKFLOW.replace(
+    "              saves:\n",
+    "              hooks:\n"
+    "                before_complete:\n"
+    "                  - argv: [python3, check.py]\n"
+    "              saves:\n",
+)
+
+
+def _hooked(root: Path) -> WorkflowService:
+    (root / "check.py").write_text(
+        "import os, sys\nsys.exit(1 if os.path.exists('hookfail') else 0)\n"
+    )
+    return _service(root, HOOKED)
+
+
+def test_a_failing_completion_hook_leaves_the_item_unreported(
+    tmp_path: Path,
+) -> None:
+    service = _hooked(tmp_path)
+    (tmp_path / "hookfail").write_text("")
+
+    _answer(service)
+
+    state, _ = service.load(TASK)
+    assert state.status == "failed"
+    item = _items(service)["c1"]
+    assert item.field("reply_id") == "r1"
+    assert not item.reported
+
+    (tmp_path / "hookfail").unlink()
+    service.next(TASK, retry=True)
+
+    assert all(entry.reported for entry in _items(service).values())
+    assert len(_ledger(tmp_path)) == 2
+
+
+def test_a_passing_completion_hook_reports_each_item_once(tmp_path: Path) -> None:
+    service = _hooked(tmp_path)
+
+    assert _answer(service) == "finish"
+
+    assert all(entry.reported for entry in _items(service).values())
+    assert len(_ledger(tmp_path)) == 2
+
+
+def test_a_failed_assertion_saves_and_reports_nothing(tmp_path: Path) -> None:
+    workflow = WORKFLOW.replace(
+        "              saves:\n",
+        "              assert:\n                - equals: never\n              saves:\n",
+    )
+    service = _service(tmp_path, workflow)
+
+    _answer(service)
+
+    state, _ = service.load(TASK)
+    assert state.status == "failed"
+    item = _items(service)["c1"]
+    assert item.field("reply_id") is None
+    assert not item.reported

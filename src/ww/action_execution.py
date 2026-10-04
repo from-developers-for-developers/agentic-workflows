@@ -796,12 +796,16 @@ class ActionExecutor:
 
 
 def _more_report_stages(plan: WorkflowPlan, cursor: int, item: PlanItem) -> bool:
-    """Whether a later stage of the same item and pass still reports it."""
+    """Whether the report stage's lifecycle still has a later plan item.
+
+    A stage's handler-group members and its completion hooks are plan items of
+    the same item, pass and report operation, so the item is reported only by
+    the last of them, once the whole stage has completed.
+    """
     return any(
         later.item_id == item.item_id
         and later.item_pass == item.item_pass
         and later.item_operation == "report_item"
-        and later.phase == item.phase
         for later in plan.items[cursor + 1 :]
     )
 
