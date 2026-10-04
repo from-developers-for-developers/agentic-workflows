@@ -105,6 +105,8 @@ def test_discover_json_carries_the_same_choices(
         {
             "name": "task",
             "description": "Implement a change.",
+            "source": "ww.yaml",
+            "source_level": "project",
             "default_modes": ["economy"],
             "runtime": None,
             "inherits": None,
@@ -114,6 +116,8 @@ def test_discover_json_carries_the_same_choices(
         {
             "name": "bugfix",
             "description": "",
+            "source": "ww.yaml",
+            "source_level": "project",
             "default_modes": [],
             "runtime": None,
             "inherits": None,

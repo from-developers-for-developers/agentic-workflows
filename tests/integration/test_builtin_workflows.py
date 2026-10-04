@@ -192,9 +192,16 @@ def test_discover_lists_ww_own_workflows_apart(
     report = json.loads(capsys.readouterr().out)
     assert [workflow["name"] for workflow in report["workflows"]] == ["task"]
     assert report["builtin_workflows"] == [
-        {"name": "learn", "description": "Learns who the operator is."}
+        {
+            "name": "learn",
+            "description": "Learns who the operator is.",
+            "source": None,
+            "source_level": None,
+        }
     ]
     assert report["catchall"]["name"] == CATCHALL
+    assert report["catchall"]["source"] is None
+    assert report["catchall"]["source_level"] is None
 
     assert main(["--root", str(root), "discover"]) == 0
     output = capsys.readouterr().out

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from ww.actions import Commands
 from ww.builtin_workflows import CATCHALL
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
@@ -50,6 +51,8 @@ def test_a_single_file_passes_through_unchanged(repo: Path) -> None:
     assert composed.text == text
     assert composed.sources == ("ww.yaml",)
     assert composed.overrides == ()
+    assert composed.workflow_provenance["task"].source == "ww.yaml"
+    assert composed.workflow_provenance["task"].level == "project"
 
 
 def test_the_root_overrides_the_last_import_which_overrides_the_first(
@@ -305,6 +308,86 @@ workflows:
         "task",
         CATCHALL,
     ]
+    assert configuration.workflow_provenance["user-only"].level == "global"
+    assert configuration.workflow_provenance["user-only"].source == str(
+        user / "ww.yaml"
+    )
+    assert configuration.workflow_provenance["task"].level == "project"
+    assert configuration.workflow_provenance["task"].source == "ww.yaml"
+    assert CATCHALL not in configuration.workflow_provenance
+
+
+def test_import_provenance_uses_importing_level_and_physical_source(
+    user: Path, repo: Path
+) -> None:
+    outside = _write(
+        user / "lib" / "workflows.yaml", _WORKFLOW.replace("task", "shared")
+    )
+    _write(user / "ww.yaml", "imports: [lib/workflows.yaml]\n")
+    root = _write(repo / "ww.yaml", "workflows: []\n")
+
+    configuration = load_configuration(root)
+
+    origin = configuration.workflow_provenance["shared"]
+    assert origin.source == str(outside)
+    assert origin.level == "global"
+
+
+def test_project_import_outside_project_keeps_project_level(
+    repo: Path,
+) -> None:
+    _write(repo.parent / "shared.yaml", _WORKFLOW.replace("task", "shared"))
+    root = _write(repo / "ww.yaml", "imports: [../shared.yaml]\nworkflows: []\n")
+
+    origin = load_configuration(root).workflow_provenance["shared"]
+
+    assert origin.source == "../shared.yaml"
+    assert origin.level == "project"
+
+
+def test_local_workflow_winner_and_handler_override_keep_distinct_provenance(
+    user: Path, repo: Path
+) -> None:
+    _write(user / "ww.yaml", _WORKFLOW)
+    _write(
+        repo / "ww.yaml",
+        """handlers:
+  - name: h
+    argv: [echo, project]
+workflows:
+  - name: task
+    steps:
+      - invoke: ~
+        handler: h
+""",
+    )
+    _write(
+        repo / "ww.local.yaml",
+        """handlers:
+  - name: h
+    argv: [echo, local]
+""",
+    )
+
+    configuration = load_configuration(repo / "ww.yaml")
+
+    assert configuration.workflow_provenance["task"].source == "ww.yaml"
+    assert configuration.workflow_provenance["task"].level == "project"
+    action = configuration.handlers_by_name["h"].action
+    assert action is not None and isinstance(action.payload, Commands)
+    assert action.payload.commands[0].argv == ("echo", "local")
+
+
+def test_local_workflow_replacement_becomes_the_winning_origin(
+    user: Path, repo: Path
+) -> None:
+    _write(user / "ww.yaml", _WORKFLOW)
+    _write(repo / "ww.yaml", "workflows: []\n")
+    _write(repo / "ww.local.yaml", _WORKFLOW.replace("Repo task", "Local task"))
+
+    origin = load_configuration(repo / "ww.yaml").workflow_provenance["task"]
+
+    assert (origin.source, origin.level) == ("ww.local.yaml", "local")
 
 
 @pytest.mark.parametrize("where", ["root", "import"])
@@ -332,6 +415,29 @@ def test_extends_false_leaves_out_the_levels_above(
     assert composed.notices[0] == (
         f"{user / 'ww.yaml'} is not applied: a lower level sets extends: false."
     )
+
+
+def test_extends_false_drops_provenance_from_ignored_levels(
+    user: Path, repo: Path
+) -> None:
+    _write(user / "ww.yaml", _WORKFLOW)
+    root = _write(repo / "ww.yaml", "extends: false\nworkflows: []\n")
+
+    configuration = load_configuration(root)
+
+    assert "task" not in configuration.workflow_provenance
+    assert configuration.workflow_provenance == {}
+
+
+def test_absent_levels_do_not_contribute_workflow_provenance(
+    repo: Path,
+) -> None:
+    root = _write(repo / "ww.yaml", _WORKFLOW)
+
+    provenance = load_configuration(root).workflow_provenance
+
+    assert set(provenance) == {"task"}
+    assert provenance["task"].level == "project"
 
 
 def test_extends_true_changes_nothing(user: Path, repo: Path) -> None:

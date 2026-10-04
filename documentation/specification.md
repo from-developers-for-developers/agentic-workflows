@@ -120,6 +120,14 @@ directory when it is missing.
 - `lint` lists the configuration files it read, and `plan` ends with the same
   list; `lint` notices name the file of the level that overrode a definition.
 
+The `discover --json` entries in `workflows`, `builtin_workflows`, and
+`catchall` include additive `source` and `source_level` fields. Configured
+workflows report the winning YAML definition's physical source label and its
+public level (`global`, `project`, or `local`); imported definitions keep the
+level of the file that imported them. Built-in workflows report `null` for
+both fields because they have no configured source. Existing workflow fields
+keep their meanings.
+
 ```yaml
 # ~/.config/ww/ww.yaml
 handlers:
