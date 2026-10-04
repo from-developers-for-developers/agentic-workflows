@@ -11,6 +11,7 @@ publication can be repaired instead of replayed.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Protocol
 
@@ -71,12 +72,14 @@ class ChildCoordinator:
         lifecycle: RunLifecycle,
         start_run: StartChildRun,
         now: Clock,
+        validate_workflow: Callable[[str, ChildTask, ExecutionState], None],
         start_identity: StartChildIdentity | None = None,
     ) -> None:
         self.tasks = tasks
         self.lifecycle = lifecycle
         self.start_run = start_run
         self.now = now
+        self.validate_workflow = validate_workflow
         self.start_identity = start_identity
 
     def start_child(
@@ -84,6 +87,7 @@ class ChildCoordinator:
         parent_task_id: str,
         child_id: str,
         *,
+        workflow_name: str | None = None,
         workflow_runtime: str | None = None,
         model: str | None = None,
         reasoning: str | None = None,
@@ -118,7 +122,20 @@ class ChildCoordinator:
                 for other in children
             ):
                 raise StateError("another child is already in progress")
-            workflow = coordinator.workflow
+            workflow = (
+                workflow_name
+                if workflow_name is not None
+                else (
+                    child.workflow
+                    if child.status == "starting"
+                    else coordinator.workflow
+                )
+            )
+            if child.status == "starting" and workflow != child.workflow:
+                raise StateError(
+                    f"child {child.id!r} is already starting; workflow cannot change"
+                )
+            self.validate_workflow(workflow, child, parent)
             child = self._launch_settings(
                 child, parent, workflow_runtime, model, reasoning
             )

@@ -1301,6 +1301,7 @@ def _start_child(context: _Context) -> _Outcome:
         context.service.start_child(
             args.parent_task_id,
             args.child_id,
+            workflow_name=args.workflow_name,
             workflow_runtime=args.workflow_runtime,
             model=args.model,
             reasoning=args.reasoning,

@@ -711,6 +711,11 @@ def build_parser() -> argparse.ArgumentParser:
     start_child.add_argument("parent_task_id")
     start_child.add_argument("child_id")
     start_child.add_argument(
+        "--workflow",
+        dest="workflow_name",
+        help="Child workflow (default: the parent's configured child workflow).",
+    )
+    start_child.add_argument(
         "-r",
         "--runtime",
         dest="workflow_runtime",
