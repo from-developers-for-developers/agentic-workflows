@@ -413,6 +413,8 @@ def _header(instruction: Instruction) -> Lines:
         lines.extend(_manager_intro())
     if instruction.rules_notice:
         lines.extend([instruction.rules_notice, ""])
+    for notice in instruction.notices:
+        lines.extend([f"> {notice}", ""])
     return lines
 
 

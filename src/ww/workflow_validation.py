@@ -11,9 +11,11 @@ from ww.actions import AutomaticAction, DefinedAction, Prompt, actions
 from ww.builtin_workflows import with_builtin_workflows
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
-from ww.operations import WorkflowHandoff
+from ww.interpolation import dependencies
+from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.project_config import ProjectConfig
 from ww.validation import is_positive_int
+from ww.variables import CHILD_FIELD_PREFIX, CHILD_VALUE_NAMES
 from ww.workflow_config import (
     INIT_STEP_NAME,
     INIT_STEP_PROMPT,
@@ -141,6 +143,7 @@ def validate_configuration(
     _validate_child_tasks(normalized.workflows)
     _validate_item_saves(normalized)
     _validate_item_phases(normalized)
+    _validate_child_launches(normalized)
     return normalized
 
 
@@ -782,6 +785,52 @@ def _check_item_phases(
             (_child_stages(step), per_item),
         ):
             _check_item_phases(workflow, nested, path, per_item=nested_per_item)
+
+
+def _validate_child_launches(configuration: WorkflowConfiguration) -> None:
+    """Allow ``start_child`` only on the per-child stage that runs the child.
+
+    The launch becomes part of the child run the stage compiles to.  On any
+    other step, or in a reusable handler no workflow stage runs the child
+    with, it would silently start nothing.  Its templates read the child's own
+    record, which is all that exists before the child has started.
+    """
+    places = [
+        (f"workflow {workflow.name!r}", step)
+        for workflow in configuration.workflows
+        for step in _walk_steps(workflow.steps)
+    ]
+    places += [
+        (f"handler {handler.name!r}", step)
+        for handler in configuration.handlers
+        if isinstance(handler, StepDefinition)
+        for step in _walk_steps((handler,))
+    ]
+    for where, step in places:
+        launch = step.child_launch
+        if launch is None:
+            continue
+        if not isinstance(step.operation, ChildWorkflowRun):
+            raise ConfigurationError(
+                f"{where} step {step.name!r} sets start_child outside the stage "
+                "that runs the child, where it would start nothing: put it "
+                "beside `workflow:` on the stage under children.steps"
+            )
+        for template in launch.templates:
+            unknown = sorted(
+                name
+                for name in dependencies(template)
+                if name not in CHILD_VALUE_NAMES
+                and not name.startswith(CHILD_FIELD_PREFIX)
+            )
+            if unknown:
+                raise ConfigurationError(
+                    f"{where} step {step.name!r} start_child reads "
+                    + ", ".join(f"{{{{{name}}}}}" for name in unknown)
+                    + ", which does not exist before the child starts; it can "
+                    "read {{ww.child.id}}, {{ww.child.text}}, "
+                    "{{ww.child.project}} and {{ww.child.field.<name>}}"
+                )
 
 
 def _item_saves(

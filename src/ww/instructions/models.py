@@ -493,6 +493,9 @@ class Instruction:
     manager_intro: bool = False
     # On the first page of ``start``: the declared rules no check covers yet.
     rules_notice: str | None = None
+    # One-line notes ww shows under the page header: what it did on the
+    # caller's behalf (started a child, dispatched the next step).
+    notices: tuple[str, ...] = ()
     completion_registered: bool = False
     # The completion was accepted but held: verifiers judge its rules first.
     completion_held: bool = False
@@ -638,6 +641,7 @@ class Instruction:
             "assignment_continues": self.assignment_continues,
             "manager_intro": self.manager_intro,
             "rules_notice": self.rules_notice,
+            "notices": list(self.notices),
             "completion_registered": self.completion_registered,
             "completion_held": self.completion_held,
             "caller_role": self.caller_role,

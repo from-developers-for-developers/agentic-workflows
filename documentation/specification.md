@@ -650,7 +650,34 @@ workflow and waits for it to finish.
   `start-child` command for its own child; any other child is refused while it
   waits. Its artifact is the child's workflow summary, so later stages use it
   with `artifact_from: implement`.
-- Stages before it may refine the child with `update-child`; the child's `init`
+- `start_child` beside `workflow:` makes ww start the child itself when
+  the stage is reached, so the manager never runs `start-child` by hand:
+
+  ```yaml
+  - implement:
+      workflow: task                 # the default child workflow, as above
+      start_child:                   # every key optional
+        workflow: "{{ww.child.field.workflow}}"
+        runtime: "{{ww.child.field.runtime}}"
+        model: "{{ww.child.field.model}}"
+        reasoning: "{{ww.child.field.reasoning}}"
+        agent: "{{ww.child.field.agent}}"
+  ```
+
+  Each key is a template over the child's record (`{{ww.child.id}}`,
+  `text`, `project`, `field.<name>`; nothing else exists before the child
+  starts), rendered when the stage runs, so `update-child --field model=...`
+  made earlier counts. An omitted key, a field the child does not carry, or a
+  value that renders empty inherits exactly as the same `start-child` option
+  omitted does. The launch is `start-child` itself: the same validation and
+  the same frozen record. The manager's `next` at the stage starts the child
+  and prints the child's page under a one-line note; a launch that cannot
+  proceed (an unknown workflow, an invalid runtime or agent) fails the stage
+  like an automatic handler, for the operator to repair the child's fields
+  and `next --retry`. `start_child` is valid only beside `workflow:` on a
+  stage directly under `children.steps`; elsewhere validation rejects it.
+- Stages before it may refine the child with `update-child` (including
+  `--field` values that record its launch settings); the child's `init`
   records the text it has when it starts as its requirements.
 - In `auto`, the parent's manager also manages the child: starting it returns
   the child's page, and the child's steps are ordinary worker assignments the

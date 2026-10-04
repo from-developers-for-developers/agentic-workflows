@@ -716,7 +716,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NAME=VALUE",
-        help="Set a custom field of the child; allowed at any time.",
+        help=(
+            "Set a custom field of the child; allowed at any time. Fields can "
+            "record launch settings (workflow, runtime, model, reasoning, agent) "
+            "that a stage's start_child reads."
+        ),
     )
     start_child = subparsers.add_parser(
         "start-child", parents=[json_output], help="Start one child task."

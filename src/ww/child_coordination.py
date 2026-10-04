@@ -319,7 +319,13 @@ class ChildCoordinator:
         current = next(
             (entry for entry in refreshed if entry.run_id == run.run_id), None
         )
-        if current is not None and current.state.status in {"completed", "failed"}:
+        # A parent that was already failed is left to the command's own
+        # failure handling, so ``next --retry`` can reach recovery.
+        if (
+            current is not None
+            and current.state.status in {"completed", "failed"}
+            and current.state.status != run.state.status
+        ):
             return self.lifecycle.render(current.state, current.snapshot)
         return None
 
@@ -376,7 +382,10 @@ class ChildCoordinator:
                 # A recovery retry may find a published child whose parent
                 # relink was interrupted while the child was still pending.
                 # Persist the in-progress binding while the parent keeps waiting.
-                if parent.status == "failed":
+                # A child ww could not launch has no run: it stays failed.
+                if parent.status == "failed" and any(
+                    child.run_id is not None for child in watched
+                ):
                     parent = retry_failed_item(parent, snapshot.plan, self.now)
                     parent = begin_child_workflow(parent, item, self.now)
                     commit_children()

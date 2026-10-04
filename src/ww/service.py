@@ -7,7 +7,7 @@ import hashlib
 import json
 import secrets
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +82,7 @@ from ww.item_passes import (
 )
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
+from ww.operations import ChildLaunch
 from ww.plan import (
     PlanCompilationOptions,
     PlanItem,
@@ -152,6 +153,7 @@ from ww.transitions import (
     enter_loop,
     exit_exhausted_loop,
     fail_agent_item,
+    fail_child_workflow,
     finish_loop_continue,
     finish_loop_exit,
     finish_selection,
@@ -885,7 +887,96 @@ class WorkflowService:
             caller_role=caller_role,
         )
         self.children.reconcile_after_child(task_id)
+        instruction = self._start_declared_child(task_id, instruction)
         return self._tag_caller(instruction, caller_role)
+
+    def _start_declared_child(
+        self, task_id: str, instruction: Instruction
+    ) -> Instruction:
+        """Start the child a ``start_child`` stage declares, once it is reached.
+
+        The launch goes through ``start-child`` itself, so validation and
+        recording are the same as for a manual start.  It runs after the
+        parent's lock is released because starting a child locks the parent.
+        A launch that cannot proceed fails the stage like any automatic
+        handler: the operator reads the cause and retries or replans.
+        """
+        if is_bootstrap_request(task_id) or "/" in task_id:
+            return instruction
+        state, snapshot = self.load(task_id)
+        if state.cursor >= len(snapshot.plan.items):
+            return instruction
+        item = snapshot.plan.items[state.cursor]
+        coordinator = child_workflow(item)
+        if (
+            coordinator is None
+            or coordinator.launch is None
+            or item.child_number is None
+            or state.status != "in_progress"
+            or state.item_executions[state.cursor].status != "in_progress"
+        ):
+            return instruction
+        children = self.tasks.read_children(state.task_id, state.run_id)
+        child = children[item.child_number - 1]
+        if child.status not in {"pending", "starting"}:
+            return instruction
+        # A start already begun keeps its frozen settings.
+        settings = (
+            {}
+            if child.status == "starting"
+            else self._launch_settings(
+                coordinator.launch, self._child_values(state, snapshot.plan, item)
+            )
+        )
+        try:
+            started = self.children.start_child(state.task_id, child.id, **settings)
+        except (StateError, ConfigurationError) as error:
+            with self.tasks.lock_task(state.task_id):
+                state, snapshot = self.load(state.task_id)
+                failed = fail_child_workflow(
+                    state,
+                    snapshot.plan,
+                    item,
+                    child.id,
+                    _now,
+                    f"ww could not start child {child.id!r} for step "
+                    f"{item.name!r}: {error}",
+                )
+                self.commit(failed, snapshot)
+                return self.render(failed, snapshot)
+        return replace(
+            started,
+            notices=(
+                *started.notices,
+                f"ww started child `{child.id}` for step `{item.name}` of "
+                f"`{state.task_id}` with the launch settings recorded on the child.",
+            ),
+        )
+
+    @staticmethod
+    def _launch_settings(
+        launch: ChildLaunch, values: Mapping[str, str]
+    ) -> dict[str, str]:
+        """The ``start-child`` options a launch renders to from the child's record.
+
+        A setting that is absent, names a field the child lacks, or renders
+        empty is left out, so it inherits.
+        """
+        settings: dict[str, str] = {}
+        for name, template in (
+            ("workflow_name", launch.workflow),
+            ("workflow_runtime", launch.runtime),
+            ("model", launch.model),
+            ("reasoning", launch.reasoning),
+            ("agent", launch.agent),
+        ):
+            if template is None:
+                continue
+            bound = {name: "" for name in dependencies(template)} | dict(values)
+            rendered = interpolate(template, bound).strip()
+            if rendered:
+                settings[name] = rendered
+        return settings
 
     def _next_command(
         self,

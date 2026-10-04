@@ -82,6 +82,7 @@ def _parse_handler(
         extra = set(mapping) - {
             "name",
             "handoff_to",
+            "start_child",
             "description",
             "agent",
             "model",

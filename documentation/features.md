@@ -3409,7 +3409,15 @@ runs its `task` workflow), `review`, and `land` for `A`, then the same four for
   as its requirements.
 - Children carry custom fields like items: `add-child ... --field area=parser`,
   and `update-child ... --field area=lexer` at any time.
-- The `implement` stage shows `start-child TASK-123 A` for its own child only;
+- Add `start_child` beside `workflow:` to let ww start the child itself:
+  `implement: {workflow: task, start_child: {model: "{{ww.child.field.model}}"}}`.
+  It takes `workflow`, `runtime`, `model`, `reasoning` and `agent`, each a template
+  over the child's record, read when the stage runs; an omitted or empty value
+  inherits as `start-child` does. Record the settings with
+  `update-child ... --field model=...` (or `add-child --field`) in the stages
+  before. The manager's `next` starts the child and shows its page; a failed
+  launch stops the stage for the operator, and `next --retry` starts it again.
+- Without `start_child`, the `implement` stage shows `start-child TASK-123 A` for its own child only;
   its artifact is the child's workflow summary, which `review` reads through
   `artifact_from: implement`.
 - In `auto`, the parent's manager also manages the child: starting it returns

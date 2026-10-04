@@ -79,27 +79,81 @@ class WorkflowHandoff:
         return cls(data["target"])
 
 
+CHILD_LAUNCH_SETTINGS = ("workflow", "runtime", "model", "reasoning", "agent")
+
+
+@dataclass(frozen=True)
+class ChildLaunch:
+    """The launch settings ww applies when it starts a child itself.
+
+    Each setting is a template rendered, when the stage runs, from the child's
+    record (``{{ww.child.field.<name>}}`` and the like).  ``None`` or a value
+    that renders empty inherits, exactly as an omitted ``start-child`` option.
+    """
+
+    workflow: str | None = None
+    runtime: str | None = None
+    model: str | None = None
+    reasoning: str | None = None
+    agent: str | None = None
+
+    @property
+    def templates(self) -> tuple[str, ...]:
+        return tuple(
+            value
+            for name in CHILD_LAUNCH_SETTINGS
+            if isinstance(value := getattr(self, name), str)
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            name: value
+            for name in CHILD_LAUNCH_SETTINGS
+            if (value := getattr(self, name)) is not None
+        }
+
+    @classmethod
+    def from_dict(cls, data: object) -> ChildLaunch:
+        if not isinstance(data, dict) or not all(
+            key in CHILD_LAUNCH_SETTINGS and isinstance(value, str)
+            for key, value in data.items()
+        ):
+            raise ValueError("child launch must map launch settings to strings")
+        return cls(**data)
+
+
 @dataclass(frozen=True)
 class ChildWorkflowRun:
-    """Coordinator item that runs the named workflow once per collected child."""
+    """Coordinator item that runs the named workflow once per collected child.
+
+    With ``launch`` ww starts the child itself when the item is reached.
+    """
 
     kind: ClassVar[str] = "child_workflow"
     owner: ClassVar[PlanItemOwner] = "ww"
     execution: ClassVar[ExecutionKind] = "agent_instruction"
 
     workflow: str
+    launch: ChildLaunch | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.workflow, str) or not self.workflow.strip():
             raise ValueError("child workflow requires a non-empty target")
 
     def to_dict(self) -> dict[str, object]:
-        return {"workflow": self.workflow}
+        data: dict[str, object] = {"workflow": self.workflow}
+        if self.launch is not None:
+            data["launch"] = self.launch.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChildWorkflowRun:
         expect_keys(data, {"workflow"}, f"{cls.kind} operation")
-        return cls(data["workflow"])
+        launch = data.get("launch")
+        return cls(
+            data["workflow"],
+            ChildLaunch.from_dict(launch) if launch is not None else None,
+        )
 
 
 CoreOperation: TypeAlias = "LoopBoundary | WorkflowHandoff | ChildWorkflowRun"

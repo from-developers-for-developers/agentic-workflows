@@ -16,6 +16,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
   reasoning now show wherever the child is described.
 - New `start-child --agent <agent>`: starts the child for another agent (same vocabulary and validation
   as `start --agent`), recorded on the child and inherited from the parent when omitted.
+- New `start_child` beside `workflow:` on a per-child stage: ww starts the child itself when the stage is
+  reached, from templates over the child's record (`workflow`, `runtime`, `model`, `reasoning`, `agent`;
+  an omitted or empty value inherits), through the same code as `start-child`. A launch failure stops the
+  stage for the operator. Rejected anywhere else. `next` on a parent whose launch failed now reaches
+  `--retry` instead of repeating the failure page. Instruction pages and JSON gain `notices`.
 
 ## 2026-10-04
 

@@ -726,9 +726,13 @@ def fail_child_workflow(
     item: PlanItem,
     child_id: str,
     now: Clock,
+    message: str | None = None,
 ) -> ExecutionState:
-    """Fail the active child coordinator when one of its children fails."""
-    message = f"child {child_id!r} failed"
+    """Fail the active child coordinator when one of its children fails.
+
+    ``message`` names another cause: ww could not start the child itself.
+    """
+    message = message or f"child {child_id!r} failed"
     records = list(state.item_executions)
     records[state.cursor] = replace(
         records[state.cursor], status="failed", error=message

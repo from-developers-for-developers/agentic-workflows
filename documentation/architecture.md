@@ -1333,6 +1333,15 @@ artifacts, items, hooks, and workflow summary, while the parent's run-local
 This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
 
+A per-child stage may carry `start_child`, which compiles into the launch of its
+`ChildWorkflowRun` operation (templates over the child's record, saved with the
+plan). It is not an action: starting a child locks the parent, so it cannot run
+inside the executor's parent lock. After releasing it, `WorkflowService.next`
+renders the launch from the fresh child record and calls the same
+`ChildCoordinator.start_child` as the command; a validation failure fails the
+coordinator item, and a parent already failed is no longer refreshed back to
+waiting while the child it could not launch has no run.
+
 Child launch settings are independent of the parent session: `start-child` can
 override workflow, runtime, agent, model, and reasoning. The service validates the
 target before the coordinator persists the launch, including the single-level

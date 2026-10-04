@@ -758,6 +758,7 @@ class InstructionBuilder:
     def _child_control(
         self, state: ExecutionState, item: PlanItem, record: PlanItemExecution
     ) -> Instruction:
+        coordinator = child_workflow(item)
         children = self.tasks.read_children(state.task_id, state.run_id)
         if record.status == "pending":
             return replace(
@@ -791,6 +792,15 @@ class InstructionBuilder:
             )
         elif active is not None:
             text = f"Child `{active.id}` is in progress at `{active.task_id}`."
+        elif pending is not None and coordinator is not None and coordinator.launch:
+            text = (
+                f"ww starts pending child `{pending.id}` itself, with the "
+                "launch settings this stage declares from the child's record. "
+                f"Run `{next_command(state.task_id)}` and it "
+                "starts the child and shows its page. Until then, the child's "
+                "text or project can still change with "
+                f"`{update_child_command(state.task_id, pending.id)}`."
+            )
         elif pending is not None:
             text = (
                 f"Start pending child `{pending.id}` with:\n\n```console\n"
