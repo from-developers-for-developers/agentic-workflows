@@ -311,7 +311,12 @@ class WorkflowService:
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)
         self.rule_checker = RuleChecker(self.tasks.write_command_output, _now)
         self.children = ChildCoordinator(
-            self.tasks, self, self._start, _now, self._start_child_identity
+            self.tasks,
+            self,
+            self._start,
+            _now,
+            self._validate_child_workflow,
+            self._start_child_identity,
         )
 
     def start(
@@ -2727,6 +2732,7 @@ class WorkflowService:
         parent_task_id: str,
         child_id: str,
         *,
+        workflow_name: str | None = None,
         workflow_runtime: str | None = None,
         model: str | None = None,
         reasoning: str | None = None,
@@ -2734,10 +2740,50 @@ class WorkflowService:
         return self.children.start_child(
             parent_task_id,
             child_id,
+            workflow_name=workflow_name,
             workflow_runtime=workflow_runtime,
             model=model,
             reasoning=reasoning,
         )
+
+    def _validate_child_workflow(
+        self, workflow_name: str, child: ChildTask, parent: ExecutionState
+    ) -> None:
+        """Validate a launch target before freezing the parent's child record."""
+        configuration = self._load_configuration()
+        workflow = configuration.workflows_by_name.get(workflow_name)
+        if workflow is None:
+            raise ConfigurationError(f"workflow not found: {workflow_name}")
+        require_lane(workflow)
+        self._project_directory(child.project)
+        plan = compile_workflow_plan(
+            configuration,
+            self.storage.root,
+            workflow_name,
+            parent.agent,
+            child.task_id,
+            self.extensions,
+            PlanCompilationOptions(task_id=child.task_id, project=child.project),
+            self.extensions.config,
+        )
+        if any(item.child_operation is not None for item in plan.items):
+            raise StateError("child workflows cannot use children")
+        if (
+            is_bootstrap_request(child.id)
+            and self.bootstrap.step(
+                configuration,
+                workflow_name,
+                (),
+                parent.agent,
+                self._unknown_modes,
+                project=child.project,
+            )
+            is None
+        ):
+            raise StateError(
+                f"child workflow {workflow_name!r} declares no variable task_id in "
+                "its first step; add the child with an explicit --id"
+            )
 
     @staticmethod
     def _children_bind_identity(plan: WorkflowPlan) -> bool:
