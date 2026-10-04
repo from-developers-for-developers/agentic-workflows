@@ -35,6 +35,8 @@ is in [documentation/limitations.md](documentation/limitations.md).
   to put every verification command in completion hooks is gone. `0ae0753`
 - An assessment outcome made of an automatic command waits for the chosen outcome; completing the
   assessment used to run it at once. `0ae0753`
+- When a manager (auto runtime) chose an assessment outcome made of an automatic command, `ww next` showed
+  the first step of the unchosen branch; it now continues after the assessment. `d9834bb`
 - Setup learns the project, not the operator. The profile interviews are retired: `ww-learn` and `ww-express`
   and their documents `me`, `myrole`, `team` and `company` are gone from the built-ins, `ww-learn` is no
   longer installed by `init`, and `learned.me|myrole|team|company` can no longer be set (old values stay in the
@@ -62,6 +64,12 @@ is in [documentation/limitations.md](documentation/limitations.md).
   being resolved and reported, so an analysis pass can lead into one batch fix. An empty
   collection now finishes a pass without stages instead of being refused. An `items` step nested
   in another's per-item stages is rejected. Expanding a schema 1 plan writes it as schema 2. `04f4189`
+- Item passes are validated and gated more strictly. A later pass that sets `persistent`, `identity` or
+  `unique` differently from the first declaration is rejected by `lint`; `saves: item.field.*` is accepted
+  only on an `items` step itself or inside per-item stages, and rejected elsewhere. A pass that ends in an
+  assessment is left only after its outcome is chosen. A pass-gate stop has its own operator reason,
+  `pass_incomplete`: record what is missing with `update-item`, then `next --retry`; `next --force` is
+  refused there. `e221674`
 - Groundwork for several sequential `items` passes over one collection; a workflow still may
   hold only one `items` step. Every `items` declaration is now a pass with a stable identity (its
   step path) carried by its collection item and per-item stages in the plan. `persistent`,
