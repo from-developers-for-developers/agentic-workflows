@@ -123,8 +123,8 @@ def test_a_wrong_assignment_writes_nothing(
     assert _state(root, capsys)["project"]["setup.done"] is False  # type: ignore[index]
 
 
-@pytest.mark.parametrize("key", ["me", "myrole", "team", "company"])
-def test_retired_profile_keys_cannot_be_set_and_say_why(
+@pytest.mark.parametrize("key", ["learned.other", "other"])
+def test_an_unknown_key_cannot_be_set(
     user: Path, root: Path, capsys: pytest.CaptureFixture[str], key: str
 ) -> None:
     arguments = [
@@ -132,24 +132,23 @@ def test_retired_profile_keys_cannot_be_set_and_say_why(
         "--set",
         "setup.done=true",
         "--set",
-        f"learned.{key}=now",
+        f"{key}=now",
     ]
 
     assert main(["--root", str(root), *arguments]) == 1
 
     error = capsys.readouterr().err
-    assert f"learned.{key} is retired" in error
-    assert "learned.project" in error
+    assert f"unknown onboarding key {key!r}" in error
     assert _state(root, capsys)["project"]["setup.done"] is False  # type: ignore[index]
 
 
-def test_old_retired_values_stay_on_disk_and_are_ignored(
+def test_unrelated_values_stay_on_disk_and_are_ignored(
     user: Path, root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     user.mkdir()
     (user / "state.json").write_text(
         json.dumps(
-            {"explain": True, "learned": {"me": "2026-01-01T00:00:00Z"}, "other": 1}
+            {"explain": True, "learned": {"extra": "2026-01-01T00:00:00Z"}, "other": 1}
         ),
         encoding="utf-8",
     )
@@ -159,7 +158,7 @@ def test_old_retired_values_stay_on_disk_and_are_ignored(
             {
                 "ww": {
                     "learned": {
-                        "team": "2026-01-01T00:00:00Z",
+                        "extra": "2026-01-01T00:00:00Z",
                         "project": "2026-02-01T00:00:00Z",
                     }
                 },
@@ -184,11 +183,11 @@ def test_old_retired_values_stay_on_disk_and_are_ignored(
     saved = json.loads((user / "state.json").read_text(encoding="utf-8"))
     assert saved == {
         "explain": False,
-        "learned": {"me": "2026-01-01T00:00:00Z"},
+        "learned": {"extra": "2026-01-01T00:00:00Z"},
         "other": 1,
     }
     metadata = json.loads((root / ".ww/metadata.json").read_text(encoding="utf-8"))
-    assert metadata["ww"]["learned"]["team"] == "2026-01-01T00:00:00Z"
+    assert metadata["ww"]["learned"]["extra"] == "2026-01-01T00:00:00Z"
     assert metadata["keep"] == {"me": "x"}
 
 
@@ -213,8 +212,8 @@ def test_discover_mentions_setup_once_without_interrupting_or_interviewing(
     assert "has not been set up in this project" in output
     assert "never blocks ordinary work" in output
     assert "`ww-setup` skill" in output
-    for retired in ("explain", "interview", "myrole", "ww-learn "):
-        assert retired not in output.split("## Onboarding")[1].split("##")[0]
+    for word in ("explain", "interview"):
+        assert word not in output.split("## Onboarding")[1].split("##")[0]
     report = json.loads(_run(root, capsys, "discover", "--json"))
     assert report["onboarding"]["setup_done"] is False
     assert len(report["onboarding"]["guidance"]) == 1

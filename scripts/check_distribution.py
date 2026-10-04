@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tarfile
@@ -12,22 +13,11 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# Skills init installs: the setup guide with the project learning it starts.
-RETAINED_SKILLS = (
-    "ww-setup",
-    "ww-learn-project",
-    "ww-suggest",
-    "ww-refresh",
-    "ww-wizard",
-)
-# Retired managed assets must not ship again.
-RETIRED_ASSETS = ("ww/assets/ww-learn_skill.md",)
 DESIGN_DOCUMENTS = ("specification", "features", "examples")
 REQUIRED_WHEEL_PATHS = {
     *(f"ww/assets/docs/{name}.md" for name in DESIGN_DOCUMENTS),
     "ww/assets/agent_instructions.md",
     "ww/assets/ww_skill.md",
-    *(f"ww/assets/{name}_skill.md" for name in RETAINED_SKILLS),
     "ww/assets/workflows/onboarding.yaml",
     "ww/_bundled_extensions/ww/git/extension.py",
 }
@@ -35,7 +25,6 @@ REQUIRED_SDIST_PATHS = {
     *(f"documentation/{name}.md" for name in DESIGN_DOCUMENTS),
     "src/ww/assets/agent_instructions.md",
     "src/ww/assets/ww_skill.md",
-    *(f"src/ww/assets/{name}_skill.md" for name in RETAINED_SKILLS),
     "ext/ww/git/extension.py",
 }
 
@@ -60,11 +49,28 @@ def _require_members(path: Path, required: set[str]) -> None:
         raise RuntimeError(f"{path.name} is missing required files: {detail}")
 
 
-def _forbid_members(path: Path, forbidden: tuple[str, ...]) -> None:
-    members = {name.removeprefix("src/") for name in _archive_members(path)}
-    present = sorted(name for name in forbidden if name in members)
-    if present:
-        raise RuntimeError(f"{path.name} ships retired files: {', '.join(present)}")
+def _skill_names(path: Path) -> set[str]:
+    """The skills an archive ships, from its ``*_skill.md`` asset files."""
+    suffix = "_skill.md"
+    prefix = "ww/assets/" if path.suffix == ".whl" else "src/ww/assets/"
+    return {
+        name.removeprefix(prefix).removesuffix(suffix)
+        for name in _archive_members(path)
+        if name.startswith(prefix)
+        and name.endswith(suffix)
+        and "/" not in name[len(prefix) :]
+    }
+
+
+def _require_exact_skills(path: Path, expected: set[str]) -> None:
+    """The shipped skill set is exactly ``defaults.SKILLS``."""
+    shipped = _skill_names(path)
+    if shipped != expected:
+        extra = ", ".join(sorted(shipped - expected)) or "none"
+        missing = ", ".join(sorted(expected - shipped)) or "none"
+        raise RuntimeError(
+            f"{path.name} ships the wrong skills: extra {extra}; missing {missing}"
+        )
 
 
 def _read_member(path: Path, name: str) -> bytes:
@@ -109,10 +115,8 @@ def main() -> int:
         _require_members(wheel, REQUIRED_WHEEL_PATHS)
         _require_license(wheel)
         _require_document_parity(wheel)
-        _forbid_members(wheel, RETIRED_ASSETS)
         _require_members(sdist, REQUIRED_SDIST_PATHS)
         _require_license(sdist)
-        _forbid_members(sdist, RETIRED_ASSETS)
 
         environment = temporary_root / "venv"
         _run(sys.executable, "-m", "venv", str(environment), cwd=temporary_root)
@@ -127,6 +131,17 @@ def main() -> int:
             str(wheel),
             cwd=temporary_root,
         )
+        listing = subprocess.run(
+            (sys.executable, "-c", "from ww.defaults import SKILLS; print(*SKILLS)"),
+            cwd=ROOT,
+            env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        expected_skills = set(listing.stdout.split())
+        _require_exact_skills(wheel, expected_skills)
+        _require_exact_skills(sdist, expected_skills)
         _run(
             str(python),
             "-c",

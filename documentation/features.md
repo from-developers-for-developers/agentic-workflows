@@ -239,9 +239,7 @@ that action. With consent it appends these lines to `.gitignore`:
 
 Everything under `.ww` is one checkout's state, except `project.md`, in which
 ww records what it learned about the project: it is meant to be committed and
-shared. Versions of ww before this one also re-included `team.md` and
-`company.md`; ww no longer writes them, and a line that re-includes them stays
-as it is. Git cannot re-include a file inside
+shared. Git cannot re-include a file inside
 an ignored directory, which is why the directory's contents are ignored rather
 than the directory. A line that ignores the directory whole, as `.ww/`, `.ww`,
 `/.ww` or `/.ww/`, would keep the
@@ -448,12 +446,6 @@ belongs:
 | `explain` | `state.json` in the user configuration directory | whether the operator wants the agent to narrate what ww does while it learns; optional, absent until they say so |
 | `setup.done` | `.ww/metadata.json`, as `ww.setup.done` | whether ww was set up in this project |
 | `learned.project` | `.ww/metadata.json`, under `ww.learned` | when ww last learned about the project |
-
-ww used to record when it learned about the operator, their role, their team
-and their company (`learned.me`, `learned.myrole`, `learned.team`,
-`learned.company`). That feature is retired: those values, and every other key
-in the files, stay as they are and are ignored; `--set` refuses a retired key
-with a message saying so.
 
 The project keys live in ww's own `ww.` namespace of project metadata, which
 no workflow can save into, so they never collide with a workflow's values.
@@ -663,8 +655,7 @@ process answers, the design and "apply". Express runs `ww-learn-project`, then
 question, states the defaults the project supports, and asks only a
 consequential choice the project leaves open. Both keep project learning: an
 existing `project.md` is read first and refreshed, never silently replaced by a
-generic template. The retired `ww-learn` and `ww-express` workflows answer a
-start with the command to run instead.
+generic template.
 
 **What `ww-suggest` proposes.** Its `design` step asks, in one message with
 a default for each answer taken from the profile, what the setup turns on,
@@ -721,9 +712,7 @@ preferences about workflows belong in the resulting proposal and configuration,
 and ww keeps no replacement dossier about the operator. It is the built-in
 document `project`, so `{{ww.documents.project}}` names it in any workflow, and
 it resolves against the project root even for a task working in a Git
-worktree. Files older versions wrote (`me.md`, `myrole.md`, `team.md`,
-`company.md`) are user documents now: ww never reads them for setup, rewrites
-them or deletes them. It starts with this remark, which tells any other agent
+worktree. It starts with this remark, which tells any other agent
 to leave it alone:
 
 ```markdown

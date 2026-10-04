@@ -32,7 +32,6 @@ from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies, interpolate
 from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
-from ww.retired import workflow_not_found
 from ww.variables import (
     CHILD_FIELD_PREFIX,
     CHILD_VALUE_NAMES,
@@ -331,7 +330,7 @@ class WorkflowPlanCompiler:
         try:
             workflow = self.configuration.workflows_by_name[workflow_name]
         except KeyError as error:
-            raise ConfigurationError(workflow_not_found(workflow_name)) from error
+            raise ConfigurationError(f"workflow not found: {workflow_name}") from error
         selected = (
             self.options.modes if self.options.modes is not None else workflow.modes
         )

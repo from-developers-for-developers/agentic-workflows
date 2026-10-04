@@ -61,7 +61,7 @@ def test_auto_covers_execution_settings_this_session_cannot_change() -> None:
     assert "execution settings this session cannot change" in guidance
 
 
-def test_a_retired_runtime_names_the_supported_ones() -> None:
+def test_an_unknown_runtime_names_the_supported_ones() -> None:
     with pytest.raises(ConfigurationError) as error:
         runtime_instruction("delegate")
 

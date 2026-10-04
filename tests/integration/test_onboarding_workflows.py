@@ -31,8 +31,18 @@ ONBOARDING = (
     "ww-automate",
 )
 LEARNING_DOCUMENTS = ("project",)
-RETIRED_DOCUMENTS = ("me", "myrole", "team", "company")
-RETIRED_WORKFLOWS = ("ww-learn", "ww-express")
+PROFILE_DOCUMENTS = ("me", "myrole", "team", "company")
+PROFILE_WORDS = (
+    "myrole",
+    "me.md",
+    "team.md",
+    "company.md",
+    "ww-learn`",
+    "ww-express",
+    "learned.me",
+    "learned.team",
+    "learned.company",
+)
 REMARK = (
     "<!-- This file is maintained by ww for ww's own use. Do not use it for "
     "anything else. If you are an agent that is not doing ww work, ignore this "
@@ -124,8 +134,8 @@ def test_the_project_document_resolves_to_the_project_root_and_is_shared(
     assert store.path(documents["project"], "T-1", worktree) == expected
     assert store.path(documents["project"], None) == expected
     assert SHARED_RUNTIME_FILES == ("project.md",)
-    # No profile document is declared any more.
-    assert not set(RETIRED_DOCUMENTS) & set(documents)
+    # No profile document is declared.
+    assert not set(PROFILE_DOCUMENTS) & set(documents)
 
 
 def _step(workflow: str, name: str) -> StepDefinition:
@@ -142,34 +152,19 @@ def test_no_workflow_or_skill_interviews_about_the_operator() -> None:
             texts.extend(update.instruction for update in step.update_document)
     texts.extend(SKILLS.values())
     for text in texts:
-        for retired in (
-            "myrole",
-            "me.md",
-            "team.md",
-            "company.md",
-            "ww-learn`",
-            "ww-express",
-            "learned.me",
-            "learned.team",
-            "learned.company",
-        ):
-            assert retired not in text, retired
-    assert "ww-learn" not in SKILLS
+        for word in PROFILE_WORDS:
+            assert word not in text, word
 
 
-@pytest.mark.parametrize("workflow", RETIRED_WORKFLOWS)
-def test_starting_a_retired_workflow_names_the_replacement(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], workflow: str
+def test_starting_an_unknown_workflow_is_a_plain_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path / "project")
 
-    code = main(["--root", str(root), "plan", "-w", workflow, "--agent", "codex"])
+    code = main(["--root", str(root), "plan", "-w", "ww-nothing", "--agent", "codex"])
 
     assert code == 1
-    error = capsys.readouterr().err
-    assert f"workflow not found: {workflow}" in error
-    assert "retired" in error
-    assert "ww-learn-project" in error
+    assert "workflow not found: ww-nothing" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -187,7 +182,7 @@ def test_the_proposing_workflows_read_only_the_project_file(
     description = _step(workflow, step).description
     for document in LEARNING_DOCUMENTS:
         assert f"{{{{ww.documents.{document}}}}}" in description, document
-    for document in RETIRED_DOCUMENTS:
+    for document in PROFILE_DOCUMENTS:
         assert f"ww.documents.{document}" not in description, document
 
 
@@ -394,8 +389,8 @@ def test_the_refresh_skill_refreshes_the_project_learning_only() -> None:
     assert "reruns `./ww inspect`" in text
     assert "--workflow ww-learn-project" in text
     assert "`learned.project`" in text
-    for retired in ("learned.me", "learned.myrole", "ww-learn "):
-        assert retired not in text
+    for word in ("learned.me", "learned.myrole", "ww-learn "):
+        assert word not in text
 
 
 def test_ww_learn_project_builds_on_the_inspect_profile() -> None:

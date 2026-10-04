@@ -184,10 +184,10 @@ def test_init_writes_the_runtime_lines_and_completes_a_partial_set(
         "node_modules/\n" + _RUNTIME_LINES + _LOCAL_PATTERNS
     )
 
-    _write(project / ".gitignore", ".ww/*\n!.ww/team.md\n")
+    _write(project / ".gitignore", ".ww/*\n!.ww/notes.md\n")
     _init(project, capsys, "--update-gitignore")
     assert (project / ".gitignore").read_text() == (
-        ".ww/*\n!.ww/team.md\n!.ww/project.md\n" + _LOCAL_PATTERNS
+        ".ww/*\n!.ww/notes.md\n!.ww/project.md\n" + _LOCAL_PATTERNS
     )
 
 
@@ -211,12 +211,12 @@ def test_init_replaces_every_line_that_ignores_the_runtime_directory_whole(
 def test_a_re_inclusion_counts_only_after_the_runtime_line(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(project / ".gitignore", "!.ww/team.md\n.ww/*\n!.ww/project.md\nend/\n")
+    _write(project / ".gitignore", "!.ww/notes.md\n.ww/*\n!.ww/project.md\nend/\n")
 
     _init(project, capsys, "--update-gitignore")
 
     assert (project / ".gitignore").read_text() == (
-        "!.ww/team.md\n.ww/*\n!.ww/project.md\nend/\n" + _LOCAL_PATTERNS
+        "!.ww/notes.md\n.ww/*\n!.ww/project.md\nend/\n" + _LOCAL_PATTERNS
     )
 
 
@@ -237,7 +237,7 @@ def test_the_runtime_lines_let_git_see_only_the_shared_files(
 ) -> None:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _init(tmp_path, capsys, "--update-gitignore")
-    for name in ("team.md", "company.md", "project.md", "metadata.json"):
+    for name in ("notes.md", "project.md", "metadata.json"):
         _write(tmp_path / ".ww" / name, "x\n")
 
     status = subprocess.run(

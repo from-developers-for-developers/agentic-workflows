@@ -1660,7 +1660,7 @@ suggests `ww-scriptize-rules` only while it is switched on.
 | --- | --- | --- | --- |
 | `check_guidance` | string | none | The operator's guidance for building checks, carried as written by `rules --json` (`check_guidance`) for `ww-scriptize-rules` and ww's rule-writing skills; blank text is unset. |
 
-`rules` takes no other key; another key, such as the retired `scripting`, or
+`rules` takes no other key; another key, such as `scripting`, or
 a non-string `check_guidance` is an error. Every check is recorded by the
 operator, through `rules convert`, with `approved_by: operator`; a store
 written by an earlier ww may still hold `auto`.

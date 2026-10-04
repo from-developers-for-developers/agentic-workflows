@@ -263,7 +263,7 @@ def test_decode_rejects_malformed_payloads(
     [
         ("prompt", {"text": "a", "extra": 1}),
         ("cli", {"commands": [{"shell": "a", "cwd": "/"}], "assert": None}),
-        ("cli", {"commands": [{"argv": ["a"], "retired": True}], "assert": None}),
+        ("cli", {"commands": [{"argv": ["a"], "extra": True}], "assert": None}),
     ],
 )
 def test_decode_leaves_fields_it_does_not_know_alone(kind: str, data: dict) -> None:

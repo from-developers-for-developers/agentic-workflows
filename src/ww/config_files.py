@@ -44,9 +44,8 @@ LOCAL_IGNORE_PATTERNS = (
     LOCAL_SETUP_IMPORT_FILE,
 )
 # The files under ``.ww`` a team commits: what ww learned about the project.
-# Everything else there is one checkout's state. Older versions also shared
-# ``team.md`` and ``company.md``; ww no longer writes them, and a line that
-# re-includes them stays as the operator has it.
+# Everything else there is one checkout's state. Existing ``.gitignore`` lines
+# are never touched; the operator's own re-includes stay as they are.
 SHARED_RUNTIME_FILES = ("project.md",)
 # The .gitignore lines ``init`` writes for ``.ww``. Git cannot re-include a
 # file inside an ignored directory, so the directory's contents are ignored
