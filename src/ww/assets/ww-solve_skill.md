@@ -6,7 +6,7 @@ description: Listen to a problem the operator has with how work goes with agents
 # Solve a problem with ww's setup
 
 The `ww-solve` workflow listens, proposes the smallest change, shows it, and
-places it with `./ww setup apply` once the operator confirms; this skill
+places it with `./ww setup apply` (or `./ww setup update` to change an existing workflow) once the operator confirms; this skill
 starts it.
 
 1. Run `./ww onboarding --json`. If `user.explain` is `true`, add

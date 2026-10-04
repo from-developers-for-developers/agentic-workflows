@@ -45,4 +45,6 @@ description: Carry out the user's request through ww, this project's workflow to
    `operator_reason` and the exact error to the user; when they decide, run
    the recovery command ww showed, `./ww next <task-id> --retry` to run the
    handler again, `--force --reason` to skip it or leave the loop, or
-   `--replan` / `--keep-plan` for a changed workflow.
+   `--replan` / `--keep-plan` for a changed workflow. A `pass_incomplete`
+   stop is cleared by recording what it names with `./ww update-item`, then
+   `./ww next <task-id> --retry`; `--force` is refused there.

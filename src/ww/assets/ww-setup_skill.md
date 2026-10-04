@@ -1,6 +1,6 @@
 ---
 name: ww-setup
-description: Guide the operator through setting ww up in this project, express or guided - ww learns the repository (ww-learn-project), then designs a minimal setup with the operator and proposes it (ww-suggest), which in the guided path asks a few questions about their process and in the express path derives defaults from the project. Use when the operator asks to set up, onboard, or configure ww, or accepts the offer `./ww discover` makes while setup is not done; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
+description: Guide the operator through setting ww up in this project, express or guided - ww learns the repository (ww-learn-project), then designs a minimal setup with the operator and proposes it (ww-suggest), which in the guided path asks a few questions about their process and in the express path derives defaults from the project. Use when the operator asks to set up, onboard, or configure ww, or asks what ww can do here while setup is not done; on a later run it offers refreshing what ww learned, solving a problem, rules from past work, and automating a step.
 ---
 
 # Set ww up with the operator

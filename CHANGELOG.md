@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- Validation and `lint` now reject `item_phase` where it would silently do nothing: on an `assess` step
+  itself (an assessment compiles no item operation, so the pass gate and automatic reporting never saw
+  it) and on any step outside a per-item stage, including through a reusable handler used there. Put
+  `item_phase` on the outcome steps that do the work.
 - New `ww-wizard` skill, installed by `init`: it helps you create a workflow, change an existing one, create or
   improve rules, or choose an approach, adapting its questions to the request and challenging needless
   complexity. It reads the `ww docs` sections, inspects the project, validates drafts with the compiled plan,
@@ -76,13 +80,13 @@ is in [documentation/limitations.md](documentation/limitations.md).
   `identity` and `unique` are modeled as unset until declared, and `items: {steps: []}` is
   recorded in the plan as collect-only, apart from the `items: ~` shorthand. Plan snapshots are
   schema 2; schema 1 snapshots still load, with their one pass derived and their digest unchanged,
-  and a replan upgrades them. Older ww builds cannot read schema 2 snapshots. `48c662a`
+  and a replan, or the expansion of an items pass, upgrades them. Older ww builds cannot read schema 2 snapshots. `48c662a`
 - `discover` JSON guidance fields (`task_id`, `runtime_guidance`, `modes_guidance`,
   `model_and_reasoning`, the catch-all `guidance`, runtime descriptions) now carry the same concise
   text the Markdown shows, and `explicit_task_id` states whether the project requires a task ID. `48c662a`
 - `discover` Markdown is concise: a start synopsis with optional arguments in brackets, project
   workflows labeled and sorted local, then project, then global, and a pointer to `ww workflows`
-  for ww's own. Its JSON is unchanged. A layered `workflows: null` no longer breaks composition,
+  for ww's own. Its JSON keeps its structure; only the guidance fields above changed. A layered `workflows: null` no longer breaks composition,
   and the roadmap's start-child page mentions `--workflow`. `0075d12`
 - Interactive steps accept natural conversational completion and keep async choices pending
   until the operator answers. `a282452`

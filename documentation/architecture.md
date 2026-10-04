@@ -817,7 +817,8 @@ had a single implicit pass, so the codec derives that pass from the plan on load
 (refusing a plan that holds several collections or inconsistent fields), keeps
 the snapshot at schema 1, and serializes and digests it without the pass fields
 so the stored plan digest still matches; a replan, which writes a new plan,
-upgrades it to schema 2. A schema 2 plan whose collection or templates lack a
+and the expansion of an items pass (`materialize_item_plan`), which writes the
+expanded plan in the current schema, upgrade it to schema 2. A schema 2 plan whose collection or templates lack a
 pass is refused rather than guessed at.
 Metadata publication intents are prepared first, state publication is the
 execution commit point, and their task/project projections follow that commit.
@@ -1379,7 +1380,7 @@ including its `after_complete` hooks and built-in workflow summary. A failed
 child instead marks that coordinator failed so the parent does not appear done.
 
 Child publication and parent notification are separate task commits, so terminal
-reconciliation is repeatable. A child `next` or `recover` retries notification,
+reconciliation is repeatable. A child `next` retries notification,
 and a waiting parent's ordinary `next` refreshes every child outcome from the
 authoritative child aggregates before deciding whether to keep waiting. Repeating
 that refresh after the parent has advanced or completed is safe.

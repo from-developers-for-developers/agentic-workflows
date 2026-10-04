@@ -405,7 +405,7 @@ repair, reset, or delete its directory is the operator's decision.
 ```markdown
 ## Unreadable tasks
 
-- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 2
+- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 3
 
 Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
 ```
@@ -618,9 +618,10 @@ call that fails or takes too long leaves only its own fact not found.
 
 ## Setting ww up: learning and suggestions
 
-ww can learn who uses it and how the project works, and design a setup for the
-project with the operator from that. The `ww-setup` skill guides the operator through it;
-`discover` offers the skill on the first use of ww in a project, while
+ww can learn how the project works, and design a setup for the project with the
+operator from that; it learns only the project, never who uses it. The
+`ww-setup` skill guides the operator through it. `discover` mentions the skill
+only when the operator asks to set ww up or what ww can do here, while
 `setup.done` is not recorded (see [Onboarding state](#onboarding-state)). The
 work itself is done by ww's own [built-in workflows](specification.md#built-in-workflows),
 shipped as YAML and started like any workflow; each skill is a thin starter
@@ -636,7 +637,7 @@ for one of them.
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
 | `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It automatically creates a branch from `extensions.ww/git.base_branches.default`, which must be configured, and follows ww/git worktree settings, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
-| `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
+| `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the configuration defines, the workflow with the step turned into a command step, placed with `setup update`); applies on confirmation. |
 
 ww never interviews the operator about who they are, their role, their team
 or their company. What a setup needs of the operator is a few questions about
@@ -742,10 +743,11 @@ workflow writes its fragment to the task's `setup_proposal` document
 [`ww setup apply`](#apply-a-proposed-setup): `--for me` into the local files,
 for trying a setup alone, `--for team` into the shared ones. Running
 `ww-suggest` again later and choosing to share offers the same setup to the
-team. A fragment cannot change a workflow the project's own
-`ww.yaml` defines, since that file keeps its own
-definitions; for such a change the workflow proposes a filtered hook or shows
-the YAML to edit by hand. Rules proposed from past artifacts are written with
+team. A fragment applied with `setup apply` only adds definitions; to change a
+workflow the configuration already defines, wherever it is written, the
+workflow proposes the complete changed workflow and places it with
+`setup update` (see [Change a workflow that is already
+defined](#change-a-workflow-that-is-already-defined)). Rules proposed from past artifacts are written with
 `rules add`, like the `ww-rule` skill's.
 
 **Refreshing.** Every learning step reads the existing file first, asks only
@@ -1188,8 +1190,7 @@ changes one thing: when ww is interrupted while the handler runs, the next
 locked `next` replays the interrupted and unrun commands under the same
 operation identity and carries on, instead of stopping at the recovery
 boundary for an operator decision. The default is `false`, which keeps the
-unknown outcome until `next --retry`, `recover --mark-succeeded`, or a checker
-settles it; see [Interrupted automatic handlers](#interrupted-automatic-handlers).
+unknown outcome until `next --retry` or a checker settles it; see [Interrupted automatic handlers](#interrupted-automatic-handlers).
 Declare it on test runs, linters, and checks that only read; leave it off
 anything that publishes, commits, or sends. `lint` rejects it without `argv`
 or `shell`, the saved plan carries it, and `plan` shows it under
@@ -1335,7 +1336,9 @@ The agent sees the choice before it answers: the assessment's page lists each
 outcome and what it does, for example "`negative` — ends the workflow here".
 Once the assessment is complete, the next page asks for the outcome and shows
 one `next --outcome <label>` command per outcome, never a plain `next`, which
-ww would refuse. A delegating manager chooses it itself; no worker preview is
+ww would refuse. An outcome made of an automatic command runs only after its
+outcome is chosen; ww pauses at a pending assessment rather than running any
+branch. A delegating manager chooses it itself; no worker preview is
 shown until the outcome decides which work comes next.
 
 `profile` may be a name or a mapping containing `name` and/or `description`.
@@ -2940,7 +2943,11 @@ one pass with one artifact:
 
 To control the stages, list them under `items.steps`. Mark stages with
 `item_phase: analyze`, `item_phase: resolve`, or `item_phase: report` when they
-update those standard item fields. `steps: []` collects items without processing them, for
+update those standard item fields. `item_phase` is valid only on an acting
+step inside a per-item stage (nested loops, groups, and assessment outcomes
+count). On an `assess` step itself, or on a step outside any per-item stage, it
+would do nothing, so validation and `lint` reject it: put it on the outcome
+steps that do the work. `steps: []` collects items without processing them, for
 example when a later step reads them.
 
 ```yaml
@@ -3047,8 +3054,16 @@ with an `assess` stage, the check waits for the answer: the chosen outcome's
 work is part of the pass, and an outcome that stops the workflow ends the run.
 A pass whose items still lack something stops for the operator with
 `operator_reason: pass_incomplete`, naming each item and what it lacks; record
-it with `update-item` and run `next --retry`. An `items` step nested inside
+it with `update-item` and run `next --retry`. `next --force` is refused at a
+pass gate; the missing values must be recorded. An `items` step nested inside
 another's per-item stages is rejected.
+
+Automatic saves into item fields belong to per-item stages. A command on the
+collecting `items` step itself cannot save item fields (one output cannot be
+distributed among several items), and that is rejected; every field a stage
+declares receives the same whole trimmed output. A report stage in which ww runs
+nothing, one done by the agent alone, still marks its item reported with
+`update-item --reported=true`.
 
 `persistent`, `identity`, and `unique` describe the one collection, so the
 first `items` step decides them. Later passes leave them out or repeat the
@@ -3132,7 +3147,13 @@ which updates items with `update-item` instead:
 ```
 
 Per-item stage prompts can read the stage's own item: `{{ww.item.id}}`,
-`{{ww.item.text}}`, and `{{ww.item.field.<name>}}`. The effective current
+`{{ww.item.text}}`, `{{ww.item.field.<name>}}`, and the lifecycle values
+`{{ww.item.processed_item}}`, `{{ww.item.proposed_solution}}`,
+`{{ww.item.actual_solution}}`, `{{ww.item.resolved}}`, `{{ww.item.reported}}`,
+and `{{ww.item.reference_to_id}}`. `resolved` and `reported` render as `true`
+or `false`; every other value renders as the empty string while unset (a
+`reference_to_id` is empty for an item that links to none). The specification's
+[Item values](specification.md#item-values) is authoritative. The effective current
 step's `{{ww.choices}}` value is a JSON array of configured choice labels in
 order, or `[]` when there are none. Use it as guidance in prompts or provided-
 variable descriptions; ww does not validate a supplied value against labels.
@@ -4181,7 +4202,8 @@ round limit escalates the same way, and the force there leaves the loop.
 `init` offers its bundled skills to every agent integration it knows about:
 `ww`, `noww`, `ww-rule`, and `ww-setup` with the skills it guides through
 (`ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
-`ww-rules-from-artifacts`, `ww-automate`; see
+`ww-rules-from-artifacts`, `ww-feedback-rules`, `ww-deduce-feedback`,
+`ww-automate`, `ww-scriptize`, `ww-wizard`; see
 [Setting ww up](#setting-ww-up-learning-and-suggestions)). In a terminal it
 can redraw, that is one checklist rather than one question per agent:
 

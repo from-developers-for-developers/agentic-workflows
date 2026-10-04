@@ -307,7 +307,9 @@ own chat, or opens a local operator page for a per-item answer sheet, and the
 task waits. An **automatic handler failing** — a test suite that will not pass,
 a commit that is rejected — stops the task and reports the error, because
 recovery is your decision, not the agent's: retry the handler, or force past it
-with a recorded reason.
+with a recorded reason. A stop for an incomplete item pass (`pass_incomplete`)
+is cleared by recording the missing values with `update-item` and then
+`next --retry`; forcing is refused there.
 
 If the agent's own work genuinely cannot be finished, it records that rather
 than leaving the task open:

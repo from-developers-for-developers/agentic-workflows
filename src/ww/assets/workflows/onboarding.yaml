@@ -552,10 +552,11 @@ workflows:
           handler change as a setup fragment in
           {{ww.documents.setup_proposal}}: a hook that runs it, filtered to the
           workflow and step with `workflows` and `steps`, or, for a workflow
-          ww-setup.yaml defines, that workflow with the step turned into an
-          `argv` or `shell` step. A fragment cannot change a workflow that
-          ww.yaml defines itself; for that, show the operator
-          the exact YAML to change by hand. Never edit ww's configuration files
+          the configuration defines, that workflow with the step turned into an
+          `argv` or `shell` step. To change a workflow the configuration
+          already defines, write the complete changed workflow alone in the
+          fragment and place it with `setup update`, which edits the
+          definition in force. Never edit ww's configuration files
           yourself. ww runs the script from the step's directory, the task's
           worktree when worktrees are on: write it for that directory, run
           the project's tools through its wrapper as

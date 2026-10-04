@@ -267,6 +267,7 @@ Each item in `workflows` accepts:
 | `subagents` | boolean | no | `false`: no step's performer spawns subagents, unless a step sets `true`; see the step key. |
 | `handoff` | — | — | Removed; rejected with a message. A workflow transition (`handoff_to` on the last step) makes a handoff workflow; see the step key `handoff_to`. |
 | `runtime` | `single` or `auto` | no | The runtime `start` uses for this workflow when `--runtime` is omitted; it outranks the project default in `ww.json`, and the flag outranks it. |
+| `explicit` | boolean | no | Default `false`; every step inherits it unless it or an enclosing step sets its own; see the step key. |
 | `hooks_from` | string | no | The workflow whose global hooks this one runs with: a global hook filtered with `workflows` applies here when its filter admits this workflow's own name or the named workflow, so this workflow takes that lane's branch, worktree and commit handling. Extensions receive the lane as `ExtensionContext.lane` and key per-workflow settings by it: `ww/git` takes the lane's `branch_name_formats` and `base_branches` entries, while its records and `{{ww.task.workflow}}` keep the workflow's own name and `{{ww.task.lane}}` gives its formats and argv base-branch commands the lane. Rule groups and modes filtered with `workflows` keep matching the workflow's own name only: they are the lane's conventions, not its handling. Must name another workflow that has no `hooks_from` of its own. Set it in the workflow definition in `ww.yaml`. The plan freezes it, so a run keeps its lane. |
 | `needs_hooks_from` | boolean | no | The workflow refuses to run until `hooks_from` is set: `start` (before a bootstrap request is opened), a handoff to it, and a replan of a run whose recompiled workflow lacks it (a `plan_changed` refusal). The message names `hooks_from` in the workflow definition in `ww.yaml`. Defaults to `false`. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
@@ -479,7 +480,7 @@ A step accepts every [handler key](#handlers), plus:
 | `artifact_from` | name | Earlier artifact-producing step whose artifact is supplied to this step: an earlier sibling, or an earlier step of an enclosing level, the nearest one first. Inside assessment outcomes the assessment itself is eligible, and inside per-item stages the `items` step, each supplying its own artifact; an enclosing loop or group is not. A plain group, or an assessment named after its outcomes, supplies the artifact of the latest step inside it (inside the chosen outcome) that saved one in its current round (inside a loop, the loop's current iteration only), and needs some step inside that can save one; when none did, an assessment supplies its own artifact if it saved one, and otherwise the step is told that no artifact is available. An assessment whose outcomes cannot save an artifact supplies its own. |
 | `items` | `null`, string, or mapping | Collects work items, then runs per-item stages for each; see [Items](#items). |
 | `handoff_to` | workflow name or `{{variable}}` | Makes the workflow a handoff workflow and ends it by starting that workflow as the task's next run. A workflow has at most one transition, and nothing may follow it: valid only on the last top-level step (with no completion hook applying to it), with `description`, `agent`, `model`, and `reasoning` at most; or on a hook, see [Hooks](#hooks). `workflow` only runs a child, under `children`. |
-| `item_phase` | `analyze`, `resolve`, or `report` | On a per-item stage: the standard item fields the stage fills, the analysis (`processed_item`), the solution and `resolved`, or `reported`. |
+| `item_phase` | `analyze`, `resolve`, or `report` | Only on an acting step of a per-item stage, at any depth inside its loops, groups, and assessment outcomes: the standard item fields the stage fills, the analysis (`processed_item`), the solution and `resolved`, or `reported`. It is rejected on an assessment step itself (put it on the outcome steps that do the work) and on any step outside a per-item stage, including through a handler used there. |
 | `children` | mapping | Collects child tasks with the step's own action, then runs every child with one workflow, or runs the parent's own stages once per child; see [Children](#children). |
 | `handler` | handler name | Copies a root handler definition into this step; the step keeps its own name and any explicit step fields override the copied values. A step with no content of its own, `- fetch_requirements: ~`, and a root handler of the same name copies that handler implicitly. |
 
@@ -489,7 +490,9 @@ may use hooks, profiles, item collection, nested steps, and the other step
 features. A pure `steps` group or loop wrapper cannot be `interactive: true`
 because it does not execute its own conversation; make an executed child step
 interactive instead. An item or child collector remains a real step and may be
-interactive. `item_phase` is invalid together with `items`.
+interactive. `item_phase` is invalid together with `items`, on an assessment
+step, and outside a per-item stage; validation and `lint` reject each, because
+the phase would silently have no effect there.
 
 The manager enters a loop and dispatches its body. With the default
 `assignment: per_round`, one worker carries consecutive body steps of
@@ -1241,7 +1244,9 @@ negative completes the workflow, like an outcome with `stop_workflow: true`.
 ```
 
 The assessment's page lists every outcome with what it does, and the page
-after it offers one `next --outcome <label>` command per outcome.
+after it offers one `next --outcome <label>` command per outcome. An outcome
+made of an automatic command runs only after the outcome is chosen: the run
+pauses at a pending assessment and no branch executes before then.
 
 ### Saves
 
