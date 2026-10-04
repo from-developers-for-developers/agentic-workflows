@@ -11,6 +11,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- `start-child --workflow` selects a different workflow for a pending child and preserves it
+  across interrupted launches and identity binding. `9dcffd4`
+
 - `start-child` accepts runtime, model and reasoning overrides, preserving them across retries
   and identity bootstrap. `8caadc7`
 

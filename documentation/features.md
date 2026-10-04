@@ -3974,7 +3974,7 @@ handles a whole child in `single`:
 
 ```console
 ww-agentic-workflows start-child TASK-123 TASK-123.1 \
-  --runtime single --model gpt-6-luna --reasoning high
+  --workflow express --runtime single --model gpt-6-luna --reasoning high
 ```
 
 Launch the child session with those actual host settings and give it the child's
@@ -3984,7 +3984,12 @@ after the child completes. Without flags, children inherit parent settings.
 Changing only the model resets reasoning to `auto`; specify both for an exact
 request. Launch settings are fixed once starting begins and survive retries,
 including external-ID bootstrap. This command cannot change an already-started
-child's runtime or model.
+child's runtime or model. `--workflow` also overrides the child workflow named
+by the parent coordinator, without changing the parent plan or earlier children.
+The target must exist, cannot contain `children`, and must provide its own
+first-step `task_id` variable when starting an external-ID request. The chosen
+workflow survives interrupted starts and identity binding; it cannot change
+after launch begins. Omit the flag to use the configured target.
 
 `single` is the default, so an agent told little more than that would omit
 `--runtime` and get `single` every time, including for workflows written to
