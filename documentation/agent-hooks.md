@@ -103,7 +103,11 @@ Which tasks concern a session:
   own stop (`SubagentStop` in Claude Code and Codex, `subagentStop` in Cursor)
   reminds instead. A step the manager performs itself (`role: manager`) is
   still reminded. Antigravity reports no worker stop, so its manager is
-  simply not reminded about delegated steps.
+  simply not reminded about delegated steps. Likewise a manager whose task has
+  a child task open below it (a parent running a child) is legitimately waiting:
+  its stop gives no reminder at all, and the audit record says why. A stop in a
+  task without an open child or delegated step, such as an ordinary
+  in-progress step, reminds as before.
 - An interactive step whose conversation has not ended is not reminded: the
   session stops so the operator can answer. Once `interact --end` was
   recorded, the step is open work again and the next stop reminds. An

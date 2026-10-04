@@ -1586,7 +1586,9 @@ carries on. `next <task> --role manager --reassign` issues a new token for the
 open assignment and closes the old one, for a worker that was lost or must be
 replaced. A step the manager performs itself, `role: manager` or interactive,
 is an assignment of its own with its own token, which no worker page ever
-shows. Its page gives a manager completion command, `complete <task> --role
+shows. The worker's first page of an assignment says it is addressed to the
+worker, that running the commands it displays is expected even where they name
+the parent task, and that the worker changes only its own branch and worktree. Its page gives a manager completion command, `complete <task> --role
 manager`, and ww refuses `complete` or `loop` with `--role worker` on it ("this
 step is the manager's"), even with the step's token. The manager keeps every
 override: it may still complete or recover any other step.
@@ -1806,6 +1808,13 @@ The `ww/git` extension follows the working directory: branches, worktrees, and
 commits act on the repository the task works in, and a task in a worktree still
 resolves to that repository's primary checkout. A repository whose conventions
 differ from the root's states them in its own settings file, described next.
+
+**Which configuration is in force.** Every command, child launches included,
+reads `ww.yaml`, `ww.json`, and their imports from the primary checkout, never
+from a task's worktree: ww's `.ww` state lives there too. Editing a worktree's
+copy changes nothing, so when a task's worktree holds a `ww.yaml` whose content
+differs from the primary's, the task's instruction pages (the `notices` field in
+JSON) say in one line that the primary checkout's file is the one in force.
 
 ### A project's own extension settings
 

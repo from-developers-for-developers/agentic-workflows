@@ -83,6 +83,15 @@ Each task is guarded by one exclusive lock held across a whole `start`, `next`,
 is unspecified, and `WW_LOCK_TIMEOUT` bounds every wait so real contention
 fails loudly rather than hanging.
 
+## Configuration authority
+
+Configuration is read from the primary checkout only. A task working in a git
+worktree does not make its worktree's `ww.yaml`, `ww.json`, or imports take
+effect, for itself or for the child tasks it launches; a copy that differs from
+the primary's is only flagged on the task's instruction pages. Land a
+configuration change in the primary checkout (or its branch there) for it to
+apply.
+
 ## Storage
 
 ww's authoritative state is the local filesystem under `.ww/` and nothing

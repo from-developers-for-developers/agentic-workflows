@@ -22,6 +22,7 @@ from ww.assignments import (
     loop_span,
     selection_item,
 )
+from ww.config_files import WORKFLOWS_FILE
 from ww.contracts import (
     CallerRole,
     Control,
@@ -234,6 +235,7 @@ class InstructionBuilder:
                 else built.continuation_command
             ),
             run_id=state.run_id,
+            notices=(*built.notices, *self._configuration_notices(state)),
             workflow_runtime=state.workflow_runtime,
             agent=state.agent,
             model=(record.model if record and record.model else None)
@@ -675,6 +677,29 @@ class InstructionBuilder:
                 DocumentTask(update.name, update.instruction, str(path), path.is_file())
             )
         return tuple(tasks)
+
+    def _configuration_notices(self, state: ExecutionState) -> tuple[str, ...]:
+        """Say which ``ww.yaml`` is in force when the task's worktree has another.
+
+        Every command, child launches included, reads the configuration of the
+        primary checkout; a copy in the worktree that differs from it is not
+        in force, which is easy to miss after editing the wrong one.
+        """
+        workspace = resolve_workspace(self.root, state.working_directory)
+        if workspace is None or workspace == self.root.resolve():
+            return ()
+        local = workspace / WORKFLOWS_FILE
+        primary = self.root / WORKFLOWS_FILE
+        try:
+            if not local.is_file() or local.read_bytes() == primary.read_bytes():
+                return ()
+        except OSError:
+            return ()
+        return (
+            f"This task's worktree has its own `{WORKFLOWS_FILE}` that differs from "
+            f"the primary checkout's; ww reads `{primary}` for every command, "
+            "child launches included, so the worktree's copy is not in force.",
+        )
 
     def _requirements_page(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

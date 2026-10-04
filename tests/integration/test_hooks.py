@@ -1263,3 +1263,58 @@ def test_both_adapters_tell_when_a_task_was_last_written(tmp_path: Path) -> None
     memory.written_at["T1"] = before - timedelta(days=10)
     work = open_work(memory, root, since=before - timedelta(days=3))
     assert (work.tasks, work.skipped) == ((), 1)
+
+
+def _parent_with_child(root: Path, *, start: bool) -> WorkflowService:
+    (root / "ww.yaml").write_text(
+        """workflows:
+  - name: parent
+    steps:
+      - split: Collect children.
+        children:
+          workflow: child
+  - name: child
+    steps:
+      - work: Do the child's work.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(root))
+    start_after_init(service, "parent", "P", agent="claudecode")
+    service.next("P")
+    service.add_child("P", "A", "Child requirements.")
+    if start:
+        service.complete("P", artifact="Collected.", summary_for_next="Ready.")
+        service.next("P")
+        start_after_init_child = service.start_child("P", "A")
+        assert start_after_init_child.task_id == "P/A"
+        service.next("P/A")
+    return service
+
+
+def test_the_managers_stop_is_silent_while_a_child_task_is_in_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _parent_with_child(root, start=True)
+    open_ids = {
+        task.task_id for task in open_work(Storage(root).task_persistence, root).tasks
+    }
+    assert {"P", "P/A"} <= open_ids
+
+    assert _hook(root, monkeypatch, capsys, "stop") == ""
+    log = _hook_log(root)[-1]
+    assert log["hook_decision"] == (
+        "allowed: the manager is waiting on a child or worker"
+    )
+
+
+def test_the_stop_still_reminds_in_the_ordinary_in_progress_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    _parent_with_child(root, start=False)
+
+    reminder = json.loads(_hook(root, monkeypatch, capsys, "stop"))
+
+    assert "P step `split` is still in progress" in reminder["reason"]

@@ -37,6 +37,14 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - `complete --role manager` now dispatches the manager's own next step (`role: manager`, no worker to
   select, nothing stopped, no assessment outcome to choose) as `next --role manager` would, printing its work
   page under a one-line note. `--no-dispatch` keeps the old behavior.
+- Documented that configuration is read from the primary checkout only (child launches included), and a
+  task's instruction pages now carry a one-line notice when its worktree holds a `ww.yaml` that differs from
+  the primary's, saying which one is in force.
+- The worker's first page of an assignment now states that it is addressed to the worker, that running the
+  commands it displays is expected even where they name the parent task, and that the worker changes only its
+  own branch and worktree.
+- The stop hook gives no reminder to a manager whose task has a child task or a delegated assignment in
+  progress: it is waiting, not stopping short. An ordinary in-progress step still reminds.
 
 ## 2026-10-04
 

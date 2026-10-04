@@ -2261,6 +2261,12 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 "`--artifact`; write nothing under `.ww` except a document this "
                 "page names.",
                 "",
+                "This assignment is addressed to you, the worker. Running the "
+                "commands this page displays is expected, even where they name "
+                "the parent task or another task ID than the one you were "
+                "given. Change only your own branch and worktree; leave every "
+                "other branch and worktree as it is.",
+                "",
                 *_assignment_coverage(instruction),
             ]
         case Audience.MANAGER if instruction.choosing_outcome_of is not None:
