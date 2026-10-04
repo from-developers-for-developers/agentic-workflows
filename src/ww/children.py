@@ -27,6 +27,7 @@ class ChildTask:
     workflow_runtime: str | None = None
     model: str | None = None
     reasoning: str | None = None
+    agent: str | None = None
     # Custom fields, as items carry them; per-child parent stages read them
     # as ``{{ww.child.field.<name>}}``. String values only.
     fields: tuple[tuple[str, str], ...] = ()
@@ -50,6 +51,7 @@ class ChildTask:
             "workflow_runtime": self.workflow_runtime,
             "model": self.model,
             "reasoning": self.reasoning,
+            "agent": self.agent,
             "fields": dict(self.fields),
         }
 
@@ -71,7 +73,7 @@ class ChildTask:
         for name in ("start_operation_id", "parent_task_id", "project"):
             if data.get(name) is not None and not isinstance(data[name], str):
                 raise ValueError(f"child task {name} must be a string or null")
-        for name in ("workflow_runtime", "model", "reasoning"):
+        for name in ("workflow_runtime", "model", "reasoning", "agent"):
             value = data.get(name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"child task {name} must be non-empty or null")
@@ -91,6 +93,7 @@ class ChildTask:
             workflow_runtime=data.get("workflow_runtime"),
             model=data.get("model"),
             reasoning=data.get("reasoning"),
+            agent=data.get("agent"),
             fields=validate_item_fields(data.get("fields", {})),
         )
 

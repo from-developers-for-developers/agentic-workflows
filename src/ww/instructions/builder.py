@@ -45,7 +45,7 @@ from ww.item_passes import item_collection
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
-from ww.runtimes import runtime_instruction
+from ww.runtimes import requested_setting, runtime_instruction
 from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
@@ -210,10 +210,10 @@ class InstructionBuilder:
             workflow_runtime=state.workflow_runtime,
             agent=state.agent,
             model=(record.model if record and record.model else None)
-            or (item.model if item else None)
+            or (requested_setting(item.model) if item else None)
             or state.model,
             reasoning=(record.reasoning if record and record.reasoning else None)
-            or (item.reasoning if item else None)
+            or (requested_setting(item.reasoning) if item else None)
             or state.reasoning,
             requested_agent=shape.requested_agent if shape else None,
             requested_model=shape.requested_model if shape else None,

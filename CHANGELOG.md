@@ -9,6 +9,14 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-05
+
+- Fix: `start-child --model X` was recorded on the child but `ww status` and the child's pages showed
+  `auto`, because a step's unset model (`auto`) shadowed the task's model. The given model and
+  reasoning now show wherever the child is described.
+- New `start-child --agent <agent>`: starts the child for another agent (same vocabulary and validation
+  as `start --agent`), recorded on the child and inherited from the parent when omitted.
+
 ## 2026-10-04
 
 - Breaking: saved plans from before `items` pass identity (snapshot schema 1) are no longer read; finish or

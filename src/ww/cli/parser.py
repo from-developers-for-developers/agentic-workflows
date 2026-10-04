@@ -736,6 +736,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Child runtime (default: inherit the parent's runtime).",
     )
     start_child.add_argument(
+        "-a",
+        "--agent",
+        help="Child agent (default: inherit the parent's agent).",
+    )
+    start_child.add_argument(
         "--model", help="Child session model (default: inherit the parent's model)."
     )
     start_child.add_argument(

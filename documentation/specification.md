@@ -586,8 +586,10 @@ refused with its status. Its custom fields only feed the parent's per-child
 stages, so `--field` may change them at any time.
 
 `start-child <parent> <child> [--workflow NAME] [--runtime single|auto]
-[--model MODEL] [--reasoning LEVEL]` can start the child in a different session configuration
-from its parent. Omitted options inherit the parent's settings; changing the
+[--agent AGENT] [--model MODEL] [--reasoning LEVEL]` can start the child in a different session
+configuration from its parent. Omitted options inherit the parent's settings (`--agent` takes
+the same vocabulary as `start --agent`, is validated against the child workflow, and is shown by
+the child's pages and `status`); any model string is recorded as given; changing the
 model without specifying reasoning resets reasoning to `auto`, while repeating
 the inherited model preserves its reasoning. These options do not change the
 parent or the child workflow's configured step settings. `--workflow` selects

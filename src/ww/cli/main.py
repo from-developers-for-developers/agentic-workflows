@@ -1371,6 +1371,7 @@ def _start_child(context: _Context) -> _Outcome:
             workflow_runtime=args.workflow_runtime,
             model=args.model,
             reasoning=args.reasoning,
+            agent=args.agent,
         ),
         args.json_output,
     )

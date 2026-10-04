@@ -124,7 +124,7 @@ from ww.rule_verification import (
 )
 from ww.rule_views import RuleView, check_preview, rule_view
 from ww.run_coordination import RunCoordinator
-from ww.runtimes import runtime_instruction
+from ww.runtimes import requested_setting, runtime_instruction
 from ww.storage import Storage
 from ww.storage_adapters import (
     CommandOutputAddress,
@@ -1124,9 +1124,13 @@ class WorkflowService:
             state,
             snapshot.plan,
             item,
-            model=model if model != "auto" else item.model or state.model,
+            model=model
+            if model != "auto"
+            else requested_setting(item.model) or state.model,
             reasoning=(
-                reasoning if reasoning != "auto" else item.reasoning or state.reasoning
+                reasoning
+                if reasoning != "auto"
+                else requested_setting(item.reasoning) or state.reasoning
             ),
             selected_model=model if model != "auto" else None,
             selected_reasoning=reasoning if reasoning != "auto" else None,
@@ -2835,6 +2839,7 @@ class WorkflowService:
         workflow_runtime: str | None = None,
         model: str | None = None,
         reasoning: str | None = None,
+        agent: str | None = None,
     ) -> Instruction:
         return self.children.start_child(
             parent_task_id,
@@ -2843,6 +2848,7 @@ class WorkflowService:
             workflow_runtime=workflow_runtime,
             model=model,
             reasoning=reasoning,
+            agent=agent,
         )
 
     def _validate_child_workflow(
@@ -2859,7 +2865,7 @@ class WorkflowService:
             configuration,
             self.storage.root,
             workflow_name,
-            parent.agent,
+            child.agent or parent.agent,
             child.task_id,
             self.extensions,
             PlanCompilationOptions(task_id=child.task_id, project=child.project),
@@ -2873,7 +2879,7 @@ class WorkflowService:
                 configuration,
                 workflow_name,
                 (),
-                parent.agent,
+                child.agent or parent.agent,
                 self._unknown_modes,
                 project=child.project,
             )
@@ -2899,7 +2905,7 @@ class WorkflowService:
             self._load_configuration(),
             workflow_name,
             (),
-            parent.agent,
+            child.agent or parent.agent,
             self._unknown_modes,
             project=child.project,
         )
@@ -2911,7 +2917,7 @@ class WorkflowService:
         return self.bootstrap.start(
             workflow_name,
             (),
-            parent.agent,
+            child.agent or parent.agent,
             item,
             child.model or parent.model,
             child.reasoning or parent.reasoning,
@@ -3089,8 +3095,8 @@ class WorkflowService:
                     state,
                     plan,
                     item,
-                    model=item.model or state.model,
-                    reasoning=item.reasoning or state.reasoning,
+                    model=requested_setting(item.model) or state.model,
+                    reasoning=requested_setting(item.reasoning) or state.reasoning,
                     now=_now,
                 )
                 self.commit(state, snapshot)
@@ -3441,8 +3447,12 @@ class WorkflowService:
             state,
             snapshot.plan,
             item,
-            model=state.assignment_model or item.model or state.model,
-            reasoning=state.assignment_reasoning or item.reasoning or state.reasoning,
+            model=state.assignment_model
+            or requested_setting(item.model)
+            or state.model,
+            reasoning=state.assignment_reasoning
+            or requested_setting(item.reasoning)
+            or state.reasoning,
             selected_agent=state.assignment_selected_agent,
             selected_model=state.assignment_selected_model,
             selected_reasoning=state.assignment_selected_reasoning,
@@ -3542,10 +3552,12 @@ class WorkflowService:
             assignment_token=secrets.token_hex(4)
             if state.workflow_runtime == "auto"
             else None,
-            assignment_model=model if model != "auto" else item.model or state.model,
+            assignment_model=model
+            if model != "auto"
+            else requested_setting(item.model) or state.model,
             assignment_reasoning=reasoning
             if reasoning != "auto"
-            else item.reasoning or state.reasoning,
+            else requested_setting(item.reasoning) or state.reasoning,
             assignment_selected_agent=selected_agent,
             assignment_selected_model=model if model != "auto" else None,
             assignment_selected_reasoning=reasoning if reasoning != "auto" else None,

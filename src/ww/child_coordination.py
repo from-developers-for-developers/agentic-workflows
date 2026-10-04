@@ -91,6 +91,7 @@ class ChildCoordinator:
         workflow_runtime: str | None = None,
         model: str | None = None,
         reasoning: str | None = None,
+        agent: str | None = None,
     ) -> Instruction:
         validate_task_id(parent_task_id)
         validate_child_id(child_id)
@@ -135,10 +136,10 @@ class ChildCoordinator:
                 raise StateError(
                     f"child {child.id!r} is already starting; workflow cannot change"
                 )
-            self.validate_workflow(workflow, child, parent)
             child = self._launch_settings(
-                child, parent, workflow_runtime, model, reasoning
+                child, parent, workflow_runtime, model, reasoning, agent
             )
+            self.validate_workflow(workflow, child, parent)
             child = replace(child, workflow=workflow, status="starting")
             children[children.index(by_id[child_id])] = child
             self.lifecycle.commit(parent, snapshot, children=tuple(children))
@@ -172,7 +173,7 @@ class ChildCoordinator:
                 child_task_id,
                 workflow,
                 (),
-                parent.agent,
+                child.agent or parent.agent,
                 parent_task_id=parent_task_id,
                 start_operation_id=start_operation_id,
                 model=child.model or parent.model,
@@ -193,6 +194,7 @@ class ChildCoordinator:
         workflow_runtime: str | None,
         model: str | None,
         reasoning: str | None,
+        agent: str | None,
     ) -> ChildTask:
         """Resolve and freeze settings before any child launch side effect."""
         inherited_model = child.model or parent.model
@@ -209,13 +211,18 @@ class ChildCoordinator:
         resolved_runtime = (
             workflow_runtime if workflow_runtime is not None else inherited_runtime
         )
+        inherited_agent = child.agent or parent.agent
+        resolved_agent = agent if agent is not None else inherited_agent
         if not resolved_model.strip() or not resolved_reasoning.strip():
             raise StateError("execution requires non-empty --model and --reasoning")
+        if not resolved_agent.strip():
+            raise StateError("execution requires a non-empty --agent")
         runtime_instruction(resolved_runtime)
         if child.status == "starting" and (
             resolved_model != inherited_model
             or resolved_reasoning != inherited_reasoning
             or resolved_runtime != inherited_runtime
+            or resolved_agent != inherited_agent
         ):
             raise StateError(
                 f"child {child.id!r} is already starting; launch settings cannot change"
@@ -225,6 +232,7 @@ class ChildCoordinator:
             model=resolved_model,
             reasoning=resolved_reasoning,
             workflow_runtime=resolved_runtime,
+            agent=resolved_agent,
         )
 
     def bind_child(

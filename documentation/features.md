@@ -4265,7 +4265,7 @@ manager instruction command; ww does not switch a running session's model.
 The parent retains its own runtime/model/reasoning and resumes its review stages
 after the child completes. Without flags, children inherit parent settings.
 Changing only the model resets reasoning to `auto`; specify both for an exact
-request. Launch settings are fixed once starting begins and survive retries,
+request. `--agent` starts the child for another agent and defaults to the parent's. Launch settings are fixed once starting begins and survive retries,
 including external-ID bootstrap. This command cannot change an already-started
 child's runtime or model. `--workflow` also overrides the child workflow named
 by the parent coordinator, without changing the parent plan or earlier children.

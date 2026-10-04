@@ -1334,7 +1334,7 @@ This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
 
 Child launch settings are independent of the parent session: `start-child` can
-override workflow, runtime, model, and reasoning. The service validates the
+override workflow, runtime, agent, model, and reasoning. The service validates the
 target before the coordinator persists the launch, including the single-level
 children boundary and identity requirements. The coordinator freezes resolved settings
 in the child record before launch, so retrying an interrupted start cannot
