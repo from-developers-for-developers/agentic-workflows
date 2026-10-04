@@ -817,8 +817,18 @@ def await_item_input(
 
 
 def block_item_phase(state: ExecutionState, message: str, now: Clock) -> ExecutionState:
-    """Stop before leaving a per-item phase whose work is incomplete."""
-    return replace(state, status="failed", last_error=message, updated_at=now())
+    """Stop before leaving an items pass whose items lack what it declares.
+
+    Nothing failed and the next step has not started: ``next --retry``
+    checks the items again once the operator recorded what they lack.
+    """
+    return replace(
+        state,
+        status="failed",
+        last_error=message,
+        failure_kind="pass_incomplete",
+        updated_at=now(),
+    )
 
 
 def advance_completed_item(state: ExecutionState, now: Clock) -> ExecutionState:
@@ -1582,6 +1592,7 @@ def select_assessment_outcome(
             + ", ".join(pending.labels)
         )
     records = list(state.item_executions)
+    records[pending.index] = replace(records[pending.index], assessment_outcome=outcome)
     skipped = f"skipped: assessment selected {outcome}"
     if chosen.stops:
         for index in range(state.cursor, len(records)):
@@ -1590,7 +1601,7 @@ def select_assessment_outcome(
             )
         return replace(state, cursor=len(records), item_executions=tuple(records))
     if not pending.declared:
-        return state
+        return replace(state, item_executions=tuple(records))
     group = outcome_region(plan, pending.index)
     for index in group:
         if plan.items[index].assessment_outcome != outcome:

@@ -268,8 +268,11 @@ class InstructionBuilder:
             control=control,
             operator_reason=operator_reason(state, plan),
             result_saved=(
+                # A pass gate stops before the next step: there is no result.
+                None
+                if state.failure_kind == "pass_incomplete"
                 # A rejected or held completion keeps only a draft of the result.
-                False
+                else False
                 if state.failure_kind is not None
                 else _result_saved(state, plan)
                 if state.status in {"failed", "interrupted"} or automatic_running
@@ -715,7 +718,16 @@ class InstructionBuilder:
                 else ()
             ),
             operation_id=record.operation_id if record else None,
-            recovery_commands=recovery_commands(state.task_id) if current else (),
+            recovery_commands=(
+                ()
+                if current is None
+                # A pass gate is passed by recording the items, never skipped.
+                else (
+                    RecoveryCommand("retry", next_command(state.task_id, retry=True)),
+                )
+                if state.failure_kind == "pass_incomplete"
+                else recovery_commands(state.task_id)
+            ),
             # At the fix limit the operator decides on what the checks said.
             fix_required=(
                 fix_required(current, record)

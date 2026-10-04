@@ -9,7 +9,8 @@ and ``resolved``, a report stage ``reported``, and a phase stage's declared
 item saves their values.  The built-in ``handle-item`` stage keeps its whole
 lifecycle: ``resolved`` and ``reported``.  A stage without ``item_phase``
 has only its ordinary completion contract.  A stage that never ran, because
-an assessment, a break, or a stop skipped it, requires nothing.
+an assessment, a break, or a stop skipped it, requires nothing.  When the
+pass ends with an assessment, it is left only once the outcome is chosen.
 
 A linked item (``reference_to_id``) shares its canonical item's analysis and
 solution, so a duplicate comment needs no duplicate fix, but it is reported,
@@ -27,8 +28,8 @@ def item_collection(plan: WorkflowPlan) -> PlanItem | None:
     """The first ``items`` declaration, which holds the collection's settings.
 
     Every pass works on the same collection; its ``persistent``,
-    ``identity``, and ``unique`` settings are the first declaration's, and a
-    later declaration does not change them at runtime.
+    ``identity``, and ``unique`` settings are the first declaration's.  The
+    shared validator rejects a later declaration that sets them differently.
     """
     return next(
         (
@@ -53,8 +54,10 @@ def is_pass_stage(item: PlanItem) -> bool:
 def leaving_pass(plan: WorkflowPlan, cursor: int) -> str | None:
     """The pass whose expanded stages end right before ``cursor``, if any.
 
-    Every workflow without a handoff ends with its built-in summary, so the
-    run never leaves a pass by reaching the end of the plan.
+    Assessment outcomes inside a per-item stage carry the stage's item and
+    pass, so they count as stages of the pass.  Every workflow without a
+    handoff ends with its built-in summary, so the run never leaves a pass by
+    reaching the end of the plan; a stopping outcome completes the run.
     """
     if not 0 < cursor < len(plan.items):
         return None

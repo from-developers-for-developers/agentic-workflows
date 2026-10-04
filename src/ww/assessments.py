@@ -108,8 +108,8 @@ def pending_assessment(
     """The assessment just completed whose outcome is still to be chosen.
 
     Its outcome items, or for the compact form the step after it, are still
-    pending at the cursor; once an outcome is chosen the cursor moves into it
-    and nothing is pending here any more.
+    pending at the cursor until an outcome is chosen; the choice is recorded
+    on the assessment's record and the cursor moves into its work.
     """
     if not 0 < state.cursor < len(plan.items):
         return None
@@ -136,11 +136,24 @@ def pending_assessment(
         )
         if index is None:
             raise StateError(f"assessment outcome has no parent assessment: {parent}")
-        return _pending(plan, index, declared=True)
+        return _unanswered(state, plan, index, declared=True)
     previous = plan.items[state.cursor - 1]
     if previous.assessment_question is not None and not previous.assessment_outcomes:
-        return _pending(plan, state.cursor - 1, declared=False)
+        return _unanswered(state, plan, state.cursor - 1, declared=False)
     return None
+
+
+def _unanswered(
+    state: ExecutionState, plan: WorkflowPlan, index: int, *, declared: bool
+) -> PendingAssessment | None:
+    """The assessment at ``index``, unless its outcome is already chosen.
+
+    A chosen outcome is kept on the assessment's record, so a stop between
+    the answer and the next step, such as a pass gate, never asks again.
+    """
+    if state.item_executions[index].assessment_outcome is not None:
+        return None
+    return _pending(plan, index, declared=declared)
 
 
 def _pending(plan: WorkflowPlan, index: int, *, declared: bool) -> PendingAssessment:

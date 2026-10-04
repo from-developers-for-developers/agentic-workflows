@@ -1515,6 +1515,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `fix_limit` | A step's check failed as many times as its rule's `max_fixes`, else `limits.fixes`, allows; see [Rules and checks](#rules-and-checks). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
+| `pass_incomplete` | An `items` pass finished its stages, but some items lack what those stages declare, such as an analysis or `reported`; see [Several passes over the same items](#several-passes-over-the-same-items). The next step has not started. Record the missing values with `update-item`, then `next --retry` checks again; the gate cannot be forced. |
 | `plan_changed` | The workflow's definition changed since the run's plan was saved; see [When the workflow changes mid-run](#when-the-workflow-changes-mid-run). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
@@ -2879,13 +2880,26 @@ the items' records, so the analysis written by the batch step is there for the
 quick analyze checkpoints, and nothing an earlier pass recorded is cleared.
 Inside a loop a pass is expanded again every round.
 
+A pass with `steps: []` only collects or reconciles; `items: ~` stays the
+shorthand for a single pass with the whole built-in lifecycle.
+
 Leaving a pass requires only what its stages declare: an analyze stage needs
 the item's analysis, a resolve stage its actual solution and `resolved`, a
 report stage `reported`, and the built-in `handle-item` stage both `resolved`
 and `reported`. So an analysis-only pass can lead into a batch fix, and a
 workflow that only analyzes can end there. A linked comment reuses its
-canonical item's analysis and fix but is reported itself. An `items` step
-nested inside another's per-item stages is rejected.
+canonical item's analysis and fix but is reported itself. When a pass ends
+with an `assess` stage, the check waits for the answer: the chosen outcome's
+work is part of the pass, and an outcome that stops the workflow ends the run.
+A pass whose items still lack something stops for the operator with
+`operator_reason: pass_incomplete`, naming each item and what it lacks; record
+it with `update-item` and run `next --retry`. An `items` step nested inside
+another's per-item stages is rejected.
+
+`persistent`, `identity`, and `unique` describe the one collection, so the
+first `items` step decides them. Later passes leave them out or repeat the
+same values; a later pass that sets a different value fails `lint` and names
+both steps.
 
 ### Items that persist across runs
 
@@ -2950,7 +2964,10 @@ ww-agentic-workflows item TASK-123 --by bitbucket_reply_id=200
 A step declares the fields it sets as `item.field.<name>` entries of `saves`,
 beside its metadata and document entries, and ww refuses to complete the step
 while any of them is empty on the step's item, or on every item when the
-step is the collection:
+step is the collection. Such a save needs an item: it belongs on an `items`
+step or on a step, hook, or reused handler that runs within a per-item stage.
+`lint` rejects one on an ordinary step, such as a batch fix between passes,
+which updates items with `update-item` instead:
 
 ```yaml
 - reply: Reply in the Bitbucket thread, then resolve it.
