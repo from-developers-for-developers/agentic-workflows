@@ -256,7 +256,9 @@ def test_a_passing_completion_hook_reports_each_item_once(tmp_path: Path) -> Non
 def test_a_failed_assertion_saves_and_reports_nothing(tmp_path: Path) -> None:
     workflow = WORKFLOW.replace(
         "              saves:\n",
-        "              assert:\n                - equals: never\n              saves:\n",
+        "              assert:\n"
+        "                - equals: never\n"
+        "              saves:\n",
     )
     service = _service(tmp_path, workflow)
 
