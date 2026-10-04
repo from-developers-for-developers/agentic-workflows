@@ -27,6 +27,7 @@ from ww.config_files import (
     display_path,
 )
 from ww.defaults import PROJECT_LAUNCHER
+from ww.design_docs import read_design_document
 from ww.errors import StateError, WwError
 from ww.executable import printed_executable, ww_command
 from ww.extensions import ExtensionContext, ExtensionRegistry
@@ -121,6 +122,7 @@ _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
 _READ_ONLY_COMMANDS = frozenset(
     {
         "discover",
+        "docs",
         "inspect",
         "lookup",
         "lint",
@@ -1362,6 +1364,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "discover": lambda c: _Outcome(
         render_discover(c.storage, c.extensions, c.args.json_output) + "\n"
     ),
+    "docs": lambda c: _Outcome(read_design_document(c.args.document)),
     "inspect": _inspect,
     "lookup": lambda c: _Outcome(
         render_lookup(

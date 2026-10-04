@@ -221,8 +221,8 @@ Check it before you run anything:
 exact, ordered plan that would run — every step, hook, and handler — without
 creating any task state.
 
-[documentation/examples.md](documentation/examples.md) has fifteen complete,
-tested `ww.yaml` files, from this one up to loops, per-item work,
+[documentation/examples.md](documentation/examples.md) has twenty-one complete,
+tested `ww.yaml` examples, from this one up to loops, per-item work,
 child tasks, and Git integration.
 
 ### 4. Ask your agent to do the work
@@ -573,10 +573,12 @@ ww-agentic-workflows complete TASK-123 --role worker \
 
 ## Documentation
 
-- [specification.md](documentation/specification.md) is the concise `ww.yaml`
-  specification, including allowed keys, value types, and constraints.
-- [features.md](documentation/features.md) is the complete user/developer feature reference,
-  with configuration and command examples.
+- [specification.md](documentation/specification.md) is the exact `ww.yaml`
+  specification: keys, value types, defaults, scopes and failure semantics.
+- [features.md](documentation/features.md) is the design guide and feature
+  reference: when to use what, with configuration and command examples.
+- Both, with the examples below, are the authorities for designing workflows.
+  An installed ww prints its own copies: `ww docs specification|features|examples`.
 - [architecture.md](documentation/architecture.md) describes internals, boundaries, state, and
   design decisions.
 - [agent-hooks.md](documentation/agent-hooks.md) covers the agent's own hooks

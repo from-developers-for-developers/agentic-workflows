@@ -49,8 +49,8 @@ configuration files yourself: ww's workflows place changes with
    conventions and recurring pitfalls, starting from `./ww inspect`, in
    `.ww/project.md`, which is shared with the team once committed; when that
    file exists, it is refreshed, not replaced; `ww-suggest` designs a minimal
-   setup from it with you, grounded in ww's specification, features and
-   examples, proposes it in full with the evidence for each piece, walks
+   setup from it with you, grounded in ww's design documents (`./ww docs
+   specification|features|examples`), proposes it in full with the evidence for each piece, walks
    through a realistic task, revises it from your feedback, validates it, and
    places it for you alone or shared with the team. The guided path takes one
    more reply than the express one: your answers about the process.

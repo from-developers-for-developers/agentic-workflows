@@ -149,11 +149,10 @@ workflows:
         description: >-
           Read what ww learned about the project, skipping the file if it
           does not exist: {{ww.documents.project}}. Read the design
-          authorities that say what a setup can be made of, as the checkout or
-          ww's documentation provides them: the specification, the features
-          and the examples documents (`documentation/specification.md`,
-          `documentation/features.md`, `documentation/examples.md` in ww's
-          own repository); the proposal stays within what they describe. Read
+          authorities that say what a setup can be made of, which every
+          installation prints: `{{ww.executable}} docs specification`,
+          `{{ww.executable}} docs features` and `{{ww.executable}} docs
+          examples`; the proposal stays within what they describe. Read
           the current setup: `{{ww.executable}} discover` and
           `{{ww.executable}} rules --json`. When {{ww.documents.project}} has
           no "Profile" section, or does not exist, run `{{ww.executable}}
@@ -226,12 +225,9 @@ workflows:
           review by default but an agent self-review step, and for a small
           team or a team, the operator keeping the review in an interactive
           step by default, an agent review loop being the alternative; (7) for each workflow whose work is not
-          a plain code change, such as manual testing, the step features it
-          uses, proposed as decided where the work calls for them (see the
-          propose step): an `items` step for work that splits into cases,
-          interactive steps or the operator page for what the operator
-          performs or judges, and a document or item fields for a template
-          the work fills; (8) what the process answers turn into modes, such as brief
+          a plain code change, such as manual testing, which step features it
+          needs and why, as the features guide's "Designing a workflow"
+          section says; (8) what the process answers turn into modes, such as brief
           updates or asking first, and operator stops; (9) only when the layout lists candidate
           projects, `projects`: ask for the paths of the sibling
           repositories, which ww never scans; (10) a rule for a hot path or a
@@ -261,8 +257,8 @@ workflows:
             artifact_from: design
             description: >-
               Draft the complete setup from the facts and the design
-              decisions, in the shape of the documentation's examples (the Node
-              project in ww's documentation/examples.md), sized to the project:
+              decisions, in the shape of the examples (`{{ww.executable}} docs
+              examples`, the Node project one), sized to the project:
               one test script gets one lane, a handler or two and the git
               settings. Write it to {{ww.documents.setup_proposal}} as a
               fragment with the root keys `workflows`, `modes`, `documents`,
@@ -286,21 +282,15 @@ workflows:
               `limits` only on request.
 
 
-              Hook the `ww/git` handlers to the lanes:
-              `ext/ww/git/handlers:is-git-clean`, `start-task-branch` and, with
-              worktrees, `create-worktree` before a lane starts, `git-commit`
-              before it completes where agents commit; nothing pushes. Give each
-              verify command an automatic handler with the exact `argv` or
-              `shell`, with no agent prompt or command-running loop. Attach
-              these handlers as ordered `before_complete` hooks with
-              `on_failure: fix` to the steps that change code, such as
-              implement, fix or merge. ww runs the checks when the worker
-              completes; only a failed check sends its output back to the
-              worker to fix, and ww reruns the checks on completion. Never
-              also ask the agent to run these commands or add duplicate
-              verification steps. Give each lane a workflow: investigate,
-              implement or fix, and the review chosen in design; `inherit` for a
-              lane that differs only in its base branch, a `merge-to-<integration
+              Design the workflows by the features guide (`{{ww.executable}} docs
+              features`, "Designing a workflow") and write exact syntax by the
+              specification (`{{ww.executable}} docs specification`): they say
+              where a command belongs (an ordinary step, a reusable handler or
+              a hook), when items, assessments, loops and modes are warranted,
+              and how ww/git lifecycle handlers attach to lanes; nothing
+              pushes. Give each lane a workflow: investigate, implement or
+              fix, and the review chosen in design; `inherit` for a lane that
+              differs only in its base branch, a `merge-to-<integration
               branch>` lane where there is one, and `recommended_next_workflow`
               where lanes chain.
 
@@ -315,30 +305,8 @@ workflows:
               checkout's absolute path or `cd` out of it.
 
 
-              Fit each workflow's steps to its kind of work with ww's step
-              features, and propose them without waiting to be asked: work
-              that splits into cases of one kind, such as test cases, review
-              comments or tickets, is an `items` step (`items:` with
-              `steps:` stages, `persistent: true` when the same cases return
-              each round); what the operator performs or judges, such as
-              running a manual test, is `interactive: true`, or, per item,
-              `interactive: page` with `choices` (for example `pass` and
-              `fail`) so the operator answers every case on one page; a
-              structure the work fills each time, such as a test case
-              template or a report, is a `documents` entry the step `saves`,
-              and per-item values are `item.field.<name>` entries of
-              `saves`; work repeated until a condition holds is a `loop`
-              with a `break`. A plain code lane needs none of them.
-
-
-              Choose one place for each automated check; never repeat a
-              step's check at `before_complete_workflow`. Use a workflow
-              boundary check only when it belongs at that boundary rather
-              than on a code-changing step. Add a mode only for a preference that
-              changes how an agent works, and rules only for conventions no
-              command checks, on the steps they govern, with a one-line check
-              where one exists; a rule never restates its step, a preference or
-              a command, and a step that needs none gets none. Never redefine a
+              Keep each workflow as simple as its work allows and add a feature only
+              for the concrete reason the guide gives. Never redefine a
               workflow ww ships (`catchall`, `ww-*`), duplicate what is
               configured, or edit ww's configuration files yourself.
 
@@ -408,14 +376,10 @@ workflows:
           the problem decide what it asks of the operator: what it must always
           hold gets rules and checks, what can be handed over gets handoffs,
           and decisions the operator keeps become operator stops or
-          interactive steps. Where the problem is about a kind of work, use
-          the step features that fit it: an `items` step for work that
-          splits into cases, `interactive: true` or, per item,
-          `interactive: page` with `choices` for what the operator performs
-          or judges, such as a manual test, a `documents` entry or
-          `item.field.<name>` saves for a template the work fills, and a
-          `loop` with a `break` for work repeated until a condition holds.
-          Write every command it carries, a hook's `argv` or `shell`, a
+          interactive steps. Where the problem is about a kind of work, choose
+          the structure by the features guide (`{{ww.executable}} docs
+          features`, "Designing a workflow"), and write exact syntax by the
+          specification (`{{ww.executable}} docs specification`). Write every command it carries, a hook's `argv` or `shell`, a
           rule's check or a script, for the step's directory, the task's
           worktree when worktrees are on, through the project's wrapper as
           {{ww.documents.project}} records it and as the `check_guidance` of
@@ -536,7 +500,8 @@ workflows:
           judgement: running commands, collecting or reformatting data, filling
           a template, checking a condition. The artifact says what could be a
           script, what must stay with an agent, and whether the script would
-          replace the step or run as a hook before or after it. Read
+          replace the step or run beside it, by the features guide's
+          "Designing a workflow" section (`{{ww.executable}} docs features`). Read
           {{ww.documents.project}} where it exists, and keep the proposal
           within what it says: the project's conventions decide what a script
           may automate.

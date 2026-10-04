@@ -1,10 +1,16 @@
 # Examples
 
-Each example is a complete `ww.yaml`, unless it says otherwise, and every
-one is loaded and compiled by the test suite. They are ordered from the simplest
-to the most involved and each one introduces a different control or behaviour.
-Agent-facing text is deliberately short; in a real project the descriptions
-carry the instructions your agents need.
+Runnable examples for [the specification](specification.md), which defines
+every key exactly, and [the features guide](features.md), which says when to
+use what. Each example is a complete `ww.yaml`, unless it says otherwise, and
+the test suite loads and compiles every one; the behavioral ones are also run
+in a temporary project with fake commands. The first six are the ones to start
+from; the rest are larger compositions. Agent-facing text is
+deliberately brief; in a real project the descriptions carry the instructions
+your agents need.
+
+Read these documents from any installation with `ww docs examples`,
+`ww docs features` and `ww docs specification`.
 
 Run any of them with:
 
@@ -13,26 +19,227 @@ Run any of them with:
 ./ww start TASK-1 --workflow <name> --agent codex --requirements "<requirements>" --role manager
 ```
 
-## 1. A linear workflow
+## 1. A linear workflow with an automatic check
 
-The smallest useful workflow. Every step is plain agent work, the implicit
-`init` step records the requirements first, and each step produces an artifact.
+Plain agent steps in order, and a command ww runs itself. The implicit `init`
+step records the requirements first. `verify` is an ordinary visible step: ww
+runs it when it is reached, advances when it passes, and on a failure hands the
+output to an agent to fix (`on_failure: fix`) and runs it again.
 
 ```yaml
 workflows:
   - name: task
-    description: Implement a small change end to end.
+    description: Implement a change and verify it.
     steps:
-      - develop: Implement the requested change.
-      - test: Run the tests and fix what fails.
+      - develop: Implement the requested change, with tests.
+      - verify: ~
+        argv: [python3, -m, pytest, -q]
+        on_failure: fix
       - document: Update the documentation the change affects.
 ```
 
-## 2. Hooks and reusable handlers
+## 2. A natural interactive review
 
-Handlers are defined once and attached to lifecycle phases as workflow hooks.
-Global hooks apply to every workflow, a workflow's hooks to one workflow, and
-step hooks to one step.
+An interactive step is a conversation held by the session the operator talks
+to. `choices` lists the answers the operator may pick, and `{{ww.choices}}`
+puts their labels into the instruction as a JSON array. It is guidance only:
+the operator may also just talk, and the agent finishes when their intent is
+clear.
+
+```yaml
+workflows:
+  - name: reviewed-change
+    steps:
+      - develop: Implement the requested change.
+      - review: >-
+          Walk the operator through the change and take their verdict. They
+          may answer with one of {{ww.choices}} or in their own words.
+        interactive: true
+        choices:
+          - approve: The change is fine as it is.
+          - rework: More changes are needed; the operator says which.
+```
+
+## 3. One item per piece with `items: ~`
+
+`items: ~` is the whole item lifecycle in one line: the step's own work is to
+split the task into items with `add-item`, and every item then gets one stage
+that analyzes, resolves and reports it. A string instead of `~` gives the
+splitting guidance. Use it when each piece is independent and one pass over
+it is enough.
+
+```yaml
+workflows:
+  - name: migrate-calls
+    steps:
+      - collect: Find every file that still calls `old_api`.
+        items: One item per file, with the file path as its ID.
+      - summarize: Summarize what changed.
+```
+
+## 4. One analysis, one fix, one report per comment
+
+Review comments often share causes, so they are analyzed and fixed together
+once, while every comment is still checked and answered on its own. The
+workflow has one item collection and several passes over it; the ordinary
+steps between the passes run once. The last pass reports each comment with the
+project's own script (not part of ww; `scripts/reply-to-comment.py` posts or
+updates one reply and prints the reply ID). ww passes values to it as
+arguments, saves the printed ID into the item, and marks the item reported
+once the command succeeds. `identity` and `unique` make the comment ID the
+item's identity, so no comment becomes two items.
+
+```yaml
+workflows:
+  - name: review-comments
+    steps:
+      - collect: Record one item per review comment, using its source ID.
+        items:
+          identity: comment_id
+          unique: [comment_id, reply_id]
+          steps: []
+      - analyze-together: >-
+          Analyze all collected comments together and record each analysis
+          with `update-item`.
+      - confirm-analysis: Reuse the collected items.
+        items:
+          steps:
+            - analyze: Check the shared analysis for this comment; fill gaps.
+              item_phase: analyze
+      - fix-together: >-
+          Implement and verify the fixes for all analyzed comments. Record the
+          result of each with `update-item --actual-solution ... --resolved=true`.
+      - report: Reuse the collected items.
+        items:
+          steps:
+            - reply: ~
+              item_phase: report
+              argv:
+                - python3
+                - scripts/reply-to-comment.py
+                - "{{ww.item.field.comment_id}}"
+                - "{{ww.item.actual_solution}}"
+                - "{{ww.item.field.reply_id}}"
+              saves:
+                - item.field.reply_id: The reply ID the script printed.
+```
+
+Re-running the script with a saved `reply_id` must update that reply instead
+of creating another: if ww stops after the remote call but before it saves the
+result, the next attempt runs the command again, and the script owns that
+idempotency.
+
+## 5. Assessments
+
+An assessment asks the agent for a judgment and routes the rest of the
+workflow. The compact form takes only a question: `positive` continues,
+`negative` completes the workflow. The standard branches can sit beside
+`question`, each one an ordinary step shape, and an undeclared branch runs
+nothing and continues. With labels of your own, wrap the branches in
+`outcomes`; each one here is a direct handler. The agent picks with
+`next --outcome <label>`.
+
+```yaml
+handlers:
+  - name: apply-migration
+    argv: [python3, scripts/migrate.py]
+  - name: ask-for-fixes
+    description: Ask the author to fix the migration.
+
+workflows:
+  - name: gate
+    steps:
+      - build: Implement the change.
+      - assess: Is the change ready for review?
+      - review: Review the change.
+
+  - name: branches
+    steps:
+      - assess:
+          question: Does the change touch public behavior?
+          positive:
+            steps:
+              - changelog: Add a changelog entry.
+          negative:
+            steps:
+              - note: Record that the change is internal.
+      - wrap-up: Summarize the change.
+
+  - name: migrate
+    steps:
+      - dry-run: Run the migration against a scratch database.
+      - assess:
+          question: How did the dry run go?
+          outcomes:
+            clean:
+              handler: apply-migration
+            needs-fixes:
+              handler: ask-for-fixes
+```
+
+## 6. Global, project and local variants
+
+Workflows come from up to three levels: your global file (`~/.config/ww/ww.yaml`,
+or `$WW_USER_CONFIG_DIR`), the project's committed `ww.yaml`, and an uncommitted
+`ww.local.yaml` beside it. A lower level replaces a same-named definition from
+above and adds its own; handlers, modes and the rest compose the same way.
+`discover` shows where each workflow comes from and lists local, then project,
+then global, which is the order to prefer when several fit; an explicit request
+for a workflow always wins. Each block below is a separate file, marked by its
+first line.
+
+```yaml
+# file: ~/.config/ww/ww.yaml
+handlers:
+  - name: test
+    argv: [python3, -m, pytest, -q]
+
+workflows:
+  - name: task
+    description: Implement a change, my default.
+    steps:
+      - develop: Implement the change.
+  - name: standup
+    description: Summarize yesterday's work.
+    steps:
+      - summarize: Summarize what changed since yesterday.
+```
+
+```yaml
+# file: ww.yaml
+workflows:
+  - name: task
+    description: Implement a change the way this project does.
+    steps:
+      - develop: Implement the change with tests.
+      - test: ~
+  - name: review
+    description: Review a pull request against the team's checklist.
+    steps:
+      - read: Read the change and report what to fix.
+```
+
+```yaml
+# file: ww.local.yaml
+workflows:
+  - name: review
+    description: Review a pull request, findings first.
+    steps:
+      - read: Read the change and list the findings, worst first.
+```
+
+Here `task` is the project's (it replaces the global one and still uses the
+global `test` handler), `review` is the local one, and `standup` comes from the
+global file.
+
+## 7. Hooks and reusable handlers
+
+Hooks are for lifecycle invariants: something that must happen at a fixed
+point of every matching step or workflow, such as a clean tree before a task
+starts. A command that is merely a visible operation of the workflow belongs
+in an ordinary step (example 1); being automatic does not make it a hook.
+Handlers are defined once, so a step or a hook can reuse them. Global hooks apply to every
+workflow, a workflow's hooks to one workflow, and step hooks to one step.
 Automatic handlers, here `argv` commands, run by ww itself; the agent never
 executes them. `assert` lists conditions the command's output must meet. `idempotent: true` says
 that running the handler again is harmless, so when ww is interrupted while
@@ -77,7 +284,7 @@ workflows:
       - review: Review the change.
 ```
 
-## 3. Shell commands with arguments, environment, and variables
+## 8. Shell commands with arguments, environment, and variables
 
 Shell source never interpolates directly; data goes through `args` and `env`.
 `variables` asks the agent for values that later automatic steps consume, and
@@ -101,7 +308,7 @@ workflows:
       - notes: Write the release notes for {{version}}.
 ```
 
-## 4. Modes, profiles, and execution settings
+## 9. Modes, profiles, and execution settings
 
 Modes are selectable guidance, profiles describe how an agent should behave,
 and `agent`, `model`, and `reasoning` are advisory requests the manager sees in
@@ -131,7 +338,7 @@ workflows:
         agent: claudecode
 ```
 
-## 5. Skills, slash commands, and MCP actions
+## 10. Skills, slash commands, and MCP actions
 
 A step can require a discovered agent skill or slash command instead of plain
 prompt text (`kind: skill` or `kind: slash_command`), or address an MCP
@@ -152,7 +359,7 @@ workflows:
         kind: slash_command
 ```
 
-## 6. Nested steps and artifact dependencies
+## 11. Nested steps and artifact dependencies
 
 `steps` groups related work under a parent step that becomes in progress with
 its first child and completes with its last. `artifact_from` hands an earlier
@@ -174,7 +381,7 @@ workflows:
         artifact_from: analyze
 ```
 
-## 7. Loops with break and continue
+## 12. Loops with break and continue
 
 A `loop` repeats its body until a worker breaks it or the round limit is
 reached. `break` and `continue` are natural-language conditions the worker
@@ -196,71 +403,7 @@ workflows:
           - fix: Fix the findings.
 ```
 
-## 8. Assessments
-
-An assessment asks the agent for a decision and selects a subtree by its named
-outcome. The compact form only continues or finishes the workflow. A workflow
-holds at most one `assess` step, because the name is reserved.
-
-```yaml
-handlers:
-  - name: refactor
-    description: Refactor the modules the assessment named.
-
-workflows:
-  - name: maintenance
-    steps:
-      - assess:
-          question: Does the recent development warrant refactoring?
-          outcomes:
-            positive:
-              handler: refactor
-            negative:
-              steps:
-                - record: Record that no refactoring is needed now.
-            mixed:
-              steps:
-                - investigate: Gather the missing evidence.
-                - decide: Decide and record the outcome.
-
-  - name: follow-ups
-    steps:
-      - assess: Are there follow-up tasks worth opening?
-      - open-follow-ups: Open the follow-up tasks.
-```
-
-## 9. Items: split work into pieces
-
-An `items` step collects work items, here review findings, and then runs stages
-for each of them. The bare form gets one built-in stage per item. The string
-form gives splitting guidance. `assignment: per_item` keeps one worker for
-all stages of an item in the `auto` runtime, and `item_phase` names the
-standard item fields a stage fills.
-
-```yaml
-workflows:
-  - name: quick-fixes
-    steps:
-      - collect: Review the pull request.
-        items: One item per unresolved review thread; use the thread ID as the item ID.
-
-  - name: review-feedback
-    steps:
-      - collect: Review the pull request.
-        items:
-          description: One item per review finding.
-          assignment: per_item
-          model: sonnet
-          steps:
-            - analyze: Analyze this finding.
-              item_phase: analyze
-            - fix: Resolve this finding.
-              item_phase: resolve
-            - reply: Reply in the finding's thread and resolve it.
-              item_phase: report
-```
-
-## 10. A handoff workflow that chooses the next one
+## 13. A handoff workflow that chooses the next one
 
 A workflow that ends in a transition step, `handoff_to` beside the step name,
 hands off to another workflow, which continues as the next run of the same
@@ -289,7 +432,7 @@ workflows:
       - test: Test it.
 ```
 
-## 11. Parent and child tasks
+## 14. Parent and child tasks
 
 A `children` step collects independent pieces of work and runs a workflow for
 each as its own task under the parent. Children run one at a time; the parent
@@ -342,7 +485,7 @@ workflows:
       - test: Test it.
 ```
 
-## 12. Children that bind their own Jira IDs
+## 15. Children that bind their own Jira IDs
 
 When the child workflow's first step declares the variable `task_id`, each child obtains its
 own external ID from that step when it starts. The parent's collection step
@@ -370,7 +513,7 @@ workflows:
       - implement: Implement {{ww.task.id}}.
 ```
 
-## 13. Saved metadata and project-scoped values
+## 16. Saved metadata and project-scoped values
 
 `saves` persists values an agent produces. A `metadata.<path>` entry stays with
 the task; a `project_metadata.<path>` entry is shared by every task and read
@@ -389,7 +532,7 @@ workflows:
       - verify: Pay special attention to {{ww.metadata.dependencies.riskiest_change}}.
 ```
 
-## 14. Git branches, commits, and worktrees
+## 17. Git branches, commits, and worktrees
 
 Git integration is the bundled `ww/git` extension. Its handlers are referenced
 like any other, and its settings live in `ww.json`.
@@ -435,7 +578,7 @@ workflows:
 }
 ```
 
-## 15. One ww instance over several repositories
+## 18. One ww instance over several repositories
 
 With `projects` in `ww.json`, the ww root is a workspace above
 the repositories. `start --project` and `add-child --project` choose where a
@@ -507,7 +650,7 @@ workflows:
 ./ww add-child CHANGE-1 --id web --text "Web part" --project frontend
 ```
 
-## 16. A copied workflow, an early stop, and a recommended successor
+## 19. A copied workflow, an early stop, and a recommended successor
 
 `bugfix` is `hotfix` under another name, so `ww/git` gives it its own branch
 format and base branch. `hotfix` recommends `merge-to-dev` when it completes,
@@ -565,7 +708,7 @@ workflows:
 The `start-task-branch` hook is written for `hotfix` and also runs for
 `bugfix`, which clears the recommendation it would otherwise inherit.
 
-## 17. Rules, checks, and the fix loop
+## 20. Rules, checks, and the fix loop
 
 Rules are sentences a step's agent follows. `develop` receives the
 `engineering` group, its own two rules, and a `pytest` hook that sends the step
@@ -633,15 +776,17 @@ gives a verdict, and a failing one sends develop back like a failed check.
 with the operator, and ww then runs each check for its wording in every later
 step instead of asking a verifier.
 
-## 18. What ww-suggest proposes for a Node project with dev/main and a Jira-like tracker
+## 21. What ww-suggest proposes for a Node project with dev/main and a Jira-like tracker
 
 The shape to expect from `ww-suggest` for a project that integrates on `dev`,
 releases from `main`, references `PROJ-123` keys in its commits, and verifies
-a change with `npm run lint`, `npm run typecheck` and `npm test`. The commands
-are automatic handlers attached to the code-changing steps as `before_complete`
-checks. ww runs them once on completion without asking the agent to run them.
-Failures return their output to that step's worker to fix; ww checks again when
-the worker completes. `bugfix` is `hotfix` on another base
+a change with `npm run lint`, `npm run typecheck` and `npm test`. This project
+treats passing all three as an invariant of every code-changing step, so the
+commands are automatic handlers attached to those steps as `before_complete`
+checks (a project that only needs one visible verification uses a command step
+as in example 1). ww runs them once on completion without asking the agent to
+run them. Failures return their output to that step's worker to fix; ww checks
+again when the worker completes. `bugfix` is `hotfix` on another base
 branch, `hotfix` recommends the merge back into `dev`, and the operator keeps
 the review of a feature. The operator's wish for short updates is a mode, not
 a rule; no rule is needed, since every convention here is a command or a

@@ -11,6 +11,17 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- The specification, features guide and examples are the three authorities for workflow design, and they
+  describe what the item, assessment and interactive features actually do. The features guide opens with
+  "Designing a workflow" (start linear; steps, handlers and hooks; conversation or assessment; items and
+  shared analysis; external comment IDs, reconciliation and restarts; what needs the agent), the examples
+  begin with six short runnable ones that the tests parse, compile and run with fake commands, and
+  `ww docs specification|features|examples` prints the same-version document from any installation (wheels
+  carry copies of the canonical files; `scripts/check_distribution.py` checks they match). Skills and
+  built-in workflows point at those documents instead of carrying their own recipes, and the blanket rule
+  to put every verification command in completion hooks is gone.
+- An assessment outcome made of an automatic command waits for the chosen outcome; completing the
+  assessment used to run it at once.
 - Setup learns the project, not the operator. The profile interviews are retired: `ww-learn` and `ww-express`
   and their documents `me`, `myrole`, `team` and `company` are gone from the built-ins, `ww-learn` is no
   longer installed by `init`, and `learned.me|myrole|team|company` can no longer be set (old values stay in the
