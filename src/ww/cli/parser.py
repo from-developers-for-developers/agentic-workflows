@@ -421,6 +421,14 @@ def build_parser() -> argparse.ArgumentParser:
         "complete", parents=[completion], help="Complete the current workflow step."
     )
     complete.add_argument("task_id")
+    complete.add_argument(
+        "--no-dispatch",
+        action="store_true",
+        help=(
+            "With --role manager, do not dispatch the manager's own next step; "
+            "the page names the next command instead."
+        ),
+    )
     complete.add_argument("--variable", action="append", default=[])
     complete.add_argument(
         "--metadata",

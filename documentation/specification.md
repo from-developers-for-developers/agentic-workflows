@@ -458,6 +458,12 @@ task. Amendments are shown on every page, newest last. The instruction JSON keep
 `task_requirements` and adds `requirements_in_full`, `requirements_command`, and
 `task_amendments`.
 
+`complete <task> --role manager [--no-dispatch]` in the `auto` runtime also
+dispatches the manager's own next step (as `next --role manager` would, with a
+one-line `notices` entry) when that step is `role: manager`, nothing waits for the
+operator, and no worker, assessment outcome, loop boundary, or child is to be
+chosen; `--no-dispatch` returns the pending page instead.
+
 The implicit step otherwise participates in the standard step lifecycle.
 `before_start_workflow` runs once before `init`; it belongs at global or workflow
 scope and does not accept a `steps` filter. Use `before_start` for

@@ -1591,6 +1591,14 @@ manager`, and ww refuses `complete` or `loop` with `--role worker` on it ("this
 step is the manager's"), even with the step's token. The manager keeps every
 override: it may still complete or recover any other step.
 
+When the step after a manager's `complete --role manager` is also the manager's
+own (`role: manager`, so no worker is selected), `complete` performs the dispatch
+that `next --role manager` would and prints that step's work page under a
+one-line note, so the separate `next` is unnecessary. It never does so when a
+worker must be selected, when the task stops or waits for the operator, for an
+assessment's outcome choice, at a loop boundary or a child coordinator, or for
+`--role worker`; `complete --no-dispatch` keeps the pending page.
+
 Tokens guard against a confused agent, not a hostile one: a worker that runs
 the manager's commands is still not stopped. The `single` runtime, where one
 session does every step, uses no tokens.

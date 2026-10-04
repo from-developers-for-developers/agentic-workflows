@@ -48,6 +48,7 @@ from ww.hooks import (
 from ww.hooks.notices import interruption_notice
 from ww.inspect import inspect_checkout, render_markdown
 from ww.instructions import Instruction
+from ww.instructions.policy import manager_continues_itself
 from ww.items import WorkItem
 from ww.onboarding import Onboarding, render_onboarding
 from ww.operator_ui import run_operator_page
@@ -897,22 +898,43 @@ def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
 
 def _complete(context: _Context) -> _Outcome:
     args = context.args
-    return _instruction_outcome(
-        context.service.complete(
-            context.task_id,
-            _variables(args.variable),
-            args.artifact,
-            _metadata_values(args.metadata),
-            selected_agent=args.selected_agent,
-            selected_model=args.selected_model,
-            selected_reasoning=args.selected_reasoning,
-            summary_for_next=args.summary,
-            caller_role=args.role,
-            rule_results=tuple(args.rule_result),
-            assignment=args.assignment,
+    instruction = context.service.complete(
+        context.task_id,
+        _variables(args.variable),
+        args.artifact,
+        _metadata_values(args.metadata),
+        selected_agent=args.selected_agent,
+        selected_model=args.selected_model,
+        selected_reasoning=args.selected_reasoning,
+        summary_for_next=args.summary,
+        caller_role=args.role,
+        rule_results=tuple(args.rule_result),
+        assignment=args.assignment,
+    )
+    if args.role == "manager" and not args.no_dispatch:
+        # The manager's own next step is dispatched here, as ``next`` would,
+        # so the separate call is unnecessary.
+        followed = _dispatch_own_step(context, instruction)
+        if followed is not None:
+            return _instruction_outcome(followed, args.json_output)
+    return _instruction_outcome(instruction, args.json_output, completing=True)
+
+
+def _dispatch_own_step(
+    context: _Context, handed_back: Instruction
+) -> Instruction | None:
+    """The page ``next`` shows for the manager's own next step, or ``None``."""
+    if not manager_continues_itself(handed_back):
+        return None
+    dispatched = context.service.next(context.task_id, caller_role="manager")
+    return replace(
+        dispatched,
+        notices=(
+            *dispatched.notices,
+            f"Completion recorded; ww dispatched your next step, "
+            f"`{dispatched.item_name}`, as `next` would. Pass `--no-dispatch` to "
+            "`complete` to receive the pending page instead.",
         ),
-        args.json_output,
-        completing=True,
     )
 
 

@@ -34,6 +34,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
   authorization for routine repairs (dependency installation, formatting, retries) covers stops of that kind:
   the agent applies it without asking again and asks only for a material decision or an action outside it.
   Every other stop behavior is unchanged.
+- `complete --role manager` now dispatches the manager's own next step (`role: manager`, no worker to
+  select, nothing stopped, no assessment outcome to choose) as `next --role manager` would, printing its work
+  page under a one-line note. `--no-dispatch` keeps the old behavior.
 
 ## 2026-10-04
 
