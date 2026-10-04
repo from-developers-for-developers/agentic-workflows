@@ -73,6 +73,19 @@ class OpenTask:
             return self.item_name
         return f"{self.item_name} (a hook of {self.step})"
 
+    def waiting_on_another(self, open_tasks: tuple[OpenTask, ...]) -> bool:
+        """A manager legitimately waits: a child task or a worker is at work.
+
+        The child is any open task below this one; the worker holds a step
+        this task's manager delegated and has not yet finished.
+        """
+        return (
+            self.delegated
+            and self.run_status == "in_progress"
+            and self.item_status == "in_progress"
+            and self.operator_reason is None
+        ) or any(task.task_id.startswith(f"{self.task_id}/") for task in open_tasks)
+
     @property
     def agent_step_in_progress(self) -> bool:
         """An agent-owned step was dispatched and is neither done nor waiting.

@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 
+from ww.amendments import Amendment
 from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
 from ww.items import WorkItem
@@ -32,6 +33,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self._artifact_owners: dict[str, str] = {}
         self.metadata: dict[str, TaskMetadata] = {}
         self.shared_items: dict[str, tuple[WorkItem, ...]] = {}
+        self.amendments: dict[str, tuple[Amendment, ...]] = {}
         self.aggregates: dict[str, tuple[tuple[TaskRunAggregate, ...], str | None]] = {}
         self.aggregate_revisions: dict[str, int] = {}
         # When each task's runs were last committed.
@@ -128,6 +130,12 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
     def write_shared_items(self, task_id: str, items: tuple[WorkItem, ...]) -> None:
         self.shared_items[task_id] = items
 
+    def read_amendments(self, task_id: str) -> tuple[Amendment, ...]:
+        return self.amendments.get(task_id, ())
+
+    def append_amendment(self, task_id: str, amendment: Amendment) -> None:
+        self.amendments[task_id] = (*self.read_amendments(task_id), amendment)
+
     def remove_task(self, task_id: str) -> bool:
         existed = bool(
             task_id in self.aggregates
@@ -136,6 +144,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         )
         self.metadata.pop(task_id, None)
         self.shared_items.pop(task_id, None)
+        self.amendments.pop(task_id, None)
         self.aggregates.pop(task_id, None)
         self.aggregate_revisions.pop(task_id, None)
         self.written_at.pop(task_id, None)

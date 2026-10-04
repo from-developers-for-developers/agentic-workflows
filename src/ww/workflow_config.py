@@ -25,7 +25,7 @@ from ww.contracts import (
     LoopAssignment,
     StepRole,
 )
-from ww.operations import ChildWorkflowRun, WorkflowHandoff
+from ww.operations import ChildLaunch, ChildWorkflowRun, WorkflowHandoff
 from ww.workspace import Workdir
 
 MetadataScope = Literal["task", "project"]
@@ -595,6 +595,8 @@ class StepDefinition(HandlerDefinition):
     # once for every collected item.
     items: ItemFlow | None = None
     item_operation: ItemOperation | None = None
+    # ``start_child`` on the stage that runs a child: ww starts it itself.
+    child_launch: ChildLaunch | None = None
     artifact: bool = True
     # A step with ``children`` collects child tasks, then runs each with
     # ``children.workflow``, or runs ``children.steps`` once per child.

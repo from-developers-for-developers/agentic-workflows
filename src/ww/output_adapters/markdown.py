@@ -413,6 +413,8 @@ def _header(instruction: Instruction) -> Lines:
         lines.extend(_manager_intro())
     if instruction.rules_notice:
         lines.extend([instruction.rules_notice, ""])
+    for notice in instruction.notices:
+        lines.extend([f"> {notice}", ""])
     return lines
 
 
@@ -531,7 +533,10 @@ def _awaiting_operator(instruction: Instruction) -> Lines:
         "`ww` is waiting for the operator, the user "
         f"(`operator_reason: {instruction.operator_reason}`). Stop and ask "
         "them: the recovery commands below are theirs to choose, and nothing "
-        "runs until they do.",
+        "runs until they do. If they already gave a standing authorization "
+        "for routine repairs of this kind (dependency installation, "
+        "formatting, retries), apply it without asking again; ask only for a "
+        "material decision or an action it does not cover.",
         "",
     ]
 
@@ -708,6 +713,7 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
             "Continue in the same assignment.",
         ]
     )
+    _task_requirements(lines, instruction)
     _work(lines, instruction)
     _explicit_guidance(lines, instruction)
     _modes(lines, instruction)
@@ -761,12 +767,57 @@ def _profile(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", "### Profile", "", instruction.profile_instruction])
 
 
+# A paragraph shorter than this is not worth replacing by a pointer.
+_DUPLICATE_PARAGRAPH = 80
+
+
 def _task_requirements(lines: Lines, instruction: Instruction) -> None:
-    """Repeat the saved requirements, so the user's wording reaches the worker."""
-    if instruction.item_status != "in_progress" or not instruction.task_requirements:
+    """Show the requirements once per session, then point; amendments always show.
+
+    The first work page of a session carries the user's wording in full; its
+    later pages name the command that prints it again.  What the work
+    instruction already quotes verbatim is not printed twice.
+    """
+    if instruction.item_status != "in_progress":
+        return
+    text = instruction.task_requirements
+    amendments = instruction.task_amendments
+    if not text and not amendments:
         return
     _append_section(lines, "Task requirements")
-    lines.append(instruction.task_requirements)
+    if text and instruction.requirements_in_full:
+        lines.append(_without_duplicates(text, instruction.action_text))
+    elif text and instruction.requirements_command:
+        lines.append(
+            "The full task requirements are not repeated on this page; "
+            f"print them with `{instruction.requirements_command}`."
+        )
+    if amendments:
+        lines.extend(["", "Amendments to the requirements, oldest first:", ""])
+        lines.extend(
+            f"- {entry.at} · {entry.role}: {entry.text}" for entry in amendments
+        )
+
+
+def _without_duplicates(requirements: str, work: str | None) -> str:
+    """The requirements with every paragraph the work text already quotes cut.
+
+    Only whole paragraphs found verbatim in the work instruction are replaced,
+    so nothing the work instruction does not repeat is ever dropped.
+    """
+    if not work:
+        return requirements
+    paragraphs = requirements.split("\n\n")
+    marker = "(quoted in the work instruction below)"
+    kept: list[str] = []
+    for paragraph in paragraphs:
+        quoted = len(paragraph.strip()) >= _DUPLICATE_PARAGRAPH and (
+            paragraph.strip() in work
+        )
+        if quoted and kept[-1:] == [marker]:
+            continue
+        kept.append(marker if quoted else paragraph)
+    return "\n\n".join(kept)
 
 
 def _previous_step_result(lines: Lines, instruction: Instruction) -> None:
@@ -2210,6 +2261,12 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 "it returns control to the manager. `ww` saves your result from "
                 "`--artifact`; write nothing under `.ww` except a document this "
                 "page names.",
+                "",
+                "This assignment is addressed to you, the worker. Running the "
+                "commands this page displays is expected, even where they name "
+                "the parent task or another task ID than the one you were "
+                "given. Change only your own branch and worktree; leave every "
+                "other branch and worktree as it is.",
                 "",
                 *_assignment_coverage(instruction),
             ]

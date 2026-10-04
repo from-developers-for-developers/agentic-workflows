@@ -550,15 +550,27 @@ class ActionExecutor:
         )
         state = self._start_item(state, snapshot, item)
         dispatch = _Dispatch(self, state, snapshot, item)
-        result = implementation.execute(planned, _ExecutionContext.create(dispatch))
-        if not isinstance(result, ActionResult):
-            result = ActionResult.failed(
-                "automatic action returned an invalid ActionResult"
-            )
-        error = action_result_error(result, item.outputs)
-        if error is not None:
-            result = ActionResult.failed(
-                f"automatic action returned an invalid result: {error}"
+        # Only a failure the action itself reported is a known outcome worth
+        # another attempt; agent-supplied values would fail the same way again.
+        retries = 0 if item.provide else self.extensions.config.limits.auto_retries
+        while True:
+            result = implementation.execute(planned, _ExecutionContext.create(dispatch))
+            reported = isinstance(result, ActionResult)
+            if not reported:
+                result = ActionResult.failed(
+                    "automatic action returned an invalid ActionResult"
+                )
+            error = action_result_error(result, item.outputs)
+            if error is not None:
+                result = ActionResult.failed(
+                    f"automatic action returned an invalid result: {error}"
+                )
+                reported = False
+            if result.ok or not reported or retries == 0:
+                break
+            retries -= 1
+            dispatch.state = self._record_retry(
+                dispatch.state, snapshot, bounded(result.error)
             )
         # Services update dispatch.state at every durable boundary.
         if not result.ok:
@@ -756,6 +768,21 @@ class ActionExecutor:
         )
         self.commit(started, snapshot)
         return started
+
+    def _record_retry(
+        self, state: ExecutionState, snapshot: PlanSnapshot, error: str
+    ) -> ExecutionState:
+        """Record a failed attempt ww retries by itself, before the next one."""
+        records = list(state.item_executions)
+        record = records[state.cursor]
+        records[state.cursor] = replace(
+            record,
+            attempts=record.attempts + 1,
+            retry_errors=(*record.retry_errors, error),
+        )
+        retried = replace(state, item_executions=tuple(records), updated_at=self.now())
+        self.commit(retried, snapshot)
+        return retried
 
     def _fail_item(
         self,

@@ -282,6 +282,19 @@ hooks alone. A hook installation that fails, for example because the agent's
 hooks file is not valid JSON, never fails init: the summary names the file and
 prints the snippet to add by hand.
 
+When Claude Code is set up (a `.claude` directory exists), init also asks, as an
+opt-in question whose default is no, whether to write Bash allow rules for
+ww's role commands into `.claude/settings.local.json`: the project wrapper's
+absolute path (never a bare `ww`) followed by `instruction *`, `next *`,
+`complete *`, `fail *`, `dispute *`, `check *`, `status *`, `artifacts *`,
+`items *`, `item *`, `add-item *`, `update-item *`, `interact *`, `loop *`,
+`lookup *`, `discover*` and `requirements *`. The file is created or merged
+(every other key and rule stays as it was), `.gitignore` gets a line for it
+unless Git already ignores it, and an unreadable file is left untouched with the
+rules printed to add by hand. `--permissions` answers yes without asking and
+`--no-permissions` no; a saved answer is reused, and `--force` asks again.
+Without a terminal or a flag, nothing is written.
+
 `init` also creates the [user configuration
 directory](#user-repo-and-local-configuration) when it is missing, and lists it
 under "Created or restored".
@@ -1505,9 +1518,23 @@ carries `--role manager`, and the preview before it says that no worker is
 selected. Every pending-input page also lists, under "Work these values
 describe", the handovers of the steps completed since that handler last ran
 in the run, so a commit message names this round's work rather than repeating
-an earlier one. Every worker instruction also repeats the requirements saved by
-`init` under "Task requirements", so the user's wording reaches each worker
-without the manager adding commentary, and states that ww writes the artifact
+an earlier one. The first page of each session shows the requirements saved by
+`init` in full under "Task requirements", so the user's wording reaches the worker
+without the manager adding commentary: the manager's first page that asks for
+work, the first page of every delegated worker assignment (each is a fresh
+session; `pages.worker_requirements` in `ww.json` set to `pointer` swaps it for
+the pointer), or, in the `single` runtime, the first agent step. Later pages of
+the same session, such as the following stages of one assignment, carry a
+one-line pointer to
+`ww requirements <task>`, which prints them again (JSON pages keep
+`task_requirements` and add `requirements_in_full` and `requirements_command`).
+A paragraph the work instruction already quotes verbatim is shown there only.
+`ww amend <task> --requirements "<text>" [--role ROLE]` appends a short
+(at most 1000 characters), timestamped amendment recording who made it (the
+caller role, or `operator`) and never rewrites the original; every page lists the
+amendments, newest last, under "Task requirements" (JSON: `task_amendments`), and
+`ww requirements` prints them after the original. A completed task refuses an
+amendment. Each page also states that ww writes the artifact
 from the completion command, never the worker under `.ww`. It then shows, under
 "Previous step result", the handover of the step completed most recently
 before this one. Completing an ordinary step requires
@@ -1577,10 +1604,20 @@ carries on. `next <task> --role manager --reassign` issues a new token for the
 open assignment and closes the old one, for a worker that was lost or must be
 replaced. A step the manager performs itself, `role: manager` or interactive,
 is an assignment of its own with its own token, which no worker page ever
-shows. Its page gives a manager completion command, `complete <task> --role
+shows. The worker's first page of an assignment says it is addressed to the
+worker, that running the commands it displays is expected even where they name
+the parent task, and that the worker changes only its own branch and worktree. Its page gives a manager completion command, `complete <task> --role
 manager`, and ww refuses `complete` or `loop` with `--role worker` on it ("this
 step is the manager's"), even with the step's token. The manager keeps every
 override: it may still complete or recover any other step.
+
+When the step after a manager's `complete --role manager` is also the manager's
+own (`role: manager`, so no worker is selected), `complete` performs the dispatch
+that `next --role manager` would and prints that step's work page under a
+one-line note, so the separate `next` is unnecessary. It never does so when a
+worker must be selected, when the task stops or waits for the operator, for an
+assessment's outcome choice, at a loop boundary or a child coordinator, or for
+`--role worker`; `complete --no-dispatch` keeps the pending page.
 
 Tokens guard against a confused agent, not a hostile one: a worker that runs
 the manager's commands is still not stopped. The `single` runtime, where one
@@ -1789,6 +1826,13 @@ The `ww/git` extension follows the working directory: branches, worktrees, and
 commits act on the repository the task works in, and a task in a worktree still
 resolves to that repository's primary checkout. A repository whose conventions
 differ from the root's states them in its own settings file, described next.
+
+**Which configuration is in force.** Every command, child launches included,
+reads `ww.yaml`, `ww.json`, and their imports from the primary checkout, never
+from a task's worktree: ww's `.ww` state lives there too. Editing a worktree's
+copy changes nothing, so when a task's worktree holds a `ww.yaml` whose content
+differs from the primary's, the task's instruction pages (the `notices` field in
+JSON) say in one line that the primary checkout's file is the one in force.
 
 ### A project's own extension settings
 
@@ -3388,6 +3432,12 @@ workflows:
       - develop: Implement {{ww.task.id}}.
 ```
 
+A stage that only runs a command can be automatic: `land: ~` with
+`argv: [git, merge, --no-ff, "{{ww.child.git.branch}}"]` and `on_failure: fix`
+runs in the task workspace, and a conflict hands the agent a repair assignment
+carrying the command's output (see `on_failure` above), so the agent resolves the
+merge instead of performing every landing.
+
 With two children `A` and `B`, the parent runs `refine`, `implement` (child `A`
 runs its `task` workflow), `review`, and `land` for `A`, then the same four for
 `B`, then `close-plan`. `ww plan --workflow roadmap` shows the stages under
@@ -3409,7 +3459,15 @@ runs its `task` workflow), `review`, and `land` for `A`, then the same four for
   as its requirements.
 - Children carry custom fields like items: `add-child ... --field area=parser`,
   and `update-child ... --field area=lexer` at any time.
-- The `implement` stage shows `start-child TASK-123 A` for its own child only;
+- Add `start_child` beside `workflow:` to let ww start the child itself:
+  `implement: {workflow: task, start_child: {model: "{{ww.child.field.model}}"}}`.
+  It takes `workflow`, `runtime`, `model`, `reasoning` and `agent`, each a template
+  over the child's record, read when the stage runs; an omitted or empty value
+  inherits as `start-child` does. Record the settings with
+  `update-child ... --field model=...` (or `add-child --field`) in the stages
+  before. The manager's `next` starts the child and shows its page; a failed
+  launch stops the stage for the operator, and `next --retry` starts it again.
+- Without `start_child`, the `implement` stage shows `start-child TASK-123 A` for its own child only;
   its artifact is the child's workflow summary, which `review` reads through
   `artifact_from: implement`.
 - In `auto`, the parent's manager also manages the child: starting it returns
@@ -4147,6 +4205,13 @@ the budget, and an operator force skips the handler. Known failure retries
 need no `idempotent: true`; unknown outcomes after interruption still use the
 existing recovery rules.
 
+`limits.auto_retries` in `ww.json` (default 0, never negative) makes ww retry a
+failed automatic step that many times itself before any of this applies: an
+interrupted step (unknown outcome) and a step that needs agent-supplied values
+are never retried this way. Each failed attempt is kept on the step's record, and a
+page that stops for the operator, or hands a repair to the agent, lists them
+(`ww retried this step N time(s) itself`). An operator retry starts the count over.
+
 Optional `on_failure_instruction` also adds guidance to hook failures.
 `before_complete` hooks with `on_failure: fix` keep the step's existing check
 loop with its worker; see [The fix loop](#the-fix-loop).
@@ -4265,7 +4330,7 @@ manager instruction command; ww does not switch a running session's model.
 The parent retains its own runtime/model/reasoning and resumes its review stages
 after the child completes. Without flags, children inherit parent settings.
 Changing only the model resets reasoning to `auto`; specify both for an exact
-request. Launch settings are fixed once starting begins and survive retries,
+request. `--agent` starts the child for another agent and defaults to the parent's. Launch settings are fixed once starting begins and survive retries,
 including external-ID bootstrap. This command cannot change an already-started
 child's runtime or model. `--workflow` also overrides the child workflow named
 by the parent coordinator, without changing the parent plan or earlier children.

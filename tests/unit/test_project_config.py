@@ -153,6 +153,14 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"limits": {"rounds": "3"}}, "limits.rounds must be a positive integer"),
         ({"limits": {"fixes": 0}}, "limits.fixes must be a positive integer"),
         ({"limits": {"fixes": False}}, "limits.fixes must be a positive integer"),
+        (
+            {"limits": {"auto_retries": -1}},
+            "limits.auto_retries must be a non-negative integer",
+        ),
+        (
+            {"limits": {"auto_retries": True}},
+            "limits.auto_retries must be a non-negative integer",
+        ),
         ({"agent_hooks": []}, "ww.json.agent_hooks must be an object"),
         (
             {"agent_hooks": {"days": 3}},
@@ -519,3 +527,24 @@ def test_task_format_placeholders_take_double_braces(tmp_path: Path) -> None:
     assert config.task_format == "T-{{digit}}"
     with pytest.raises(ConfigurationError, match="has invalid placeholders"):
         load_project_config(_settings(tmp_path, {"task_format": "T-{digit}"}))
+
+
+def test_pages_default_to_full_worker_requirements(tmp_path: Path) -> None:
+    assert load_project_config(write(tmp_path, {})).pages.worker_requirements == "full"
+    path = write(tmp_path, {"pages": {"worker_requirements": "pointer"}})
+    assert load_project_config(path).pages.worker_requirements == "pointer"
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"pages": 3}, "pages must be an object"),
+        ({"pages": {"other": 1}}, "pages has unknown key\\(s\\): other"),
+        ({"pages": {"worker_requirements": "none"}}, "must be one of: full, pointer"),
+    ],
+)
+def test_pages_reject_malformed_input(
+    tmp_path: Path, payload: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        load_project_config(write(tmp_path, payload))

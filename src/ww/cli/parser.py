@@ -184,6 +184,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    init.add_argument(
+        "--permissions",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Allow ww's role commands, through the project's wrapper, in "
+            ".claude/settings.local.json when Claude Code is set up in the "
+            "project (default: ask, answering no)."
+        ),
+    )
+
     lookup = subparsers.add_parser(
         "lookup",
         parents=[json_output],
@@ -421,6 +432,14 @@ def build_parser() -> argparse.ArgumentParser:
         "complete", parents=[completion], help="Complete the current workflow step."
     )
     complete.add_argument("task_id")
+    complete.add_argument(
+        "--no-dispatch",
+        action="store_true",
+        help=(
+            "With --role manager, do not dispatch the manager's own next step; "
+            "the page names the next command instead."
+        ),
+    )
     complete.add_argument("--variable", action="append", default=[])
     complete.add_argument(
         "--metadata",
@@ -569,6 +588,27 @@ def build_parser() -> argparse.ArgumentParser:
         "status", parents=[with_run], help="Show a compact current-task summary."
     )
     status.add_argument("task_id")
+    requirements = subparsers.add_parser(
+        "requirements",
+        parents=[with_run],
+        help="Print the task's recorded requirements and their amendments.",
+    )
+    requirements.add_argument("task_id")
+    amend = subparsers.add_parser(
+        "amend",
+        parents=[_shared("json", "role")],
+        help="Append a timestamped amendment to the task's requirements.",
+    )
+    amend.add_argument("task_id")
+    amend.add_argument(
+        "--requirements",
+        required=True,
+        dest="amendment",
+        help=(
+            "A short clarification to append; the recorded requirements are "
+            "never rewritten."
+        ),
+    )
     instruction = subparsers.add_parser(
         "instruction",
         parents=[with_run],
@@ -716,7 +756,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NAME=VALUE",
-        help="Set a custom field of the child; allowed at any time.",
+        help=(
+            "Set a custom field of the child; allowed at any time. Fields can "
+            "record launch settings (workflow, runtime, model, reasoning, agent) "
+            "that a stage's start_child reads."
+        ),
     )
     start_child = subparsers.add_parser(
         "start-child", parents=[json_output], help="Start one child task."
@@ -734,6 +778,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="workflow_runtime",
         choices=tuple(RUNTIME_INSTRUCTIONS),
         help="Child runtime (default: inherit the parent's runtime).",
+    )
+    start_child.add_argument(
+        "-a",
+        "--agent",
+        help="Child agent (default: inherit the parent's agent).",
     )
     start_child.add_argument(
         "--model", help="Child session model (default: inherit the parent's model)."

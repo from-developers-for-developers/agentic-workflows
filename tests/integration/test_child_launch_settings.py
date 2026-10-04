@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Independent child session settings, including interrupted launches."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -351,3 +352,57 @@ def test_identity_override_without_identity_is_rejected_before_launch(
     with pytest.raises(StateError, match="declares no variable task_id"):
         service.start_child("P", child.id, workflow_name="express")
     assert service.tasks.read_children("P", "01-parent")[0].status == "pending"
+
+
+def test_cli_child_model_and_reasoning_are_recorded_and_shown_by_status(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    service = _parent(tmp_path)
+    assert (
+        main(
+            [
+                "--root",
+                str(tmp_path),
+                "start-child",
+                "P",
+                "A",
+                "--runtime",
+                "single",
+                "--model",
+                "claude-sonnet-5-5",
+                "--reasoning",
+                "high",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["--root", str(tmp_path), "status", "P/A", "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert (status["model"], status["reasoning"]) == ("claude-sonnet-5-5", "high")
+    child = service.tasks.read_children("P", "01-parent")[0]
+    assert (child.model, child.reasoning) == ("claude-sonnet-5-5", "high")
+
+
+def test_child_agent_is_recorded_inherited_and_validated(tmp_path: Path) -> None:
+    service = _parent(tmp_path)
+    with pytest.raises(ConfigurationError, match="unsupported agent"):
+        service.start_child("P", "A", agent="nonsense")
+    assert service.tasks.read_children("P", "01-parent")[0].status == "pending"
+    service.start_child("P", "A", agent="claudecode")
+    state, _ = service.load("P/A")
+    assert state.agent == "claudecode"
+    assert service.task_status("P/A").agent == "claudecode"
+    child = service.tasks.read_children("P", "01-parent")[0]
+    assert child.agent == "claudecode"
+    assert child.to_dict()["agent"] == "claudecode"
+    parent, _ = service.load("P")
+    assert parent.agent == "codex"
+
+
+def test_child_agent_defaults_to_the_parent_agent(tmp_path: Path) -> None:
+    service = _parent(tmp_path)
+    service.start_child("P", "A")
+    state, _ = service.load("P/A")
+    parent, _ = service.load("P")
+    assert state.agent == parent.agent

@@ -1333,8 +1333,32 @@ artifacts, items, hooks, and workflow summary, while the parent's run-local
 This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
 
+A per-child stage may carry `start_child`, which compiles into the launch of its
+`ChildWorkflowRun` operation (templates over the child's record, saved with the
+plan). It is not an action: starting a child locks the parent, so it cannot run
+inside the executor's parent lock. After releasing it, `WorkflowService.next`
+renders the launch from the fresh child record and calls the same
+`ChildCoordinator.start_child` as the command; a validation failure fails the
+coordinator item, and a parent already failed is no longer refreshed back to
+waiting while the child it could not launch has no run.
+
+`complete --role manager` is composed in the CLI: the policy (`manager_continues_itself`)
+reads the page the completion returned and, when the next step is the manager's own,
+the command calls `next` as the manager would; the service's `complete` never
+dispatches, so every other caller keeps its single-step contract. The stop hook
+treats a task with an open child below it, or a delegated step in progress, as a
+manager that is waiting (`OpenTask.waiting_on_another`). `init`'s opt-in Claude Code
+permission rules live in `ww.claude_permissions` (merge, never clobber, keep ignored).
+
+Amendments to a task's requirements live behind their own storage port
+(`TaskAmendmentStorage`: `read_amendments`, append-only `append_amendment`), per
+task rather than per run, and are removed with the task. The instruction builder
+decides what a page shows of the requirements (`_RequirementsPage`: in full on
+the first page that asks an agent for work, a pointer afterwards, amendments
+always); the Markdown renderer only presents it.
+
 Child launch settings are independent of the parent session: `start-child` can
-override workflow, runtime, model, and reasoning. The service validates the
+override workflow, runtime, agent, model, and reasoning. The service validates the
 target before the coordinator persists the launch, including the single-level
 children boundary and identity requirements. The coordinator freezes resolved settings
 in the child record before launch, so retrying an interrupted start cannot
@@ -1664,6 +1688,11 @@ handler's worker guidance; repeated failures stay with that worker. In
 `single`, the current session receives repair work immediately. Submission
 persists the repair artifact before ww retries through the existing command
 ledger, preserving prior attempts and completed predecessor items.
+
+`ActionExecutor.run` retries a failure an action itself reported
+`limits.auto_retries` times before it fails the item; each failure is kept in the
+record's `retry_errors` and each attempt is committed before the next. An
+interruption is not a reported failure and is not retried.
 
 The same `limits.fixes` policy escalates exhausted repairs to the operator.
 Operator retries renew the budget; forcing skips the failed automated item.

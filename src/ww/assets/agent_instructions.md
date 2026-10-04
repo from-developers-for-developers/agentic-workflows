@@ -38,10 +38,12 @@ a worker resuming its assignment uses `--role worker`. Check status with
 - Use a host choice tool when available, following its contract; otherwise use
   a numbered chat list. Keep async choices pending until an answer arrives;
   timeout, dismissal, and preselection are not answers.
-- On nonzero exit, read the full response. For "Fix required", repair and complete
-  again (`./ww check <task-id>` previews checks) or dispute with `./ww dispute`;
-  record impossible work with `./ww fail` and the page's role/assignment. On
-  `awaiting_operator`, stop and report the reason and exact error. Run only the
-  operator's chosen recovery option; never reset unasked.
+- On nonzero exit, read the full response. For "Fix required", repair and complete again
+  (`./ww check <task-id>` previews checks) or `./ww dispute`; record impossible work
+  with `./ww fail` and the page's role/assignment. On `awaiting_operator`, stop and
+  report the reason and exact error; run only the operator's chosen recovery option;
+  never reset unasked. A standing operator authorization for routine repairs (dependency
+  installation, formatting, retries) covers such stops: apply it, asking only for a
+  material decision or an action outside it.
 - Relay feedback-deduction suggestions after completion; use its skill and ww
   commands. Rule approval and pruning are separate follow-ups.

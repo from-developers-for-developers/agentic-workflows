@@ -14,6 +14,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "executable": "ww-agentic-workflows-dev",
   "limits": {"rounds": 3, "fixes": 3},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
+  "pages": {"worker_requirements": "pointer"},
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
@@ -28,16 +29,26 @@ contains ww-wide settings, built-in execution hints, and extension settings.
 never do), or ``"on_request"`` (ww is available, but agents use it only when
 the user explicitly asks for it).
 
-``limits`` holds two positive integers. ``rounds`` is the round limit of a
+``limits`` holds positive integers ``rounds`` and ``fixes`` and the non-negative
+``auto_retries``. ``rounds`` is the round limit of a
 step ``loop`` that sets no ``max_rounds`` of its own. ``fixes`` is how many
 times a step's completion may be rejected for a failed check before ww stops
-for the operator, unless a rule sets its own ``max_fixes``.
+for the operator, unless a rule sets its own ``max_fixes``. ``auto_retries``
+(default 0) is how many times ww retries a failed automatic step itself,
+recording each failure on the step, before the step's own failure handling (a
+repair assignment, or the operator) applies.
 
 ``agent_hooks`` tunes what the ``session-start`` hook reports.
 ``check_unfinished`` (default ``true``) is whether it scans for unfinished
 tasks at all; ``recent_days`` (default 3) is how many days back a task's last
 update or an interruption counts as recent, for that hook, ``discover``,
 ``lookup``, and ``ww interrupted``.
+
+``pages`` tunes what pages print. ``worker_requirements`` is ``full`` (the
+default: the first page of every delegated worker assignment prints the task
+requirements in full) or ``pointer`` (it carries the pointer to ``ww
+requirements`` instead); the manager's pages are unaffected. ``init`` writes the
+key only once it is set.
 
 ``workflows`` switches off the workflows ww provides to every project, such
 as ``catchall``; each is on unless its entry says ``"enabled": false``.
@@ -86,7 +97,7 @@ from ww.config_files import (
 )
 from ww.errors import ConfigurationError
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
-from ww.validation import expect_normalized_name, is_positive_int
+from ww.validation import expect_normalized_name, is_positive_int, is_strict_int
 
 FILE_NAME = SETTINGS_FILE
 BUILTIN_NAMES = frozenset({"init", "workflow_summary"})
@@ -228,9 +239,17 @@ class Limits:
     rounds: int = DEFAULT_ROUNDS
     # Rejected completions a check allows when its rule sets no ``max_fixes``.
     fixes: int = DEFAULT_FIXES
+    # How often ww itself retries a failed automatic step before the step's
+    # failure handling (a repair assignment, or the operator) applies.
+    auto_retries: int = 0
 
     def to_dict(self) -> dict[str, int]:
-        return {"rounds": self.rounds, "fixes": self.fixes}
+        # The retries appear once set, so a default file stays as ``init`` wrote it.
+        return {
+            "rounds": self.rounds,
+            "fixes": self.fixes,
+            **({"auto_retries": self.auto_retries} if self.auto_retries else {}),
+        }
 
 
 @dataclass(frozen=True)
@@ -249,6 +268,26 @@ class AgentHooks:
         }
 
 
+WORKER_REQUIREMENTS = ("full", "pointer")
+
+
+@dataclass(frozen=True)
+class Pages:
+    """The ``pages`` setting: what the pages ww prints carry."""
+
+    # ``full`` prints the task requirements on a delegated worker assignment's
+    # first page; ``pointer`` names the command that prints them instead.
+    worker_requirements: Literal["full", "pointer"] = "full"
+
+    def to_dict(self) -> dict[str, str]:
+        # Written once set, so a default file stays as ``init`` wrote it.
+        return (
+            {"worker_requirements": self.worker_requirements}
+            if self.worker_requirements != "full"
+            else {}
+        )
+
+
 @dataclass(frozen=True)
 class ProjectConfig:
     """Settings that apply to a project rather than to one workflow."""
@@ -257,6 +296,7 @@ class ProjectConfig:
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
     limits: Limits = Limits()
     agent_hooks: AgentHooks = AgentHooks()
+    pages: Pages = Pages()
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
@@ -454,6 +494,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "builtins",
         "limits",
         "agent_hooks",
+        "pages",
         "projects",
         "update_check",
         "feedback_learning",
@@ -510,6 +551,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         builtins=normalized,
         limits=_parse_limits(raw.get("limits"), path),
         agent_hooks=_parse_agent_hooks(raw.get("agent_hooks"), path),
+        pages=_parse_pages(raw.get("pages"), path),
         enabled=enabled,
         projects=_parse_projects(raw.get("projects"), path),
         runtime=runtime,
@@ -523,20 +565,45 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
 
 
 def _parse_limits(data: Any, path: str) -> Limits:
-    """``limits``: an object of optional positive ``rounds`` and ``fixes``."""
+    """``limits``: optional positive ``rounds`` and ``fixes``, and ``auto_retries``."""
     if data is None:
         return Limits()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.limits must be an object")
-    unknown = set(data) - {"rounds", "fixes"}
+    unknown = set(data) - {"rounds", "fixes", "auto_retries"}
     if unknown:
         raise ConfigurationError(
             f"{path}.limits has unknown key(s): {', '.join(sorted(unknown))}"
         )
     for key, value in data.items():
-        if not is_positive_int(value):
+        if key == "auto_retries":
+            if not is_strict_int(value) or value < 0:
+                raise ConfigurationError(
+                    f"{path}.limits.auto_retries must be a non-negative integer"
+                )
+        elif not is_positive_int(value):
             raise ConfigurationError(f"{path}.limits.{key} must be a positive integer")
     return Limits(**data)
+
+
+def _parse_pages(data: Any, path: str) -> Pages:
+    """``pages``: an optional ``worker_requirements``, ``full`` or ``pointer``."""
+    if data is None:
+        return Pages()
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{path}.pages must be an object")
+    unknown = set(data) - {"worker_requirements"}
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.pages has unknown key(s): {', '.join(sorted(unknown))}"
+        )
+    value = data.get("worker_requirements", "full")
+    if value not in WORKER_REQUIREMENTS:
+        raise ConfigurationError(
+            f"{path}.pages.worker_requirements must be one of: "
+            + ", ".join(WORKER_REQUIREMENTS)
+        )
+    return Pages(**data)
 
 
 def _parse_agent_hooks(data: Any, path: str) -> AgentHooks:

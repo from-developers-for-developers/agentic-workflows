@@ -296,7 +296,11 @@ boolean defaulting to `true` that decides whether the `session-start` hook
 lists unfinished tasks, and `recent_days`, a positive integer defaulting to
 `3`: the window of that hook's scan, of `ww interrupted`, and of the
 interruption pointer in `discover` and `lookup`; any other key in it is an
-error. The file may
+error. `pages` holds `worker_requirements`, `full` (the default) or
+`pointer`: the first page of every delegated worker assignment prints the task
+requirements in full, or only the pointer to `ww requirements` when it is
+`pointer`; the manager's pages are unaffected, and `init` writes the key only
+once it is set. Any other value, or key, is an error. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
@@ -325,7 +329,7 @@ with its default, as `init` writes it:
   "feedback_learning": true,
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
-  "limits": {"rounds": 3, "fixes": 3},
+  "limits": {"rounds": 3, "fixes": 3, "auto_retries": 0},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "rules": {},
   "builtins": {
@@ -448,6 +452,21 @@ is an error because the name is reserved. Its fixed agent prompt records the
 passed task requirements with corrected grammar and style, without analysis or
 planning. It always produces an artifact, uses low reasoning, and does not
 inherit the workflow profile.
+
+Pages print the recorded requirements in full once, on the first instruction that
+asks for work, and later pages point at `requirements <task> [--json]`, which
+prints them again with their amendments. `amend <task> --requirements TEXT [--role ROLE]`
+appends a timestamped amendment (at most 1000 characters, recorded with the caller
+role or `operator`); it never rewrites the original and is refused for a completed
+task. Amendments are shown on every page, newest last. The instruction JSON keeps
+`task_requirements` and adds `requirements_in_full`, `requirements_command`, and
+`task_amendments`.
+
+`complete <task> --role manager [--no-dispatch]` in the `auto` runtime also
+dispatches the manager's own next step (as `next --role manager` would, with a
+one-line `notices` entry) when that step is `role: manager`, nothing waits for the
+operator, and no worker, assessment outcome, loop boundary, or child is to be
+chosen; `--no-dispatch` returns the pending page instead.
 
 The implicit step otherwise participates in the standard step lifecycle.
 `before_start_workflow` runs once before `init`; it belongs at global or workflow
@@ -586,8 +605,10 @@ refused with its status. Its custom fields only feed the parent's per-child
 stages, so `--field` may change them at any time.
 
 `start-child <parent> <child> [--workflow NAME] [--runtime single|auto]
-[--model MODEL] [--reasoning LEVEL]` can start the child in a different session configuration
-from its parent. Omitted options inherit the parent's settings; changing the
+[--agent AGENT] [--model MODEL] [--reasoning LEVEL]` can start the child in a different session
+configuration from its parent. Omitted options inherit the parent's settings (`--agent` takes
+the same vocabulary as `start --agent`, is validated against the child workflow, and is shown by
+the child's pages and `status`); any model string is recorded as given; changing the
 model without specifying reasoning resets reasoning to `auto`, while repeating
 the inherited model preserves its reasoning. These options do not change the
 parent or the child workflow's configured step settings. `--workflow` selects
@@ -648,7 +669,34 @@ workflow and waits for it to finish.
   `start-child` command for its own child; any other child is refused while it
   waits. Its artifact is the child's workflow summary, so later stages use it
   with `artifact_from: implement`.
-- Stages before it may refine the child with `update-child`; the child's `init`
+- `start_child` beside `workflow:` makes ww start the child itself when
+  the stage is reached, so the manager never runs `start-child` by hand:
+
+  ```yaml
+  - implement:
+      workflow: task                 # the default child workflow, as above
+      start_child:                   # every key optional
+        workflow: "{{ww.child.field.workflow}}"
+        runtime: "{{ww.child.field.runtime}}"
+        model: "{{ww.child.field.model}}"
+        reasoning: "{{ww.child.field.reasoning}}"
+        agent: "{{ww.child.field.agent}}"
+  ```
+
+  Each key is a template over the child's record (`{{ww.child.id}}`,
+  `text`, `project`, `field.<name>`; nothing else exists before the child
+  starts), rendered when the stage runs, so `update-child --field model=...`
+  made earlier counts. An omitted key, a field the child does not carry, or a
+  value that renders empty inherits exactly as the same `start-child` option
+  omitted does. The launch is `start-child` itself: the same validation and
+  the same frozen record. The manager's `next` at the stage starts the child
+  and prints the child's page under a one-line note; a launch that cannot
+  proceed (an unknown workflow, an invalid runtime or agent) fails the stage
+  like an automatic handler, for the operator to repair the child's fields
+  and `next --retry`. `start_child` is valid only beside `workflow:` on a
+  stage directly under `children.steps`; elsewhere validation rejects it.
+- Stages before it may refine the child with `update-child` (including
+  `--field` values that record its launch settings); the child's `init`
   records the text it has when it starts as its requirements.
 - In `auto`, the parent's manager also manages the child: starting it returns
   the child's page, and the child's steps are ordinary worker assignments the
@@ -1035,7 +1083,11 @@ the item ID, attempt count, limit, instruction, output references and artifacts.
 
 The handler stops for the operator with `operator_reason: fix_limit` after
 `limits.fixes` failures (default 3), using the same counting policy as checks.
-An operator-authorized `next --retry` starts a fresh budget and retries the
+Before that, `limits.auto_retries` (default 0; a non-negative integer) has ww
+retry a handler that reported a failure itself that many times, recording each
+failed attempt on the step and listing them on the stop or repair page; an
+interrupted handler and one that takes agent-supplied values are never retried
+this way. An operator-authorized `next --retry` starts a fresh budget and retries the
 handler; `next --force --reason "..."` skips it. An agent that cannot repair it
 can use the displayed `fail` command to request an operator decision.
 

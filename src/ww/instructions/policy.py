@@ -54,6 +54,33 @@ def audience(instruction: Instruction) -> Audience:
     return Audience.WORKER if instruction.next_role == "worker" else Audience.MANAGER
 
 
+def manager_continues_itself(instruction: Instruction) -> bool:
+    """Whether the step a manager's completion hands back is the manager's own.
+
+    Then ``next`` has nothing to decide for the manager: no worker is selected,
+    nothing waits for the operator, no assessment outcome is to be chosen, and
+    no loop, child, repair, or plan change needs a deliberate command.
+    """
+    return (
+        instruction.workflow_runtime == "auto"
+        and instruction.caller_role == "manager"
+        and instruction.next_role == "manager"
+        and instruction.role == "manager"
+        and instruction.control == "handoff_manager"
+        and instruction.status == "pending"
+        and instruction.item_status == "pending"
+        and instruction.operator_reason is None
+        and instruction.choosing_outcome_of is None
+        and instruction.plan_change is None
+        and instruction.fix_required is None
+        and instruction.handler_repair is None
+        and instruction.error is None
+        and not instruction.is_loop_control
+        and not instruction.is_child_workflow_control
+        and not instruction.manager_only
+    )
+
+
 def _instruction_status(value: str) -> InstructionStatus:
     status: InstructionStatus = expect_literal(
         value, InstructionStatus, "bootstrap request status", error=StateError

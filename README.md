@@ -163,6 +163,11 @@ The wizard asks a few questions and then sets the project up:
 - **Your user configuration directory**, `~/.config/ww/`,
   where settings of your own for every project live.
 
+For Claude Code it can also write, if you opt in, Bash allow rules for ww's role
+commands (through the project wrapper's absolute path) into
+`.claude/settings.local.json`, keeping that file out of Git; `init --permissions`
+answers the question yes, as described in [features](documentation/features.md).
+
 It finishes by printing any manual additions you still need in `AGENTS.md` or
 `CLAUDE.md`, the exact permission entries that let your agents run ww without
 asking each time (for Claude Code, the lines to add to

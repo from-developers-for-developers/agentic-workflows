@@ -8,6 +8,8 @@
 
 You are the worker for this assignment. Do the work, run the worker completion command below, and keep following `ww` until it returns control to the manager. `ww` saves your result from `--artifact`; write nothing under `.ww` except a document this page names.
 
+This assignment is addressed to you, the worker. Running the commands this page displays is expected, even where they name the parent task or another task ID than the one you were given. Change only your own branch and worktree; leave every other branch and worktree as it is.
+
 ### Task requirements
 
 Add a --verbose flag to the CLI.

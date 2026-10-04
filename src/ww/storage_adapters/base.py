@@ -10,6 +10,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 
+from ww.amendments import Amendment
 from ww.children import ChildTask
 from ww.contracts import RunStatus, run_is_open
 from ww.errors import StateError
@@ -429,6 +430,21 @@ class TaskItemStorage(ABC):
         """Atomically replace the task's shared items."""
 
 
+class TaskAmendmentStorage(ABC):
+    """Storage for the amendments appended to a task's requirements.
+
+    They belong to the task, not to a run, and are only ever appended.
+    """
+
+    @abstractmethod
+    def read_amendments(self, task_id: str) -> tuple[Amendment, ...]:
+        """The task's amendments, oldest first; a task without any has none."""
+
+    @abstractmethod
+    def append_amendment(self, task_id: str, amendment: Amendment) -> None:
+        """Append one amendment; the caller holds the task's lock."""
+
+
 class TaskMetadataStorage(ABC):
     """Storage for durable metadata shared by every run of one task."""
 
@@ -458,7 +474,12 @@ class ProjectMetadataStorage(ABC):
 
 
 class TaskStorageAdapter(
-    TaskRunStorage, TaskArtifactStorage, TaskMetadataStorage, TaskItemStorage, ABC
+    TaskRunStorage,
+    TaskArtifactStorage,
+    TaskMetadataStorage,
+    TaskItemStorage,
+    TaskAmendmentStorage,
+    ABC,
 ):
     """Complete storage-adapter boundary required by ``WorkflowService``.
 

@@ -7,7 +7,7 @@ import hashlib
 import json
 import secrets
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +19,7 @@ from ww.actions import (
     PlannedAction,
     actions,
 )
+from ww.amendments import MAX_AMENDMENT_LENGTH, Amendment, TaskRequirements
 from ww.assessments import pending_assessment
 from ww.assignments import (
     active_assignment,
@@ -82,6 +83,7 @@ from ww.item_passes import (
 )
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
+from ww.operations import ChildLaunch
 from ww.plan import (
     PlanCompilationOptions,
     PlanItem,
@@ -124,7 +126,7 @@ from ww.rule_verification import (
 )
 from ww.rule_views import RuleView, check_preview, rule_view
 from ww.run_coordination import RunCoordinator
-from ww.runtimes import runtime_instruction
+from ww.runtimes import requested_setting, runtime_instruction
 from ww.storage import Storage
 from ww.storage_adapters import (
     CommandOutputAddress,
@@ -152,6 +154,7 @@ from ww.transitions import (
     enter_loop,
     exit_exhausted_loop,
     fail_agent_item,
+    fail_child_workflow,
     finish_loop_continue,
     finish_loop_exit,
     finish_selection,
@@ -295,6 +298,11 @@ class WorkflowService:
             self._runtime_values,
             child_values=self._child_values,
             item_values=self._item_values,
+            worker_requirements=lambda: (
+                load_project_config(
+                    self.storage.project_config_path
+                ).pages.worker_requirements
+            ),
             root=self.storage.root,
             documents=self.documents,
             interactions=self.interactions,
@@ -885,7 +893,96 @@ class WorkflowService:
             caller_role=caller_role,
         )
         self.children.reconcile_after_child(task_id)
+        instruction = self._start_declared_child(task_id, instruction)
         return self._tag_caller(instruction, caller_role)
+
+    def _start_declared_child(
+        self, task_id: str, instruction: Instruction
+    ) -> Instruction:
+        """Start the child a ``start_child`` stage declares, once it is reached.
+
+        The launch goes through ``start-child`` itself, so validation and
+        recording are the same as for a manual start.  It runs after the
+        parent's lock is released because starting a child locks the parent.
+        A launch that cannot proceed fails the stage like any automatic
+        handler: the operator reads the cause and retries or replans.
+        """
+        if is_bootstrap_request(task_id) or "/" in task_id:
+            return instruction
+        state, snapshot = self.load(task_id)
+        if state.cursor >= len(snapshot.plan.items):
+            return instruction
+        item = snapshot.plan.items[state.cursor]
+        coordinator = child_workflow(item)
+        if (
+            coordinator is None
+            or coordinator.launch is None
+            or item.child_number is None
+            or state.status != "in_progress"
+            or state.item_executions[state.cursor].status != "in_progress"
+        ):
+            return instruction
+        children = self.tasks.read_children(state.task_id, state.run_id)
+        child = children[item.child_number - 1]
+        if child.status not in {"pending", "starting"}:
+            return instruction
+        # A start already begun keeps its frozen settings.
+        settings = (
+            {}
+            if child.status == "starting"
+            else self._launch_settings(
+                coordinator.launch, self._child_values(state, snapshot.plan, item)
+            )
+        )
+        try:
+            started = self.children.start_child(state.task_id, child.id, **settings)
+        except (StateError, ConfigurationError) as error:
+            with self.tasks.lock_task(state.task_id):
+                state, snapshot = self.load(state.task_id)
+                failed = fail_child_workflow(
+                    state,
+                    snapshot.plan,
+                    item,
+                    child.id,
+                    _now,
+                    f"ww could not start child {child.id!r} for step "
+                    f"{item.name!r}: {error}",
+                )
+                self.commit(failed, snapshot)
+                return self.render(failed, snapshot)
+        return replace(
+            started,
+            notices=(
+                *started.notices,
+                f"ww started child `{child.id}` for step `{item.name}` of "
+                f"`{state.task_id}` with the launch settings recorded on the child.",
+            ),
+        )
+
+    @staticmethod
+    def _launch_settings(
+        launch: ChildLaunch, values: Mapping[str, str]
+    ) -> dict[str, str]:
+        """The ``start-child`` options a launch renders to from the child's record.
+
+        A setting that is absent, names a field the child lacks, or renders
+        empty is left out, so it inherits.
+        """
+        settings: dict[str, str] = {}
+        for name, template in (
+            ("workflow_name", launch.workflow),
+            ("workflow_runtime", launch.runtime),
+            ("model", launch.model),
+            ("reasoning", launch.reasoning),
+            ("agent", launch.agent),
+        ):
+            if template is None:
+                continue
+            bound = {name: "" for name in dependencies(template)} | dict(values)
+            rendered = interpolate(template, bound).strip()
+            if rendered:
+                settings[name] = rendered
+        return settings
 
     def _next_command(
         self,
@@ -1124,9 +1221,13 @@ class WorkflowService:
             state,
             snapshot.plan,
             item,
-            model=model if model != "auto" else item.model or state.model,
+            model=model
+            if model != "auto"
+            else requested_setting(item.model) or state.model,
             reasoning=(
-                reasoning if reasoning != "auto" else item.reasoning or state.reasoning
+                reasoning
+                if reasoning != "auto"
+                else requested_setting(item.reasoning) or state.reasoning
             ),
             selected_model=model if model != "auto" else None,
             selected_reasoning=reasoning if reasoning != "auto" else None,
@@ -2236,6 +2337,52 @@ class WorkflowService:
         state, snapshot = self.runs.resolve(task_id, runs, run_id)
         return self.render(state, snapshot), (state, snapshot)
 
+    def requirements(self, task_id: str, run_id: str | None = None) -> TaskRequirements:
+        """The requirements ``init`` recorded, with their amendments, read only."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id, run_id)
+        return TaskRequirements(
+            task_id,
+            self.instructions.requirements(state, snapshot.plan),
+            self.tasks.read_amendments(task_id),
+        )
+
+    def amend(
+        self,
+        task_id: str,
+        text: str,
+        *,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+    ) -> Amendment:
+        """Append a timestamped amendment to the task's requirements.
+
+        The recorded requirements are never rewritten.  ``caller_role`` is who
+        recorded it; without one the operator at the terminal did.
+        """
+        self._validate_caller_role(caller_role)
+        validate_task_id(task_id)
+        amendment_text = text.strip()
+        if not amendment_text:
+            raise StateError("amend requires non-empty --requirements")
+        if len(amendment_text) > MAX_AMENDMENT_LENGTH:
+            raise StateError(
+                f"an amendment is a short clarification (at most "
+                f"{MAX_AMENDMENT_LENGTH} characters); the original requirements "
+                "stay as recorded"
+            )
+        with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
+            state, _ = self.load(task_id)
+            if state.status == "completed":
+                raise StateError(
+                    f"task {task_id!r} is already completed; its requirements "
+                    "cannot be amended"
+                )
+            amendment = Amendment(_now(), caller_role or "operator", amendment_text)
+            self.tasks.append_amendment(task_id, amendment)
+        return amendment
+
     def documents_listing(self, task_id: str | None) -> list[dict[str, object]]:
         """Describe every declared document, with its file and last update."""
         workspace = None
@@ -2835,6 +2982,7 @@ class WorkflowService:
         workflow_runtime: str | None = None,
         model: str | None = None,
         reasoning: str | None = None,
+        agent: str | None = None,
     ) -> Instruction:
         return self.children.start_child(
             parent_task_id,
@@ -2843,6 +2991,7 @@ class WorkflowService:
             workflow_runtime=workflow_runtime,
             model=model,
             reasoning=reasoning,
+            agent=agent,
         )
 
     def _validate_child_workflow(
@@ -2859,7 +3008,7 @@ class WorkflowService:
             configuration,
             self.storage.root,
             workflow_name,
-            parent.agent,
+            child.agent or parent.agent,
             child.task_id,
             self.extensions,
             PlanCompilationOptions(task_id=child.task_id, project=child.project),
@@ -2873,7 +3022,7 @@ class WorkflowService:
                 configuration,
                 workflow_name,
                 (),
-                parent.agent,
+                child.agent or parent.agent,
                 self._unknown_modes,
                 project=child.project,
             )
@@ -2899,7 +3048,7 @@ class WorkflowService:
             self._load_configuration(),
             workflow_name,
             (),
-            parent.agent,
+            child.agent or parent.agent,
             self._unknown_modes,
             project=child.project,
         )
@@ -2911,7 +3060,7 @@ class WorkflowService:
         return self.bootstrap.start(
             workflow_name,
             (),
-            parent.agent,
+            child.agent or parent.agent,
             item,
             child.model or parent.model,
             child.reasoning or parent.reasoning,
@@ -3089,8 +3238,8 @@ class WorkflowService:
                     state,
                     plan,
                     item,
-                    model=item.model or state.model,
-                    reasoning=item.reasoning or state.reasoning,
+                    model=requested_setting(item.model) or state.model,
+                    reasoning=requested_setting(item.reasoning) or state.reasoning,
                     now=_now,
                 )
                 self.commit(state, snapshot)
@@ -3441,8 +3590,12 @@ class WorkflowService:
             state,
             snapshot.plan,
             item,
-            model=state.assignment_model or item.model or state.model,
-            reasoning=state.assignment_reasoning or item.reasoning or state.reasoning,
+            model=state.assignment_model
+            or requested_setting(item.model)
+            or state.model,
+            reasoning=state.assignment_reasoning
+            or requested_setting(item.reasoning)
+            or state.reasoning,
             selected_agent=state.assignment_selected_agent,
             selected_model=state.assignment_selected_model,
             selected_reasoning=state.assignment_selected_reasoning,
@@ -3542,10 +3695,12 @@ class WorkflowService:
             assignment_token=secrets.token_hex(4)
             if state.workflow_runtime == "auto"
             else None,
-            assignment_model=model if model != "auto" else item.model or state.model,
+            assignment_model=model
+            if model != "auto"
+            else requested_setting(item.model) or state.model,
             assignment_reasoning=reasoning
             if reasoning != "auto"
-            else item.reasoning or state.reasoning,
+            else requested_setting(item.reasoning) or state.reasoning,
             assignment_selected_agent=selected_agent,
             assignment_selected_model=model if model != "auto" else None,
             assignment_selected_reasoning=reasoning if reasoning != "auto" else None,

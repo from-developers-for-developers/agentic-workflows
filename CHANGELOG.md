@@ -9,6 +9,48 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-05
+
+- The task requirements now print on the first page of each session: under `auto` every delegated worker assignment's first page carries them in full (its later stages and the manager's later pages carry the pointer), instead of only the task's first agent page. New `pages.worker_requirements` in `ww.json` (`full`, the default, or `pointer`) keeps the text off worker first pages.
+- Fix: `start-child --model X` was recorded on the child but `ww status` and the child's pages showed
+  `auto`, because a step's unset model (`auto`) shadowed the task's model. The given model and
+  reasoning now show wherever the child is described.
+- New `start-child --agent <agent>`: starts the child for another agent (same vocabulary and validation
+  as `start --agent`), recorded on the child and inherited from the parent when omitted.
+- New `start_child` beside `workflow:` on a per-child stage: ww starts the child itself when the stage is
+  reached, from templates over the child's record (`workflow`, `runtime`, `model`, `reasoning`, `agent`;
+  an omitted or empty value inherits), through the same code as `start-child`. A launch failure stops the
+  stage for the operator. Rejected anywhere else. `next` on a parent whose launch failed now reaches
+  `--retry` instead of repeating the failure page. Instruction pages and JSON gain `notices`.
+- Pages print the task requirements in full once, on the first instruction that asks for work; later pages
+  carry a one-line pointer to the new `ww requirements <task>`. A paragraph the work instruction already
+  quotes is not printed twice. JSON keeps `task_requirements` and adds `requirements_in_full`,
+  `requirements_command` and `task_amendments`.
+- New `ww amend <task> --requirements "<text>"` appends a timestamped, short amendment recording the caller
+  role, never rewriting the original; every page lists amendments newest last. Refused on a completed task.
+- New `limits.auto_retries` in `ww.json` (default 0): ww retries a failed automatic step that many times
+  before the repair assignment or operator stop applies. Each failed attempt is recorded on the step and
+  listed on the page that stops or hands out the repair.
+- Agent instructions, the `ww` skill and the `awaiting_operator` page now say that a standing operator
+  authorization for routine repairs (dependency installation, formatting, retries) covers stops of that kind:
+  the agent applies it without asking again and asks only for a material decision or an action outside it.
+  Every other stop behavior is unchanged.
+- `complete --role manager` now dispatches the manager's own next step (`role: manager`, no worker to
+  select, nothing stopped, no assessment outcome to choose) as `next --role manager` would, printing its work
+  page under a one-line note. `--no-dispatch` keeps the old behavior.
+- Documented that configuration is read from the primary checkout only (child launches included), and a
+  task's instruction pages now carry a one-line notice when its worktree holds a `ww.yaml` that differs from
+  the primary's, saying which one is in force.
+- The worker's first page of an assignment now states that it is addressed to the worker, that running the
+  commands it displays is expected even where they name the parent task, and that the worker changes only its
+  own branch and worktree.
+- The stop hook gives no reminder to a manager whose task has a child task or a delegated assignment in
+  progress: it is waiting, not stopping short. An ordinary in-progress step still reminds.
+- `init` for Claude Code offers, as an opt-in question defaulting to no (`--permissions` /
+  `--no-permissions` to answer), Bash allow rules for ww's role commands through the project wrapper's
+  absolute path in `.claude/settings.local.json`: created or merged without touching other keys, and kept out
+  of Git.
+
 ## 2026-10-04
 
 - Breaking: saved plans from before `items` pass identity (snapshot schema 1) are no longer read; finish or

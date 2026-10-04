@@ -15,7 +15,12 @@ from ww.actions import (
 from ww.contracts import ItemAssignment, ItemOperation, LoopAssignment, StepRole
 from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
-from ww.operations import ChildWorkflowRun, WorkflowHandoff
+from ww.operations import (
+    CHILD_LAUNCH_SETTINGS,
+    ChildLaunch,
+    ChildWorkflowRun,
+    WorkflowHandoff,
+)
 from ww.validation import is_positive_int
 from ww.workflow_config import (
     ChildFlow,
@@ -68,6 +73,7 @@ STEP_ONLY_KEYS: set[str] = {
     "profile",
     "items",
     "item_phase",
+    "start_child",
     "artifact_from",
     "artifact",
     "children",
@@ -200,6 +206,7 @@ _STEP_CONTENT_KEYS = frozenset(
         "negative",
         "mixed",
         "item_phase",
+        "start_child",
         "rules",
     }
 )
@@ -263,6 +270,7 @@ def _parse_step(
     loop_break, loop_continue = _parse_loop_controls(mapping, path, referenced)
     _check_loop_wrapper(mapping, path, base, loop_steps)
     item_operation = _parse_item_phase(mapping, path)
+    child_launch = _parse_child_launch(mapping, path)
     child_flow = _parse_child_flow(mapping, path, handlers_by_name, referenced)
     if "children" in mapping and base.operation is not None:
         raise ConfigurationError(
@@ -349,6 +357,7 @@ def _parse_step(
         loop_continue=loop_continue,
         items=items,
         item_operation=item_operation,
+        child_launch=child_launch,
         artifact=artifact,
         children=child_flow,
         artifact_dependency=artifact_from,
@@ -586,6 +595,31 @@ def _parse_item_phase(mapping: dict[str, Any], path: str) -> ItemOperation | Non
     return ITEM_PHASES[phase]
 
 
+def _parse_child_launch(mapping: dict[str, Any], path: str) -> ChildLaunch | None:
+    """Parse ``start_child``: the launch settings ww starts the child with.
+
+    Every setting is an optional template over the child's record; an omitted
+    or empty one inherits, as an omitted ``start-child`` option does.
+    """
+    if "start_child" not in mapping:
+        return None
+    launch_path = f"{path}.start_child"
+    value = mapping["start_child"]
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ConfigurationError(f"{launch_path} must be a mapping of launch settings")
+    _only(value, set(CHILD_LAUNCH_SETTINGS), launch_path)
+    settings: dict[str, str] = {}
+    for name in CHILD_LAUNCH_SETTINGS:
+        if name in value:
+            setting = value[name]
+            if not isinstance(setting, str):
+                raise ConfigurationError(f"{launch_path}.{name} must be a string")
+            settings[name] = setting
+    return ChildLaunch(**settings)
+
+
 def _parse_child_flow(
     mapping: dict[str, Any],
     path: str,
@@ -774,7 +808,7 @@ def _parse_child_stages(
         run,
         description=run.description
         or f"Run the child task with the `{target}` workflow and wait for it.",
-        operation=ChildWorkflowRun(target),
+        operation=ChildWorkflowRun(target, run.child_launch),
     )
     converted = tuple(child_run if stage is run else stage for stage in stages)
     for stage in step_tree(converted):
@@ -807,7 +841,7 @@ def _child_run_entry(entry: Any) -> tuple[Any, bool]:
         and len(entry) == 1
         and "name" not in entry
         and isinstance(next(iter(entry.values())), dict)
-        and "workflow" in next(iter(entry.values()))
+        and {"workflow", "start_child"} & set(next(iter(entry.values())))
     ):
         name, settings = next(iter(entry.items()))
         entry = {"name": name, **settings}

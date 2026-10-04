@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ww.agents import choice_mechanism
+from ww.amendments import Amendment
 from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
@@ -21,6 +22,7 @@ from ww.assignments import (
     loop_span,
     selection_item,
 )
+from ww.config_files import WORKFLOWS_FILE
 from ww.contracts import (
     CallerRole,
     Control,
@@ -45,7 +47,7 @@ from ww.item_passes import item_collection
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
-from ww.runtimes import runtime_instruction
+from ww.runtimes import requested_setting, runtime_instruction
 from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
@@ -67,6 +69,7 @@ from .commands import (
     interact_commands,
     next_command,
     recovery_commands,
+    requirements_command,
     start_child_command,
     update_child_command,
 )
@@ -121,6 +124,31 @@ class _Selection:
         )
 
 
+def _with_retry_note(error: str | None, record: PlanItemExecution | None) -> str | None:
+    """``error`` followed by the attempts ww itself retried before stopping."""
+    if error is None or record is None or not record.retry_errors:
+        return error
+    attempts = "\n".join(
+        f"- attempt {number}: {message.splitlines()[0] if message else 'failed'}"
+        for number, message in enumerate(record.retry_errors, start=1)
+    )
+    return (
+        f"{error}\n\nww retried this step {len(record.retry_errors)} time(s) "
+        "itself (`limits.auto_retries`) before stopping; the failed earlier "
+        f"attempts:\n{attempts}"
+    )
+
+
+@dataclass(frozen=True)
+class _RequirementsPage:
+    """What one page shows of the task's requirements and amendments."""
+
+    text: str | None = None
+    in_full: bool = True
+    command: str | None = None
+    amendments: tuple[Amendment, ...] = ()
+
+
 class InstructionBuilder:
     """Build caller-facing instructions from authoritative run records."""
 
@@ -134,8 +162,11 @@ class InstructionBuilder:
         interactions: InteractionLog,
         child_values: StepValues = no_step_values,
         item_values: StepValues = no_step_values,
+        worker_requirements: Callable[[], str] = lambda: "full",
     ) -> None:
         self.tasks = tasks
+        # ``pages.worker_requirements``, read per page so an edit applies at once.
+        self.worker_requirements = worker_requirements
         self.item_values = item_values
         self.child_values = child_values
         self.documents = documents
@@ -207,13 +238,14 @@ class InstructionBuilder:
                 else built.continuation_command
             ),
             run_id=state.run_id,
+            notices=(*built.notices, *self._configuration_notices(state)),
             workflow_runtime=state.workflow_runtime,
             agent=state.agent,
             model=(record.model if record and record.model else None)
-            or (item.model if item else None)
+            or (requested_setting(item.model) if item else None)
             or state.model,
             reasoning=(record.reasoning if record and record.reasoning else None)
-            or (item.reasoning if item else None)
+            or (requested_setting(item.reasoning) if item else None)
             or state.reasoning,
             requested_agent=shape.requested_agent if shape else None,
             requested_model=shape.requested_model if shape else None,
@@ -367,16 +399,23 @@ class InstructionBuilder:
             text += "\n\n" + item.on_failure_instruction
         text += "\n\n" + action_text(item, values, state.task_id, ContainerArtifact())
         text += "\n\nFailure:\n\n" + (
-            record.error or state.last_error or "Unknown command failure"
+            _with_retry_note(
+                record.error or state.last_error or "Unknown command failure", record
+            )
+            or ""
         )
         if references:
             text += "\n\nFull command output:\n" + "\n".join(
                 f"- `{self.root / reference}`" for reference in references
             )
+        page = self._requirements_page(state, plan, item)
         return replace(
             _base(state, item, item_status="in_progress" if active else "pending"),
             action_text=text,
-            task_requirements=self._requirements(state, plan),
+            task_requirements=page.text,
+            requirements_in_full=page.in_full,
+            requirements_command=page.command,
+            task_amendments=page.amendments,
             working_directory=str(workspace or self.root),
             profile_instruction=profile_instruction(item, self.root),
             handler_repair={
@@ -642,7 +681,71 @@ class InstructionBuilder:
             )
         return tuple(tasks)
 
-    def _requirements(self, state: ExecutionState, plan: WorkflowPlan) -> str | None:
+    def _configuration_notices(self, state: ExecutionState) -> tuple[str, ...]:
+        """Say which ``ww.yaml`` is in force when the task's worktree has another.
+
+        Every command, child launches included, reads the configuration of the
+        primary checkout; a copy in the worktree that differs from it is not
+        in force, which is easy to miss after editing the wrong one.
+        """
+        workspace = resolve_workspace(self.root, state.working_directory)
+        if workspace is None or workspace == self.root.resolve():
+            return ()
+        local = workspace / WORKFLOWS_FILE
+        primary = self.root / WORKFLOWS_FILE
+        try:
+            if not local.is_file() or local.read_bytes() == primary.read_bytes():
+                return ()
+        except OSError:
+            return ()
+        return (
+            f"This task's worktree has its own `{WORKFLOWS_FILE}` that differs from "
+            f"the primary checkout's; ww reads `{primary}` for every command, "
+            "child launches included, so the worktree's copy is not in force.",
+        )
+
+    def _requirements_page(
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        *,
+        continues_assignment: bool = False,
+    ) -> _RequirementsPage:
+        """The requirements and amendments an item's page carries.
+
+        The full requirements print on the first page of each session, then
+        later pages point at the command that prints them again.  A single
+        runtime is one session: its first page that asks an agent for work.
+        Under ``auto`` the manager is one session, so the same rule holds for
+        its own pages, and every delegated worker assignment is a fresh one:
+        its first page prints them (unless ``pages.worker_requirements`` is
+        ``pointer``) and the later stages of that assignment point.
+        The amendments are short and print on every page.
+        """
+        if state.workflow_runtime == "auto" and item.role == "worker":
+            return _RequirementsPage(
+                self.requirements(state, plan),
+                not continues_assignment and self.worker_requirements() == "full",
+                requirements_command(state.task_id),
+                self.tasks.read_amendments(state.task_id),
+            )
+        first = next(
+            (
+                entry
+                for entry in plan.items
+                if entry.owner == "agent" and entry.step != INIT_STEP_NAME
+            ),
+            None,
+        )
+        return _RequirementsPage(
+            self.requirements(state, plan),
+            first is None or item.id == first.id,
+            requirements_command(state.task_id),
+            self.tasks.read_amendments(state.task_id),
+        )
+
+    def requirements(self, state: ExecutionState, plan: WorkflowPlan) -> str | None:
         """The requirements ``init`` saved, so every worker reads the user's ask."""
         record = next(
             (
@@ -675,14 +778,18 @@ class InstructionBuilder:
             _base(
                 state, current, item_status="interrupted" if interrupted else "failed"
             ),
-            error=(
-                f"Handler repair reached its fix limit ({record.repair_failures} of "
-                f"{current.max_handler_fixes}).\n\n{state.last_error}"
-                if record is not None
-                and current is not None
-                and needs_repair(state)
-                and state.failure_kind == "fix_limit"
-                else state.last_error
+            error=_with_retry_note(
+                (
+                    f"Handler repair reached its fix limit "
+                    f"({record.repair_failures} of {current.max_handler_fixes})."
+                    f"\n\n{state.last_error}"
+                    if record is not None
+                    and current is not None
+                    and needs_repair(state)
+                    and state.failure_kind == "fix_limit"
+                    else state.last_error
+                ),
+                record,
             ),
             child_tasks=(
                 self.tasks.read_children(state.task_id, state.run_id)
@@ -758,6 +865,7 @@ class InstructionBuilder:
     def _child_control(
         self, state: ExecutionState, item: PlanItem, record: PlanItemExecution
     ) -> Instruction:
+        coordinator = child_workflow(item)
         children = self.tasks.read_children(state.task_id, state.run_id)
         if record.status == "pending":
             return replace(
@@ -791,6 +899,15 @@ class InstructionBuilder:
             )
         elif active is not None:
             text = f"Child `{active.id}` is in progress at `{active.task_id}`."
+        elif pending is not None and coordinator is not None and coordinator.launch:
+            text = (
+                f"ww starts pending child `{pending.id}` itself, with the "
+                "launch settings this stage declares from the child's record. "
+                f"Run `{next_command(state.task_id)}` and it "
+                "starts the child and shows its page. Until then, the child's "
+                "text or project can still change with "
+                f"`{update_child_command(state.task_id, pending.id)}`."
+            )
         elif pending is not None:
             text = (
                 f"Start pending child `{pending.id}` with:\n\n```console\n"
@@ -885,6 +1002,16 @@ class InstructionBuilder:
             state.working_directory,
             {**dict(state.workflow_values), **self.task_values(state, plan)},
         )
+        requirements = (
+            self._requirements_page(
+                state,
+                plan,
+                item,
+                continues_assignment=item.id in span_ids[1:],
+            )
+            if item.step != INIT_STEP_NAME
+            else _RequirementsPage()
+        )
         return replace(
             _base(state, item, item_status=record.status),
             action_text=action_text(
@@ -918,9 +1045,10 @@ class InstructionBuilder:
             loop_name=loop_round[0] if loop_round else None,
             loop_iteration=loop_round[1] if loop_round else None,
             max_rounds=loop_round[2] if loop_round else None,
-            task_requirements=(
-                self._requirements(state, plan) if item.step != INIT_STEP_NAME else None
-            ),
+            task_requirements=requirements.text,
+            requirements_in_full=requirements.in_full,
+            requirements_command=requirements.command,
+            task_amendments=requirements.amendments,
             previous_step=previous.step if previous else None,
             previous_step_artifact=(
                 str((self.root / previous.artifact).resolve()) if previous else None

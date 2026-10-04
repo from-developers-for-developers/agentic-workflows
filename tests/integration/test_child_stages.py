@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -390,3 +391,58 @@ def test_a_missing_child_field_says_how_to_set_it(tmp_path: Path) -> None:
     ) in (stopped.error or "")
     service.update_child(TASK, "A", fields=(("area", "parser"),))
     assert service.next(TASK, retry=True).operator_reason is None
+
+
+def _landing_workflow() -> str:
+    program = (
+        "import os, sys; "
+        "open('landed', 'a').write(sys.argv[1] + chr(10)); "
+        "print('CONFLICT in file.txt'); "
+        "sys.exit(1 if os.path.exists('conflict') else 0)"
+    )
+    argv = json.dumps([sys.executable, "-c", program, "{{ww.child.git.branch}}"])
+    return f"""workflows:
+  - name: parent
+    steps:
+      - slices: Split.
+        children:
+          steps:
+            - implement:
+                workflow: child
+            - land: ~
+              argv: {argv}
+              on_failure: fix
+              on_failure_instruction: Resolve the merge conflict.
+  - name: child
+    steps:
+      - work: Do child work.
+"""
+
+
+def test_an_automatic_landing_step_hands_a_conflict_to_the_agent(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path, _landing_workflow())
+    (tmp_path / "ww.json").write_text(
+        json.dumps({"enabled": True, "extensions": {"ww/git": {}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "conflict").touch()
+    service = WorkflowService(Storage(tmp_path))
+    _collect(service, "A")
+    service.extensions.store("ww/git").append_line(
+        "branches.jsonl",
+        json.dumps({"task_id": "T1/A", "branch": "feature/a", "base": "main"}),
+    )
+    _run_child(service, "A")
+    repair = service.next(TASK)
+    # The branch was interpolated and the command ran in the task workspace.
+    assert (tmp_path / "landed").read_text() == "feature/a\n"
+    assert repair.handler_repair is not None
+    assert repair.operator_reason is None
+    assert "CONFLICT in file.txt" in repair.action_text
+    assert "Resolve the merge conflict." in repair.action_text
+    (tmp_path / "conflict").unlink()
+    done = service.complete(TASK, artifact="Resolved the conflict.")
+    assert done.item_name != "land"
+    assert (tmp_path / "landed").read_text() == "feature/a\nfeature/a\n"

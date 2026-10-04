@@ -131,6 +131,15 @@ def _stop(
     # A manager waiting on a worker is not the one to close the step: its own
     # stop skips delegated steps, and the worker's stop reminds instead. A
     # step in conversation with the operator stops to hear them.
+    if not payload.from_worker and any(
+        task.waiting_on_another(tasks)
+        for task in tasks_for_session(
+            tasks, records.storage.root, payload.directory, agent.name
+        )
+    ):
+        return replace(
+            ALLOW, decision="allowed: the manager is waiting on a child or worker"
+        )
     working = tasks_for_session(
         tuple(
             task

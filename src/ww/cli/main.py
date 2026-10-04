@@ -48,6 +48,7 @@ from ww.hooks import (
 from ww.hooks.notices import interruption_notice
 from ww.inspect import inspect_checkout, render_markdown
 from ww.instructions import Instruction
+from ww.instructions.policy import manager_continues_itself
 from ww.items import WorkItem
 from ww.onboarding import Onboarding, render_onboarding
 from ww.operator_ui import run_operator_page
@@ -108,6 +109,7 @@ from .initialization import (
     _initialization_options,
     _link_agent_instructions,
     install_agent_hooks,
+    install_claude_permissions,
 )
 from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
@@ -135,6 +137,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "interrupted",
         "check",
         "rule",
+        "requirements",
     }
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
@@ -246,6 +249,7 @@ def _init(context: _Context) -> _Outcome:
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
     result = install_agent_hooks(context.storage, context.args, result)
+    result = install_claude_permissions(context.storage, context.args, result)
     result = _finish_initialization(
         context.storage,
         result,
@@ -896,22 +900,43 @@ def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
 
 def _complete(context: _Context) -> _Outcome:
     args = context.args
-    return _instruction_outcome(
-        context.service.complete(
-            context.task_id,
-            _variables(args.variable),
-            args.artifact,
-            _metadata_values(args.metadata),
-            selected_agent=args.selected_agent,
-            selected_model=args.selected_model,
-            selected_reasoning=args.selected_reasoning,
-            summary_for_next=args.summary,
-            caller_role=args.role,
-            rule_results=tuple(args.rule_result),
-            assignment=args.assignment,
+    instruction = context.service.complete(
+        context.task_id,
+        _variables(args.variable),
+        args.artifact,
+        _metadata_values(args.metadata),
+        selected_agent=args.selected_agent,
+        selected_model=args.selected_model,
+        selected_reasoning=args.selected_reasoning,
+        summary_for_next=args.summary,
+        caller_role=args.role,
+        rule_results=tuple(args.rule_result),
+        assignment=args.assignment,
+    )
+    if args.role == "manager" and not args.no_dispatch:
+        # The manager's own next step is dispatched here, as ``next`` would,
+        # so the separate call is unnecessary.
+        followed = _dispatch_own_step(context, instruction)
+        if followed is not None:
+            return _instruction_outcome(followed, args.json_output)
+    return _instruction_outcome(instruction, args.json_output, completing=True)
+
+
+def _dispatch_own_step(
+    context: _Context, handed_back: Instruction
+) -> Instruction | None:
+    """The page ``next`` shows for the manager's own next step, or ``None``."""
+    if not manager_continues_itself(handed_back):
+        return None
+    dispatched = context.service.next(context.task_id, caller_role="manager")
+    return replace(
+        dispatched,
+        notices=(
+            *dispatched.notices,
+            f"Completion recorded; ww dispatched your next step, "
+            f"`{dispatched.item_name}`, as `next` would. Pass `--no-dispatch` to "
+            "`complete` to receive the pending page instead.",
         ),
-        args.json_output,
-        completing=True,
     )
 
 
@@ -1041,6 +1066,39 @@ def _status(context: _Context) -> _Outcome:
             status.workflow,
             status.task_id,
         ),
+    )
+
+
+def _requirements(context: _Context) -> _Outcome:
+    args = context.args
+    recorded = context.service.requirements(context.task_id, args.run_id)
+    if args.json_output:
+        return _Outcome(_json(recorded.to_dict()))
+    lines = [f"# {recorded.task_id} · requirements", ""]
+    lines.append(recorded.text or "No requirements were recorded.")
+    if recorded.amendments:
+        lines.extend(["", "## Amendments, oldest first", ""])
+        lines.extend(
+            f"- {entry.at} · {entry.role}: {entry.text}"
+            for entry in recorded.amendments
+        )
+    return _Outcome("\n".join(lines) + "\n")
+
+
+def _amend(context: _Context) -> _Outcome:
+    args = context.args
+    amendment = context.service.amend(
+        context.task_id,
+        args.amendment,
+        caller_role=args.role,
+        assignment=args.assignment,
+    )
+    if args.json_output:
+        return _Outcome(_json(amendment.to_dict()))
+    return _Outcome(
+        f"Recorded an amendment to the requirements of {context.task_id} "
+        f"({amendment.role}, {amendment.at}). Later pages list it under the "
+        "task requirements.\n"
     )
 
 
@@ -1371,6 +1429,7 @@ def _start_child(context: _Context) -> _Outcome:
             workflow_runtime=args.workflow_runtime,
             model=args.model,
             reasoning=args.reasoning,
+            agent=args.agent,
         ),
         args.json_output,
     )
@@ -1464,6 +1523,8 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "fail": _fail,
     "status": _status,
     "instruction": _instruction,
+    "requirements": _requirements,
+    "amend": _amend,
     "metadata": _metadata,
     "documents": _documents,
     "onboarding": _onboarding,
