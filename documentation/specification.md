@@ -18,8 +18,8 @@ keys, invalid types, and invalid references are errors.
   printed commands invoke ww: `./ww` or the configured `executable`),
   `{{ww.documents.<name>}}`,
   `{{ww.metadata.<path>}}`, `{{ww.project_metadata.<path>}}`, on a per-item
-  stage `{{ww.item.id}}`, `{{ww.item.text}}`, and `{{ww.item.field.<name>}}`
-  for the stage's own item, and on a per-child stage `{{ww.child.*}}`. A
+  stage the `{{ww.item.*}}` values of the stage's own item (see
+  [Item values](#item-values)), and on a per-child stage `{{ww.child.*}}`. A
   configured extension may add values under `{{ww.<namespace>.<name>}}`:
   with `ww/git` listed in the settings, `{{ww.git.branch}}` (the task's
   branch), `{{ww.git.base_branch}}` (the branch it was created from) and
@@ -1128,6 +1128,53 @@ Within one completion window, matching supplied-variable declarations (the
 same name and description) share one input across handlers, in first-request
 order. Conflicting declarations for a name are an error identifying that name
 and both plan items. Repeating a supplied `--variable` remains an error.
+
+### Item values
+
+On a per-item stage, agent instructions and automatic `argv`/`shell` actions
+read the stage's own work item through the same mapping:
+
+| Value | Meaning and representation |
+| --- | --- |
+| `{{ww.item.id}}` | The item's stable ID. |
+| `{{ww.item.text}}` | The collected item text. |
+| `{{ww.item.processed_item}}` | The recorded analysis text; empty when unset. |
+| `{{ww.item.proposed_solution}}` | The proposed solution text; empty when unset. |
+| `{{ww.item.actual_solution}}` | The recorded solution, the item's resolution text; empty when unset. There is no separate resolution-text field or alias. |
+| `{{ww.item.resolved}}` | `true` or `false`. |
+| `{{ww.item.reported}}` | `true` or `false`. |
+| `{{ww.item.reference_to_id}}` | The ID of the item this one links to; empty when it links to none. |
+| `{{ww.item.field.<name>}}` | A custom field's string value; empty when the item has not set it. |
+
+Values are read from the run's current item record each time an instruction
+is rendered and immediately before each command runs, never frozen when the
+plan is compiled. They therefore show changes from earlier passes and from
+`update-item` after a pass-gate stop followed by `next --retry`, and each item
+assignment sees only its own item. Unset values render as the empty string.
+
+Using `{{ww.item.*}}` in a step with no bound item (outside the stages of an
+`items` step) is a context error: an automatic handler fails naming the item
+variables and saying no work item is bound, and no other item's value is
+substituted.
+
+Rendered values are data. `argv` entries and shell `args` or `env` receive
+quotes, newlines, Unicode, `$`, and backticks unchanged; shell source itself
+may not contain interpolation. A project-owned script can take values as
+arguments:
+
+```yaml
+- reply: ~
+  item_phase: report
+  argv:
+    - python3
+    - scripts/reply-to-comment.py
+    - "{{ww.item.field.comment_id}}"
+    - "{{ww.item.actual_solution}}"
+    - "{{ww.item.field.reply_id}}"
+```
+
+`scripts/reply-to-comment.py` is the project's own script, not part of ww.
+Saving the command's result into the item is not available yet.
 
 ### Assessments
 

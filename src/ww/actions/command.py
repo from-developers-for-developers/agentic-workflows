@@ -17,6 +17,7 @@ from ww.validation import (
     expect_string,
     reject_unknown_keys,
 )
+from ww.variables import unbound_item_message, unbound_item_values
 
 from .contracts import (
     ActionResult,
@@ -154,6 +155,8 @@ class CommandAction(AutomaticAction[Commands, Commands]):
             for name in dependencies(template)
             if name not in values
         }
+        if missing and unbound_item_values(missing):
+            raise StateError(unbound_item_message(missing))
         if missing:
             raise StateError(
                 "automatic handler is missing variable(s): "

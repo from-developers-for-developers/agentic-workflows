@@ -88,3 +88,26 @@ def test_unavailable_values_leave_ww_own_values_out() -> None:
     )
 
     assert unavailable_ww_values(names, {}) == ("ww.git.branch", "ww.child.git.branch")
+
+
+def test_item_values_use_stable_string_representations() -> None:
+    from ww.items import WorkItem
+    from ww.variables import item_variable_values
+
+    values = item_variable_values(
+        WorkItem("c1", "Text", resolved=True, fields=(("reply_id", "r1"),)),
+        ("ww.item.field.reply_id", "ww.item.field.unset"),
+    )
+
+    assert values == {
+        "ww.item.id": "c1",
+        "ww.item.text": "Text",
+        "ww.item.processed_item": "",
+        "ww.item.proposed_solution": "",
+        "ww.item.actual_solution": "",
+        "ww.item.resolved": "true",
+        "ww.item.reported": "false",
+        "ww.item.reference_to_id": "",
+        "ww.item.field.reply_id": "r1",
+        "ww.item.field.unset": "",
+    }

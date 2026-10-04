@@ -179,6 +179,7 @@ from ww.variables import (
     PROJECT_METADATA_PREFIX,
     child_value_name,
     child_values,
+    item_variable_values,
     runtime_variable_values,
     unavailable_ww_values,
 )
@@ -288,6 +289,7 @@ class WorkflowService:
             self.tasks,
             self._runtime_values,
             child_values=self._child_values,
+            item_values=self._item_values,
             root=self.storage.root,
             documents=self.documents,
             interactions=self.interactions,
@@ -316,6 +318,7 @@ class WorkflowService:
             task_values=self._runtime_values,
             metadata_publisher=self.metadata_publisher,
             child_values=self._child_values,
+            item_values=self._item_values,
         )
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)
         self.rule_checker = RuleChecker(self.tasks.write_command_output, _now)
@@ -2349,6 +2352,30 @@ class WorkflowService:
                 **self._child_values(state, plan, item),
             },
         )
+
+    def _item_values(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> dict[str, str]:
+        """``{{ww.item.*}}`` for a per-item stage: its item as stored right now.
+
+        Read from the run's items on every call, so a value changed in an
+        earlier pass or by ``update-item`` after a gate stop is what renders;
+        nothing is frozen into the plan.  A step with no bound item, or whose
+        item is gone, has none: reading one is a context error.
+        """
+        if item.item_id is None:
+            return {}
+        work = next(
+            (
+                entry
+                for entry in self.tasks.read_items(state.task_id, state.run_id)
+                if entry.id == item.item_id
+            ),
+            None,
+        )
+        if work is None:
+            return {}
+        return item_variable_values(work, item.dependencies)
 
     def _child_values(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

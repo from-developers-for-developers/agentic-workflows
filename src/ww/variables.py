@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ww.executable import ww_command
+from ww.items import WorkItem
 from ww.workspace import Workdir, item_workspace, resolve_workspace
 
 TASK_ID = "ww.task.id"
@@ -31,12 +32,13 @@ DOCUMENTS_PREFIX = "ww.documents."
 ITEM_ID = "ww.item.id"
 ITEM_TEXT = "ww.item.text"
 ITEM_FIELD_PREFIX = "ww.item.field."
+ITEM_PREFIX = "ww.item."
 CHOICES = "ww.choices"
 # Values resolved while the task runs rather than when its plan is compiled.
 RUNTIME_PREFIXES = (
     METADATA_PREFIX,
     PROJECT_METADATA_PREFIX,
-    "ww.item.",
+    ITEM_PREFIX,
     "ww.child.",
 )
 
@@ -82,6 +84,51 @@ RESERVED_NAMESPACES = (
 CHILD_VALUE_PREFIX = "ww.child."
 CHILD_FIELD_PREFIX = "ww.child.field."
 CHILD_VALUE_NAMES = ("ww.child.id", "ww.child.text", "ww.child.project")
+
+
+def item_variable_values(
+    work: WorkItem, referenced: tuple[str, ...] = ()
+) -> dict[str, str]:
+    """``{{ww.item.*}}`` for a bound work item, the one mapping everything uses.
+
+    Agent instructions and automatic actions both read it, so they render the
+    same values.  Representations are stable strings: text fields as stored,
+    booleans as ``true`` or ``false``, and a value never set (an empty text
+    field, no ``reference_to_id``, a custom field the item lacks) as the empty
+    string, the same convention as an unset metadata list.  ``referenced``
+    names the ``ww.item.field.*`` values the caller's templates read, so one
+    the item lacks renders empty rather than as a missing variable.
+    ``ww.item.actual_solution`` is the item's resolution text.
+    """
+    values = {
+        ITEM_ID: work.id,
+        ITEM_TEXT: work.item,
+        "ww.item.processed_item": work.processed_item,
+        "ww.item.proposed_solution": work.proposed_solution,
+        "ww.item.actual_solution": work.actual_solution,
+        "ww.item.resolved": "true" if work.resolved else "false",
+        "ww.item.reported": "true" if work.reported else "false",
+        "ww.item.reference_to_id": work.reference_to_id or "",
+    }
+    values.update(
+        {name: "" for name in referenced if name.startswith(ITEM_FIELD_PREFIX)}
+    )
+    values.update({f"{ITEM_FIELD_PREFIX}{name}": value for name, value in work.fields})
+    return values
+
+
+def unbound_item_values(names: Iterable[str]) -> tuple[str, ...]:
+    """The ``ww.item.*`` names among ``names``, read where no item is bound."""
+    return tuple(sorted(name for name in names if name.startswith(ITEM_PREFIX)))
+
+
+def unbound_item_message(names: Iterable[str]) -> str:
+    """The context error for item values used by a step with no work item."""
+    return (
+        "item variable(s) used where no work item is bound: "
+        + ", ".join(unbound_item_values(names))
+        + "; ww.item.* is available only in the stages of an `items` step"
+    )
 
 
 def child_value_name(name: str) -> str:

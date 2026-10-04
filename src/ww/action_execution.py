@@ -46,7 +46,12 @@ from ww.interpolation import dependencies, interpolate
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
 from ww.storage_adapters import CommandOutputAddress
-from ww.variables import PROJECT, item_workspace_values
+from ww.variables import (
+    PROJECT,
+    item_workspace_values,
+    unbound_item_message,
+    unbound_item_values,
+)
 from ww.workspace import relative_workspace
 
 _OUTPUT_LIMIT = 16_000
@@ -61,7 +66,8 @@ Clock = Callable[[], str]
 WriteCommandOutput = Callable[[CommandOutputAddress, str], str]
 ReadCommandOutput = Callable[[str], str]
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
-# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
+# ``{{ww.child.*}}`` for a per-child stage, and ``{{ww.item.*}}`` for a per-item
+# stage; empty for any other item.
 ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
 
 
@@ -263,6 +269,8 @@ class _ExtensionService:
                 if name not in values
             }
         )
+        if unbound_item_values(missing):
+            raise StateError(unbound_item_message(missing))
         if missing:
             raise StateError(
                 "extension handler arguments are missing variable(s): "
@@ -476,8 +484,10 @@ class ActionExecutor:
         task_values: TaskValues,
         metadata_publisher: MetadataPublisher,
         child_values: ChildValues = _no_child_values,
+        item_values: ChildValues = _no_child_values,
     ) -> None:
         self.root = root
+        self.item_values = item_values
         self.extensions = extensions
         self.commit = commit
         self.project_state = project_state
@@ -519,6 +529,7 @@ class ActionExecutor:
                 **dict(state.workflow_values),
                 **self.task_values(state, plan),
                 **self.child_values(state, plan, item),
+                **self.item_values(state, plan, item),
             },
         )
 
