@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- A shell or argv handler in a per-item stage can declare `saves: item.field.<name>`: its whole
+  trimmed stdout is saved on the stage's item, and a `report` stage then marks only that item
+  reported in the same commit, so an automatic reply handler needs no agent bookkeeping. Nonzero
+  exit, failed assertions or empty output never report the item. Automatic collection-field saves
+  are rejected; idempotency of remote effects stays with the project's handler.
 - Per-item stages, instructions and automatic `argv`/`shell` actions alike, can read
   `{{ww.item.processed_item}}`, `proposed_solution`, `actual_solution` (the resolution text),
   `resolved`, `reported` and `reference_to_id` besides the ID, text and custom fields, always

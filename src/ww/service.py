@@ -319,6 +319,8 @@ class WorkflowService:
             metadata_publisher=self.metadata_publisher,
             child_values=self._child_values,
             item_values=self._item_values,
+            read_items=lambda state: self.tasks.read_items(state.task_id, state.run_id),
+            commit_items=self._commit_items,
         )
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)
         self.rule_checker = RuleChecker(self.tasks.write_command_output, _now)
@@ -721,6 +723,16 @@ class WorkflowService:
             and load_project_config(self.storage.project_config_path).feedback_learning
         ):
             self.feedback.complete_task(state.task_id)
+
+    def _commit_items(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        items: tuple[WorkItem, ...],
+    ) -> None:
+        """Commit a transition together with the item records it changed."""
+        self.commit(state, snapshot, items=items)
+        self._share_items(state.task_id, snapshot.plan, items)
 
     def feedback_sources(
         self,

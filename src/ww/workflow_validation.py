@@ -695,6 +695,15 @@ def _check_item_saves(
             fields = _item_saves(step, catalog)
             if fields and step.items is None:
                 raise ConfigurationError(f"{where} {_unbound_item_saves(fields)}")
+            if fields and step.action is not None:
+                raise ConfigurationError(
+                    f"{where} saves "
+                    + ", ".join(f"item.field.{name}" for name in fields)
+                    + " from an automatic command on a collection step: one "
+                    "output cannot be distributed among several items; save "
+                    "item fields from a per-item stage, or have the agent "
+                    "record collection fields with update-item"
+                )
             for hook in (
                 *configuration.global_hooks,
                 *workflow.hooks,

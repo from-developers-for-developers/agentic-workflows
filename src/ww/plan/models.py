@@ -453,8 +453,8 @@ class PlanItem:
             raise ValueError("only agent-owned or CLI plan items can save metadata")
         if self.update_document and self.owner != "agent":
             raise ValueError("only agent-owned plan items can update documents")
-        if self.update_item and self.owner != "agent":
-            raise ValueError("only agent-owned plan items can update items")
+        if self.update_item and self.owner != "agent" and self.kind != "cli":
+            raise ValueError("only agent-owned or CLI plan items can save item fields")
         metadata_names = [item.name for item in self.save_metadata]
         metadata_keys = [(item.scope, item.key) for item in self.save_metadata]
         if len(metadata_names) != len(set(metadata_names)):
