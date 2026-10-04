@@ -62,6 +62,7 @@ STEP_ONLY_KEYS: set[str] = {
     "role",
     "subagents",
     "interactive",
+    "explicit",
     "learnable",
     "choices",
     "profile",
@@ -191,6 +192,7 @@ _STEP_CONTENT_KEYS = frozenset(
         "loop",
         "items",
         "children",
+        "explicit",
         "handoff_to",
         "question",
         "outcomes",
@@ -270,6 +272,11 @@ def _parse_step(
     artifact, artifact_from = _parse_artifact(mapping, path, referenced)
     role, subagents, profile = _parse_performer(mapping, path, referenced)
     interactive, ui, choices = _parse_interactive(mapping, path, referenced, item_stage)
+    explicit = mapping.get(
+        "explicit", referenced.explicit if referenced is not None else None
+    )
+    if "explicit" in mapping and not isinstance(explicit, bool):
+        raise ConfigurationError(f"{path}.explicit must be true or false")
     if interactive and role == "worker":
         raise ConfigurationError(
             f"{path} is interactive, so the manager holds the conversation; "
@@ -326,6 +333,7 @@ def _parse_step(
         role=role,
         subagents=subagents,
         interactive=interactive,
+        explicit=explicit,
         learnable=learnable,
         choices=choices,
         ui=ui,

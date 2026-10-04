@@ -248,6 +248,13 @@ class InstructionBuilder:
             ),
             assignment_step=driver.name if driver else None,
             assignment_items=tuple(entry.name for entry in covered),
+            assignment_explicit_steps=tuple(
+                dict.fromkeys(
+                    entry.step
+                    for entry in covered
+                    if entry.explicit and entry.owner == "agent"
+                )
+            ),
             assignment_continues=(
                 item is not None
                 and bool(covered)
@@ -929,6 +936,7 @@ class InstructionBuilder:
             summary_required=item.hands_over,
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
+            explicit=item.explicit and item.owner == "agent",
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(
@@ -1309,6 +1317,10 @@ def _assignment_preview(
             "requested_model": item.requested_model,
             "requested_reasoning": item.requested_reasoning,
             "requested_profile": item.profile,
+            "explicit": item.explicit,
+            "explicit_steps": (
+                [item.step] if item.explicit and item.owner == "agent" else []
+            ),
             "repair": True,
         }
     assignment = assignment_at(plan, state.cursor, runtime=state.workflow_runtime)
@@ -1350,6 +1362,12 @@ def _assignment_preview(
             "requested_model": driver.requested_model,
             "requested_reasoning": driver.requested_reasoning,
             "requested_profile": driver.profile,
+            "explicit": driver.explicit,
+            "explicit_steps": [
+                entry.step
+                for entry in plan.items[assignment.start : assignment.stop]
+                if entry.explicit and entry.owner == "agent"
+            ],
             **(
                 {"item_scope": span.to_dict()}
                 if isinstance(span, ItemSpan)

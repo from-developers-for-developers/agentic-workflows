@@ -1051,6 +1051,7 @@ class WorkflowPlanCompiler:
                 role=role,
                 subagents=hints.subagents,
                 interactive=step.interactive and phase == "step",
+                explicit=step.explicit is True and phase == "step",
                 learnable=step.learnable and phase == "step",
                 choices=step.choices if phase == "step" else (),
                 ui=step.ui and phase == "step",

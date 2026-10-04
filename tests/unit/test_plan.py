@@ -1330,3 +1330,39 @@ def test_a_compiled_plan_keeps_its_item_ids_and_operations_through_a_reload(
     assert loaded == plan
     kinds = {type(item.operation) for item in loaded.items}
     assert {LoopBoundary, ChildWorkflowRun, WorkflowHandoff} <= kinds
+
+
+def test_plan_snapshot_persists_explicit_and_reads_legacy_items(tmp_path: Path) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        """workflows:
+  - task: ~
+    explicit: true
+    steps:
+      - inspect: Inspect the change.
+""",
+        encoding="utf-8",
+    )
+    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
+    snapshot = PlanSnapshot(
+        schema_version=PLAN_SCHEMA_VERSION,
+        compiler_version="test",
+        configuration_digest="digest",
+        compiled_at="2026-01-01T00:00:00Z",
+        plan=plan,
+    )
+    raw = json.loads(json.dumps(snapshot.to_dict()))
+    assert next(item for item in plan.items if item.step == "inspect").explicit is True
+    assert "Explicit work guidance:** enabled" in render_plan(plan, False)
+    for plan_name in ("plan", "template_plan"):
+        assert any(
+            item.get("explicit") is True
+            for item in raw[plan_name]["items"]
+            if item["step"] == "inspect"
+        )
+        for item in raw[plan_name]["items"]:
+            item.pop("explicit", None)
+
+    legacy = PlanSnapshot.from_dict(raw)
+
+    assert all(item.explicit is False for item in legacy.plan.items)

@@ -76,6 +76,51 @@ def test_an_heir_s_own_settings_replace_the_copied_ones(tmp_path: Path) -> None:
     assert (bugfix.runtime, bugfix.restartable) == ("auto", False)
 
 
+def test_explicit_visibility_inherits_through_workflows_and_structures(
+    tmp_path: Path,
+) -> None:
+    configuration = _load(
+        tmp_path,
+        """workflows:
+  - base: ~
+    explicit: true
+    steps:
+      - group: ~
+        steps:
+          - inherited: Inherit visibility.
+          - private: Keep default visibility.
+            explicit: false
+      - repeat: ~
+        loop:
+          - repeated: Inherit from loop.
+      - collect: Collect items.
+        items:
+          steps:
+            - process: Process each item.
+              explicit: false
+  - child: ~
+    inherit: base
+    explicit: false
+""",
+    )
+
+    base = configuration.workflows_by_name["base"]
+    child = configuration.workflows_by_name["child"]
+    assert base.explicit is True
+    assert child.explicit is False
+    group, repeat, collect = base.steps
+    assert group.explicit is True
+    assert [step.explicit for step in group.child_steps] == [True, False]
+    assert repeat.loop_steps[0].explicit is True
+    assert collect.items is not None
+    assert collect.items.steps[0].explicit is False
+
+    plan = compile_workflow_plan(configuration, tmp_path, "base", "codex")
+    assert {item.step: item.explicit for item in plan.items if item.phase == "step"}[
+        "group/private"
+    ] is False
+
+
 def test_inheritance_chains_and_reaches_every_heir(tmp_path: Path) -> None:
     configuration = _load(
         tmp_path,

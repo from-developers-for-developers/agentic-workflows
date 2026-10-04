@@ -351,6 +351,68 @@ def test_choices_are_a_json_core_value_in_instructions_and_input_descriptions(
     assert page.choices[0].label == 'A, "quoted" 🧪'
 
 
+def test_choices_data_is_ordered_escaped_reused_and_cleared_between_steps(
+    tmp_path: Path,
+) -> None:
+    captured = tmp_path / "choices.json"
+    (tmp_path / "ww.yaml").write_text(
+        f"""hooks:
+  before_complete:
+    - shell: 'printf "%s" "$WW_CHOICES" > {captured}'
+      env:
+        WW_CHOICES: "{{{{ww.choices}}}}"
+handlers:
+  - name: shared
+    description: "Choose from {{{{ww.choices}}}}."
+    interactive: true
+    choices:
+      - 'A, "quoted"': First option.
+      - B: Second option.
+workflows:
+  - manual: ~
+    steps:
+      - name: first
+        handler: shared
+      - name: second
+        handler: shared
+      - final: "Current labels: {{{{ww.choices}}}}."
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    service.start("manual", "TASK-CHOICES-REUSE", agent="codex", init_artifact="Test.")
+
+    first = service.next("TASK-CHOICES-REUSE")
+    assert first.item_name == "first"
+    assert first.action_text is not None
+    assert '["A, \\"quoted\\"", "B"]' in first.action_text
+    service.interact(
+        "TASK-CHOICES-REUSE",
+        transcript="Agent: Which option?\nOperator: A.",
+        choice="1",
+        end=True,
+    )
+    second = service.complete(
+        "TASK-CHOICES-REUSE", artifact="First done.", summary_for_next="Next."
+    )
+    assert captured.read_text(encoding="utf-8") == '["A, \\"quoted\\"", "B"]'
+    assert second.item_name == "second"
+    assert second.action_text is not None
+    assert '["A, \\"quoted\\"", "B"]' in second.action_text
+    service.interact(
+        "TASK-CHOICES-REUSE",
+        transcript="Agent: Which option?\nOperator: B.",
+        choice="2",
+        end=True,
+    )
+    final = service.complete(
+        "TASK-CHOICES-REUSE", artifact="Second done.", summary_for_next="Done."
+    )
+    assert final.item_name == "final"
+    assert final.action_text is not None
+    assert "Current labels: []." in final.action_text
+
+
 MANUAL_TESTS = """workflows:
   - name: manual
     steps:

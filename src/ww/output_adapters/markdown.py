@@ -96,6 +96,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _assignment_preview(lines, instruction)
         delegating = audience(instruction) is Audience.MANAGER_DELEGATING
         if delegating and instruction.role == "worker":
+            _assignment_explicit_guidance(lines, instruction)
             _worker_bootstrap(lines, instruction)
             return _document(lines)
         _assignment_scope(lines, instruction)
@@ -104,6 +105,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _task_requirements(lines, instruction)
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
+        _explicit_guidance(lines, instruction)
         _modes(lines, instruction)
         _rules(lines, instruction)
         _verification(lines, instruction)
@@ -607,6 +609,17 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
                     if value is not None
                 ),
                 f"Requested profile: `{preview['requested_profile'] or 'none'}`",
+                *(
+                    [
+                        "Explicit work guidance applies to: "
+                        + ", ".join(
+                            f"`{step}`" for step in _strings(preview["explicit_steps"])
+                        )
+                        + "."
+                    ]
+                    if preview.get("explicit_steps")
+                    else []
+                ),
             ]
         )
         scope = preview.get("item_scope") or preview.get("loop_scope")
@@ -654,6 +667,20 @@ def _assignment_scope(lines: Lines, instruction: Instruction) -> None:
             "says control returns to the manager.",
         ]
     )
+    _assignment_explicit_guidance(lines, instruction)
+
+
+def _assignment_explicit_guidance(lines: Lines, instruction: Instruction) -> None:
+    if not instruction.assignment_explicit_steps:
+        return
+    lines.extend(
+        [
+            "",
+            "Explicit work guidance applies to: "
+            + ", ".join(f"`{step}`" for step in instruction.assignment_explicit_steps)
+            + ". Their own pages carry the operation and per-file diff details.",
+        ]
+    )
 
 
 def _continues_assignment(instruction: Instruction) -> bool:
@@ -681,6 +708,7 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
         ]
     )
     _work(lines, instruction)
+    _explicit_guidance(lines, instruction)
     _modes(lines, instruction)
     _rules(lines, instruction)
     _documents(lines, instruction)
@@ -781,6 +809,21 @@ def _work(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", f"> **No subagents.** {NO_SUBAGENTS}"])
     _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
+
+
+def _explicit_guidance(lines: Lines, instruction: Instruction) -> None:
+    if not instruction.explicit or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Visible work")
+    lines.extend(
+        [
+            "Before each meaningful operation, describe what you are about to do. "
+            "After changing each file, show its concrete edits or a focused diff. "
+            "For large changes, provide a concrete diff artifact. Name every "
+            "changed file, and redact secrets. You may group related files into "
+            "batches, but do not hide edits behind a vague summary.",
+        ]
+    )
 
 
 def _modes(lines: Lines, instruction: Instruction) -> None:

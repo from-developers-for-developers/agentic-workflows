@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import assignment_token
+from tests.workflow_helpers import assignment_token, start_after_init
 from ww.config import load_configuration
 from ww.errors import ConfigurationError, StateError
 from ww.instructions import Instruction
@@ -388,3 +388,99 @@ def test_per_item_assessments_keep_outcomes_in_their_own_item(
         if record.result == "skipped: assessment selected negative"
     ]
     assert skipped == (["one", "one"] if first_outcome == "negative" else [])
+
+
+def test_direct_assessment_branches_resume_inside_item_stages(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        """handlers:
+  - discuss: Discuss this item.
+workflows:
+  - task: ~
+    steps:
+      - collect: Collect items.
+        items:
+          steps:
+            - assess:
+                question: Does this need discussion?
+                positive:
+                  handler: discuss
+                mixed:
+                  handlers:
+                    - argv: [printf, recorded]
+            - resolve: Resolve the item.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(service, "task", "TASK-DIRECT-ITEM", agent="codex")
+    service.next("TASK-DIRECT-ITEM")
+    for item_id in ("one", "two"):
+        service.add_item("TASK-DIRECT-ITEM", WorkItem(item_id, "Item."))
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Collected.", summary_for_next="Assess."
+    )
+
+    assert service.next("TASK-DIRECT-ITEM").item_name == "assess"
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Positive.", summary_for_next="Choose."
+    )
+    waiting = service.status("TASK-DIRECT-ITEM")
+    assert waiting.choosing_outcome_of == "assess"
+    assert service.resume(*service.load("TASK-DIRECT-ITEM")).choosing_outcome_of == (
+        "assess"
+    )
+    assert "--outcome positive" in md.render_instruction(
+        service.instruction("TASK-DIRECT-ITEM")
+    )
+    assert service.next("TASK-DIRECT-ITEM", outcome="positive").item_name == "positive"
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Discussed.", summary_for_next="Resolve."
+    )
+    assert service.next("TASK-DIRECT-ITEM").item_name == "resolve"
+    service.complete(
+        "TASK-DIRECT-ITEM", artifact="Resolved.", summary_for_next="Next item."
+    )
+
+    assert service.next("TASK-DIRECT-ITEM").item_name == "assess"
+    service.complete("TASK-DIRECT-ITEM", artifact="Mixed.", summary_for_next="Choose.")
+    assert service.status("TASK-DIRECT-ITEM").choosing_outcome_of == "assess"
+    assert service.next("TASK-DIRECT-ITEM", outcome="mixed").item_name == "resolve"
+
+
+def test_direct_assessment_branches_resume_inside_a_loop(tmp_path: Path) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        """handlers:
+  - discuss: Discuss this round.
+workflows:
+  - task: ~
+    steps:
+      - reconsider: ~
+        loop:
+          - assess:
+              question: Did the round resolve the issue?
+              positive:
+                handler: discuss
+              negative:
+                handlers:
+                  - argv: [printf, recorded]
+          - review: Review the result.
+            break: The round is complete.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    entry = start_after_init(service, "task", "TASK-DIRECT-LOOP", agent="codex")
+    assert entry.action_kind == "loop"
+
+    assert service.next("TASK-DIRECT-LOOP").item_name == "assess"
+    service.complete(
+        "TASK-DIRECT-LOOP", artifact="Positive.", summary_for_next="Choose."
+    )
+    waiting = service.status("TASK-DIRECT-LOOP")
+    assert waiting.choosing_outcome_of == "assess"
+    assert service.resume(*service.load("TASK-DIRECT-LOOP")).choosing_outcome_of == (
+        "assess"
+    )
+    assert service.next("TASK-DIRECT-LOOP", outcome="positive").item_name == "positive"

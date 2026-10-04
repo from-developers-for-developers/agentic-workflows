@@ -117,9 +117,9 @@ def parse_yaml_text(
         _parse_workflow(item, f"workflows[{index}]", handlers_by_name)
         for index, item in enumerate(workflows_raw)
     )
-    workflows, handlers = resolve_step_rules(
-        _resolve_inheritance(parsed), handlers, rule_groups, base
-    )
+    workflows = _resolve_explicit(_resolve_inheritance(parsed))
+    handlers = _resolve_explicit_handlers(handlers)
+    workflows, handlers = resolve_step_rules(workflows, handlers, rule_groups, base)
     return WorkflowConfiguration(
         _extend_modes_to_heirs(modes, workflows),
         profiles,
@@ -261,6 +261,7 @@ _OVERRIDES = {
     "profile": ("profile", "profile_description"),
     "role": ("role",),
     "subagents": ("subagents",),
+    "explicit": ("explicit",),
     "runtime": ("runtime",),
     "restartable": ("restartable",),
     "recommended_next_workflow": ("recommended_next_workflow",),
@@ -292,6 +293,7 @@ def _parse_workflow(
         "profile",
         "role",
         "subagents",
+        "explicit",
         "runtime",
         "restartable",
         "inherit",
@@ -367,6 +369,7 @@ def _parse_workflow(
         **_profile(mapping, f"workflow {name!r}"),
         role=_role(mapping, f"workflow {name!r}"),
         subagents=_subagents(mapping, f"workflow {name!r}"),
+        explicit=_optional_bool(mapping, "explicit", f"workflow {name!r}"),
         runtime=runtime,
         restartable=restartable,
         inherits=inherits,
@@ -428,6 +431,82 @@ def _resolve_inheritance(
         return resolved[name]
 
     return tuple(resolve(entry.definition.name, ()) for entry in parsed)
+
+
+def _optional_bool(mapping: dict[str, Any], key: str, path: str) -> bool | None:
+    if key not in mapping:
+        return None
+    value = mapping[key]
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{path}.{key} must be true or false")
+    return value
+
+
+def _resolve_explicit(
+    workflows: tuple[WorkflowDefinition, ...],
+) -> tuple[WorkflowDefinition, ...]:
+    """Freeze inherited visibility guidance after workflow inheritance resolves."""
+    resolved = []
+    for workflow in workflows:
+        explicit = workflow.explicit if workflow.explicit is not None else False
+        resolved.append(
+            replace(
+                workflow,
+                explicit=explicit,
+                steps=_resolve_explicit_steps(workflow.steps, explicit),
+            )
+        )
+    return tuple(resolved)
+
+
+def _resolve_explicit_handlers(
+    handlers: tuple[HandlerDefinition, ...],
+) -> tuple[HandlerDefinition, ...]:
+    """Give reusable step handlers a default after workflow references resolve."""
+    return tuple(
+        _resolve_explicit_steps((handler,), False)[0]
+        if isinstance(handler, StepDefinition)
+        else handler
+        for handler in handlers
+    )
+
+
+def _resolve_explicit_steps(
+    values: tuple[StepDefinition, ...], parent: bool
+) -> tuple[StepDefinition, ...]:
+    result = []
+    for step in values:
+        effective = step.explicit if step.explicit is not None else parent
+        items = (
+            replace(
+                step.items,
+                steps=_resolve_explicit_steps(step.items.steps, effective),
+            )
+            if step.items is not None
+            else None
+        )
+        children = (
+            replace(
+                step.children,
+                steps=_resolve_explicit_steps(step.children.steps, effective),
+            )
+            if step.children is not None
+            else None
+        )
+        result.append(
+            replace(
+                step,
+                explicit=effective,
+                child_steps=_resolve_explicit_steps(step.child_steps, effective),
+                loop_steps=_resolve_explicit_steps(step.loop_steps, effective),
+                assessment_outcomes=_resolve_explicit_steps(
+                    step.assessment_outcomes, effective
+                ),
+                items=items,
+                children=children,
+            )
+        )
+    return tuple(result)
 
 
 def _extend_to_heirs(

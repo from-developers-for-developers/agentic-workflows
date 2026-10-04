@@ -2421,6 +2421,16 @@ Completing an interactive step is refused until at least one entry was recorded
 and the interaction was ended. The step's artifact and handover are written as
 usual; what goes into them is the agent's judgement.
 
+For work where the operator wants to follow each action and edit, set
+`explicit: true` on a workflow or step. The agent describes each meaningful
+operation before it begins and shows the concrete edits for every changed file
+afterward. Large edits can use a focused diff artifact; the agent still names
+each changed file and redacts secrets. Structural groups, loops, item stages,
+and child stages inherit the setting, and a nested step can turn it off with
+`explicit: false`. The compiled plan preserves the resolved value across
+resumption. WW-owned automatic handlers continue to show their command and
+result through ww's existing output.
+
 When the operator's answer is one of a few outcomes, declare them as `choices`
 and ww turns them into a real pick rather than free text:
 
