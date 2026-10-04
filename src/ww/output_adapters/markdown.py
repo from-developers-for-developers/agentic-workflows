@@ -517,6 +517,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "fix_limit": "the step's checks reached their fix limit",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
+    "pass_incomplete": "an items pass is missing item records",
 }
 
 
@@ -1527,6 +1528,9 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.operator_reason == "value_unavailable":
         _value_unavailable(lines, instruction)
         return
+    if instruction.operator_reason == "pass_incomplete":
+        _pass_incomplete(lines, instruction)
+        return
     child = _failed_child(instruction)
     if child is None:
         lines.extend(["", *_failed_handler_guidance(instruction)])
@@ -1770,6 +1774,36 @@ def _value_unavailable(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]
         )
+
+
+def _pass_incomplete(lines: Lines, instruction: Instruction) -> None:
+    """A pass gate: the pass's items lack records; nothing failed or ran."""
+    lines.extend(
+        [
+            "",
+            "The items pass has finished its stages, but the items named in "
+            "the error above lack what those stages declare. No handler "
+            "failed, and the next step has not started.",
+        ]
+    )
+    if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
+        lines.extend(
+            [
+                "",
+                f"Stop here. {_return_phrase(instruction)}: the operator decides "
+                "how to go on.",
+            ]
+        )
+        return
+    _append_section(lines, "Operator recovery")
+    lines.append(
+        "Nothing else runs until the user, who is the `ww` operator, decides. "
+        "Show them what each item lacks. Once the missing values are recorded "
+        "with `update-item`, by them or by you at their request, check the "
+        "items again:"
+    )
+    for command in instruction.recovery_commands:
+        lines.extend(["", "```console", command.command, "```"])
 
 
 def _interrupted(lines: Lines, instruction: Instruction) -> None:

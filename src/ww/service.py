@@ -19,6 +19,7 @@ from ww.actions import (
     PlannedAction,
     actions,
 )
+from ww.assessments import pending_assessment
 from ww.assignments import (
     active_assignment,
     assignment_at,
@@ -250,6 +251,11 @@ class OpenAssignment:
 FORCE_NOT_APPLICABLE = (
     "cannot force a task that is not failed or interrupted and is not stopped "
     "at a loop limit"
+)
+# Forcing would skip the step after the pass, not the pass's missing records.
+FORCE_PAST_PASS_GATE = (
+    "an items pass gate cannot be forced: record what each item lacks with "
+    "update-item, then run next --retry"
 )
 
 
@@ -958,6 +964,8 @@ class WorkflowService:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
         if state.status == "failed":
+            if force and state.failure_kind == "pass_incomplete":
+                raise StateError(FORCE_PAST_PASS_GATE)
             if (
                 force
                 and state.failure_kind in {"fix_limit", "check_disputed"}
@@ -1129,6 +1137,8 @@ class WorkflowService:
                 f"`{items[state.cursor].name}`: its worker completes it again "
                 "without that check, and the artifact records the waiver"
             )
+        if state.status == "failed" and state.failure_kind == "pass_incomplete":
+            raise StateError(FORCE_PAST_PASS_GATE)
         if state.status in {"failed", "interrupted"}:
             if state.cursor >= len(items):
                 raise StateError(
@@ -3077,7 +3087,10 @@ class WorkflowService:
 
         Checked once the pass's last stage is done and before the next item
         starts; only what the pass's stages declared, and actually ran, is
-        required (see ``ww.item_passes``).
+        required (see ``ww.item_passes``).  When that last stage is an
+        assessment, the pass ends only once its outcome is chosen: an outcome
+        whose work belongs to the pass runs first, and one that stops the
+        workflow ends the run without a gate.
         """
         pass_id = leaving_pass(plan, state.cursor)
         following = state.item_executions[state.cursor]
@@ -3085,6 +3098,7 @@ class WorkflowService:
             pass_id is None
             or following.status != "pending"
             or following.started_at is not None
+            or pending_assessment(state, plan) is not None
         ):
             return None
         unfinished = pass_gate_failures(

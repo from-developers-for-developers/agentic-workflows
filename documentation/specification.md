@@ -753,9 +753,9 @@ The mapping form accepts these keys, all optional:
 | `choices` | list of choices | Options the operator picks from in the built-in `handle-item` stage. Invalid together with `steps`. |
 | `steps` | list of steps | The per-item stages. Omitted, one built-in `handle-item` stage runs per item. An explicit `[]` (or `~`) collects or reconciles items only and never expands the default `handle-item` stage; `items: ~` is the full-lifecycle shorthand. |
 | `assignment` | `together`, `per_item`, or `per_step` | How per-item stages are split into worker assignments in the `auto` runtime; default `together`. |
-| `persistent` | boolean | The items outlive the run: every run of the task starts from the task's stored items with their outcomes cleared, and the collection step reconciles that list against the source instead of splitting again. Defaults to `false`; omitting it is distinct from writing `false` in the model, because the first `items` declaration of a workflow establishes the collection's settings and a later one that omits them is not in conflict. |
-| `identity` | field name | The custom field every new item must carry; `add-item` refuses one without it. Implied in `unique`. |
-| `unique` | list of field names | One pool of values across the listed fields: a value may appear once over all items, in the run and in the task's stored items. `add-item` and `update-item` refuse a duplicate and name the item that holds it. |
+| `persistent` | boolean | The items outlive the run: every run of the task starts from the task's stored items with their outcomes cleared, and the collection step reconciles that list against the source instead of splitting again. Defaults to `false`. A collection setting: see [Several passes over one collection](#several-passes-over-one-collection). |
+| `identity` | field name | The custom field every new item must carry; `add-item` refuses one without it. Implied in `unique`. A collection setting. |
+| `unique` | list of field names | One pool of values across the listed fields: a value may appear once over all items, in the run and in the task's stored items. `add-item` and `update-item` refuse a duplicate and name the item that holds it. A collection setting. |
 | `agent` | non-empty string other than `auto` | Agent for the per-item stages. |
 | `model` | non-empty string | Model for the per-item stages. |
 | `reasoning` | non-empty string | Reasoning for the per-item stages. |
@@ -815,7 +815,9 @@ not depend on descriptions or work-item IDs.
 
 A workflow has one item collection, and every `items` step is a pass over it.
 Passes are sequential steps, at any level and inside loops; ordinary steps
-between them, such as one batch analysis or fix for all items, run once:
+between them, such as one batch analysis or fix for all items, run once.
+A pass with `steps: []` only collects or reconciles items; `items: ~` remains
+the shorthand for one pass with the whole built-in lifecycle:
 
 ```yaml
 - collect: Record one item per comment with its stable source ID.
@@ -853,7 +855,13 @@ between them, such as one batch analysis or fix for all items, run once:
   items recorded by then, with fresh stage records; nested loops and
   nearest-loop `break` behave as for any other step.
 - **Settings.** `persistent`, `identity`, and `unique` belong to the
-  collection: the first `items` declaration's apply to every pass.
+  collection. The first `items` declaration in plan order decides them, with
+  the defaults for what it omits, and they apply to every pass. A later pass
+  may omit them or repeat the same values; one that sets a different value is
+  a configuration error naming both steps, for example `workflow 'review'
+  step 'finish' sets items.persistent to true, but the collection's first
+  items step 'collect' leaves it unset`. `unique` is compared as a set, with
+  `identity` in it.
 - An `items` step inside another `items` step's per-item stages is an
   error; declare later passes as sequential steps instead.
 
@@ -877,9 +885,38 @@ assessment outcome, a `break`, or a stopped workflow skipped it, requires
 nothing, and ww never marks an item resolved or reported by itself. A linked
 item (`--refers-to`) shares the analysis, solution, and `resolved` state of the
 item it refers to, so a duplicate comment needs no duplicate fix, but it is
-reported for its own source. A pass that is not satisfied stops the run for
-the operator with each missing value; once the items are updated, `next
---retry` continues.
+reported for its own source.
+
+An assessment outcome inside a per-item stage belongs to its pass. When an
+assessment is a pass's last stage, the pass ends once its outcome is chosen:
+the chosen outcome's work runs first and is gated with the rest, an outcome
+that skips that work requires nothing of it, and an outcome that stops the
+workflow ends the run without a gate. The chosen outcome is recorded on the
+assessment, so a stop after it never asks for it again.
+
+A pass that is not satisfied stops the run for the operator with
+`operator_reason: pass_incomplete` and each item's missing values; the next
+step has not started. Once the items are updated with `update-item`, `next
+--retry` checks them again. The gate cannot be forced: `next --force` there is
+refused, because it would skip the next step rather than the missing records.
+
+#### Item field saves
+
+`saves: item.field.<name>` binds to an item, so it is valid only where there
+is one:
+
+- on an `items` step itself, for every item it collects or reconciles;
+- on a step inside a per-item stage, at any depth (nested steps, loops,
+  assessment outcomes), and on a hook or handler that runs for such a step,
+  for the stage's current item.
+
+Anywhere else, such as an ordinary batch step between passes, a hook of the
+collection step, or a workflow-boundary hook, it is a configuration error
+that names the step and the field; such a step updates items with
+`update-item`. Reusable handlers are checked where they are used: as a step's
+`handler`, as a hook, or through a handler group. A catalog handler with item
+saves that no step uses unbound is valid. Metadata and document saves are
+valid anywhere.
 
 An `items` step cannot also declare `steps`, `loop`, `item_phase`, or child
 tasks.
@@ -1156,7 +1193,7 @@ entry can only name something ww manages.
 | `metadata.<path>` | task metadata at `<path>`, read as `{{ww.metadata.<path>}}` | `complete --metadata <path>=<value>` |
 | `project_metadata.<path>` | project metadata shared by every task, read as `{{ww.project_metadata.<path>}}` | `complete --metadata project_metadata.<path>=<value>` |
 | `documents.<name>` | a root document, created or edited in place; see [Documents](#documents) | the file itself |
-| `item.field.<name>` | a custom field of the step's item; on the collection step, of every collected item. Completion is refused while any is empty. | `update-item --field <name>=<value>`, several per call |
+| `item.field.<name>` | a custom field of the step's item; on the collection step, of every collected item. Completion is refused while any is empty. Valid only on an `items` step or within a per-item stage; see [Item field saves](#item-field-saves). | `update-item --field <name>=<value>`, several per call |
 
 A metadata entry may add `append: true`: the path holds a list, each
 completion may pass it once per value or omit it, values are appended to what
