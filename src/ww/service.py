@@ -179,7 +179,7 @@ from ww.variables import (
     PROJECT_METADATA_PREFIX,
     child_value_name,
     child_values,
-    item_variable_values,
+    item_binding_values,
     runtime_variable_values,
     unavailable_ww_values,
 )
@@ -2373,9 +2373,7 @@ class WorkflowService:
             ),
             None,
         )
-        if work is None:
-            return {}
-        return item_variable_values(work, item.dependencies)
+        return item_binding_values(item.item_id, work, item.dependencies)
 
     def _child_values(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

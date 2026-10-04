@@ -33,6 +33,9 @@ ITEM_ID = "ww.item.id"
 ITEM_TEXT = "ww.item.text"
 ITEM_FIELD_PREFIX = "ww.item.field."
 ITEM_PREFIX = "ww.item."
+# Kept in a step's values to say which work item the plan binds it to; never a
+# template name of its own.
+ITEM_BINDING = "__item_binding"
 CHOICES = "ww.choices"
 # Values resolved while the task runs rather than when its plan is compiled.
 RUNTIME_PREFIXES = (
@@ -117,18 +120,49 @@ def item_variable_values(
     return values
 
 
-def unbound_item_values(names: Iterable[str]) -> tuple[str, ...]:
-    """The ``ww.item.*`` names among ``names``, read where no item is bound."""
-    return tuple(sorted(name for name in names if name.startswith(ITEM_PREFIX)))
+def item_binding_values(
+    item_id: str | None, work: WorkItem | None, referenced: tuple[str, ...] = ()
+) -> dict[str, str]:
+    """The item values of a step, with how the step is bound to its item.
+
+    ``item_id`` is the work item the plan binds the step to and ``work`` its
+    current record.  Nothing is bound for a step without ``item_id``; a bound
+    step whose item is gone keeps only the binding, so a read of an item value
+    can say which of those it is (see ``item_context_error``).
+    """
+    if item_id is None:
+        return {}
+    values = {ITEM_BINDING: item_id}
+    if work is not None:
+        values.update(item_variable_values(work, referenced))
+    return values
 
 
-def unbound_item_message(names: Iterable[str]) -> str:
-    """The context error for item values used by a step with no work item."""
-    return (
-        "item variable(s) used where no work item is bound: "
-        + ", ".join(unbound_item_values(names))
-        + "; ww.item.* is available only in the stages of an `items` step"
+def item_context_error(missing: Iterable[str], values: Mapping[str, str]) -> str | None:
+    """The context error for ``ww.item.*`` names ``values`` cannot give, if any.
+
+    The one wording for a command's arguments and an extension handler's:
+    no item bound to the step, the bound item no longer in the run, or a
+    ``ww.item`` name that does not exist.
+    """
+    names = sorted(name for name in missing if name.startswith(ITEM_PREFIX))
+    if not names:
+        return None
+    listed = ", ".join(names)
+    if ITEM_BINDING not in values:
+        return (
+            f"item variable(s) used where no work item is bound: {listed}; "
+            "ww.item.* is available only in the stages of an `items` step"
+        )
+    if ITEM_ID not in values:
+        return (
+            f"item variable(s) {listed} read the work item "
+            f"{values[ITEM_BINDING]!r}, which is no longer in the run's items"
+        )
+    valid = sorted(
+        (*item_variable_values(WorkItem("x", "x")), f"{ITEM_FIELD_PREFIX}<name>")
     )
+    return f"unknown item variable(s): {listed}; valid names are " + ", ".join(valid)
 
 
 def child_value_name(name: str) -> str:

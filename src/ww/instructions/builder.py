@@ -46,6 +46,7 @@ from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
 from ww.runtimes import runtime_instruction
+from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
     enclosing_loop_entry_index,
@@ -96,14 +97,6 @@ from .policy import (
 from .text import NO_SUBAGENTS, ContainerArtifact, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
-# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
-ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
-
-
-def _no_child_values(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-) -> dict[str, str]:
-    return {}
 
 
 @dataclass(frozen=True)
@@ -139,8 +132,8 @@ class InstructionBuilder:
         root: Path,
         documents: DocumentStore,
         interactions: InteractionLog,
-        child_values: ChildValues = _no_child_values,
-        item_values: ChildValues = _no_child_values,
+        child_values: StepValues = no_step_values,
+        item_values: StepValues = no_step_values,
     ) -> None:
         self.tasks = tasks
         self.item_values = item_values

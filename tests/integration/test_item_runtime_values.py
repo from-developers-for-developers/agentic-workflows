@@ -210,3 +210,37 @@ def test_values_follow_a_pass_gate_stop_update_item_and_retry(
 
     assert _argv(tmp_path, "c1") == [["c1", "analysis one"]]
     assert _argv(tmp_path, "c2") == [["c2", "analysis two"]]
+
+
+def _failed_error(root: Path, workflow: str) -> str:
+    service = _collected(root, workflow)
+    service.next(TASK)  # the reused collection step
+    service.complete(TASK, artifact="started", summary_for_next="Done.")
+    service.next(TASK, caller_role="manager")
+    state, _ = service.load(TASK)
+    assert state.status == "failed"
+    assert state.last_error is not None
+    return state.last_error
+
+
+def _bound_workflow(name: str) -> str:
+    return f"""workflows:
+  - name: review
+    steps:
+      - collect: Record one item per comment.
+        items:
+          steps: []
+      - finish: Reuse the collected items.
+        items:
+          steps:
+            - reply: ~
+              argv: [echo, "{{{{ww.item.{name}}}}}"]
+"""
+
+
+def test_a_misspelled_item_value_names_the_valid_ones(tmp_path: Path) -> None:
+    error = _failed_error(tmp_path, _bound_workflow("actual_soluton"))
+
+    assert "unknown item variable(s): ww.item.actual_soluton" in error
+    assert "ww.item.actual_solution" in error
+    assert "no work item is bound" not in error

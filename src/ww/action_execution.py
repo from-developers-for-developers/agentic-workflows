@@ -45,12 +45,12 @@ from ww.extensions import (
 from ww.interpolation import dependencies, interpolate
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
+from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import CommandOutputAddress
 from ww.variables import (
     PROJECT,
+    item_context_error,
     item_workspace_values,
-    unbound_item_message,
-    unbound_item_values,
 )
 from ww.workspace import relative_workspace
 
@@ -66,15 +66,6 @@ Clock = Callable[[], str]
 WriteCommandOutput = Callable[[CommandOutputAddress, str], str]
 ReadCommandOutput = Callable[[str], str]
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
-# ``{{ww.child.*}}`` for a per-child stage, and ``{{ww.item.*}}`` for a per-item
-# stage; empty for any other item.
-ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
-
-
-def _no_child_values(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-) -> dict[str, str]:
-    return {}
 
 
 @dataclass
@@ -269,8 +260,9 @@ class _ExtensionService:
                 if name not in values
             }
         )
-        if unbound_item_values(missing):
-            raise StateError(unbound_item_message(missing))
+        context_error = item_context_error(missing, values)
+        if context_error is not None:
+            raise StateError(context_error)
         if missing:
             raise StateError(
                 "extension handler arguments are missing variable(s): "
@@ -483,8 +475,8 @@ class ActionExecutor:
         read_command_output: ReadCommandOutput,
         task_values: TaskValues,
         metadata_publisher: MetadataPublisher,
-        child_values: ChildValues = _no_child_values,
-        item_values: ChildValues = _no_child_values,
+        child_values: StepValues = no_step_values,
+        item_values: StepValues = no_step_values,
     ) -> None:
         self.root = root
         self.item_values = item_values
