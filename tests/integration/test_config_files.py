@@ -131,7 +131,7 @@ def test_the_markdown_plan_ends_with_the_files_read(
 # init and .gitignore
 
 _LOCAL_PATTERNS = "*ww.local.yaml\n*ww.local.json\nww-setup.local.yaml\n"
-_RUNTIME_LINES = ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n"
+_RUNTIME_LINES = ".ww/*\n!.ww/project.md\n"
 
 
 def _init(project: Path, capsys: pytest.CaptureFixture[str], *extra: str) -> None:
@@ -187,7 +187,7 @@ def test_init_writes_the_runtime_lines_and_completes_a_partial_set(
     _write(project / ".gitignore", ".ww/*\n!.ww/team.md\n")
     _init(project, capsys, "--update-gitignore")
     assert (project / ".gitignore").read_text() == (
-        ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n" + _LOCAL_PATTERNS
+        ".ww/*\n!.ww/team.md\n!.ww/project.md\n" + _LOCAL_PATTERNS
     )
 
 
@@ -216,8 +216,7 @@ def test_a_re_inclusion_counts_only_after_the_runtime_line(
     _init(project, capsys, "--update-gitignore")
 
     assert (project / ".gitignore").read_text() == (
-        "!.ww/team.md\n.ww/*\n!.ww/project.md\n!.ww/team.md\n!.ww/company.md\n"
-        "end/\n" + _LOCAL_PATTERNS
+        "!.ww/team.md\n.ww/*\n!.ww/project.md\nend/\n" + _LOCAL_PATTERNS
     )
 
 
@@ -250,9 +249,7 @@ def test_the_runtime_lines_let_git_see_only_the_shared_files(
     ).stdout
 
     assert sorted(line.split()[-1] for line in status.splitlines()) == [
-        ".ww/company.md",
-        ".ww/project.md",
-        ".ww/team.md",
+        ".ww/project.md"
     ]
 
 

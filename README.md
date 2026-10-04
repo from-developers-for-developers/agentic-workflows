@@ -145,10 +145,8 @@ The wizard asks a few questions and then sets the project up:
 - **Git setup**, in a Git repository: it enables the bundled `ww/git`
   extension and asks about worktrees and branch formats, and offers to keep
   `.ww/` out of Git (`.ww/*` in `.gitignore`), except the files where ww
-  records what it learned about your team, company and project
-  (`.ww/team.md`, `.ww/company.md`, `.ww/project.md`), which are meant to be
-  committed; `.ww/myrole.md`, your role in the project, stays ignored as
-  personal to the checkout. It also keeps local configuration files
+  records what it learned about the project (`.ww/project.md`), which is
+  meant to be committed. It also keeps local configuration files
   (`*ww.local.yaml`, `*ww.local.json`,
   `ww-setup.local.yaml`) out of Git.
 - **Agent skills** — for each agent directory it finds (`.claude/`, `.codex/`
@@ -156,7 +154,7 @@ The wizard asks a few questions and then sets the project up:
   work through ww by name, a `noww` skill, so you can tell it to leave ww
   out, a `ww-rule` skill, which turns your own words into rules for ww's
   steps, and the `ww-setup` skill with the skills it guides through
-  (`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
+  (`ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
   `ww-rules-from-artifacts`, `ww-automate`, `ww-scriptize`), and
   `ww-deduce-feedback` and `ww-feedback-rules` for learning from completed
   artifacts and proposing rules.
@@ -167,13 +165,14 @@ It finishes by printing any manual additions you still need in `AGENTS.md` or
 `CLAUDE.md`, the exact permission entries that let your agents run ww without
 asking each time (for Claude Code, the lines to add to
 `.claude/settings.json`), a reminder to define a workflow, and the next step:
-run the `ww-setup` skill to set ww up for you, your team and this project.
-That skill interviews you briefly about how you and your team work, reads how
-the project is organised (its tooling, tracker, conventions and recurring
-pitfalls, not its features), and proposes a complete setup shaped by the
-project's own branches, commands and history, each piece with the evidence
-for it, which you try alone first and share with the team if you like. Each
-part is optional and shows you every change before ww places it; see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
+run the `ww-setup` skill to set ww up for this project.
+That skill learns the repository (what it is for, its stack, commands, CI,
+review and release process, conventions and recurring pitfalls), asks a few
+questions about your process (express setup skips them and derives defaults
+from the project), and proposes a minimal setup shaped by the project's own
+branches, commands and history, each piece with the evidence for it, which
+you try alone first and share with the team if you like. It never interviews
+you about who you are, your role, your team or your company. Each part is optional and shows you every change before ww places it; see [Setting ww up](documentation/features.md#setting-ww-up-learning-and-suggestions).
 
 `init` takes flags for every prompt if you would rather not answer them
 interactively — `--no-input` accepts all defaults, and
@@ -457,8 +456,8 @@ only the documented public extension API.
 
 ## Sensitive runtime data
 
-Treat `.ww/` as private runtime data, apart from the shared learning files
-`team.md`, `company.md` and `project.md`, which are meant for the repository. It can contain task errors, worker
+Treat `.ww/` as private runtime data, apart from the shared learning file
+`project.md`, which is meant for the repository. It can contain task errors, worker
 artifacts, command stdout/stderr, metadata, and configured extension settings;
 any of those may include credentials or other sensitive values supplied to a
 workflow. The audit file `.ww/executions.jsonl` is owner-readable only and

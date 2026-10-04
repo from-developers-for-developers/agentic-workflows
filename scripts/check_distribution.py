@@ -12,14 +12,21 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Skills init installs: the setup guide with the project learning it starts.
+RETAINED_SKILLS = ("ww-setup", "ww-learn-project", "ww-suggest", "ww-refresh")
+# Retired managed assets must not ship again.
+RETIRED_ASSETS = ("ww/assets/ww-learn_skill.md",)
 REQUIRED_WHEEL_PATHS = {
     "ww/assets/agent_instructions.md",
     "ww/assets/ww_skill.md",
+    *(f"ww/assets/{name}_skill.md" for name in RETAINED_SKILLS),
+    "ww/assets/workflows/onboarding.yaml",
     "ww/_bundled_extensions/ww/git/extension.py",
 }
 REQUIRED_SDIST_PATHS = {
     "src/ww/assets/agent_instructions.md",
     "src/ww/assets/ww_skill.md",
+    *(f"src/ww/assets/{name}_skill.md" for name in RETAINED_SKILLS),
     "ext/ww/git/extension.py",
 }
 
@@ -44,6 +51,13 @@ def _require_members(path: Path, required: set[str]) -> None:
         raise RuntimeError(f"{path.name} is missing required files: {detail}")
 
 
+def _forbid_members(path: Path, forbidden: tuple[str, ...]) -> None:
+    members = {name.removeprefix("src/") for name in _archive_members(path)}
+    present = sorted(name for name in forbidden if name in members)
+    if present:
+        raise RuntimeError(f"{path.name} ships retired files: {', '.join(present)}")
+
+
 def _require_license(path: Path) -> None:
     members = _archive_members(path)
     has_license = any(
@@ -64,8 +78,10 @@ def main() -> int:
         (sdist,) = dist.glob("*.tar.gz")
         _require_members(wheel, REQUIRED_WHEEL_PATHS)
         _require_license(wheel)
+        _forbid_members(wheel, RETIRED_ASSETS)
         _require_members(sdist, REQUIRED_SDIST_PATHS)
         _require_license(sdist)
+        _forbid_members(sdist, RETIRED_ASSETS)
 
         environment = temporary_root / "venv"
         _run(sys.executable, "-m", "venv", str(environment), cwd=temporary_root)

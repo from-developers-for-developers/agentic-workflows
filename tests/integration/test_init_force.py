@@ -223,5 +223,5 @@ def test_json_output_names_the_next_step(
 
     result = json.loads(capsys.readouterr().out)
     assert result["next_steps"] == [
-        "Run the ww-setup skill to set ww up for you, your team and this project."
+        "Run the ww-setup skill to set ww up for this project."
     ]

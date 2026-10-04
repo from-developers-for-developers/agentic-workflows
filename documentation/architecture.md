@@ -143,8 +143,9 @@ documents, lives below `../.ww` so projects can exclude one directory as a unit;
 the `.gitignore` lines `init` writes (`RUNTIME_IGNORE_LINES` in
 `../src/ww/config_files.py`) ignore that directory's contents rather than the
 directory, because Git cannot re-include a file under an ignored directory, and
-then re-include the shared learning files `team.md`, `company.md` and
-`project.md`. Agent instructions remain at the project root because
+then re-include the shared learning file `project.md` (older versions also
+re-included `team.md` and `company.md`; existing lines for them stay and the
+files are never touched). Agent instructions remain at the project root because
 `../AGENTS.md` and `../CLAUDE.md` must be able to reference a durable, versioned file.
 The interactive answers are remembered in `.ww/init-choices.json` so a repeat
 run asks nothing already decided; `init --force` reads none of them back (it
@@ -187,10 +188,15 @@ Potentially project-opinionated edits such as `../.gitignore` remain explicit us
 choices.
 
 Onboarding state (`../src/ww/onboarding.py`) is split by what it describes:
-the operator's `explain` preference and when ww learned about them live in
-`state.json` in the user directory, shared by every project, and the project's
-`setup.done` and learning timestamps live in project metadata under the `ww.`
-namespace. That namespace is reserved in `SavedMetadata` itself, so no workflow
+the operator's optional `explain` preference lives in `state.json` in the user
+directory, shared by every project, and the project's `setup.done` and
+`learned.project` timestamp live in project metadata under the `ww.` namespace.
+The retired profile keys (`learned.me`, `learned.myrole`, `learned.team`,
+`learned.company`) are neither read nor written: old values stay in the files
+untouched, other keys are preserved, and setting one is refused with a message
+saying so. A built-in workflow that was retired (`ww-learn`, `ww-express`,
+`../src/ww/retired.py`) is answered with its replacement when started; plans
+frozen into old tasks stay readable. That namespace is reserved in `SavedMetadata` itself, so no workflow
 can save into it, and the storage port stays the one writer of
 `.ww/metadata.json`. `discover` reads the state to add its onboarding guidance;
 `ww onboarding` is the only command that sets it, and records only the

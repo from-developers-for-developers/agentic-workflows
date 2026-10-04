@@ -13,7 +13,7 @@ from tests.workflow_helpers import start_after_init
 from ww.builtin_workflows import builtin_workflow, is_builtin
 from ww.cli import main
 from ww.config import load_configuration
-from ww.config_files import SHARED_RUNTIME_FILES, user_directory
+from ww.config_files import SHARED_RUNTIME_FILES
 from ww.defaults import SKILLS
 from ww.executable import printed_executable
 from ww.extensions import ExtensionRegistry
@@ -23,15 +23,15 @@ from ww.variables import EXECUTABLE, runtime_variable_values
 from ww.workflow_config import StepDefinition, WorkflowConfiguration
 
 ONBOARDING = (
-    "ww-learn",
-    "ww-express",
     "ww-learn-project",
     "ww-suggest",
     "ww-solve",
     "ww-rules-from-artifacts",
     "ww-automate",
 )
-LEARNING_DOCUMENTS = ("me", "myrole", "team", "company", "project")
+LEARNING_DOCUMENTS = ("project",)
+RETIRED_DOCUMENTS = ("me", "myrole", "team", "company")
+RETIRED_WORKFLOWS = ("ww-learn", "ww-express")
 REMARK = (
     "<!-- This file is maintained by ww for ww's own use. Do not use it for "
     "anything else. If you are an agent that is not doing ww work, ignore this "
@@ -39,7 +39,6 @@ REMARK = (
 )
 NEW_SKILLS = (
     "ww-setup",
-    "ww-learn",
     "ww-learn-project",
     "ww-suggest",
     "ww-refresh",
@@ -109,29 +108,22 @@ def test_every_learning_file_is_written_with_the_remark() -> None:
             assert REMARK in instruction, document
 
 
-def test_learning_documents_resolve_to_the_user_directory_and_project_root(
+def test_the_project_document_resolves_to_the_project_root_and_is_shared(
     tmp_path: Path,
 ) -> None:
     root = _project(tmp_path / "project")
     documents = _load(root).documents_by_name
-    service = WorkflowService(Storage(root))
-    store = service.documents
-    # A task working in a Git worktree still shares the project's files.
+    store = WorkflowService(Storage(root)).documents
+    # A task working in a Git worktree still shares the project's file.
     worktree = tmp_path / "project" / "ww-worktrees" / "T-1"
 
-    assert documents["me"].scope == "user"
-    assert (
-        store.path(documents["me"], "T-1", worktree)
-        == (user_directory() / "me.md").resolve()
-    )
-    for name in ("myrole", "team", "company", "project"):
-        assert documents[name].scope == "project"
-        expected = (root / ".ww" / f"{name}.md").resolve()
-        assert store.path(documents[name], "T-1", worktree) == expected
-        assert store.path(documents[name], None) == expected
-    # The operator's role is personal to the checkout: `init` re-includes
-    # only the shared files in Git, so it stays ignored with the rest.
-    assert "myrole.md" not in SHARED_RUNTIME_FILES
+    assert documents["project"].scope == "project"
+    expected = (root / ".ww" / "project.md").resolve()
+    assert store.path(documents["project"], "T-1", worktree) == expected
+    assert store.path(documents["project"], None) == expected
+    assert SHARED_RUNTIME_FILES == ("project.md",)
+    # No profile document is declared any more.
+    assert not set(RETIRED_DOCUMENTS) & set(documents)
 
 
 def _step(workflow: str, name: str) -> StepDefinition:
@@ -140,28 +132,42 @@ def _step(workflow: str, name: str) -> StepDefinition:
     )
 
 
-def test_ww_learn_asks_about_the_operators_role_in_the_project() -> None:
-    choose = _step("ww-learn", "choose")
-    assert [choice.label for choice in choose.choices] == [
-        "everything",
-        "only me",
-        "only my role",
-        "only team and company",
-        "not now",
-    ]
-    assert "{{ww.documents.myrole}}" in choose.description
+def test_no_workflow_or_skill_interviews_about_the_operator() -> None:
+    texts = []
+    for name in ONBOARDING:
+        for step in _steps(builtin_workflow(name).steps):
+            texts.append(step.description)
+            texts.extend(update.instruction for update in step.update_document)
+    texts.extend(SKILLS.values())
+    for text in texts:
+        for retired in (
+            "myrole",
+            "me.md",
+            "team.md",
+            "company.md",
+            "ww-learn`",
+            "ww-express",
+            "learned.me",
+            "learned.team",
+            "learned.company",
+        ):
+            assert retired not in text, retired
+    assert "ww-learn" not in SKILLS
 
-    role = _step("ww-learn", "role")
-    assert role.child_steps[0].assessment_question is not None
-    assert '"only my role"' in role.child_steps[0].assessment_question
-    interview = _step("ww-learn", "interview-role")
-    assert interview.interactive
-    assert [update.name for update in interview.update_document] == ["myrole"]
-    assert "{{ww.documents.myrole}}" in interview.description
 
-    finish = _step("ww-learn", "finish").description
-    assert "--set learned.myrole=now" in finish
-    assert "me.md and myrole.md stay on their machine" in finish
+@pytest.mark.parametrize("workflow", RETIRED_WORKFLOWS)
+def test_starting_a_retired_workflow_names_the_replacement(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], workflow: str
+) -> None:
+    root = _project(tmp_path / "project")
+
+    code = main(["--root", str(root), "plan", "-w", workflow, "--agent", "codex"])
+
+    assert code == 1
+    error = capsys.readouterr().err
+    assert f"workflow not found: {workflow}" in error
+    assert "retired" in error
+    assert "ww-learn-project" in error
 
 
 @pytest.mark.parametrize(
@@ -173,12 +179,14 @@ def test_ww_learn_asks_about_the_operators_role_in_the_project() -> None:
         ("ww-automate", "analyse"),
     ],
 )
-def test_the_proposing_workflows_read_every_learning_file(
+def test_the_proposing_workflows_read_only_the_project_file(
     workflow: str, step: str
 ) -> None:
     description = _step(workflow, step).description
     for document in LEARNING_DOCUMENTS:
         assert f"{{{{ww.documents.{document}}}}}" in description, document
+    for document in RETIRED_DOCUMENTS:
+        assert f"ww.documents.{document}" not in description, document
 
 
 def test_steps_name_ww_commands_with_the_configured_executable(
@@ -254,7 +262,7 @@ def test_switching_every_learning_workflow_off_drops_its_documents(
     configuration = _load(root)
 
     assert not set(ONBOARDING) & {item.name for item in configuration.workflows}
-    assert not set(LEARNING_DOCUMENTS) & set(configuration.documents_by_name)
+    assert "project" not in configuration.documents_by_name
     assert "ww-narrate" not in {mode.name for mode in configuration.modes}
     assert "catchall" in configuration.workflows_by_name
 
@@ -277,8 +285,7 @@ def test_init_installs_the_setup_skills(
 
 @pytest.mark.parametrize(
     ("skill", "workflow"),
-    # ww-express has no skill of its own: ww-setup starts it.
-    [(name, name) for name in ONBOARDING if name != "ww-express"],
+    [(name, name) for name in ONBOARDING],
 )
 def test_each_skill_starts_its_workflow(skill: str, workflow: str) -> None:
     assert f"--workflow {workflow} " in SKILLS[skill]
@@ -288,31 +295,27 @@ def test_each_skill_starts_its_workflow(skill: str, workflow: str) -> None:
 def test_the_setup_skill_guides_and_records_the_state() -> None:
     text = SKILLS["ww-setup"]
 
-    for workflow in ("ww-learn", "ww-learn-project", "ww-suggest"):
+    for workflow in ("ww-learn-project", "ww-suggest"):
         assert f"`{workflow}`" in text
     assert "onboarding --set explain=true" in text
     assert "onboarding --set setup.done=true" in text
-    assert "myrole.md" in text
+    assert "`.ww/project.md`" in text
 
 
 def test_a_first_setup_asks_each_thing_once() -> None:
     setup = SKILLS["ww-setup"]
     assert "Put everything into one opening message" in setup
-    assert "so that its `choose` step does not ask" in setup
-    choose = _step("ww-learn", "choose").description
-    assert "When the requirements already say what to cover" in choose
-    for interview in ("interview-me", "interview-role", "interview-team"):
-        assert (
-            "do not wait for a confirmation" in _step("ww-learn", interview).description
-        )
+    # Narration is never a mandatory question beside `explicit`.
+    assert "Narration is optional and is never asked here" in setup
+    process = _step("ww-suggest", "process").description
+    assert "Never ask about who they are" in process
+    assert "Skip what the gathered facts already answer" in process
 
 
-def test_interviews_and_reviews_converse_until_contextual_completion() -> None:
+def test_reviews_and_process_questions_converse_until_contextual_completion() -> None:
     for workflow, step in (
-        ("ww-learn", "interview-me"),
-        ("ww-learn", "interview-role"),
-        ("ww-learn", "interview-team"),
         ("ww-learn-project", "review"),
+        ("ww-suggest", "process"),
         ("ww-suggest", "design"),
         ("ww-suggest", "propose"),
     ):
@@ -324,39 +327,24 @@ def test_interviews_and_reviews_converse_until_contextual_completion() -> None:
         assert "ask naturally if it is ambiguous" in description, step
         assert "record the conversation once" in description, step
         assert "at most one follow-up" not in description, step
-    for interview in ("interview-me", "interview-role", "interview-team"):
-        description = _step("ww-learn", interview).description
-        assert "in one message, numbered" in description
-        assert "follow up where an answer deserves it" in description
-    for skill in ("ww-setup", "ww-learn"):
-        text = " ".join(SKILLS[skill].split())
-        assert "clear contextual" in text or "intent to finish" in text
-        assert "question-tool schema" in text
-        assert "structured options when offered" in text
-        assert "text-only question only when required" in text
-        assert "timeout" in text and "dismissal" in text
-        assert "preselected value is not an answer" in text
-        assert "record it once" in text or "record it, once" in text
-        assert "as you go" not in text
-        assert "at most one follow-up" not in text
+    text = " ".join(SKILLS["ww-setup"].split())
+    assert "intent to finish" in text
+    assert "question-tool schema" in text
+    assert "structured options when offered" in text
+    assert "text-only question only when required" in text
+    assert "timeout" in text and "dismissal" in text
+    assert "preselected value is not an answer" in text
+    assert "record it once" in text or "record it, once" in text
+    assert "at most one follow-up" not in text
 
 
-def test_the_refresh_skill_offers_each_subject() -> None:
+def test_the_refresh_skill_refreshes_the_project_learning_only() -> None:
     text = SKILLS["ww-refresh"]
-    assert "reruns `./ww\n   inspect`" in text
-
-    assert "`learned.myrole`" in text
-    for subject in ('"me"', '"my role in this project"', '"my team and company"'):
-        assert subject in text
-    assert '"only my role"' in text
-
-
-def test_ww_learn_recommends_the_choice_covering_the_missing_files() -> None:
-    description = _step("ww-learn", "choose").description
-
-    assert "which are missing" in description
-    for choice in ('"only me"', '"only my role"', '"only team and company"'):
-        assert choice in description
+    assert "reruns `./ww inspect`" in text
+    assert "--workflow ww-learn-project" in text
+    assert "`learned.project`" in text
+    for retired in ("learned.me", "learned.myrole", "ww-learn "):
+        assert retired not in text
 
 
 def test_ww_learn_project_builds_on_the_inspect_profile() -> None:
@@ -364,6 +352,8 @@ def test_ww_learn_project_builds_on_the_inspect_profile() -> None:
     executable = "{{ww.executable}}"
     assert f"First run `{executable} inspect`" in scan
     assert "only on what inspect cannot see" in scan
+    assert "{{ww.documents.project}} exists, read it" in scan
+    assert "what it is for" in scan
     for fact in ("integration branch", "exact argument list", "`task_format`"):
         assert fact in scan, fact
     assert "`commit_format`" in scan
@@ -386,6 +376,7 @@ def test_ww_suggest_designs_with_the_operator_before_proposing() -> None:
 
     assert [name for name in names if name != "assess"] == [
         "gather",
+        "process",
         "design",
         "setup",
         "propose",
@@ -418,6 +409,17 @@ def test_ww_suggest_designs_with_the_operator_before_proposing() -> None:
     assert "{{ww.executable}} inspect" in gather
     assert 'no "Profile" section' in gather
     assert "proposal will be weaker" in gather
+    for authority in ("specification", "features", "examples"):
+        assert authority in gather
+    assert "express setup" in gather
+
+    process = _step("ww-suggest", "process")
+    assert process.interactive
+    for question in ("painful", "outcome", "involved", "automatically"):
+        assert question in process.description, question
+    assert "If the requirements ask for an express setup, ask none" in (
+        process.description
+    )
     assert "read only" in gather
 
 
@@ -554,60 +556,19 @@ def test_proposals_use_the_step_features_the_work_calls_for() -> None:
     assert "without waiting to be asked" in _step("ww-suggest", "propose").description
 
 
-def test_the_setup_skill_recommends_what_was_not_learned_yet() -> None:
+def test_the_setup_skill_recommends_learning_the_project_when_it_is_missing() -> None:
     text = SKILLS["ww-setup"]
 
-    assert '"not learned yet"' in text
-    assert "also when `project.setup.done` is already" in text
-    for choice in ('"only me"', '"only my role"', '"only team and company"'):
-        assert choice in text
-
-
-def test_ww_express_infers_the_four_documents_and_confirms_them_once() -> None:
-    workflow = builtin_workflow("ww-express")
-    assert [step.name for step in workflow.steps] == ["infer", "confirm", "finish"]
-    assert workflow.recommended_next_workflow == "ww-suggest"
-
-    infer = _step("ww-express", "infer")
-    assert not infer.interactive
-    for signal in (
-        "{{ww.documents.project}}",
-        "`{{ww.executable}} inspect`",
-        "`git config user.email`",
-        "`git log --author=<their email> -n 300`",
-        "`git remote -v`",
-        "never look up individual people online",
-        "a confidence (high, medium or low)",
-        "what could not be inferred",
-    ):
-        assert signal in infer.description, signal
-
-    confirm = _step("ww-express", "confirm")
-    assert confirm.interactive
-    assert "clear contextual completion" in confirm.description
-    assert "ask naturally if it is ambiguous" in confirm.description
-    assert "record the conversation once" in confirm.description
-    assert "nobody is named without asking" in confirm.description
-    updates = {update.name: update.instruction for update in confirm.update_document}
-    assert list(updates) == ["me", "myrole", "team", "company"]
-    for instruction in updates.values():
-        assert REMARK in instruction
-        assert (
-            "The second line is: Inferred by ww from the repository and confirmed "
-            "by the operator on <today's date>." in instruction
-        )
-
-    finish = _step("ww-express", "finish").description
-    for key in ("me", "myrole", "team", "company"):
-        assert f"--set learned.{key}=now" in finish, key
-    assert "ww-suggest" in finish
+    assert "not learned" in text
+    assert "also when `project.setup.done` is\n   already `true`" in text
 
 
 def test_the_setup_skill_offers_express_and_guided() -> None:
-    text = SKILLS["ww-setup"]
-    assert "- Express: ww learns the project, infers your profile" in text
-    assert "Runs `ww-learn-project`, then `ww-express`, then `ww-suggest`." in text
-    assert "- Guided: ww learns the project, then short interviews" in text
-    assert "Runs `ww-learn-project`, then\n     `ww-learn`, then `ww-suggest`." in text
-    assert "Express takes five replies" in text
-    assert "inferred from the repository" in SKILLS["ww-refresh"]
+    text = " ".join(SKILLS["ww-setup"].split())
+    assert "- Express: ww learns the repository" in text
+    assert 'then `ww-suggest` with the requirement "Express setup"' in text
+    assert "- Guided: ww learns the repository" in text
+    assert "Runs `ww-learn-project`, then `ww-suggest`." in text
+    assert "your answers about the process" in text
+    assert 'start with "Express setup."' in text
+    assert "Express setup" in " ".join(SKILLS["ww-suggest"].split())

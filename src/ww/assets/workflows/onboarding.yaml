@@ -1,38 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# ww's learning and setup workflows. They learn who uses ww and how the
-# project works, into five files ww keeps for its own use, and design a
-# setup with the operator from them, which ww places with `setup apply`. The
-# `ww-*` skills start them; `ww-setup` guides through them on a first use and
-# starts `ww-express`, which has no skill of its own.
+# ww's learning and setup workflows. They learn how the project works, into
+# the one file ww keeps for its own use, and design a setup with the operator
+# from it, which ww places with `setup apply`. They never interview the
+# operator about who they are, their role, their team or their company: what
+# the setup needs of the operator is asked as process questions, in
+# conversation, and ends up in the proposal, not in a dossier. The `ww-*`
+# skills start them; `ww-setup` guides through them on a first use, express
+# (`ww-suggest` told to derive defaults) or not.
 #
-# Every step that writes a learning file starts it with the same remark, so an
-# agent that is not doing ww work leaves the file alone. The steps always
-# update an existing file in place, so running a workflow again refreshes it.
-# None of them commits: the shared files are left for the operator to review
-# and commit.
+# The learning step always updates an existing file in place, so running the
+# workflow again refreshes it. None of them commits: the shared file is left
+# for the operator to review and commit.
+
 documents:
-  - me: >-
-      Who the operator is, how they work, and what they expect from agents and
-      ww. Personal: kept in the user configuration directory.
-    scope: user
-  - myrole: >-
-      The operator's role in this project: what they are responsible for and
-      own, who they work with, what they are measured on, and what they want
-      agents to take over or leave to them. Personal to this checkout: kept
-      out of version control.
-    scope: project
-    path: .ww/myrole.md
-  - team: >-
-      The operator's team: what it does, how it works, its pain points and
-      expectations. Shared with the team through the repository.
-    scope: project
-    path: .ww/team.md
-  - company: >-
-      The company in short: its domain, size and constraints. Shared with the
-      team through the repository.
-    scope: project
-    path: .ww/company.md
   - project: >-
       How this project's work is organised: tooling, trackers, infrastructure,
       stack, conventions and recurring pitfalls. Shared with the team.
@@ -50,335 +31,23 @@ modes:
       it, say what it found or changed and where.
 
 workflows:
-  - name: ww-learn
-    description: >-
-      Interviews you about yourself, your role here, your team and company
-      into me.md, myrole.md, team.md and company.md.
-    runtime: single
-    restartable: true
-    role: manager
-    recommended_next_workflow: ww-suggest
-    steps:
-      - name: choose
-        interactive: true
-        description: >-
-          Tell the operator in a few plain sentences what this workflow does:
-          ww asks some questions to learn who they are and how their team and
-          company work, so that it can later suggest a setup that fits them.
-          The answers go into files ww keeps for its own use:
-          {{ww.documents.me}}, which is personal and never leaves their
-          machine; {{ww.documents.myrole}}, their role in this project, which
-          stays on this machine; and {{ww.documents.team}} and
-          {{ww.documents.company}}, which are committed with the project and
-          shared with the team. Say which of them exist and which are missing:
-          an existing file is updated, not replaced. Then ask what to cover,
-          and recommend the choice that covers the missing files ("only me"
-          for me.md, "only my role" for myrole.md, "only team and company" for
-          team.md or company.md, "everything" when they fall under more than
-          one). When the requirements already say what to cover, as ww-setup
-          passes them, take that as the answer, say so, and do not ask. Any
-          question can be skipped, and every file is shown to them as it is
-          written.
-        choices:
-          - everything: Me, my role in this project, my team and my company.
-          - only me: Only me, my working style and what I expect.
-          - only my role: Only my role in this project.
-          - only team and company: Only my team and my company.
-          - not now: Stop here; nothing is written.
-      - assess: >-
-          Did the operator choose to go on, that is anything other than "not
-          now" in the choose step?
-      - name: me
-        steps:
-          - assess:
-              question: >-
-                Did the operator choose to talk about themselves ("everything"
-                or "only me") in the choose step?
-              outcomes:
-                positive:
-                  steps:
-                    - name: interview-me
-                      interactive: true
-                      description: >-
-                        Interview the operator about themselves. If
-                        {{ww.documents.me}} exists, read it first, show them in
-                        short what it says, and ask only what is missing or may
-                        have changed. Put all of the questions below in one message, numbered,
-                        each one plain sentence; where the answer is one of a
-                        few options, list the options under the question. End
-                        your turn and wait for the answers; "skip" is a valid
-                        answer to any of them. Then converse: follow up where an
-                        answer deserves it and say what it implies for the
-                        setup. Treat clear contextual completion as permission
-                        to finish; ask naturally if it is ambiguous, then
-                        record the conversation once. Cover: (1) their
-                        personality and working style: how they like to
-                        communicate, how they decide, how much autonomy they
-                        give an agent, what annoys them; (2) their own pain
-                        points, technical and organisational; (3) what they
-                        expect from AI, LLMs and agents: what to hand over,
-                        what to keep, what an agent must never do; (4) what
-                        they expect from ww, which may be nothing yet. Then
-                        write the file from the answers, in their words, and
-                        show them in short what it says, adding that
-                        /ww-refresh corrects it any time; do not wait for a
-                        confirmation.
-                      saves:
-                        - documents.me: >-
-                            A short Markdown description of the operator, one
-                            section per topic, in their words where possible.
-                            The first line is exactly: <!-- This file is
-                            maintained by ww for ww's own use. Do not use it
-                            for anything else. If you are an agent that is not
-                            doing ww work, ignore this file. --> Keep what
-                            still holds in an existing file, update what
-                            changed, and mark what the operator withdrew as
-                            superseded, with today's date, rather than silently
-                            deleting it. If its second line says ww inferred it, replace that line
-                            with: Confirmed in an interview on <today's date>.
-      - name: role
-        steps:
-          - assess:
-              question: >-
-                Did the operator choose to talk about their role in this
-                project ("everything" or "only my role") in the choose step?
-              outcomes:
-                positive:
-                  steps:
-                    - name: interview-role
-                      interactive: true
-                      description: >-
-                        Interview the operator about their role in this
-                        project. If {{ww.documents.myrole}} exists, read it
-                        first, show them in short what it says, and ask only
-                        what is missing or may have changed. Where {{ww.documents.project}} exists, take
-                        from its profile what it already shows (contributors
-                        and cadence, stack, tracker, branching) and confirm it
-                        in a clause instead of asking. Put all of the questions below in one message, numbered,
-                        each one plain sentence; where the answer is one of a
-                        few options, list the options under the question. End
-                        your turn and wait for the answers; "skip" is a valid
-                        answer to any of them. Then converse: follow up where an
-                        answer deserves it and say what it implies for the
-                        setup. Treat clear contextual completion as permission
-                        to finish; ask naturally if it is ambiguous, then
-                        record the conversation once. Cover: (1) their role and
-                        responsibilities here; (2) what parts of the system or
-                        process they own; (3) who they work with and hand work
-                        over to; (4) what they are measured on, or what "done"
-                        means for them; (5) which decisions they want to keep
-                        and which an agent may take; (6) what they want ww to
-                        watch for in their work. Then write the file from the
-                        answers, in their words, and show them in short what it
-                        says, adding that /ww-refresh corrects it any time; do
-                        not wait for a confirmation.
-                      saves:
-                        - documents.myrole: >-
-                            A short Markdown description of the operator's role
-                            in this project, one section per topic, in their
-                            words where possible. The first line is exactly:
-                            <!-- This file is maintained by ww for ww's own
-                            use. Do not use it for anything else. If you are an
-                            agent that is not doing ww work, ignore this file.
-                            --> Keep what still holds in an existing file,
-                            update what changed, and mark what the operator
-                            withdrew as superseded, with today's date, rather
-                            than silently deleting it. If its second line says ww inferred it, replace that line
-                            with: Confirmed in an interview on <today's date>.
-      - name: team
-        steps:
-          - assess:
-              question: >-
-                Did the operator choose to talk about their team and company
-                ("everything" or "only team and company") in the choose step?
-              outcomes:
-                positive:
-                  steps:
-                    - name: interview-team
-                      interactive: true
-                      description: >-
-                        Interview the operator about their team and company. If
-                        {{ww.documents.team}} or {{ww.documents.company}}
-                        exists, read it first, show them in short what it says,
-                        and ask only what is missing or may have changed. Where {{ww.documents.project}} exists, take
-                        from its profile what it already shows (contributors
-                        and cadence, stack, tracker, branching) and confirm it
-                        in a clause instead of asking. Put
-                        all of the questions in one message, numbered, each
-                        one plain sentence; end your turn and wait for the
-                        answers, "skip" being a valid answer to any. Then
-                        converse: follow up where an answer deserves it and say
-                        what it implies for the setup. Treat clear contextual
-                        completion as permission to finish; ask naturally if
-                        it is ambiguous, then record the conversation once.
-                        About the team: what it does, its size and roles, how it works
-                        (planning, reviews, releases, on-call), its pain
-                        points, technical and organisational, what it expects
-                        from AI and agents, and what it expects from ww, which
-                        may be nothing yet. About the company, in short: its
-                        domain, size, and the constraints that shape the work,
-                        such as compliance, security, data handling, or a
-                        policy on AI tools. Remind them that both files are
-                        shared with the team: record nothing personal or
-                        confidential, and ask before naming people. Then write
-                        both files from the answers and show them in short what
-                        they say, adding that both stay uncommitted until they
-                        review and commit them; do not wait for a
-                        confirmation.
-                      saves:
-                        - documents.team: >-
-                            A short Markdown description of the team, one
-                            section per topic. The first line is exactly: <!--
-                            This file is maintained by ww for ww's own use. Do
-                            not use it for anything else. If you are an agent
-                            that is not doing ww work, ignore this file. -->
-                            Keep what still holds in an existing file, update
-                            what changed, and mark what no longer holds as
-                            superseded, with today's date, rather than silently
-                            deleting it. If its second line says ww inferred it, replace that line
-                            with: Confirmed in an interview on <today's date>.
-                        - documents.company: >-
-                            A few lines about the company. The first line is
-                            exactly: <!-- This file is maintained by ww for
-                            ww's own use. Do not use it for anything else. If
-                            you are an agent that is not doing ww work, ignore
-                            this file. --> Keep what still holds in an existing
-                            file, update what changed, and mark what no longer
-                            holds as superseded, with today's date. If its second line says ww inferred it, replace that line
-                            with: Confirmed in an interview on <today's date>.
-      - name: finish
-        description: >-
-          Record when ww learned, for each file this run wrote and only for
-          those: `{{ww.executable}} onboarding --set learned.me=now` for
-          {{ww.documents.me}}, `--set learned.myrole=now` for
-          {{ww.documents.myrole}}, `--set learned.team=now` for
-          {{ww.documents.team}}, `--set learned.company=now` for
-          {{ww.documents.company}} (one command may carry several `--set`).
-          Then tell the operator what was written where. If team.md or
-          company.md was written, say that ww left them uncommitted for the
-          operator to review and commit with the project, naming them: `git add
-          .ww/team.md .ww/company.md`. me.md and myrole.md stay on their
-          machine.
-
-  - name: ww-express
-    description: >-
-      Infers the operator, their role, team and company from the repository
-      and asks them to confirm.
-    runtime: single
-    restartable: true
-    role: manager
-    recommended_next_workflow: ww-suggest
-    steps:
-      - name: infer
-        description: >-
-          Draft what ww would otherwise learn in interviews, from the
-          repository in {{ww.task.workspace_dir}}. Read only; change no file,
-          and look at nothing outside this checkout. Start from the Profile
-          section of {{ww.documents.project}}; if that file does not exist,
-          run `{{ww.executable}} inspect` and say that the findings rest on the
-          repository alone. Then gather what the profile does not carry. The
-          operator: `git config user.name` and `git config user.email`; their
-          own commits (`git log --author=<their email> -n 300`): their share of
-          all commits, the paths they touch most (what they own), their commit
-          message style and typical commit size, and when they commit
-          (weekdays or weekends, time of day), as careful hints about their
-          working style, never as judgements. The team: the other authors, how
-          many were active in the last 90 days, the paths each touches most
-          (roles by area, such as frontend, backend, infrastructure or
-          documentation), and the review signals (merge commits by author, a
-          pull request template, CODEOWNERS). The company: the remote's
-          organisation (`git remote -v`), the e-mail domains of the authors,
-          the author and organisation fields of the README, LICENSE and
-          package manifests, and a domain or product name the documents
-          mention. You may visit the public website of the company or product
-          found this way to describe the company in two or three sentences;
-          never look up individual people online, and never copy personal
-          data beyond what the repository already carries. The artifact is a
-          draft section for each of {{ww.documents.me}},
-          {{ww.documents.myrole}}, {{ww.documents.team}} and
-          {{ww.documents.company}}, each finding with its evidence (the command
-          or file) and a confidence (high, medium or low), then a short list
-          of what could not be inferred.
-      - name: confirm
-        interactive: true
-        artifact_from: infer
-        description: >-
-          Show the operator the four drafts side by side in plain words: what
-          ww inferred about them, their role, their team and their company,
-          what each finding rests on, and which findings are guesses. If a
-          file already exists, say what it holds and what the draft would
-          change. Remind them that team.md and company.md are shared with the
-          team: they carry nothing personal or confidential, and nobody is
-          named without asking. Then converse: the operator corrects, adds or
-          removes, and you revise the drafts. Treat clear contextual completion
-          as permission to finish; ask naturally if it is ambiguous, then
-          record the conversation once and write the four files as confirmed.
-        saves:
-          - documents.me: >-
-              A short Markdown description of the operator, one section per
-              topic, as confirmed. The first line is exactly: <!-- This file is
-              maintained by ww for ww's own use. Do not use it for anything
-              else. If you are an agent that is not doing ww work, ignore this
-              file. --> The second line is: Inferred by ww from the repository
-              and confirmed by the operator on <today's date>. Keep what still
-              holds in an existing file, update what changed, and mark what the
-              operator withdrew as superseded, with today's date, rather than
-              silently deleting it.
-          - documents.myrole: >-
-              A short Markdown description of the operator's role in this
-              project, one section per topic, as confirmed. The first line is
-              exactly: <!-- This file is maintained by ww for ww's own use. Do
-              not use it for anything else. If you are an agent that is not
-              doing ww work, ignore this file. --> The second line is: Inferred
-              by ww from the repository and confirmed by the operator on
-              <today's date>. Keep what still holds in an existing file, update
-              what changed, and mark what the operator withdrew as superseded,
-              with today's date, rather than silently deleting it.
-          - documents.team: >-
-              A short Markdown description of the team, one section per topic,
-              as confirmed, naming nobody the operator did not agree to name.
-              The first line is exactly: <!-- This file is maintained by ww for
-              ww's own use. Do not use it for anything else. If you are an
-              agent that is not doing ww work, ignore this file. --> The second
-              line is: Inferred by ww from the repository and confirmed by the
-              operator on <today's date>. Keep what still holds in an existing
-              file, update what changed, and mark what no longer holds as
-              superseded, with today's date, rather than silently deleting it.
-          - documents.company: >-
-              A few lines about the company, as confirmed. The first line is
-              exactly: <!-- This file is maintained by ww for ww's own use. Do
-              not use it for anything else. If you are an agent that is not
-              doing ww work, ignore this file. --> The second line is: Inferred
-              by ww from the repository and confirmed by the operator on
-              <today's date>. Keep what still holds in an existing file, update
-              what changed, and mark what no longer holds as superseded, with
-              today's date.
-      - name: finish
-        description: >-
-          Record when ww learned: `{{ww.executable}} onboarding --set
-          learned.me=now --set learned.myrole=now --set learned.team=now --set
-          learned.company=now`. Then tell the operator what was written where:
-          {{ww.documents.me}} and {{ww.documents.myrole}} stay on their
-          machine; {{ww.documents.team}} and {{ww.documents.company}} are left
-          uncommitted for them to review and commit with the project, for
-          example `git add .ww/team.md .ww/company.md`. Say that ww-suggest
-          comes next.
-
   - name: ww-learn-project
     description: >-
-      Scans how the project's work is organised (branching, verify commands,
-      tracker, pitfalls) into project.md.
+      Learns the repository (purpose, stack, verify commands, CI, review and
+      release process, conventions, pitfalls) into project.md.
     runtime: single
     restartable: true
     role: manager
-    recommended_next_workflow: ww-learn
+    recommended_next_workflow: ww-suggest
     steps:
       - name: scan
         description: >-
-          Learn how the project in {{ww.task.workspace_dir}} organises its
-          work; ignore what the software does. Read only; change no file.
-          First run `{{ww.executable}} inspect` there and take its facts as the
-          base, each with the evidence it names or "not found": the default
+          Learn the repository in {{ww.task.workspace_dir}}: what it is for,
+          in a sentence or two, and above all how its work is organised. Read
+          only; change no file. If {{ww.documents.project}} exists, read it
+          first: what it records is the project learning to refresh, so look
+          again only at what may have changed and keep the rest. First run
+          `{{ww.executable}} inspect` there and take its facts as the base, each with the evidence it names or "not found": the default
           and integration branch, the branch patterns, merge or rebase and the
           pull request signals; activity and team shape; the fix share and the
           paths fixes touch; the manifests and their verify commands, each an
@@ -396,7 +65,8 @@ workflows:
           AGENTS.md, CLAUDE.md and cursor rules; what the pull request template
           and CODEOWNERS demand; the process sections of the README and
           CONTRIBUTING, such as reviews, releases and versioning; the gates the
-          CI files enforce; and a verify command a document names that no
+          CI files enforce; the workflows and conventions already in use,
+          including an existing ww setup (`ww.yaml`, `ww-setup.yaml`); and a verify command a document names that no
           manifest does. Then, briefly, the agent tooling (MCP servers and
           agent settings in .mcp.json, .claude/, .codex/, .cursor/, .gemini/,
           skills and commands) and the stack (languages, frameworks, package
@@ -449,7 +119,8 @@ workflows:
               has its own environment), the tracker and its candidate `task_format`, the commit
               convention and its candidate `commit_format`, the CI gates and
               release practice, and what agents are allowed or forbidden to do,
-              each with its evidence or "not found". Then sections for agent
+              each with its evidence or "not found". Then a "Purpose" line on what the
+              project is for, and sections for agent
               tooling, issue tracking, infrastructure and stack, conventions,
               and recurring pitfalls with their candidate rules. The first line
               is exactly: <!-- This file is maintained by ww for ww's own use.
@@ -461,41 +132,71 @@ workflows:
       - name: finish
         description: >-
           Record when ww learned about the project: `{{ww.executable}}
-          onboarding --set learned.project=now`. Then tell the operator that
+          onboarding --set learned.project=now`. Say that ww-suggest comes
+          next. Then tell the operator that
           {{ww.documents.project}} was left uncommitted for them to review and
           commit with the project: `git add .ww/project.md`.
 
   - name: ww-suggest
     description: >-
-      Designs a setup with you from what ww learned and proposes it in full.
+      Designs a minimal setup with you from what ww learned about the project
+      and proposes it in full.
     runtime: single
     restartable: true
     role: manager
     steps:
       - name: gather
         description: >-
-          Read what ww knows, skipping a file that does not exist:
-          {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
-          {{ww.documents.company}}, {{ww.documents.project}}. Read the current
-          setup: `{{ww.executable}} discover` and `{{ww.executable}} rules
-          --json`. When {{ww.documents.project}} has no "Profile" section, or
-          does not exist, run `{{ww.executable}} inspect` in
-          {{ww.task.workspace_dir}} and take its facts; look up, read only,
-          only what neither has, such as what AGENTS.md, CLAUDE.md and cursor
-          rules let agents do. The artifact lists every fact a setup decision
-          can rest on, each with its evidence or "not found": the branches and
-          lanes, the verify commands and how and where they run, the kind of
-          work each lane or workflow the operator wants covers (code changes,
-          manual testing, reviews, reports), the team shape and cadence, the fix
-          signals, the candidate projects, the tracker key and commit
-          convention; then the operator's preferences that map to modes,
-          operator stops or a review step, whether they work on several tasks
-          in parallel, how the team works and its pain points, and what is
-          already configured. If {{ww.documents.myrole}} or
-          {{ww.documents.project}} does not exist, tell the operator that the
-          proposal will be weaker without it and that the next step offers to
-          learn first; they may prefer to go on. If none of the five files
-          exists, say that the suggestions rest on the checkout alone.
+          Read what ww learned about the project, skipping the file if it
+          does not exist: {{ww.documents.project}}. Read the design
+          authorities that say what a setup can be made of, as the checkout or
+          ww's documentation provides them: the specification, the features
+          and the examples documents (`documentation/specification.md`,
+          `documentation/features.md`, `documentation/examples.md` in ww's
+          own repository); the proposal stays within what they describe. Read
+          the current setup: `{{ww.executable}} discover` and
+          `{{ww.executable}} rules --json`. When {{ww.documents.project}} has
+          no "Profile" section, or does not exist, run `{{ww.executable}}
+          inspect` in {{ww.task.workspace_dir}} and take its facts; look up,
+          read only, only what neither has, such as what AGENTS.md, CLAUDE.md
+          and cursor rules let agents do. The artifact lists every fact a
+          setup decision can rest on, each with its evidence or "not found":
+          the branches and lanes, the verify commands and how and where they
+          run, the CI and review process, the kind of work each lane or
+          workflow the operator wants covers (code changes, manual testing,
+          reviews, reports), the team shape and cadence, the fix signals, the
+          candidate projects, the tracker key and commit convention, the
+          pitfalls the project file records, and what is already configured.
+          If {{ww.documents.project}} does not exist, tell the operator that
+          the proposal will be weaker without it and that the next step offers
+          to learn first; they may prefer to go on; say that the suggestions
+          then rest on the checkout alone. State whether the
+          requirements ask for an express setup.
+      - name: process
+        interactive: true
+        description: >-
+          Ask the operator about their process, a few questions that shape the
+          setup, in one message, numbered, each one plain sentence. Never ask
+          about who they are, their role, their team or their company; ask
+          only about the work. Skip what the gathered facts already answer,
+          saying so in a clause ("the project file records that reviews happen
+          in pull requests"), and ask only what is missing: (1) what is
+          painful in how work goes with agents or in this project today,
+          taking recurring pitfalls the facts list as the starting point; (2)
+          what outcome would help most; (3) where they want to be involved,
+          such as reviewing, approving a plan or testing by hand, and where an
+          agent may go on alone; (4) what may run automatically without them.
+          If the requirements ask for an express setup, ask none of these:
+          state the defaults the facts support for each, and ask only a
+          consequential choice that the facts leave open and that changes the
+          setup, such as who reviews when the project shows no review process.
+          End your turn and wait for the answers; "skip" is a valid answer.
+          Then converse: follow up where an answer deserves it and say what it
+          implies for the setup. Treat clear contextual completion as
+          permission to finish; ask naturally if it is ambiguous, then record
+          the conversation once. Keep the answers for the proposal: they
+          decide modes, operator stops, review and automation there, and are
+          not written to a file of their own. They never block ordinary work.
       - name: design
         interactive: true
         description: >-
@@ -503,7 +204,8 @@ workflows:
           numbered items, each one plain sentence with its default and, in a
           clause, the evidence for it, so that the operator only corrects;
           list the options under an item that has a few. What the profile
-          already answers is stated as decided, not asked. End your turn and
+          already answers, and what the process answers, is stated as decided,
+          not asked. End your turn and
           wait for the answers; "skip" keeps a default. Then discuss: follow
           up where an answer deserves it and revise the decisions. Treat clear
           contextual completion as permission to finish; ask naturally if it
@@ -519,19 +221,18 @@ workflows:
           push (never); (4) a worktree per task: on by default when several
           contributors are active and the operator works on parallel tasks,
           otherwise off; (5) the task ID format, from the tracker key prefixes,
-          or ww's generated IDs when there are none; (6) the review: for a solo
-          team shape, no interactive review by default but an agent
-          self-review step, and for a small team or a team, the operator
-          keeping the review in an interactive step by default, an agent review
-          loop being the alternative; (7) for each workflow whose work is not
+          or ww's generated IDs when there are none; (6) the review, from the review process the facts show and where the
+          operator wants to be involved: for a solo team shape, no interactive
+          review by default but an agent self-review step, and for a small
+          team or a team, the operator keeping the review in an interactive
+          step by default, an agent review loop being the alternative; (7) for each workflow whose work is not
           a plain code change, such as manual testing, the step features it
           uses, proposed as decided where the work calls for them (see the
           propose step): an `items` step for work that splits into cases,
           interactive steps or the operator page for what the operator
           performs or judges, and a document or item fields for a template
-          the work fills; (8) the operator's preferences that become modes,
-          such as brief updates or asking first, and the decisions that
-          become operator stops; (9) only when the layout lists candidate
+          the work fills; (8) what the process answers turn into modes, such as brief
+          updates or asking first, and operator stops; (9) only when the layout lists candidate
           projects, `projects`: ask for the paths of the sibling
           repositories, which ww never scans; (10) a rule for a hot path or a
           fix-prone path, only when the Fixes section shows a repeated cause
@@ -540,17 +241,15 @@ workflows:
           files committed with the project. If ww-setup.local.yaml exists
           beside ww.yaml, an earlier run set ww up for the operator alone: say
           so, and that this run can share that setup or refine it. If the
-          gather step found {{ww.documents.myrole}} or
-          {{ww.documents.project}} missing, add to the last item the option to
-          learn first. The artifact lists every decision with the fact or
-          answer it rests on. The answer to the last item is the choice. On
-          "learn first" this run ends; tell the operator to run ww-learn for a
-          missing myrole.md and ww-learn-project for a missing project.md, the
-          second of which recommends ww-suggest when it completes.
+          gather step found {{ww.documents.project}} missing, add to the last
+          item the option to learn first. The artifact lists every decision
+          with the fact or answer it rests on. The answer to the last item is
+          the choice. On "learn first" this run ends; tell the operator to run
+          ww-learn-project, which recommends ww-suggest when it completes.
         choices:
           - for me: Set it up for me alone; I can share it later.
           - for the team: Set it up for the team, in the shared files.
-          - learn first: Let ww learn what is missing first; nothing changes.
+          - learn first: Let ww learn the project first; nothing changes.
           - not now: Stop here; nothing changes. I can come back later.
       - assess: >-
           Did the operator choose "for me" or "for the team" in the design
@@ -701,14 +400,14 @@ workflows:
       - name: propose
         interactive: true
         description: >-
-          Read what ww knows, skipping a file that does not exist:
-          {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
-          {{ww.documents.company}}, {{ww.documents.project}}; and the current
+          Read what ww learned about the project, skipping the file if it
+          does not exist: {{ww.documents.project}}; and the current
           setup: `{{ww.executable}} discover` and `{{ww.executable}} rules
           --json`. Propose the smallest change that addresses the problem: a
-          workflow or a step, a mode, a rule, a hook, or a setting. Weigh the
-          operator's role: what they own gets rules and checks, what they hand
-          over gets handoffs, and decisions they keep become operator stops or
+          workflow or a step, a mode, a rule, a hook, or a setting. Let
+          the problem decide what it asks of the operator: what it must always
+          hold gets rules and checks, what can be handed over gets handoffs,
+          and decisions the operator keeps become operator stops or
           interactive steps. Where the problem is about a kind of work, use
           the step features that fit it: an `items` step for work that
           splits into cases, `interactive: true` or, per item,
@@ -776,11 +475,9 @@ workflows:
           the lessons that recur in more than one task, such as the same review
           finding or the same fix, and skip one-off defects. Read
           `{{ww.executable}} rules --json` and drop lessons an existing rule
-          already covers. Read {{ww.documents.me}}, {{ww.documents.myrole}},
-          {{ww.documents.team}}, {{ww.documents.company}} and
-          {{ww.documents.project}} where they exist, and keep each lesson
-          within what they say: the operator's role and the team's conventions
-          decide what a rule may demand. The artifact lists each lesson with
+          already covers. Read {{ww.documents.project}} where it exists, and keep each
+          lesson within what it says: the project's conventions decide what a
+          rule may demand. The artifact lists each lesson with
           the tasks that show it.
       - name: propose
         interactive: true
@@ -840,10 +537,9 @@ workflows:
           a template, checking a condition. The artifact says what could be a
           script, what must stay with an agent, and whether the script would
           replace the step or run as a hook before or after it. Read
-          {{ww.documents.me}}, {{ww.documents.myrole}}, {{ww.documents.team}},
-          {{ww.documents.company}} and {{ww.documents.project}} where they
-          exist, and keep the proposal within what they say: the operator's
-          role and the team's conventions decide what a script may automate.
+          {{ww.documents.project}} where it exists, and keep the proposal
+          within what it says: the project's conventions decide what a script
+          may automate.
           If nothing is mechanical, say so; that is a fine result.
       - name: propose
         interactive: true
