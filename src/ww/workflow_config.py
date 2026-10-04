@@ -568,6 +568,9 @@ class StepDefinition(HandlerDefinition):
     # A conversation with the operator, held by the session that can talk to
     # them; implies ``role: manager``.
     interactive: bool = False
+    # Describe each operation and show concrete edits when enabled. ``None``
+    # inherits from the enclosing workflow or structural step.
+    explicit: bool | None = None
     # Opt-in artifact source for feedback deduction after workflow completion.
     learnable: bool = False
     # The options the operator chooses from during an interactive step.
@@ -660,6 +663,8 @@ class WorkflowDefinition:
     role: StepRole | None = None
     # Whether the performers of its steps may spawn subagents, inherited.
     subagents: bool | None = None
+    # Default visibility guidance for steps; individual steps can override it.
+    explicit: bool | None = None
     # The runtime ``start`` uses for this workflow when ``--runtime`` is
     # omitted; it outranks the project default, and the flag outranks it.
     runtime: str | None = None

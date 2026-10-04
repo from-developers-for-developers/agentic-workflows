@@ -440,6 +440,14 @@ planner, registration, and a test that demonstrates shared lifecycle behavior.
 Runtime loop transitions, child coordination, and handoff execution deliberately
 remain consumers of the saved plan rather than construct-planner concerns.
 
+The `explicit` visibility setting is resolved while configuration is
+normalized: workflow inheritance runs first, then each structural group,
+loop, item stage, and child stage inherits its nearest setting while preserving
+an explicit `false`. The compiler stores the effective value on each plan
+item; legacy snapshots decode a missing field as `false`. Instruction pages
+render operation and per-file diff guidance from that saved value, while
+ww-owned automatic work keeps its existing command and result output.
+
 An automatic action may override the `preflight` hook. Core runs it before
 recording the durable `in_progress` boundary; for extensions this verifies the
 frozen provider identity before a handler can run. A rejected identity is thus

@@ -403,6 +403,8 @@ class Instruction:
     documents: tuple[DocumentTask, ...] = ()
     # An interactive step: its conversation state and the recording commands.
     interactive: bool = False
+    # This agent-owned step requests concrete pre/post operation visibility.
+    explicit: bool = False
     # Optional suggestion after completion; never a plan item or assignment.
     feedback_deduction_command: str | None = None
     interaction_entries: int = 0
@@ -479,6 +481,8 @@ class Instruction:
     # The first stage of a multi-stage item assignment describes its scope;
     # later stages of the same assignment are rendered compactly.
     assignment_scope: dict[str, object] | None = None
+    # Agent-owned explicit steps covered by this worker assignment.
+    assignment_explicit_steps: tuple[str, ...] = ()
     continues_assignment: bool = False
     # The assignment the current item belongs to, in the ``auto`` runtime: the
     # step that drives worker selection, every agent or input item it covers,
@@ -561,6 +565,7 @@ class Instruction:
             "input_context": [item.to_dict() for item in self.input_context],
             "documents": [item.to_dict() for item in self.documents],
             "interactive": self.interactive,
+            "explicit": self.explicit,
             "feedback_deduction_command": self.feedback_deduction_command,
             "interaction_entries": self.interaction_entries,
             "interaction_ended": self.interaction_ended,
@@ -629,6 +634,7 @@ class Instruction:
             "continues_assignment": self.continues_assignment,
             "assignment_step": self.assignment_step,
             "assignment_items": list(self.assignment_items),
+            "assignment_explicit_steps": list(self.assignment_explicit_steps),
             "assignment_continues": self.assignment_continues,
             "manager_intro": self.manager_intro,
             "rules_notice": self.rules_notice,

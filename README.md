@@ -601,8 +601,10 @@ scripts/test
 .venv/bin/python scripts/check_distribution.py
 ```
 
-`scripts/test` creates or reuses `.venv` and runs ruff, mypy and the test
-suite, in parallel.
+`scripts/test` creates or reuses `.venv` with a Python version supported by
+`pyproject.toml`, repairs a partial development install, then runs ruff, mypy
+and the test suite. Set `WW_PYTHON` to choose the interpreter for a new
+environment. It preserves existing environments when setup fails.
 
 ## License
 

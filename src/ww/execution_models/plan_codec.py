@@ -168,6 +168,7 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         interactive=expect_bool(
             raw.get("interactive", False), f"{item_path}.interactive"
         ),
+        explicit=expect_bool(raw.get("explicit", False), f"{item_path}.explicit"),
         learnable=expect_bool(raw.get("learnable", False), f"{item_path}.learnable"),
         choices=_choices_from_list(raw.get("choices", []), item_path),
         ui=expect_bool(raw.get("ui", False), f"{item_path}.ui"),

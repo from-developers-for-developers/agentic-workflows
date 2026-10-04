@@ -168,6 +168,8 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
                 "",
             ]
         )
+        if item.explicit and item.owner == "agent":
+            lines.extend(["**Explicit work guidance:** enabled", ""])
         if item.parent:
             lines.extend([f"**Parent step:** `{item.parent}`", ""])
         if item.owner == "ww" and item.execution == "automatic":

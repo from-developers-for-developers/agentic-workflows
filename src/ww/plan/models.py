@@ -222,6 +222,7 @@ class PlanItem:
     # A conversation with the operator; performed by the session that can
     # talk to them, so ``role`` is ``manager`` as well.
     interactive: bool = False
+    explicit: bool = False
     learnable: bool = False
     choices: tuple[ChoiceDefinition, ...] = ()
     # A per-item stage the operator answers on the operator page.
@@ -477,6 +478,8 @@ class PlanItem:
             del data["update_document"]
         if not self.interactive:
             del data["interactive"]
+        if not self.explicit:
+            del data["explicit"]
         if not self.learnable:
             del data["learnable"]
         if not self.choices:
@@ -530,6 +533,7 @@ class PlanItem:
             "role": self.role,
             "subagents": self.subagents,
             "interactive": self.interactive,
+            "explicit": self.explicit,
             "learnable": self.learnable,
             "choices": [choice.to_dict() for choice in self.choices],
             "ui": self.ui,

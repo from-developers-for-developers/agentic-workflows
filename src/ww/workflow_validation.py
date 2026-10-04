@@ -269,6 +269,12 @@ def _validate_steps(
                 "the compact form"
             )
         _validate_execution_hints(step, f"step {step.name!r}")
+        if step.interactive and (step.child_steps or step.loop_steps):
+            raise ConfigurationError(
+                f"step {step.name!r} in workflow {workflow_name!r} is a pure "
+                "structural step or loop container and cannot be interactive; "
+                "make an executed child step interactive instead"
+            )
         if step.name == INIT_STEP_NAME:
             raise ConfigurationError(
                 f"step name {INIT_STEP_NAME!r} is reserved and must not be declared"
