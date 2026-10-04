@@ -30,7 +30,9 @@ one lands it is deliberate and marked "Breaking:" in the changelog.
 
 Every persisted format — task state, saved plans, execution records, the rule
 stores — carries a schema version, and this build reads only its own version,
-rejecting every other one rather than guessing or migrating it. When the
+rejecting every other one rather than guessing or migrating it. The one
+exception is saved plans written before `items` pass identity (schema 1), which
+still load. When the
 changelog says a schema changed, finish or reset in-flight tasks before
 upgrading.
 

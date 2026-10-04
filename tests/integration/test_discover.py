@@ -595,6 +595,42 @@ def test_explicit_task_format_requires_an_id(
     assert service.add_child("P", "PROJ-8", "Part").id == "PROJ-8"
 
 
+@pytest.mark.parametrize(
+    ("task_format", "explicit"), [(None, False), ("explicit", True)]
+)
+def test_discover_json_states_whether_the_task_id_is_explicit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    task_format: str | None,
+    explicit: bool,
+) -> None:
+    config = {"task_format": task_format} if task_format else {}
+    root = _project(tmp_path, config)
+
+    report = json.loads(_discover(root, capsys, "--json"))
+    markdown = _discover(root, capsys)
+
+    assert report["explicit_task_id"] is explicit
+    # The Markdown renders from the structured fact and the JSON guidance.
+    assert report["task_id"] in markdown
+    assert (" start <task-id> --workflow" in markdown) is explicit
+    assert ("[<task-id>] --workflow" in markdown) is not explicit
+
+
+def test_discover_json_carries_the_concise_guidance_the_markdown_shows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    report = json.loads(_discover(root, capsys, "--json"))
+    markdown = _discover(root, capsys)
+
+    for field in ("model_and_reasoning", "runtime_guidance", "modes_guidance"):
+        assert report[field] in markdown
+    assert "{default}" not in report["runtime_guidance"]
+    for runtime in report["runtimes"]:
+        assert runtime["description"].rstrip(".") in markdown
+
+
 def test_the_project_may_choose_the_default_runtime(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

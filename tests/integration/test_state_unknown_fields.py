@@ -27,8 +27,8 @@ def _started_by_an_other_version(
     (tmp_path / "ww.yaml").write_text(WORKFLOWS, encoding="utf-8")
     original = PlanItem.to_dict
 
-    def with_retired_field(item: PlanItem) -> dict[str, object]:
-        return {**original(item), "retired_field": "set by another ww"}
+    def with_retired_field(item: PlanItem, *args: bool) -> dict[str, object]:
+        return {**original(item, *args), "retired_field": "set by another ww"}
 
     with monkeypatch.context() as patch:
         patch.setattr(PlanItem, "to_dict", with_retired_field)

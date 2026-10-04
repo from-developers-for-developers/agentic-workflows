@@ -256,6 +256,7 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         summary=False,
         item_operation=None,
         item_template=False,
+        item_collect_only=False,
         shared_items=False,
         item_identity=None,
         item_unique=(),

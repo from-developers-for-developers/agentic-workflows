@@ -751,9 +751,9 @@ The mapping form accepts these keys, all optional:
 | `saves` | list of saved values | Metadata, documents, or item fields the built-in `handle-item` stage saves on each item's completion. Invalid together with `steps`. |
 | `interactive` | `true` or `page` | `true` makes the built-in `handle-item` stage a conversation with the operator, for example a manual test the operator performs and reports; `page` has the operator answer it on the operator page, and `interact --await` completes it from the answer. Invalid together with `steps`. |
 | `choices` | list of choices | Options the operator picks from in the built-in `handle-item` stage. Invalid together with `steps`. |
-| `steps` | list of steps | The per-item stages. Omitted, one built-in `handle-item` stage runs per item. `[]` collects items without processing them. |
+| `steps` | list of steps | The per-item stages. Omitted, one built-in `handle-item` stage runs per item. An explicit `[]` (or `~`) collects or reconciles items only and never expands the default `handle-item` stage; `items: ~` is the full-lifecycle shorthand. |
 | `assignment` | `together`, `per_item`, or `per_step` | How per-item stages are split into worker assignments in the `auto` runtime; default `together`. |
-| `persistent` | boolean | The items outlive the run: every run of the task starts from the task's stored items with their outcomes cleared, and the collection step reconciles that list against the source instead of splitting again. Defaults to `false`. |
+| `persistent` | boolean | The items outlive the run: every run of the task starts from the task's stored items with their outcomes cleared, and the collection step reconciles that list against the source instead of splitting again. Defaults to `false`; omitting it is distinct from writing `false` in the model, because the first `items` declaration of a workflow establishes the collection's settings and a later one that omits them is not in conflict. |
 | `identity` | field name | The custom field every new item must carry; `add-item` refuses one without it. Implied in `unique`. |
 | `unique` | list of field names | One pool of values across the listed fields: a value may appear once over all items, in the run and in the task's stored items. `add-item` and `update-item` refuse a duplicate and name the item that holds it. |
 | `agent` | non-empty string other than `auto` | Agent for the per-item stages. |
@@ -806,6 +806,11 @@ whole span with one worker.
 The step's `before_start` hooks run before collection, and its completion
 hooks run after the last item. Each stage keeps its own hooks. Collection does
 not require an artifact, because its result is the recorded items.
+
+Each `items` declaration is a pass with a stable identity, its logical step
+path, recorded in the plan on its collection item and per-item stages; it does
+not depend on descriptions or work-item IDs. Sequential passes over one
+collection are being built on that identity and are not available yet.
 
 A workflow may contain at most one `items` step, at any nesting level. This is
 an intentional limitation: collected items belong to the workflow run, and ww

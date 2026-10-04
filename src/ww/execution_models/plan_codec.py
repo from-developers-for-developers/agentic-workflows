@@ -8,6 +8,7 @@ through the normalized plan items in that snapshot.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, cast
 
 from ww.actions import Commands, actions
@@ -54,7 +55,13 @@ from ww.workflow_config import (
 from ww.workspace import Workdir
 
 
-def _plan_from_dict(data: Any) -> WorkflowPlan:
+def _plan_from_dict(data: Any, item_passes: bool = True) -> WorkflowPlan:
+    """Decode a plan; ``item_passes=False`` reads the pre-pass (schema 1) form.
+
+    A pre-pass plan has at most one ``items`` declaration, so its pass identity
+    is derived deterministically from the plan itself; the derivation is
+    in-memory only and never written back (see ``PlanSnapshot.to_dict``).
+    """
     if not isinstance(data, dict):
         raise ValueError("plan must be a mapping")
     required = {
@@ -77,6 +84,7 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         raise ValueError("plan modes must be strings")
     if not isinstance(data["handoff"], bool):
         raise ValueError("plan handoff must be a boolean")
+    items = _checked_item_passes(items, item_passes)
     return WorkflowPlan(
         workflow=expect_string(data["workflow"], "workflow"),
         workflow_description=expect_string(
@@ -92,6 +100,76 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
             data.get("recommended_next_workflow"), "recommended next workflow"
         ),
         hooks_from=expect_optional_string(data.get("hooks_from"), "hooks_from"),
+    )
+
+
+def _is_item_flow_member(item: PlanItem) -> bool:
+    """Whether a per-item stage or hook of an ``items`` step, never a child's."""
+    return item.child_stage is None and (item.item_template or item.item_id is not None)
+
+
+def _checked_item_passes(
+    items: tuple[PlanItem, ...], item_passes: bool
+) -> tuple[PlanItem, ...]:
+    """Give every item of an ``items`` declaration its pass, or refuse the plan.
+
+    Current plans must already carry the identity on the collection item and
+    on every per-item template; a plan missing it was not written by a
+    compatible ww and is refused rather than guessed at.  A pre-pass plan holds
+    at most one collection, so the one pass is unambiguous and is derived; a
+    pre-pass plan that somehow holds several cannot be told apart and is
+    refused with the way forward.
+    """
+    collectors = [
+        item
+        for item in items
+        if item.item_operation == "collect" and item.child_operation is None
+    ]
+    members = [item for item in items if _is_item_flow_member(item)]
+    if item_passes:
+        missing = [
+            item
+            for item in (*collectors, *(m for m in members if m.item_template))
+            if item.item_pass is None
+        ]
+        if missing:
+            raise ValueError(
+                f"plan item {missing[0].id!r} belongs to an items step but has "
+                "no item_pass; the snapshot was not written by a compatible ww, "
+                "so it cannot be resumed safely. Finish the run with the ww "
+                "that started it, or reset the task and start it again"
+            )
+        return items
+    if any(item.item_pass is not None for item in items):
+        raise ValueError(
+            "a schema 1 plan item carries item_pass, which only schema 2 "
+            "plans define; the snapshot is inconsistent"
+        )
+    if not collectors:
+        if members:
+            raise ValueError(
+                "a schema 1 plan has per-item stages but no items collection "
+                "step; the snapshot is inconsistent"
+            )
+        return items
+    if len(collectors) > 1:
+        raise ValueError(
+            "a schema 1 plan has several items collection steps, so which "
+            "per-item stage belongs to which cannot be recovered; reset the "
+            "task and start it again with the current ww"
+        )
+    collector = collectors[0]
+    expanded = {collector.id: collector, **{m.id: m for m in members}}
+    return tuple(
+        replace(
+            item,
+            item_pass=collector.step,
+            item_collect_only=(item is collector and not members),
+        )
+        if item.id in expanded
+        or (item.verifies is not None and item.verifies.item_id in expanded)
+        else item
+        for item in items
     )
 
 
@@ -186,6 +264,12 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             raw.get("item_template", False), f"{item_path}.item_template"
         ),
         item_id=expect_optional_string(raw.get("item_id"), "item ID"),
+        item_pass=expect_optional_string(
+            raw.get("item_pass"), f"{item_path}.item_pass"
+        ),
+        item_collect_only=expect_bool(
+            raw.get("item_collect_only", False), f"{item_path}.item_collect_only"
+        ),
         item_assignment=_item_assignment(raw.get("item_assignment", "per_step")),
         loop_id=expect_optional_string(raw.get("loop_id"), "loop ID"),
         loop_assignment=_loop_assignment(raw.get("loop_assignment")),

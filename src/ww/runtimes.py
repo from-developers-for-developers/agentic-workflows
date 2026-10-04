@@ -45,8 +45,7 @@ RUNTIME_DESCRIPTIONS = {
     ),
     "auto": (
         "The manager delegates each assignment to a worker agent it selects, "
-        "using the requested agent, model, and reasoning. Use it when "
-        "delegation is available and permitted."
+        "using the requested agent, model, and reasoning."
     ),
 }
 DEFAULT_RUNTIME = "single"
