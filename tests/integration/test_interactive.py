@@ -72,7 +72,11 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
     assert "### Worker bootstrap" not in rendered
     assert "because a delegated worker cannot talk to them" in rendered
     assert "### Interaction with the operator" in rendered
-    assert "say `ww done` when you are finished with this" in rendered
+    assert "clear contextual completion" in rendered
+    assert "`done`, `I'm done`, `looks good, continue`" in rendered
+    assert "ask naturally whether they want to continue or finish" in rendered
+    assert "`Done for today` means pause" in rendered
+    assert "ww done" not in rendered
     assert "Record nothing while you talk." in rendered
     assert (
         "./ww interact TASK-1 --role manager --transcript - --end <<'EOF'\n"
@@ -266,6 +270,9 @@ def test_choices_resolve_to_the_agent_mechanism_and_gate_the_end(
         "--choice=\"<label or number>\" --end <<'EOF'" in rendered
     )
     assert "Nothing chosen yet." in rendered
+    if agent == "codex":
+        assert "`request_user_input_async`" in rendered
+        assert "timeout, dismissal, or preselected value is not an answer" in rendered
 
     with pytest.raises(StateError, match="is not one of the choices"):
         service.interact("TASK-3", choice="maybe")

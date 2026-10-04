@@ -16,7 +16,7 @@ Confirm the result with the operator.
 
 ### Interaction with the operator
 
-Hold this conversation with the operator in this session, because a delegated worker cannot talk to them: present the matter, ask, listen, and clarify. Record nothing while you talk. Open by telling the operator: say `ww done` when you are finished with this; I will then record our conversation and move on. When you judge the conversation has covered what the step needs, ask the operator with your question tool, or as a numbered list in the chat where you have none: `Move on` or `I have more`; on `Move on`, or an unmistakable "we're done", end it.
+Hold this conversation with the operator in this session, because a delegated worker cannot talk to them: present the matter, ask, listen, and clarify. Record nothing while you talk. Respond to the operator's questions and corrections until the conversation covers what this step needs. Treat clear contextual completion, such as `done`, `I'm done`, `looks good, continue`, or an appropriate final choice, as permission to end; if it is ambiguous, ask naturally whether they want to continue or finish. `Done for today` means pause: record the conversation and use the pause command, leaving the interaction open to resume later.
 
 When it ends, record both sides verbatim and end the interaction in one command, then complete the step; completion is refused while it is open.
 
@@ -34,7 +34,7 @@ Nothing is recorded yet.
 1. `accept` — The result is accepted.
 2. `reject` — The result needs more work.
 
-Present the matter in your reply first, then ask with the `request_user_input` tool: one short question of a line or two, never the matter itself, these options in this order with their descriptions, single select. The operator picks a number; a free-form answer is a comment, not a choice. If the tool is not available in this session, present the choices as a numbered list instead and ask the operator to answer with the number or the label.
+Present the matter in your reply first. In Codex Plan mode, use the `request_user_input` tool with one short question and these options in order, single select; the operator picks a number. If this session only offers `request_user_input_async`, include the options in its question text, use a fresh unique task handle, and ask for a label or number; keep the choice pending until the operator answers. A timeout, dismissal, or preselected value is not an answer. If neither tool is available, present the choices as a numbered list and ask for the number or label.
 
 The pick is required; it goes in `--choice` above.
 

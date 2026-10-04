@@ -202,7 +202,7 @@ def test_record_transition_shares_commit_message_with_project_hook(
         if name in {"approaches", "checks"}:
             service.interact(
                 "S-1",
-                transcript="Agent: Approve?\nOperator: Approved. ww done",
+                transcript="Agent: Approve?\nOperator: Looks good, continue.",
                 choice="build" if name == "approaches" else "record",
                 end=True,
             )
