@@ -11,6 +11,7 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- The task requirements now print on the first page of each session: under `auto` every delegated worker assignment's first page carries them in full (its later stages and the manager's later pages carry the pointer), instead of only the task's first agent page. New `pages.worker_requirements` in `ww.json` (`full`, the default, or `pointer`) keeps the text off worker first pages.
 - Fix: `start-child --model X` was recorded on the child but `ww status` and the child's pages showed
   `auto`, because a step's unset model (`auto`) shadowed the task's model. The given model and
   reasoning now show wherever the child is described.

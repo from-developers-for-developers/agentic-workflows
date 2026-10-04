@@ -296,7 +296,11 @@ boolean defaulting to `true` that decides whether the `session-start` hook
 lists unfinished tasks, and `recent_days`, a positive integer defaulting to
 `3`: the window of that hook's scan, of `ww interrupted`, and of the
 interruption pointer in `discover` and `lookup`; any other key in it is an
-error. The file may
+error. `pages` holds `worker_requirements`, `full` (the default) or
+`pointer`: the first page of every delegated worker assignment prints the task
+requirements in full, or only the pointer to `ww requirements` when it is
+`pointer`; the manager's pages are unaffected, and `init` writes the key only
+once it is set. Any other value, or key, is an error. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
 off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each

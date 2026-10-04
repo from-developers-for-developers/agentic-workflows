@@ -298,6 +298,11 @@ class WorkflowService:
             self._runtime_values,
             child_values=self._child_values,
             item_values=self._item_values,
+            worker_requirements=lambda: (
+                load_project_config(
+                    self.storage.project_config_path
+                ).pages.worker_requirements
+            ),
             root=self.storage.root,
             documents=self.documents,
             interactions=self.interactions,

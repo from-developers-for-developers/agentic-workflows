@@ -713,6 +713,7 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
             "Continue in the same assignment.",
         ]
     )
+    _task_requirements(lines, instruction)
     _work(lines, instruction)
     _explicit_guidance(lines, instruction)
     _modes(lines, instruction)
@@ -771,11 +772,11 @@ _DUPLICATE_PARAGRAPH = 80
 
 
 def _task_requirements(lines: Lines, instruction: Instruction) -> None:
-    """Show the requirements once, then point at them; amendments always show.
+    """Show the requirements once per session, then point; amendments always show.
 
-    The first work page carries the user's wording in full; later pages name
-    the command that prints it again.  What the work instruction already
-    quotes verbatim is not printed twice.
+    The first work page of a session carries the user's wording in full; its
+    later pages name the command that prints it again.  What the work
+    instruction already quotes verbatim is not printed twice.
     """
     if instruction.item_status != "in_progress":
         return
@@ -788,8 +789,8 @@ def _task_requirements(lines: Lines, instruction: Instruction) -> None:
         lines.append(_without_duplicates(text, instruction.action_text))
     elif text and instruction.requirements_command:
         lines.append(
-            "The full task requirements were shown on the task's first page; "
-            f"print them again with `{instruction.requirements_command}`."
+            "The full task requirements are not repeated on this page; "
+            f"print them with `{instruction.requirements_command}`."
         )
     if amendments:
         lines.extend(["", "Amendments to the requirements, oldest first:", ""])

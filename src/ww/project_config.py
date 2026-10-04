@@ -14,6 +14,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "executable": "ww-agentic-workflows-dev",
   "limits": {"rounds": 3, "fixes": 3},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
+  "pages": {"worker_requirements": "pointer"},
   "workflows": {"catchall": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
@@ -42,6 +43,12 @@ repair assignment, or the operator) applies.
 tasks at all; ``recent_days`` (default 3) is how many days back a task's last
 update or an interruption counts as recent, for that hook, ``discover``,
 ``lookup``, and ``ww interrupted``.
+
+``pages`` tunes what pages print. ``worker_requirements`` is ``full`` (the
+default: the first page of every delegated worker assignment prints the task
+requirements in full) or ``pointer`` (it carries the pointer to ``ww
+requirements`` instead); the manager's pages are unaffected. ``init`` writes the
+key only once it is set.
 
 ``workflows`` switches off the workflows ww provides to every project, such
 as ``catchall``; each is on unless its entry says ``"enabled": false``.
@@ -261,6 +268,26 @@ class AgentHooks:
         }
 
 
+WORKER_REQUIREMENTS = ("full", "pointer")
+
+
+@dataclass(frozen=True)
+class Pages:
+    """The ``pages`` setting: what the pages ww prints carry."""
+
+    # ``full`` prints the task requirements on a delegated worker assignment's
+    # first page; ``pointer`` names the command that prints them instead.
+    worker_requirements: Literal["full", "pointer"] = "full"
+
+    def to_dict(self) -> dict[str, str]:
+        # Written once set, so a default file stays as ``init`` wrote it.
+        return (
+            {"worker_requirements": self.worker_requirements}
+            if self.worker_requirements != "full"
+            else {}
+        )
+
+
 @dataclass(frozen=True)
 class ProjectConfig:
     """Settings that apply to a project rather than to one workflow."""
@@ -269,6 +296,7 @@ class ProjectConfig:
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
     limits: Limits = Limits()
     agent_hooks: AgentHooks = AgentHooks()
+    pages: Pages = Pages()
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
     # ``"on_request"`` keeps ww available, but agents use it only when the
     # user explicitly asks for it.
@@ -466,6 +494,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "builtins",
         "limits",
         "agent_hooks",
+        "pages",
         "projects",
         "update_check",
         "feedback_learning",
@@ -522,6 +551,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         builtins=normalized,
         limits=_parse_limits(raw.get("limits"), path),
         agent_hooks=_parse_agent_hooks(raw.get("agent_hooks"), path),
+        pages=_parse_pages(raw.get("pages"), path),
         enabled=enabled,
         projects=_parse_projects(raw.get("projects"), path),
         runtime=runtime,
@@ -554,6 +584,26 @@ def _parse_limits(data: Any, path: str) -> Limits:
         elif not is_positive_int(value):
             raise ConfigurationError(f"{path}.limits.{key} must be a positive integer")
     return Limits(**data)
+
+
+def _parse_pages(data: Any, path: str) -> Pages:
+    """``pages``: an optional ``worker_requirements``, ``full`` or ``pointer``."""
+    if data is None:
+        return Pages()
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{path}.pages must be an object")
+    unknown = set(data) - {"worker_requirements"}
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.pages has unknown key(s): {', '.join(sorted(unknown))}"
+        )
+    value = data.get("worker_requirements", "full")
+    if value not in WORKER_REQUIREMENTS:
+        raise ConfigurationError(
+            f"{path}.pages.worker_requirements must be one of: "
+            + ", ".join(WORKER_REQUIREMENTS)
+        )
+    return Pages(**data)
 
 
 def _parse_agent_hooks(data: Any, path: str) -> AgentHooks:

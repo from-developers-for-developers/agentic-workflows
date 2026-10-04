@@ -162,8 +162,11 @@ class InstructionBuilder:
         interactions: InteractionLog,
         child_values: StepValues = no_step_values,
         item_values: StepValues = no_step_values,
+        worker_requirements: Callable[[], str] = lambda: "full",
     ) -> None:
         self.tasks = tasks
+        # ``pages.worker_requirements``, read per page so an edit applies at once.
+        self.worker_requirements = worker_requirements
         self.item_values = item_values
         self.child_values = child_values
         self.documents = documents
@@ -702,14 +705,31 @@ class InstructionBuilder:
         )
 
     def _requirements_page(
-        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        *,
+        continues_assignment: bool = False,
     ) -> _RequirementsPage:
         """The requirements and amendments an item's page carries.
 
-        The full requirements print on the first page that asks an agent for
-        work; every later page points at the command that prints them again.
+        The full requirements print on the first page of each session, then
+        later pages point at the command that prints them again.  A single
+        runtime is one session: its first page that asks an agent for work.
+        Under ``auto`` the manager is one session, so the same rule holds for
+        its own pages, and every delegated worker assignment is a fresh one:
+        its first page prints them (unless ``pages.worker_requirements`` is
+        ``pointer``) and the later stages of that assignment point.
         The amendments are short and print on every page.
         """
+        if state.workflow_runtime == "auto" and item.role == "worker":
+            return _RequirementsPage(
+                self.requirements(state, plan),
+                not continues_assignment and self.worker_requirements() == "full",
+                requirements_command(state.task_id),
+                self.tasks.read_amendments(state.task_id),
+            )
         first = next(
             (
                 entry
@@ -983,7 +1003,12 @@ class InstructionBuilder:
             {**dict(state.workflow_values), **self.task_values(state, plan)},
         )
         requirements = (
-            self._requirements_page(state, plan, item)
+            self._requirements_page(
+                state,
+                plan,
+                item,
+                continues_assignment=item.id in span_ids[1:],
+            )
             if item.step != INIT_STEP_NAME
             else _RequirementsPage()
         )

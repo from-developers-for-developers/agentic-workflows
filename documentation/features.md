@@ -1518,9 +1518,14 @@ carries `--role manager`, and the preview before it says that no worker is
 selected. Every pending-input page also lists, under "Work these values
 describe", the handovers of the steps completed since that handler last ran
 in the run, so a commit message names this round's work rather than repeating
-an earlier one. The first instruction that asks for work shows the requirements saved by
+an earlier one. The first page of each session shows the requirements saved by
 `init` in full under "Task requirements", so the user's wording reaches the worker
-without the manager adding commentary; later pages carry a one-line pointer to
+without the manager adding commentary: the manager's first page that asks for
+work, the first page of every delegated worker assignment (each is a fresh
+session; `pages.worker_requirements` in `ww.json` set to `pointer` swaps it for
+the pointer), or, in the `single` runtime, the first agent step. Later pages of
+the same session, such as the following stages of one assignment, carry a
+one-line pointer to
 `ww requirements <task>`, which prints them again (JSON pages keep
 `task_requirements` and add `requirements_in_full` and `requirements_command`).
 A paragraph the work instruction already quotes verbatim is shown there only.

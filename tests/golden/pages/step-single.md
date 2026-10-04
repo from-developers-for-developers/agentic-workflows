@@ -8,7 +8,7 @@ You play both roles in this session: act as the worker and do the work yourself,
 
 ### Task requirements
 
-The full task requirements were shown on the task's first page; print them again with `./ww requirements TASK-1`.
+The full task requirements are not repeated on this page; print them with `./ww requirements TASK-1`.
 
 ### Previous step result
 

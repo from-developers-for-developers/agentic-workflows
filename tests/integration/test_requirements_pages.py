@@ -16,7 +16,7 @@ from ww.storage import Storage
 
 TASK = "T1"
 REQUIREMENTS = "Add a --verbose flag to the CLI."
-POINTER = "print them again with `./ww requirements T1`"
+POINTER = "print them with `./ww requirements T1`"
 CONFIG = """workflows:
   - name: task
     steps:
