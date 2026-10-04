@@ -107,8 +107,8 @@ def test_a_later_pass_may_omit_or_repeat_the_collection_settings(
         (
             "\n          identity: source",
             "\n          unique: [reply]",
-            "sets items.unique to [reply], but the collection's first items "
-            "step 'collect' sets it to [source]",
+            "sets items.unique to [reply, source], but the collection's first "
+            "items step 'collect' sets it to [source]",
         ),
     ],
     ids=[
@@ -128,6 +128,31 @@ def test_a_later_pass_cannot_contradict_the_collection_settings(
         _load(tmp_path, _passes(first, later))
     assert message in str(error.value)
     assert "workflow 'review'" in str(error.value)
+
+
+def test_an_explicit_unique_equal_to_identity_is_not_read_as_omitted(
+    tmp_path: Path,
+) -> None:
+    first = "\n          identity: comment_id\n          unique: [comment_id, thread]"
+    later = "\n          identity: comment_id\n          unique: [comment_id]"
+    with pytest.raises(ConfigurationError) as error:
+        _load(tmp_path, _passes(first, later))
+    assert (
+        "step 'finish' sets items.unique to [comment_id], but the collection's "
+        "first items step 'collect' sets it to [comment_id, thread]"
+    ) in str(error.value)
+    # Repeating identity alone, or naming only the other field, still fits.
+    _load(tmp_path, _passes(first, "\n          identity: comment_id"))
+    _load(tmp_path, _passes(first, "\n          unique: [thread]"))
+
+
+def test_identity_alone_still_makes_its_field_unique_at_runtime(
+    tmp_path: Path,
+) -> None:
+    configuration = _load(tmp_path, _passes("\n          identity: source", ""))
+    plan = compile_workflow_plan(configuration, tmp_path, "review", "codex")
+    collector = next(item for item in plan.items if item.item_operation == "collect")
+    assert (collector.item_identity, collector.item_unique) == ("source", ("source",))
 
 
 def test_settings_conflicts_are_found_in_loops_and_outcomes(tmp_path: Path) -> None:

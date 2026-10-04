@@ -560,7 +560,7 @@ def _validate_collection_settings(
     for path, step in passes[1:]:
         assert step.items is not None
         for setting in _COLLECTION_SETTINGS:
-            declared = _declared_setting(step.items, setting)
+            declared = _declared_setting(step.items, setting, first.items.identity)
             established = _effective_setting(first.items, setting)
             if declared is None or declared == established:
                 continue
@@ -571,6 +571,7 @@ def _validate_collection_settings(
                 + (
                     "leaves it unset"
                     if getattr(first.items, setting) is None
+                    and established in (False, None, frozenset())
                     else f"sets it to {_setting_text(established)}"
                 )
                 + f"; a workflow has one item collection whose {setting} the "
@@ -603,19 +604,20 @@ def _item_passes(
 
 
 def _declared_setting(
-    flow: ItemFlow, setting: str
+    flow: ItemFlow, setting: str, identity: str | None
 ) -> bool | str | frozenset[str] | None:
-    """One collection setting as a declaration wrote it, ``None`` if omitted."""
+    """One collection setting as a declaration wrote it, ``None`` if omitted.
+
+    A declared ``unique`` is compared with the collection's ``identity``
+    (``identity``) folded in, as the run applies it.
+    """
     if setting == "persistent":
         return flow.persistent
     if setting == "identity":
         return flow.identity
-    if flow.unique is None or (
-        # Only the folded ``identity``: ``unique`` itself was omitted.
-        flow.identity is not None and flow.unique == (flow.identity,)
-    ):
+    if flow.unique is None:
         return None
-    return frozenset(flow.unique)
+    return frozenset(flow.effective_unique) | ({identity} if identity else set())
 
 
 def _effective_setting(
@@ -626,7 +628,7 @@ def _effective_setting(
         return bool(flow.persistent)
     if setting == "identity":
         return flow.identity
-    return frozenset(flow.unique or ())
+    return frozenset(flow.effective_unique)
 
 
 def _setting_text(value: bool | str | frozenset[str] | None) -> str:

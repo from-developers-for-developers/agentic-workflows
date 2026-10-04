@@ -88,7 +88,7 @@ def test_explicit_default_settings_differ_from_unset(tmp_path: Path) -> None:
     assert explicit != _flow(tmp_path, " ~")
 
 
-def test_identity_is_folded_into_unique_and_explicit_settings_are_kept(
+def test_unique_is_kept_as_declared_and_identity_joins_the_effective_pool(
     tmp_path: Path,
 ) -> None:
     flow = _flow(
@@ -99,7 +99,9 @@ def test_identity_is_folded_into_unique_and_explicit_settings_are_kept(
 
     assert flow.persistent is True
     assert flow.identity == "source_id"
-    assert flow.unique == ("source_id", "url")
+    assert flow.unique == ("url",)
+    assert flow.effective_unique == ("source_id", "url")
+    assert _flow(tmp_path, "\n          identity: source_id").unique is None
 
 
 def test_unset_settings_compile_to_the_single_pass_defaults(tmp_path: Path) -> None:

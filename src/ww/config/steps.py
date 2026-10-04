@@ -876,11 +876,7 @@ def _parse_items(
         isinstance(name, str) and FIELD_NAME.fullmatch(name) for name in unique_raw
     ):
         raise ConfigurationError(f"{items_path}.unique must be a list of field names")
-    unique = (
-        tuple(dict.fromkeys(([identity] if identity else []) + unique_raw))
-        if identity or "unique" in value
-        else None
-    )
+    unique = tuple(dict.fromkeys(unique_raw)) if "unique" in value else None
     assignment = cast(
         ItemAssignment,
         _assignment(

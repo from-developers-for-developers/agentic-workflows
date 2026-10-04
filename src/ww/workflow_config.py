@@ -640,10 +640,12 @@ class ItemFlow:
     steps: tuple[StepDefinition, ...] = ()
     description: str | None = None
     assignment: ItemAssignment = "together"
-    # Collection-wide settings.  ``None`` / ``()`` means this declaration did
-    # not set them: the first declaration of a workflow establishes them, so a
-    # later declaration that omits one must not be read as choosing the
-    # default.  ``unique`` folds ``identity`` in, as it always has.
+    # Collection-wide settings, exactly as this declaration wrote them.
+    # ``None`` means it did not set one: the first declaration of a workflow
+    # establishes them, so a later declaration that omits one must not be
+    # read as choosing the default.  ``identity`` is folded into the unique
+    # pool only by ``effective_unique``, so an explicit ``unique`` stays
+    # distinguishable from an omitted one.
     #
     # ``persistent``: the items outlive the run: every run of the task reuses
     # them, and the collection stage reconciles them instead of splitting anew.
@@ -652,6 +654,15 @@ class ItemFlow:
     # form one pool in which each value may appear once across all items.
     identity: str | None = None
     unique: tuple[str, ...] | None = None
+
+    @property
+    def effective_unique(self) -> tuple[str, ...]:
+        """The unique pool a run applies: ``identity`` first, then ``unique``."""
+        return tuple(
+            dict.fromkeys(
+                (*((self.identity,) if self.identity else ()), *(self.unique or ()))
+            )
+        )
 
     @property
     def collect_only(self) -> bool:

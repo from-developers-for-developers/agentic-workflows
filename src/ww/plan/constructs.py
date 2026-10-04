@@ -301,7 +301,7 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
                     split_instruction=flow.description,
                     shared_items=bool(flow.persistent),
                     item_identity=flow.identity,
-                    item_unique=flow.unique or (),
+                    item_unique=flow.effective_unique,
                 ),
             )
         )
