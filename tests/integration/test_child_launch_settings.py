@@ -169,10 +169,13 @@ def test_interrupted_launch_freezes_settings_for_retry(
         service.start_child("P", "A", workflow_runtime="auto")
 
 
+@pytest.mark.parametrize("override", [False, True])
 def test_retry_after_child_publication_keeps_the_same_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, override: bool
 ) -> None:
     service = _parent(tmp_path)
+    if override:
+        _alternate(service)
     original = service.children._publish_child
 
     def interrupted(*args: object, **kwargs: object) -> None:
@@ -181,13 +184,19 @@ def test_retry_after_child_publication_keeps_the_same_run(
     monkeypatch.setattr(service.children, "_publish_child", interrupted)
     with pytest.raises(OSError, match="publication interrupted"):
         service.start_child(
-            "P", "A", workflow_runtime="single", model="luna", reasoning="high"
+            "P",
+            "A",
+            workflow_name="express" if override else None,
+            workflow_runtime="single",
+            model="luna",
+            reasoning="high",
         )
     assert len(service.tasks.execution_runs("P/A")) == 1
     monkeypatch.setattr(service.children, "_publish_child", original)
     service.start_child("P", "A")
     assert len(service.tasks.execution_runs("P/A")) == 1
     child = service.tasks.read_children("P", "01-parent")[0]
+    assert child.workflow == ("express" if override else "child")
     assert (child.status, child.workflow_runtime, child.model, child.reasoning) == (
         "in_progress",
         "single",

@@ -13,6 +13,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 - Interactive steps accept natural conversational completion and keep async choices pending
   until the operator answers. `a282452`
+- `start-child --workflow` selects a different workflow for a pending child and preserves it
+  across interrupted launches and identity binding. `9dcffd4`
+
 - `start-child` accepts runtime, model and reasoning overrides, preserving them across retries
   and identity bootstrap. `8caadc7`
 
