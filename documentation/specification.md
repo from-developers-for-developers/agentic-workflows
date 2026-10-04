@@ -809,13 +809,79 @@ not require an artifact, because its result is the recorded items.
 
 Each `items` declaration is a pass with a stable identity, its logical step
 path, recorded in the plan on its collection item and per-item stages; it does
-not depend on descriptions or work-item IDs. Sequential passes over one
-collection are being built on that identity and are not available yet.
+not depend on descriptions or work-item IDs.
 
-A workflow may contain at most one `items` step, at any nesting level. This is
-an intentional limitation: collected items belong to the workflow run, and ww
-expands every per-item stage in one place when collection completes. An `items`
-step cannot also declare `steps`, `loop`, `item_phase`, or child
+#### Several passes over one collection
+
+A workflow has one item collection, and every `items` step is a pass over it.
+Passes are sequential steps, at any level and inside loops; ordinary steps
+between them, such as one batch analysis or fix for all items, run once:
+
+```yaml
+- collect: Record one item per comment with its stable source ID.
+  items:
+    steps: []
+- analyze-together: Analyze all collected comments together.
+- confirm-analysis: Reuse the collected items.
+  items:
+    steps:
+      - analyze: Reuse the shared analysis; confirm and fill gaps.
+        item_phase: analyze
+- fix-together: Implement and verify the fixes for all analyzed items.
+- finish: Reuse the collected items.
+  items:
+    steps:
+      - verify-resolution: Verify the result and record actual_solution.
+        item_phase: resolve
+      - report: Report the result for this original comment.
+        item_phase: report
+```
+
+- **Expansion.** A pass's stages are expanded, right after its collection
+  step, when that step completes, once for every item recorded by then; no
+  other pass is expanded or changed. `steps: []` expands nothing, and a pass
+  whose collection is empty finishes without stages.
+- **Membership.** The collection step of each pass may add or reconcile
+  items; a later pass's step is told to reuse the items rather than split
+  the source again. An item added after a pass expanded is kept and joins
+  the next pass (or the next round of the same pass); a running pass never
+  changes its items.
+- **Records.** Passes share one record per item. A pass never clears its
+  analysis, solution, custom fields, references, or reported state, and no
+  stage is skipped because an earlier pass resolved or reported its item.
+- **Loops.** A pass inside a loop is expanded anew in every round, for the
+  items recorded by then, with fresh stage records; nested loops and
+  nearest-loop `break` behave as for any other step.
+- **Settings.** `persistent`, `identity`, and `unique` belong to the
+  collection: the first `items` declaration's apply to every pass.
+- An `items` step inside another `items` step's per-item stages is an
+  error; declare later passes as sequential steps instead.
+
+#### Pass gates
+
+When the run leaves a pass, after its last stage and before the next item
+starts, every item of the pass must hold what the pass's stages declare, for
+each stage that ran:
+
+| Stage | Requires on the item |
+| --- | --- |
+| `item_phase: analyze` | `processed_item` |
+| `item_phase: resolve` | `actual_solution` and `resolved` |
+| `item_phase: report` | `reported` |
+| built-in `handle-item` | `resolved` and `reported` |
+
+A stage with `item_phase` also requires the item fields it saves (`saves:
+item.field.*`). A stage without `item_phase` keeps only its ordinary
+completion contract, whatever its name. A stage that never ran, because an
+assessment outcome, a `break`, or a stopped workflow skipped it, requires
+nothing, and ww never marks an item resolved or reported by itself. A linked
+item (`--refers-to`) shares the analysis, solution, and `resolved` state of the
+item it refers to, so a duplicate comment needs no duplicate fix, but it is
+reported for its own source. A pass that is not satisfied stops the run for
+the operator with each missing value; once the items are updated, `next
+--retry` continues.
+
+An `items` step cannot also declare `steps`, `loop`, `item_phase`, or child
 tasks.
 
 ## Handlers

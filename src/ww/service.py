@@ -73,6 +73,7 @@ from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
+from ww.item_passes import item_collection, leaving_pass, pass_gate_failures
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import (
@@ -666,7 +667,8 @@ class WorkflowService:
         Identity, text, and references carry over; the outcome fields start
         clear, because every run is a new round over the same items.
         """
-        if not any(item.shared_items for item in plan.items):
+        collection = item_collection(plan)
+        if collection is None or not collection.shared_items:
             return None
         return tuple(
             WorkItem(
@@ -682,7 +684,8 @@ class WorkflowService:
         self, task_id: str, plan: WorkflowPlan, items: tuple[WorkItem, ...]
     ) -> None:
         """Refresh the task's shared items from the run's copy, when shared."""
-        if any(item.shared_items for item in plan.items):
+        collection = item_collection(plan)
+        if collection is not None and collection.shared_items:
             self.tasks.write_shared_items(task_id, items)
 
     def commit(
@@ -1790,7 +1793,11 @@ class WorkflowService:
             state = request_loop_continue(state, snapshot.plan, item, _now)
         elif item.item_operation == "collect":
             state, snapshot = materialize_item_plan(
-                state, snapshot, self.tasks.read_items(task_id, state.run_id), _now
+                state,
+                snapshot,
+                item,
+                self.tasks.read_items(task_id, state.run_id),
+                _now,
             )
         elif item.child_operation == "collect":
             state, snapshot = materialize_child_plan(
@@ -2502,10 +2509,7 @@ class WorkflowService:
         a value may appear once over all items of the run and, when the
         flow is shared, of the task's store.
         """
-        collect = next(
-            (entry for entry in plan.items if entry.item_operation == "collect"),
-            None,
-        )
+        collect = item_collection(plan)
         if collect is None:
             return
         if adding and collect.item_identity and not item.field(collect.item_identity):
@@ -2983,28 +2987,10 @@ class WorkflowService:
                 state = begin_child_workflow(state, item, _now)
                 self.commit(state, snapshot)
                 return state, snapshot
-            if (
-                item.item_id is None
-                and any(entry.item_id for entry in plan.items[: state.cursor])
-                and all(
-                    record.status == "completed"
-                    for record in state.item_executions[: state.cursor]
-                )
-            ):
-                work_items = self.tasks.read_items(state.task_id, state.run_id)
-                unfinished = [
-                    entry.id
-                    for entry in work_items
-                    if not entry.resolved or not entry.reported
-                ]
-                if unfinished:
-                    message = (
-                        "item phase cannot complete; unresolved or unreported items: "
-                        + ", ".join(unfinished)
-                    )
-                    state = block_item_phase(state, message, _now)
-                    self.commit(state, snapshot)
-                    return state, snapshot
+            blocked = self._block_unfinished_pass(state, plan)
+            if blocked is not None:
+                self.commit(blocked, snapshot)
+                return blocked, snapshot
             record = state.item_executions[state.cursor]
             if needs_repair(state):
                 return state, snapshot
@@ -3083,6 +3069,39 @@ class WorkflowService:
         state = complete_run(state, plan, _now)
         self.commit(state, snapshot)
         return state, snapshot
+
+    def _block_unfinished_pass(
+        self, state: ExecutionState, plan: WorkflowPlan
+    ) -> ExecutionState | None:
+        """Stop before leaving an items pass whose declared phases are unmet.
+
+        Checked once the pass's last stage is done and before the next item
+        starts; only what the pass's stages declared, and actually ran, is
+        required (see ``ww.item_passes``).
+        """
+        pass_id = leaving_pass(plan, state.cursor)
+        following = state.item_executions[state.cursor]
+        if (
+            pass_id is None
+            or following.status != "pending"
+            or following.started_at is not None
+        ):
+            return None
+        unfinished = pass_gate_failures(
+            plan,
+            state.item_executions,
+            pass_id,
+            self.tasks.read_items(state.task_id, state.run_id),
+        )
+        if not unfinished:
+            return None
+        message = (
+            f"items pass {pass_id!r} cannot complete; its items lack what its "
+            "stages declare: "
+            + "; ".join(unfinished)
+            + ". Record it with update-item, then retry"
+        )
+        return block_item_phase(state, message, _now)
 
     def _handoff(
         self, state: ExecutionState, snapshot: PlanSnapshot, item: PlanItem

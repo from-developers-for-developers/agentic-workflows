@@ -493,18 +493,45 @@ def _template_steps(step: StepDefinition) -> tuple[StepDefinition, ...]:
 
 
 def _validate_item_flows(workflow_name: str, steps: tuple[StepDefinition, ...]) -> None:
-    """Allow one ``items`` step per workflow; its plan expands in one place.
+    """Allow sequential ``items`` passes; reject one nested in another's stages.
 
-    Collected items belong to the workflow run and every per-item template is
-    expanded at the first template position, so a second item flow would be
-    merged into the first.  The limitation is intentional and documented.
+    A workflow has one item collection.  Each ``items`` step is a pass over
+    it, expanded at its own position when its collection completes, so
+    several sequential passes (also inside loops) are unambiguous.  An
+    ``items`` step inside another's per-item stages would collect a second,
+    independent set per item, which ww does not support.
     """
-    flows = [step for step in _walk_steps(steps) if step.items is not None]
-    if len(flows) > 1:
-        raise ConfigurationError(
-            f"workflow {workflow_name!r} may define at most one items step; "
-            "found " + ", ".join(repr(step.name) for step in flows)
+    for step in _walk_nested(steps):
+        nested = [
+            inner.name
+            for inner in _walk_nested(_item_steps(step))
+            if inner.items is not None
+        ]
+        if nested:
+            raise ConfigurationError(
+                f"workflow {workflow_name!r}: items step {nested[0]!r} is nested "
+                f"inside the per-item steps of items step {step.name!r}; a "
+                "workflow has one item collection, so declare later items "
+                "passes as sequential steps instead of inside another pass"
+            )
+
+
+def _walk_nested(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...]:
+    """Every step in ``steps`` and below, including assessment outcomes."""
+    result: list[StepDefinition] = []
+    for step in steps:
+        result.append(step)
+        result.extend(
+            _walk_nested(
+                (
+                    *step.child_steps,
+                    *step.loop_steps,
+                    *step.assessment_outcomes,
+                    *_template_steps(step),
+                )
+            )
         )
+    return tuple(result)
 
 
 def _validate_hooks(

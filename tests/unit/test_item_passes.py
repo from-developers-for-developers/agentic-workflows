@@ -399,3 +399,69 @@ def test_a_legacy_plan_with_stages_but_no_collection_is_refused(
 
     with pytest.raises(ValueError, match="no items collection step"):
         PlanSnapshot.from_dict(raw)
+
+
+def _materialized(
+    tmp_path: Path, steps: str, count: int, version: int = PLAN_SCHEMA_VERSION
+) -> PlanSnapshot:
+    """A snapshot of ``steps`` expanded by ww for ``count`` items."""
+    from ww.execution_models import initial_state
+    from ww.items import WorkItem
+    from ww.transitions import materialize_item_plan
+
+    snapshot = _snapshot(_plan(tmp_path, steps), version)
+    collector = next(i for i in snapshot.plan.items if i.item_operation == "collect")
+    _, expanded = materialize_item_plan(
+        initial_state(snapshot, (), "2026-01-01T00:00:00Z", run_id="01-task"),
+        snapshot,
+        collector,
+        tuple(WorkItem(f"c{n}", f"Comment {n}.") for n in range(1, count + 1)),
+        lambda: "2026-01-01T00:00:00Z",
+    )
+    return expanded
+
+
+@pytest.mark.parametrize("count", [0, 3])
+def test_an_expanded_legacy_plan_takes_collect_only_from_its_template(
+    tmp_path: Path, count: int
+) -> None:
+    expanded = _materialized(tmp_path, ONE_PASS, count)
+    concrete = [item for item in expanded.plan.items if item.item_id]
+    assert len(concrete) == 2 * count
+    assert not any(item.item_template for item in expanded.plan.items)
+
+    loaded = PlanSnapshot.from_dict(_legacy_json(expanded))
+
+    # With no items the plan holds no stages; the pass still had them.
+    assert [i.item_collect_only for i in loaded.plan.items if i.name == "collect"] == [
+        False
+    ]
+    assert loaded.plan == expanded.plan
+    assert loaded.template_plan == expanded.template_plan
+
+
+def test_an_expanded_legacy_collect_only_plan_stays_collect_only(
+    tmp_path: Path,
+) -> None:
+    expanded = _materialized(
+        tmp_path, "      - collect: C.\n        items:\n          steps: []\n", 2
+    )
+
+    loaded = PlanSnapshot.from_dict(_legacy_json(expanded))
+
+    assert [i.item_collect_only for i in loaded.plan.items if i.name == "collect"] == [
+        True
+    ]
+
+
+def test_expanding_a_legacy_snapshot_writes_the_current_schema(
+    tmp_path: Path,
+) -> None:
+    expanded = _materialized(tmp_path, ONE_PASS, 2, version=1)
+
+    assert expanded.schema_version == PLAN_SCHEMA_VERSION
+    raw = json.loads(json.dumps(expanded.to_dict()))
+    assert {
+        item.get("item_pass") for item in raw["plan"]["items"] if item["name"] != "wrap"
+    } >= {"collect"}
+    assert PlanSnapshot.from_dict(raw) == expanded

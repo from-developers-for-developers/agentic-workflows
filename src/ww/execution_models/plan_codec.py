@@ -55,12 +55,17 @@ from ww.workflow_config import (
 from ww.workspace import Workdir
 
 
-def _plan_from_dict(data: Any, item_passes: bool = True) -> WorkflowPlan:
+def _plan_from_dict(
+    data: Any, item_passes: bool = True, collect_only: bool | None = None
+) -> WorkflowPlan:
     """Decode a plan; ``item_passes=False`` reads the pre-pass (schema 1) form.
 
     A pre-pass plan has at most one ``items`` declaration, so its pass identity
     is derived deterministically from the plan itself; the derivation is
     in-memory only and never written back (see ``PlanSnapshot.to_dict``).
+    Whether that pass only collects is ``collect_only`` when given: an
+    expanded plan whose pass collected nothing holds no stages, so only its
+    template plan can tell.
     """
     if not isinstance(data, dict):
         raise ValueError("plan must be a mapping")
@@ -84,7 +89,7 @@ def _plan_from_dict(data: Any, item_passes: bool = True) -> WorkflowPlan:
         raise ValueError("plan modes must be strings")
     if not isinstance(data["handoff"], bool):
         raise ValueError("plan handoff must be a boolean")
-    items = _checked_item_passes(items, item_passes)
+    items = _checked_item_passes(items, item_passes, collect_only)
     return WorkflowPlan(
         workflow=expect_string(data["workflow"], "workflow"),
         workflow_description=expect_string(
@@ -109,7 +114,7 @@ def _is_item_flow_member(item: PlanItem) -> bool:
 
 
 def _checked_item_passes(
-    items: tuple[PlanItem, ...], item_passes: bool
+    items: tuple[PlanItem, ...], item_passes: bool, collect_only: bool | None = None
 ) -> tuple[PlanItem, ...]:
     """Give every item of an ``items`` declaration its pass, or refuse the plan.
 
@@ -164,7 +169,10 @@ def _checked_item_passes(
         replace(
             item,
             item_pass=collector.step,
-            item_collect_only=(item is collector and not members),
+            item_collect_only=(
+                item is collector
+                and (not members if collect_only is None else collect_only)
+            ),
         )
         if item.id in expanded
         or (item.verifies is not None and item.verifies.item_id in expanded)

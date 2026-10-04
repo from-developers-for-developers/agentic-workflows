@@ -18,6 +18,7 @@ from ww.contracts import StepStatus
 from ww.control import loop_control
 from ww.errors import StateError
 from ww.execution_models import (
+    PLAN_SCHEMA_VERSION,
     CheckReport,
     CommandExecution,
     Dispute,
@@ -1242,22 +1243,57 @@ def complete_run(
 def materialize_item_plan(
     state: ExecutionState,
     snapshot: PlanSnapshot,
+    collector: PlanItem,
     items: tuple[WorkItem, ...],
     now: Clock,
 ) -> tuple[ExecutionState, PlanSnapshot]:
-    """Replace per-item templates with one concrete lifecycle per work item."""
+    """Expand one ``items`` pass for the items collected when it completes.
+
+    Only the pass ``collector`` declares is expanded, right after it, from
+    its own templates in the template plan; every other pass keeps its
+    templates (or its concrete stages) untouched.  The pass's earlier
+    stages, from a previous loop round, are replaced: the new round runs
+    the items collected now, so an item added since joins it and the
+    membership of a running pass never changes.  A pass without stages
+    (``items: {steps: []}``), or one that collected no items, expands to
+    nothing.  The snapshot is written in the current schema, whose pass
+    identity the expanded plan relies on.
+    """
+    pass_id = collector.item_pass
+    if pass_id is None:
+        raise StateError(f"items step {collector.name!r} has no item pass")
+    template = snapshot.template_plan or snapshot.plan
     templates = tuple(
         entry
-        for entry in snapshot.plan.items
-        if entry.item_template and entry.child_stage is None
+        for entry in template.items
+        if entry.item_template
+        and entry.child_stage is None
+        and entry.item_pass == pass_id
     )
     if not templates:
         return state, snapshot
-    if not items:
-        raise StateError("items step completed without recorded items; use add-item")
+    members = frozenset(
+        entry.id
+        for entry in snapshot.plan.items
+        if entry.item_pass == pass_id
+        and entry.child_stage is None
+        and (entry.item_template or entry.item_id is not None)
+    )
+    anchor = next(
+        (
+            index
+            for index, entry in enumerate(snapshot.plan.items)
+            if entry.id == collector.id
+        ),
+        None,
+    )
+    if anchor is None:
+        raise StateError(f"items step {collector.name!r} is not in the plan")
     return _expand_templates(
         state,
-        snapshot,
+        replace(
+            snapshot, schema_version=max(snapshot.schema_version, PLAN_SCHEMA_VERSION)
+        ),
         templates,
         "{item}",
         tuple(
@@ -1265,7 +1301,26 @@ def materialize_item_plan(
             for number, work_item in enumerate(items, 1)
         ),
         now,
+        replaced=members,
+        after=collector.id,
+        scope=_record_scope(state, anchor),
     )
+
+
+def _record_scope(state: ExecutionState, index: int) -> str:
+    """The operation namespace the record at ``index`` was created in.
+
+    A loop round gives its records a namespace of their own; stages expanded
+    in that round share their collection step's.
+    """
+    record = state.item_executions[index]
+    prefix, suffix = f"{state.task_id}:", f":{record.plan_item_id}"
+    operation = record.operation_id
+    if operation is None or not (
+        operation.startswith(prefix) and operation.endswith(suffix)
+    ):
+        return operation_scope_for(state)
+    return operation[len(prefix) : -len(suffix)]
 
 
 def materialize_child_plan(
@@ -1311,13 +1366,24 @@ def _expand_templates(
     placeholder: str,
     units: tuple[tuple[str, str, dict[str, str | int]], ...],
     now: Clock,
+    *,
+    replaced: frozenset[str] | None = None,
+    after: str | None = None,
+    scope: str | None = None,
 ) -> tuple[ExecutionState, PlanSnapshot]:
     """Expand ``templates`` once per unit at the first template's position.
 
     Each unit is its path segment (replacing ``placeholder`` in every path),
     its plan-item ID suffix, and the fields binding the copy to its unit.
+    ``replaced`` names the plan items the expansion replaces, the templates
+    by default; with ``after`` the expansion goes right after that item
+    instead.  New records are created in ``scope``, the run's by default.
     """
-    template_ids = {template.id for template in templates}
+    template_ids = (
+        replaced
+        if replaced is not None
+        else frozenset(template.id for template in templates)
+    )
 
     def concrete_path(value: str, segment: str) -> str:
         return value.replace(placeholder, segment)
@@ -1367,19 +1433,22 @@ def _expand_templates(
             ),
         )
 
+    expansion = [
+        expand(template, segment, suffix, bind)
+        for segment, suffix, bind in units
+        for template in templates
+    ]
     concrete: list[PlanItem] = []
     expanded_templates = False
     for entry in snapshot.plan.items:
-        if entry.id not in template_ids:
-            concrete.append(entry)
+        if entry.id in template_ids:
+            if after is None and not expanded_templates:
+                concrete.extend(expansion)
+                expanded_templates = True
             continue
-        if expanded_templates:
-            continue
-        for segment, suffix, bind in units:
-            concrete.extend(
-                expand(template, segment, suffix, bind) for template in templates
-            )
-        expanded_templates = True
+        concrete.append(entry)
+        if entry.id == after:
+            concrete.extend(expansion)
 
     plan = replace(
         snapshot.plan,
@@ -1394,7 +1463,9 @@ def _expand_templates(
     records = tuple(
         replace(old_records[entry.id], position=entry.position)
         if entry.id in old_records
-        else new_item_execution(state.task_id, operation_scope_for(state), entry)
+        else new_item_execution(
+            state.task_id, scope or operation_scope_for(state), entry
+        )
         for entry in plan.items
     )
     revised_snapshot = replace(
