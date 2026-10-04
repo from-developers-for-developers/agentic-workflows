@@ -11,6 +11,19 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- New `ww-wizard` skill, installed by `init`: it helps you create a workflow, change an existing one, create or
+  improve rules, or choose an approach, adapting its questions to the request and challenging needless
+  complexity. It reads the `ww docs` sections, inspects the project, validates drafts with the compiled plan,
+  places changes through ww, and hands rule work to the rules skills.
+- New `ww setup update <workflow> <file> [--level local|project|global]` changes a workflow the configuration
+  already defines, wherever it is written (root YAML, an import, any level). It edits the definition in force,
+  refuses an edit that a higher-precedence definition would hide, replaces only that list item and keeps the
+  rest of the file and its comments, and shows a validated diff first. `setup apply` and `setup update`
+  accept `--dry-run --inspect <workflow> --agent <agent>` to print the compiled plan the change would leave.
+- `ww-suggest` follows one method for each proposed workflow (trigger, result and operator involvement; smallest
+  structure; YAML with a walkthrough and a failure path; validation with the compiled plan inspected; apply),
+  derives test commands from repository evidence only, and does not ask again for an edit already approved.
+  `ww-solve` changes an existing workflow with `setup update`.
 - The specification, features guide and examples are the three authorities for workflow design, and they
   describe what the item, assessment and interactive features actually do. The features guide opens with
   "Designing a workflow" (start linear; steps, handlers and hooks; conversation or assessment; items and

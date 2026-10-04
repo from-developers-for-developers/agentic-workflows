@@ -157,13 +157,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
                     *_manager_setting_notices(raw, label),
                 ),
             )
-    seen = {level.path.resolve() for level in present}
-    levels = [_read_level(level, base, seen) for level in present]
-    start = max(
-        (index for index, level in enumerate(levels) if not level.extends),
-        default=0,
-    )
-    applied = [(*file, level.name) for level in levels[start:] for file in level.files]
+    base, levels, start, applied = _fold_order(path, present)
     group_names = {
         name
         for _, raw, _, _ in applied
@@ -191,6 +185,62 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
         tuple(notices),
         MappingProxyType(dict(composer.workflow_provenance)),
     )
+
+
+@dataclass(frozen=True)
+class WorkflowSite:
+    """One configuration file that defines a workflow, and where it ranks."""
+
+    file: Path
+    label: str
+    level: WorkflowConfigLevel
+    entry: Any
+
+
+def workflow_sites(path: Path, name: str) -> tuple[WorkflowSite, ...]:
+    """Every applied file defining workflow ``name``, lowest precedence first.
+
+    The last site is the definition that wins; the ones before it are hidden by
+    it. Files a lower level's ``extends: false`` leaves out are not applied and
+    not listed.
+    """
+    present = tuple(
+        level
+        for level in workflow_levels(path)
+        if level.name == "repo" or configuration_file_exists(level.path)
+    )
+    _, _, _, applied = _fold_order(path, present)
+    sites: list[WorkflowSite] = []
+    for label, raw, file, level_name in applied:
+        workflows = raw.get("workflows")
+        if not isinstance(workflows, list):
+            continue
+        sites.extend(
+            WorkflowSite(file, label, _public_level(level_name), entry)
+            for entry in workflows
+            if entry_name(entry) == name
+        )
+    return tuple(sites)
+
+
+def _fold_order(
+    path: Path, present: tuple[ConfigurationLevel, ...]
+) -> tuple[
+    Path,
+    list[_Level],
+    int,
+    list[tuple[str, dict[str, Any], Path, str]],
+]:
+    """The files folded for ``path`` in order, after any ``extends: false``."""
+    base = path.parent
+    seen = {level.path.resolve() for level in present}
+    levels = [_read_level(level, base, seen) for level in present]
+    start = max(
+        (index for index, level in enumerate(levels) if not level.extends),
+        default=0,
+    )
+    applied = [(*file, level.name) for level in levels[start:] for file in level.files]
+    return base, levels, start, applied
 
 
 def _read_level(level: ConfigurationLevel, base: Path, seen: set[Path]) -> _Level:

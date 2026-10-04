@@ -153,8 +153,16 @@ workflows:
           installation prints: `{{ww.executable}} docs specification`,
           `{{ww.executable}} docs features` and `{{ww.executable}} docs
           examples`; the proposal stays within what they describe. Read
-          the current setup: `{{ww.executable}} discover` and
-          `{{ww.executable}} rules --json`. When {{ww.documents.project}} has
+          the current setup: `{{ww.executable}} discover` (each workflow's
+          source says which file defines it) and `{{ww.executable}} rules
+          --json`. Inspect before suggesting: the project's own commands
+          (manifests, scripts, CI, the wrapper its documents name), the
+          workflows that already exist, and the concrete process pain the
+          project file or the operator's requirements name. A test, lint or
+          type command comes only from repository evidence, an exact argument
+          list with the file that shows it; where the evidence is missing or
+          contradictory, record it as uncertain and propose no command for it,
+          rather than inventing one. When {{ww.documents.project}} has
           no "Profile" section, or does not exist, run `{{ww.executable}}
           inspect` in {{ww.task.workspace_dir}} and take its facts; look up,
           read only, only what neither has, such as what AGENTS.md, CLAUDE.md
@@ -189,7 +197,9 @@ workflows:
           state the defaults the facts support for each, and ask only a
           consequential choice that the facts leave open and that changes the
           setup, such as who reviews when the project shows no review process.
-          End your turn and wait for the answers; "skip" is a valid answer.
+          Ask only what the gathered facts leave unanswered and what changes
+          the design. End your turn and wait for the answers; "skip" is a
+          valid answer.
           Then converse: follow up where an answer deserves it and say what it
           implies for the setup. Treat clear contextual completion as
           permission to finish; ask naturally if it is ambiguous, then record
@@ -308,12 +318,33 @@ workflows:
               Keep each workflow as simple as its work allows and add a feature only
               for the concrete reason the guide gives. Never redefine a
               workflow ww ships (`catchall`, `ww-*`), duplicate what is
-              configured, or edit ww's configuration files yourself.
+              configured, or edit ww's configuration files yourself. A
+              workflow the project already defines is changed with
+              `{{ww.executable}} setup update`, not by a second definition.
 
 
-              Run `{{ww.executable}} setup apply {{ww.documents.setup_proposal}}
-              --for <me or team, as chosen in design> --dry-run` and fix the
-              fragment until it passes. Present it section by section
+              For each proposed workflow, in this order: (1) state its
+              trigger, the result it should give and where the operator is
+              involved, in a few lines; (2) choose the smallest structure that
+              expresses them; (3) show concise YAML and a short walkthrough of
+              a representative task, with a failure and retry path wherever an
+              external effect or an automatic command is involved; (4) validate
+              and inspect, below, and fix the draft before asking; (5) ask to
+              apply it. Commands come from the repository evidence of the
+              gather step; show a command it could not settle as an open
+              question, never as a guess. Preserve every requirement the
+              operator stated, rather than shortening the YAML.
+
+
+              Validate the composed configuration and inspect what it
+              compiles to: `{{ww.executable}} setup apply
+              {{ww.documents.setup_proposal}} --for <me or team, as chosen in
+              design> --dry-run --inspect <the main lane> --agent <your
+              agent>` and fix the fragment until it passes. In the compiled
+              plan check that automation is ww-owned (a command runs as a
+              handler or hook, and no step asks the agent to run it), that
+              item scopes are valid, and that the operator meets only the
+              conversations intended. Present it section by section
               (settings, handlers, workflows, hooks, modes, rules), each piece
               with its evidence in one clause, such as "`hotfix` lane: 14
               `hotfix/*` branches merged this year" or "`run-tests` runs `npm
@@ -321,10 +352,11 @@ workflows:
               walk through the main lane: its steps in order with what an agent
               does at each and where ww runs checks automatically without an
               agent prompt, from the fragment, in ten lines or fewer. Ask
-              whether to apply it; discuss and take changes, checking and
+              whether to apply it; discuss and take changes, validating and
               showing it again until the operator's intent to finish is clear;
               ask naturally if it is ambiguous, then record the conversation
-              once with their pick, apply or cancel.
+              once with their pick, apply or cancel. The pick is the approval
+              of this exact edit: do not ask again before applying it.
             choices:
               - apply: Apply it as shown.
               - cancel: Do not apply anything.
@@ -388,29 +420,34 @@ workflows:
           {{ww.documents.setup_proposal}} (the root keys `workflows`, `modes`,
           `documents`, `handlers`, `hooks`, `rules` and `settings`; rules as
           literal sentences in the `rules` lists of the steps they govern). A
-          fragment cannot change a workflow that ww.yaml
-          defines itself: for such a change propose a hook filtered to its
-          steps, or show the operator the exact YAML to change by hand. Never
+          fragment adds definitions; to change a workflow the configuration
+          already defines, write the complete changed workflow alone in the
+          fragment (its `workflows` list holding that one entry) and apply it
+          with `{{ww.executable}} setup update <name> <fragment>`, which
+          edits the definition in force where it is written. Never
           edit ww's configuration files yourself. Check the fragment with
           `{{ww.executable}} setup apply {{ww.documents.setup_proposal}} --for
-          me --dry-run` until it passes. Show the operator what each piece does
+          me --dry-run` (or `setup update <name> <fragment> --dry-run`) until
+          it passes. Show the operator what each piece does
           and why, with the dry run's list of changes, and ask where to apply
           it.
         choices:
           - for me: Apply it to my local setup.
           - for the team: Apply it to the shared setup.
+          - update: Change the existing workflow where it is defined.
           - cancel: Do not apply anything.
         saves:
           - documents.setup_proposal: >-
               The setup fragment as the operator last saw it.
       - assess: >-
-          Did the operator choose "for me" or "for the team" in the propose
-          step?
+          Did the operator choose "for me", "for the team" or "update" in the
+          propose step?
       - name: apply
         description: >-
           Place the change: `{{ww.executable}} setup apply
-          {{ww.documents.setup_proposal}} --for <me or team, as chosen> --yes`,
-          then run `{{ww.executable}} lint` and show its result. Tell the
+          {{ww.documents.setup_proposal}} --for <me or team, as chosen> --yes`
+          or, for "update", `{{ww.executable}} setup update <name>
+          {{ww.documents.setup_proposal}} --yes`, then run `{{ww.executable}} lint` and show its result. Tell the
           operator which files changed; shared ones are left uncommitted for
           them to review and commit. If `setup apply` refuses, show its message
           and stop; never place the configuration another way.

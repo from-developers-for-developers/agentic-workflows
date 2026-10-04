@@ -18,14 +18,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from ww import rule_conversion, rule_writes, setup_apply
+from ww import rule_conversion, rule_writes, setup_apply, workflow_update
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
     SETTINGS_FILE,
     WORKFLOWS_FILE,
     display_path,
+    staged_files,
 )
+from ww.config_writes import FileWrite
 from ww.defaults import PROJECT_LAUNCHER
 from ww.design_docs import read_design_document
 from ww.errors import StateError, WwError
@@ -1175,6 +1177,8 @@ def _setup(context: _Context) -> _Outcome:
     args = context.args
     root = context.storage.root
     config_path = context.storage.config_path
+    if args.setup_action == "update":
+        return _setup_update(context)
     plan = setup_apply.plan_setup(root, config_path, args.fragment, args.audience)
     # Only a change that would load is shown to the operator.
     setup_apply.validate_setup(root, config_path, plan)
@@ -1183,8 +1187,9 @@ def _setup(context: _Context) -> _Outcome:
         if args.json_output:
             return _Outcome(_json(setup_apply.plan_to_dict(plan, root, applied=False)))
         return _Outcome(
-            summary + "Dry run: the configuration would be valid; nothing was "
-            "written.\n"
+            summary
+            + "Dry run: the configuration would be valid; nothing was written.\n"
+            + _inspected_plan(context, plan.writes)
         )
     sys.stderr.write(summary)
     if not confirm_operator(
@@ -1199,6 +1204,65 @@ def _setup(context: _Context) -> _Outcome:
     setup_apply.apply_setup(plan)
     if args.json_output:
         return _Outcome(_json(setup_apply.plan_to_dict(plan, root, applied=True)))
+    return _Outcome("Applied.\n" + summary)
+
+
+def _inspected_plan(context: _Context, writes: tuple[FileWrite, ...]) -> str:
+    """The compiled plan of ``--inspect``'s workflow, as the writes would leave it."""
+    args = context.args
+    if args.inspect is None:
+        return ""
+    if args.agent is None:
+        raise StateError("--inspect needs --agent")
+    with staged_files({write.path: write.content for write in writes}):
+        configuration = load_configuration(
+            context.storage.config_path, context.extensions
+        )
+        plan = compile_workflow_plan(
+            configuration,
+            context.storage.root,
+            args.inspect,
+            args.agent,
+            None,
+            context.extensions,
+            PlanCompilationOptions(),
+            context.extensions.config,
+        )
+    return f"\nCompiled plan of {args.inspect} after this change:\n" + render_plan(
+        plan, False
+    )
+
+
+def _setup_update(context: _Context) -> _Outcome:
+    """Show a one-workflow replacement as a diff, ask, and write it validated."""
+    args = context.args
+    root = context.storage.root
+    config_path = context.storage.config_path
+    plan = workflow_update.plan_update(
+        root, config_path, args.workflow, args.fragment, args.level
+    )
+    workflow_update.validate_update(root, config_path, plan)
+    summary = workflow_update.render_plan(plan)
+    if args.dry_run:
+        if args.json_output:
+            return _Outcome(_json(workflow_update.plan_to_dict(plan, applied=False)))
+        return _Outcome(
+            summary
+            + "Dry run: the configuration would be valid; nothing was written.\n"
+            + _inspected_plan(context, (plan.write,))
+        )
+    sys.stderr.write(summary)
+    if not confirm_operator(
+        "ww setup update",
+        f"replace workflow {plan.name} in {plan.label}",
+        "Apply it?",
+        "Update",
+        assume_yes=args.yes,
+    ):
+        return _Outcome("", error="setup update cancelled", exit_code=1)
+    workflow_update.apply_update(plan)
+    if args.json_output:
+        return _Outcome(_json(workflow_update.plan_to_dict(plan, applied=True)))
     return _Outcome("Applied.\n" + summary)
 
 

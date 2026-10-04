@@ -525,6 +525,39 @@ target and keeps its permissions. When a write fails, ww puts back every file
 it already wrote, removes its temporary file, and reports the error. Nothing
 is committed.
 
+`--dry-run --inspect <workflow> --agent <agent>` also compiles that workflow as
+the change would leave it and prints its execution plan, so a draft can be
+checked, in memory, before anything is asked or written: that automation is
+ww-owned, that item scopes are valid, and that the operator meets only the
+conversations intended.
+
+### Change a workflow that is already defined
+
+`setup apply` adds definitions to ww's own setup files. To change a workflow
+the configuration already defines, in its root `ww.yaml`, in a file it
+imports, or at another level, write the complete changed workflow alone in a
+fragment (`workflows` holding that one entry, named like the workflow) and
+update it where it is written:
+
+```console
+./ww setup update review proposal.yaml --dry-run --inspect review --agent codex
+./ww setup update review proposal.yaml --level project --yes
+```
+
+The definition that wins in the composed configuration is the one edited, and
+the preview names its file and level. `--level local|project|global` selects
+that level's definition instead, and ww refuses when a higher-precedence
+definition hides it, because an edit there would report success and change
+nothing; it tells which definition is in force. Only that list item's lines
+are replaced, in ww's YAML style: the rest of the file, other definitions and
+comments included, stays byte for byte. Comments inside the replaced entry
+are lost, and the preview says so. ww checks that the file reloads as the old
+data with exactly that entry swapped, validates the whole configuration in
+memory, and checks that the workflow now comes from the file it wrote. The
+preview is a diff; `--yes`, `--dry-run` and `--json` work as for `apply`. A
+workflow only ww ships, or one defined nowhere, is refused: define or
+override it with `setup apply`. Nothing is committed.
+
 ## Inspect the project
 
 `ww inspect` prints a read-only profile of the checkout: facts about how the
@@ -597,8 +630,9 @@ for one of them.
 | --- | --- | --- |
 | `ww-setup` | — | The guide. Asks once, in its opening message, which path to take: Express (learn-project, then suggest told to derive defaults) or Guided (learn-project, then suggest, which asks a few process questions), and records `setup.done` at the end, also when everything is declined. Narration (`explain`) is never asked; it is recorded only when the operator says they want it. Once set up, it offers the ones below instead. |
 | `ww-learn-project` | `ww-learn-project` | Learns the repository: what it is for, and how its work is organised. It reads an existing `project.md` first, so a rerun refreshes it. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, how and where those commands run (on the host or through a container exec, virtual environment or task runner, given as an exact argument list, and whether each worktree has its own environment), the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, the workflows and conventions already in use, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file but `project.md`. |
-| `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, and reads the [specification](specification.md), this guide and the [examples](examples.md) for what a setup can be made of. In the guided path it asks a few process questions: what is painful, what outcome would help, where the operator wants to be involved and what may run automatically, skipping what the project already answers. Then it designs a minimal setup with the operator in one set of questions, proposes it in full, with the step features each kind of work calls for (an `items` step for cases, interactive steps and the operator page for what the operator performs, a document or item fields for a template such as a test case, a loop for work repeated until a condition holds), shows it with `setup apply --dry-run`'s list of changes, walks through a realistic task, and places it on confirmation; see below. |
+| `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, and reads the [specification](specification.md), this guide and the [examples](examples.md) for what a setup can be made of. In the guided path it asks a few process questions: what is painful, what outcome would help, where the operator wants to be involved and what may run automatically, skipping what the project already answers. Then it designs a minimal setup with the operator in one set of questions, proposes it in full, with the step features each kind of work calls for (an `items` step for cases, interactive steps and the operator page for what the operator performs, a document or item fields for a template such as a test case, a loop for work repeated until a condition holds), shows it with `setup apply --dry-run`'s list of changes, walks through a realistic task, and places it on confirmation; see below. It follows one method per proposed workflow: trigger, result and operator involvement; the smallest structure; concise YAML with a walkthrough and a failure path; validation with the compiled plan inspected; then apply. Commands come from repository evidence, never guessed. |
 | `ww-refresh` | `ww-learn-project` | Runs the project learning again; see below. |
+| `ww-wizard` | — | Shapes the setup with the operator: asks which of four branches (create a workflow, change an existing workflow, create or improve rules, choose an approach) unless the request says, adapts the depth of its questions, reads the `ww docs` sections, challenges needless complexity with a simpler alternative, drafts, validates with `--dry-run --inspect`, and places the change with `setup apply` or, for an existing workflow, `setup update` at the level `discover` reports. Rule work goes to the rules skills. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
 | `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It automatically creates a branch from `extensions.ww/git.base_branches.default`, which must be configured, and follows ww/git worktree settings, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
