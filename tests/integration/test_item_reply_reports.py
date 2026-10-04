@@ -269,3 +269,32 @@ def test_a_failed_assertion_saves_and_reports_nothing(tmp_path: Path) -> None:
     item = _items(service)["c1"]
     assert item.field("reply_id") is None
     assert not item.reported
+
+
+AGENT_HOOKED = "handlers:\n  - review-reply: Review the reply for {{ww.item.id}}.\n" + (
+    WORKFLOW.replace(
+        "              saves:\n",
+        "              hooks:\n"
+        "                after_complete:\n"
+        "                  - review-reply: ~\n"
+        "              saves:\n",
+    )
+)
+
+
+def test_an_agent_hook_ending_the_report_stage_reports_the_item(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path, AGENT_HOOKED)
+    page = service.complete(TASK, artifact="started", summary_for_next="Done.")
+
+    seen: list[str] = []
+    while page.item_name == "review-reply":
+        seen.append(page.action_text)
+        reported = [entry.id for entry in _items(service).values() if entry.reported]
+        assert reported == [f"c{n}" for n in range(1, len(seen))]
+        page = service.complete(TASK, artifact="reviewed", summary_for_next="Done.")
+
+    assert len(seen) == 2
+    assert page.item_name == "finish"
+    assert all(entry.reported for entry in _items(service).values())

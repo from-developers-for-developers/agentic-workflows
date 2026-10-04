@@ -1312,8 +1312,10 @@ Every declared field is required, so empty output fails the stage.
 
 After a zero exit and passing assertions, the field values and the stage
 completion are committed together; a `report` stage marks its item `reported`
-in that same commit, but only with the last report-phase stage of the item in
-the pass, and only that item. A nonzero exit, a failed assertion, or an empty
+in that same commit, but only with the last plan item of the report stage's
+lifecycle (its step, handler-group members and completion hooks), whoever owns
+that item, and only that item. A report stage in which ww runs nothing is still
+reported by its agent with `update-item --reported=true`. A nonzero exit, a failed assertion, or an empty
 required value never reports the item, and the failed stage can be retried.
 ww does not derive `processed_item` or `actual_solution` from stdout; analysis
 and resolution commands rely on `update-item` or existing records, and the

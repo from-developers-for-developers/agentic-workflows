@@ -51,6 +51,31 @@ def is_pass_stage(item: PlanItem) -> bool:
     )
 
 
+def reports_item_on_completion(plan: WorkflowPlan, cursor: int) -> bool:
+    """Whether completing ``plan.items[cursor]`` finishes an automatic report.
+
+    A report stage's lifecycle is its step, its handler-group members and its
+    completion hooks: the plan items of one item and pass with the report
+    operation.  When ww runs any of them, the item is reported by the last one
+    to complete, whoever owns that last item, so no agent bookkeeping is
+    needed.  A report stage that ww runs none of is reported by its agent
+    with ``update-item --reported=true``, as before.
+    """
+    current = plan.items[cursor]
+    if current.item_operation != "report_item" or current.item_id is None:
+        return False
+    lifecycle = [
+        other
+        for other in plan.items
+        if other.item_id == current.item_id
+        and other.item_pass == current.item_pass
+        and other.item_operation == "report_item"
+    ]
+    return lifecycle[-1].id == current.id and any(
+        other.owner == "ww" for other in lifecycle
+    )
+
+
 def leaving_pass(plan: WorkflowPlan, cursor: int) -> str | None:
     """The pass whose expanded stages end right before ``cursor``, if any.
 

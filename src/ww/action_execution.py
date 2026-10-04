@@ -43,6 +43,7 @@ from ww.extensions import (
     parse_reference,
 )
 from ww.interpolation import dependencies, interpolate
+from ww.item_passes import reports_item_on_completion
 from ww.items import WorkItem
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
@@ -640,7 +641,7 @@ class ActionExecutor:
         with its last report-phase stage, after this completion commits.
         Returns ``None`` when the command changes no item.
         """
-        reports = item.item_operation == "report_item" and item.item_id is not None
+        reports = reports_item_on_completion(snapshot.plan, state.cursor)
         if not item.update_item and not reports:
             return None
         if item.item_id is None or self.commit_items is None:
@@ -670,7 +671,7 @@ class ActionExecutor:
             updated = updated.with_fields(
                 {field.name: value for field in item.update_item}
             )
-        if reports and not _more_report_stages(snapshot.plan, state.cursor, item):
+        if reports:
             updated = replace(updated, reported=True)
         if updated == items[index]:
             return None
@@ -793,21 +794,6 @@ class ActionExecutor:
         state = self.project_state(state, snapshot.plan)
         self.commit(state, snapshot)
         return state
-
-
-def _more_report_stages(plan: WorkflowPlan, cursor: int, item: PlanItem) -> bool:
-    """Whether the report stage's lifecycle still has a later plan item.
-
-    A stage's handler-group members and its completion hooks are plan items of
-    the same item, pass and report operation, so the item is reported only by
-    the last of them, once the whole stage has completed.
-    """
-    return any(
-        later.item_id == item.item_id
-        and later.item_pass == item.item_pass
-        and later.item_operation == "report_item"
-        for later in plan.items[cursor + 1 :]
-    )
 
 
 def replace_command(
