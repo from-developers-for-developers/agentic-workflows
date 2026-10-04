@@ -135,6 +135,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "interrupted",
         "check",
         "rule",
+        "requirements",
     }
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
@@ -1044,6 +1045,39 @@ def _status(context: _Context) -> _Outcome:
     )
 
 
+def _requirements(context: _Context) -> _Outcome:
+    args = context.args
+    recorded = context.service.requirements(context.task_id, args.run_id)
+    if args.json_output:
+        return _Outcome(_json(recorded.to_dict()))
+    lines = [f"# {recorded.task_id} · requirements", ""]
+    lines.append(recorded.text or "No requirements were recorded.")
+    if recorded.amendments:
+        lines.extend(["", "## Amendments, oldest first", ""])
+        lines.extend(
+            f"- {entry.at} · {entry.role}: {entry.text}"
+            for entry in recorded.amendments
+        )
+    return _Outcome("\n".join(lines) + "\n")
+
+
+def _amend(context: _Context) -> _Outcome:
+    args = context.args
+    amendment = context.service.amend(
+        context.task_id,
+        args.amendment,
+        caller_role=args.role,
+        assignment=args.assignment,
+    )
+    if args.json_output:
+        return _Outcome(_json(amendment.to_dict()))
+    return _Outcome(
+        f"Recorded an amendment to the requirements of {context.task_id} "
+        f"({amendment.role}, {amendment.at}). Later pages list it under the "
+        "task requirements.\n"
+    )
+
+
 def _instruction(context: _Context) -> _Outcome:
     args = context.args
     return _with_interruption(
@@ -1465,6 +1499,8 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "fail": _fail,
     "status": _status,
     "instruction": _instruction,
+    "requirements": _requirements,
+    "amend": _amend,
     "metadata": _metadata,
     "documents": _documents,
     "onboarding": _onboarding,

@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ww.amendments import Amendment
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.contracts import (
@@ -387,6 +388,13 @@ class Instruction:
     loop_name: str | None = None
     # The task requirements saved by ``init``, repeated to every worker.
     task_requirements: str | None = None
+    # The full requirements are printed on the task's first work page; later
+    # pages point at ``requirements_command`` instead.
+    requirements_in_full: bool = True
+    requirements_command: str | None = None
+    # Amendments appended to the requirements, oldest first; every page lists
+    # them in full.
+    task_amendments: tuple[Amendment, ...] = ()
     # The most recently completed step's handover and artifact reference, so a
     # worker knows what was just done.  Hooks and the summary never qualify.
     previous_step: str | None = None
@@ -560,6 +568,9 @@ class Instruction:
             "loop_limit_reached": self.loop_limit_reached,
             "loop_name": self.loop_name,
             "task_requirements": self.task_requirements,
+            "requirements_in_full": self.requirements_in_full,
+            "requirements_command": self.requirements_command,
+            "task_amendments": [entry.to_dict() for entry in self.task_amendments],
             "previous_step": self.previous_step,
             "previous_step_artifact": self.previous_step_artifact,
             "previous_step_summary": self.previous_step_summary,

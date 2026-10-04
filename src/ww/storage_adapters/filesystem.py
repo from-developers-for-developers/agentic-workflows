@@ -11,6 +11,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ww.amendments import Amendment
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX
 from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
@@ -249,6 +250,33 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             self._shared_items_path(task_id), json.dumps(payload, indent=2) + "\n"
         )
 
+    def read_amendments(self, task_id: str) -> tuple[Amendment, ...]:
+        path = self._amendments_path(task_id)
+        if not path.exists():
+            return ()
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or raw.get("task_id") != task_id:
+                raise ValueError("amendments have a mismatched task ID")
+            entries = raw.get("amendments", [])
+            if not isinstance(entries, list):
+                raise ValueError("amendments must be a list")
+            return tuple(Amendment.from_dict(entry) for entry in entries)
+        except (OSError, ValueError) as error:
+            raise StateError(
+                f"cannot read amendments of {task_id!r}: {error}"
+            ) from error
+
+    def append_amendment(self, task_id: str, amendment: Amendment) -> None:
+        amendments = (*self.read_amendments(task_id), amendment)
+        payload = {
+            "task_id": task_id,
+            "amendments": [entry.to_dict() for entry in amendments],
+        }
+        self.locks.atomic_write(
+            self._amendments_path(task_id), json.dumps(payload, indent=2) + "\n"
+        )
+
     def _write_task_metadata_payload(self, metadata: TaskMetadata) -> None:
         payload: dict[str, object] = {"task_id": metadata.task_id}
         if metadata.values:
@@ -270,6 +298,7 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             self._state_path(task_id),
             self._metadata_path(task_id),
             self._shared_items_path(task_id),
+            self._amendments_path(task_id),
         )
         for owned in owned_paths:
             if owned.exists() and not owned.is_symlink() and owned.is_file():
@@ -312,6 +341,9 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
 
     def _metadata_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "metadata.json"
+
+    def _amendments_path(self, task_id: str) -> Path:
+        return self.tasks_path / task_id / "amendments.json"
 
     def _shared_items_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "items.json"

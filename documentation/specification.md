@@ -449,6 +449,15 @@ passed task requirements with corrected grammar and style, without analysis or
 planning. It always produces an artifact, uses low reasoning, and does not
 inherit the workflow profile.
 
+Pages print the recorded requirements in full once, on the first instruction that
+asks for work, and later pages point at `requirements <task> [--json]`, which
+prints them again with their amendments. `amend <task> --requirements TEXT [--role ROLE]`
+appends a timestamped amendment (at most 1000 characters, recorded with the caller
+role or `operator`); it never rewrites the original and is refused for a completed
+task. Amendments are shown on every page, newest last. The instruction JSON keeps
+`task_requirements` and adds `requirements_in_full`, `requirements_command`, and
+`task_amendments`.
+
 The implicit step otherwise participates in the standard step lifecycle.
 `before_start_workflow` runs once before `init`; it belongs at global or workflow
 scope and does not accept a `steps` filter. Use `before_start` for

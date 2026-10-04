@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ww.agents import choice_mechanism
+from ww.amendments import Amendment
 from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
@@ -67,6 +68,7 @@ from .commands import (
     interact_commands,
     next_command,
     recovery_commands,
+    requirements_command,
     start_child_command,
     update_child_command,
 )
@@ -119,6 +121,16 @@ class _Selection:
             (record.selected_reasoning if record else None)
             or state.assignment_selected_reasoning,
         )
+
+
+@dataclass(frozen=True)
+class _RequirementsPage:
+    """What one page shows of the task's requirements and amendments."""
+
+    text: str | None = None
+    in_full: bool = True
+    command: str | None = None
+    amendments: tuple[Amendment, ...] = ()
 
 
 class InstructionBuilder:
@@ -373,10 +385,14 @@ class InstructionBuilder:
             text += "\n\nFull command output:\n" + "\n".join(
                 f"- `{self.root / reference}`" for reference in references
             )
+        page = self._requirements_page(state, plan, item)
         return replace(
             _base(state, item, item_status="in_progress" if active else "pending"),
             action_text=text,
-            task_requirements=self._requirements(state, plan),
+            task_requirements=page.text,
+            requirements_in_full=page.in_full,
+            requirements_command=page.command,
+            task_amendments=page.amendments,
             working_directory=str(workspace or self.root),
             profile_instruction=profile_instruction(item, self.root),
             handler_repair={
@@ -642,7 +658,31 @@ class InstructionBuilder:
             )
         return tuple(tasks)
 
-    def _requirements(self, state: ExecutionState, plan: WorkflowPlan) -> str | None:
+    def _requirements_page(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> _RequirementsPage:
+        """The requirements and amendments an item's page carries.
+
+        The full requirements print on the first page that asks an agent for
+        work; every later page points at the command that prints them again.
+        The amendments are short and print on every page.
+        """
+        first = next(
+            (
+                entry
+                for entry in plan.items
+                if entry.owner == "agent" and entry.step != INIT_STEP_NAME
+            ),
+            None,
+        )
+        return _RequirementsPage(
+            self.requirements(state, plan),
+            first is None or item.id == first.id,
+            requirements_command(state.task_id),
+            self.tasks.read_amendments(state.task_id),
+        )
+
+    def requirements(self, state: ExecutionState, plan: WorkflowPlan) -> str | None:
         """The requirements ``init`` saved, so every worker reads the user's ask."""
         record = next(
             (
@@ -895,6 +935,11 @@ class InstructionBuilder:
             state.working_directory,
             {**dict(state.workflow_values), **self.task_values(state, plan)},
         )
+        requirements = (
+            self._requirements_page(state, plan, item)
+            if item.step != INIT_STEP_NAME
+            else _RequirementsPage()
+        )
         return replace(
             _base(state, item, item_status=record.status),
             action_text=action_text(
@@ -928,9 +973,10 @@ class InstructionBuilder:
             loop_name=loop_round[0] if loop_round else None,
             loop_iteration=loop_round[1] if loop_round else None,
             max_rounds=loop_round[2] if loop_round else None,
-            task_requirements=(
-                self._requirements(state, plan) if item.step != INIT_STEP_NAME else None
-            ),
+            task_requirements=requirements.text,
+            requirements_in_full=requirements.in_full,
+            requirements_command=requirements.command,
+            task_amendments=requirements.amendments,
             previous_step=previous.step if previous else None,
             previous_step_artifact=(
                 str((self.root / previous.artifact).resolve()) if previous else None

@@ -158,6 +158,11 @@ def dispute_command(
     )
 
 
+def requirements_command(task_id: str) -> str:
+    """Print the task's requirements and their amendments."""
+    return _command("requirements", _arg(task_id))
+
+
 def start_child_command(task_id: str, child_id: str) -> str:
     return _command("start-child", _arg(task_id), _arg(child_id))
 

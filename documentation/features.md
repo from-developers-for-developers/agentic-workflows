@@ -1505,9 +1505,18 @@ carries `--role manager`, and the preview before it says that no worker is
 selected. Every pending-input page also lists, under "Work these values
 describe", the handovers of the steps completed since that handler last ran
 in the run, so a commit message names this round's work rather than repeating
-an earlier one. Every worker instruction also repeats the requirements saved by
-`init` under "Task requirements", so the user's wording reaches each worker
-without the manager adding commentary, and states that ww writes the artifact
+an earlier one. The first instruction that asks for work shows the requirements saved by
+`init` in full under "Task requirements", so the user's wording reaches the worker
+without the manager adding commentary; later pages carry a one-line pointer to
+`ww requirements <task>`, which prints them again (JSON pages keep
+`task_requirements` and add `requirements_in_full` and `requirements_command`).
+A paragraph the work instruction already quotes verbatim is shown there only.
+`ww amend <task> --requirements "<text>" [--role ROLE]` appends a short
+(at most 1000 characters), timestamped amendment recording who made it (the
+caller role, or `operator`) and never rewrites the original; every page lists the
+amendments, newest last, under "Task requirements" (JSON: `task_amendments`), and
+`ww requirements` prints them after the original. A completed task refuses an
+amendment. Each page also states that ww writes the artifact
 from the completion command, never the worker under `.ww`. It then shows, under
 "Previous step result", the handover of the step completed most recently
 before this one. Completing an ordinary step requires

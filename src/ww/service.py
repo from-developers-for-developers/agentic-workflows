@@ -19,6 +19,7 @@ from ww.actions import (
     PlannedAction,
     actions,
 )
+from ww.amendments import MAX_AMENDMENT_LENGTH, Amendment, TaskRequirements
 from ww.assessments import pending_assessment
 from ww.assignments import (
     active_assignment,
@@ -2330,6 +2331,52 @@ class WorkflowService:
             return summary, None
         state, snapshot = self.runs.resolve(task_id, runs, run_id)
         return self.render(state, snapshot), (state, snapshot)
+
+    def requirements(self, task_id: str, run_id: str | None = None) -> TaskRequirements:
+        """The requirements ``init`` recorded, with their amendments, read only."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id, run_id)
+        return TaskRequirements(
+            task_id,
+            self.instructions.requirements(state, snapshot.plan),
+            self.tasks.read_amendments(task_id),
+        )
+
+    def amend(
+        self,
+        task_id: str,
+        text: str,
+        *,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+    ) -> Amendment:
+        """Append a timestamped amendment to the task's requirements.
+
+        The recorded requirements are never rewritten.  ``caller_role`` is who
+        recorded it; without one the operator at the terminal did.
+        """
+        self._validate_caller_role(caller_role)
+        validate_task_id(task_id)
+        amendment_text = text.strip()
+        if not amendment_text:
+            raise StateError("amend requires non-empty --requirements")
+        if len(amendment_text) > MAX_AMENDMENT_LENGTH:
+            raise StateError(
+                f"an amendment is a short clarification (at most "
+                f"{MAX_AMENDMENT_LENGTH} characters); the original requirements "
+                "stay as recorded"
+            )
+        with self.tasks.lock_task(task_id):
+            self._authorize_worker(task_id, caller_role, assignment)
+            state, _ = self.load(task_id)
+            if state.status == "completed":
+                raise StateError(
+                    f"task {task_id!r} is already completed; its requirements "
+                    "cannot be amended"
+                )
+            amendment = Amendment(_now(), caller_role or "operator", amendment_text)
+            self.tasks.append_amendment(task_id, amendment)
+        return amendment
 
     def documents_listing(self, task_id: str | None) -> list[dict[str, object]]:
         """Describe every declared document, with its file and last update."""

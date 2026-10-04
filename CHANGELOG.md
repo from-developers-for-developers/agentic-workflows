@@ -21,6 +21,12 @@ is in [documentation/limitations.md](documentation/limitations.md).
   an omitted or empty value inherits), through the same code as `start-child`. A launch failure stops the
   stage for the operator. Rejected anywhere else. `next` on a parent whose launch failed now reaches
   `--retry` instead of repeating the failure page. Instruction pages and JSON gain `notices`.
+- Pages print the task requirements in full once, on the first instruction that asks for work; later pages
+  carry a one-line pointer to the new `ww requirements <task>`. A paragraph the work instruction already
+  quotes is not printed twice. JSON keeps `task_requirements` and adds `requirements_in_full`,
+  `requirements_command` and `task_amendments`.
+- New `ww amend <task> --requirements "<text>"` appends a timestamped, short amendment recording the caller
+  role, never rewriting the original; every page lists amendments newest last. Refused on a completed task.
 
 ## 2026-10-04
 

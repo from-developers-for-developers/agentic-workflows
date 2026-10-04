@@ -1342,6 +1342,13 @@ renders the launch from the fresh child record and calls the same
 coordinator item, and a parent already failed is no longer refreshed back to
 waiting while the child it could not launch has no run.
 
+Amendments to a task's requirements live behind their own storage port
+(`TaskAmendmentStorage`: `read_amendments`, append-only `append_amendment`), per
+task rather than per run, and are removed with the task. The instruction builder
+decides what a page shows of the requirements (`_RequirementsPage`: in full on
+the first page that asks an agent for work, a pointer afterwards, amendments
+always); the Markdown renderer only presents it.
+
 Child launch settings are independent of the parent session: `start-child` can
 override workflow, runtime, agent, model, and reasoning. The service validates the
 target before the coordinator persists the launch, including the single-level

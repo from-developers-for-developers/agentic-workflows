@@ -569,6 +569,27 @@ def build_parser() -> argparse.ArgumentParser:
         "status", parents=[with_run], help="Show a compact current-task summary."
     )
     status.add_argument("task_id")
+    requirements = subparsers.add_parser(
+        "requirements",
+        parents=[with_run],
+        help="Print the task's recorded requirements and their amendments.",
+    )
+    requirements.add_argument("task_id")
+    amend = subparsers.add_parser(
+        "amend",
+        parents=[_shared("json", "role")],
+        help="Append a timestamped amendment to the task's requirements.",
+    )
+    amend.add_argument("task_id")
+    amend.add_argument(
+        "--requirements",
+        required=True,
+        dest="amendment",
+        help=(
+            "A short clarification to append; the recorded requirements are "
+            "never rewritten."
+        ),
+    )
     instruction = subparsers.add_parser(
         "instruction",
         parents=[with_run],

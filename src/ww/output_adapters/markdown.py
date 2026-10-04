@@ -763,12 +763,57 @@ def _profile(lines: Lines, instruction: Instruction) -> None:
         lines.extend(["", "### Profile", "", instruction.profile_instruction])
 
 
+# A paragraph shorter than this is not worth replacing by a pointer.
+_DUPLICATE_PARAGRAPH = 80
+
+
 def _task_requirements(lines: Lines, instruction: Instruction) -> None:
-    """Repeat the saved requirements, so the user's wording reaches the worker."""
-    if instruction.item_status != "in_progress" or not instruction.task_requirements:
+    """Show the requirements once, then point at them; amendments always show.
+
+    The first work page carries the user's wording in full; later pages name
+    the command that prints it again.  What the work instruction already
+    quotes verbatim is not printed twice.
+    """
+    if instruction.item_status != "in_progress":
+        return
+    text = instruction.task_requirements
+    amendments = instruction.task_amendments
+    if not text and not amendments:
         return
     _append_section(lines, "Task requirements")
-    lines.append(instruction.task_requirements)
+    if text and instruction.requirements_in_full:
+        lines.append(_without_duplicates(text, instruction.action_text))
+    elif text and instruction.requirements_command:
+        lines.append(
+            "The full task requirements were shown on the task's first page; "
+            f"print them again with `{instruction.requirements_command}`."
+        )
+    if amendments:
+        lines.extend(["", "Amendments to the requirements, oldest first:", ""])
+        lines.extend(
+            f"- {entry.at} · {entry.role}: {entry.text}" for entry in amendments
+        )
+
+
+def _without_duplicates(requirements: str, work: str | None) -> str:
+    """The requirements with every paragraph the work text already quotes cut.
+
+    Only whole paragraphs found verbatim in the work instruction are replaced,
+    so nothing the work instruction does not repeat is ever dropped.
+    """
+    if not work:
+        return requirements
+    paragraphs = requirements.split("\n\n")
+    marker = "(quoted in the work instruction below)"
+    kept: list[str] = []
+    for paragraph in paragraphs:
+        quoted = len(paragraph.strip()) >= _DUPLICATE_PARAGRAPH and (
+            paragraph.strip() in work
+        )
+        if quoted and kept[-1:] == [marker]:
+            continue
+        kept.append(marker if quoted else paragraph)
+    return "\n\n".join(kept)
 
 
 def _previous_step_result(lines: Lines, instruction: Instruction) -> None:

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from ww.actions import PlannedAction, Prompt
+from ww.amendments import Amendment
 from ww.errors import StateError
 from ww.execution_models import (
     PLAN_SCHEMA_VERSION,
@@ -51,10 +52,27 @@ def test_public_storage_adapter_requires_every_executor_write_capability() -> No
         "read_task_metadata",
         "read_shared_items",
         "write_shared_items",
+        "read_amendments",
+        "append_amendment",
         "write_task_metadata",
         "remove_task",
         "task_ids",
     }
+
+
+def test_amendments_append_in_order_and_go_with_the_task(
+    adapter: TaskStorageAdapter,
+) -> None:
+    first = Amendment("2026-10-05T10:00:00+00:00", "manager", "Also cover the CLI.")
+    second = Amendment("2026-10-05T11:00:00+00:00", "operator", "Skip the docs.")
+
+    assert adapter.read_amendments("PROJ-1") == ()
+    adapter.append_amendment("PROJ-1", first)
+    adapter.append_amendment("PROJ-1", second)
+    assert adapter.read_amendments("PROJ-1") == (first, second)
+    assert adapter.read_amendments("PROJ-2") == ()
+    adapter.remove_task("PROJ-1")
+    assert adapter.read_amendments("PROJ-1") == ()
 
 
 def test_task_ids_lists_top_level_tasks_without_requests(
