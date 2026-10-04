@@ -307,7 +307,7 @@ def test_a_first_setup_asks_each_thing_once() -> None:
         )
 
 
-def test_interviews_and_reviews_converse_until_ww_done_and_record_once() -> None:
+def test_interviews_and_reviews_converse_until_contextual_completion() -> None:
     for workflow, step in (
         ("ww-learn", "interview-me"),
         ("ww-learn", "interview-role"),
@@ -317,7 +317,11 @@ def test_interviews_and_reviews_converse_until_ww_done_and_record_once() -> None
         ("ww-suggest", "propose"),
     ):
         description = _step(workflow, step).description
-        assert "until the operator says `ww done`" in description, step
+        assert any(
+            phrase in description
+            for phrase in ("clear contextual completion", "intent to finish is clear")
+        ), step
+        assert "ask naturally if it is ambiguous" in description, step
         assert "record the conversation once" in description, step
         assert "at most one follow-up" not in description, step
     for interview in ("interview-me", "interview-role", "interview-team"):
@@ -326,7 +330,10 @@ def test_interviews_and_reviews_converse_until_ww_done_and_record_once() -> None
         assert "follow up where an answer deserves it" in description
     for skill in ("ww-setup", "ww-learn"):
         text = SKILLS[skill]
-        assert "`ww done`" in text
+        assert "clear contextual" in text or "intent to finish" in text
+        assert "request_user_input_async" in text
+        assert "timeout" in text and "dismissal" in text
+        assert "preselected value is not an answer" in text
         assert "record it once" in text or "record it, once" in text
         assert "as you go" not in text
         assert "at most one follow-up" not in text
@@ -428,7 +435,7 @@ def test_ww_suggest_proposes_a_complete_setup_shaped_by_the_project() -> None:
         "`recommended_next_workflow`",
         "ext/ww/git/handlers:is-git-clean",
         "--dry-run",
-        "until the operator says `ww done`",
+        "intent to finish is clear",
         "each piece with its evidence in one clause",
         "`hotfix/*` branches merged this year",
         "walk through the main lane",
@@ -575,7 +582,8 @@ def test_ww_express_infers_the_four_documents_and_confirms_them_once() -> None:
 
     confirm = _step("ww-express", "confirm")
     assert confirm.interactive
-    assert "until the operator says `ww done`" in confirm.description
+    assert "clear contextual completion" in confirm.description
+    assert "ask naturally if it is ambiguous" in confirm.description
     assert "record the conversation once" in confirm.description
     assert "nobody is named without asking" in confirm.description
     updates = {update.name: update.instruction for update in confirm.update_document}

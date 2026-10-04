@@ -88,8 +88,9 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
             '--choice="<label or number>" --end',
             "<<'EOF'",
             "completion is refused while it is open",
-            "say `ww done` when you are finished",
-            "`Move on` or `I have more`",
+            "clear contextual completion",
+            "ask naturally whether they want to continue or finish",
+            "`Done for today` means pause",
         ),
     },
     "step-rules": {

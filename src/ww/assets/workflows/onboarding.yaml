@@ -109,8 +109,9 @@ workflows:
                         your turn and wait for the answers; "skip" is a valid
                         answer to any of them. Then converse: follow up where an
                         answer deserves it and say what it implies for the
-                        setup, until the operator says `ww done` or is clearly
-                        done; then record the conversation once. Cover: (1) their
+                        setup. Treat clear contextual completion as permission
+                        to finish; ask naturally if it is ambiguous, then
+                        record the conversation once. Cover: (1) their
                         personality and working style: how they like to
                         communicate, how they decide, how much autonomy they
                         give an agent, what annoys them; (2) their own pain
@@ -159,8 +160,9 @@ workflows:
                         your turn and wait for the answers; "skip" is a valid
                         answer to any of them. Then converse: follow up where an
                         answer deserves it and say what it implies for the
-                        setup, until the operator says `ww done` or is clearly
-                        done; then record the conversation once. Cover: (1) their role and
+                        setup. Treat clear contextual completion as permission
+                        to finish; ask naturally if it is ambiguous, then
+                        record the conversation once. Cover: (1) their role and
                         responsibilities here; (2) what parts of the system or
                         process they own; (3) who they work with and hand work
                         over to; (4) what they are measured on, or what "done"
@@ -206,9 +208,10 @@ workflows:
                         one plain sentence; end your turn and wait for the
                         answers, "skip" being a valid answer to any. Then
                         converse: follow up where an answer deserves it and say
-                        what it implies for the setup, until the operator says
-                        `ww done` or is clearly done; then record the
-                        conversation once. About the team: what it does, its size and roles, how it works
+                        what it implies for the setup. Treat clear contextual
+                        completion as permission to finish; ask naturally if
+                        it is ambiguous, then record the conversation once.
+                        About the team: what it does, its size and roles, how it works
                         (planning, reviews, releases, on-call), its pain
                         points, technical and organisational, what it expects
                         from AI and agents, and what it expects from ww, which
@@ -307,9 +310,9 @@ workflows:
           change. Remind them that team.md and company.md are shared with the
           team: they carry nothing personal or confidential, and nobody is
           named without asking. Then converse: the operator corrects, adds or
-          removes, and you revise the drafts, until the operator says `ww
-          done`; then record the conversation once and write the four files
-          as confirmed.
+          removes, and you revise the drafts. Treat clear contextual completion
+          as permission to finish; ask naturally if it is ambiguous, then
+          record the conversation once and write the four files as confirmed.
         saves:
           - documents.me: >-
               A short Markdown description of the operator, one section per
@@ -423,8 +426,9 @@ workflows:
           Show the operator the setup facts first, each with its evidence or
           "not found", then a short summary of the other findings and the
           candidate rules, and ask whether it is right. Discuss and revise
-          until the operator says `ww done`, then record the conversation once
-          and write {{ww.documents.project}}. It is shared with the team
+          until the operator's intent to finish is clear; ask naturally if it
+          is ambiguous, then record the conversation once and write
+          {{ww.documents.project}}. It is shared with the team
           through the repository, so record nothing secret, such as tokens,
           hostnames or credentials.
         choices:
@@ -501,8 +505,9 @@ workflows:
           list the options under an item that has a few. What the profile
           already answers is stated as decided, not asked. End your turn and
           wait for the answers; "skip" keeps a default. Then discuss: follow
-          up where an answer deserves it and revise the decisions, until the
-          operator says `ww done`; then record the conversation once. Cover:
+          up where an answer deserves it and revise the decisions. Treat clear
+          contextual completion as permission to finish; ask naturally if it
+          is ambiguous, then record the conversation once. Cover:
           (1) the integration branch and the lanes, from the branch patterns
           actually present: feature work, plus a hotfix, bugfix or release
           lane only where such branches exist or the operator asks for one,
@@ -650,8 +655,9 @@ workflows:
               does at each and where ww runs checks automatically without an
               agent prompt, from the fragment, in ten lines or fewer. Ask
               whether to apply it; discuss and take changes, checking and
-              showing it again, until the operator says `ww done`; then record
-              the conversation once with their pick, apply or cancel.
+              showing it again until the operator's intent to finish is clear;
+              ask naturally if it is ambiguous, then record the conversation
+              once with their pick, apply or cancel.
             choices:
               - apply: Apply it as shown.
               - cancel: Do not apply anything.

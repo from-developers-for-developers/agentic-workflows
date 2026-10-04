@@ -445,8 +445,9 @@ for one of them.
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
 The questions are interactive steps: an interview opens with its questions in
-one numbered message, then converses until the operator says `ww done`, and a
-pick between a few answers goes through the agent's own question tool. `ww-setup` asks about
+one numbered message, then converses until the operator's intent to finish is
+clear, asking naturally if it is ambiguous. A pick between a few answers goes
+through the host's native question tool when available. `ww-setup` asks about
 narration and which workflows to run in one message and passes the choice on,
 so `ww-learn` does not ask it again. Every question can be skipped. An
 interview writes its file from the answers and shows it, without a separate
@@ -2371,16 +2372,14 @@ Mark such a step `interactive: true`:
   interactive: true
 ```
 
-The conversation comes first and is not interrupted by ww commands. The agent
-holds it in its own session: it presents, asks, listens, follows up and
-proposes, and records nothing while they talk. It opens by telling the
-operator how the conversation ends: "say `ww done` when you are finished with
-this; I will then record our conversation and move on". When the agent
-judges that the conversation has covered what the step needs, it asks
-through its question tool (a numbered list in the chat where it has none):
-`Move on` or `I have more`; `Move on`, `ww done`, or an unmistakable "we're
-done" ends it. Then one command records both sides, verbatim, and ends the
-interaction:
+The conversation comes first and is held in the session that can talk to the
+operator. The agent presents, asks, listens, responds to questions and
+corrections, and records nothing while they talk. Clear contextual completion,
+such as "done", "I'm done", "looks good, continue", or an appropriate final
+choice, lets the agent finish; if intent is ambiguous, it asks naturally
+whether to continue or finish. "Done for today" can mean pause, leaving the
+interaction open to resume later. One command records both sides, verbatim,
+and ends the interaction:
 
 ```console
 ww-agentic-workflows interact TASK-123 --role manager --transcript - --end <<'EOF'
@@ -2421,15 +2420,18 @@ items:
     - skip: Skip this test case.
 ```
 
-The page lists the choices in order and tells the agent how to offer them for
-its integration, with the question tool each agent offers: `AskUserQuestion`
-in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini CLI,
-`AskQuestion` in Cursor, `ask_question` in Antigravity, and
-`ask_user_question` in Grok CLI, where the operator picks with the keyboard.
-Several agents offer the tool only in some modes, Codex in Plan mode for
-example, so the page also says to fall back to a numbered list when the tool
-is not available; Kimi, DeepSeek, and custom agents get the numbered list
-straight away. The tool names come from the
+The page lists choices in order and tells the agent to use the host's native
+choice tool when available, according to its contract, and otherwise show a
+numbered list in chat. Codex's `request_user_input` supports structured
+options when available, including Plan mode; if a session only exposes
+`request_user_input_async`, its question is text, so include the options in
+that text, use a fresh unique task handle, and leave the pick pending until
+the operator answers. A timeout,
+dismissal, or preselected value is not an answer. The named tools for other
+integrations include `AskUserQuestion` in Claude Code, `ask_user` in Gemini
+CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, and
+`ask_user_question` in Grok CLI. Kimi, DeepSeek, and custom agents get the
+numbered list. The tool names come from the
 [askmux](https://github.com/iShaldam/askmux) question-tool matrix (MIT,
 Copyright (c) 2026 iShaldam) and the Gemini CLI documentation. The pick goes in the
 same recording call, `interact --transcript - --choice "<label or number>"

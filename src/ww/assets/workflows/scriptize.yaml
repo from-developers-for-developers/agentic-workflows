@@ -51,8 +51,9 @@ workflows:
           Show the operator every proposed check and every rule proposed as
           not convertible in one message, numbered, each with its rules, tool
           and what it will install and configure, so they approve, change or
-          drop each one. Discuss and revise until the operator says `ww
-          done`; then record the conversation once. The artifact is the
+          drop each one. Discuss and revise until the operator's intent to
+          finish is clear; ask naturally if it is ambiguous, then record the
+          conversation once. The artifact is the
           agreed list. When collect found nothing to scriptize, say so and
           offer only "nothing to do".
         choices:
@@ -96,8 +97,9 @@ workflows:
               its own, and for the rules not convertible `{{ww.executable}}
               rules decline <rule-id>... --reason "<why>" --dry-run`; show
               every preview in full. Ask which to record; discuss, take
-              changes and preview a changed command again, until the operator
-              says `ww done`. Record nothing in this step and never edit
+              changes and preview a changed command again until the operator's
+              intent to finish is clear; ask naturally if it is ambiguous.
+              Record nothing in this step and never edit
               `ww-rule-automation.json` yourself. Then record the conversation
               once with the pick. The artifact lists the exact commands to
               record, each as previewed and approved with `--yes` in the

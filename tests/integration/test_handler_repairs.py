@@ -101,7 +101,9 @@ def test_repair_is_persistent_and_retries_only_failed_handler(
         assignment=repair.assignment_token,
     )
     assert result.item_name == "C"
-    assert result.item_status == ("in_progress" if runtime == "single" else "pending")
+    assert result.item_status == (
+        "in_progress" if runtime == "single" else "pending"
+    )
     assert (tmp_path / "executions").read_text() == "A\n"
     state, snapshot = service.load("TASK-1")
     record = next(
@@ -149,28 +151,41 @@ def test_repair_attempts_retain_worker_token_and_stop_at_limit(
     assert retried.operator_reason is None
 
 
-def test_operator_policy_stops_without_repair(tmp_path: Path):
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+def test_operator_policy_stops_without_repair(tmp_path: Path, runtime: str):
     service = configured_service(
         tmp_path, workflow("shell: echo failure; exit 1", "operator")
     )
-    failed = complete_manual(service, "single")
+    failed = complete_manual(service, runtime)
     assert failed.control == "awaiting_operator"
     assert failed.operator_reason == "handler_failed"
     assert failed.handler_repair is None
     assert "failure" in failed.error
 
 
-def test_successful_automated_steps_do_not_create_repair_assignments(tmp_path: Path):
-    service = configured_service(tmp_path, workflow('shell: "true"'))
-    result = complete_manual(service, "single")
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+@pytest.mark.parametrize(
+    "command",
+    ['shell: "true"', f"argv: {json.dumps([sys.executable, '-c', 'pass'])}"],
+)
+def test_successful_automated_steps_do_not_create_repair_assignments(
+    tmp_path: Path, runtime: str, command: str
+):
+    service = configured_service(tmp_path, workflow(command))
+    result = complete_manual(service, runtime)
     assert result.item_name == "C"
-    assert result.item_status == "in_progress"
+    assert result.item_status == ("in_progress" if runtime == "single" else "pending")
     assert result.handler_repair is None
     state, _ = service.load("TASK-1")
     assert not any(
         record.repair_pending or record.repair_failures
         for record in state.item_executions
     )
+    state, snapshot = service.load("TASK-1")
+    b_item = next(item for item in snapshot.plan.items if item.name == "B")
+    b_record = state.item_executions[snapshot.plan.items.index(b_item)]
+    assert b_item.owner == "ww"
+    assert b_record.status == "completed"
 
 
 def test_repair_completion_requires_active_assignment_and_artifact(tmp_path: Path):

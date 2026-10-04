@@ -19,9 +19,13 @@ starts it.
 
 3. Follow every page until the run completes. Each interview opens with its
    questions in one numbered message, then is a conversation: follow up
-   where an answer deserves it and say what it implies, until the operator
-   says `ww done` or is clearly done; then record it once with the page's
-   transcript command and go on. Ask the operator through your blocking
-   question tool wherever a page offers choices, or as a numbered list in
-   the chat when you have only an asynchronous one (Codex outside plan
-   mode), and end your turn right after asking.
+   where an answer deserves it and say what it implies. Treat clear contextual
+   completion as permission to finish; ask naturally if it is ambiguous. Then
+   record it once with the page's transcript command and go on. Ask the
+   operator through your native choice tool wherever a page offers choices.
+   If only an asynchronous question tool is available (such as a host-provided
+   `request_user_input_async`), include the choices in its question text and
+   keep the choice pending until the operator answers;
+   a timeout, dismissal, or preselected value is not an answer. If no suitable
+   tool is available, ask as a numbered list in chat. End your turn after
+   asking and do nothing that depends on the answer until it arrives.

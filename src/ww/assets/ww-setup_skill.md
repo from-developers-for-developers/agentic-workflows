@@ -9,16 +9,20 @@ Talk to the operator in plain words. An interview opens with all of a
 subject's questions in one numbered message, each a plain sentence with its
 options listed beneath where there are a few, then becomes a conversation:
 follow up where an answer deserves it and reason aloud about what it implies
-for the setup, until the operator says `ww done` or is clearly done. Only
+for the setup, until the operator's intent to finish is clear; respond to
+corrections and questions, and ask naturally if that intent is ambiguous. Only
 then record it, once, with the transcript command the step's page shows, and
-go on. A single choice, as in the
-`choose` steps, goes through your blocking question tool where you have one
-(`AskUserQuestion` in Claude Code; `request_user_input` in Codex's plan
-mode). Either way, end your turn right after asking: do nothing else until
-the operator has answered. Where the only question tool is an asynchronous one
-(Codex outside plan mode offers `request_user_input_async`), do not use it:
-its form disappears when your turn ends. Ask in the chat instead, as a
-numbered list of the options, and end your turn. The operator sees every
+go on. A single choice, as in the `choose` steps, goes through your native
+choice tool where available (`AskUserQuestion` in Claude Code;
+`request_user_input` in Codex Plan mode). If the only available question tool
+is asynchronous (for example, a host-provided
+`request_user_input_async`), put the choices in its question text and ask for
+a label or number. Keep the choice
+pending until the operator answers; a timeout,
+dismissal, or preselected value is not an answer, and no dependent step may
+proceed. If there is no suitable question tool, ask in the chat as a numbered
+list of options. End your turn after asking and resume only when the operator
+answers. The operator sees every
 file ww writes, the setup before it is placed, and you never edit ww's
 configuration files yourself: ww's workflows place changes with
 `./ww setup apply`.

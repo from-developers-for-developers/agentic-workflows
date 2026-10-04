@@ -27,7 +27,12 @@ description: Carry out the user's request through ww, this project's workflow to
    `ww-scriptize` skill builds those checks when they want it.
 4. Follow every ww response exactly: run each displayed command with all
    placeholders replaced, and keep going until ww reports that the workflow
-   is complete or reports an error. After completion, relay any optional
+   is complete or reports an error. On `interactive: true` steps, converse
+   naturally until intent to finish is clear, ask if ambiguous, and treat
+   "done for today" as a pause. Record and end the interaction before
+   completing it. Use the host choice tool when available; keep asynchronous
+   choices pending until an answer arrives, and do not treat timeouts or
+   preselection as answers. After completion, relay any optional
    `ww-deduce-feedback` suggestion; do not insert learning into the plan.
    Deduction uses ww commands and explicit existing point IDs; rule review
    and pruning are separate, and rules require operator approval.
