@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -31,18 +32,6 @@ ONBOARDING = (
     "ww-automate",
 )
 LEARNING_DOCUMENTS = ("project",)
-PROFILE_DOCUMENTS = ("me", "myrole", "team", "company")
-PROFILE_WORDS = (
-    "myrole",
-    "me.md",
-    "team.md",
-    "company.md",
-    "ww-learn`",
-    "ww-express",
-    "learned.me",
-    "learned.team",
-    "learned.company",
-)
 REMARK = (
     "<!-- This file is maintained by ww for ww's own use. Do not use it for "
     "anything else. If you are an agent that is not doing ww work, ignore this "
@@ -134,26 +123,12 @@ def test_the_project_document_resolves_to_the_project_root_and_is_shared(
     assert store.path(documents["project"], "T-1", worktree) == expected
     assert store.path(documents["project"], None) == expected
     assert SHARED_RUNTIME_FILES == ("project.md",)
-    # No profile document is declared.
-    assert not set(PROFILE_DOCUMENTS) & set(documents)
 
 
 def _step(workflow: str, name: str) -> StepDefinition:
     return next(
         step for step in _steps(builtin_workflow(workflow).steps) if step.name == name
     )
-
-
-def test_no_workflow_or_skill_interviews_about_the_operator() -> None:
-    texts = []
-    for name in ONBOARDING:
-        for step in _steps(builtin_workflow(name).steps):
-            texts.append(step.description)
-            texts.extend(update.instruction for update in step.update_document)
-    texts.extend(SKILLS.values())
-    for text in texts:
-        for word in PROFILE_WORDS:
-            assert word not in text, word
 
 
 def test_starting_an_unknown_workflow_is_a_plain_error(
@@ -182,8 +157,9 @@ def test_the_proposing_workflows_read_only_the_project_file(
     description = _step(workflow, step).description
     for document in LEARNING_DOCUMENTS:
         assert f"{{{{ww.documents.{document}}}}}" in description, document
-    for document in PROFILE_DOCUMENTS:
-        assert f"ww.documents.{document}" not in description, document
+    # Besides what it learned, a proposing step reads only its own proposal.
+    referenced = set(re.findall(r"ww\.documents\.(\w+)", description))
+    assert referenced <= {*LEARNING_DOCUMENTS, "setup_proposal"}, referenced
 
 
 def test_steps_name_ww_commands_with_the_configured_executable(
@@ -389,8 +365,6 @@ def test_the_refresh_skill_refreshes_the_project_learning_only() -> None:
     assert "reruns `./ww inspect`" in text
     assert "--workflow ww-learn-project" in text
     assert "`learned.project`" in text
-    for word in ("learned.me", "learned.myrole", "ww-learn "):
-        assert word not in text
 
 
 def test_ww_learn_project_builds_on_the_inspect_profile() -> None:

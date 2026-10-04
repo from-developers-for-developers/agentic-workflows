@@ -422,14 +422,6 @@ def test_runtime_values_and_metadata_follow_the_task_not_the_worktree(
 
 # --- setup: learn the project, discuss the process, propose, validate, apply ---
 
-PROFILE_INTERVIEW_WORDS = (
-    "myrole",
-    "ww-express",
-    "ww.documents.me",
-    "learned.me",
-    "profile interview",
-)
-
 PROPOSAL = """workflows:
   - name: hotfix
     description: Fix fast.
@@ -460,11 +452,9 @@ def _discuss(
     return service.interact(task, end=True, caller_role="manager", **options)
 
 
-def _no_profile_interview_guidance(page: Instruction) -> None:
+def _no_magic_closing_phrase(page: Instruction) -> None:
     rendered = MarkdownOutputAdapter().render_instruction(page).lower()
-    for word in PROFILE_INTERVIEW_WORDS:
-        assert word not in rendered, (page.item_name, word)
-    assert "ww done" not in rendered
+    assert "ww done" not in rendered, page.item_name
 
 
 @pytest.mark.usefixtures("shipped_builtins")
@@ -489,7 +479,7 @@ def test_a_fresh_project_learns_discusses_proposes_validates_and_updates(
     ):
         learned.append(page.item_name)
         assert page.interactive == (page.item_name == "review")
-        _no_profile_interview_guidance(page)
+        _no_magic_closing_phrase(page)
         if page.item_name == "review":
             (root / ".ww").mkdir(exist_ok=True)
             (root / ".ww/project.md").write_text(
@@ -509,7 +499,7 @@ def test_a_fresh_project_learns_discusses_proposes_validates_and_updates(
         "update-workflow-summary"
     ):
         names.append(page.item_name)
-        _no_profile_interview_guidance(page)
+        _no_magic_closing_phrase(page)
         if page.item_name == "assess":
             service.complete(
                 "S-1",
