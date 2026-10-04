@@ -268,7 +268,7 @@ class ProfileDefinition:
 
 @dataclass(frozen=True)
 class ItemFieldUpdate:
-    """An agent-owned action's promise to set a custom field on its item.
+    """A promise to set a custom field on an item, by an agent or a command.
 
     On a per-item stage the stage's item must carry the field when the stage
     completes; on the collection step every collected item must.

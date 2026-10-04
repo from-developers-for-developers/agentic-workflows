@@ -932,6 +932,11 @@ class WorkflowPlanCompiler:
             raise ConfigurationError(
                 f"handler {handler.name!r} can update documents only when agent-owned"
             )
+        if handler.update_item and owner != "agent" and kind != "cli":
+            raise ConfigurationError(
+                f"handler {handler.name!r} can save item fields only when "
+                "agent-owned or using a shell or argv handler"
+            )
         allowed = {
             *CORE_VARIABLE_NAMES,
             *available_variables,

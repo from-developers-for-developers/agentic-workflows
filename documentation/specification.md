@@ -918,6 +918,13 @@ that names the step and the field; such a step updates items with
 saves that no step uses unbound is valid. Metadata and document saves are
 valid anywhere.
 
+A shell or argv handler in a per-item stage may declare `item.field.<name>`
+saves too, and ww then records them automatically; see
+[Automatic item saves](#automatic-item-saves). An automatic command on an
+`items` step cannot save item fields: one output cannot be distributed among
+several items, so that is a configuration error. An agent still records
+collection fields with `update-item`.
+
 An `items` step cannot also declare `steps`, `loop`, `item_phase`, or child
 tasks.
 
@@ -1240,7 +1247,7 @@ entry can only name something ww manages.
 | `metadata.<path>` | task metadata at `<path>`, read as `{{ww.metadata.<path>}}` | `complete --metadata <path>=<value>` |
 | `project_metadata.<path>` | project metadata shared by every task, read as `{{ww.project_metadata.<path>}}` | `complete --metadata project_metadata.<path>=<value>` |
 | `documents.<name>` | a root document, created or edited in place; see [Documents](#documents) | the file itself |
-| `item.field.<name>` | a custom field of the step's item; on the collection step, of every collected item. Completion is refused while any is empty. Valid only on an `items` step or within a per-item stage; see [Item field saves](#item-field-saves). | `update-item --field <name>=<value>`, several per call |
+| `item.field.<name>` | a custom field of the step's item; on the collection step, of every collected item. Completion is refused while any is empty. Valid only on an `items` step or within a per-item stage; see [Item field saves](#item-field-saves). | `update-item --field <name>=<value>`, several per call; a shell or argv handler in a per-item stage saves its stdout, see [Automatic item saves](#automatic-item-saves) |
 
 A metadata entry may add `append: true`: the path holds a list, each
 completion may pass it once per value or omit it, values are appended to what
@@ -1278,8 +1285,51 @@ saves an empty string. Each metadata entry receives the same whole output;
 Metadata is saved only after successful exit and all assertions pass. The
 completion and its publication intents are committed before publication;
 interrupted publication resumes without replaying the successful command.
-`from` is not a supported save option. Documents and item fields remain
-agent-owned.
+`from` is not a supported save option. Documents remain agent-owned.
+
+#### Automatic item saves
+
+A shell or argv handler in a per-item stage (`item_phase`, or any stage of an
+`items` pass, including its hooks and handler groups) may declare
+`item.field.<name>` saves. With exactly one current item, the same whole
+trimmed stdout convention applies: no `from`, no splitting, no structured
+extraction. When several fields (or metadata entries) are declared, each
+receives the same whole output; this is not a way to extract different fields.
+Every declared field is required, so empty output fails the stage.
+
+```yaml
+- reply:
+  item_phase: report
+  argv:
+    - python3
+    - scripts/reply-to-comment.py   # a project-owned script, not part of ww
+    - "{{ww.item.field.comment_id}}"
+    - "{{ww.item.actual_solution}}"
+    - "{{ww.item.field.reply_id}}"
+  saves:
+    - item.field.reply_id: The confirmed reply ID printed by the command.
+```
+
+After a zero exit and passing assertions, the field values and the stage
+completion are committed together; a `report` stage marks its item `reported`
+in that same commit, but only with the last plan item of the report stage's
+lifecycle (its step, handler-group members and completion hooks), whoever owns
+that item, and only that item. A report stage in which ww runs nothing is still
+reported by its agent with `update-item --reported=true`. A nonzero exit, a failed assertion, or an empty
+required value never reports the item, and the failed stage can be retried.
+ww does not derive `processed_item` or `actual_solution` from stdout; analysis
+and resolution commands rely on `update-item` or existing records, and the
+pass gate names whatever is missing. Saved field values stay on the item
+across passes.
+
+Publication of task or project metadata declared by the same handler is
+recorded as an intent in the completion and resumes after an interruption
+without rerunning the successful command. ww cannot make a remote effect
+exactly-once: if the process dies after a remote reply but before the result is
+saved locally, the next attempt runs the command again. The project's handler
+owns that reconciliation, for example by reusing the saved reply ID passed as
+an argument (`{{ww.item.field.reply_id}}`) to update the reply instead of
+creating another.
 
 ## Commands
 

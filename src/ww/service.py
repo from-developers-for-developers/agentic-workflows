@@ -74,7 +74,12 @@ from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
-from ww.item_passes import item_collection, leaving_pass, pass_gate_failures
+from ww.item_passes import (
+    item_collection,
+    leaving_pass,
+    pass_gate_failures,
+    reports_item_on_completion,
+)
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import (
@@ -319,6 +324,8 @@ class WorkflowService:
             metadata_publisher=self.metadata_publisher,
             child_values=self._child_values,
             item_values=self._item_values,
+            read_items=lambda state: self.tasks.read_items(state.task_id, state.run_id),
+            commit_items=self._commit_items,
         )
         self.recovery = RecoveryCoordinator(self.tasks, self.actions, self, _now)
         self.rule_checker = RuleChecker(self.tasks.write_command_output, _now)
@@ -721,6 +728,31 @@ class WorkflowService:
             and load_project_config(self.storage.project_config_path).feedback_learning
         ):
             self.feedback.complete_task(state.task_id)
+
+    def _reported_items(
+        self, task_id: str, state: ExecutionState, item: PlanItem, reports: bool
+    ) -> tuple[WorkItem, ...] | None:
+        """The items with ``item``'s own item marked reported, if it reports.
+
+        The mark is committed with the completion that finishes the report
+        stage, so an item is never reported before that completion is durable.
+        """
+        if not reports or item.item_id is None:
+            return None
+        return tuple(
+            replace(entry, reported=True) if entry.id == item.item_id else entry
+            for entry in self.tasks.read_items(task_id, state.run_id)
+        )
+
+    def _commit_items(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        items: tuple[WorkItem, ...],
+    ) -> None:
+        """Commit a transition together with the item records it changed."""
+        self.commit(state, snapshot, items=items)
+        self._share_items(state.task_id, snapshot.plan, items)
 
     def feedback_sources(
         self,
@@ -1773,6 +1805,12 @@ class WorkflowService:
             state.item_executions[state.cursor].selected_agent,
             state.item_executions[state.cursor].selected_model,
         )
+        reported_items = self._reported_items(
+            task_id,
+            state,
+            item,
+            reports_item_on_completion(snapshot.plan, state.cursor),
+        )
         state = complete_agent_item(
             state,
             snapshot.plan,
@@ -1816,7 +1854,10 @@ class WorkflowService:
             state, snapshot = materialize_child_plan(
                 state, snapshot, self.tasks.read_children(task_id, state.run_id), _now
             )
-        self.commit(state, snapshot)
+        if reported_items is None:
+            self.commit(state, snapshot)
+        else:
+            self._commit_items(state, snapshot, reported_items)
         for document in promised_documents:
             self.documents.record_update(
                 document,
