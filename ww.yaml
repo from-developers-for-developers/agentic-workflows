@@ -55,7 +55,7 @@ handlers:
 
 hooks:
   before_start_workflow:
-    - workflows: [task, hotfix, auto-refactor, roadmap]
+    - workflows: [task, hotfix, auto-refactor, roadmap, express]
       handlers:
         - ext/ww/git/handlers:is-git-clean: ~
         - ext/ww/git/handlers:start-task-branch: ~
@@ -68,6 +68,10 @@ hooks:
         - update-agent-instructions: ~
         - ext/ww/git/handlers:git-commit: ~
         - update-changelog: ~
+        - ext/ww/git/handlers:git-commit: ~
+
+    - workflows: [express]
+      handlers:
         - ext/ww/git/handlers:git-commit: ~
 
 workflows:
