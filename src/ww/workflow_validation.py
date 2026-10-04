@@ -140,6 +140,7 @@ def validate_configuration(
     _validate_hooks_from(normalized)
     _validate_child_tasks(normalized.workflows)
     _validate_item_saves(normalized)
+    _validate_item_phases(normalized)
     return normalized
 
 
@@ -734,6 +735,53 @@ def _check_item_saves(
                 per_item=nested_per_item,
                 precise=precise,
             )
+
+
+def _validate_item_phases(configuration: WorkflowConfiguration) -> None:
+    """Allow ``item_phase`` only on an acting step of a per-item stage.
+
+    The phase becomes the step's item operation, which the pass gate and the
+    automatic reporting read from concrete per-item plan items.  On an
+    assessment the operation is never compiled, and outside a per-item stage
+    there is no item to mark, so either placement would silently do nothing.
+    Reusable handlers are checked where a step uses them, never as unused
+    catalog definitions.
+    """
+    for workflow in configuration.workflows:
+        _check_item_phases(workflow, workflow.steps, None, per_item=False)
+
+
+def _check_item_phases(
+    workflow: WorkflowDefinition,
+    steps: tuple[StepDefinition, ...],
+    parent: str | None,
+    *,
+    per_item: bool,
+) -> None:
+    for step in steps:
+        path = f"{parent}/{step.name}" if parent else step.name
+        if step.item_operation is not None and step.items is None:
+            where = f"workflow {workflow.name!r} step {path!r}"
+            if step.assessment_question is not None:
+                raise ConfigurationError(
+                    f"{where} sets item_phase on an assessment, which has no "
+                    "effect: an assessment compiles no item operation. Put "
+                    "item_phase on the outcome steps that do the work"
+                )
+            if not per_item:
+                raise ConfigurationError(
+                    f"{where} sets item_phase outside any per-item stage, "
+                    "where it has no effect: item_phase marks a stage under "
+                    "an items step, so move the step into items.steps"
+                )
+        for nested, nested_per_item in (
+            (step.child_steps, per_item),
+            (step.loop_steps, per_item),
+            (step.assessment_outcomes, per_item),
+            (_item_steps(step), True),
+            (_child_stages(step), per_item),
+        ):
+            _check_item_phases(workflow, nested, path, per_item=nested_per_item)
 
 
 def _item_saves(

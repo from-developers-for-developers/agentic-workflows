@@ -496,3 +496,148 @@ def test_item_field_update_model_is_unchanged() -> None:
         "name": "reply_id",
         "description": "",
     }
+
+
+# --- item_phase: only on an acting step of a per-item stage -----------------
+
+_COLLECT = """      - collect: Record items.
+        items:
+          identity: comment_id
+          steps: []
+"""
+
+
+def _assessment_with_phase(where: str) -> str:
+    return f"""workflows:
+  - name: probe
+    steps:
+{_COLLECT}      - answer: Reuse the items.
+        items:
+          steps:
+            - assess:
+                question: Does this comment get a reply?
+                {where}
+                positive:
+                  steps:
+                    - reply: Reply.
+                      item_phase: report
+                negative:
+                  steps:
+                    - skip: Nothing to reply.
+      - wrap: Wrap up.
+"""
+
+
+def test_item_phase_on_an_assessment_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match=r"step 'answer/assess' sets item_phase on an assessment.*"
+        r"outcome steps that do the work",
+    ):
+        _load(tmp_path, _assessment_with_phase("item_phase: report"))
+
+
+def test_item_phase_on_the_outcome_steps_of_an_assessment_is_valid(
+    tmp_path: Path,
+) -> None:
+    configuration = _load(tmp_path, _assessment_with_phase(""))
+    assert configuration is not None
+
+
+def test_lint_rejects_item_phase_on_an_assessment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        _assessment_with_phase("item_phase: report"), encoding="utf-8"
+    )
+
+    assert main(["--root", str(tmp_path), "lint"]) != 0
+    assert "sets item_phase on an assessment" in capsys.readouterr().err
+
+
+_PHASE_OUTSIDE = {
+    "top-level": "      - fix: Fix it.\n        item_phase: resolve\n",
+    "between-passes": (
+        _COLLECT
+        + "      - fix-together: Fix.\n        item_phase: resolve\n"
+        + "      - again: Reuse.\n        items:\n          steps: []\n"
+    ),
+    "loop-outside-items": (
+        "      - repeat: Repeat.\n        loop:\n"
+        "          - fix: Fix it.\n            item_phase: report\n"
+    ),
+    "through-a-handler": ("      - fix:\n        handler: phased\n"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_PHASE_OUTSIDE))
+def test_item_phase_outside_a_per_item_stage_is_rejected(
+    tmp_path: Path, case: str
+) -> None:
+    handlers = (
+        "handlers:\n  - name: phased\n    description: Phased.\n"
+        "    item_phase: resolve\n"
+        if case == "through-a-handler"
+        else ""
+    )
+    text = handlers + "workflows:\n  - name: probe\n    steps:\n" + _PHASE_OUTSIDE[case]
+    with pytest.raises(
+        ConfigurationError, match=r"sets item_phase outside any per-item stage"
+    ):
+        _load(tmp_path, text)
+
+
+def test_lint_rejects_item_phase_outside_a_per_item_stage(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        "workflows:\n  - name: probe\n    steps:\n" + _PHASE_OUTSIDE["top-level"],
+        encoding="utf-8",
+    )
+
+    assert main(["--root", str(tmp_path), "lint"]) != 0
+    assert "step 'fix' sets item_phase outside any per-item stage" in (
+        capsys.readouterr().err
+    )
+
+
+def test_item_phase_is_valid_in_per_item_stages_however_nested(
+    tmp_path: Path,
+) -> None:
+    text = f"""handlers:
+  - name: phased
+    description: Phased.
+    item_phase: resolve
+workflows:
+  - name: probe
+    steps:
+{_COLLECT}      - answer: Reuse the items.
+        items:
+          steps:
+            - plain: Plain stage.
+              item_phase: analyze
+            - handled:
+              handler: phased
+            - repeat: Repeat.
+              loop:
+                - inner: Inner.
+                  item_phase: resolve
+            - assess:
+                question: Reply?
+                positive:
+                  steps:
+                    - reply: Reply.
+                      item_phase: report
+      - unused: Unused.
+        items: ~
+"""
+    assert _load(tmp_path, text) is not None
+
+
+def test_an_unused_handler_with_item_phase_is_valid(tmp_path: Path) -> None:
+    _load(
+        tmp_path,
+        "handlers:\n  - name: phased\n    description: Phased.\n"
+        "    item_phase: resolve\n"
+        "workflows:\n  - name: probe\n    steps:\n      - plain: Work.\n",
+    )
