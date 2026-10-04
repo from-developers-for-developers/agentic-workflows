@@ -329,9 +329,11 @@ def test_interviews_and_reviews_converse_until_contextual_completion() -> None:
         assert "in one message, numbered" in description
         assert "follow up where an answer deserves it" in description
     for skill in ("ww-setup", "ww-learn"):
-        text = SKILLS[skill]
+        text = " ".join(SKILLS[skill].split())
         assert "clear contextual" in text or "intent to finish" in text
-        assert "request_user_input_async" in text
+        assert "question-tool schema" in text
+        assert "structured options when offered" in text
+        assert "text-only question only when required" in text
         assert "timeout" in text and "dismissal" in text
         assert "preselected value is not an answer" in text
         assert "record it once" in text or "record it, once" in text

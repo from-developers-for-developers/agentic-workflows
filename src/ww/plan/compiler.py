@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -28,13 +29,14 @@ from ww.control import child_workflow, workflow_transition
 from ww.discovery import AgentDiscovery
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
-from ww.interpolation import dependencies
+from ww.interpolation import dependencies, interpolate
 from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
 from ww.variables import (
     CHILD_FIELD_PREFIX,
     CHILD_VALUE_NAMES,
     CHILD_VALUE_PREFIX,
+    CHOICES,
     CORE_VARIABLE_NAMES,
     DOCUMENTS_PREFIX,
     child_value_name,
@@ -932,6 +934,16 @@ class WorkflowPlanCompiler:
             *self._namespace_variables,
             *(self._child_variables if annotations.child_stage is not None else ()),
         }
+        choice_value = json.dumps(
+            [choice.label for choice in step.choices], ensure_ascii=False
+        )
+        provided = tuple(
+            replace(
+                value,
+                description=interpolate(value.description, {CHOICES: choice_value}),
+            )
+            for value in handler.provide
+        )
         if isinstance(operation, WorkflowHandoff):
             operation = WorkflowHandoff(
                 self.actions._interpolate(operation.target, allowed)
@@ -1020,14 +1032,14 @@ class WorkflowPlanCompiler:
                 max_handler_fixes=self.project_config.limits.fixes,
                 owner=owner,
                 execution=execution,
-                requires_agent_input=execution == "automatic" and bool(handler.provide),
+                requires_agent_input=execution == "automatic" and bool(provided),
                 workflow=workflow.name,
                 step=step_path,
                 parent=parent,
                 phase=phase,
                 source=source,
                 registered_handler=registered_name,
-                provide=handler.provide,
+                provide=provided,
                 save_metadata=handler.save_metadata,
                 update_document=handler.update_document,
                 update_item=handler.update_item,

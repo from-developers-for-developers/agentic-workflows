@@ -282,10 +282,10 @@ def test_the_skill_and_instructions_let_discover_decide_whether_to_use_ww() -> N
     skill = " ".join(WW_SKILL.split())
     description = WW_SKILL.split("\n")[2]
 
-    assert "it says whether to use ww unasked" in instructions
+    assert "whether to use ww unasked" in instructions
     assert "Where ww is used by default" in instructions
-    assert "every change to files goes through ww" in instructions
-    assert "use it only when the user explicitly asks for ww" in instructions
+    assert "every file change goes through ww" in instructions
+    assert "use it only when the user asks for ww" in instructions
     assert "where `./ww discover` says ww is used by default" in description
     assert "used only on request and the user did not explicitly ask" in skill
 
@@ -552,7 +552,9 @@ def test_discover_tells_agents_to_use_the_ticket_key(
     assert "use that key as <TASK-ID> so the task matches the issue" in output
     assert "omit `<TASK-ID>` to let ww assign one" not in output
     assert "use that key as the task ID" in WW_SKILL
-    assert "start the task\nunder that key" in AGENT_INSTRUCTIONS
+    assert "When a request names an external ticket, use that as the task ID." in (
+        AGENT_INSTRUCTIONS
+    )
 
 
 def test_explicit_task_format_requires_an_id(

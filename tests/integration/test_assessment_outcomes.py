@@ -37,6 +37,18 @@ COMPACT = """workflows:
       - assess: Is the merge worth reviewing?
       - tests: Run the tests.
 """
+DIRECT = """workflows:
+  - name: merge
+    steps:
+      - assess:
+          question: Were conflicts resolved in non-trivial code?
+          positive:
+            steps:
+              - review-conflicts: Review the conflicts.
+          negative:
+            stop_workflow: true
+      - tests: Run the tests.
+"""
 md = MarkdownOutputAdapter()
 
 
@@ -157,6 +169,73 @@ def test_the_compact_form_gets_the_same_pages(tmp_path: Path) -> None:
     assert "--outcome negative" in md.render_instruction(after)
     with pytest.raises(StateError, match="pending assess requires --outcome"):
         service.next("TASK-1", caller_role="manager")
+
+
+def test_direct_standard_branches_use_the_existing_outcome_transitions(
+    tmp_path: Path,
+) -> None:
+    service, page, _ = _assessed(tmp_path, DIRECT)
+
+    assert [outcome.label for outcome in page.assessment_outcomes] == [
+        "positive",
+        "negative",
+        "mixed",
+    ]
+    assert "continues with `review-conflicts`" in md.render_instruction(page)
+    assert service.status("TASK-1").choosing_outcome_of == "assess"
+    assert service.resume(*service.load("TASK-1")).choosing_outcome_of == "assess"
+    chosen = service.next("TASK-1", outcome="positive", caller_role="manager")
+    assert chosen.item_name == "review-conflicts"
+    assert chosen.choosing_outcome_of is None
+    assert "--outcome" not in md.render_instruction(chosen)
+
+
+@pytest.mark.parametrize(
+    ("branch", "message"),
+    [
+        (
+            "          positive:\n"
+            "            steps:\n"
+            "              - review: Review it.\n"
+            "          outcomes:\n"
+            "            negative:\n"
+            "              stop_workflow: true\n",
+            ".outcomes cannot be combined with direct",
+        ),
+        (
+            "          positiv:\n"
+            "            steps:\n"
+            "              - review: Review it.\n",
+            ".positiv is not a direct assessment branch",
+        ),
+    ],
+)
+def test_invalid_direct_assessment_branches_report_their_paths(
+    tmp_path: Path, branch: str, message: str
+) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        "workflows:\n  - name: m\n    steps:\n      - assess:\n"
+        "          question: Q?\n" + branch,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match=message):
+        load_configuration(path)
+
+
+def test_direct_assessment_branches_require_a_question(tmp_path: Path) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        "workflows:\n  - name: m\n    steps:\n      - assess:\n"
+        "          positive:\n            stop_workflow: true\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ConfigurationError, match=r"\.positive requires an assess question"
+    ):
+        load_configuration(path)
 
 
 def test_a_delegating_manager_chooses_without_a_worker_preview(

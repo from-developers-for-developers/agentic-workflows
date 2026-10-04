@@ -42,7 +42,8 @@ def test_a_completed_run_offers_its_recommendation(tmp_path: Path) -> None:
     assert done.to_dict()["recommended_workflow"] == "merge-to-dev"
     assert "### Recommended next workflow" in page
     assert "Do not start it on your own" in page
-    assert "`request_user_input`" in page
+    assert "question-tool schema" in page
+    assert "structured options when offered" in page
     assert "1. **Start merge-to-dev**" in page
     assert "2. **Stop here**" in page
     assert (

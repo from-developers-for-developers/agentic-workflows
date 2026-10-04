@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import uuid
 from collections.abc import Sequence
@@ -169,6 +170,7 @@ from ww.variables import (
     BRANCH_NAMING_STRATEGY,
     CHILD_FIELD_PREFIX,
     CHILD_VALUE_PREFIX,
+    CHOICES,
     DOCUMENTS_PREFIX,
     METADATA_PREFIX,
     PROJECT,
@@ -2259,6 +2261,23 @@ class WorkflowService:
                 self._project_path(project),
             ),
         }
+        current = plan.items[state.cursor] if state.cursor < len(plan.items) else None
+        choice_step = current
+        if current is not None and current.phase != "step":
+            choice_step = next(
+                (
+                    item
+                    for item in plan.items
+                    if item.step == current.step and item.phase == "step"
+                ),
+                current,
+            )
+        values[CHOICES] = json.dumps(
+            [choice.label for choice in choice_step.choices]
+            if choice_step is not None
+            else [],
+            ensure_ascii=False,
+        )
         bound: dict[str, dict[str, object] | None] = {}
         for item in plan.items:
             if not isinstance(item.operation, PlannedAction):

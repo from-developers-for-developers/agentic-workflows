@@ -162,9 +162,7 @@ def with_builtin_workflows(
         if not enabled:
             continue
         added_workflows.extend(
-            workflow
-            for workflow in enabled
-            if workflow.name not in workflows
+            workflow for workflow in enabled if workflow.name not in workflows
         )
         for document in builtin.documents:
             if document.name not in documents:

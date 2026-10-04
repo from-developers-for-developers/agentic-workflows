@@ -239,7 +239,7 @@ CHOICES = """workflows:
     ("agent", "mechanism"),
     [
         ("claudecode", "`AskUserQuestion` tool"),
-        ("codex", "`request_user_input`"),
+        ("codex", "host's available question-tool schema"),
         ("gemini", "`ask_user` tool"),
         ("cursor", "`AskQuestion` tool"),
         ("antigravity", "`ask_question` tool"),
@@ -271,7 +271,9 @@ def test_choices_resolve_to_the_agent_mechanism_and_gate_the_end(
     )
     assert "Nothing chosen yet." in rendered
     if agent == "codex":
-        assert "`request_user_input_async`" in rendered
+        assert "question-tool schema" in rendered
+        assert "structured options when offered" in rendered
+        assert "text-only question only when required" in rendered
         assert "timeout, dismissal, or preselected value is not an answer" in rendered
 
     with pytest.raises(StateError, match="is not one of the choices"):
@@ -315,6 +317,38 @@ def test_a_transcript_a_choice_and_the_end_go_in_one_call(tmp_path: Path) -> Non
     assert service.interactions.entries("TASK-6")[0].text == (
         "Choice: fail and give comment"
     )
+
+
+def test_choices_are_a_json_core_value_in_instructions_and_input_descriptions(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        """workflows:
+  - name: manual
+    steps:
+      - name: verify
+        description: Set the result using {{ww.choices}}.
+        interactive: true
+        choices:
+          - 'A, "quoted" 🧪': The label keeps its punctuation.
+        variables:
+          - result: Set result to one of {{ww.choices}}.
+""",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    service.start("manual", "TASK-CHOICES", agent="codex", init_artifact="Test.")
+
+    page = service.next("TASK-CHOICES")
+    rendered = MarkdownOutputAdapter().render_instruction(page)
+
+    assert page.action_text is not None
+    assert '["A, \\"quoted\\" 🧪"]' in page.action_text
+    assert page.required_values[0].description == (
+        'Set result to one of ["A, \\"quoted\\" 🧪"].'
+    )
+    assert "Choices" in rendered
+    assert page.choices[0].label == 'A, "quoted" 🧪'
 
 
 MANUAL_TESTS = """workflows:

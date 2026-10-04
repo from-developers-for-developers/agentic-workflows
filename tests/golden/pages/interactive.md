@@ -34,7 +34,7 @@ Nothing is recorded yet.
 1. `accept` — The result is accepted.
 2. `reject` — The result needs more work.
 
-Present the matter in your reply first. In Codex Plan mode, use the `request_user_input` tool with one short question and these options in order, single select; the operator picks a number. If this session only offers `request_user_input_async`, include the options in its question text, use a fresh unique task handle, and ask for a label or number; keep the choice pending until the operator answers. A timeout, dismissal, or preselected value is not an answer. If neither tool is available, present the choices as a numbered list and ask for the number or label.
+Present the matter in your reply first. Inspect the host's available question-tool schema and follow its supported fields, using structured options when offered and a text-only question only when required. Keep the choice pending until the operator explicitly answers; a timeout, dismissal, or preselected value is not an answer. If no suitable question tool is available, present the choices as a numbered list and ask for the number or label.
 
 The pick is required; it goes in `--choice` above.
 

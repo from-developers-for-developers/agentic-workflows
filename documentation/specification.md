@@ -443,7 +443,7 @@ A step accepts every [handler key](#handlers), plus:
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
 | `interactive` | `true`, `false`, or `page` | `true`: the step is a normal conversation with the operator, held by the session that can talk to them; it implies `role: manager`, and `role: worker` beside it is an error. The agent responds to questions and corrections and treats clear contextual completion as permission to finish, asking naturally if the intent is ambiguous. `Done for today` may mean pause and resume later. Completion is refused until the conversation was recorded with `interact` and ended; an open interaction cannot be completed. `page`: the operator answers this stage on the operator page, an answer sheet over every item that `interact --await` serves while the agent waits and applies when the wait ends; valid on one per-item stage per `items` step. Defaults to `false`. |
 | `learnable` | boolean | Opts this step's completed artifact into optional feedback deduction after workflow completion. Independent of `interactive`; defaults to `false` and requires `artifact: true`. |
-| `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent uses the host's native choice tool when available, following that tool's contract, and otherwise presents a numbered list in chat. For Codex, `request_user_input` accepts structured options when available (Plan mode); if only `request_user_input_async` is exposed, include the options in the question text, use a fresh unique task handle, and keep the pick pending until an answer arrives. A timeout, dismissal, or preselected value is not an answer. The pick must be recorded before the interaction ends. Requires `interactive: true`. |
+| `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent follows the host's actual question-tool schema, using structured options when offered and a text-only question only when required, and otherwise presents a numbered list in chat. An asynchronous answer remains pending until the operator explicitly answers; timeout, dismissal, or preselection is not an answer. The pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `steps` | list of steps | Nested ordered steps. |
 | `loop` | non-empty list of steps | Repeats ordinary nested steps until an authorized worker stops it. |
 | `max_rounds` | positive integer | Overrides the project-wide maximum number of rounds for this loop. Valid only beside `loop`. |
@@ -990,6 +990,11 @@ Names must be unique in the list and may not start with `ww` as their first
 dot-separated segment, or with `__`: those are ww's own values. Dots are
 allowed in a name.
 
+`{{ww.choices}}` is scoped to the effective current step after reuse and
+compilation. Its value is a JSON array of configured choice labels in order,
+or `[]` when the step has no choices. It is read-only guidance for instructions
+and provided-variable descriptions; it does not validate the value supplied.
+
 Within one completion window, matching supplied-variable declarations (the
 same name and description) share one input across handlers, in first-request
 order. Conflicting declarations for a name are an error identifying that name
@@ -1000,6 +1005,12 @@ and both plan items. Repeating a supplied `--variable` remains an error.
 `assess` asks the agent to choose a named outcome before work continues. Prefer
 `positive` or `negative` when the evidence supports either; reserve `mixed` for
 material uncertainty. Select the result with `next --outcome <label>`.
+
+The standard branches may be written beside `question` as `positive`,
+`negative`, and `mixed`, using the same ordinary step shapes as entries under
+`outcomes`. Do not combine these direct branches with `outcomes`; use
+`outcomes` when custom labels are needed. Omitted standard outcomes retain the
+existing behavior of doing no branch work and continuing after the assessment.
 
 ```yaml
 - assess:

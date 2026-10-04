@@ -1133,6 +1133,21 @@ Here `negative` and `mixed` go straight to `verify`. A label of your own, such
 as `partial`, is accepted only when declared. For a simple gate, `- assess: <question>` accepts `positive` or
 `negative`; positive continues normally and negative completes the workflow.
 
+The standard branches can also sit directly beside `question`:
+
+```yaml
+- assess:
+    question: Does recent development warrant refactoring?
+    positive:
+      handler: refactor-plan
+    negative:
+      steps:
+        - record: No refactoring is needed now.
+```
+
+Direct branches and `outcomes` cannot be combined; use `outcomes` for custom
+labels.
+
 The agent sees the choice before it answers: the assessment's page lists each
 outcome and what it does, for example "`negative` — ends the workflow here".
 Once the assessment is complete, the next page asks for the outcome and shows
@@ -2421,13 +2436,12 @@ items:
 ```
 
 The page lists choices in order and tells the agent to use the host's native
-choice tool when available, according to its contract, and otherwise show a
-numbered list in chat. Codex's `request_user_input` supports structured
-options when available, including Plan mode; if a session only exposes
-`request_user_input_async`, its question is text, so include the options in
-that text, use a fresh unique task handle, and leave the pick pending until
-the operator answers. A timeout,
-dismissal, or preselected value is not an answer. The named tools for other
+choice tool when available, following its actual schema, and otherwise show a
+numbered list in chat. For Codex, inspect the available question-tool schema
+and use its supported structured options when offered; use a text-only
+question only when required by that tool. Keep the pick pending until the
+operator explicitly answers. A timeout, dismissal, or preselected value is not
+an answer. The named tools for other
 integrations include `AskUserQuestion` in Claude Code, `ask_user` in Gemini
 CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, and
 `ask_user_question` in Grok CLI. Kimi, DeepSeek, and custom agents get the
@@ -2872,7 +2886,10 @@ step is the collection:
 ```
 
 Per-item stage prompts can read the stage's own item: `{{ww.item.id}}`,
-`{{ww.item.text}}`, and `{{ww.item.field.<name>}}`.
+`{{ww.item.text}}`, and `{{ww.item.field.<name>}}`. The effective current
+step's `{{ww.choices}}` value is a JSON array of configured choice labels in
+order, or `[]` when there are none. Use it as guidance in prompts or provided-
+variable descriptions; ww does not validate a supplied value against labels.
 
 Two flow-level rules make deduplication a refusal rather than a hope:
 
@@ -3485,6 +3502,7 @@ publish a package advertising an `ww.extensions` entry point:
 ```python
 from ww.extensions.api import Extension, ExtensionHandler, ExtensionResult
 
+
 def _greet(context):
     return ExtensionResult(
         True,
@@ -3492,16 +3510,13 @@ def _greet(context):
         values={"greeting": "hello"},
     )
 
+
 EXTENSION = Extension(
     vendor="acme",
     name="hello",
     version="1.0.0",
     description="A minimal example.",
-    handlers=(
-        ExtensionHandler(
-            "greet", _greet, "Say hello.", outputs=("greeting",)
-        ),
-    ),
+    handlers=(ExtensionHandler("greet", _greet, "Say hello.", outputs=("greeting",)),),
 )
 ```
 
@@ -3546,8 +3561,11 @@ def _subject_error(values):
         return "commit_message must be a single line"
     return None
 
+
 ExtensionHandler(
-    "git-commit", _commit, provide=(ProvidedVariable("commit_message"),),
+    "git-commit",
+    _commit,
+    provide=(ProvidedVariable("commit_message"),),
     validate=_subject_error,
 )
 ```
@@ -3566,8 +3584,12 @@ and any that has a store.
 def _claims(context):
     return context.store.read_text(f"{context.task_id}.json") is not None
 
+
 EXTENSION = Extension(
-    vendor="acme", name="tickets", claims_task=_claims, forget_task=_forget,
+    vendor="acme",
+    name="tickets",
+    claims_task=_claims,
+    forget_task=_forget,
 )
 ```
 
@@ -3599,13 +3621,15 @@ claimed, and two listed extensions claiming one namespace are an error.
 `ww/git` declares `git`:
 
 ```python
-namespace=ExtensionNamespace(
-    "git",
-    (
-        ExtensionVariable("branch", _branch_variable),
-        ExtensionVariable("base_branch", _base_branch_variable),
+namespace = (
+    ExtensionNamespace(
+        "git",
+        (
+            ExtensionVariable("branch", _branch_variable),
+            ExtensionVariable("base_branch", _base_branch_variable),
+        ),
     ),
-),
+)
 ```
 
 `ww/git` is bundled with the installed `ww-agentic-workflows` package, so it is
