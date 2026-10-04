@@ -88,3 +88,43 @@ def test_unavailable_values_leave_ww_own_values_out() -> None:
     )
 
     assert unavailable_ww_values(names, {}) == ("ww.git.branch", "ww.child.git.branch")
+
+
+def test_item_values_use_stable_string_representations() -> None:
+    from ww.items import WorkItem
+    from ww.variables import item_variable_values
+
+    values = item_variable_values(
+        WorkItem("c1", "Text", resolved=True, fields=(("reply_id", "r1"),)),
+        ("ww.item.field.reply_id", "ww.item.field.unset"),
+    )
+
+    assert values == {
+        "ww.item.id": "c1",
+        "ww.item.text": "Text",
+        "ww.item.processed_item": "",
+        "ww.item.proposed_solution": "",
+        "ww.item.actual_solution": "",
+        "ww.item.resolved": "true",
+        "ww.item.reported": "false",
+        "ww.item.reference_to_id": "",
+        "ww.item.field.reply_id": "r1",
+        "ww.item.field.unset": "",
+    }
+
+
+def test_item_context_errors_tell_the_three_cases_apart() -> None:
+    from ww.items import WorkItem
+    from ww.variables import item_binding_values, item_context_error
+
+    missing = ("ww.item.id",)
+    unbound = item_context_error(missing, item_binding_values(None, None))
+    gone = item_context_error(missing, item_binding_values("c9", None))
+    bound = item_binding_values("c1", WorkItem("c1", "T"))
+    unknown = item_context_error(("ww.item.actual_soluton",), bound)
+
+    assert unbound is not None and "no work item is bound" in unbound
+    assert gone is not None and "'c9'" in gone and "no longer in the run" in gone
+    assert unknown is not None and "ww.item.actual_soluton" in unknown
+    assert "ww.item.actual_solution" in unknown
+    assert item_context_error(("other.name",), bound) is None

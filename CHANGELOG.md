@@ -11,6 +11,11 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- Per-item stages, instructions and automatic `argv`/`shell` actions alike, can read
+  `{{ww.item.processed_item}}`, `proposed_solution`, `actual_solution` (the resolution text),
+  `resolved`, `reported` and `reference_to_id` besides the ID, text and custom fields, always
+  fresh from the item's current record. Booleans render `true`/`false`, unset values empty; an
+  item value used with no bound item is a clear context error.
 - A workflow may hold several sequential `items` passes over its one collection, also inside
   loops: each pass expands only its own stages, right after its collection step, for the items
   recorded by then, and a looped pass expands again each round. Leaving a pass requires only what

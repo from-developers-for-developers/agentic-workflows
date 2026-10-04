@@ -46,6 +46,7 @@ from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
 from ww.runtimes import runtime_instruction
+from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
     enclosing_loop_entry_index,
@@ -54,9 +55,6 @@ from ww.transitions import (
     loop_limit_reached,
 )
 from ww.variables import (
-    ITEM_FIELD_PREFIX,
-    ITEM_ID,
-    ITEM_TEXT,
     item_workspace_values,
 )
 from ww.workflow_config import INIT_STEP_NAME, ProvidedVariable
@@ -99,14 +97,6 @@ from .policy import (
 from .text import NO_SUBAGENTS, ContainerArtifact, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
-# ``{{ww.child.*}}`` for a per-child stage; empty for any other item.
-ChildValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
-
-
-def _no_child_values(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-) -> dict[str, str]:
-    return {}
 
 
 @dataclass(frozen=True)
@@ -142,9 +132,11 @@ class InstructionBuilder:
         root: Path,
         documents: DocumentStore,
         interactions: InteractionLog,
-        child_values: ChildValues = _no_child_values,
+        child_values: StepValues = no_step_values,
+        item_values: StepValues = no_step_values,
     ) -> None:
         self.tasks = tasks
+        self.item_values = item_values
         self.child_values = child_values
         self.documents = documents
         self.interactions = interactions
@@ -614,26 +606,6 @@ class InstructionBuilder:
             == (state.run_id, item.name, item.item_id)
         )
 
-    def _item_values(self, state: ExecutionState, item: PlanItem) -> dict[str, str]:
-        """``{{ww.item.*}}`` for a per-item stage's own work item."""
-        if item.item_id is None:
-            return {}
-        work = next(
-            (
-                entry
-                for entry in self.tasks.read_items(state.task_id, state.run_id)
-                if entry.id == item.item_id
-            ),
-            None,
-        )
-        if work is None:
-            return {}
-        return {
-            ITEM_ID: work.id,
-            ITEM_TEXT: work.item,
-            **{f"{ITEM_FIELD_PREFIX}{name}": value for name, value in work.fields},
-        }
-
     def _current_child(self, state: ExecutionState, item: PlanItem) -> str:
         """Name a per-child stage's child, and how to refine it before it runs."""
         if item.child_number is None:
@@ -919,7 +891,7 @@ class InstructionBuilder:
                 item,
                 {
                     **values,
-                    **self._item_values(state, item),
+                    **self.item_values(state, plan, item),
                     **self.child_values(state, plan, item),
                 },
                 state.task_id,
