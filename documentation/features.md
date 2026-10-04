@@ -3968,6 +3968,24 @@ tasks.
 
 ## Choosing a runtime
 
+A parent and its children can use different runtimes and session models. For
+example, a Sol manager can coordinate an `auto` roadmap while each Luna session
+handles a whole child in `single`:
+
+```console
+ww-agentic-workflows start-child TASK-123 TASK-123.1 \
+  --runtime single --model gpt-6-luna --reasoning high
+```
+
+Launch the child session with those actual host settings and give it the child's
+manager instruction command; ww does not switch a running session's model.
+The parent retains its own runtime/model/reasoning and resumes its review stages
+after the child completes. Without flags, children inherit parent settings.
+Changing only the model resets reasoning to `auto`; specify both for an exact
+request. Launch settings are fixed once starting begins and survive retries,
+including external-ID bootstrap. This command cannot change an already-started
+child's runtime or model.
+
 `single` is the default, so an agent told little more than that would omit
 `--runtime` and get `single` every time, including for workflows written to
 delegate. `discover` therefore makes the choice explicit. Any workflow declaring an `agent`,

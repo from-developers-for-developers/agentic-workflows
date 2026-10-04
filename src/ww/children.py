@@ -23,6 +23,10 @@ class ChildTask:
     parent_task_id: str | None = None
     # The configured project the child works in; ``None`` means the root.
     project: str | None = None
+    # Launch settings are frozen before starting, including identity requests.
+    workflow_runtime: str | None = None
+    model: str | None = None
+    reasoning: str | None = None
     # Custom fields, as items carry them; per-child parent stages read them
     # as ``{{ww.child.field.<name>}}``. String values only.
     fields: tuple[tuple[str, str], ...] = ()
@@ -43,6 +47,9 @@ class ChildTask:
             "start_operation_id": self.start_operation_id,
             "parent_task_id": self.parent_task_id,
             "project": self.project,
+            "workflow_runtime": self.workflow_runtime,
+            "model": self.model,
+            "reasoning": self.reasoning,
             "fields": dict(self.fields),
         }
 
@@ -64,6 +71,12 @@ class ChildTask:
         for name in ("start_operation_id", "parent_task_id", "project"):
             if data.get(name) is not None and not isinstance(data[name], str):
                 raise ValueError(f"child task {name} must be a string or null")
+        for name in ("workflow_runtime", "model", "reasoning"):
+            value = data.get(name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"child task {name} must be non-empty or null")
+        if data.get("workflow_runtime") not in {None, "single", "auto"}:
+            raise ValueError("child task workflow_runtime must be single or auto")
         return cls(
             id=data["id"],
             description=data["description"],
@@ -75,6 +88,9 @@ class ChildTask:
             start_operation_id=data.get("start_operation_id"),
             parent_task_id=data.get("parent_task_id"),
             project=data.get("project"),
+            workflow_runtime=data.get("workflow_runtime"),
+            model=data.get("model"),
+            reasoning=data.get("reasoning"),
             fields=validate_item_fields(data.get("fields", {})),
         )
 

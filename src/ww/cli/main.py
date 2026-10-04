@@ -1298,7 +1298,13 @@ def _update_child(context: _Context) -> _Outcome:
 def _start_child(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
-        context.service.start_child(args.parent_task_id, args.child_id),
+        context.service.start_child(
+            args.parent_task_id,
+            args.child_id,
+            workflow_runtime=args.workflow_runtime,
+            model=args.model,
+            reasoning=args.reasoning,
+        ),
         args.json_output,
     )
 

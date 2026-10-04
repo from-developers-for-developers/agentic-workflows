@@ -23,6 +23,7 @@ from ww.execution_models import ExecutionState, PlanSnapshot
 from ww.instructions import Instruction
 from ww.plan import PlanItem
 from ww.run_coordination import RunLifecycle
+from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
 from ww.task_ids import is_bootstrap_request, validate_child_id, validate_task_id
 from ww.transitions import (
@@ -78,7 +79,15 @@ class ChildCoordinator:
         self.now = now
         self.start_identity = start_identity
 
-    def start_child(self, parent_task_id: str, child_id: str) -> Instruction:
+    def start_child(
+        self,
+        parent_task_id: str,
+        child_id: str,
+        *,
+        workflow_runtime: str | None = None,
+        model: str | None = None,
+        reasoning: str | None = None,
+    ) -> Instruction:
         validate_task_id(parent_task_id)
         validate_child_id(child_id)
         with self.tasks.lock_task(parent_task_id):
@@ -110,6 +119,9 @@ class ChildCoordinator:
             ):
                 raise StateError("another child is already in progress")
             workflow = coordinator.workflow
+            child = self._launch_settings(
+                child, parent, workflow_runtime, model, reasoning
+            )
             child = replace(child, workflow=workflow, status="starting")
             children[children.index(by_id[child_id])] = child
             self.lifecycle.commit(parent, snapshot, children=tuple(children))
@@ -146,9 +158,9 @@ class ChildCoordinator:
                 parent.agent,
                 parent_task_id=parent_task_id,
                 start_operation_id=start_operation_id,
-                model=parent.model,
-                reasoning=parent.reasoning,
-                workflow_runtime=parent.workflow_runtime,
+                model=child.model or parent.model,
+                reasoning=child.reasoning or parent.reasoning,
+                workflow_runtime=child.workflow_runtime or parent.workflow_runtime,
                 init_artifact=(
                     f"Requirements for child task {child_id}: {child.description}"
                 ),
@@ -156,6 +168,47 @@ class ChildCoordinator:
             )
         self._publish_child(parent_task_id, child_id, child_task_id, workflow)
         return child_instruction
+
+    @staticmethod
+    def _launch_settings(
+        child: ChildTask,
+        parent: ExecutionState,
+        workflow_runtime: str | None,
+        model: str | None,
+        reasoning: str | None,
+    ) -> ChildTask:
+        """Resolve and freeze settings before any child launch side effect."""
+        inherited_model = child.model or parent.model
+        inherited_reasoning = child.reasoning or parent.reasoning
+        inherited_runtime = child.workflow_runtime or parent.workflow_runtime
+        resolved_model = model if model is not None else inherited_model
+        resolved_reasoning = (
+            reasoning
+            if reasoning is not None
+            else "auto"
+            if resolved_model != inherited_model
+            else inherited_reasoning
+        )
+        resolved_runtime = (
+            workflow_runtime if workflow_runtime is not None else inherited_runtime
+        )
+        if not resolved_model.strip() or not resolved_reasoning.strip():
+            raise StateError("execution requires non-empty --model and --reasoning")
+        runtime_instruction(resolved_runtime)
+        if child.status == "starting" and (
+            resolved_model != inherited_model
+            or resolved_reasoning != inherited_reasoning
+            or resolved_runtime != inherited_runtime
+        ):
+            raise StateError(
+                f"child {child.id!r} is already starting; launch settings cannot change"
+            )
+        return replace(
+            child,
+            model=resolved_model,
+            reasoning=resolved_reasoning,
+            workflow_runtime=resolved_runtime,
+        )
 
     def bind_child(
         self, parent_task_id: str, temporary_id: str, child_task_id: str

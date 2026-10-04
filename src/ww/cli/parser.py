@@ -710,6 +710,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     start_child.add_argument("parent_task_id")
     start_child.add_argument("child_id")
+    start_child.add_argument(
+        "-r",
+        "--runtime",
+        dest="workflow_runtime",
+        choices=tuple(RUNTIME_INSTRUCTIONS),
+        help="Child runtime (default: inherit the parent's runtime).",
+    )
+    start_child.add_argument(
+        "--model", help="Child session model (default: inherit the parent's model)."
+    )
+    start_child.add_argument(
+        "--reasoning",
+        help=(
+            "Child session reasoning (default: inherit; changing the model "
+            "without reasoning resets it to auto)."
+        ),
+    )
     reset = subparsers.add_parser(
         "reset", parents=[json_output], help="Delete a task's state and artifacts."
     )

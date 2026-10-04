@@ -801,6 +801,10 @@ class InstructionBuilder:
             text = (
                 f"Start pending child `{pending.id}` with:\n\n```console\n"
                 f"{start_child_command(state.task_id, pending.id)}\n```\n\n"
+                "Optionally add `--runtime`, `--model`, and `--reasoning` to "
+                "choose the child's session settings; omitted values inherit "
+                "from the parent, except a different model resets omitted "
+                "reasoning to `auto`. These settings are fixed once launch begins. "
                 "Until a child starts, its text or project can still change "
                 f"with `{update_child_command(state.task_id, pending.id)}`."
             )

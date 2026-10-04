@@ -2722,8 +2722,22 @@ class WorkflowService:
             self.commit(state, snapshot, children=tuple(children))
             return child
 
-    def start_child(self, parent_task_id: str, child_id: str) -> Instruction:
-        return self.children.start_child(parent_task_id, child_id)
+    def start_child(
+        self,
+        parent_task_id: str,
+        child_id: str,
+        *,
+        workflow_runtime: str | None = None,
+        model: str | None = None,
+        reasoning: str | None = None,
+    ) -> Instruction:
+        return self.children.start_child(
+            parent_task_id,
+            child_id,
+            workflow_runtime=workflow_runtime,
+            model=model,
+            reasoning=reasoning,
+        )
 
     @staticmethod
     def _children_bind_identity(plan: WorkflowPlan) -> bool:
@@ -2754,9 +2768,9 @@ class WorkflowService:
             (),
             parent.agent,
             item,
-            parent.model,
-            parent.reasoning,
-            parent.workflow_runtime,
+            child.model or parent.model,
+            child.reasoning or parent.reasoning,
+            child.workflow_runtime or parent.workflow_runtime,
             None,
             f"Requirements for child task {child.id}: {child.description}",
             child.project,

@@ -554,6 +554,21 @@ child runs, and while the parent waits for its children; a started child is
 refused with its status. Its custom fields only feed the parent's per-child
 stages, so `--field` may change them at any time.
 
+`start-child <parent> <child> [--runtime single|auto] [--model MODEL]
+[--reasoning LEVEL]` can start the child in a different session configuration
+from its parent. Omitted options inherit the parent's settings; changing the
+model without specifying reasoning resets reasoning to `auto`, while repeating
+the inherited model preserves its reasoning. These options do not change the
+parent or the child workflow's configured step settings. Under `single`, the
+chosen session performs all child assignments without subagents; its actual
+host model and reasoning settings remain authoritative, so launch that session
+with the requested settings. ww records guidance rather than switching models.
+
+The resolved launch settings are saved before starting the child, including
+when it first obtains an external ID. A retry can omit the flags and keeps the
+saved settings. Conflicting overrides after launch begins are refused, and
+already-started children cannot be reconfigured through `start-child`.
+
 #### Per-child stages
 
 With `steps`, the parent owns a loop over its children: once collection

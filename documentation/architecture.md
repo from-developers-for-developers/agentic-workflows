@@ -1317,6 +1317,13 @@ artifacts, items, hooks, and workflow summary, while the parent's run-local
 This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
 
+Child launch settings are independent of the parent session: `start-child` can
+override runtime, model, and reasoning. The coordinator freezes resolved settings
+in the child record before launch, so retrying an interrupted start cannot
+accidentally inherit a different session configuration. Identity requests carry
+the same settings into the bound run. Existing child records without these fields
+inherit the parent settings; the parent's execution state is never reconfigured.
+
 With `children.steps` the parent instead owns a loop over its children. The
 parser turns the one stage carrying `workflow:` into a `ChildWorkflowRun`
 stage (inside `children`, `workflow:` runs a child, it never hands off), and
