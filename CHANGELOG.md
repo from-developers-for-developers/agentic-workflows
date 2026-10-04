@@ -14,16 +14,16 @@ is in [documentation/limitations.md](documentation/limitations.md).
 - New `ww-wizard` skill, installed by `init`: it helps you create a workflow, change an existing one, create or
   improve rules, or choose an approach, adapting its questions to the request and challenging needless
   complexity. It reads the `ww docs` sections, inspects the project, validates drafts with the compiled plan,
-  places changes through ww, and hands rule work to the rules skills.
+  places changes through ww, and hands rule work to the rules skills. `742a898`
 - New `ww setup update <workflow> <file> [--level local|project|global]` changes a workflow the configuration
   already defines, wherever it is written (root YAML, an import, any level). It edits the definition in force,
   refuses an edit that a higher-precedence definition would hide, replaces only that list item and keeps the
   rest of the file and its comments, and shows a validated diff first. `setup apply` and `setup update`
-  accept `--dry-run --inspect <workflow> --agent <agent>` to print the compiled plan the change would leave.
+  accept `--dry-run --inspect <workflow> --agent <agent>` to print the compiled plan the change would leave. `742a898`
 - `ww-suggest` follows one method for each proposed workflow (trigger, result and operator involvement; smallest
   structure; YAML with a walkthrough and a failure path; validation with the compiled plan inspected; apply),
   derives test commands from repository evidence only, and does not ask again for an edit already approved.
-  `ww-solve` changes an existing workflow with `setup update`.
+  `ww-solve` changes an existing workflow with `setup update`. `742a898`
 - The specification, features guide and examples are the three authorities for workflow design, and they
   describe what the item, assessment and interactive features actually do. The features guide opens with
   "Designing a workflow" (start linear; steps, handlers and hooks; conversation or assessment; items and
@@ -32,9 +32,9 @@ is in [documentation/limitations.md](documentation/limitations.md).
   `ww docs specification|features|examples` prints the same-version document from any installation (wheels
   carry copies of the canonical files; `scripts/check_distribution.py` checks they match). Skills and
   built-in workflows point at those documents instead of carrying their own recipes, and the blanket rule
-  to put every verification command in completion hooks is gone.
+  to put every verification command in completion hooks is gone. `0ae0753`
 - An assessment outcome made of an automatic command waits for the chosen outcome; completing the
-  assessment used to run it at once.
+  assessment used to run it at once. `0ae0753`
 - Setup learns the project, not the operator. The profile interviews are retired: `ww-learn` and `ww-express`
   and their documents `me`, `myrole`, `team` and `company` are gone from the built-ins, `ww-learn` is no
   longer installed by `init`, and `learned.me|myrole|team|company` can no longer be set (old values stay in the
@@ -44,38 +44,38 @@ is in [documentation/limitations.md](documentation/limitations.md).
   project; `ww-refresh`, `ww-solve`, `ww-rules-from-artifacts` and `ww-automate` read only `project.md`.
   Starting a retired workflow names its replacement. `init` writes only `!.ww/project.md` beside `.ww/*`,
   existing lines and files stay untouched. `discover`'s Onboarding notice is a single optional line that
-  neither interrupts work nor asks about narration.
+  neither interrupts work nor asks about narration. `925747e`
 - A shell or argv handler in a per-item stage can declare `saves: item.field.<name>`: its whole
   trimmed stdout is saved on the stage's item, and a `report` stage then marks only that item
   reported in the same commit, so an automatic reply handler needs no agent bookkeeping. Nonzero
   exit, failed assertions or empty output never report the item. Automatic collection-field saves
-  are rejected; idempotency of remote effects stays with the project's handler.
+  are rejected; idempotency of remote effects stays with the project's handler. `63953e8`
 - Per-item stages, instructions and automatic `argv`/`shell` actions alike, can read
   `{{ww.item.processed_item}}`, `proposed_solution`, `actual_solution` (the resolution text),
   `resolved`, `reported` and `reference_to_id` besides the ID, text and custom fields, always
   fresh from the item's current record. Booleans render `true`/`false`, unset values empty; an
-  item value used with no bound item is a clear context error.
+  item value used with no bound item is a clear context error. `b23d4ef`
 - A workflow may hold several sequential `items` passes over its one collection, also inside
   loops: each pass expands only its own stages, right after its collection step, for the items
   recorded by then, and a looped pass expands again each round. Leaving a pass requires only what
   its stages declare (analysis, solution and `resolved`, or `reported`), instead of every item
   being resolved and reported, so an analysis pass can lead into one batch fix. An empty
   collection now finishes a pass without stages instead of being refused. An `items` step nested
-  in another's per-item stages is rejected. Expanding a schema 1 plan writes it as schema 2.
+  in another's per-item stages is rejected. Expanding a schema 1 plan writes it as schema 2. `04f4189`
 - Groundwork for several sequential `items` passes over one collection; a workflow still may
   hold only one `items` step. Every `items` declaration is now a pass with a stable identity (its
   step path) carried by its collection item and per-item stages in the plan. `persistent`,
   `identity` and `unique` are modeled as unset until declared, and `items: {steps: []}` is
   recorded in the plan as collect-only, apart from the `items: ~` shorthand. Plan snapshots are
   schema 2; schema 1 snapshots still load, with their one pass derived and their digest unchanged,
-  and a replan upgrades them. Older ww builds cannot read schema 2 snapshots.
+  and a replan upgrades them. Older ww builds cannot read schema 2 snapshots. `48c662a`
 - `discover` JSON guidance fields (`task_id`, `runtime_guidance`, `modes_guidance`,
   `model_and_reasoning`, the catch-all `guidance`, runtime descriptions) now carry the same concise
-  text the Markdown shows, and `explicit_task_id` states whether the project requires a task ID.
+  text the Markdown shows, and `explicit_task_id` states whether the project requires a task ID. `48c662a`
 - `discover` Markdown is concise: a start synopsis with optional arguments in brackets, project
   workflows labeled and sorted local, then project, then global, and a pointer to `ww workflows`
   for ww's own. Its JSON is unchanged. A layered `workflows: null` no longer breaks composition,
-  and the roadmap's start-child page mentions `--workflow`.
+  and the roadmap's start-child page mentions `--workflow`. `0075d12`
 - Interactive steps accept natural conversational completion and keep async choices pending
   until the operator answers. `a282452`
 - `start-child --workflow` selects a different workflow for a pending child and preserves it
