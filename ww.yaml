@@ -71,6 +71,22 @@ hooks:
         - ext/ww/git/handlers:git-commit: ~
 
 workflows:
+  - express: Implement a change in one step, with fully automated development checks.
+    steps:
+      - develop: >-
+          Research the request and implement the change, including relevant
+          tests and documentation. Do not run the development checks yourself:
+          ww runs formatting checks, lint, type checks, and the full test suite
+          automatically when you complete this step. Fix any failures ww
+          returns, then complete again. Do not create a .venv symlink.
+        hooks:
+          before_complete:
+            - argv: [scripts/test]
+              on_failure: fix
+              on_failure_instruction: >-
+                Fix the reported development-check failures. Complete the step
+                again so ww reruns the checks automatically.
+
   - task: Implement a feature or a planned change, from research to a tested commit.
     steps:
       - develop: >-
