@@ -109,6 +109,7 @@ from .initialization import (
     _initialization_options,
     _link_agent_instructions,
     install_agent_hooks,
+    install_claude_permissions,
 )
 from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
@@ -248,6 +249,7 @@ def _init(context: _Context) -> _Outcome:
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
     result = install_agent_hooks(context.storage, context.args, result)
+    result = install_claude_permissions(context.storage, context.args, result)
     result = _finish_initialization(
         context.storage,
         result,

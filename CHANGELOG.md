@@ -45,6 +45,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
   own branch and worktree.
 - The stop hook gives no reminder to a manager whose task has a child task or a delegated assignment in
   progress: it is waiting, not stopping short. An ordinary in-progress step still reminds.
+- `init` for Claude Code offers, as an opt-in question defaulting to no (`--permissions` /
+  `--no-permissions` to answer), Bash allow rules for ww's role commands through the project wrapper's
+  absolute path in `.claude/settings.local.json`: created or merged without touching other keys, and kept out
+  of Git.
 
 ## 2026-10-04
 

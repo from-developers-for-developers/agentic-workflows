@@ -1342,6 +1342,14 @@ renders the launch from the fresh child record and calls the same
 coordinator item, and a parent already failed is no longer refreshed back to
 waiting while the child it could not launch has no run.
 
+`complete --role manager` is composed in the CLI: the policy (`manager_continues_itself`)
+reads the page the completion returned and, when the next step is the manager's own,
+the command calls `next` as the manager would; the service's `complete` never
+dispatches, so every other caller keeps its single-step contract. The stop hook
+treats a task with an open child below it, or a delegated step in progress, as a
+manager that is waiting (`OpenTask.waiting_on_another`). `init`'s opt-in Claude Code
+permission rules live in `ww.claude_permissions` (merge, never clobber, keep ignored).
+
 Amendments to a task's requirements live behind their own storage port
 (`TaskAmendmentStorage`: `read_amendments`, append-only `append_amendment`), per
 task rather than per run, and are removed with the task. The instruction builder

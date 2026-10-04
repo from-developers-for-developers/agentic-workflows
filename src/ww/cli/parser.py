@@ -184,6 +184,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    init.add_argument(
+        "--permissions",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Allow ww's role commands, through the project's wrapper, in "
+            ".claude/settings.local.json when Claude Code is set up in the "
+            "project (default: ask, answering no)."
+        ),
+    )
+
     lookup = subparsers.add_parser(
         "lookup",
         parents=[json_output],

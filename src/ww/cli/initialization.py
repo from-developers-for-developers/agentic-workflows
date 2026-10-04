@@ -11,6 +11,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from ww import claude_permissions
 from ww.config.composition import compose_configuration
 from ww.config_files import runtime_ignored, settings_levels
 from ww.defaults import SKILLS, WW_SKILL_NAME, default_settings, skill_location
@@ -124,6 +125,67 @@ def install_agent_hooks(
             created.append(f"{agent.settings_file} (added ww hooks)")
     if choices:
         _save_init_choice(storage, "hooks", choices)
+    return replace(
+        result,
+        created=tuple(created),
+        preserved=tuple(preserved),
+        actions=tuple(actions),
+    )
+
+
+def install_claude_permissions(
+    storage: Storage, args: argparse.Namespace, result: InitializationResult
+) -> InitializationResult:
+    """Offer Bash allow rules for ww's role commands in Claude Code's local file.
+
+    Opt-in: the question's default is no, a terminal is needed to be asked,
+    and ``--permissions``/``--no-permissions`` answer without one.  The answer
+    is remembered, so a later init refreshes the rules it was given for.  The
+    rules name the project wrapper by absolute path; the file is merged, never
+    overwritten, and kept out of Git.  A settings file that cannot be merged
+    never fails init: the summary says how to add the rules by hand.
+    """
+    if not (storage.root / AGENT_DIRECTORIES["claudecode"]).is_dir():
+        return result
+    interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
+    choices = _init_choices(storage)
+    remembered = None if args.force and interactive else choices.get("permissions")
+    wanted = args.permissions if args.permissions is not None else remembered
+    if wanted is None and interactive:
+        try:
+            wanted = _ask_yes_no(
+                _init_prompt(
+                    65,
+                    "Allow ww's role commands for Claude Code in "
+                    f"{claude_permissions.SETTINGS_FILE}? [y/N]: ",
+                ),
+                False,
+            )
+        except EOFError:
+            return result
+    if not isinstance(wanted, bool):
+        return result
+    _save_init_choice(storage, "permissions", wanted)
+    if not wanted:
+        return result
+    created, preserved, actions = (
+        list(result.created),
+        list(result.preserved),
+        list(result.actions),
+    )
+    rules = claude_permissions.role_rules(storage.root.resolve() / "ww")
+    try:
+        if claude_permissions.install_rules(storage.root, rules):
+            created.append(f"{claude_permissions.SETTINGS_FILE} (added ww permissions)")
+        else:
+            preserved.append(f"{claude_permissions.SETTINGS_FILE} (ww permissions)")
+        if claude_permissions.ensure_ignored(storage.root):
+            created.append(f".gitignore (added {claude_permissions.SETTINGS_FILE})")
+    except (StateError, OSError) as error:
+        actions.append(
+            f"Add these to permissions.allow in {claude_permissions.SETTINGS_FILE} "
+            f"by hand ({error}): " + ", ".join(rules)
+        )
     return replace(
         result,
         created=tuple(created),

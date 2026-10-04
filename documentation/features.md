@@ -282,6 +282,19 @@ hooks alone. A hook installation that fails, for example because the agent's
 hooks file is not valid JSON, never fails init: the summary names the file and
 prints the snippet to add by hand.
 
+When Claude Code is set up (a `.claude` directory exists), init also asks, as an
+opt-in question whose default is no, whether to write Bash allow rules for
+ww's role commands into `.claude/settings.local.json`: the project wrapper's
+absolute path (never a bare `ww`) followed by `instruction *`, `next *`,
+`complete *`, `fail *`, `dispute *`, `check *`, `status *`, `artifacts *`,
+`items *`, `item *`, `add-item *`, `update-item *`, `interact *`, `loop *`,
+`lookup *`, `discover*` and `requirements *`. The file is created or merged
+(every other key and rule stays as it was), `.gitignore` gets a line for it
+unless Git already ignores it, and an unreadable file is left untouched with the
+rules printed to add by hand. `--permissions` answers yes without asking and
+`--no-permissions` no; a saved answer is reused, and `--force` asks again.
+Without a terminal or a flag, nothing is written.
+
 `init` also creates the [user configuration
 directory](#user-repo-and-local-configuration) when it is missing, and lists it
 under "Created or restored".
@@ -3413,6 +3426,12 @@ workflows:
     steps:
       - develop: Implement {{ww.task.id}}.
 ```
+
+A stage that only runs a command can be automatic: `land: ~` with
+`argv: [git, merge, --no-ff, "{{ww.child.git.branch}}"]` and `on_failure: fix`
+runs in the task workspace, and a conflict hands the agent a repair assignment
+carrying the command's output (see `on_failure` above), so the agent resolves the
+merge instead of performing every landing.
 
 With two children `A` and `B`, the parent runs `refine`, `implement` (child `A`
 runs its `task` workflow), `review`, and `land` for `A`, then the same four for

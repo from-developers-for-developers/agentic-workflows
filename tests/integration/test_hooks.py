@@ -707,7 +707,9 @@ def test_init_asks_once_per_agent_and_remembers(
 ) -> None:
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".codex").mkdir()
-    answers = iter(["", "n"])
+    # Hooks for claudecode (default yes), for codex (no), then the opt-in
+    # permissions question (default no).
+    answers = iter(["", "n", ""])
     tty_type = type("Tty", (), {"isatty": lambda self: True})
     monkeypatch.setattr("ww.cli.initialization.sys.stdin", tty_type())
     monkeypatch.setattr(sys.modules["ww.cli.main"], "_initialization_options", _options)
@@ -719,6 +721,8 @@ def test_init_asks_once_per_agent_and_remembers(
     assert not (tmp_path / ".codex/hooks.json").exists()
     choices = json.loads((tmp_path / ".ww/init-choices.json").read_text())
     assert choices["hooks"] == {"claudecode": True, "codex": False}
+    assert choices["permissions"] is False
+    assert not (tmp_path / ".claude/settings.local.json").exists()
 
 
 def _options(storage: Storage, args: object) -> tuple:
