@@ -73,6 +73,7 @@ def retry_failed_item(
             status="pending",
             error=None,
             repair_pending=False,
+            retry_errors=(),
             repair_failures=0
             if state.failure_kind == "fix_limit"
             else record.repair_failures,

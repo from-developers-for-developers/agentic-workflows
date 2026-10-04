@@ -153,6 +153,14 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"limits": {"rounds": "3"}}, "limits.rounds must be a positive integer"),
         ({"limits": {"fixes": 0}}, "limits.fixes must be a positive integer"),
         ({"limits": {"fixes": False}}, "limits.fixes must be a positive integer"),
+        (
+            {"limits": {"auto_retries": -1}},
+            "limits.auto_retries must be a non-negative integer",
+        ),
+        (
+            {"limits": {"auto_retries": True}},
+            "limits.auto_retries must be a non-negative integer",
+        ),
         ({"agent_hooks": []}, "ww.json.agent_hooks must be an object"),
         (
             {"agent_hooks": {"days": 3}},

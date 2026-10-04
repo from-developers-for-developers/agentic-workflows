@@ -123,6 +123,21 @@ class _Selection:
         )
 
 
+def _with_retry_note(error: str | None, record: PlanItemExecution | None) -> str | None:
+    """``error`` followed by the attempts ww itself retried before stopping."""
+    if error is None or record is None or not record.retry_errors:
+        return error
+    attempts = "\n".join(
+        f"- attempt {number}: {message.splitlines()[0] if message else 'failed'}"
+        for number, message in enumerate(record.retry_errors, start=1)
+    )
+    return (
+        f"{error}\n\nww retried this step {len(record.retry_errors)} time(s) "
+        "itself (`limits.auto_retries`) before stopping; the failed earlier "
+        f"attempts:\n{attempts}"
+    )
+
+
 @dataclass(frozen=True)
 class _RequirementsPage:
     """What one page shows of the task's requirements and amendments."""
@@ -379,7 +394,10 @@ class InstructionBuilder:
             text += "\n\n" + item.on_failure_instruction
         text += "\n\n" + action_text(item, values, state.task_id, ContainerArtifact())
         text += "\n\nFailure:\n\n" + (
-            record.error or state.last_error or "Unknown command failure"
+            _with_retry_note(
+                record.error or state.last_error or "Unknown command failure", record
+            )
+            or ""
         )
         if references:
             text += "\n\nFull command output:\n" + "\n".join(
@@ -715,14 +733,18 @@ class InstructionBuilder:
             _base(
                 state, current, item_status="interrupted" if interrupted else "failed"
             ),
-            error=(
-                f"Handler repair reached its fix limit ({record.repair_failures} of "
-                f"{current.max_handler_fixes}).\n\n{state.last_error}"
-                if record is not None
-                and current is not None
-                and needs_repair(state)
-                and state.failure_kind == "fix_limit"
-                else state.last_error
+            error=_with_retry_note(
+                (
+                    f"Handler repair reached its fix limit "
+                    f"({record.repair_failures} of {current.max_handler_fixes})."
+                    f"\n\n{state.last_error}"
+                    if record is not None
+                    and current is not None
+                    and needs_repair(state)
+                    and state.failure_kind == "fix_limit"
+                    else state.last_error
+                ),
+                record,
             ),
             child_tasks=(
                 self.tasks.read_children(state.task_id, state.run_id)

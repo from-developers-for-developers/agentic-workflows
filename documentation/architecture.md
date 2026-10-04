@@ -1681,6 +1681,11 @@ handler's worker guidance; repeated failures stay with that worker. In
 persists the repair artifact before ww retries through the existing command
 ledger, preserving prior attempts and completed predecessor items.
 
+`ActionExecutor.run` retries a failure an action itself reported
+`limits.auto_retries` times before it fails the item; each failure is kept in the
+record's `retry_errors` and each attempt is committed before the next. An
+interruption is not a reported failure and is not retried.
+
 The same `limits.fixes` policy escalates exhausted repairs to the operator.
 Operator retries renew the budget; forcing skips the failed automated item.
 Interrupted operations keep their existing recovery boundary because their

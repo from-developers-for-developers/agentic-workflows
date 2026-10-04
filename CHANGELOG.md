@@ -27,6 +27,13 @@ is in [documentation/limitations.md](documentation/limitations.md).
   `requirements_command` and `task_amendments`.
 - New `ww amend <task> --requirements "<text>"` appends a timestamped, short amendment recording the caller
   role, never rewriting the original; every page lists amendments newest last. Refused on a completed task.
+- New `limits.auto_retries` in `ww.json` (default 0): ww retries a failed automatic step that many times
+  before the repair assignment or operator stop applies. Each failed attempt is recorded on the step and
+  listed on the page that stops or hands out the repair.
+- Agent instructions, the `ww` skill and the `awaiting_operator` page now say that a standing operator
+  authorization for routine repairs (dependency installation, formatting, retries) covers stops of that kind:
+  the agent applies it without asking again and asks only for a material decision or an action outside it.
+  Every other stop behavior is unchanged.
 
 ## 2026-10-04
 

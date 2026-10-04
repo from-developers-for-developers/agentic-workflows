@@ -4164,6 +4164,13 @@ the budget, and an operator force skips the handler. Known failure retries
 need no `idempotent: true`; unknown outcomes after interruption still use the
 existing recovery rules.
 
+`limits.auto_retries` in `ww.json` (default 0, never negative) makes ww retry a
+failed automatic step that many times itself before any of this applies: an
+interrupted step (unknown outcome) and a step that needs agent-supplied values
+are never retried this way. Each failed attempt is kept on the step's record, and a
+page that stops for the operator, or hands a repair to the agent, lists them
+(`ww retried this step N time(s) itself`). An operator retry starts the count over.
+
 Optional `on_failure_instruction` also adds guidance to hook failures.
 `before_complete` hooks with `on_failure: fix` keep the step's existing check
 loop with its worker; see [The fix loop](#the-fix-loop).

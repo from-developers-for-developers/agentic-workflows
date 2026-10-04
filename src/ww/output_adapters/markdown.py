@@ -533,7 +533,10 @@ def _awaiting_operator(instruction: Instruction) -> Lines:
         "`ww` is waiting for the operator, the user "
         f"(`operator_reason: {instruction.operator_reason}`). Stop and ask "
         "them: the recovery commands below are theirs to choose, and nothing "
-        "runs until they do.",
+        "runs until they do. If they already gave a standing authorization "
+        "for routine repairs of this kind (dependency installation, "
+        "formatting, retries), apply it without asking again; ask only for a "
+        "material decision or an action it does not cover.",
         "",
     ]
 

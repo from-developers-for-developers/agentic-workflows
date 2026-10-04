@@ -547,6 +547,9 @@ class PlanItemExecution:
     repair_pending: bool = False
     repair_failures: int = 0
     repair_artifacts: tuple[str, ...] = ()
+    # The failures ww retried by itself (``limits.auto_retries``), oldest
+    # first; an operator retry starts the list over.
+    retry_errors: tuple[str, ...] = ()
     # The short handover a step's worker wrote for the next step.
     summary_for_next: str | None = None
     # An interactive step's conversation with the operator, as recorded by
@@ -648,6 +651,7 @@ class PlanItemExecution:
                 if self.assessment_outcome is not None
                 else {}
             ),
+            **({"retry_errors": list(self.retry_errors)} if self.retry_errors else {}),
         }
 
     @classmethod
@@ -696,6 +700,10 @@ class PlanItemExecution:
             repair_artifacts=tuple(
                 expect_string(value, "repair artifact")
                 for value in _list(data.get("repair_artifacts", []), "repair artifacts")
+            ),
+            retry_errors=tuple(
+                expect_string(value, "retry error")
+                for value in _list(data.get("retry_errors", []), "retry errors")
             ),
             summary_for_next=expect_optional_string(
                 data.get("summary_for_next"), "summary for next step"

@@ -325,7 +325,7 @@ with its default, as `init` writes it:
   "feedback_learning": true,
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
-  "limits": {"rounds": 3, "fixes": 3},
+  "limits": {"rounds": 3, "fixes": 3, "auto_retries": 0},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "rules": {},
   "builtins": {
@@ -1073,7 +1073,11 @@ the item ID, attempt count, limit, instruction, output references and artifacts.
 
 The handler stops for the operator with `operator_reason: fix_limit` after
 `limits.fixes` failures (default 3), using the same counting policy as checks.
-An operator-authorized `next --retry` starts a fresh budget and retries the
+Before that, `limits.auto_retries` (default 0; a non-negative integer) has ww
+retry a handler that reported a failure itself that many times, recording each
+failed attempt on the step and listing them on the stop or repair page; an
+interrupted handler and one that takes agent-supplied values are never retried
+this way. An operator-authorized `next --retry` starts a fresh budget and retries the
 handler; `next --force --reason "..."` skips it. An agent that cannot repair it
 can use the displayed `fail` command to request an operator decision.
 
