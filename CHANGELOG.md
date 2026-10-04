@@ -9,6 +9,11 @@ The package version stays at 0.1.0 while the release process is not yet in
 place. What may change between two pulls, and what ww does not promise yet,
 is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-04
+
+- `start-child` accepts runtime, model and reasoning overrides, preserving them across retries
+  and identity bootstrap. `8caadc7`
+
 ## 2026-10-03
 
 - Shell and argv handlers automatically save successful stdout when metadata is declared in `saves`;
