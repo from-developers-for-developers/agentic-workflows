@@ -331,8 +331,11 @@ class _Composer:
                     self._note_origins(key, value, label)
 
     def _set_workflow_provenance(
-        self, entries: list[Any], label: str, level: WorkflowConfigLevel
+        self, entries: Any, label: str, level: WorkflowConfigLevel
     ) -> None:
+        # The raw catalog is not validated yet; the parser rejects bad shapes.
+        if not isinstance(entries, list):
+            return
         for entry in entries:
             if (name := entry_name(entry)) is not None:
                 self.workflow_provenance[name] = WorkflowProvenance(label, level)

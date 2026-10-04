@@ -93,7 +93,7 @@ def test_projects_are_parsed_and_listed_by_discover(
 
     assert "- `backend` at `./backend` — Python API service." in text
     assert "- `frontend` at `./frontend`" in text
-    assert "- `--project`: `backend`, `frontend`. Omit it to work in the root." in text
+    assert "[--project <backend|frontend>]" in text
     assert report["projects"] == [
         {
             "name": "backend",
@@ -110,7 +110,7 @@ def test_projects_are_parsed_and_listed_by_discover(
             "task_format": None,
         },
     ]
-    assert "may carry an `extensions` section" in text
+    assert "A project's own `ww.json` may add `extensions`" in text
 
 
 def test_discover_without_projects_shows_no_project_option(

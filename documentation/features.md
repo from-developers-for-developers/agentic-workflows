@@ -220,27 +220,49 @@ configuration:
 ./ww discover --json
 ```
 
-It lists the workflows and modes with their descriptions and default modes
-(an automatic mode with where it is always on),
-the configured projects, the runtimes and roles with what each means, and the
-start options with their possible values: agents, runtimes, projects, and the
-branch strategies an extension such as `ww/git` defines. It explains when to pass `--model` and `--reasoning`, and
-it ends with the exact commands to start a task, show a task's instructions,
-check its status, and inspect a workflow's plan. Every unfinished task is
-listed under "Unfinished tasks", newest first, in the `session-start` hook's
-format with any interruption notice, and `unfinished_tasks` in the JSON
-carries each one's `task_id`, `workflow`, `agent`, `step`, `item_status`,
-`workspace`, `updated_at`, `resume` command and whether it is `interrupted`.
-When declared rules have no check yet, a short "Rules" section, and
-`rules_notice` in the JSON, says how many and suggests the `ww-scriptize`
-skill; see [How a rule becomes a check](#how-a-rule-becomes-a-check).
+The Markdown is deliberately short. It lists the project's workflows with
+their descriptions and default modes, each labeled with the configuration
+level and source it came from and sorted local, then project, then global
+(stable within a level), under this instruction: choose a workflow matching
+the request; when several fit, prefer local over project over global; honor an
+explicitly requested workflow; if the choice is still unclear, ask the
+operator. The preference is guidance, not an automatic selector:
+
+```markdown
+- review — [local: ww.local.yaml] Review incoming PR feedback.
+- develop — [project: ww.yaml] Implement and verify a change.
+- generic-fix — [global: ~/.config/ww/ww.yaml] General bug-fix workflow.
+```
+
+After the workflows come the changes no workflow covers (the `catchall`,
+started through `lookup`), the configured projects when there are any, the
+modes (an automatic mode with where it is always on), and a multiline start
+synopsis in which square brackets denote optional arguments. The task ID is
+`<task-id>` where the project requires one and `[<task-id>]` otherwise, with
+the external-ticket guidance; `--project` and `--branch-strategy` appear only
+when projects or branch strategies are configured, with their values. A few
+lines explain what is not obvious: explicit modes replace the defaults,
+automatic modes apply themselves, `auto` honours per-step worker requests while
+`single` records them, and `--model` and `--reasoning` describe your own
+session. It ends with the resume and status commands and one optional plan
+preview. ww's own workflows are not listed there: it points at `ww workflows`,
+the catalog of every workflow. Every unfinished task is listed under
+"Unfinished tasks", newest first, in the `session-start` hook's format with any
+interruption notice, and `unfinished_tasks` in the JSON carries each one's
+`task_id`, `workflow`, `agent`, `step`, `item_status`, `workspace`,
+`updated_at`, `resume` command and whether it is `interrupted`. The Rules
+suggestion is not part of the Markdown; `rules_notice` in the JSON and the
+first page of `start` carry it, see
+[How a rule becomes a check](#how-a-rule-becomes-a-check). The JSON keeps every
+field, including the built-in catalogs, the roles and the guidance texts.
 `discover` is read-only and leaves no audit record.
 
 In JSON, each workflow entry also carries `source` and `source_level`, naming
 the winning YAML definition and whether it came from the global user config,
 project config, or local config. Imported files keep the level of the config
-that imported them. Built-in workflow entries and the catch-all use `null` for
-both fields.
+that imported them. `null` for both fields means a contribution without a
+configured definition, such as a built-in or the catch-all that no
+configuration file defines; one that a file does define reports that file.
 
 A task whose state ww cannot read, such as one written by a build with another
 state schema, does not break `discover`. It is listed
@@ -273,7 +295,7 @@ not use it, and `start` refuses to create a task.
 Set `"enabled": "on_request"` to keep ww available but out of the way: an
 agent uses it only when the user explicitly asks for it (says to use ww, names
 a ww task, or invokes the `ww` skill), and otherwise works without ww and
-without asking. `discover` opens with that rule, then lists the full catalog so
+without asking. `discover` opens with that rule, then lists the workflows so
 an explicit request can proceed, and its JSON carries `"enabled":
 "on_request"`. `start` and `lookup` work as usual, `lookup` reminding the agent
 to go on only for an explicit request, and the `session-start` hook says that
@@ -1980,8 +2002,8 @@ goes back to its worker with the fix page, and it counts toward the rule's
 `max_fixes` like a failed check. Once every rule passes, ww records the held
 completion as submitted.
 
-`discover` and the first page of `start` say how many declared rules have no
-check yet and suggest the `ww-scriptize` skill, which starts
+`discover --json` (`rules_notice`) and the first page of `start` say how many
+declared rules have no check yet and suggest the `ww-scriptize` skill, which starts
 `ww-scriptize-rules`. The notice never blocks a task; it is left out
 while `ww-scriptize-rules` is switched off, and on the pages of
 `ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules,

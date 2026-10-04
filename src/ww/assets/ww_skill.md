@@ -22,7 +22,7 @@ description: Carry out the user's request through ww, this project's workflow to
    task the conversation works on or the request names, as written, and
    follow its answer, then do the work as you would without ww. Questions and
    other read-only work need no task.
-   When `discover` or the first page of `start` says rules have no check
+   When the first page of `start` says rules have no check
    yet, tell the user once and carry on: it never blocks the task, and the
    `ww-scriptize` skill builds those checks when they want it.
 4. Follow every ww response exactly: run each displayed command with all

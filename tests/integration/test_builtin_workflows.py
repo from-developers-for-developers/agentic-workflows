@@ -205,5 +205,8 @@ def test_discover_lists_ww_own_workflows_apart(
 
     assert main(["--root", str(root), "discover"]) == 0
     output = capsys.readouterr().out
-    assert "## ww's own workflows\n\n- `learn` — Learns who the operator is." in output
+    # ww's own workflows stay out of the Markdown and behind the catalog.
+    assert "Learns who the operator is." not in output
+    assert "ww's own workflows" in output
+    assert "workflows` lists every workflow" in output
     assert "## Changes no workflow covers" in output

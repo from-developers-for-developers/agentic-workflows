@@ -11,6 +11,10 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- `discover` Markdown is concise: a start synopsis with optional arguments in brackets, project
+  workflows labeled and sorted local, then project, then global, and a pointer to `ww workflows`
+  for ww's own. Its JSON is unchanged. A layered `workflows: null` no longer breaks composition,
+  and the roadmap's start-child page mentions `--workflow`.
 - Interactive steps accept natural conversational completion and keep async choices pending
   until the operator answers. `a282452`
 - `start-child --workflow` selects a different workflow for a pending child and preserves it

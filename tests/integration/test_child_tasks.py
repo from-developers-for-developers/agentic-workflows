@@ -197,6 +197,7 @@ def test_recovered_child_leaves_parent_waiting_for_other_children(
     assert parent.error is None
     assert parent.action_text is not None
     assert "./ww start-child TASK1 1" in parent.action_text
+    assert "`--workflow <name>`" in parent.action_text
 
 
 def test_child_start_retries_after_parent_binding_was_persisted(

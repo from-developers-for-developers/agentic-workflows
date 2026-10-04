@@ -547,3 +547,39 @@ def test_an_invalid_settings_level_is_reported_by_path(user: Path, repo: Path) -
 
     with pytest.raises(ConfigurationError, match="must contain a JSON object"):
         load_project_config(repo / "ww.json")
+
+
+@pytest.mark.parametrize("empty", ["null", "42", "text"])
+def test_a_non_list_workflows_value_does_not_break_layered_provenance(
+    user: Path, repo: Path, empty: str
+) -> None:
+    _write(user / "ww.yaml", f"workflows: {empty}\n")
+    root = _write(repo / "ww.yaml", "workflows: []\n")
+
+    composed = compose_configuration(root)
+
+    assert composed.raw["workflows"] == []
+    assert composed.workflow_provenance == {}
+
+
+def test_a_null_global_workflows_value_leaves_project_provenance(
+    user: Path, repo: Path
+) -> None:
+    _write(user / "ww.yaml", "workflows: null\n")
+    root = _write(repo / "ww.yaml", _WORKFLOW)
+
+    provenance = compose_configuration(root).workflow_provenance
+
+    assert set(provenance) == {"task"}
+    assert provenance["task"].level == "project"
+
+
+def test_a_configured_catchall_has_a_yaml_origin(repo: Path) -> None:
+    root = _write(
+        repo / "ww.yaml",
+        f"workflows:\n  - {CATCHALL}: Mine.\n    steps:\n      - work: Do it.\n",
+    )
+
+    origin = load_configuration(root).workflow_provenance[CATCHALL]
+
+    assert (origin.source, origin.level) == ("ww.yaml", "project")
