@@ -184,7 +184,18 @@ class PlanSnapshot:
         ):
             raise ValueError(f"unsupported plan snapshot schema: {schema_version!r}")
         item_passes = schema_version >= PLAN_SCHEMA_VERSION
-        plan = _plan_from_dict(data["plan"], item_passes)
+        template = (
+            _plan_from_dict(data["template_plan"], item_passes)
+            if "template_plan" in data
+            else None
+        )
+        # A schema 1 template keeps its per-item templates, so it alone knows
+        # whether an expanded pass that collected nothing had stages.
+        plan = _plan_from_dict(
+            data["plan"],
+            item_passes,
+            None if template is None else _legacy_collect_only(template),
+        )
         return cls(
             schema_version=schema_version,
             compiler_version=expect_string(
@@ -198,15 +209,23 @@ class PlanSnapshot:
             plan_revision=expect_positive_int(
                 data.get("plan_revision", 1), "plan snapshot.plan_revision"
             ),
-            template_plan=(
-                _plan_from_dict(data["template_plan"], item_passes)
-                if "template_plan" in data
-                else plan
-            ),
+            template_plan=template if template is not None else plan,
             bootstrap_step=expect_optional_string(
                 data.get("bootstrap_step"), "plan snapshot.bootstrap_step"
             ),
         )
+
+
+def _legacy_collect_only(template: WorkflowPlan) -> bool | None:
+    """Whether the template's one ``items`` pass only collects, if it has one."""
+    return next(
+        (
+            item.item_collect_only
+            for item in template.items
+            if item.item_operation == "collect" and item.child_operation is None
+        ),
+        None,
+    )
 
 
 def validate_task_runs(task_id: str, runs: tuple[TaskRunAggregate, ...]) -> None:

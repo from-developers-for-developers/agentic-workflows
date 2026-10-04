@@ -41,6 +41,7 @@ from ww.execution_models import (
 )
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
+from ww.item_passes import item_collection
 from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
@@ -891,6 +892,9 @@ class InstructionBuilder:
                 else plan.items[enclosing_loop_entry_index(plan, state.cursor)].artifact
             )
             loop_break_command = completion(item.artifact or wrapper_artifact, "break")
+        later_pass = _later_item_pass(plan, item)
+        # A collection step's identity and unique fields are the collection's.
+        collection = item_collection(plan) if item.item_operation == "collect" else None
         workspace, values = item_workspace_values(
             self.root,
             item.workdir,
@@ -908,6 +912,7 @@ class InstructionBuilder:
                 },
                 state.task_id,
                 self._container_artifact(state, plan, item),
+                later_pass=later_pass,
             )
             + self._current_child(state, item),
             required_values=required,
@@ -961,16 +966,16 @@ class InstructionBuilder:
             operator_paused=state.operator_paused,
             conversation=(self._conversation(state, item) if item.interactive else ()),
             ui=item.ui,
-            shared_items=item.shared_items,
+            shared_items=item.shared_items and not later_pass,
             stored_items=(
                 self.tasks.read_items(state.task_id, state.run_id)
-                if item.shared_items
+                if item.shared_items and not later_pass
                 else ()
             ),
             required_item_fields=item.update_item,
             collects_items=item.item_operation == "collect",
-            item_identity=item.item_identity,
-            item_unique=item.item_unique,
+            item_identity=collection.item_identity if collection else None,
+            item_unique=collection.item_unique if collection else (),
             run_handovers=(
                 tuple(
                     StepHandover(
@@ -1555,3 +1560,11 @@ def _bootstrap_modes(request: dict[str, object]) -> tuple[PlannedMode, ...]:
         PlannedMode.from_dict(entry, f"bootstrap request step_modes[{index}]")
         for index, entry in enumerate(entries)
     )
+
+
+def _later_item_pass(plan: WorkflowPlan, item: PlanItem) -> bool:
+    """Whether ``item`` collects for an ``items`` pass after the workflow's first."""
+    if item.item_operation != "collect" or item.child_operation is not None:
+        return False
+    first = item_collection(plan)
+    return first is not None and item.item_pass != first.item_pass

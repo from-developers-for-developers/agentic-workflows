@@ -311,7 +311,10 @@ def _expanded_run(tmp_path: Path) -> TaskRunAggregate:
         ChildTask("A", "Slice A", "child", "TASK-1/A"),
         ChildTask("B", "Slice B", "child", "TASK-1/B"),
     )
-    state, snapshot = materialize_item_plan(state, snapshot, items, _clock)
+    collector = next(
+        item for item in snapshot.plan.items if item.item_operation == "collect"
+    )
+    state, snapshot = materialize_item_plan(state, snapshot, collector, items, _clock)
     state, snapshot = materialize_child_plan(state, snapshot, children, _clock)
     return TaskRunAggregate(
         "01-parent", "parent", snapshot, state, items=items, children=children

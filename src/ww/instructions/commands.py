@@ -211,6 +211,10 @@ def add_child_command(
     )
 
 
+def items_command(task_id: str = TASK_PLACEHOLDER) -> str:
+    return _command("items", _arg(task_id))
+
+
 def item_command(task_id: str, item_id: str) -> str:
     return _command("item", _arg(task_id), "--id", _arg(item_id))
 

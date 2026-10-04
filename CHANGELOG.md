@@ -11,6 +11,13 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- A workflow may hold several sequential `items` passes over its one collection, also inside
+  loops: each pass expands only its own stages, right after its collection step, for the items
+  recorded by then, and a looped pass expands again each round. Leaving a pass requires only what
+  its stages declare (analysis, solution and `resolved`, or `reported`), instead of every item
+  being resolved and reported, so an analysis pass can lead into one batch fix. An empty
+  collection now finishes a pass without stages instead of being refused. An `items` step nested
+  in another's per-item stages is rejected. Expanding a schema 1 plan writes it as schema 2.
 - Groundwork for several sequential `items` passes over one collection; a workflow still may
   hold only one `items` step. Every `items` declaration is now a pass with a stable identity (its
   step path) carried by its collection item and per-item stages in the plan. `persistent`,

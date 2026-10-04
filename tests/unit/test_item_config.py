@@ -206,15 +206,16 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
             "item_phase must be one of: analyze, resolve, report",
         ),
         (
-            "      - review: Review.\n        items: ~\n"
-            "      - triage: Triage.\n        items: ~\n",
-            "at most one items step; found 'review', 'triage'",
+            "      - review: Review.\n        items:\n          steps:\n"
+            "            - triage: Triage.\n              items: ~\n",
+            "items step 'triage' is nested inside the per-item steps of items "
+            "step 'review'",
         ),
         (
-            "      - outer:\n        steps:\n"
-            "          - review: Review.\n            items: ~\n"
-            "          - triage: Triage.\n            items: ~\n",
-            "at most one items step",
+            "      - review: Review.\n        items:\n          steps:\n"
+            "            - rounds: Rounds.\n              loop:\n"
+            "                - triage: Triage.\n                  items: ~\n",
+            "items step 'triage' is nested inside the per-item steps",
         ),
     ],
 )

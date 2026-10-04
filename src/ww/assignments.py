@@ -102,6 +102,8 @@ def shares_item_span(
     """Whether ``item`` continues the per-item assignment begun at ``first``."""
     if first.item_id is None or item.item_id is None:
         return False
+    if first.item_pass != item.item_pass:
+        return False
     if first.item_assignment != item.item_assignment:
         return False
     if item.item_assignment == "per_item" and first.item_id != item.item_id:

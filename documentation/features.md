@@ -2847,9 +2847,45 @@ reasoning, or profile, or is the manager's (`role: manager`), starts a new assig
 exactly as a loop body step does. The setting has no effect in
 the `single` runtime.
 
-A workflow may contain at most one `items` step. This is intentional: collected
-items belong to the workflow run, and ww expands every per-item stage in one
-place when collection completes.
+### Several passes over the same items
+
+A workflow has one item collection, and each `items` step is a pass over it.
+Analysis and fixes that are cheaper together can run once between passes,
+while every source comment is still checked and reported on its own:
+
+```yaml
+- collect: Record one item per comment with its stable source ID.
+  items:
+    steps: []
+- analyze-together: Analyze all collected comments together.
+- confirm-analysis: Reuse the collected items.
+  items:
+    steps:
+      - analyze: Reuse the shared analysis; confirm and fill gaps.
+        item_phase: analyze
+- fix-together: Implement and verify the fixes for all analyzed items.
+- finish: Reuse the collected items.
+  items:
+    steps:
+      - verify-resolution: Verify the result and record actual_solution.
+        item_phase: resolve
+      - report: Report the result for this original comment.
+        item_phase: report
+```
+
+Each pass expands its own stages when its collection step completes, for the
+items recorded by then; an item added later joins the next pass. Passes share
+the items' records, so the analysis written by the batch step is there for the
+quick analyze checkpoints, and nothing an earlier pass recorded is cleared.
+Inside a loop a pass is expanded again every round.
+
+Leaving a pass requires only what its stages declare: an analyze stage needs
+the item's analysis, a resolve stage its actual solution and `resolved`, a
+report stage `reported`, and the built-in `handle-item` stage both `resolved`
+and `reported`. So an analysis-only pass can lead into a batch fix, and a
+workflow that only analyzes can end there. A linked comment reuses its
+canonical item's analysis and fix but is reported itself. An `items` step
+nested inside another's per-item stages is rejected.
 
 ### Items that persist across runs
 
