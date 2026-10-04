@@ -1493,10 +1493,15 @@ at render time.
 
 Some work is only enumerable after an agent has inspected an external source,
 such as the comments on a pull request. Items are therefore durable, run-local
-records rather than configuration-time loop values. One `items` step owns the
-whole flow: its own action is the collection, annotated `collect` and carrying
-any splitting guidance, and its completion expands the saved per-item templates
-into concrete plan items. A bare `items` step compiles one built-in
+records rather than configuration-time loop values. A workflow has one item
+collection and may hold several sequential `items` passes over it. Each `items`
+declaration is a pass with a stable identity (its step path): its own action is
+the collection step (the first pass records the items; later passes reuse them),
+annotated `collect` and carrying any splitting guidance, and its completion
+expands only that pass's saved per-item templates into concrete plan items, for
+the items recorded by then. Membership is frozen for the pass, so an item added
+meanwhile joins the next pass, or the next round of a loop, whose passes expand
+again each round. A bare `items` step compiles one built-in
 `handle-item` template with the combined `handle_item` operation. This
 preserves the executor's ordinary retry, artifact, and status rules while making
 each item's progress independently visible.
@@ -1506,9 +1511,9 @@ so the compiler sees ordinary steps; where stages still differ, the assignment
 bound splits at run time rather than the compiler rejecting the flow. Only the
 collection item carries `collect`: the `items`
 step's hooks wrap the entire flow, and a completion hook tagged `collect` would
-re-trigger expansion after the last item. Each workflow allows one `items` step,
-because collected items are run-scoped and every template expands at the first
-template position.
+re-trigger expansion after the last item. A pass's templates expand at its own
+collection step rather than at the first template position, and an `items` step
+nested in another's per-item stages is rejected.
 
 Per-item templates are full steps, not merely work handlers. Their applicable
 global, workflow, and step hooks are compiled into the template segment and
@@ -1521,8 +1526,16 @@ Each record retains both the source text and its analysis, proposed and actual
 solution, resolution/reporting flags, and an optional canonical-item reference.
 Related source comments can share work without disappearing from reporting.
 The item commands are the only mutation boundary, which keeps external agents
-from editing task files directly. The executor refuses to leave an item phase
-until every collected item is both resolved and reported.
+from editing task files directly. Leaving a pass requires only what its
+stages declare: an `analyze` stage needs `processed_item`, a `resolve` stage
+`actual_solution` and `resolved`, a `report` stage `reported`, so an analysis
+pass can lead into one batch fix. An unmet pass stops with `pass_incomplete`;
+the missing values are recorded with `update-item` and `next --retry` checks
+again. Per-item stages read the item's current record through `ww.item.*`
+values, and an automatic shell or argv stage can save its whole stdout into an
+item field (`saves: item.field.<name>`), after which a `report` stage marks only
+that item reported in the same commit as the save; the project's handler owns
+the idempotency of any remote effect.
 
 A flow declared `persistent` adds one task-level store beside the per-run copies,
 through the storage adapter like metadata. The run's copy stays the working

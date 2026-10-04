@@ -36,6 +36,7 @@ def _runner_project(tmp_path: Path, *, supported: bool = True) -> tuple[Path, Pa
         '[ -e "$(dirname "$0")/tools-ready" ] ;; *) exit 0 ;; esac\n'
         "  exit $?\n"
         'elif [ "$1" = "-m" ] && [ "$2" = "pip" ]; then\n'
+        '  [ -z "$FAKE_PIP_FAILS" ] || exit 1\n'
         '  printf \'%s\\n\' "$*" >> "$(dirname "$0")/pip.log"\n'
         '  case "$*" in *\' -e .[dev]\'*) touch "$(dirname "$0")/tools-ready" ;; esac\n'
         'elif [ "$1" = "-m" ] && [ "$2" = "pytest" ]; then\n'
@@ -53,12 +54,17 @@ def _runner_project(tmp_path: Path, *, supported: bool = True) -> tuple[Path, Pa
 
 
 def _run(
-    project: Path, fake_bin: Path, *, override: str = ""
+    project: Path,
+    fake_bin: Path,
+    *,
+    override: str = "",
+    installer_fails: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     environment = {
         **os.environ,
         "PATH": f"{fake_bin}:/usr/bin:/bin",
         "WW_PYTHON": override,
+        "FAKE_PIP_FAILS": "1" if installer_fails else "",
     }
     return subprocess.run(
         ["/bin/sh", str(project / "scripts" / "test"), "tests/unit"],
@@ -142,3 +148,43 @@ def test_missing_supported_python_has_a_clear_diagnostic(tmp_path: Path) -> None
     assert result.returncode != 0
     assert "Python >= 3.10 is required" in result.stderr
     assert not (project / ".venv").exists()
+
+
+def test_failed_install_removes_the_environment_it_just_created(
+    tmp_path: Path,
+) -> None:
+    project, fake_bin = _runner_project(tmp_path)
+
+    result = _run(project, fake_bin, installer_fails=True)
+
+    assert result.returncode != 0
+    assert not (project / ".venv").exists()
+    assert not (project / ".venv/bin/pytest.log").exists()
+
+
+def test_failed_install_preserves_an_existing_partial_environment(
+    tmp_path: Path,
+) -> None:
+    project, fake_bin = _runner_project(tmp_path)
+    helper_project, helper_bin = _runner_project(tmp_path / "helper")
+    setup = subprocess.run(
+        ["/bin/sh", str(helper_project / "scripts/test"), "tests/unit"],
+        cwd=helper_project,
+        env={**os.environ, "PATH": f"{helper_bin}:/usr/bin:/bin"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert setup.returncode == 0, setup.stderr
+    venv_bin = project / ".venv/bin"
+    venv_bin.mkdir(parents=True)
+    shutil.copy2(helper_project / ".venv/bin/python", venv_bin / "python")
+    (venv_bin / "marker").write_text("keep", encoding="utf-8")
+
+    result = _run(project, fake_bin, installer_fails=True)
+
+    assert result.returncode != 0
+    assert (venv_bin / "python").exists()
+    assert (venv_bin / "marker").read_text(encoding="utf-8") == "keep"
+    assert not (venv_bin / "tools-ready").exists()
+    assert not (venv_bin / "pytest.log").exists()
