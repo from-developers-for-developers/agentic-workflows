@@ -199,7 +199,7 @@ def test_steps_name_ww_commands_with_the_configured_executable(
     assert values[EXECUTABLE] == "./ww"
 
 
-def test_discover_lists_the_learning_workflows_briefly(
+def test_discover_leaves_the_learning_workflows_to_the_catalog(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path / "project")
@@ -214,14 +214,14 @@ def test_discover_lists_the_learning_workflows_briefly(
 
     assert main(["--root", str(root), "discover"]) == 0
     output = capsys.readouterr().out
-    section = output.split("## ww's own workflows", 1)[1].split("\n## ", 1)[0]
-    entries = [line for line in section.splitlines() if line.startswith("- ")]
-    assert [entry.split("`")[1] for entry in entries] == [
-        *ONBOARDING,
-        "ww-scriptize-rules",
-    ]
-    # One short line each.
-    assert all(len(entry) < 140 for entry in entries)
+    # The Markdown leaves them to the catalog.
+    assert "ww-scriptize-rules" not in output
+    assert "workflows` lists every workflow" in output
+    assert main(["--root", str(root), "workflows"]) == 0
+    catalog = {
+        item["name"] for item in json.loads(capsys.readouterr().out)["workflows"]
+    }
+    assert {*ONBOARDING, "ww-scriptize-rules"} <= catalog
 
 
 @pytest.mark.parametrize("workflow", ONBOARDING)

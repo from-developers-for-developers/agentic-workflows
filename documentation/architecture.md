@@ -173,7 +173,8 @@ but runs its checks on the composed result, and adds the local-file patterns to
 That file is deliberately short. It states when to use ww and the rules for
 following its responses, and it sends agents to `discover`
 (`../src/ww/cli/discover.py`), which renders the project's current workflows,
-modes, runtimes, roles, start options, and commands. Keeping the choices in a
+modes, a start synopsis, and resume commands. ww's own workflows stay in the
+`workflows` catalog; the JSON keeps the full lists. Keeping the choices in a
 command rather than in copied prose means the guidance cannot drift from the
 configuration. Branch strategies are the one option core cannot know itself:
 an extension that names branches declares `branch_strategies`, and the registry

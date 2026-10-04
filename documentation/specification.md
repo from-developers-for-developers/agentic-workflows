@@ -124,9 +124,18 @@ The `discover --json` entries in `workflows`, `builtin_workflows`, and
 `catchall` include additive `source` and `source_level` fields. Configured
 workflows report the winning YAML definition's physical source label and its
 public level (`global`, `project`, or `local`); imported definitions keep the
-level of the file that imported them. Built-in workflows report `null` for
-both fields because they have no configured source. Existing workflow fields
-keep their meanings.
+level of the file that imported them. A workflow with no configured
+YAML definition, such as an unconfigured built-in or the unconfigured
+catch-all, reports `null` for both fields; a built-in or the catch-all that a
+configuration file defines has that file as its origin. Existing workflow
+fields keep their meanings. The Markdown shows each project workflow as
+`name — [level: path] description`, sorted local, then project, then global,
+stable within a level, with the home directory written `~` and an honest
+`other` label, never `local`, for a workflow without a configured source. The
+ordering is only guidance for choosing between workflows that fit, never
+overriding an explicit request, and does not change configuration or execution
+order. `discover` Markdown omits the rules notice (`rules_notice` stays in
+JSON and in task instructions).
 
 ```yaml
 # ~/.config/ww/ww.yaml
@@ -266,7 +275,7 @@ the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 syntax. `enabled` is `true` (the default: agents use ww for project work),
 `false` (agents do not use ww, `discover` says only that, and `start` refuses),
 or `"on_request"` (ww stays available, but agents use it only when the user
-explicitly asks for it; `discover` says so before its full catalog and reports
+explicitly asks for it; `discover` says so before its workflows and reports
 `"enabled": "on_request"` in JSON); any other value is an error naming the three.
 `limits` holds two positive integers, each defaulting to `3`: `rounds`, the
 round limit of a step `loop` without its own `max_rounds`, and `fixes`, the
@@ -336,9 +345,9 @@ user level:
   nothing.
 - Built-in workflows follow the configured ones. They are added after the
   levels are composed, so `extends: false` never removes them.
-- `discover` lists `catchall` under its own heading, and the other
-  built-in workflows under "ww's own workflows" (`builtin_workflows` in JSON),
-  apart from the project's.
+- `discover` lists `catchall` under its own heading. Its Markdown leaves the
+  other built-in workflows to the `workflows` catalog, which it points at;
+  `builtin_workflows` in JSON still lists them apart from the project's.
 - A built-in's `recommended_next_workflow` naming a workflow that is switched
   off is dropped.
 
@@ -1415,7 +1424,7 @@ A failing verdict rejects the held completion as a failed check would, under
 the rule's `max_fixes`. Once every rule of the round passed, ww records the
 held completion as submitted.
 
-`discover` (a "Rules" section; JSON: `rules_notice`) and the first page of
+`discover` (JSON only: `rules_notice`) and the first page of
 `start` (JSON: `rules_notice`) say how many declared rules are
 `unscriptized` and suggest the `ww-scriptize` skill, which starts
 `ww-scriptize-rules`. The notice is left out while

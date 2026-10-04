@@ -237,8 +237,8 @@ usual way, and it runs ww for you:
 `WW_AGENT_INSTRUCTIONS.md` tells it to route project work through ww, and the
 installed `ww` skill lets you name the tool explicitly. From there the agent
 starts at `./ww discover`, which tells it whether to use ww in this project
-by default, only when you ask for it, or not at all, and lists the workflows,
-modes, runtimes, start options, and the exact commands to run. It picks the workflow matching your request and opens the
+by default, only when you ask for it, or not at all, and lists the project's workflows,
+modes, and the exact commands to start and resume work. It picks the workflow matching your request and opens the
 task:
 
 ```console

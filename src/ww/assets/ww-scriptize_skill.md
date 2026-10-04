@@ -12,7 +12,7 @@ operator confirms. It automatically creates a branch from
 `extensions.ww/git.base_branches.default` and follows ww/git's worktree
 settings; this skill starts it.
 
-1. Run `./ww discover`. If it does not list `ww-scriptize-rules`, the
+1. Run `./ww workflows`. If it does not list `ww-scriptize-rules`, the
    operator switched it off; say so and stop.
 2. Start it with the start command `./ww discover` shows, omitting the task
    ID unless discover says this project needs one:

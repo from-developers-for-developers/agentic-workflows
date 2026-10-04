@@ -70,24 +70,20 @@ def test_discover_lists_choices_options_and_commands(
 
     assert output.startswith("# ww discover\n\nww is enabled for this project.")
     for expected in (
-        "- `task` — Implement a change. Default modes: `economy`.",
-        "- `bugfix` — No description.",
+        "- task — [project: ww.yaml] Implement a change. Default modes: `economy`.",
+        "- bugfix — [project: ww.yaml] No description.",
         "- `economy` — Use as few tokens as possible. Prefer short answers.",
         "- `ext/ww/git/modes:conventional-commits` — Write commit messages",
-        "- `single` (project default) — One session plays both manager and worker",
-        "- `auto` — The manager delegates each assignment to a worker agent",
-        "- `manager` — Runs start and next",
-        "- `worker` — Performs one assignment",
+        "`single` (project default) — One session plays both manager and worker",
+        "`auto` — The manager delegates each assignment to a worker agent",
         "`claudecode`",
         "or `custom:<name>`.",
-        "- `--runtime` (`-r`): `single` or `auto`. Steps requesting a specific "
-        "worker are honoured only under `--runtime auto`; `single` records them "
-        "and performs the step in this session. Omitted, ww uses the workflow's "
-        "own runtime if it declares one, then the project default, `single`.",
-        "- `--model`, `--reasoning`: Optional.",
-        "- `--branch-strategy`: `default`, `bugfix`.",
-        "./ww start <TASK-ID> --workflow <workflow> --agent <agent> "
-        '--requirements "<the user\'s requirements, normalized>" --role manager',
+        "[--runtime <single|auto>]",
+        "[--model <model>]",
+        "[--branch-strategy <default|bugfix>]",
+        "./ww start [<task-id>] --workflow <workflow> --agent <agent> \\",
+        '--requirements "<the user\'s requirements, normalized>" \\',
+        "Square brackets denote optional arguments.",
         "./ww instruction <task-id> --role manager",
         "./ww status <task-id>",
         "./ww plan --workflow <workflow> --agent <agent>",
@@ -137,7 +133,8 @@ def test_discover_without_branch_strategies_says_to_omit_the_flag(
 ) -> None:
     output = _discover(_project(tmp_path), capsys)
 
-    assert "- `--branch-strategy`: no extension defines branch strategies" in output
+    assert "--branch-strategy" not in output
+    assert "--project" not in output
 
 
 def test_a_disabled_project_tells_agents_not_to_use_ww(
@@ -179,11 +176,11 @@ def test_an_on_request_project_lists_everything_but_says_to_wait_for_a_request(
         "the user explicitly asks for ww"
     )
     assert "otherwise carry out the request without ww and do not ask." in output
-    assert "When the user has asked for ww, choose the workflow" in output
+    assert "When the user has asked for ww, choose a workflow" in output
     assert "ww is enabled for this project." not in output
     # The full catalog follows, so an explicit request can proceed.
-    assert "- `task` — Implement a change." in output
-    assert "./ww start <TASK-ID> --workflow <workflow>" in output
+    assert "- task — [project: ww.yaml] Implement a change." in output
+    assert "./ww start [<task-id>] --workflow <workflow>" in output
     catchall = output.split("## Changes no workflow covers", 1)[1]
     assert "Only when the user has asked for ww; otherwise make the change" in (
         catchall
@@ -552,9 +549,8 @@ def test_discover_tells_agents_to_use_the_ticket_key(
 ) -> None:
     output = _discover(_project(tmp_path), capsys)
 
-    assert "To start a task:" in output
-    assert "use that key as <TASK-ID> so the task matches the issue" in output
-    assert "omit `<TASK-ID>` to let ww assign one" not in output
+    assert "[<task-id>] --workflow" in output
+    assert "use it as the task ID so the task matches the issue" in output
     assert "use that key as the task ID" in WW_SKILL
     assert "When a request names an external ticket, use that as the task ID." in (
         AGENT_INSTRUCTIONS
@@ -583,7 +579,10 @@ def test_explicit_task_format_requires_an_id(
     )
     service = WorkflowService(Storage(root))
 
-    assert "This project requires an explicit <TASK-ID>" in _discover(root, capsys)
+    output = _discover(root, capsys)
+    assert "This project requires an explicit task ID" in output
+    assert " start <task-id> --workflow" in output
+    assert "[<task-id>]" not in output
     with pytest.raises(StateError, match="requires an explicit task ID"):
         service.start("task", None, agent="codex")
     assert service.start("task", "PROJ-7", agent="codex").task_id == "PROJ-7"
@@ -604,8 +603,8 @@ def test_the_project_may_choose_the_default_runtime(
 
     text = _discover(root, capsys)
     report = json.loads(_discover(root, capsys, "--json"))
-    assert "- `auto` (project default) — " in text
-    assert "then the project default, `auto`." in text
+    assert "`auto` (project default) — " in text
+    assert "then the project default `auto`." in text
     assert [r["default"] for r in report["runtimes"]] == [False, True]
 
     defaulted = service.start("task", "T1", agent="codex")
@@ -672,9 +671,11 @@ def test_discover_points_a_workflow_that_requests_workers_at_the_auto_runtime(
     output = _discover(_runtime_advice_project(tmp_path), capsys)
 
     assert "`triage`, `review`" in output
-    assert "start it with `--runtime auto` so those requests apply" in output
+    assert "Requests specific workers on `triage`, `review`; use `--runtime auto`" in (
+        output
+    )
     # The workflow that asks for nothing is left alone.
-    plain = next(line for line in output.splitlines() if line.startswith("- `plain`"))
+    plain = next(line for line in output.splitlines() if line.startswith("- plain"))
     assert "auto" not in plain
 
 
@@ -683,10 +684,8 @@ def test_discover_asks_for_a_deliberate_runtime_instead_of_the_default(
 ) -> None:
     output = _discover(_runtime_advice_project(tmp_path), capsys)
 
-    assert "Choose deliberately rather than defaulting." in output
-    # The old wording told the agent to omit the flag, which always meant single.
-    assert "omit it for the default" not in output
-    assert "honoured only under `--runtime auto`" in output
+    assert "Use `auto` when the workflow requests specific workers" in output
+    assert "`single` when nothing is requested" in output
 
 
 def test_discover_reports_worker_requests_as_data(
@@ -711,9 +710,9 @@ def test_discover_sets_the_catchall_apart_with_when_to_use_it(
     assert rest.lstrip().startswith("- `catchall` — ")
     for rule in (
         "about to change files",
-        "read-only work need no task",
+        "read-only work needs no task",
         "Do not start it directly",
-        "before a task ww has never seen is created",
+        "asks the operator before it creates a task ww has never seen",
         "./ww lookup [<task>] --agent <agent>",
     ):
         assert rule in rest
@@ -857,3 +856,95 @@ def test_discover_without_unfinished_tasks_has_no_such_section(
     assert "## Unfinished tasks" not in capsys.readouterr().out
     assert main(["--root", str(root), "discover", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["unfinished_tasks"] == []
+
+
+def _layered_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    home = tmp_path / "home"
+    (home / ".config" / "ww").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("WW_USER_CONFIG_DIR", str(home / ".config" / "ww"))
+    (home / ".config" / "ww" / "ww.yaml").write_text(
+        "workflows:\n  - generic-fix: General bug-fix workflow.\n"
+        "    steps:\n      - fix: Fix.\n"
+        "  - develop: Global develop.\n    steps:\n      - work: Work.\n",
+        encoding="utf-8",
+    )
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "ww.yaml").write_text(
+        "workflows:\n  - develop: Implement and verify a change.\n"
+        "    steps:\n      - work: Work.\n"
+        "  - review: Shared review.\n    steps:\n      - look: Look.\n"
+        "  - ww-custom: Prefixed but a project workflow.\n"
+        "    steps:\n      - work: Work.\n",
+        encoding="utf-8",
+    )
+    (root / "ww.local.yaml").write_text(
+        "workflows:\n  - review: Review incoming PR feedback.\n"
+        "    steps:\n      - look: Look.\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_discover_sorts_workflows_local_project_global_with_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _layered_project(tmp_path, monkeypatch)
+
+    output = _discover(root, capsys)
+    report = json.loads(_discover(root, capsys, "--json"))
+
+    listed = [line for line in output.splitlines() if " — [" in line]
+    assert listed == [
+        "- review — [local: ww.local.yaml] Review incoming PR feedback.",
+        "- develop — [project: ww.yaml] Implement and verify a change.",
+        "- ww-custom — [project: ww.yaml] Prefixed but a project workflow.",
+        "- generic-fix — [global: ~/.config/ww/ww.yaml] General bug-fix workflow.",
+    ]
+    assert "prefer local over project over global" in output
+    assert "Honor an explicitly requested workflow" in output
+    # Only the rendering is ordered; JSON keeps the declaration order.
+    assert [w["name"] for w in report["workflows"]] == [
+        "generic-fix",
+        "develop",
+        "review",
+        "ww-custom",
+    ]
+    assert {w["name"]: w["source_level"] for w in report["workflows"]} == {
+        "generic-fix": "global",
+        "develop": "project",
+        "review": "local",
+        "ww-custom": "project",
+    }
+
+
+def test_discover_never_labels_an_unconfigured_workflow_local() -> None:
+    from ww.cli.discover import _workflow_line
+
+    line = _workflow_line(
+        {
+            "name": "ext",
+            "description": "From an extension.",
+            "source": None,
+            "source_level": None,
+            "default_modes": [],
+        }
+    )
+
+    assert line == "- ext — [other: not from a configuration file] From an extension."
+
+
+def test_a_configured_catchall_reports_its_yaml_source(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "ww.yaml").write_text(
+        WORKFLOWS + "  - catchall: Mine.\n    steps:\n      - work: Do it.\n",
+        encoding="utf-8",
+    )
+
+    report = json.loads(_discover(root, capsys, "--json"))
+
+    assert report["catchall"]["source"] == "ww.yaml"
+    assert report["catchall"]["source_level"] == "project"
