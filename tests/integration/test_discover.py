@@ -538,8 +538,7 @@ def test_the_permission_notice_is_shown_once_and_getting_started_until_a_workflo
     for output in (first, second):
         assert output.rstrip().endswith(
             "Next steps\n\n"
-            "  Run the ww-setup skill to set ww up for you, your team and this "
-            "project.\n"
+            "  Run the ww-setup skill to set ww up for this project.\n"
             "  In Claude Code, for example, type /ww-setup."
         )
 

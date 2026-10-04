@@ -11,6 +11,16 @@ is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-04
 
+- Setup learns the project, not the operator. The profile interviews are retired: `ww-learn` and `ww-express`
+  and their documents `me`, `myrole`, `team` and `company` are gone from the built-ins, `ww-learn` is no
+  longer installed by `init`, and `learned.me|myrole|team|company` can no longer be set (old values stay in the
+  files, ignored). `ww-learn-project` also records the project's purpose and refreshes an existing
+  `project.md`; `ww-suggest` asks a few process questions (pain, wanted outcome, involvement, automation) in
+  the guided path, and an express setup (`ww-suggest` told "Express setup") derives defaults from the
+  project; `ww-refresh`, `ww-solve`, `ww-rules-from-artifacts` and `ww-automate` read only `project.md`.
+  Starting a retired workflow names its replacement. `init` writes only `!.ww/project.md` beside `.ww/*`,
+  existing lines and files stay untouched. `discover`'s Onboarding notice is a single optional line that
+  neither interrupts work nor asks about narration.
 - A shell or argv handler in a per-item stage can declare `saves: item.field.<name>`: its whole
   trimmed stdout is saved on the stage's item, and a `report` stage then marks only that item
   reported in the same commit, so an automatic reply handler needs no agent bookkeeping. Nonzero

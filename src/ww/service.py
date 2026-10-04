@@ -101,6 +101,7 @@ from ww.results import (
     ResetResult,
     TaskStatus,
 )
+from ww.retired import workflow_not_found
 from ww.rule_checks import CheckScope, RuleChecker, change_set, item_reports
 from ww.rule_conversion import SCRIPTIZE_WORKFLOW, scriptize_notice
 from ww.rule_disputes import DisputeEntry, DisputeLog
@@ -555,7 +556,7 @@ class WorkflowService:
         configuration = self._load_configuration()
         working_directory = self._project_directory(project)
         if workflow_name not in configuration.workflows_by_name:
-            raise ConfigurationError(f"workflow not found: {workflow_name}")
+            raise ConfigurationError(workflow_not_found(workflow_name))
         workflow = configuration.workflows_by_name[workflow_name]
         require_lane(workflow)
         unknown_modes = self._unknown_modes(mode_names, configuration)
@@ -2852,7 +2853,7 @@ class WorkflowService:
         configuration = self._load_configuration()
         workflow = configuration.workflows_by_name.get(workflow_name)
         if workflow is None:
-            raise ConfigurationError(f"workflow not found: {workflow_name}")
+            raise ConfigurationError(workflow_not_found(workflow_name))
         require_lane(workflow)
         self._project_directory(child.project)
         plan = compile_workflow_plan(

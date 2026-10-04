@@ -13,6 +13,7 @@ from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
 from ww.instructions import Instruction, action_text, build_bootstrap_instruction
 from ww.plan import PlanCompilationOptions, PlanItem, compile_workflow_plan
+from ww.retired import workflow_not_found
 from ww.storage import Storage
 from ww.storage_adapters import ArtifactAddress, TaskStorageAdapter
 from ww.task_ids import validate_child_id
@@ -95,7 +96,7 @@ class BootstrapCoordinator:
     ) -> PlanItem | None:
         """Return the first agent step that establishes an external task ID."""
         if workflow_name not in configuration.workflows_by_name:
-            raise ConfigurationError(f"workflow not found: {workflow_name}")
+            raise ConfigurationError(workflow_not_found(workflow_name))
         workflow = configuration.workflows_by_name[workflow_name]
         require_lane(workflow)
         unknown_modes = unknown_modes_for(mode_names, configuration)

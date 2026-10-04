@@ -356,18 +356,15 @@ The built-in workflows:
 | Workflow | File | Purpose |
 | --- | --- | --- |
 | `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
-| `ww-learn` | `onboarding.yaml` | Interviews the operator into the documents `me`, `myrole`, `team` and `company`. |
-| `ww-express` | `onboarding.yaml` | Infers the documents `me`, `myrole`, `team` and `company` from the repository and writes them once the operator confirms. |
-| `ww-learn-project` | `onboarding.yaml` | Scans how the project's work is organised into `project`. |
-| `ww-suggest` | `onboarding.yaml` | Designs a setup with the operator, proposes it in full, and places it with `setup apply`. |
+| `ww-learn-project` | `onboarding.yaml` | Learns the repository (purpose, stack, verify commands, CI, review and release process, conventions, pitfalls) into `project`, refreshing an existing file. |
+| `ww-suggest` | `onboarding.yaml` | Asks a few process questions (express setup skips them), designs a minimal setup with the operator, proposes it in full, and places it with `setup apply`. |
 | `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes. |
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 | `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own from the required `ww/git` default base, following its worktree settings; automatic Git hooks, `restartable`. |
 
-`onboarding.yaml` also declares the documents `me` (`scope: user`), `myrole`,
-`team`, `company` and `project` (`scope: project`, `path: .ww/<name>.md`;
-`myrole.md` stays git-ignored, personal to the checkout),
+`onboarding.yaml` also declares the documents `project` (`scope: project`,
+`path: .ww/project.md`) and
 `setup_proposal` (a task document at `.ww/tasks/{{ww.task.id}}/setup-proposal.yaml`),
 and the mode `ww-narrate`. See the features guide,
 [Setting ww up](features.md#setting-ww-up-learning-and-suggestions).

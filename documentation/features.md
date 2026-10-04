@@ -102,16 +102,14 @@ that action. With consent it appends these lines to `.gitignore`:
 
 ```gitignore
 .ww/*
-!.ww/team.md
-!.ww/company.md
 !.ww/project.md
 ```
 
-Everything under `.ww` is one checkout's state, except the three files in
-which ww records what it learned about the team, the company, and the project:
-those are meant to be committed and shared. `myrole.md`, where ww records the
-operator's role in the project, stays ignored with the rest, since it is
-personal to the checkout. Git cannot re-include a file inside
+Everything under `.ww` is one checkout's state, except `project.md`, in which
+ww records what it learned about the project: it is meant to be committed and
+shared. Versions of ww before this one also re-included `team.md` and
+`company.md`; ww no longer writes them, and a line that re-includes them stays
+as it is. Git cannot re-include a file inside
 an ignored directory, which is why the directory's contents are ignored rather
 than the directory. A line that ignores the directory whole, as `.ww/`, `.ww`,
 `/.ww` or `/.ww/`, would keep the
@@ -315,10 +313,15 @@ belongs:
 
 | Key | Where | Means |
 | --- | --- | --- |
-| `explain` | `state.json` in the user configuration directory | whether the operator wants the agent to narrate what ww does while it learns; absent until they answer |
-| `learned.me` | the same file | when ww last learned about the operator |
+| `explain` | `state.json` in the user configuration directory | whether the operator wants the agent to narrate what ww does while it learns; optional, absent until they say so |
 | `setup.done` | `.ww/metadata.json`, as `ww.setup.done` | whether ww was set up in this project |
-| `learned.team`, `learned.company`, `learned.project`, `learned.myrole` | `.ww/metadata.json`, under `ww.learned` | when ww last learned about each; `myrole` is the operator's role in this project, per checkout like the rest of the file |
+| `learned.project` | `.ww/metadata.json`, under `ww.learned` | when ww last learned about the project |
+
+ww used to record when it learned about the operator, their role, their team
+and their company (`learned.me`, `learned.myrole`, `learned.team`,
+`learned.company`). That feature is retired: those values, and every other key
+in the files, stay as they are and are ignored; `--set` refuses a retired key
+with a message saying so.
 
 The project keys live in ww's own `ww.` namespace of project metadata, which
 no workflow can save into, so they never collide with a workflow's values.
@@ -326,24 +329,22 @@ no workflow can save into, so they never collide with a workflow's values.
 ```console
 ./ww onboarding
 ./ww onboarding --json
-./ww onboarding --set explain=true --set learned.team=now
+./ww onboarding --set explain=true --set learned.project=now
 ```
 
 `--set` is repeatable and takes a known key: `explain=true|false`,
-`setup.done=true|false`, `learned.<me|team|company|project|myrole>=now` or an ISO
+`setup.done=true|false`, `learned.project=now` or an ISO
 timestamp. An unknown key or a malformed value is an error, and nothing is
 written unless every assignment is valid. Setting records the operator's stated
 preference, so it asks for no confirmation; it appears in the audit log, while
 showing does not.
 
-While `setup.done` is not recorded, `discover` adds an "Onboarding" section
-telling the agent that this is the first use of ww in the project and to offer
-the operator the `ww-setup` skill through its choice menu, never starting it
-unasked. While `explain` is unset, it also tells the agent to ask once whether
-the operator wants to see what ww does while it learns, and to record the
-answer with `ww onboarding --set explain=…`. Its JSON carries `onboarding`
-with `setup_done`, `explain` and the `guidance` lines. Under `"enabled":
-"on_request"` the section only informs: it asks the agent to offer nothing.
+While `setup.done` is not recorded, `discover` adds a short "Onboarding"
+notice: ww has not been set up in this project, setup is optional and never
+blocks ordinary work, and the agent mentions the `ww-setup` skill only when the
+operator asks to set ww up or what ww can do. It asks no question and starts
+nothing. Its JSON carries `onboarding` with `setup_done`, `explain` and the
+`guidance` lines. Under `"enabled": "on_request"` the notice only informs.
 
 ## Apply a proposed setup
 
@@ -462,46 +463,41 @@ for one of them.
 
 | Skill | Workflow | Does |
 | --- | --- | --- |
-| `ww-setup` | — | The guide. Asks once, in its opening message, whether the operator wants to see what ww does as it learns (`explain`) and which path to take: Express (learn-project → express → suggest) or Guided (learn-project → learn → suggest), and records `setup.done` at the end, also when everything is declined. Once set up, it offers the ones below instead. |
-| `ww-learn` | `ww-learn` | A short interview: the operator's personality and working style, their role in this project (what they own, who they work with and hand over to, what they are measured on, which decisions they keep), their team and company in short, technical and organisational pain points, what they expect from AI and agents, and from ww (which may be nothing). |
-| — | `ww-express` | Started by `ww-setup` in express mode. Infers the operator's profile, their role, their team and their company from the repository (their own commits, the other authors and the paths each touches, the review signals, the remote's organisation, the authors' e-mail domains, manifest and README fields, and the company's or product's public website), shows the four drafts with the evidence and a confidence for each finding, and writes them once the operator has corrected and confirmed them. |
-| `ww-learn-project` | `ww-learn-project` | Reads how the project's work is organised, not what the software does. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, how and where those commands run (on the host or through a container exec, virtual environment or task runner, given as an exact argument list, and whether each worktree has its own environment), the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file. |
-| `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, designs the setup with the operator in one set of questions, proposes it in full, with the step features each kind of work calls for (an `items` step for cases, interactive steps and the operator page for what the operator performs, a document or item fields for a template such as a test case, a loop for work repeated until a condition holds), shows it with `setup apply --dry-run`'s list of changes, and places it on confirmation; see below. |
-| `ww-refresh` | `ww-learn`, `ww-learn-project` | Runs the learning again; see below. |
+| `ww-setup` | — | The guide. Asks once, in its opening message, which path to take: Express (learn-project, then suggest told to derive defaults) or Guided (learn-project, then suggest, which asks a few process questions), and records `setup.done` at the end, also when everything is declined. Narration (`explain`) is never asked; it is recorded only when the operator says they want it. Once set up, it offers the ones below instead. |
+| `ww-learn-project` | `ww-learn-project` | Learns the repository: what it is for, and how its work is organised. It reads an existing `project.md` first, so a rerun refreshes it. It starts from [`ww inspect`](#inspect-the-project)'s profile and reads only what the profile cannot see, such as what `AGENTS.md` allows and what the pull request template demands. First the setup facts, each with its evidence or "not found": the default and integration branches and the branch patterns in use, merge or rebase, required pull requests, the test, lint, type check, format and build commands as exact argument lists, how and where those commands run (on the host or through a container exec, virtual environment or task runner, given as an exact argument list, and whether each worktree has its own environment), the tracker's key format as a `task_format` candidate, the commit convention as a `commit_format` candidate, CI gates and releases, the workflows and conventions already in use, and what agents may already do. Then agent tooling, infrastructure and stack, other conventions, and recurring pitfalls, starting from the profile's fix commits and adding review comments where `gh`, `glab` or a tracker is signed in, each as a candidate rule with its evidence and, where a command could verify it, a check. `project.md` keeps the trimmed profile as its "Profile" section, above "Setup facts". Changes no project file but `project.md`. |
+| `ww-suggest` | `ww-suggest` | Gathers the setup facts from `project.md`, running `ww inspect` when it has no profile, and reads the [specification](specification.md), this guide and the [examples](examples.md) for what a setup can be made of. In the guided path it asks a few process questions: what is painful, what outcome would help, where the operator wants to be involved and what may run automatically, skipping what the project already answers. Then it designs a minimal setup with the operator in one set of questions, proposes it in full, with the step features each kind of work calls for (an `items` step for cases, interactive steps and the operator page for what the operator performs, a document or item fields for a template such as a test case, a loop for work repeated until a condition holds), shows it with `setup apply --dry-run`'s list of changes, walks through a realistic task, and places it on confirmation; see below. |
+| `ww-refresh` | `ww-learn-project` | Runs the project learning again; see below. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
 | `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It automatically creates a branch from `extensions.ww/git.base_branches.default`, which must be configured, and follows ww/git worktree settings, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the setup file defines, a command step); applies on confirmation. |
 
-The questions are interactive steps: an interview opens with its questions in
-one numbered message, then converses until the operator's intent to finish is
-clear, asking naturally if it is ambiguous. A pick between a few answers goes
-through the host's native question tool when available. `ww-setup` asks about
-narration and which workflows to run in one message and passes the choice on,
-so `ww-learn` does not ask it again. Every question can be skipped. An
-interview writes its file from the answers and shows it, without a separate
-confirmation (`ww-refresh` corrects it, and the shared files stay uncommitted
-until the operator commits them); `project.md` and the setup are shown before
-they are written. A guided first setup takes about seven replies: the opening
-question, three interviews, the project review, the design and "apply". These workflows declare `runtime: single`
-and give every step to the session that talks to the operator (`role:
+ww never interviews the operator about who they are, their role, their team
+or their company. What a setup needs of the operator is a few questions about
+the process, asked in `ww-suggest`: they are interactive steps, which open with
+the questions in one numbered message, then converse until the operator's
+intent to finish is clear, asking naturally if it is ambiguous. A pick between
+a few answers goes through the host's native question tool when available.
+The answers are ordinary conversation: they shape the proposal (modes, operator
+stops, review, automation) and are not written to a file of their own. Every
+question can be skipped, and setup never blocks ordinary work. `project.md` and
+the setup are shown before they are written, and the shared file stays
+uncommitted until the operator commits it. These workflows declare `runtime:
+single` and give every step to the session that talks to the operator (`role:
 manager`), so they work in agents without subagents. When `explain` is `true`,
 the skills start them with the built-in `ww-narrate` mode, whose steps tell
 the operator what each one does and why.
 
 **Express or Guided.** The opening question offers two paths. Guided runs
-`ww-learn-project`, the `ww-learn` interviews and `ww-suggest`. Express runs
-`ww-learn-project`, then `ww-express` instead of the interviews, then
-`ww-suggest`, and takes five replies: the opening question, the project
-review, the confirmation, the design and "apply". `ww-express` drafts `me.md`,
-`myrole.md`, `team.md` and `company.md` from what the checkout shows, each
-finding with its evidence and a confidence and a list of what it could not
-infer, and the operator corrects them in one conversation before they are
-written. Each file's second line says it was inferred from the repository and
-confirmed on that date; `ww-refresh` refreshes it like any other, through the
-interviews. The inference reads only this checkout and the public website of
-the company or product it names; it never looks people up online and copies
-no personal data beyond what the repository already carries.
+`ww-learn-project`, then `ww-suggest`, which asks the process questions; it
+takes about five replies: the opening question, the project review, the
+process answers, the design and "apply". Express runs `ww-learn-project`, then
+`ww-suggest` started with the requirement "Express setup": it asks no process
+question, states the defaults the project supports, and asks only a
+consequential choice the project leaves open. Both keep project learning: an
+existing `project.md` is read first and refreshed, never silently replaced by a
+generic template. The retired `ww-learn` and `ww-express` workflows answer a
+start with the command to run instead.
 
 **What `ww-suggest` proposes.** Its `design` step asks, in one message with
 a default for each answer taken from the profile, what the setup turns on,
@@ -514,7 +510,7 @@ contributors are active and the operator works on parallel tasks), the task ID
 format, who reviews (for a solo project an agent self-review step rather than
 an interactive review; for a team the operator keeps the review), the step
 features a workflow whose work is not a plain code change uses, which of
-the operator's preferences become modes or operator stops, `projects` when the
+the process answers become modes or operator stops, `projects` when the
 layout found candidates (it asks for the sibling repositories' paths and never
 scans them), a rule for a fix-prone path only when the fixes show a repeated
 cause, and whether the setup is for the operator alone or the team. The proposal then
@@ -550,37 +546,32 @@ Before asking to apply, `ww-suggest` walks through the main lane in ten lines
 or fewer, its steps in order with what an agent does at each; after applying,
 it shows the first page of `ww plan --workflow <main lane>` as what an agent
 gets on the first task. When
-`myrole.md` or `project.md` is missing, `ww-suggest` says the proposal will be
-weaker and offers to learn first, and a later `ww-setup` run recommends every
-subject not learned yet before anything else.
+`project.md` is missing, `ww-suggest` says the proposal will be weaker and
+offers to learn first, and a later `ww-setup` run recommends learning the
+project before anything else.
 
-What ww learns goes into five files it keeps for its own use:
-
-| File | Where | Shared | Written by |
-| --- | --- | --- | --- |
-| `me.md` | the user configuration directory (`scope: user`) | no, personal | `ww-learn`, `ww-express` |
-| `myrole.md` | `.ww/` at the project root | no, personal to the checkout | `ww-learn`, `ww-express` |
-| `team.md`, `company.md` | `.ww/` at the project root | yes, once committed | `ww-learn`, `ww-express` |
-| `project.md` | `.ww/` at the project root | yes, once committed | `ww-learn-project` |
-
-They are the built-in documents `me`, `myrole`, `team`, `company` and
-`project`, so
-`{{ww.documents.team}}` and the rest name them in any workflow. The project
-ones resolve against the project root even for a task working in a Git
-worktree. Every one starts with this remark, which tells any other agent to
-leave it alone:
+What ww learns goes into one file it keeps for its own use, `project.md` in
+`.ww/` at the project root, written by `ww-learn-project` and shared once
+committed. It records evidence and operational facts about the repository;
+preferences about workflows belong in the resulting proposal and configuration,
+and ww keeps no replacement dossier about the operator. It is the built-in
+document `project`, so `{{ww.documents.project}}` names it in any workflow, and
+it resolves against the project root even for a task working in a Git
+worktree. Files older versions wrote (`me.md`, `myrole.md`, `team.md`,
+`company.md`) are user documents now: ww never reads them for setup, rewrites
+them or deletes them. It starts with this remark, which tells any other agent
+to leave it alone:
 
 ```markdown
 <!-- This file is maintained by ww for ww's own use. Do not use it for anything else. If you are an agent that is not doing ww work, ignore this file. -->
 ```
 
-`init --update-gitignore` keeps `.ww/` out of Git except the three shared
-files; `myrole.md` stays ignored, since it is personal to the checkout. ww never commits them: the last step of each workflow names the files
-it left for the operator to review and commit, and records when ww learned
-with `ww onboarding --set learned.<me|team|company|project|myrole>=now`.
-`ww-suggest`, `ww-solve`, `ww-rules-from-artifacts` and `ww-automate` read
-every learning file that exists and keep their proposals within what the
-operator's role and the team's conventions allow.
+`init --update-gitignore` keeps `.ww/` out of Git except `project.md`. ww never
+commits it: the last step of `ww-learn-project` names the file it left for the
+operator to review and commit, and records when ww learned with `ww onboarding
+--set learned.project=now`. `ww-suggest`, `ww-solve`, `ww-rules-from-artifacts`
+and `ww-automate` read `project.md` where it exists and keep their proposals
+within the project's conventions.
 
 The proposals never touch ww's configuration files through the agent. A
 workflow writes its fragment to the task's `setup_proposal` document
@@ -597,8 +588,8 @@ the YAML to edit by hand. Rules proposed from past artifacts are written with
 **Refreshing.** Every learning step reads the existing file first, asks only
 what is missing or may have changed, keeps what still holds, updates what
 changed, and marks what no longer holds as superseded with the date. So
-refreshing is running `ww-learn` or `ww-learn-project` again, which is what
-the `ww-refresh` skill does after showing when ww last learned each.
+refreshing is running `ww-learn-project` again, which is what the
+`ww-refresh` skill does after showing when ww last learned the project.
 
 **Git hooks.** The learning and setup workflows create no branch or worktree
 and commit nothing themselves. `ww-scriptize-rules` has its own Git hooks: it
@@ -613,7 +604,7 @@ if it creates branches or worktrees.
 **Switching them off.** Each is a built-in workflow, switched off by name in
 `ww.json`; the documents and the mode stay while any of them
 is enabled, and a recommendation of a switched-off one (`ww-learn-project` recommends
-`ww-learn`, which recommends `ww-suggest`, as `ww-express` does) is dropped:
+`ww-suggest`) is dropped:
 
 ```json
 {"workflows": {"ww-solve": {"enabled": false}, "ww-automate": {"enabled": false}}}
@@ -2612,7 +2603,7 @@ after the issue changed and a `build-test-report` workflow reads later.
 Declare documents once at the root; a task-scoped document lives under the
 task directory, a `scope: project` one under `.ww/documents`, and a `scope:
 user` one in the user configuration directory, shared by every project of the
-user (such as ww's own `me.md`), unless `path` places it elsewhere in the
+user, unless `path` places it elsewhere in the
 project (for a user document, elsewhere in the user directory), for example
 `documentation/issues/{{ww.task.id}}/notes.md`, which then resolves inside the
 task's worktree when the run has one:
@@ -4026,13 +4017,13 @@ round limit escalates the same way, and the force there leaves the loop.
 
 `init` offers its bundled skills to every agent integration it knows about:
 `ww`, `noww`, `ww-rule`, and `ww-setup` with the skills it guides through
-(`ww-learn`, `ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
+(`ww-learn-project`, `ww-suggest`, `ww-refresh`, `ww-solve`,
 `ww-rules-from-artifacts`, `ww-automate`; see
 [Setting ww up](#setting-ww-up-learning-and-suggestions)). In a terminal it
 can redraw, that is one checklist rather than one question per agent:
 
 ```text
-Install the ww skills (ww, noww, ww-rule, ww-setup, ww-learn, …) into which agent directories?
+Install the ww skills (ww, noww, ww-rule, ww-setup, ww-learn-project, …) into which agent directories?
   ↑↓ move · space toggles · a all · enter confirms
 
  > [ ] .agents

@@ -30,9 +30,7 @@ def _agent_answers(*approve: str) -> str:
 
 
 _GITIGNORE_WITH_WW = (
-    ".ww/*\n!.ww/team.md\n!.ww/company.md\n!.ww/project.md\n"
-    "*ww.local.yaml\n*ww.local.json\n"
-    "ww-setup.local.yaml\n"
+    ".ww/*\n!.ww/project.md\n*ww.local.yaml\n*ww.local.json\nww-setup.local.yaml\n"
 )
 
 

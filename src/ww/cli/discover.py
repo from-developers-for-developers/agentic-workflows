@@ -64,23 +64,14 @@ ON_REQUEST_CATCHALL_PREFIX = (
     "Only when the user has asked for ww; otherwise make the change without ww. "
 )
 SETUP_GUIDANCE = (
-    "This is the first use of ww in this project: it has not been set up here. "
-    "Offer the operator the `ww-setup` skill, which walks them through setting "
-    "ww up, by asking through your choice menu; do not start it unasked."
-)
-EXPLAIN_GUIDANCE = (
-    "The operator has not said whether they want to see what ww does while it "
-    "learns. Ask them once, through your choice menu, and record the answer "
-    "with `{command} onboarding --set explain=true` (or `explain=false`)."
+    "ww has not been set up in this project yet. Setup is optional and never "
+    "blocks ordinary work: carry on with the request, and mention the "
+    "`ww-setup` skill only if the operator asks to set ww up or asks what ww "
+    "can do here."
 )
 ON_REQUEST_SETUP_NOTE = (
     "For information: ww has not been set up in this project yet; when the "
-    "operator asks for ww, the `ww-setup` skill can walk them through it."
-)
-ON_REQUEST_EXPLAIN_NOTE = (
-    "For information: the operator has not said whether they want to see what "
-    "ww does while it learns; `{command} onboarding --set explain=true` (or "
-    "`explain=false`) records it once they say."
+    "operator asks for ww, the `ww-setup` skill can set it up."
 )
 UNREADABLE_GUIDANCE = (
     "Other tasks and new work are unaffected. Commands addressing these tasks "
@@ -588,17 +579,9 @@ def _pointer_lines(report: dict[str, object], days: int) -> list[str]:
 
 def _onboarding_guidance(state: OnboardingState, *, on_request: bool) -> list[str]:
     """What to offer on a first use; under ``"on_request"``, information only."""
-    command = ww_command()
-    guidance = []
-    if not state.setup_done:
-        guidance.append(ON_REQUEST_SETUP_NOTE if on_request else SETUP_GUIDANCE)
-    if state.explain is None:
-        guidance.append(
-            (ON_REQUEST_EXPLAIN_NOTE if on_request else EXPLAIN_GUIDANCE).format(
-                command=command
-            )
-        )
-    return guidance
+    if state.setup_done:
+        return []
+    return [ON_REQUEST_SETUP_NOTE if on_request else SETUP_GUIDANCE]
 
 
 def _onboarding_lines(report: dict[str, object]) -> list[str]:

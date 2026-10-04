@@ -5,17 +5,19 @@ Two places hold it, each for what it describes:
 
 - the user level, ``state.json`` in the user configuration directory:
   ``explain``, whether the operator wants the agent to narrate what ww does
-  while it learns (absent until they answer), and ``learned.me``, when ww last
-  learned about the operator;
+  while it learns (absent until they say so);
 - the project, in ``.ww/metadata.json`` under ww's own ``ww.`` namespace, which
-  no workflow can save into: ``setup.done``, and when ww last learned about the
-  team, the company, the project and the operator's role in it
-  (``learned.team``, ``learned.company``, ``learned.project``,
-  ``learned.myrole``). The role is per checkout, like the rest of that file.
+  no workflow can save into: ``setup.done``, and when ww last learned about
+  the project (``learned.project``).
 
 ``ww onboarding`` shows both and sets a known key; it records the operator's
 stated preference, so it asks for no confirmation. ``discover`` reads it to
-tell an agent what to offer on a first use.
+tell an agent whether to mention setup on a first use.
+
+ww used to learn about the operator, their role, team and company as well
+(``learned.me``, ``learned.myrole``, ``learned.team``, ``learned.company``).
+That is retired: the old values stay in the files, untouched and ignored, and
+setting one is refused with a message saying so.
 """
 
 from __future__ import annotations
@@ -37,10 +39,14 @@ EXPLAIN = "explain"
 SETUP_DONE = "setup.done"
 LEARNED = "learned"
 # What ww learns about, and at which level it records when it did.
-LEARNED_USER = ("me",)
-LEARNED_PROJECT = ("team", "company", "project", "myrole")
+LEARNED_USER: tuple[str, ...] = ()
+LEARNED_PROJECT = ("project",)
 USER_KEYS = (EXPLAIN, *(f"{LEARNED}.{name}" for name in LEARNED_USER))
 PROJECT_KEYS = (SETUP_DONE, *(f"{LEARNED}.{name}" for name in LEARNED_PROJECT))
+# Keys of the retired profile interviews: never read, never written.
+RETIRED_KEYS = tuple(
+    f"{LEARNED}.{name}" for name in ("me", "myrole", "team", "company")
+)
 KEYS = (*USER_KEYS, *PROJECT_KEYS)
 NOW = "now"
 _BOOLEANS = {"true": True, "false": False}
@@ -200,6 +206,13 @@ def parse_assignment(text: str) -> tuple[str, bool | str]:
     key, value = key.strip(), value.strip()
     if not separator:
         raise StateError(f"--set takes KEY=VALUE, not {text!r}")
+    if key in RETIRED_KEYS:
+        raise StateError(
+            f"{key} is retired: ww no longer learns about the operator, their "
+            "role, team or company, so there is nothing to record; what it "
+            "stored earlier stays untouched and is ignored. Only "
+            f"{LEARNED}.project is recorded now (ww-learn-project)"
+        )
     if key not in KEYS:
         raise StateError(
             f"unknown onboarding key {key!r}; the keys are " + ", ".join(KEYS)
