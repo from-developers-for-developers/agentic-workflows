@@ -126,6 +126,7 @@ class RuleLine:
     id: str
     summary: str
     paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
     has_command: bool = False
     hook: bool = False
     interpretation: str | None = None
@@ -141,6 +142,7 @@ class RuleLine:
             "id": self.id,
             "summary": self.summary,
             "paths": list(self.paths),
+            "contains": list(self.contains),
             "has_command": self.has_command,
             "hook": self.hook,
             "interpretation": self.interpretation,
@@ -266,6 +268,7 @@ class VerificationPage:
     all_files: bool = False
     diff_command: str | None = None
     draft_artifact: str | None = None
+    adjustments: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -275,6 +278,7 @@ class VerificationPage:
             "all_files": self.all_files,
             "diff_command": self.diff_command,
             "draft_artifact": self.draft_artifact,
+            "adjustments": self.adjustments,
         }
 
 
@@ -400,6 +404,8 @@ class Instruction:
     previous_step: str | None = None
     previous_step_artifact: str | None = None
     previous_step_summary: str | None = None
+    # What the operator asked that step's worker to change, as it reported them.
+    previous_step_adjustments: str | None = None
     # The completion of this step must include a summary for the next step.
     summary_required: bool = False
     # For the built-in workflow summary: every step's handover in this run.
@@ -574,6 +580,7 @@ class Instruction:
             "previous_step": self.previous_step,
             "previous_step_artifact": self.previous_step_artifact,
             "previous_step_summary": self.previous_step_summary,
+            "previous_step_adjustments": self.previous_step_adjustments,
             "summary_required": self.summary_required,
             "run_handovers": [item.to_dict() for item in self.run_handovers],
             "input_context": [item.to_dict() for item in self.input_context],

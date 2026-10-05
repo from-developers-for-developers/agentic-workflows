@@ -484,6 +484,7 @@ def _loop(context: _Context) -> _Outcome:
             selected_reasoning=args.selected_reasoning,
             continue_loop=args.continue_loop,
             summary_for_next=args.summary,
+            adjustments=args.adjustments,
             caller_role=args.role,
             assignment=args.assignment,
         ),
@@ -608,6 +609,7 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             args.group_name,
             args.text,
             paths=tuple(args.paths or ()),
+            contains=tuple(args.contains or ()),
             check=rule_writes.check_mapping(
                 args.check_shell,
                 tuple(args.check_argv) if args.check_argv else None,
@@ -622,6 +624,7 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             args.rule_id,
             text=args.text,
             paths=tuple(args.paths) if args.paths is not None else None,
+            contains=tuple(args.contains) if args.contains is not None else None,
         )
     elif action == "move":
         write = rule_writes.plan_move(project, args.rule_id, args.target_group)
@@ -910,6 +913,7 @@ def _complete(context: _Context) -> _Outcome:
         selected_model=args.selected_model,
         selected_reasoning=args.selected_reasoning,
         summary_for_next=args.summary,
+        adjustments=args.adjustments,
         caller_role=args.role,
         rule_results=tuple(args.rule_result),
         assignment=args.assignment,

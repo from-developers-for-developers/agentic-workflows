@@ -137,19 +137,43 @@ def project_files(workdir: Path) -> tuple[str, ...]:
     )
 
 
-def select_files(files: Iterable[str], globs: tuple[str, ...]) -> tuple[str, ...]:
-    """The files matching any glob; every file when there are no globs.
+def select_files(
+    files: Iterable[str],
+    globs: tuple[str, ...],
+    contains: tuple[str, ...] = (),
+    directory: Path | None = None,
+) -> tuple[str, ...]:
+    """The files matching any glob and containing any string.
 
-    ``*`` and ``?`` stay within one path segment, ``**`` spans any number of
-    segments, and a glob without a ``/`` matches a file's name anywhere, so
-    ``*.py`` and ``**/*.py`` mean the same.
+    A filter that is not given selects every file. ``*`` and ``?`` stay
+    within one path segment, ``**`` spans any number of segments, and a glob
+    without a ``/`` matches a file's name anywhere, so ``*.py`` and
+    ``**/*.py`` mean the same. ``contains`` strings are plain,
+    case-sensitive substrings (no regular expressions) of the file's text,
+    read under ``directory``; a file that cannot be read as text is not
+    selected.
     """
-    if not globs:
-        return tuple(files)
-    patterns = tuple(_compile(glob) for glob in globs)
-    return tuple(
-        path for path in files if any(pattern.fullmatch(path) for pattern in patterns)
-    )
+    selected: Iterable[str] = files
+    if globs:
+        patterns = tuple(_compile(glob) for glob in globs)
+        selected = (
+            path
+            for path in selected
+            if any(pattern.fullmatch(path) for pattern in patterns)
+        )
+    if contains:
+        selected = (
+            path for path in selected if _contains_any(directory, path, contains)
+        )
+    return tuple(selected)
+
+
+def _contains_any(directory: Path | None, path: str, needles: tuple[str, ...]) -> bool:
+    try:
+        text = ((directory or Path()) / path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return any(needle in text for needle in needles)
 
 
 def _compile(glob: str) -> re.Pattern[str]:

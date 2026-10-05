@@ -12,6 +12,12 @@ Run `./ww feedback sources <task> --run <run> --json` and
 If no sources exist, stop. When `feedback_learning` is disabled, explain that
 recording is disabled and stop. Do not start a workflow to perform deduction.
 
+A source may carry `adjustments`: the changes the operator asked for during
+that step, as its worker reported them. Read them with the artifact; an
+operator request to change what the worker did or chose is a strong
+correction signal, and a quote may come from `adjustments` as well as from
+`content`.
+
 Read the artifacts and deduce negative feedback points with lasting relevance:
 corrections, repeated misunderstandings, inappropriate choices and requirement
 gaps. Separate these from one-time defects and successful outcomes. Reason

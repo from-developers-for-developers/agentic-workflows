@@ -109,8 +109,8 @@ class RuleChecker:
         files: tuple[str, ...],
         scope: CheckScope,
     ) -> CheckResult:
-        selected = select_files(files, check.paths)
-        if check.paths and not selected:
+        selected = select_files(files, check.paths, check.contains, scope.directory)
+        if (check.paths or check.contains) and not selected:
             return CheckResult(check.id, check.source, "not_applicable")
         action = CommandAction()
         outputs: list[str] = []

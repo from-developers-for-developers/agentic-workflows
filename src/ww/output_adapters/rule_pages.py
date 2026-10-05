@@ -15,6 +15,7 @@ from ww.output_adapters.markdown import (
     _document,
     _fix_failures,
     _waivers,
+    rule_scope,
 )
 from ww.rule_conversion import StoreChange, scriptize_state
 from ww.rule_store import (
@@ -112,6 +113,11 @@ def render_rule_view(view: RuleView) -> str:
     facts: Lines = []
     if view.paths:
         facts.append(f"- Applies to: {', '.join(view.paths)}")
+    if view.contains:
+        facts.append(
+            "- Applies to files containing: "
+            + ", ".join(f'"{text}"' for text in view.contains)
+        )
     if view.source:
         facts.append(f"- Rule file: {view.source}")
     elif view.kind == "rule":
@@ -200,7 +206,7 @@ def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
         return
     lines.append("")
     for rule in rules:
-        scope = f" — {', '.join(rule.paths)}" if rule.paths else ""
+        scope = rule_scope(rule.paths, rule.contains)
         check = (
             " (checked by its command)"
             if rule.has_check

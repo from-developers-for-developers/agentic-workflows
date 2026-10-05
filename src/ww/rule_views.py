@@ -80,6 +80,7 @@ class RuleView:
     text: str
     steps: tuple[str, ...]
     paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
     source: str | None = None
     command: str | None = None
     assertion: str | None = None
@@ -99,6 +100,7 @@ class RuleView:
             "text": self.text,
             "steps": list(self.steps),
             "paths": list(self.paths),
+            "contains": list(self.contains),
             "source": self.source,
             "command": self.command,
             "assert": self.assertion,
@@ -177,6 +179,7 @@ def _rule(
         text=rule.text,
         steps=steps,
         paths=rule.paths,
+        contains=rule.contains,
         source=rule.source,
         command=describe_command(command.command) if command else None,
         assertion=(
@@ -201,6 +204,7 @@ def _check(check: PlannedCheck, steps: tuple[str, ...]) -> RuleView:
         text=check.summary,
         steps=steps,
         paths=check.paths,
+        contains=check.contains,
         command=describe_command(check.command),
         assertion=(
             check.command.assertion.describe() if check.command.assertion else None
@@ -223,6 +227,7 @@ class ListedRule:
     id: str
     summary: str
     paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
     has_check: bool = False
     source: str | None = None
     disputes: int = 0
@@ -234,6 +239,7 @@ class ListedRule:
             "id": self.id,
             "summary": self.summary,
             "paths": list(self.paths),
+            "contains": list(self.contains),
             "has_check": self.has_check,
             "source": self.source,
             "disputes": self.disputes,
@@ -327,6 +333,7 @@ def rules_listing(
             id=rule.id,
             summary=rule.summary,
             paths=rule.paths,
+            contains=rule.contains,
             has_check=rule.check is not None,
             source=rule_source(rule.source, root),
             disputes=counts.get(rule.id, 0),

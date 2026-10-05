@@ -242,6 +242,30 @@ def _normalize_completion_selection(
 # The longest ``--summary``: one or two short sentences, since
 # the detail belongs in the artifact and the summary reaches the manager.
 SUMMARY_LIMIT = 500
+ADJUSTMENTS_LIMIT = 500
+ADJUSTMENTS_FLAG = "--adjustments"
+
+
+def _latest_adjustments(
+    state: ExecutionState, plan: WorkflowPlan
+) -> tuple[str, str] | None:
+    """The step and text of the adjustments most recently recorded in the run.
+
+    A completion held for verification carries them until it is recorded.
+    """
+    steps = {item.id: item.step for item in plan.items}
+    found = [
+        (record.completed_at or "~", steps.get(record.plan_item_id), text)
+        for record in (*state.execution_history, *state.item_executions)
+        if (
+            text := record.adjustments
+            or (record.held_completion.adjustments if record.held_completion else None)
+        )
+    ]
+    if not found:
+        return None
+    _, step, text = max(found, key=lambda entry: entry[0])
+    return (step or "", text)
 
 
 @dataclass(frozen=True)
@@ -795,6 +819,13 @@ class WorkflowService:
                     "artifact": record.artifact,
                     "encountered_at": record.completed_at or state.updated_at,
                     "content": self.tasks.read_execution_artifact(record.artifact),
+                    # What the operator asked to change during the step: the
+                    # worker's own report, quotable as evidence like the artifact.
+                    **(
+                        {"adjustments": record.adjustments}
+                        if record.adjustments
+                        else {}
+                    ),
                 }
             )
         return {"task": task_id, "run": state.run_id, "sources": sources}
@@ -1517,6 +1548,7 @@ class WorkflowService:
         continue_loop: bool = False,
         *,
         summary_for_next: str | None = None,
+        adjustments: str | None = None,
         caller_role: CallerRole | None = None,
         assignment: str | None = None,
     ) -> Instruction:
@@ -1543,6 +1575,7 @@ class WorkflowService:
                 selected_model=selected_model,
                 selected_reasoning=selected_reasoning,
                 summary_for_next=summary_for_next,
+                adjustments=adjustments,
                 caller_role=caller_role,
                 stopping_loop=not continue_loop,
                 continuing_loop=continue_loop,
@@ -1586,6 +1619,7 @@ class WorkflowService:
         selected_reasoning: str | None = None,
         *,
         summary_for_next: str | None = None,
+        adjustments: str | None = None,
         caller_role: CallerRole | None = None,
         rule_results: tuple[str, ...] = (),
         assignment: str | None = None,
@@ -1613,6 +1647,8 @@ class WorkflowService:
                 raise StateError("bootstrap completion cannot save task metadata")
             if rule_results:
                 raise StateError("a bootstrap completion verifies no rules")
+            if adjustments:
+                raise StateError("a bootstrap completion records no adjustments")
             return replace(
                 self._tag_caller(
                     self.bootstrap.complete(
@@ -1642,6 +1678,7 @@ class WorkflowService:
                 selected_model=selected_model,
                 selected_reasoning=selected_reasoning,
                 summary_for_next=summary_for_next,
+                adjustments=adjustments,
                 caller_role=caller_role,
                 rule_results=rule_results,
             )
@@ -1700,6 +1737,7 @@ class WorkflowService:
         selected_reasoning: str | None = None,
         *,
         summary_for_next: str | None = None,
+        adjustments: str | None = None,
         caller_role: CallerRole | None = None,
         stopping_loop: bool = False,
         continuing_loop: bool = False,
@@ -1724,6 +1762,7 @@ class WorkflowService:
                 variables
                 or metadata_values
                 or rule_results
+                or adjustments
                 or stopping_loop
                 or continuing_loop
             ):
@@ -1738,6 +1777,8 @@ class WorkflowService:
                 "task_id is reserved for bootstrap start without an explicit task ID"
             )
         if state.status == "awaiting_input":
+            if adjustments:
+                raise StateError("supplying values records no adjustments")
             return self._complete_pending_input(
                 state,
                 snapshot,
@@ -1812,6 +1853,18 @@ class WorkflowService:
                 f"{item.name!r} needs {SUMMARY_FLAG}: one or two short sentences "
                 "the next step will read about what was done and what it should know"
             )
+        adjustments = (adjustments or "").strip() or None
+        if adjustments is not None and len(adjustments) > ADJUSTMENTS_LIMIT:
+            raise StateError(
+                f"{ADJUSTMENTS_FLAG} has {len(adjustments)} characters; keep it "
+                f"to {ADJUSTMENTS_LIMIT}: one or two short sentences, with the "
+                "detail in the artifact"
+            )
+        if adjustments is not None and item.verifies is not None:
+            raise StateError(
+                f"{item.name!r} is a verification: it reports rule results, "
+                f"not {ADJUSTMENTS_FLAG}"
+            )
         if item.child_operation == "collect" and not self.tasks.read_children(
             task_id, state.run_id
         ):
@@ -1874,6 +1927,7 @@ class WorkflowService:
                     selected_model=selected_model,
                     selected_reasoning=selected_reasoning,
                     summary_for_next=summary_for_next,
+                    adjustments=adjustments,
                     loop_control=(
                         "break"
                         if stopping_loop
@@ -1925,6 +1979,7 @@ class WorkflowService:
             clear_selected_reasoning=selection.clear_selected_reasoning,
             summary_for_next=summary_for_next,
             check_report=check_report,
+            adjustments=adjustments,
         )
         if initialization:
             state = replace(state, pending_init_artifact=None)
@@ -2280,6 +2335,7 @@ class WorkflowService:
             ),
             instruction.item_status or instruction.status,
         )
+        latest = _latest_adjustments(state, snapshot.plan)
         return TaskStatus(
             task_id=instruction.task_id,
             workflow=instruction.workflow,
@@ -2289,6 +2345,8 @@ class WorkflowService:
             agent=instruction.selected_agent or state.agent,
             model=instruction.selected_model or instruction.model,
             reasoning=instruction.selected_reasoning or instruction.reasoning,
+            adjustments=(latest[1] if latest else None),
+            adjustments_step=(latest[0] or None if latest else None),
         )
 
     def status(
@@ -3890,6 +3948,7 @@ class WorkflowService:
             selected_model=held.selected_model,
             selected_reasoning=held.selected_reasoning,
             summary_for_next=held.summary_for_next,
+            adjustments=held.adjustments,
             caller_role=caller_role,
             stopping_loop=held.loop_control == "break",
             continuing_loop=held.loop_control == "continue",

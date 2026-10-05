@@ -156,3 +156,55 @@ FILES = ("README.md", "docs/guide.md", "src/a.py", "src/pkg/b.py", "src/pkg/c.tx
 )
 def test_globs_select_files(globs: tuple[str, ...], expected: tuple[str, ...]) -> None:
     assert select_files(FILES, globs) == expected
+
+
+def _tree(root: Path) -> tuple[str, ...]:
+    files = {
+        "a.php": "<?php class Mail {}\n",
+        "b.php": "<?php class Post {}\n",
+        "notes.md": "Mail is sent by the class.\n",
+        "mixed.txt": "mail in lower case\n",
+        "data.bin": "",
+    }
+    for name, text in files.items():
+        _write(root, name, text)
+    (root / "data.bin").write_bytes(b"\xff\xfe Mail \x00")
+    return tuple(sorted(files))
+
+
+def test_contains_alone_selects_the_files_with_the_text(tmp_path: Path) -> None:
+    files = _tree(tmp_path)
+
+    assert select_files(files, (), ("Mail",), tmp_path) == ("a.php", "notes.md")
+
+
+def test_contains_is_case_sensitive_plain_text_not_a_pattern(tmp_path: Path) -> None:
+    files = _tree(tmp_path)
+
+    assert select_files(files, (), ("mail",), tmp_path) == ("mixed.txt",)
+    assert select_files(files, (), ("M.il",), tmp_path) == ()
+    assert select_files(files, (), ("Mail.*",), tmp_path) == ()
+
+
+def test_any_of_several_strings_selects(tmp_path: Path) -> None:
+    files = _tree(tmp_path)
+
+    assert select_files(files, (), ("Post", "lower case"), tmp_path) == (
+        "b.php",
+        "mixed.txt",
+    )
+
+
+def test_globs_and_contains_both_have_to_match(tmp_path: Path) -> None:
+    files = _tree(tmp_path)
+
+    assert select_files(files, ("*.php",), ("Mail",), tmp_path) == ("a.php",)
+    assert select_files(files, ("*.md",), ("Post",), tmp_path) == ()
+    assert select_files(files, ("*.php",), (), tmp_path) == ("a.php", "b.php")
+
+
+def test_a_file_that_is_not_text_or_is_gone_is_not_selected(tmp_path: Path) -> None:
+    files = (*_tree(tmp_path), "deleted.php")
+
+    assert "data.bin" not in select_files(files, (), ("Mail",), tmp_path)
+    assert "deleted.php" not in select_files(files, (), ("",), tmp_path)

@@ -253,6 +253,7 @@ class HeldCompletion:
     selected_model: str | None = None
     selected_reasoning: str | None = None
     summary_for_next: str | None = None
+    adjustments: str | None = None
     loop_control: str | None = None
     mark: str | None = None
     files: tuple[str, ...] = ()
@@ -276,6 +277,7 @@ class HeldCompletion:
             "selected_model": self.selected_model,
             "selected_reasoning": self.selected_reasoning,
             "summary_for_next": self.summary_for_next,
+            "adjustments": self.adjustments,
             "loop_control": self.loop_control,
             "mark": self.mark,
             "files": list(self.files),
@@ -327,6 +329,9 @@ class HeldCompletion:
             ),
             summary_for_next=expect_optional_string(
                 data["summary_for_next"], "held completion.summary_for_next"
+            ),
+            adjustments=expect_optional_string(
+                data.get("adjustments"), "held completion.adjustments"
             ),
             loop_control=expect_optional_string(
                 data["loop_control"], "held completion.loop_control"
@@ -552,6 +557,9 @@ class PlanItemExecution:
     retry_errors: tuple[str, ...] = ()
     # The short handover a step's worker wrote for the next step.
     summary_for_next: str | None = None
+    # What the operator asked to change during the step, as its worker
+    # reported it with ``complete --adjustments``.
+    adjustments: str | None = None
     # An interactive step's conversation with the operator, as recorded by
     # ``interact``: how many entries, and whether the operator ended it.
     interaction_entries: int = 0
@@ -626,6 +634,7 @@ class PlanItemExecution:
             "repair_failures": self.repair_failures,
             "repair_artifacts": list(self.repair_artifacts),
             "summary_for_next": self.summary_for_next,
+            "adjustments": self.adjustments,
             "interaction_entries": self.interaction_entries,
             "interaction_ended": self.interaction_ended,
             "chosen": self.chosen,
@@ -708,6 +717,7 @@ class PlanItemExecution:
             summary_for_next=expect_optional_string(
                 data.get("summary_for_next"), "summary for next step"
             ),
+            adjustments=expect_optional_string(data.get("adjustments"), "adjustments"),
             interaction_entries=expect_nonnegative_int(
                 data.get("interaction_entries", 0), "interaction entries"
             ),

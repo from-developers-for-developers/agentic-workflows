@@ -1193,6 +1193,7 @@ class WorkflowPlanCompiler:
                 text=rule.text,
                 text_hash=rule.text_hash,
                 paths=rule.paths,
+                contains=rule.contains,
                 has_command=rule.check is not None,
                 max_fixes=rule.max_fixes or default_fixes,
                 hints=rule.hints,
@@ -1207,6 +1208,7 @@ class WorkflowPlanCompiler:
                 summary=rule.summary,
                 command=self._plan_check(rule.check, allowed, workdir, rule.id),
                 paths=rule.paths,
+                contains=rule.contains,
                 max_fixes=rule.max_fixes or default_fixes,
             )
             for rule in unique.values()

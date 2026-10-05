@@ -393,7 +393,13 @@ class InstructionBuilder:
             f"Repair the cause of the failed automatic handler `{item.name}`.\n\n"
             "Do not independently execute the handler command. Submit your repair "
             "with ww complete; "
-            "ww retries the handler and advances only when it succeeds."
+            "ww retries the handler and advances only when it succeeds.\n\n"
+            "If the failure comes from the environment rather than the work (a "
+            "sandbox or permission denial, a network or package-install error, a "
+            "lock another process holds), do not change project files. Fix the "
+            "environment where you can: reinstall, wait, or run the completion "
+            "again outside the sandbox. If you cannot, ask the operator. Say in "
+            "the completion that the cause was environmental."
         )
         if item.on_failure_instruction:
             text += "\n\n" + item.on_failure_instruction
@@ -535,6 +541,7 @@ class InstructionBuilder:
                 str(record.artifact),
                 record.summary_for_next,
                 str(record.completed_at),
+                record.adjustments,
             )
             for _, _, entry, record in candidates
         )
@@ -860,6 +867,7 @@ class InstructionBuilder:
                 if held is not None and held.draft_ref
                 else None
             ),
+            adjustments=held.adjustments if held is not None else None,
         )
 
     def _child_control(
@@ -1054,6 +1062,7 @@ class InstructionBuilder:
                 str((self.root / previous.artifact).resolve()) if previous else None
             ),
             previous_step_summary=previous.summary if previous else None,
+            previous_step_adjustments=previous.adjustments if previous else None,
             summary_required=item.hands_over,
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
@@ -1134,6 +1143,7 @@ def rule_lines(item: PlanItem, record: PlanItemExecution) -> tuple[RuleLine, ...
             rule.id,
             rule.summary,
             rule.paths,
+            rule.contains,
             rule.has_command or converted,
             interpretation=resolution.interpretation if resolution else None,
             check=(
@@ -1340,6 +1350,7 @@ class _StepResult:
     artifact: str
     summary: str | None
     completed_at: str = ""
+    adjustments: str | None = None
 
 
 def _result_body(artifact: str) -> str:

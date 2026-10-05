@@ -496,6 +496,7 @@ class RuleDefinition:
     summary: str
     text_hash: str
     paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
     check: Commands | None = None
     max_fixes: int | None = None
     hints: RuleHints = RuleHints()

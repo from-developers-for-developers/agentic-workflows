@@ -82,6 +82,17 @@ def test_repair_is_persistent_and_retries_only_failed_handler(
     assert "broken input diagnostic" in failed.action_text
     assert "Fix the broken input." in failed.action_text
     assert "Do not independently execute" in failed.action_text
+    assert (
+        "If the failure comes from the environment rather than the work"
+        in failed.action_text
+    )
+    assert "do not change project files" in failed.action_text
+    assert "Say in the completion that the cause was environmental." in (
+        failed.action_text
+    )
+    assert failed.action_text.index("environment rather than the work") < (
+        failed.action_text.index("Fix the broken input.")
+    )
     assert failed.handler_repair["output_refs"]
     state, snapshot = service.load("TASK-1")
     assert snapshot.plan.items[state.cursor].owner == "ww"

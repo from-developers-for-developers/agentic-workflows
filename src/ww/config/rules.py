@@ -53,7 +53,15 @@ from .values import (
     _optional_string,
 )
 
-RULE_FILE_KEYS = {"paths", "check", "max_fixes", "agent", "model", "reasoning"}
+RULE_FILE_KEYS = {
+    "paths",
+    "contains",
+    "check",
+    "max_fixes",
+    "agent",
+    "model",
+    "reasoning",
+}
 STEP_RULE_KEYS = {
     "text",
     "argv",
@@ -160,6 +168,11 @@ def parse_rule_file(
         paths=(
             _paths(frontmatter.get("paths"), context) if "paths" in frontmatter else ()
         ),
+        contains=(
+            _contains(frontmatter["contains"], context)
+            if "contains" in frontmatter
+            else ()
+        ),
         check=(
             parse_check_command(
                 _mapping(frontmatter["check"], f"{context}.check"), f"{context}.check"
@@ -201,6 +214,18 @@ def _paths(value: Any, context: str) -> tuple[str, ...]:
         or not all(isinstance(item, str) and item.strip() for item in value)
     ):
         raise ConfigurationError(f"{context}.paths must be a non-empty list of globs")
+    return tuple(value)
+
+
+def _contains(value: Any, context: str) -> tuple[str, ...]:
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item for item in value)
+    ):
+        raise ConfigurationError(
+            f"{context}.contains must be a non-empty list of non-empty strings"
+        )
     return tuple(value)
 
 
