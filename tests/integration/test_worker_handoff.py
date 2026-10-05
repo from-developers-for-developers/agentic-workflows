@@ -888,3 +888,73 @@ workflows:
         "completed",
     ]
     assert state.pending_init_artifact is None
+
+
+_CHILD_WORKFLOWS = """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: {child}
+  - name: quick
+    steps:
+      - name: work
+  - name: pair
+    steps:
+      - name: first
+      - name: second
+"""
+
+
+def _handoff_text(tmp_path: Path, child_workflow: str) -> str:
+    (tmp_path / "ww.yaml").write_text(
+        _CHILD_WORKFLOWS.format(child=child_workflow), encoding="utf-8"
+    )
+    service = WorkflowService(Storage(tmp_path))
+    service.start("parent", "TASK-1", agent="codex", caller_role="manager")
+    service.next("TASK-1", caller_role="manager")
+    service.add_child("TASK-1", "A", "Child work")
+    service.start(
+        child_workflow,
+        "TASK-1/A",
+        agent="codex",
+        workflow_runtime="auto",
+        caller_role="manager",
+    )
+    service.next("TASK-1/A", caller_role="manager")
+    done = None
+    for _ in range(6):
+        # The workflow's own completion hook asks for a ``summary`` variable.
+        for variables in ((), (("summary", "Child done."),)):
+            try:
+                done = service.complete(
+                    "TASK-1/A",
+                    variables=variables,
+                    artifact="done",
+                    caller_role="worker",
+                    assignment=assignment_token(service, "TASK-1/A"),
+                    summary_for_next="Done.",
+                )
+                break
+            except StateError as error:
+                if "missing required variable" not in str(error):
+                    raise
+        if done is not None and done.handoff_block is not None:
+            break
+    assert done is not None and done.handoff_block is not None
+    return MarkdownOutputAdapter().render_instruction(done)
+
+
+def test_a_completed_child_run_hands_back_to_the_parent(tmp_path: Path) -> None:
+    text = _handoff_text(tmp_path, "quick")
+
+    assert "Manager: continue with the parent task: `" in text
+    assert "next TASK-1 --role manager" in text
+    assert "next TASK-1/A" not in text
+
+
+def test_a_child_mid_run_keeps_its_own_continuation(tmp_path: Path) -> None:
+    text = _handoff_text(tmp_path, "pair")
+
+    assert "next TASK-1/A --role manager" in text
+    assert "parent task" not in text

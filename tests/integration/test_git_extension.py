@@ -1429,3 +1429,41 @@ def test_the_branch_strategy_variable_names_the_format_in_use(
         )
         == "hotfix"
     )
+
+
+def test_a_child_worktree_sits_beside_its_parent_worktree(repository: Path) -> None:
+    config = _worktree_config(repository)
+    parent = context(repository, config)
+    assert handler("start-task-branch")(parent).ok
+    assert handler("create-worktree")(parent).ok
+    child = context(repository, config, task_id="TASK-1/A")
+    assert handler("start-task-branch")(child).ok
+
+    result = handler("create-worktree")(child)
+
+    assert result.ok, result.error
+    path = repository / "trees" / "TASK-1-A"
+    assert result.working_directory == path
+    assert branch_of(path) == "feature/task-1-a"
+    assert not (repository / "trees" / "TASK-1" / "A").exists()
+    status = _run("git", "status", "--porcelain", cwd=repository / "trees" / "TASK-1")
+    assert status.stdout == ""
+    assert git_extension._reserved_paths(child) == (path,)
+
+
+def test_a_top_level_worktree_name_with_a_separator_is_flattened(
+    repository: Path,
+) -> None:
+    config = {
+        **_worktree_config(repository),
+        "worktree_name_format": "x/{{ww.task.id}}",
+    }
+    task = context(repository, config)
+    assert handler("start-task-branch")(task).ok
+
+    result = handler("create-worktree")(task)
+
+    assert result.ok, result.error
+    path = repository / "trees" / "x-TASK-1"
+    assert result.working_directory == path
+    assert git_extension._reserved_paths(task) == (path,)

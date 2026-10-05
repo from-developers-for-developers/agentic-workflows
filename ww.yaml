@@ -217,7 +217,9 @@ workflows:
                     list` shows for that branch, not in this task's workspace.
                     Run ruff, mypy and the whole pytest suite there in their
                     least verbose mode that still shows every finding, fix
-                    what they report, and commit on that branch.
+                    what they report, and commit on that branch with the
+                    subject prefixed with {{ww.child.id}} followed by `: `, as
+                    the child's own commits are.
                   artifact_from: review-slice
               max_rounds: 3
 

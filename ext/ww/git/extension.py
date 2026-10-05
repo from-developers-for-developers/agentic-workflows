@@ -481,12 +481,33 @@ def _worktree_path(context: ExtensionContext, settings: Settings, name: str) -> 
     return directory / name
 
 
+def _worktree_name(context: ExtensionContext, settings: Any) -> str:
+    """The task's worktree directory name, always a single path component.
+
+    A child's name is its parent's rendered name plus the child ID, as its
+    branch is; any other name that still holds a separator has each one
+    replaced by ``-``. Names a refusal must see (empty, ``.``, absolute) are
+    returned unchanged for the caller to reject.
+    """
+    tokens = _tokens(context)
+    name = interpolate(settings.worktree_name_format, tokens).strip()
+    if _parent_branch(context) and context.task_id:
+        parent_id, _, child_id = context.task_id.rpartition("/")
+        parent = interpolate(
+            settings.worktree_name_format, {**tokens, TASK_ID: parent_id}
+        ).strip()
+        name = f"{parent}-{child_id}"
+    if name and not Path(name).is_absolute() and "/" in name:
+        name = name.replace("/", "-")
+    return name
+
+
 def _reserved_paths(context: ExtensionContext) -> tuple[Path, ...]:
     """The worktree this task would own, so ww never reuses its ID elsewhere."""
     settings = _task_settings(context)
     if not settings.worktrees or not settings.worktree_dir:
         return ()
-    name = interpolate(settings.worktree_name_format, _tokens(context)).strip()
+    name = _worktree_name(context, settings)
     relative = Path(name)
     if (
         not name
@@ -1415,7 +1436,7 @@ def _create_worktree(context: ExtensionContext) -> ExtensionResult:
         return ExtensionResult(
             False, error="task branch does not exist; run start-task-branch first"
         )
-    name = interpolate(settings.worktree_name_format, _tokens(context)).strip()
+    name = _worktree_name(context, settings)
     path_parts = Path(name).parts
     if (
         not name

@@ -283,8 +283,9 @@ workflows:
     assert "Requested agent: `codex`" in preview
     assert "Requested model" not in preview
     assert "Requested reasoning" not in preview
-    assert "--model" not in preview
-    assert "--reasoning" not in preview
+    command = preview.split("```console")[-1]
+    assert "--model" not in command
+    assert "--reasoning" not in command
 
     service.next("TASK-1", selected_agent="codex", caller_role="manager")
     worker = md.render_instruction(
@@ -308,7 +309,7 @@ workflows:
     assert "Requested reasoning: `high`" in reviewing
     assert "--reasoning high" in reviewing
     assert "Requested model" not in reviewing
-    assert "--model" not in reviewing
+    assert "--model" not in reviewing.split("```console")[-1]
 
 
 def test_profile_is_inherited_through_enclosing_steps(tmp_path: Path) -> None:

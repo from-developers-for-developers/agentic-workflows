@@ -31,6 +31,7 @@ def handoff_block(
     files: tuple[str, ...] | None,
     error: str | None,
     loop_outcome: tuple[str, str] | None = None,
+    continuation_task_id: str | None = None,
 ) -> HandoffBlock:
     """Report the agent items of one ended assignment, in plan order.
 
@@ -38,7 +39,9 @@ def handoff_block(
     record; items the worker never reached are left out. ``error`` is the
     run's failure, such as a handler that failed after the last completion.
     ``loop_outcome`` names the item that broke or continued its loop and
-    which it did.
+    which it did. ``continuation_task_id`` names the task the manager
+    continues with when that is not ``task_id``: the parent of a child whose
+    run has ended.
     """
     steps = tuple(
         step
@@ -63,6 +66,7 @@ def handoff_block(
         files=files,
         summary=summary,
         error=error,
+        continuation_task_id=continuation_task_id,
     )
 
 
@@ -140,8 +144,12 @@ def handoff_markdown(block: HandoffBlock) -> str:
         lines.extend(["", f"Error: {_one_line(block.error)}"])
     if block.summary:
         lines.extend(["", f"Worker summary: {_one_line(block.summary)}"])
-    manager = next_command(block.task_id)
-    lines.extend(["", f"Manager: continue with `{manager}`"])
+    target = block.continuation_task_id or block.task_id
+    manager = next_command(target)
+    label = (
+        "continue with the parent task:" if target != block.task_id else "continue with"
+    )
+    lines.extend(["", f"Manager: {label} `{manager}`"])
     return "\n".join(lines)
 
 

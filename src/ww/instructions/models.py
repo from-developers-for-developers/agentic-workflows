@@ -352,10 +352,12 @@ class HandoffBlock:
     files: tuple[str, ...] | None = None
     summary: str | None = None
     error: str | None = None
+    continuation_task_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "task_id": self.task_id,
+            "continuation_task_id": self.continuation_task_id,
             "assignment": self.token,
             "steps": [step.to_dict() for step in self.steps],
             "files": None if self.files is None else list(self.files),
