@@ -12,12 +12,7 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 ## 2026-10-05
 
 - Removed: the session-start task list, stop reminders, interruption records and transcript recovery, and the
-  `interrupted` command. `session-start` now prints only the one-line reminder that ww coordinates work here;
-  `stop` and `interrupt` calls from an older installation exit 0 with no output, and `hook install` registers
-  only `session-start` (`hook uninstall` still removes every ww entry). `discover` no longer lists unfinished
-  tasks or reports `interrupted_recently` (it still names unreadable tasks), `lookup` drops its interruption
-  pointer and says "open run" for a task it would continue, and `init` no longer writes `agent_hooks`. Hooks,
-  events and the `agent_hooks` keys (`check_unfinished`, `recent_days`) stay accepted and are ignored.
+  `interrupted` command. Hooks, events and `agent_hooks` keys stay accepted. `5414a34`
 - Added: `add-child` is accepted while a per-child stage of a roadmap-style parent is active, not only while the
   collecting step is. The new child is appended after the last planned child with its own expanded lifecycle;
   once the last child's stages have finished the command is refused. `00338d9`
