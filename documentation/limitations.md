@@ -14,14 +14,17 @@ such as WSL.
 
 ## Distribution and versioning
 
-There is no published package yet, and no tagged releases to pin to. ww is
-installed from a checkout in editable mode, and `main` moves frequently; see
-the install section of [README.md](../README.md) for what that means in
-practice.
+ww is published to PyPI as `ww-agentic-workflows`, but only as development
+snapshots, `1.0.0.devN`, built from `dev` on every push. There is no stable
+release and no Git tag to pin to yet; pinning means choosing a snapshot
+version, or a commit in a source checkout. See the install section of
+[README.md](../README.md) and
+[development releases](development-releases.md).
 
 **There is no formal compatibility guarantee yet**, because there are no
-releases to define one against: nothing is contractually promised to survive a
-pull of `main`, and there is no deprecation period before a change lands.
+stable releases to define one against: nothing is contractually promised to
+survive an upgrade to the next snapshot or a pull of `main`, and there is no
+deprecation period before a change lands.
 
 In practice the surfaces have settled. `ww.yaml` and the command line
 have been stable for a while, and most work is internal refactoring, new

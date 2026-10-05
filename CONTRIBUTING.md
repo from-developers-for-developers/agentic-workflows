@@ -17,7 +17,7 @@ Everyone taking part is expected to follow the
    template. Report a security vulnerability privately, through
    [SECURITY.md](SECURITY.md), never as a public issue.
 2. **Branch from `main`, and open the pull request against `main`.** It is
-   the branch users run, so it is the base every change starts from. `dev`
+   what source checkouts track, so it is the base every change starts from. `dev`
    carries the maintainers' in-flight work and is not an integration branch
    for contributions — do not branch from it or target it. See the branch
    table in [README.md](README.md#releases-and-branches).
@@ -74,6 +74,17 @@ environment up by hand instead:
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -e '.[dev]'
+```
+
+That environment is for checks and tests. To use your checkout as the `ww`
+command in other projects, install it in editable mode with pipx, as described
+in the source-checkout part of the README's
+[install section](README.md#1-install). Add `--suffix=-dev` to keep it beside
+a PyPI install, and select it per project with
+`"executable": "ww-agentic-workflows-dev"` in `ww.json`:
+
+```console
+pipx install --editable --suffix=-dev .
 ```
 
 The project supports Python 3.10 and newer. Run all commands below from the
