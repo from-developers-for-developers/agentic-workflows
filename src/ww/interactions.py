@@ -5,11 +5,10 @@ An interactive step is a conversation the agent holds with the operator in
 its own session; ww cannot hear it.  When the conversation ends, the agent
 records both sides at once with ``interact --transcript``, and ww appends
 each entry to one file per task, ``interactions.md``, never rewriting it.
-The ``interrupt`` hook appends what it recovers from the agent's own
-transcript the same way, under a speaker marked ``(recovered)``.  Every entry names the
-run and step it belongs to, and the work item when the step is a per-item
-stage, so the file reads as the task's whole history of operator involvement
-and the conversation of one stage can be read back out of it.
+Every entry names the run and step it belongs to, and the work item when the
+step is a per-item stage, so the file reads as the task's whole history of
+operator involvement and the conversation of one stage can be read back out of
+it.
 """
 
 from __future__ import annotations
@@ -26,8 +25,6 @@ INTERACTIONS_FILE = "interactions.md"
 _SEPARATOR = " · "
 # A heading has time, run, step, and speaker; a per-item stage adds its item.
 _FIELDS = 4
-# Appended to the speaker of an entry the interrupt hook recovered.
-RECOVERED = " (recovered)"
 # A transcript line that starts an entry: a speaker marker in any case, plain
 # or bold with the colon inside or outside the bold, then the entry's first
 # line, e.g. "**Operator:** Use a queue." or "agent: I propose a queue.".

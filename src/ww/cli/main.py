@@ -45,7 +45,6 @@ from ww.hooks import (
     registered_elsewhere,
     uninstall_hooks,
 )
-from ww.hooks.notices import interruption_notice
 from ww.inspect import inspect_checkout, render_markdown
 from ww.instructions import Instruction
 from ww.instructions.handoff import handoff_markdown
@@ -136,7 +135,6 @@ _READ_ONLY_COMMANDS = frozenset(
         "documents",
         "interactions",
         "updates",
-        "interrupted",
         "check",
         "rule",
         "requirements",
@@ -462,25 +460,22 @@ def _confirmation(assume_yes: bool) -> str:
 
 def _next(context: _Context) -> _Outcome:
     args = context.args
-    return _with_interruption(
-        context,
-        _instruction_outcome(
-            context.service.next(
-                context.task_id,
-                args.model,
-                args.reasoning,
-                args.force,
-                retry=args.retry,
-                force_reason=args.force_reason,
-                outcome=args.outcome,
-                selected_agent=args.selected_agent,
-                caller_role=args.role,
-                reassign=args.reassign,
-                replan=args.replan,
-                keep_plan=args.keep_plan,
-            ),
-            args.json_output,
+    return _instruction_outcome(
+        context.service.next(
+            context.task_id,
+            args.model,
+            args.reasoning,
+            args.force,
+            retry=args.retry,
+            force_reason=args.force_reason,
+            outcome=args.outcome,
+            selected_agent=args.selected_agent,
+            caller_role=args.role,
+            reassign=args.reassign,
+            replan=args.replan,
+            keep_plan=args.keep_plan,
         ),
+        args.json_output,
     )
 
 
@@ -1077,13 +1072,10 @@ def _status(context: _Context) -> _Outcome:
     status = context.service.task_status(
         context.task_id, args.run_id, caller_role=args.role
     )
-    return _with_interruption(
-        context,
-        _Outcome(
-            render_status(status, args.json_output) + "\n",
-            status.workflow,
-            status.task_id,
-        ),
+    return _Outcome(
+        render_status(status, args.json_output) + "\n",
+        status.workflow,
+        status.task_id,
     )
 
 
@@ -1167,33 +1159,15 @@ def _with_direct_work_notice(
 
 def _instruction_page(context: _Context) -> _Outcome:
     args = context.args
-    return _with_interruption(
-        context,
-        _instruction_outcome(
-            context.service.instruction(
-                context.task_id,
-                args.run_id,
-                caller_role=args.role,
-                assignment=args.assignment,
-            ),
-            args.json_output,
+    return _instruction_outcome(
+        context.service.instruction(
+            context.task_id,
+            args.run_id,
+            caller_role=args.role,
+            assignment=args.assignment,
         ),
+        args.json_output,
     )
-
-
-def _with_interruption(context: _Context, outcome: _Outcome) -> _Outcome:
-    """Lead with a notice while the task's last session stopped mid-step.
-
-    The notice shows until the interrupted attempt completes or fails, so a
-    compaction or a new session between reading it and acting keeps it.
-    """
-    if context.args.json_output:
-        return outcome
-    interruption = context.service.interruption(context.task_id)
-    if interruption is None:
-        return outcome
-    notice = interruption_notice(interruption, context.task_id)
-    return replace(outcome, text=f"> {notice}\n\n{outcome.text}")
 
 
 def _hook(context: _Context) -> _Outcome:
@@ -1236,40 +1210,6 @@ def _duplicate_notice(context: _Context, agent: HookAgent, local: bool) -> str:
         f"Remove one copy with `{ww_command()} hook uninstall --agent "
         f"{agent.name}{flag}`.\n"
     )
-
-
-def _interrupted(context: _Context) -> _Outcome:
-    """List the tasks whose last agent session stopped mid-step."""
-    args = context.args
-    since = (
-        context.extensions.config.agent_hooks.recent_days
-        if args.since is None
-        else args.since
-    )
-    entries = (
-        context.service.interruptions()
-        if args.all
-        else context.service.hook_records.recent(since)
-    )
-    if args.json_output:
-        return _Outcome(
-            _json(
-                [
-                    {"task_id": task_id, **record.to_dict()}
-                    for task_id, record in entries
-                ]
-            )
-        )
-    if not entries:
-        window = "" if args.all else f" in the last {since} day(s)"
-        return _Outcome(f"No task was interrupted{window}.\n")
-    lines = [
-        f"- {task_id} · {record.step or record.item_name} (attempt "
-        f"{record.attempt}) · {record.at} · {record.agent}"
-        + (f" · {record.reason}" if record.reason else "")
-        for task_id, record in entries
-    ]
-    return _Outcome("\n".join(lines) + "\n")
 
 
 def _metadata(context: _Context) -> _Outcome:
@@ -1607,7 +1547,6 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "cleanup": _cleanup,
     "updates": lambda c: _Outcome(render_updates(c.storage, c.args)),
     "hook": _hook,
-    "interrupted": _interrupted,
 }
 
 

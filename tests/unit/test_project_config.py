@@ -58,7 +58,9 @@ def test_global_loop_limit_loads_from_project_config(tmp_path: Path) -> None:
     assert load_project_config(path).limits == Limits(rounds=7, fixes=3)
 
 
-def test_the_agent_hooks_settings_load_from_project_config(tmp_path: Path) -> None:
+def test_the_agent_hooks_settings_are_accepted_for_compatibility(
+    tmp_path: Path,
+) -> None:
     path = write(tmp_path, {"agent_hooks": {"check_unfinished": False}})
     assert load_project_config(path).agent_hooks == AgentHooks(False, 3)
 

@@ -13,7 +13,6 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "update_check": true,
   "executable": "ww-agentic-workflows-dev",
   "limits": {"rounds": 3, "fixes": 3},
-  "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "pages": {"worker_requirements": "pointer"},
   "workflows": {"ww-suggest": {"enabled": false}},
   "projects": [
@@ -38,11 +37,10 @@ for the operator, unless a rule sets its own ``max_fixes``. ``auto_retries``
 recording each failure on the step, before the step's own failure handling (a
 repair assignment, or the operator) applies.
 
-``agent_hooks`` tunes what the ``session-start`` hook reports.
-``check_unfinished`` (default ``true``) is whether it scans for unfinished
-tasks at all; ``recent_days`` (default 3) is how many days back a task's last
-update or an interruption counts as recent, for that hook, ``discover``,
-``lookup``, and ``ww interrupted``.
+``agent_hooks`` holds the keys ``check_unfinished`` (default ``true``) and
+``recent_days`` (default 3). Both are validated and accepted so existing files
+keep loading, and neither has any effect: ww no longer lists unfinished tasks
+or interruptions.
 
 ``pages`` tunes what pages print. ``worker_requirements`` is ``full`` (the
 default: the first page of every delegated worker assignment prints the task
@@ -259,11 +257,10 @@ class Limits:
 
 @dataclass(frozen=True)
 class AgentHooks:
-    """The ``agent_hooks`` setting: what the session-start hook reports."""
+    """The ``agent_hooks`` setting; accepted for compatibility and ignored."""
 
-    # Whether session-start scans for unfinished tasks at all.
+    # Both keys are kept so older files load; nothing reads them.
     check_unfinished: bool = True
-    # How many days back a task's last update, or an interruption, is recent.
     recent_days: int = DEFAULT_RECENT_DAYS
 
     def to_dict(self) -> dict[str, object]:

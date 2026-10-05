@@ -46,7 +46,7 @@ worktree settings; built-in composition needs no project lane setting.
 `lookup` (`../src/ww/cli/lookup.py`) is the entry point of direct work:
 `../src/ww/task_references.py` maps what the operator called a task onto the
 task format and the IDs the storage port lists, and the command answers with
-one next step, continuing an unfinished run or naming the `record` command, and
+one next step, continuing an open run or naming the `record` command, and
 asking the operator through the agent's choice menu (`../src/ww/agents.py`)
 only when the reference matches several tasks. `../src/ww/direct_work.py` holds
 the direct-work entries kept in each task's `direct-work.json` (a
@@ -1378,9 +1378,7 @@ waiting while the child it could not launch has no run.
 `complete --role manager` is composed in the CLI: the policy (`manager_continues_itself`)
 reads the page the completion returned and, when the next step is the manager's own,
 the command calls `next` as the manager would; the service's `complete` never
-dispatches, so every other caller keeps its single-step contract. The stop hook
-treats a task with an open child below it, or a delegated step in progress, as a
-manager that is waiting (`OpenTask.waiting_on_another`). `init`'s opt-in Claude Code
+dispatches, so every other caller keeps its single-step contract. `init`'s opt-in Claude Code
 permission rules live in `ww.claude_permissions` (merge, never clobber, keep ignored).
 
 Amendments to a task's requirements live behind their own storage port
@@ -1620,13 +1618,9 @@ completion is refused until it was ended. How the operator is asked is the
 agent's business; the choice mechanisms table in `agents.py` is core knowledge
 of what each integration offers, not an extension point.
 
-The `interrupt` hook is the record's safety net. For a step still in
-conversation, `hooks/transcripts.py` reads the session's own transcript
-(Claude Code's session JSONL, Codex's rollout JSONL), keeps the two sides'
-messages since the attempt started, and the hook appends them through
-`InteractionLog` under speakers marked `(recovered)`. It writes no task state
-and takes no task lock: the session that held the conversation is the one
-ending, and the step record's entry count stays the agent's.
+A session that ends mid-conversation loses what was not yet recorded; ww does
+not recover it from the agent's transcript, and the next session asks the
+operator where they were.
 
 The operator page is an extra on top of that, not part of it. The core knows
 it by one flag, `interactive: page` on a per-item stage (`ui` on the
@@ -1658,24 +1652,32 @@ the operator left, and only the operator's own words lift it.
 ## Agent hooks
 
 See [documentation/agent-hooks.md](agent-hooks.md) for the user-facing
-behaviour (events, per-agent table, install/uninstall/show, interrupted
-tasks); this section is the internal design behind it.
+behaviour (the session-start line, per-agent table, install/uninstall/show);
+this section is the internal design behind it.
 
-Agent hooks exist to carry state the static instructions cannot: which task
-is unfinished when a session starts or compacts, and whether it is ending with
-an agent-owned step still open. Every decision lives in ww. `ww.open_work`
-answers from the persisted runs alone which tasks are open and whether an
-agent step is dispatched and in progress, reusing the control policy's
-`operator_reason` so a task waiting for input or the operator never counts; it
-renders nothing, compiles nothing, and loads no extension, which keeps a hook
-fast. It returns `OpenWork`: the open tasks and, as `UnreadableTask`, every
-task whose record raised `StateError` (both storage adapters wrap a bad record
-that way), so one broken task never hides the others. The interruption scan in
-`ww.hooks.records` skips such a task, and `discover` lists what `open_work`
-reports; only commands addressing such a task still fail. `ww.hooks.runtime` turns that into the three answers, and the adapters in
-`ww.hooks.agents` only translate: each reads its agent's payload into one
-neutral record and renders ww's answer in the agent's reply shape. A new agent
-is one more adapter.
+The hooks stay small on purpose. ww once listed unfinished tasks at session
+start, reminded an agent to close a step when it stopped, recorded interrupted
+sessions, and recovered conversations from transcripts. The result confused
+sessions that had nothing to do with the task, so only the one line a session
+needs to find ww remains. `ww.hooks.runtime` answers it: `session-start`
+prints `session_context` from `ww.hooks.notices`, and every other event
+answers nothing. The adapters in `ww.hooks.agents` only translate: each reads
+its agent's payload into one neutral record and renders ww's answer in the
+agent's reply shape. A new agent is one more adapter. The three events, the
+payload fields (including the ones nothing reads now) and the `agent_hooks`
+keys stay accepted, so a hooks file or `ww.json` written by an older ww keeps
+working; `stop` and `interrupt` calls from an older installation exit 0 with no
+output and write no state. ww keeps no hook record per task: `reset` only
+removes the `interrupted.json` and `stop-reminders.json` an older version
+may have left, so they cannot keep the task directory alive.
+
+`ww.open_work` is reduced to what the operator surface `discover` needs: it
+reads every task's record and returns, as `UnreadableTask`, the ones that
+raised `StateError` (both storage adapters wrap a bad record that way), so a
+broken task is named instead of hidden; only commands addressing such a task
+still fail. It is not used by the hooks, and no command lists unfinished tasks:
+the operator names the task, and `lookup`'s "continue" outcome and
+`instruction` find the open run.
 
 The runtime form is intercepted before normal command parsing. It always
 exits 0 without stderr, because exit code 2 means "continue" to some agents'
@@ -1683,32 +1685,9 @@ stop hooks and stray text would enter the agent's context, and it skips the
 update notice. It still writes one audit record per call with ww's decision,
 never the payload, so a session can be followed without the agent's text.
 
-The stop hook is a one-time reminder rather than a block. A reminder is
-recorded per task, run, item, and attempt in `stop-reminders.json` beside the
-interaction log, and the check and the record happen under a lock of their own:
-agents run matching hooks in parallel, and the task lock would stall behind a
-long-running command. An agent's own loop guard is honoured as well.
-
-Stop and interrupt pick the tasks a session concerns in one function,
-`ww.open_work.tasks_for_session`. A workspace selects a task only when it is not
-the root: the root holds every task's state, and a worktree-less task works
-there, so matching it would tie every root session to every such task.
-Otherwise the run's recorded agent must be the hook's agent, because a session
-has no business closing another integration's step. The stop hook further
-separates a manager from its workers: `OpenTask.delegated` marks a step an
-`auto` run hands to a worker, and only a stop the adapter reports as a
-worker's (`HookPayload.from_worker`) reminds about it. Messages name work
-through `OpenTask.label`, which names a hook item by itself and its step,
-since a hook records the step it is attached to. The
-interruption record, `interrupted.json`, is cleared lazily in the one place
-that reads it, once that attempt completed, failed, or was superseded, never
-because a notice showed it, so compaction between reading and acting cannot
-lose it. Listing interruptions scans the markers instead of keeping an index
-that could drift. Both records belong to the task, and `reset` removes them
-before the storage adapter removes the task directory.
-
 Installation writes only the agent's project file, or with `--local` the one it
-keeps out of version control, merging ww's entries and recognising them by
+keeps out of version control, merging ww's one `session-start` entry and
+recognising ww's entries, including older `stop` and `interrupt` ones, by
 their command. `init` offers it per agent and treats a failure as a manual
 action, never as an init failure.
 

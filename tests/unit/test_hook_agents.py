@@ -18,8 +18,6 @@ from ww.hooks import (
     registered_elsewhere,
     uninstall_hooks,
 )
-from ww.hooks.notices import stop_reminder
-from ww.open_work import OpenTask
 from ww.storage import Storage
 
 # Payload parsing
@@ -101,18 +99,9 @@ def test_each_agent_answers_in_its_own_shape() -> None:
                 "additionalContext": "ctx",
             }
         }
-        assert json.loads(agent.continue_reply("go")) == {
-            "decision": "block",
-            "reason": "go",
-        }
     assert json.loads(cursor.context_reply("ctx")) == {"additional_context": "ctx"}
-    assert json.loads(cursor.continue_reply("go")) == {"followup_message": "go"}
     assert json.loads(antigravity.context_reply("ctx")) == {
         "injectSteps": [{"ephemeralMessage": "ctx"}]
-    }
-    assert json.loads(antigravity.continue_reply("go")) == {
-        "decision": "continue",
-        "reason": "go",
     }
 
 
@@ -134,7 +123,7 @@ def _commands(document: dict, agent: str) -> dict[str, list[str]]:
 def test_the_session_start_hook_is_registered_without_a_subagent_start() -> None:
     claude = _commands(json.loads(hook_snippet(hook_agent("claudecode"))), "claudecode")
 
-    assert set(claude) == {"SessionStart", "Stop", "SubagentStop", "SessionEnd"}
+    assert set(claude) == {"SessionStart"}
     assert "SubagentStart" not in claude
     snippet = json.loads(hook_snippet(hook_agent("claudecode")))
     assert "matcher" not in snippet["hooks"]["SessionStart"][0]
@@ -146,9 +135,9 @@ def test_the_session_start_hook_is_registered_without_a_subagent_start() -> None
 @pytest.mark.parametrize(
     ("agent", "events"),
     [
-        ("codex", {"SessionStart", "Stop", "SubagentStop", "Interrupt", "SessionEnd"}),
-        ("cursor", {"sessionStart", "stop", "subagentStop", "sessionEnd"}),
-        ("antigravity", {"PreInvocation", "Stop"}),
+        ("codex", {"SessionStart"}),
+        ("cursor", {"sessionStart"}),
+        ("antigravity", {"PreInvocation"}),
     ],
 )
 def test_each_agent_registers_its_native_events(agent: str, events: set[str]) -> None:
@@ -159,9 +148,11 @@ def test_cursor_commands_run_from_the_project_root() -> None:
     snippet = json.loads(hook_snippet(hook_agent("cursor")))
 
     assert snippet["version"] == 1
-    assert snippet["hooks"]["stop"] == [
-        {"command": "./ww hook stop --agent cursor", "timeout": 10}
-    ]
+    assert snippet["hooks"] == {
+        "sessionStart": [
+            {"command": "./ww hook session-start --agent cursor", "timeout": 10}
+        ]
+    }
 
 
 # Installing
@@ -221,7 +212,7 @@ def test_an_unreadable_hooks_file_fails_with_the_manual_snippet(
 
     message = str(raised.value)
     assert ".claude/settings.json" in message
-    assert "/ww hook stop --agent claudecode" in message
+    assert "/ww hook session-start --agent claudecode" in message
     assert path.read_text(encoding="utf-8") == content
 
 
@@ -287,42 +278,7 @@ def test_a_second_copy_in_the_other_file_is_reported(tmp_path: Path) -> None:
     assert registered_elsewhere(storage, hook_agent("codex")) is None
 
 
-# How messages name the open work
-
-
-def _open(phase: str, step: str, name: str) -> OpenTask:
-    return OpenTask(
-        task_id="T1",
-        run_id="01-task",
-        workflow="task",
-        agent="claudecode",
-        item_id="item",
-        item_name=name,
-        step=step,
-        phase=phase,
-        owner="agent",
-        item_status="in_progress",
-        attempt=1,
-        run_status="in_progress",
-        operator_reason=None,
-        workspace=Path("/w"),
-        updated_at="2026-09-28T00:00:00Z",
-    )
-
-
-def test_a_step_is_named_by_its_path() -> None:
-    assert _open("step", "check-code-quality/run", "run").label == (
-        "check-code-quality/run"
-    )
-
-
-def test_a_hook_is_named_by_itself_and_its_step() -> None:
-    task = _open("before_complete_workflow", "run-tests", "update-documentation")
-
-    assert task.label == "update-documentation (a hook of run-tests)"
-    assert "T1 step `update-documentation (a hook of run-tests)` is still" in (
-        stop_reminder((task,))
-    )
+# Permissions
 
 
 def test_only_claude_code_says_how_to_allow_commands() -> None:

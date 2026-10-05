@@ -26,8 +26,6 @@ writing one.
 
 3. Task scans parse every task's state
 
-The `session-start` hook skips tasks whose state file was last written before
-`agent_hooks.recent_days`, but `discover`, `interrupted` and `lookup` still
-parse every task's state. If a repository gathers thousands of tasks inside
-that window, the fix is an index owned by the storage adapter, written on every
-commit and rebuildable from the states, not a marker the hooks maintain.
+`discover` parses every task's state to name the ones it cannot read. If a
+repository gathers thousands of tasks, the fix is an index owned by the storage
+adapter, written on every commit and rebuildable from the states.

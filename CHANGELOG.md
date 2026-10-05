@@ -11,6 +11,8 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Removed: the session-start task list, stop reminders, interruption records and transcript recovery, and the
+  `interrupted` command. Hooks, events and `agent_hooks` keys stay accepted. `5414a34`
 - Added: `add-child` is accepted while a per-child stage of a roadmap-style parent is active, not only while the
   collecting step is. The new child is appended after the last planned child with its own expanded lifecycle;
   once the last child's stages have finished the command is refused. `00338d9`

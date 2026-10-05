@@ -97,11 +97,9 @@ def install_agent_hooks(
         if wanted is None and interactive:
             if not explained:
                 print(
-                    "\nww's hooks tell an agent session which ww tasks are "
-                    "unfinished when it starts\nor compacts, remind it once to "
-                    "record a step it leaves open, and note an\ninterrupted "
-                    "session. They only add a few lines of context; nothing is "
-                    "blocked.\n"
+                    "\nww's session-start hook tells an agent session that ww "
+                    "coordinates work here and how to\nlist its workflows. It "
+                    "only adds one line of context; nothing is blocked.\n"
                 )
                 explained = True
             try:

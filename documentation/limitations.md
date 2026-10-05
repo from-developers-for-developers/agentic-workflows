@@ -137,19 +137,14 @@ collects the limitations, so it is not repeated there.
   agent's own documentation before relying on nested delegation.
   `subagents: false` is likewise only an instruction on the step's page
   today, not a hard block: ww has no pre-spawn hook yet.
-- Per-agent hook gaps: Antigravity has no session-start event and never
-  reports a worker's own stop, so its manager is never reminded about a
-  delegated step; Codex only loads project hooks once `.codex/` is
-  trusted; only Claude Code keeps a hooks file out of version control. See
+- Per-agent hook gaps: Antigravity has no session-start event; Codex only
+  loads project hooks once `.codex/` is trusted; only Claude Code keeps a hooks file out of version control. See
   the per-agent table in
   [agent-hooks.md](agent-hooks.md#agents-and-their-files).
 - Recovering a conversation: an interactive step is recorded once, when the
-  conversation ends. When a session ends before that, the `interrupt` hook
-  recovers the exchange from the session's transcript for Claude Code and
-  Codex only, and depends on their internal transcript formats, which may
-  change with any release, so recovery is best effort. For other agents the
-  conversation is not recorded, and a crash or a closed tab runs no hook at
-  all.
+  conversation ends. When a session ends before that, the conversation is not
+  recorded and ww does not recover it from the session's transcript; the next
+  session asks the operator where they were.
 - Question-tool availability and supported fields vary by host session. ww
   instructs agents to inspect the available schema, use structured options
   when offered, and use a text-only question only when the tool requires it.

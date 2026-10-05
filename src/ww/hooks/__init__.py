@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Native agent hooks: resume context, a one-time stop reminder, and
-interruption records, translated per agent by small adapters."""
+"""Native agent hooks: the session-start context line, translated per agent
+by small adapters."""
 
 from .agents import HOOK_AGENTS, HOOK_EVENTS, HookAgent, HookEvent, hook_agent
 from .install import (
@@ -14,7 +14,6 @@ from .install import (
     registered_elsewhere,
     uninstall_hooks,
 )
-from .records import HookRecords, Interruption
 from .runtime import HookAnswer, answer_hook, is_project_root
 
 __all__ = [
@@ -25,8 +24,6 @@ __all__ = [
     "HookEvent",
     "HookInstallError",
     "HookInstallation",
-    "HookRecords",
-    "Interruption",
     "answer_hook",
     "hook_agent",
     "hook_snippet",

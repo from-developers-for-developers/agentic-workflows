@@ -611,7 +611,7 @@ ww-agentic-workflows complete TASK-123 --role worker \
 - [architecture.md](documentation/architecture.md) describes internals, boundaries, state, and
   design decisions.
 - [agent-hooks.md](documentation/agent-hooks.md) covers the agent's own hooks
-  (session-start, stop, interrupt): what they do, per-agent support, and
+  (the session-start line): what it does, per-agent support, and
   install/uninstall/show.
 - [examples.md](documentation/examples.md) is a set of complete, tested
   `ww.yaml` examples, one per control or behaviour.

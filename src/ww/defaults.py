@@ -15,7 +15,6 @@ from ww.config_files import (
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.project_config import (
     BUILTIN_DEFAULTS,
-    AgentHooks,
     Limits,
 )
 from ww.runtimes import DEFAULT_RUNTIME
@@ -41,7 +40,6 @@ def default_settings() -> dict[str, Any]:
         "executable": DEFAULT_EXECUTABLE,
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
-        "agent_hooks": AgentHooks().to_dict(),
         "rules": {},
         "builtins": deepcopy(BUILTIN_DEFAULTS),
         "workflows": {},
