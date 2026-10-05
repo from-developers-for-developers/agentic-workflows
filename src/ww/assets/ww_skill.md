@@ -1,9 +1,15 @@
 ---
 name: ww
-description: Carry out the user's request through ww, this project's workflow tool. Use when the user asks to work via ww, to start or continue a ww task, or to run a ww workflow, and, where `./ww discover` says ww is used by default, before changing files for any request, since every change then goes through ww. Not for questions or other read-only work.
+description: Carry out a development request through ww, this project's workflow tool. Use only when the request changes something (implement, fix, refactor, merge, edit documentation) or the user explicitly asks to work via ww, to start or continue a ww task, or to run a ww workflow; where `./ww discover` says ww is used by default, use it before changing files for any request, since every change then goes through ww. Never use it for reviews, questions, explanations, investigations, status checks or other read-only work, even when they concern ww or a ww task.
 ---
 
 # Work through ww
+
+ww is for development: requests that change files. A review, question,
+explanation, investigation, status check or other read-only request never
+goes through ww; answer it directly, without these steps and without a task,
+even where ww is used by default. When a read-only conversation turns into a
+change, start from step 1 then.
 
 1. Run `./ww discover` and read all of it. If it says ww is disabled, stop:
    do not use ww, and tell the user. If it says ww is used only on request
@@ -20,8 +26,8 @@ description: Carry out the user's request through ww, this project's workflow to
    When no workflow fits and you are about to change files, do not start
    `catchall` directly: run `./ww lookup [<task>] --agent <agent>` with the
    task the conversation works on or the request names, as written, and
-   follow its answer, then do the work as you would without ww. Questions and
-   other read-only work need no task.
+   follow its answer, then do the work as you would without ww. Read-only work
+   needs no task.
    When the first page of `start` says rules have no check
    yet, tell the user once and carry on: it never blocks the task, and the
    `ww-scriptize` skill builds those checks when they want it.

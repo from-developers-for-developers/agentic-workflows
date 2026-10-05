@@ -1,10 +1,10 @@
 # Working with ww
 
-ww saves progress, runs handlers, and names the next role. Where ww is used by
-default, use it for project work unless the user asks you not to; every file
-change goes through ww. When no workflow fits, run `./ww lookup [<task>] --agent
-<agent>` with the task in context and follow it; it never creates a task without
-operator confirmation. Questions and other read-only work need no task.
+ww saves progress, runs handlers, and names the next role; it is only for
+development. Where ww is used by default, every file change goes through ww
+unless the user asks you not to. Reviews, questions, investigations and other
+read-only work never use ww, its skill or a task. When no workflow fits a change, run
+`./ww lookup [<task>] --agent <agent>` and follow it; it never creates a task without operator confirmation.
 
 ## Start here
 

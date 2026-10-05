@@ -11,6 +11,9 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- The `ww` skill and agent instructions now say ww is only for development: reviews, questions, investigations,
+  status checks and other read-only requests never invoke the skill or start a task. Existing projects keep their
+  installed skill; `init --force` or copying the bundled one picks up the new wording.
 - Install ww from PyPI: `pipx install --pip-args=--pre ww-agentic-workflows`, then `ww-agentic-workflows upgrade`
   for newer snapshots. The editable source checkout remains the way to run `main` or work on ww itself.
 - `interact --await` no longer occasionally ends as closed and shuts the operator page down when the tab reloads or

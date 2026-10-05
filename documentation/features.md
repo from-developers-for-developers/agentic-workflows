@@ -809,9 +809,10 @@ changed.
 `discover` lists it apart from the configured workflows, under "Changes no
 workflow covers", together with the rules for using it, which the agent
 instructions repeat. It is only for a change to files: questions,
-explanations, reviews, and other read-only work never start a task, and a
-conversation that begins as a question turns to `catchall` only once it
-reaches a change. It never replaces a matching workflow.
+explanations, reviews, investigations, status checks and other read-only work
+never go through ww at all. The agent answers them without the ww skill and
+without a task, and a conversation that begins as a question turns to ww only
+once it reaches a change. It never replaces a matching workflow.
 
 The agent does not start it directly. It first runs `lookup` with the task the
 conversation works on, or with what the operator called the task, as they
