@@ -48,6 +48,7 @@ from ww.hooks import (
 from ww.hooks.notices import interruption_notice
 from ww.inspect import inspect_checkout, render_markdown
 from ww.instructions import Instruction
+from ww.instructions.handoff import handoff_markdown
 from ww.instructions.policy import manager_continues_itself
 from ww.items import WorkItem
 from ww.onboarding import Onboarding, render_onboarding
@@ -139,6 +140,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "check",
         "rule",
         "requirements",
+        "handoff",
     }
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
@@ -1101,6 +1103,14 @@ def _requirements(context: _Context) -> _Outcome:
     return _Outcome("\n".join(lines) + "\n")
 
 
+def _handoff(context: _Context) -> _Outcome:
+    args = context.args
+    block = context.service.handoff(context.task_id, args.run_id, args.assignment)
+    if args.json_output:
+        return _Outcome(_json(block.to_dict()))
+    return _Outcome(handoff_markdown(block) + "\n")
+
+
 def _amend(context: _Context) -> _Outcome:
     args = context.args
     amendment = context.service.amend(
@@ -1577,6 +1587,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "status": _status,
     "instruction": _instruction,
     "requirements": _requirements,
+    "handoff": _handoff,
     "amend": _amend,
     "record": _record,
     "metadata": _metadata,

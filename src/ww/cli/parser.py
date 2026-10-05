@@ -608,6 +608,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the task's recorded requirements and their amendments.",
     )
     requirements.add_argument("task_id")
+    handoff = subparsers.add_parser(
+        "handoff",
+        parents=[_shared("json", "run")],
+        help="Print the handoff block of an ended assignment again.",
+    )
+    handoff.add_argument("task_id")
+    handoff.add_argument(
+        "--assignment",
+        default=None,
+        help="The ended assignment's token (default: the most recently ended).",
+    )
     amend = subparsers.add_parser(
         "amend",
         parents=[_shared("json", "role")],

@@ -13,6 +13,7 @@ from typing import Any, TypeVar
 from ww.validation import is_positive_int
 
 _T = TypeVar("_T")
+_PAIR = 2
 
 
 def _from_path(function: Callable[[Any], _T], value: Any, path: str) -> _T:
@@ -36,3 +37,14 @@ def _positive_int_mapping(value: Any, context: str) -> tuple[tuple[str, int], ..
     ):
         raise ValueError(f"{context} must be a mapping of positive integers")
     return tuple(value.items())
+
+
+def _assignment_log(value: Any) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list) or not all(
+        isinstance(entry, list)
+        and len(entry) == _PAIR
+        and all(isinstance(part, str) for part in entry)
+        for entry in value
+    ):
+        raise ValueError("execution state.assignment_log must be a list of pairs")
+    return tuple((entry[0], entry[1]) for entry in value)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,12 +13,21 @@ import pytest
 from tests.workflow_helpers import assignment_token, start_after_init
 from ww.errors import StateError
 from ww.instructions import Instruction
+from ww.instructions.handoff import handoff_markdown
 from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import SUMMARY_LIMIT, WorkflowService
 from ww.storage import Storage
 
 TASK = "TASK-1"
+
+TWO = """workflows:
+  - name: task
+    steps:
+      - one: First.
+      - two: Second.
+      - three: Third.
+"""
 
 ROUND = """workflows:
   - task: ~
@@ -343,3 +353,126 @@ workflows:
         TASK, (("value", "ok"),), caller_role="worker", assignment=token
     )
     assert done.status != "failed"
+
+
+def test_a_reprint_equals_the_block_the_worker_received(tmp_path: Path) -> None:
+    service = _auto(tmp_path, ROUND)
+    service.next(TASK, caller_role="manager")
+    _worker_complete(service, "Findings.", "Two findings.")
+    ended = _worker_complete(service, "Fixed.", "Both findings fixed.")
+    assert ended.handoff_block is not None
+
+    again = service.handoff(TASK)
+
+    assert again == ended.handoff_block
+    assert handoff_markdown(again) == handoff_markdown(ended.handoff_block)
+    assert service.handoff(TASK, assignment=ended.handoff_block.token) == again
+
+
+def test_a_reprint_selects_an_earlier_assignment(tmp_path: Path) -> None:
+    service = _auto(tmp_path, TWO)
+    service.next(TASK, caller_role="manager")
+    first_token = assignment_token(service, TASK)
+    first = _worker_complete(service, "One.", "First done.")
+    assert first.handoff_block is not None
+    service.next(TASK, caller_role="manager")
+    second_token = assignment_token(service, TASK)
+    assert second_token != first_token
+    second = _worker_complete(service, "Two.", "Second done.")
+    assert second.handoff_block is not None
+
+    assert service.handoff(TASK) == second.handoff_block
+    earlier = service.handoff(TASK, assignment=first_token)
+    assert earlier == first.handoff_block
+    assert earlier.summary == "First done."
+
+
+def test_an_open_assignment_is_not_reprinted(tmp_path: Path) -> None:
+    service = _auto(tmp_path, ROUND)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+
+    with pytest.raises(StateError, match=f"assignment {token} has not ended"):
+        service.handoff(TASK, assignment=token)
+    with pytest.raises(StateError, match=f"assignment {token} has not ended"):
+        service.handoff(TASK)
+    with pytest.raises(StateError, match="no assignment 'nope'"):
+        service.handoff(TASK, assignment="nope")
+
+
+def test_a_reprint_keeps_the_change_set_of_the_assignment(tmp_path: Path) -> None:
+    _repository(tmp_path)
+    service = _auto(tmp_path, CHECKED)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
+    ended = _worker_complete(service, "Done.")
+    assert ended.handoff_block is not None
+    assert ended.handoff_block.files == ("feature.txt",)
+
+    # Work after the assignment ended is not the worker's.
+    (tmp_path / "later.txt").write_text("later\n", encoding="utf-8")
+    service.next(TASK, caller_role="manager")
+    again = service.handoff(TASK, assignment=token)
+
+    assert again == ended.handoff_block
+    assert again.files == ("feature.txt",)
+
+
+def test_a_reprint_without_a_stored_end_mark_is_not_reproducible(
+    tmp_path: Path,
+) -> None:
+    _repository(tmp_path)
+    service = _auto(tmp_path, CHECKED)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
+    ended = _worker_complete(service, "Done.")
+    assert ended.handoff_block is not None
+    state, snapshot = service.load(TASK)
+    service.runs.commit_run(replace(state, assignment_end_marks=()), snapshot)
+
+    again = service.handoff(TASK, assignment=token)
+
+    assert again.files is None and not again.files_reproducible
+    assert "Files changed: not reproducible after the assignment ended" in (
+        handoff_markdown(again)
+    )
+
+
+def test_the_reprint_json_has_the_shape_of_the_block(tmp_path: Path) -> None:
+    service = _auto(tmp_path, ROUND)
+    service.next(TASK, caller_role="manager")
+    _worker_complete(service, "Findings.")
+    ended = _worker_complete(service, "Fixed.")
+    assert ended.handoff_block is not None
+
+    payload = service.handoff(TASK).to_dict()
+
+    assert payload == ended.handoff_block.to_dict()
+    assert set(payload) == {
+        "task_id",
+        "continuation_task_id",
+        "assignment",
+        "steps",
+        "files",
+        "files_reproducible",
+        "summary",
+        "error",
+    }
+
+
+def test_the_completion_page_says_how_to_print_the_block_again(
+    tmp_path: Path,
+) -> None:
+    service = _auto(tmp_path, ROUND)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    _worker_complete(service, "Findings.")
+    ended = _worker_complete(service, "Fixed.")
+
+    rendered = MarkdownOutputAdapter().render_instruction(ended)
+
+    assert f"Lost it? `./ww handoff {TASK} --assignment {token}` prints it again." in (
+        rendered
+    )

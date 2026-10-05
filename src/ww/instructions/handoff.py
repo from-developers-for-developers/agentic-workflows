@@ -29,6 +29,7 @@ def handoff_block(
     *,
     root: Path,
     files: tuple[str, ...] | None,
+    files_reproducible: bool = True,
     error: str | None,
     loop_outcome: tuple[str, str] | None = None,
     continuation_task_id: str | None = None,
@@ -64,6 +65,7 @@ def handoff_block(
         token=token,
         steps=steps,
         files=files,
+        files_reproducible=files_reproducible,
         summary=summary,
         error=error,
         continuation_task_id=continuation_task_id,
@@ -134,7 +136,9 @@ def handoff_markdown(block: HandoffBlock) -> str:
         if step.error:
             lines.append(f"  error: {_one_line(step.error)}")
     lines.append("")
-    if block.files is None:
+    if not block.files_reproducible:
+        lines.append("Files changed: not reproducible after the assignment ended")
+    elif block.files is None:
         lines.append("Files changed: not tracked (no step here has rules or checks)")
     elif block.files:
         lines.extend(["Files changed:", *(f"- {path}" for path in block.files)])

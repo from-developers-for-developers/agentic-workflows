@@ -22,6 +22,7 @@ from ww.instructions.commands import (
     artifacts_command,
     check_command,
     dispute_command,
+    handoff_command,
     instruction_command,
     next_command,
     remove_item_command,
@@ -353,6 +354,9 @@ def _handoff(block: HandoffBlock) -> Lines:
             "```text",
             handoff_markdown(block),
             "```",
+            "",
+            "Lost it? "
+            f"`{handoff_command(block.task_id, block.token)}` prints it again.",
         ]
     )
     return lines

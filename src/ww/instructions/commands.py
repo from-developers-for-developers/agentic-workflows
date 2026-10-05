@@ -131,6 +131,14 @@ def lookup_command(reference: str = "<task>", agent: str = "<agent>") -> str:
     return _command("lookup", _arg(reference), "--agent", _arg(agent))
 
 
+def handoff_command(task_id: str, assignment: str | None = None) -> str:
+    """Print the handoff block of an ended assignment again."""
+    parts = ["handoff", _arg(task_id)]
+    if assignment is not None:
+        parts.extend(("--assignment", _arg(assignment)))
+    return _command(*parts)
+
+
 def artifacts_command(task_id: str, run_id: str | None = None) -> str:
     parts = ["artifacts", _arg(task_id)]
     if run_id is not None:
