@@ -11,6 +11,8 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- `interact --await` no longer occasionally ends as closed and shuts the operator page down when the tab reloads or
+  keeps polling right after a closing notice. `5215692`
 - Pushes to `dev` publish CI-checked development snapshots to PyPI once Trusted Publishing is configured;
   testers can install or pin `1.0.0.devN` packages, and keep them beside a stable install with
   `pipx install --suffix=-dev`. `5b5bc6a`
