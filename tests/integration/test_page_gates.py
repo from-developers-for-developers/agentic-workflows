@@ -27,6 +27,7 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "manager-dispatch": {
         "manager command": ("./ww next TASK-1 --role manager",),
+        "worker flags": ("`--selected-agent`", "`--model`", "`--reasoning`"),
     },
     "worker-bootstrap": {
         "bootstrap": (

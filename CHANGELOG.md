@@ -11,6 +11,18 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Fixed: when a child task's run has completed, its handoff block names the parent task's `next` command
+  ("Manager: continue with the parent task: ...") instead of a command that fails because the child is completed;
+  a child partway through its run keeps its own. The handoff JSON carries `continuation_task_id`. `6b6669c`
+- Fixed: a child task's `ww/git` worktree is named like its branch, the parent's rendered `worktree_name_format`
+  plus `-<child id>` (`ww-worktrees/TASK-51-A`), so it no longer lands inside the parent's checkout as untracked
+  content; any other rendered name holding a `/` has each one replaced with `-`. Worktrees already created inside
+  a parent's are not migrated. `6b6669c`
+- Fixed: the continuation line of a requested-worker page names the flags (`--selected-agent`, `--model`,
+  `--reasoning`) whose values follow the request. `6b6669c`
+- Changed: ww's own roadmap workflow's `fix` step tells the worker to prefix its commits with the child ID, as the
+  child's own commits are. `6b6669c`
+
 - Added: direct work replaces the `catchall` workflow. A change no workflow fits is made as in a plain
   conversation and registered afterwards with `record <task> --summary "<text>"`, which appends an entry to
   the task's `direct-work.json` with the commits ww finds itself (the task's recorded branch since its base,

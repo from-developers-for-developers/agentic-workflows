@@ -4251,6 +4251,10 @@ class WorkflowService:
             end = take_mark(directory)
             if end is not None:
                 files, _ = change_set(directory, marked[1].change_mark, end)
+        parent_id, _, _ = task_id.rpartition("/")
+        continuation = (
+            parent_id if parent_id and not run_is_open(state.status) else None
+        )
         block = handoff_block(
             task_id,
             opened.token,
@@ -4261,6 +4265,7 @@ class WorkflowService:
                 state.last_error if state.status in {"failed", "interrupted"} else None
             ),
             loop_outcome=((opened.active, loop) if loop and opened.active else None),
+            continuation_task_id=continuation,
         )
         return replace(instruction, handoff_block=block)
 

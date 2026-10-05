@@ -1691,6 +1691,11 @@ Worker summary: Both findings fixed; the parser test covers the second.
 Manager: continue with `./ww next TASK-7 --role manager`
 ```
 
+When the block ends a child task's run (the task ID has a `/` and no run of it
+is open any more), the last line names the parent instead: "Manager: continue
+with the parent task: `./ww next TASK-7 --role manager`". A child that is only
+partway through its run keeps its own command.
+
 It lists every agent item the worker performed in the assignment with its
 outcome (`completed`, `loop break`, `loop continue`, `held for verification`,
 `failed` with the error, or `not completed`), each artifact's path, the checks
@@ -3685,6 +3690,12 @@ workflow's `hooks_from` when it has one, else the workflow itself, the name
 For `ww/git`, `ww-agentic-workflows extension ww/git settings` prints what actually resolved,
 which is the first thing to run after editing the file; `--project <name>`
 prints what a task in that configured project receives.
+
+A child task's worktree name is its parent's rendered `worktree_name_format`
+plus `-<child id>`, as its branch is, so `TASK-51/A` lands beside the parent's
+worktree as `TASK-51-A` rather than inside it; any other rendered name that
+holds a `/` has each one replaced with `-`. Names that render empty, as `.` or
+`..`, or absolute are still refused.
 
 When `worktrees` is enabled, generated task IDs reserve any existing path
 rendered by `worktree_dir` and `worktree_name_format`. For example, an existing

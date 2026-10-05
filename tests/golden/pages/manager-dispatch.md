@@ -16,7 +16,7 @@ Requested profile: `none`
 
 ### Manager command
 
-To continue the workflow, run this; its worker values follow the request, so replace them if you select a different available worker:
+To continue the workflow, run this; its worker values follow the request (`--selected-agent`, `--model`, `--reasoning`); replace them if you select a different available worker:
 
 ```console
 ./ww next TASK-1 --role manager --selected-agent codex

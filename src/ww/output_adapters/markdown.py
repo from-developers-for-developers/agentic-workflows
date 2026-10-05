@@ -1974,7 +1974,8 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
                 lines.extend(
                     [
                         "To continue the workflow, run this; its worker values "
-                        "follow the request, so replace them if you select a "
+                        "follow the request (`--selected-agent`, `--model`, "
+                        "`--reasoning`); replace them if you select a "
                         "different available worker:",
                         "",
                     ]
