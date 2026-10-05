@@ -3,6 +3,9 @@
 
 import json
 import socket
+import threading
+import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -99,3 +102,28 @@ def test_a_busy_port_is_reported_not_hung(monkeypatch: pytest.MonkeyPatch) -> No
             serve_operator_page(
                 port=port, state=dict, act=lambda _: None, timeout=1, open_browser=None
             )
+
+
+def test_a_poll_that_follows_a_closing_notice_always_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The waiter is slow to wake: the tab says it is closing and polls again
+    # (a reload) before the waiter looks.  The poll came after the notice, so
+    # the wait must not end as closed under the live tab.
+    monkeypatch.setattr(server, "_CLOSING_GRACE", 0.2)
+    page = server._Server(0, dict, lambda _: None, "")
+    thread = threading.Thread(target=page.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{page.server_address[1]}"
+        request = urllib.request.Request(f"{base}/closing", data=b"", method="POST")
+        with urllib.request.urlopen(request) as response:
+            assert response.status == 200
+        with urllib.request.urlopen(f"{base}/state") as response:
+            assert response.status == 200
+        outcome = server._wait(page, time.monotonic() + 0.5)
+    finally:
+        page.shutdown()
+        page.server_close()
+        thread.join()
+    assert outcome == "timed_out"

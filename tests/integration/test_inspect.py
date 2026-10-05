@@ -45,6 +45,15 @@ def _git(root: Path, *arguments: str, author: str = "first") -> None:
     )
 
 
+def _init(root: Path) -> None:
+    """A repository whose git runs no background maintenance under the test."""
+    _git(root, "init", "-q", "-b", "main")
+    # Auto maintenance detaches and briefly writes lock files under .git,
+    # racing the listings that prove inspect changes nothing.
+    _git(root, "config", "maintenance.auto", "false")
+    _git(root, "config", "gc.auto", "0")
+
+
 def _commit(
     root: Path, path: str, text: str, subject: str, author: str = "first"
 ) -> None:
@@ -57,7 +66,7 @@ def _commit(
 
 def _scripted(root: Path) -> Path:
     """Two authors, feature and hotfix branches, fixes on one file, a tag."""
-    _git(root, "init", "-q", "-b", "main")
+    _init(root)
     _git(root, "config", "user.name", "Test")
     _git(root, "config", "user.email", "t@e.st")
     _commit(
@@ -183,7 +192,7 @@ def test_inspect_json_round_trips_the_profile(
 def test_inspect_an_empty_repository(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _git(tmp_path, "init", "-q", "-b", "main")
+    _init(tmp_path)
     before = _listing(tmp_path)
 
     page = _inspect(tmp_path, capsys)
