@@ -481,7 +481,7 @@ def _worktree_path(context: ExtensionContext, settings: Settings, name: str) -> 
     return directory / name
 
 
-def _worktree_name(context: ExtensionContext, settings: Any) -> str:
+def _worktree_name(context: ExtensionContext, settings: Settings) -> str:
     """The task's worktree directory name, always a single path component.
 
     A child's name is its parent's rendered name plus the child ID, as its
