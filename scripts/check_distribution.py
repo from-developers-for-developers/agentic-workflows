@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -105,10 +106,18 @@ def _require_license(path: Path) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dist-dir", type=Path, help="Validate existing artifacts without rebuilding"
+    )
+    arguments = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="ww-distribution-") as temporary:
         temporary_root = Path(temporary)
-        dist = temporary_root / "dist"
-        _run(sys.executable, "-m", "build", "--outdir", str(dist), cwd=ROOT)
+        if arguments.dist_dir is None:
+            dist = temporary_root / "dist"
+            _run(sys.executable, "-m", "build", "--outdir", str(dist), cwd=ROOT)
+        else:
+            dist = arguments.dist_dir.resolve()
 
         (wheel,) = dist.glob("*.whl")
         (sdist,) = dist.glob("*.tar.gz")
@@ -149,6 +158,8 @@ def main() -> int:
                 "from importlib.resources import files\n"
                 "from pathlib import Path\n"
                 "import ww\n"
+                "from importlib.metadata import version\n"
+                "assert ww.__version__ == version('ww-agentic-workflows')\n"
                 "asset = files('ww.assets').joinpath('agent_instructions.md')\n"
                 "assert asset.is_file()\n"
                 "from ww.design_docs import read_design_document\n"

@@ -8,6 +8,13 @@ import json
 import sys
 
 from ww.errors import WwError
+from ww.executable import DEFAULT_EXECUTABLE, printed_executable
+from ww.package_updates import (
+    PackageUpdateNotice,
+    last_package_notice,
+    mark_package_announced,
+    pending_package_notice,
+)
 from ww.project_config import load_project_config
 from ww.storage import Storage
 from ww.updates import (
@@ -31,13 +38,23 @@ def announce(storage: Storage, *, to_stderr: bool = False) -> None:
     try:
         if not update_check_wanted(storage):
             return
-        notice = pending_notice(installation_checkout())
+        checkout = installation_checkout()
+        notice = (
+            pending_notice(checkout)
+            if checkout is not None
+            else pending_package_notice()
+        )
         if notice is None:
             return
         stream = sys.stderr if to_stderr else sys.stdout
-        stream.write(notice.render())
+        configured = load_project_config(storage.project_config_path).executable
+        executable = configured or (
+            "./ww" if (storage.root / "ww").is_file() else DEFAULT_EXECUTABLE
+        )
+        with printed_executable(executable):
+            stream.write(notice.render())
         stream.flush()
-        mark_announced(notice)
+        _mark(notice)
     except Exception:  # noqa: BLE001 - contain every failure of a convenience
         return
 
@@ -47,18 +64,22 @@ def render_updates(storage: Storage, args: argparse.Namespace) -> str:
     if not update_check_wanted(storage):
         return _rendered(None, args, "The ww update check is turned off.\n")
     checkout = installation_checkout()
+    notice: UpdateNotice | PackageUpdateNotice | None
     if checkout is None:
-        return _rendered(
-            None,
-            args,
-            "This ww was not installed from a Git checkout, so there is "
-            "nothing to compare it against.\n",
-        )
-    pending_notice(checkout, force=bool(args.now))
-    notice = last_notice()
+        pending_package_notice(force=bool(args.now))
+        notice = last_package_notice()
+    else:
+        pending_notice(checkout, force=bool(args.now))
+        notice = last_notice()
     if notice is not None:
-        mark_announced(notice)
-    return _rendered(notice, args, "ww is up to date.\n")
+        _mark(notice)
+    return _rendered(
+        notice,
+        args,
+        "ww is up to date.\n"
+        if checkout is not None
+        else "No package update notice is available.\n",
+    )
 
 
 def update_check_wanted(storage: Storage) -> bool:
@@ -71,7 +92,9 @@ def update_check_wanted(storage: Storage) -> bool:
 
 
 def _rendered(
-    notice: UpdateNotice | None, args: argparse.Namespace, otherwise: str
+    notice: UpdateNotice | PackageUpdateNotice | None,
+    args: argparse.Namespace,
+    otherwise: str,
 ) -> str:
     if args.json_output:
         return (
@@ -85,3 +108,10 @@ def _rendered(
             + "\n"
         )
     return notice.render() if notice else otherwise
+
+
+def _mark(notice: UpdateNotice | PackageUpdateNotice) -> None:
+    if isinstance(notice, PackageUpdateNotice):
+        mark_package_announced(notice)
+    else:
+        mark_announced(notice)

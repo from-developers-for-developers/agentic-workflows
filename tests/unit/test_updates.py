@@ -237,7 +237,7 @@ def test_the_rendered_notice_tells_the_agent_to_relay_it() -> None:
     assert "- A change." in text
     assert "...and 2 more entries in CHANGELOG.md." in text
     assert "Tell the person you are working for" in text
-    assert "git -C /tools/agentic-workflows pull" in text
+    assert "ww upgrade" in text
 
 
 def test_the_check_is_turned_off_by_configuration_and_by_environment(

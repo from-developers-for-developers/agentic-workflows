@@ -809,12 +809,20 @@ def build_parser() -> argparse.ArgumentParser:
     updates = subparsers.add_parser(
         "updates",
         parents=[json_output],
-        help="Show whether the ww checkout is behind its remote.",
+        help="Show available ww updates from Git or PyPI.",
     )
     updates.add_argument(
         "--now",
         action="store_true",
         help="Look again now instead of waiting for the next scheduled check.",
+    )
+    upgrade = subparsers.add_parser(
+        "upgrade", help="Upgrade ww through its installer or editable Git checkout."
+    )
+    upgrade.add_argument(
+        "--pre",
+        action="store_true",
+        help="Allow prereleases; automatic for installed prerelease versions.",
     )
     hook = subparsers.add_parser(
         "hook",

@@ -844,6 +844,23 @@ The supported model layers are normalized authored definitions
 records (the `execution_models` package). Persisted state uses a single
 current format; any other task layout or record schema is rejected.
 
+## Installation updates
+
+`ww.__version__` comes from installed distribution metadata, with a fallback
+for an unpackaged source checkout. Update notices share the CLI announcement
+path: editable source installations use Git history; packaged installations
+use `package_updates` to select newer compatible PyPI versions and persist a
+per-environment/version daily cache. The PyPI request has a two-second timeout
+and a response-size limit. Failures do not affect normal command execution.
+
+`upgrade` is an explicit installation operation and does not initialise a
+workflow, load project extensions or create task state. It reads open-work
+records before invoking the owning installer (pip or pipx), or performing an
+editable checkout's fast-forward pull. Prerelease selection follows the
+installed version, with an explicit `--pre` override. The guard checks the
+current project and an editable source checkout, not all projects sharing the
+installation. See [features.md](features.md#update-notices-and-upgrading-ww).
+
 ## Release guarantees and intentional limits
 
 ### Version and compatibility policy
@@ -879,6 +896,15 @@ lock cleanup interleavings, and an extension installed as an independent Python
 distribution. Every storage adapter must also pass the same behavioral
 contract, including malformed identity rejection and compare-and-swap behavior.
 CI runs these focused checks before the complete test suite.
+
+Development publishing calls the same release-gates workflow on each push to
+`dev`. After the gates pass, a separate build job stamps a disposable checkout
+with `1.0.0.devN`, checks the final wheel and sdist, and uploads those files as a
+workflow artifact. A publishing job downloads that artifact and authenticates
+to PyPI through Trusted Publishing in the `pypi-dev` environment. Only that job
+can request an OIDC token; it does not execute checkout code. No version commit,
+Git tag or GitHub release is created for a development snapshot. See
+[development releases](development-releases.md) for setup and retry behavior.
 
 The guarantees for the current local execution model are:
 

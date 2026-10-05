@@ -85,6 +85,7 @@ from ww.rule_verification import revoke_check
 from ww.rule_views import declared_hashes, orphans, prune, rules_listing
 from ww.service import WorkflowService
 from ww.storage import Storage
+from ww.upgrade import upgrade
 from ww.workflow_config import (
     ALL,
     ALL_NAMES,
@@ -1577,6 +1578,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init"
         else _resolve_project_root(args.root)
     )
+    if args.command == "upgrade":
+        try:
+            sys.stdout.write(upgrade(storage, pre=args.pre))
+        except WwError as error:
+            print(f"ww error: {error}", file=sys.stderr)
+            return 1
+        return 0
     # An available update is reported before the command's own output, so an
     # agent relaying that output shows it to the operator first. ``updates``
     # is exempt: it is the command that reports one.

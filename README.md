@@ -103,8 +103,8 @@ ww deliberately does not do yet so you can tell a limitation from a bug.
 
 Python 3.10 or newer and [pipx](https://pipx.pypa.io/) are required.
 
-There is no published package yet. Clone the repository into a stable tools
-directory and install that checkout in editable mode:
+For a source installation, clone the repository into a stable tools directory
+and install that checkout in editable mode:
 
 ```console
 mkdir -p ~/tools
@@ -370,50 +370,50 @@ agents not to use ww in a project at all.
 
 ## Releases and branches
 
-**There is no PyPI package.** Installation is `pipx install --editable` from a
-clone, as above. This is deliberate while ww is under active development:
-publishing a package implies a release cadence and upgrade guarantees that
-would slow the work down right now. Once ww reaches a stable version it will be
-distributed as an ordinary Python package, and this section will change.
+Source installation uses `pipx install --editable` from a clone, as above.
+Once Trusted Publishing is configured, pushes to `dev` also publish development
+snapshots to PyPI as `1.0.0.devN`. They pass automated CI checks but are intended
+for testing unreleased changes. Install one with:
 
-**There is no versioning yet.** No tags, no release notes per version, nothing
-to pin to — but do not read that as "not released". Whatever is on `main` is
-released, in the only sense that matters here: people are running it. The
-branches carry that meaning instead of version numbers:
+```console
+pipx install --pip-args=--pre ww-agentic-workflows
+```
+
+See [development releases](documentation/development-releases.md) for setup and
+versioning. Beta and stable package publishing are not configured yet. The
+branches serve these purposes:
 
 | Branch | Use it for |
 | --- | --- |
 | `main` | **What users should install and run**, and what contributions branch from. It receives updates frequently. |
-| `dev` | The maintainers' in-flight work. Unstable by design — do not use it for real work, and do not target it in a pull request. |
+| `dev` | The maintainers' in-flight work and CI-checked development snapshots. Intended for testing; do not target it in a contribution pull request. |
 
-To update, pull `main` in your clone:
-
-```console
-git -C ~/tools/agentic-workflows pull
-```
-
-Because the install is editable, that is the whole upgrade. Updates land
-often, though mostly as new capabilities and fixes rather than changes to
-workflows you have already written — see
-[Stability and compatibility](#stability-and-compatibility) for what is
-settled. Skim [CHANGELOG.md](CHANGELOG.md) when you pull, and finish or
-`reset` any task that is mid-flight first.
-
-You do not have to remember to look. ww compares its own checkout against the
-branch it tracks, at most once a day, and prints a short notice above the
-command's output when it is behind — listing the changelog entries you would
-be pulling in, and telling the agent to show them to you before it carries on.
-The command still runs; nothing is blocked. The only network call is a
-`git fetch` against the remote you cloned from, no data leaves your machine,
-and each notice appears once:
+To update either a source checkout or a package installation:
 
 ```console
-./ww updates            # print the last notice again
-./ww updates --now      # look now
+ww-agentic-workflows upgrade
 ```
 
-Set `"update_check": false` in `ww.json` to switch it off for a
-project, or `WW_UPDATE_CHECK=0` to switch it off everywhere.
+Source checkouts update their tracking branch with a fast-forward pull; local
+changes are preserved by refusing to upgrade a dirty checkout. Package installs
+upgrade through pip or pipx. Stable installs follow stable releases; development,
+beta and RC installs also allow prereleases. `upgrade --pre` opts a stable
+installation into prereleases.
+
+WW checks for updates at most once a day and shows a short notice above normal
+command output. Source installations compare Git commits; package installations
+compare PyPI versions. Checks remain silent when offline. Before upgrading,
+finish tasks in projects using that installation and skim [CHANGELOG.md](CHANGELOG.md).
+
+```console
+ww-agentic-workflows updates            # show the cached notice
+ww-agentic-workflows updates --now      # check now
+```
+
+Set `"update_check": false` in `ww.json` to switch notices off for a project,
+or `WW_UPDATE_CHECK=0` to switch them off everywhere. See
+[update notices and upgrading](documentation/features.md#update-notices-and-upgrading-ww)
+for the installer behavior and task checks.
 
 ## Stability and compatibility
 
@@ -422,8 +422,8 @@ have been stable in practice for a while, and most work on `main` now is
 internal refactoring, new capabilities, and fixes rather than changes to what
 you have already written. Frequent updates do not mean frequent breakage.
 
-What there is not, yet, is a *formal* guarantee: no versions to pin, no
-deprecation cycle, and no promise that an incompatible change could not land.
+Development snapshots can be pinned, but there is not yet a formal deprecation
+cycle or a promise that an incompatible change could not land.
 When one does, it is deliberate and rare, and
 [CHANGELOG.md](CHANGELOG.md) marks it "Breaking:". A changed name is then an
 unknown key that `lint` reports, and saved task state in another schema
@@ -615,6 +615,11 @@ scripts/test
 `pyproject.toml`, repairs a partial development install, then runs ruff, mypy
 and the test suite. Set `WW_PYTHON` to choose the interpreter for a new
 environment. It preserves existing environments when setup fails.
+
+Pushes to `dev` also publish CI-checked development snapshots to PyPI once
+Trusted Publishing is configured. See
+[development releases](documentation/development-releases.md) for versioning,
+installation and the one-time setup.
 
 ## License
 
