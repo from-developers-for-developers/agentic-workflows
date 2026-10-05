@@ -9,15 +9,14 @@ The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
 
-## 2026-10-03
-
-- `upgrade` updates pip, pipx and editable Git installs while preserving the installed prerelease preference;
-  package installations now show cached PyPI update notices and their actual version. `6e7e6a0`
-- Pushes to `dev` publish CI-checked development snapshots to PyPI once Trusted Publishing is configured;
-  testers can install or pin `1.0.0.devN` packages. `5b5bc6a`
-
 ## 2026-10-05
 
+- Pushes to `dev` publish CI-checked development snapshots to PyPI once Trusted Publishing is configured;
+  testers can install or pin `1.0.0.devN` packages, and keep them beside a stable install with
+  `pipx install --suffix=-dev`. `5b5bc6a`
+- `upgrade` updates pip, pipx and editable Git installs while preserving the installed prerelease preference;
+  package installations now show cached PyPI update notices and their actual version. It does not refuse
+  while tasks are open: read this changelog before upgrading a project with work in progress. `6e7e6a0`
 - The task requirements now print on the first page of each session: under `auto` every delegated worker assignment's first page carries them in full (its later stages and the manager's later pages carry the pointer), instead of only the task's first agent page. New `pages.worker_requirements` in `ww.json` (`full`, the default, or `pointer`) keeps the text off worker first pages.
 - Fix: `start-child --model X` was recorded on the child but `ww status` and the child's pages showed
   `auto`, because a step's unset model (`auto`) shadowed the task's model. The given model and

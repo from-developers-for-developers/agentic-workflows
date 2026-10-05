@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from ww.cli import main
-from ww.storage import Storage
 
 upgrades = importlib.import_module("ww.upgrade")
 
@@ -64,13 +63,13 @@ def test_explicit_pre_and_pipx_suffix_use_the_owning_environment(
     )
     monkeypatch.setattr(upgrades.sys, "prefix", str(prefix))
     monkeypatch.setattr(upgrades.shutil, "which", lambda _: "/bin/pipx")
-    upgrades.upgrade(Storage(tmp_path), pre=True)
+    upgrades.upgrade(pre=True)
     command, kwargs = package_install[0]
     assert command == ["/bin/pipx", "upgrade", prefix.name, "--pip-args=--pre"]
     assert kwargs["env"]["PIPX_HOME"] == str(tmp_path / "pipx")
 
 
-def test_upgrade_refuses_an_open_task_before_running_installer(
+def test_upgrade_runs_while_a_task_is_open(
     tmp_path: Path, package_install, capsys
 ) -> None:
     (tmp_path / "ww.yaml").write_text(
@@ -96,9 +95,9 @@ def test_upgrade_refuses_an_open_task_before_running_installer(
         == 0
     )
     capsys.readouterr()
-    assert main(["--root", str(tmp_path), "upgrade"]) == 1
-    assert "Finish open tasks" in capsys.readouterr().err
-    assert not package_install
+    assert main(["--root", str(tmp_path), "upgrade"]) == 0
+    assert "finished" in capsys.readouterr().out
+    assert package_install
 
 
 def test_dirty_editable_checkout_is_not_changed(
@@ -141,10 +140,9 @@ def test_editable_upgrade_fast_forwards_and_preserves_dirty_files(
     (origin / "file").write_text("after")
     commit(origin)
     monkeypatch.setattr(upgrades, "installation_checkout", lambda: checkout)
-    project = Storage(tmp_path / "project")
-    assert "Updated" in upgrades.upgrade(project)
+    assert "Updated" in upgrades.upgrade()
     assert (checkout / "file").read_text() == "after"
     (checkout / "file").write_text("local changes")
     with pytest.raises(upgrades.StateError, match="local changes"):
-        upgrades.upgrade(project)
+        upgrades.upgrade()
     assert (checkout / "file").read_text() == "local changes"

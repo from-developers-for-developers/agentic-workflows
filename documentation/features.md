@@ -4464,11 +4464,10 @@ checkout's actual tracking branch. It refuses local changes, detached HEAD,
 missing upstream and divergent history; local work is not stashed or reset.
 An editable installation without a Git checkout cannot use this command.
 
-Before any upgrade, ww checks the current project's open tasks and unreadable
-task records, including children. It also checks the source checkout's task
-records when upgrading an editable installation. Finish open tasks and resolve
-unreadable records first. This check covers those roots, not every project on
-the machine; finish tasks in other projects that use the same installation too.
+`upgrade` does not check for open tasks. A release that changes the task state
+format can leave tasks an older build started unreadable, in this project and in
+every other project that uses the same installation, so read the changelog and
+finish such tasks first when it says so.
 
 The per-user cache is under `~/.config/ww`, or `$XDG_CONFIG_HOME/ww`; package
 checks have separate cache files for each Python environment and installed

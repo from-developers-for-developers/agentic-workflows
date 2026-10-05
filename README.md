@@ -402,8 +402,9 @@ installation into prereleases.
 
 WW checks for updates at most once a day and shows a short notice above normal
 command output. Source installations compare Git commits; package installations
-compare PyPI versions. Checks remain silent when offline. Before upgrading,
-finish tasks in projects using that installation and skim [CHANGELOG.md](CHANGELOG.md).
+compare PyPI versions. Checks remain silent when offline. `upgrade` does not
+wait for open tasks; skim [CHANGELOG.md](CHANGELOG.md) first, because a release
+that changes the task state format can leave tasks in progress unreadable.
 
 ```console
 ww-agentic-workflows updates            # show the cached notice

@@ -13,9 +13,7 @@ from pathlib import Path
 
 from ww import __version__
 from ww.errors import StateError
-from ww.open_work import open_work
 from ww.package_updates import PACKAGE_NAME, allows_prereleases
-from ww.storage import Storage
 from ww.updates import installation_checkout
 
 
@@ -35,17 +33,6 @@ def _run(
     return result.stdout.strip()
 
 
-def _refuse_open_tasks(storage: Storage) -> None:
-    work = open_work(storage.task_persistence, storage.root)
-    if work.tasks or work.unreadable:
-        ids = [task.task_id for task in work.tasks]
-        ids.extend(task.task_id for task in work.unreadable)
-        raise StateError(
-            "Finish open tasks or resolve unreadable task records before upgrading: "
-            + ", ".join(ids)
-        )
-
-
 def _editable_install() -> bool:
     try:
         direct = distribution(PACKAGE_NAME).read_text("direct_url.json")
@@ -56,13 +43,10 @@ def _editable_install() -> bool:
     return isinstance(directory, dict) and directory.get("editable") is True
 
 
-def upgrade(storage: Storage, *, pre: bool = False) -> str:
-    """Upgrade only when this project's saved tasks are safe to leave behind."""
-    _refuse_open_tasks(storage)
+def upgrade(*, pre: bool = False) -> str:
+    """Upgrade through the installer or Git checkout that owns this installation."""
     checkout = installation_checkout()
     if checkout is not None:
-        if checkout != storage.root:
-            _refuse_open_tasks(Storage(checkout))
         if _run(["git", "status", "--porcelain"], cwd=checkout):
             raise StateError(
                 "The ww checkout has local changes; commit or stash them first"

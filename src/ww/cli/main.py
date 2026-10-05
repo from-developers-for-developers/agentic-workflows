@@ -1580,7 +1580,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.command == "upgrade":
         try:
-            sys.stdout.write(upgrade(storage, pre=args.pre))
+            sys.stdout.write(upgrade(pre=args.pre))
         except WwError as error:
             print(f"ww error: {error}", file=sys.stderr)
             return 1
