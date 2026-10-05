@@ -11,6 +11,9 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Added: `add-child` is accepted while a per-child stage of a roadmap-style parent is active, not only while the
+  collecting step is. The new child is appended after the last planned child with its own expanded lifecycle;
+  once the last child's stages have finished the command is refused.
 - Added: `ww handoff <task> [--run ID] [--assignment TOKEN] [--json]` prints the handoff block of an ended assignment
   again, for a worker whose output was cut short; the completion page and the `auto` runtime instruction name it.
   The change set is reproduced only while the assignment is the latest one, otherwise the block says so. `aae3ed2`

@@ -1417,6 +1417,15 @@ extension namespace values, for agent pages, automatic handlers, and the
 reuses the loop exit: `finish_loop_exit` skips the remaining per-child items
 and the drain marks the children that never started `skipped`.
 
+`add-child` is also accepted while a per-child stage is the active item. The
+guard in `WorkflowService.add_child` refuses once the cursor has left the
+per-child items. Otherwise the new child is appended and
+`append_child_lifecycle` (in `../src/ww/transitions.py`) expands one more
+lifecycle from `snapshot.template_plan` through `_expand_templates`, with no
+replaced items and placed after the last planned child's last item. The child
+record and the grown plan are committed in the same task lock, so a child is
+never recorded without its stages.
+
 The scope is deliberately one level: a child workflow cannot itself declare
 `children`. When the last child completes, ww completes
 the parent coordinator and resumes the parent's ordinary completion lifecycle,

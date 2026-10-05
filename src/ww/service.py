@@ -154,6 +154,7 @@ from ww.task_ids import (
 )
 from ww.transitions import (
     advance_completed_item,
+    append_child_lifecycle,
     await_item_input,
     begin_agent_item,
     begin_child_workflow,
@@ -3023,13 +3024,26 @@ class WorkflowService:
             self._project_directory(project)
         with self.tasks.lock_task(task_id):
             state, snapshot = self.load(task_id)
-            if not (
+            collecting = bool(
                 state.active_item_id
                 and snapshot.plan.items[state.cursor].child_operation == "collect"
-            ):
-                raise StateError(
-                    "children can only be added while a children step is active"
-                )
+            )
+            expanded = any(
+                entry.child_stage is not None and not entry.item_template
+                for entry in snapshot.plan.items
+            )
+            if not collecting:
+                if not expanded:
+                    raise StateError(
+                        "children can only be added while a children step is active"
+                    )
+                if state.cursor >= len(snapshot.plan.items) or (
+                    snapshot.plan.items[state.cursor].child_stage is None
+                ):
+                    raise StateError(
+                        "children can be added until the last child's stages "
+                        "finish; this run is past them"
+                    )
             children = self.tasks.read_children(task_id, state.run_id)
             if child_id is None and self._children_bind_identity(snapshot.plan):
                 # The child gets its ID from its own first step; until then a
@@ -3054,6 +3068,12 @@ class WorkflowService:
                 project=project,
                 fields=fields,
             )
+            if not collecting:
+                # Appended after the last planned child: the new child's
+                # lifecycle follows the last child's items.
+                state, snapshot = append_child_lifecycle(
+                    state, snapshot, len(children) + 1, _now
+                )
             self.commit(
                 state,
                 snapshot,
