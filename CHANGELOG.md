@@ -11,6 +11,8 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Install ww from PyPI: `pipx install --pip-args=--pre ww-agentic-workflows`, then `ww-agentic-workflows upgrade`
+  for newer snapshots. The editable source checkout remains the way to run `main` or work on ww itself.
 - Pushes to `dev` publish CI-checked development snapshots to PyPI once Trusted Publishing is configured;
   testers can install or pin `1.0.0.devN` packages, and keep them beside a stable install with
   `pipx install --suffix=-dev`. `5b5bc6a`

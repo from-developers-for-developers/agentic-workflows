@@ -4401,16 +4401,19 @@ configuration file names and run the wrong binary, and `lint` warns about such
 a launcher, naming `init` as the fix. Choose the binary with `executable`, not
 by editing `./ww`.
 
-This is what lets two installs live side by side, for example one checkout for
-developing ww itself, switched between branches often, and another kept on
-`dev` for use in other projects. pipx gives the second a different global name:
+This is what lets two installs live side by side, for example a source
+checkout for developing ww itself, switched between branches often, and the
+PyPI development snapshots for use in other projects. pipx gives the second a
+different global name:
 
 ```console
 pipx install --editable ~/tools/agentic-workflows
-pipx install --editable --suffix=-dev ~/tools/agentic-workflows-dev
+pipx install --suffix=-dev --pip-args=--pre ww-agentic-workflows
 ```
 
-A project that should use the second then sets
+Two checkouts work the same way, with
+`pipx install --editable --suffix=-dev ~/tools/agentic-workflows-dev`. A
+project that should use the second install then sets
 `"executable": "ww-agentic-workflows-dev"`. The update notice, `--version`,
 and the audit log keep naming the package, `ww-agentic-workflows`.
 

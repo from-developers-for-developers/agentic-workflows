@@ -101,29 +101,50 @@ ww deliberately does not do yet so you can tell a limitation from a bug.
 
 ### 1. Install
 
-Python 3.10 or newer and [pipx](https://pipx.pypa.io/) are required.
+Python 3.10 or newer and [pipx](https://pipx.pypa.io/) are required. Install
+ww from PyPI:
 
-For a source installation, clone the repository into a stable tools directory
-and install that checkout in editable mode:
+```console
+pipx install --pip-args=--pre ww-agentic-workflows
+ww-agentic-workflows --version
+```
+
+The package is `ww-agentic-workflows`. Until a stable release exists, PyPI
+holds development snapshots, `1.0.0.devN`, which `--pre` selects. Each one is
+built from `dev` after the automated checks pass; see
+[Releases and branches](#releases-and-branches). To move to the newest
+snapshot later:
+
+```console
+ww-agentic-workflows upgrade
+```
+
+To keep a second install beside the first, give it its own global name with
+pipx's `--suffix`, for example
+`pipx install --suffix=-dev --pip-args=--pre ww-agentic-workflows`, and set
+`"executable": "ww-agentic-workflows-dev"` in the `ww.json` of each project
+that should use it. ww then prints that binary in every command, and the
+project's `./ww` runs it. [Development releases](documentation/development-releases.md#a-development-channel-beside-a-stable-one)
+covers this setup.
+
+#### From a source checkout
+
+To run `main` directly, or to work on ww itself, install a clone in editable
+mode instead. The package name is the same, so remove a PyPI install first
+with `pipx uninstall ww-agentic-workflows`, or give the checkout a suffix:
 
 ```console
 mkdir -p ~/tools
 git clone https://github.com/from-developers-for-developers/agentic-workflows.git \
   ~/tools/agentic-workflows
 pipx install --editable ~/tools/agentic-workflows
-ww-agentic-workflows --version
 ```
 
 Editable installation keeps the command connected to that checkout; after a
 `git pull` in `~/tools/agentic-workflows`, the new code is live with no
-reinstall. This is deliberate for now — see
-[Releases and branches](#releases-and-branches).
-
-To keep a second install beside it, such as a checkout of `dev`, give it its
-own global name with `pipx install --editable --suffix=-dev <checkout>`, and
-set `"executable": "ww-agentic-workflows-dev"` in the `ww.json`
-of each project that should use it. ww then prints that binary in every
-command, and the project's `./ww` runs it.
+reinstall, and `ww-agentic-workflows upgrade` performs that pull for you.
+[CONTRIBUTING.md](CONTRIBUTING.md) describes the development environment for
+changing ww.
 
 ### 2. Initialize your project
 
@@ -370,23 +391,20 @@ agents not to use ww in a project at all.
 
 ## Releases and branches
 
-Source installation uses `pipx install --editable` from a clone, as above.
-Once Trusted Publishing is configured, pushes to `dev` also publish development
-snapshots to PyPI as `1.0.0.devN`. They pass automated CI checks but are intended
-for testing unreleased changes. Install one with:
+Every push to `dev` publishes a development snapshot to PyPI as
+`ww-agentic-workflows` `1.0.0.devN`, after the automated checks pass. Snapshots
+are for using and testing unreleased changes; install them as shown in
+[Install](#1-install). A source installation, `pipx install --editable` from a
+clone, follows whichever branch the checkout tracks.
 
-```console
-pipx install --pip-args=--pre ww-agentic-workflows
-```
-
-See [development releases](documentation/development-releases.md) for setup and
-versioning. Beta and stable package publishing are not configured yet. The
-branches serve these purposes:
+See [development releases](documentation/development-releases.md) for
+publishing setup and versioning. Beta and stable package publishing are not
+configured yet. The branches serve these purposes:
 
 | Branch | Use it for |
 | --- | --- |
-| `main` | **What users should install and run**, and what contributions branch from. It receives updates frequently. |
-| `dev` | The maintainers' in-flight work and CI-checked development snapshots. Intended for testing; do not target it in a contribution pull request. |
+| `main` | What contributions branch from, and what a source checkout should track. It receives updates frequently. |
+| `dev` | The maintainers' in-flight work, from which the PyPI development snapshots are built. Do not target it in a contribution pull request. |
 
 To update either a source checkout or a package installation:
 
@@ -440,16 +458,17 @@ first.
 
 Two habits cover almost everything:
 
-- **Finish or `reset` in-flight tasks before you pull.** This is the one that
+- **Finish or `reset` in-flight tasks before you upgrade.** This is the one that
   actually bites people — a task started last week refusing to load this week.
   Completed tasks are unaffected.
-- **Skim [CHANGELOG.md](CHANGELOG.md) when you update.** ww tells you when
-  your checkout is behind and shows the entries you would be pulling in, so
-  this costs you nothing.
+- **Skim [CHANGELOG.md](CHANGELOG.md) when you update.** ww tells you when a
+  newer version is available; for a source checkout it also shows the entries
+  you would be pulling in.
 
-If you want a fixed target anyway, pin to a commit and move deliberately:
-`git -C ~/tools/agentic-workflows checkout <sha>`. Once ww reaches a stable
-release it will be an ordinary Python package with the usual guarantees.
+If you want a fixed target anyway, pin a snapshot and move deliberately:
+`pipx install --force ww-agentic-workflows==1.0.0.dev42`, or
+`git -C ~/tools/agentic-workflows checkout <sha>` for a source checkout. Once
+ww reaches a stable release, the package will carry the usual guarantees.
 [documentation/limitations.md](documentation/limitations.md) has the detail,
 alongside the execution model and the workflow shapes ww does not support.
 
