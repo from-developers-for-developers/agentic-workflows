@@ -627,7 +627,10 @@ set `artifact: false` to disable only this main artifact; body steps retain
 their own artifact settings.
 
 If a worker uses `continue`, ww records the result, runs the step's completion
-hooks, then resets the body and dispatches its first step. If no worker breaks
+hooks, then resets the body. In the `auto` runtime that ends the worker's
+assignment with its handoff block, and the manager's `next` dispatches the
+first body step as a new assignment; in the `single` runtime the same session
+goes on with it. If no worker breaks
 or continues the loop, reaching the end resets the body and the manager
 dispatches the first step again until the effective maximum is reached. The
 effective value comes from the wrapper's `max_rounds`, or from `limits.rounds`

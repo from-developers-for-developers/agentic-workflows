@@ -161,9 +161,52 @@ def test_the_block_names_a_loop_break(tmp_path: Path) -> None:
     ]
 
 
+def test_a_loop_continue_below_the_limit_hands_the_next_round_to_the_manager(
+    tmp_path: Path,
+) -> None:
+    service = _auto(tmp_path, ROUND)
+    service.next(TASK, caller_role="manager")
+    first = assignment_token(service, TASK)
+    _worker_complete(service, "Findings.")
+
+    ended = service.loop(
+        TASK,
+        artifact="Fixed some.",
+        summary_for_next="More to do.",
+        continue_loop=True,
+        caller_role="worker",
+        assignment=first,
+    )
+
+    # The round is over: the worker's assignment ends with its block, and no
+    # step is left open for a worker without a token.
+    assert ended.next_role == "manager"
+    assert not ended.loop_limit_reached
+    assert ended.handoff_block is not None
+    assert ended.handoff_block.token == first
+    assert [(s.name, s.outcome) for s in ended.handoff_block.steps] == [
+        ("review", "completed"),
+        ("fix", "loop continue"),
+    ]
+    state = service.tasks.read_execution_state(TASK, "01-task")
+    assert state is not None
+    assert (state.active_item_id, state.assignment_token) == (None, None)
+    assert dict(state.loop_iterations) == {"review-and-fix": 2}
+    with pytest.raises(StateError, match="no assignment is open"):
+        _worker_complete(service, "Stray.")
+
+    # The manager dispatches the next round as a new assignment.
+    second = service.next(TASK, caller_role="manager")
+    assert (second.item_name, second.next_role) == ("review", "worker")
+    token = assignment_token(service, TASK)
+    assert token is not None and token != first
+    review = service.status(TASK, caller_role="worker", assignment=token)
+    assert review.loop_iteration == 2
+
+
 def test_the_block_names_a_loop_continue(tmp_path: Path) -> None:
     # A continue at the loop's limit stops the task for the operator, which
-    # ends the worker's assignment; below the limit the worker goes on.
+    # ends the worker's assignment as a continue below the limit does.
     service = _auto(tmp_path, ROUND.replace("loop:", "max_rounds: 1\n        loop:", 1))
     service.next(TASK, caller_role="manager")
     _worker_complete(service, "Findings.")

@@ -11,6 +11,11 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Fixed: in the `auto` runtime, a worker's `loop --continue` below the loop's limit left the task stuck: the
+  continue ended the assignment yet opened the next round's first step for a worker that no longer held a
+  token, so the worker's next command was refused and the manager's `next` reported a step in progress. The
+  continue now ends the assignment with its handoff block, and the manager's `next` dispatches the first step
+  of the next round as a new assignment.
 - Removed: the session-start task list, stop reminders, interruption records and transcript recovery, and the
   `interrupted` command. Hooks, events and `agent_hooks` keys stay accepted. `5414a34`
 - Added: `add-child` is accepted while a per-child stage of a roadmap-style parent is active, not only while the

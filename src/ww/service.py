@@ -3337,6 +3337,10 @@ class WorkflowService:
             state = finish_loop_continue(state, plan, _now)
             if state is not prior:
                 self.commit(state, snapshot)
+                if assignment_item_id is not None and state.assignment_item_id is None:
+                    # The continue reset the round, which ended the assignment
+                    # being drained: the next round is a new assignment.
+                    return state, snapshot
             exiting_children = _exiting_children(state, plan)
             state = finish_loop_exit(state, plan, _now)
             if state is not prior:
@@ -3733,6 +3737,8 @@ class WorkflowService:
             or state.status == "completed"
             or assignment is None
             or state.cursor >= assignment.stop
+            # A loop continue reset the round and ended the assignment.
+            or state.assignment_item_id is None
         ):
             # Records an assessment skipped sit right after the assignment's
             # last item; the next dispatch starts beyond them, not on one.

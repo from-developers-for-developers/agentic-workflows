@@ -3310,6 +3310,10 @@ ww-agentic-workflows loop TASK-123 --continue --role worker \
   --artifact="<whole result in Markdown>"
 ```
 
+In the `auto` runtime a continue ends the worker's assignment, because the next
+round is a new one: the worker returns its handoff block and the manager's `next`
+dispatches the first body step again.
+
 If no worker breaks or continues, the body repeats automatically. Each repetition gives
 automatic actions fresh operation IDs, while retries within one round
 retain their existing idempotency identity.
