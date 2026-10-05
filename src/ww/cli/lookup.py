@@ -71,7 +71,8 @@ def lookup(
     """Resolve ``reference`` for a catch-all change and choose the next step."""
     normalize_agent(agent)
     configuration = load_configuration(storage.config_path, extensions)
-    if CATCHALL not in configuration.workflows_by_name:
+    catchall = configuration.workflows_by_name.get(CATCHALL)
+    if catchall is None or catchall.manual:
         raise ConfigurationError(
             f"the {CATCHALL} workflow is switched off in {FILE_NAME}"
         )

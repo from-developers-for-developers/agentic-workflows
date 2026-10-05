@@ -1193,3 +1193,93 @@ def test_error_after_process_creation_keeps_the_outcome_unknown(
     recovered = service.next("T")
     assert recovered.status == "interrupted"
     assert recovered.operation_id == state.item_executions[0].operation_id
+
+
+HANDOFF_SETTINGS = """workflows:
+  - name: choose
+    steps:
+      - name: select
+        kind: prompt
+        variables:
+          - name: workflow
+            description: Target workflow.
+        hooks:
+          after_complete:
+            - handoff_to: "{{workflow}}"
+  - name: plain
+    steps:
+      - work: Work.
+  - name: declared
+    runtime: auto
+    model: big-model
+    reasoning: high
+    steps:
+      - work: Work.
+  - name: model-only
+    model: big-model
+    steps:
+      - work: Work.
+  - name: same-model
+    model: small-model
+    steps:
+      - work: Work.
+"""
+
+
+def _handoff_state(tmp_path: Path, target: str, task_id: str):
+    (tmp_path / "ww.yaml").write_text(HANDOFF_SETTINGS, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(
+        service,
+        "choose",
+        task_id,
+        agent="codex",
+        workflow_runtime="single",
+        model="small-model",
+        reasoning="medium",
+    )
+    service.next(task_id)
+    service.complete(
+        task_id, (("workflow", target),), "# selection\n", summary_for_next="Done."
+    )
+    run_id = service.tasks.active_execution_run(task_id)
+    assert run_id is not None
+    state = service.tasks.read_execution_state(task_id, run_id)
+    assert state is not None
+    return state
+
+
+def test_handoff_target_without_settings_keeps_the_source_run_values(
+    tmp_path: Path,
+) -> None:
+    state = _handoff_state(tmp_path, "plain", "TASK-H1")
+
+    assert (state.workflow_runtime, state.model, state.reasoning) == (
+        "single",
+        "small-model",
+        "medium",
+    )
+
+
+def test_handoff_target_declared_settings_apply_to_its_run(tmp_path: Path) -> None:
+    state = _handoff_state(tmp_path, "declared", "TASK-H2")
+
+    assert (state.workflow_runtime, state.model, state.reasoning) == (
+        "auto",
+        "big-model",
+        "high",
+    )
+
+
+def test_handoff_target_model_without_reasoning_resets_reasoning(
+    tmp_path: Path,
+) -> None:
+    state = _handoff_state(tmp_path, "model-only", "TASK-H3")
+
+    assert (state.model, state.reasoning) == ("big-model", "auto")
+
+
+def test_handoff_target_repeating_the_model_keeps_reasoning(tmp_path: Path) -> None:
+    state = _handoff_state(tmp_path, "same-model", "TASK-H4")
+
+    assert (state.model, state.reasoning) == ("small-model", "medium")

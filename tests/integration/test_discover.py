@@ -49,6 +49,29 @@ def _discover(root: Path, capsys: pytest.CaptureFixture[str], *flags: str) -> st
     return capsys.readouterr().out
 
 
+def test_discover_leaves_out_manual_workflows_but_start_runs_them(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "ww.yaml").write_text(
+        WORKFLOWS + "  - name: hidden\n    manual: true\n    steps:\n      - go: Go.\n",
+        encoding="utf-8",
+    )
+
+    page = _discover(root, capsys)
+    report = json.loads(_discover(root, capsys, "--json"))
+    assert "hidden" not in page
+    assert [entry["name"] for entry in report["workflows"]] == ["task", "bugfix"]
+    assert main(["--root", str(root), "workflows"]) == 0
+    listed = {
+        entry["name"]: entry["manual"]
+        for entry in json.loads(capsys.readouterr().out)["workflows"]
+    }
+    assert listed["hidden"] is True and listed["task"] is False
+    service = WorkflowService(Storage(root))
+    assert service.start("hidden", "T-1", agent="codex").workflow == "hidden"
+
+
 def test_discover_lists_choices_options_and_commands(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

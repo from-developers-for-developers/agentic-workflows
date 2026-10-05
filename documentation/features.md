@@ -2001,6 +2001,8 @@ from an agent.
 
 ### Children that bind their own IDs
 
+A child can also be named by the parent at collection time: with the parent as an epic and its children as the epic's tasks, the agent creates each ticket, then records it with `add-child EPIC-1 --id TASK-7 --text ...`, making the child `EPIC-1/TASK-7`. `update-child` never changes an ID.
+
 The same step lets each child of a parent task obtain its own external ID, for
 example one Jira story per child of an epic. When the child workflow's first
 step declares the variable `task_id`, the parent's collection step tells the agent to record

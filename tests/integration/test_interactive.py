@@ -369,7 +369,7 @@ handlers:
       - 'A, "quoted"': First option.
       - B: Second option.
 workflows:
-  - manual: ~
+  - testing: ~
     steps:
       - name: first
         handler: shared
@@ -380,7 +380,7 @@ workflows:
         encoding="utf-8",
     )
     service = WorkflowService(Storage(tmp_path))
-    service.start("manual", "TASK-CHOICES-REUSE", agent="codex", init_artifact="Test.")
+    service.start("testing", "TASK-CHOICES-REUSE", agent="codex", init_artifact="Test.")
 
     first = service.next("TASK-CHOICES-REUSE")
     assert first.item_name == "first"

@@ -209,3 +209,27 @@ def test_an_heir_of_a_handoff_workflow_hands_off(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="cannot also recommend"):
         _load(tmp_path, text + "    recommended_next_workflow: target\n")
+
+
+def test_manual_is_read_but_never_inherited(tmp_path: Path) -> None:
+    configuration = _load(
+        tmp_path,
+        "workflows:\n"
+        "  - name: secret\n    manual: true\n    steps:\n      - a: A.\n"
+        "  - name: copy\n    inherit: secret\n"
+        "  - name: both\n    inherit: secret\n    manual: true\n",
+    )
+
+    by_name = configuration.workflows_by_name
+    assert by_name["secret"].manual is True
+    assert by_name["copy"].manual is False
+    assert by_name["both"].manual is True
+
+
+def test_manual_must_be_a_boolean(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="manual must be true or false"):
+        _load(
+            tmp_path,
+            "workflows:\n  - name: x\n    manual: yes please\n    steps:\n"
+            "      - a: A.\n",
+        )

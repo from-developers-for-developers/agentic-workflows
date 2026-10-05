@@ -700,6 +700,9 @@ class WorkflowDefinition:
     # A new start while this workflow's previous run is unfinished abandons
     # that run instead of being refused.
     restartable: bool = False
+    # Started only when the operator names it: ``discover`` leaves it out.
+    # Never inherited.
+    manual: bool = False
     # The workflow this one copies, recorded for display; the definition is
     # already complete, so nothing downstream resolves it again.
     inherits: str | None = None

@@ -362,7 +362,7 @@ def test_start_uses_the_workflow_runtime_unless_the_flag_says_otherwise(
     )
     (tmp_path / "ww.yaml").write_text(
         """workflows:
-  - manual: Manual testing.
+  - testing: Manual testing.
     runtime: single
     steps:
       - test: Test it.
@@ -374,11 +374,11 @@ def test_start_uses_the_workflow_runtime_unless_the_flag_says_otherwise(
     )
     service = WorkflowService(Storage(tmp_path))
 
-    assert service.start("manual", "M-1", agent="codex").workflow_runtime == "single"
+    assert service.start("testing", "M-1", agent="codex").workflow_runtime == "single"
     assert service.start("task", "T-1", agent="codex").workflow_runtime == "auto"
     assert (
         service.start(
-            "manual", "M-2", agent="codex", workflow_runtime="auto"
+            "testing", "M-2", agent="codex", workflow_runtime="auto"
         ).workflow_runtime
         == "auto"
     )
