@@ -1373,6 +1373,54 @@ def materialize_child_plan(
     )
 
 
+def append_child_lifecycle(
+    state: ExecutionState,
+    snapshot: PlanSnapshot,
+    child_count: int,
+    now: Clock,
+) -> tuple[ExecutionState, PlanSnapshot]:
+    """Expand one per-child lifecycle for the child appended last.
+
+    ``child_count`` is the number of children after the append, so the new
+    child is ``child-{child_count}``.  The lifecycle goes right after the
+    current last child's items, from the templates the snapshot keeps; the
+    new records are pending in the run's scope.
+    """
+    template = snapshot.template_plan
+    templates = tuple(
+        entry
+        for entry in (template.items if template is not None else ())
+        if entry.item_template and entry.child_stage is not None
+    )
+    if not templates:
+        raise StateError(
+            "the run keeps no per-child stage templates; this child cannot be expanded"
+        )
+    last = next(
+        (
+            entry
+            for entry in reversed(snapshot.plan.items)
+            if entry.child_stage is not None
+            and not entry.item_template
+            and entry.child_number is not None
+        ),
+        None,
+    )
+    if last is None:
+        raise StateError("the run has no per-child stages to extend")
+    number = child_count
+    return _expand_templates(
+        state,
+        snapshot,
+        templates,
+        "{child}",
+        ((f"child-{number}", f"child:{number}", {"child_number": number}),),
+        now,
+        replaced=frozenset(),
+        after=last.id,
+    )
+
+
 def _expand_templates(
     state: ExecutionState,
     snapshot: PlanSnapshot,

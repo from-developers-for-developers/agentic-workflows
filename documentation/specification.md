@@ -690,7 +690,15 @@ cannot itself use `children` (child tasks are one level deep). `children`
 cannot be combined with the step's own `handoff_to` transition.
 
 `add-child <task> [--id ID] --text TEXT [--project NAME] [--field
-NAME=VALUE]...` records a child during the collecting step; `--field` gives it
+NAME=VALUE]...` records a child while the collecting step is active, or, for a
+workflow with per-child stages, while any per-child stage of the run is the
+active item. A child added once the collecting step has completed is appended:
+it takes the next number, and ww expands one more lifecycle for it from the
+run's `template_plan`, right after the last planned child's items, with pending
+records, in the same locked write that appends the child. Inserting before a
+pending child is not supported. Once the run has moved past the last child's
+last stage the command is refused ("children can be added until the last
+child's stages finish; this run is past them"). `--field` gives the child
 custom fields, as `add-item --field` does for items.
 `update-child <task> <child> [--text TEXT] [--project NAME] [--field
 NAME=VALUE]...` changes a child's text or project while it has not started yet

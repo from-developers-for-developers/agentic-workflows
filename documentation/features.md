@@ -3452,6 +3452,13 @@ automatically resumes and completes the parent's normal lifecycle; the
 collecting step's completion hooks run after its children, and the parent's
 later steps follow.
 
+A slice found during the roadmap: while a parent with per-child stages is
+running one of its children, `add-child` still works. The new child is appended
+after the last planned child with its own lifecycle of stages, and the parent's
+page and `status` list it like the others. It cannot be inserted before a
+pending child, and once the last child's stages have finished the command is
+refused.
+
 ### Per-child parent stages
 
 When the parent has its own work to do around each child, such as adjusting the
