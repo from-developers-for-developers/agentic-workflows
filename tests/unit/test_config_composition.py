@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from ww.actions import Commands
-from ww.builtin_workflows import CATCHALL
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import user_directory
@@ -306,7 +305,6 @@ workflows:
     assert [workflow.name for workflow in configuration.workflows] == [
         "user-only",
         "task",
-        CATCHALL,
     ]
     assert configuration.workflow_provenance["user-only"].level == "global"
     assert configuration.workflow_provenance["user-only"].source == str(
@@ -314,7 +312,7 @@ workflows:
     )
     assert configuration.workflow_provenance["task"].level == "project"
     assert configuration.workflow_provenance["task"].source == "ww.yaml"
-    assert CATCHALL not in configuration.workflow_provenance
+    assert set(configuration.workflow_provenance) == {"user-only", "task"}
 
 
 def test_import_provenance_uses_importing_level_and_physical_source(
@@ -417,6 +415,7 @@ def test_extends_false_leaves_out_the_levels_above(
     )
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 def test_extends_false_drops_provenance_from_ignored_levels(
     user: Path, repo: Path
 ) -> None:
@@ -572,14 +571,3 @@ def test_a_null_global_workflows_value_leaves_project_provenance(
 
     assert set(provenance) == {"task"}
     assert provenance["task"].level == "project"
-
-
-def test_a_configured_catchall_has_a_yaml_origin(repo: Path) -> None:
-    root = _write(
-        repo / "ww.yaml",
-        f"workflows:\n  - {CATCHALL}: Mine.\n    steps:\n      - work: Do it.\n",
-    )
-
-    origin = load_configuration(root).workflow_provenance[CATCHALL]
-
-    assert (origin.source, origin.level) == ("ww.yaml", "project")

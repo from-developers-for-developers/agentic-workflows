@@ -49,6 +49,11 @@ from ww.defaults import (
     SKILLS,
     skill_location,
 )
+from ww.direct_work import (
+    DirectWork,
+    reconciled_summary,
+    unseen_commits,
+)
 from ww.documents import DocumentStore
 from ww.errors import ConfigurationError, StateError
 from ww.execution_models import (
@@ -2321,6 +2326,20 @@ class WorkflowService:
                 model=instruction.selected_model or instruction.model,
                 reasoning=instruction.selected_reasoning or instruction.reasoning,
             )
+        direct_work = self.tasks.read_direct_work(task_id)
+        if direct_work and not self.tasks.read_task_record(task_id)[0]:
+            # Work registered against a task that never ran a workflow.
+            return TaskStatus(
+                task_id=task_id,
+                workflow="none",
+                step=None,
+                step_state="direct work only",
+                runtime=self.extensions.config.runtime,
+                agent=None,
+                model="-",
+                reasoning="-",
+                direct_work=direct_work,
+            )
         state, snapshot = self.load(task_id, run_id)
         instruction = self.render(state, snapshot)
         if instruction.is_child_workflow_control:
@@ -2347,6 +2366,7 @@ class WorkflowService:
             reasoning=instruction.selected_reasoning or instruction.reasoning,
             adjustments=(latest[1] if latest else None),
             adjustments_step=(latest[0] or None if latest else None),
+            direct_work=direct_work,
         )
 
     def status(
@@ -2440,6 +2460,54 @@ class WorkflowService:
             amendment = Amendment(_now(), caller_role or "operator", amendment_text)
             self.tasks.append_amendment(task_id, amendment)
         return amendment
+
+    def record_direct_work(self, task_id: str, summary: str) -> DirectWork:
+        """Register work done outside any workflow, with the commits ww finds.
+
+        The task need not have a run; its directory is created when it is
+        missing. Commits already known to ww, or already registered, are not
+        counted again.
+        """
+        validate_task_id(task_id)
+        text = summary.strip()
+        if not text:
+            raise StateError("record requires a non-empty --summary")
+        with self.tasks.lock_task(task_id):
+            entry = DirectWork(
+                _now(),
+                text,
+                "agent",
+                unseen_commits(
+                    self.storage.root,
+                    self.extensions.config,
+                    task_id,
+                    self.tasks.read_direct_work(task_id),
+                ),
+            )
+            self.tasks.append_direct_work(task_id, entry)
+        return entry
+
+    def reconcile_direct_work(self, task_id: str) -> int:
+        """Register commits ww had not seen as a ``reconciled`` entry.
+
+        Returns how many commits it recorded. A task ww does not hold is left
+        alone, and no commit is ever recorded twice.
+        """
+        validate_task_id(task_id)
+        if not self.tasks.task_exists(task_id):
+            return 0
+        with self.tasks.lock_task(task_id):
+            registered = self.tasks.read_direct_work(task_id)
+            commits = unseen_commits(
+                self.storage.root, self.extensions.config, task_id, registered
+            )
+            if not commits:
+                return 0
+            self.tasks.append_direct_work(
+                task_id,
+                DirectWork(_now(), reconciled_summary(commits), "reconciled", commits),
+            )
+        return len(commits)
 
     def documents_listing(self, task_id: str | None) -> list[dict[str, object]]:
         """Describe every declared document, with its file and last update."""

@@ -12,6 +12,7 @@ import pytest
 
 from ww.actions import PlannedAction, Prompt
 from ww.amendments import Amendment
+from ww.direct_work import DirectCommit, DirectWork
 from ww.errors import StateError
 from ww.execution_models import (
     PLAN_SCHEMA_VERSION,
@@ -54,6 +55,8 @@ def test_public_storage_adapter_requires_every_executor_write_capability() -> No
         "write_shared_items",
         "read_amendments",
         "append_amendment",
+        "read_direct_work",
+        "append_direct_work",
         "write_task_metadata",
         "remove_task",
         "task_ids",
@@ -73,6 +76,52 @@ def test_amendments_append_in_order_and_go_with_the_task(
     assert adapter.read_amendments("PROJ-2") == ()
     adapter.remove_task("PROJ-1")
     assert adapter.read_amendments("PROJ-1") == ()
+
+
+def test_direct_work_appends_in_order_and_creates_the_task(
+    adapter: TaskStorageAdapter,
+) -> None:
+    first = DirectWork(
+        "2026-10-05T10:00:00+00:00",
+        "Fixed a typo.",
+        "agent",
+        (DirectCommit("a" * 40, "Fix a typo", "2026-10-05T09:59:00+00:00"),),
+    )
+    second = DirectWork("2026-10-05T11:00:00+00:00", "Renamed it.", "reconciled")
+
+    assert adapter.read_direct_work("PROJ-1") == ()
+    assert adapter.task_exists("PROJ-1") is False
+    adapter.append_direct_work("PROJ-1", first)
+    adapter.append_direct_work("PROJ-1", second)
+    assert adapter.read_direct_work("PROJ-1") == (first, second)
+    assert adapter.read_direct_work("PROJ-2") == ()
+    # A task with only direct work is a task, with no run.
+    assert adapter.task_exists("PROJ-1") is True
+    assert adapter.task_ids() == ("PROJ-1",)
+    assert adapter.read_task_record("PROJ-1")[0] == ()
+    assert adapter.remove_task("PROJ-1") is True
+    assert adapter.read_direct_work("PROJ-1") == ()
+    assert adapter.task_exists("PROJ-1") is False
+
+
+def test_the_filesystem_keeps_direct_work_as_a_json_array(tmp_path: Path) -> None:
+    adapter = FileTaskStorageAdapter(tmp_path)
+    entry = DirectWork("2026-10-05T10:00:00+00:00", "Did it.", "agent")
+
+    adapter.append_direct_work("PROJ-1", entry)
+
+    path = tmp_path / ".ww/tasks/PROJ-1/direct-work.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == [
+        {
+            "recorded_at": "2026-10-05T10:00:00+00:00",
+            "summary": "Did it.",
+            "source": "agent",
+            "commits": [],
+        }
+    ]
+    path.write_text('{"not": "a list"}', encoding="utf-8")
+    with pytest.raises(StateError, match="cannot read direct work of 'PROJ-1'"):
+        adapter.read_direct_work("PROJ-1")
 
 
 def test_task_ids_lists_top_level_tasks_without_requests(

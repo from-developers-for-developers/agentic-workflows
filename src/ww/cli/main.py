@@ -73,7 +73,7 @@ from ww.output_adapters.rule_pages import (
     render_rules_listing,
 )
 from ww.plan import PlanCompilationOptions, compile_workflow_plan
-from ww.project_config import compose_settings, load_project_config
+from ww.project_config import ProjectConfig, compose_settings, load_project_config
 from ww.rule_disputes import DisputeLog
 from ww.rule_store import (
     CheckSpec,
@@ -291,10 +291,21 @@ def _lint(context: _Context) -> _Outcome:
         f"{_configuration_files(context.storage, context.extensions)}"
         f"{notices}"
         f"{_launcher_warning(context.storage.root)}"
+        f"{_retired_workflow_warning(context.extensions.config)}"
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
         f"{_unscriptized_warning(RuleStore(context.storage.root), configuration)}"
         f"{_disputes_summary(DisputeLog(context.storage.root))}"
+    )
+
+
+def _retired_workflow_warning(config: ProjectConfig) -> str:
+    """Warn about ``workflows`` entries for workflows ww no longer provides."""
+    return "".join(
+        f"Warning: {SETTINGS_FILE} lists the workflow {name!r} under "
+        "workflows, which ww no longer provides; the entry is ignored and can "
+        "be removed.\n"
+        for name in config.retired_workflows
     )
 
 
@@ -1107,7 +1118,44 @@ def _amend(context: _Context) -> _Outcome:
     )
 
 
+def _record(context: _Context) -> _Outcome:
+    args = context.args
+    entry = context.service.record_direct_work(context.task_id, args.summary)
+    if args.json_output:
+        return _Outcome(_json({"task_id": context.task_id, **entry.to_dict()}))
+    commits = len(entry.commits)
+    return _Outcome(
+        f"Recorded direct work on {context.task_id} with {commits} "
+        f"commit{'' if commits == 1 else 's'}. `{ww_command()} status "
+        f"{context.task_id}` lists it.\n"
+    )
+
+
 def _instruction(context: _Context) -> _Outcome:
+    args = context.args
+    reconciled = (
+        context.service.reconcile_direct_work(context.task_id)
+        if args.role == "manager"
+        else 0
+    )
+    return _with_direct_work_notice(_instruction_page(context), context, reconciled)
+
+
+def _with_direct_work_notice(
+    outcome: _Outcome, context: _Context, reconciled: int
+) -> _Outcome:
+    """Lead with one line when ww just recorded commits it had not seen."""
+    if not reconciled or context.args.json_output:
+        return outcome
+    notice = (
+        f"ww recorded {reconciled} direct-work commit"
+        f"{'' if reconciled == 1 else 's'} it had not seen "
+        f"(see `{ww_command()} status {context.task_id}`)."
+    )
+    return replace(outcome, text=f"{notice}\n\n{outcome.text}")
+
+
+def _instruction_page(context: _Context) -> _Outcome:
     args = context.args
     return _with_interruption(
         context,
@@ -1530,6 +1578,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "instruction": _instruction,
     "requirements": _requirements,
     "amend": _amend,
+    "record": _record,
     "metadata": _metadata,
     "documents": _documents,
     "onboarding": _onboarding,

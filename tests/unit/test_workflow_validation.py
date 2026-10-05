@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from ww.actions import DefinedAction, Prompt
-from ww.builtin_workflows import CATCHALL, builtin_workflow, with_builtin_workflows
+from ww.builtin_workflows import builtin_workflows, with_builtin_workflows
 from ww.config import load_configuration
 from ww.errors import ConfigurationError
 from ww.plan import compile_workflow_plan
@@ -185,29 +185,36 @@ def test_rejects_step_local_before_start_hook() -> None:
         validate_configuration(configuration)
 
 
-def test_the_builtin_catchall_follows_the_configured_workflows() -> None:
+@pytest.mark.usefixtures("shipped_builtins")
+def test_the_builtin_workflows_follow_the_configured_workflows() -> None:
     validated = validate_configuration(_configuration())
 
-    assert [workflow.name for workflow in validated.workflows] == ["task", "catchall"]
-    assert validated.workflows[-1] == builtin_workflow(CATCHALL)
-    # With the catch-all, a project that configures no workflow can still
-    # record its changes.
+    assert [workflow.name for workflow in validated.workflows] == [
+        "task",
+        *(workflow.name for workflow in builtin_workflows()),
+    ]
+    # A project that configures no workflow still has ww's own.
     assert validate_configuration(_configuration(workflows=())).workflows == (
-        builtin_workflow(CATCHALL),
+        builtin_workflows()
     )
 
 
-def test_a_configured_catchall_replaces_the_builtin_one() -> None:
-    own = WorkflowDefinition("catchall", steps=(StepDefinition("record"),))
+@pytest.mark.usefixtures("shipped_builtins")
+def test_a_configured_workflow_replaces_the_builtin_one_of_its_name() -> None:
+    own = WorkflowDefinition("ww-suggest", steps=(StepDefinition("record"),))
 
     validated = validate_configuration(_configuration(workflows=(own,)))
 
-    assert validated.workflows == (own,)
+    assert own in validated.workflows
+    assert [workflow.name for workflow in validated.workflows].count("ww-suggest") == 1
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 def test_a_switched_off_builtin_workflow_is_not_added() -> None:
     configuration = _configuration()
-    config = ProjectConfig(disabled_workflows=frozenset({"catchall"}))
+    config = ProjectConfig(
+        disabled_workflows=frozenset(workflow.name for workflow in builtin_workflows())
+    )
 
     assert with_builtin_workflows(configuration, config) == configuration
 

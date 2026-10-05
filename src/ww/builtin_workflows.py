@@ -15,11 +15,6 @@ the user, repo and local levels:
 The built-in level is added after composition and parsing, when the
 configuration is validated, so a level's ``extends: false`` never removes it
 and the project's own files are parsed exactly as they are written.
-
-``catchall`` records a change no configured workflow covers. It exists so that
-every change goes through ww, including the small ones an agent would
-otherwise just make, without adding any process to them: the agent works
-exactly as it would on a plain prompt and ww keeps the record.
 """
 
 from __future__ import annotations
@@ -44,7 +39,6 @@ if TYPE_CHECKING:
 
     from ww.project_config import ProjectConfig
 
-CATCHALL = "catchall"
 # The root keys a built-in file may declare.
 BUILTIN_KEYS = frozenset({"workflows", "documents", "modes"})
 # Where the built-in files live; tests point it at a directory of their own.

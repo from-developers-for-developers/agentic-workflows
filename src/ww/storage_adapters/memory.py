@@ -9,6 +9,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 
 from ww.amendments import Amendment
+from ww.direct_work import DirectWork
 from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
 from ww.items import WorkItem
@@ -34,6 +35,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self.metadata: dict[str, TaskMetadata] = {}
         self.shared_items: dict[str, tuple[WorkItem, ...]] = {}
         self.amendments: dict[str, tuple[Amendment, ...]] = {}
+        self.direct_work: dict[str, tuple[DirectWork, ...]] = {}
         self.aggregates: dict[str, tuple[tuple[TaskRunAggregate, ...], str | None]] = {}
         self.aggregate_revisions: dict[str, int] = {}
         # When each task's runs were last committed.
@@ -111,7 +113,12 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         return self.written_at.get(task_id)
 
     def task_ids(self) -> tuple[str, ...]:
-        owners = {*self.aggregates, *self.metadata, *self._artifact_owners.values()}
+        owners = {
+            *self.aggregates,
+            *self.metadata,
+            *self.direct_work,
+            *self._artifact_owners.values(),
+        }
         return tuple(sorted({owner.split("/")[0] for owner in owners}))
 
     def task_exists(self, task_id: str) -> bool:
@@ -136,15 +143,23 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
     def append_amendment(self, task_id: str, amendment: Amendment) -> None:
         self.amendments[task_id] = (*self.read_amendments(task_id), amendment)
 
+    def read_direct_work(self, task_id: str) -> tuple[DirectWork, ...]:
+        return self.direct_work.get(task_id, ())
+
+    def append_direct_work(self, task_id: str, entry: DirectWork) -> None:
+        self.direct_work[task_id] = (*self.read_direct_work(task_id), entry)
+
     def remove_task(self, task_id: str) -> bool:
         existed = bool(
             task_id in self.aggregates
+            or task_id in self.direct_work
             or task_id in self.metadata
             or task_id in self._artifact_owners.values()
         )
         self.metadata.pop(task_id, None)
         self.shared_items.pop(task_id, None)
         self.amendments.pop(task_id, None)
+        self.direct_work.pop(task_id, None)
         self.aggregates.pop(task_id, None)
         self.aggregate_revisions.pop(task_id, None)
         self.written_at.pop(task_id, None)
@@ -156,7 +171,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
 
     def child_task_ids(self, task_id: str) -> tuple[str, ...]:
         prefix = f"{task_id}/"
-        task_ids = set(self.aggregates) | set(self.metadata)
+        task_ids = set(self.aggregates) | set(self.metadata) | set(self.direct_work)
         task_ids.update(self._artifact_owners.values())
         return tuple(
             sorted(candidate for candidate in task_ids if candidate.startswith(prefix))

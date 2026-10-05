@@ -15,7 +15,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "limits": {"rounds": 3, "fixes": 3},
   "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "pages": {"worker_requirements": "pointer"},
-  "workflows": {"catchall": {"enabled": false}},
+  "workflows": {"ww-suggest": {"enabled": false}},
   "projects": [
     {"name": "backend", "path": "./backend", "description": "Python API service."}
   ],
@@ -51,7 +51,9 @@ requirements`` instead); the manager's pages are unaffected. ``init`` writes the
 key only once it is set.
 
 ``workflows`` switches off the workflows ww provides to every project, such
-as ``catchall``; each is on unless its entry says ``"enabled": false``.
+as ``ww-suggest``; each is on unless its entry says ``"enabled": false``. An
+entry for ``catchall``, a workflow ww no longer provides, is ignored and
+``lint`` warns about it.
 
 ``projects`` are the directories, usually repositories, a task may work in.
 They are optional and machine-specific, which is why they live here rather than
@@ -101,6 +103,9 @@ from ww.validation import expect_normalized_name, is_positive_int, is_strict_int
 
 FILE_NAME = SETTINGS_FILE
 BUILTIN_NAMES = frozenset({"init", "workflow_summary"})
+# Workflows ww once provided; a ``workflows`` entry for one is ignored, with a
+# warning from ``lint``, rather than refused.
+RETIRED_WORKFLOWS = frozenset({"catchall"})
 # ``init`` only restates requirements; the workflow summary is what people
 # read, so it follows the run's ordinary worker selection.
 BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
@@ -313,6 +318,8 @@ class ProjectConfig:
     feedback_learning: bool = True
     # Built-in workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
+    # Names under ``workflows`` of workflows ww no longer provides; ignored.
+    retired_workflows: tuple[str, ...] = ()
     # The ww binary this project runs: a command on PATH or a path. ``None``
     # means the project launcher, ``./ww``, which falls back to the standard
     # name.
@@ -520,7 +527,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         raise ConfigurationError(
             f"{path}.runtime must be one of: " + ", ".join(RUNTIME_INSTRUCTIONS)
         )
-    disabled_workflows = _parse_workflows(raw.get("workflows"), path)
+    disabled_workflows, retired_workflows = _parse_workflows(raw.get("workflows"), path)
     builtins = raw.get("builtins", {})
     if not isinstance(builtins, dict):
         raise ConfigurationError(f"{path}.builtins must be an object")
@@ -558,6 +565,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         update_check=update_check,
         feedback_learning=feedback_learning,
         disabled_workflows=disabled_workflows,
+        retired_workflows=retired_workflows,
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
         **_parse_rules(raw.get("rules"), path),
@@ -686,14 +694,15 @@ def _parse_executable(data: Any, path: str) -> str | None:
     return data.strip()
 
 
-def _parse_workflows(data: Any, path: str) -> frozenset[str]:
-    """The built-in workflows switched off by ``enabled: false``."""
+def _parse_workflows(data: Any, path: str) -> tuple[frozenset[str], tuple[str, ...]]:
+    """The built-ins switched off by ``enabled: false`` and the retired names."""
     if data is None:
-        return frozenset()
+        return frozenset(), ()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.workflows must be an object")
     known = builtin_workflow_names()
-    unknown = set(data) - known
+    retired = tuple(sorted(set(data) & RETIRED_WORKFLOWS))
+    unknown = set(data) - known - RETIRED_WORKFLOWS
     if unknown:
         raise ConfigurationError(
             f"{path}.workflows has unknown name(s): {', '.join(sorted(unknown))}; "
@@ -712,9 +721,9 @@ def _parse_workflows(data: Any, path: str) -> frozenset[str]:
         enabled = value.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ConfigurationError(f"{context}.enabled must be true or false")
-        if not enabled:
+        if not enabled and name not in RETIRED_WORKFLOWS:
             disabled.add(name)
-    return frozenset(disabled)
+    return frozenset(disabled), retired
 
 
 def _parse_projects(data: Any, path: str) -> tuple[ProjectDefinition, ...]:

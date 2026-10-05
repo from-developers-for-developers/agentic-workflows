@@ -13,6 +13,7 @@ from datetime import datetime
 from ww.amendments import Amendment
 from ww.children import ChildTask
 from ww.contracts import RunStatus, run_is_open
+from ww.direct_work import DirectWork
 from ww.errors import StateError
 from ww.execution_models import (
     ExecutionState,
@@ -445,6 +446,23 @@ class TaskAmendmentStorage(ABC):
         """Append one amendment; the caller holds the task's lock."""
 
 
+class TaskDirectWorkStorage(ABC):
+    """Storage for the direct work registered against a task.
+
+    Direct work is a change made outside any workflow and registered
+    afterwards. It belongs to the task, not to a run, and is only ever
+    appended. A task may hold it without having any run.
+    """
+
+    @abstractmethod
+    def read_direct_work(self, task_id: str) -> tuple[DirectWork, ...]:
+        """The task's direct-work entries, oldest first; none when absent."""
+
+    @abstractmethod
+    def append_direct_work(self, task_id: str, entry: DirectWork) -> None:
+        """Append one entry, creating the task's storage; the caller holds the lock."""
+
+
 class TaskMetadataStorage(ABC):
     """Storage for durable metadata shared by every run of one task."""
 
@@ -479,6 +497,7 @@ class TaskStorageAdapter(
     TaskMetadataStorage,
     TaskItemStorage,
     TaskAmendmentStorage,
+    TaskDirectWorkStorage,
     ABC,
 ):
     """Complete storage-adapter boundary required by ``WorkflowService``.
@@ -498,6 +517,7 @@ class TaskStorageAdapter(
         return (
             bool(runs)
             or self.read_task_metadata(task_id) is not None
+            or bool(self.read_direct_work(task_id))
             or bool(self.child_task_ids(task_id))
         )
 
@@ -530,6 +550,7 @@ __all__ = [
     "ProjectMetadata",
     "ProjectMetadataStorage",
     "TaskArtifactStorage",
+    "TaskDirectWorkStorage",
     "TaskMetadata",
     "TaskMetadataStorage",
     "TaskRunStorage",

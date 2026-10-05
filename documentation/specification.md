@@ -125,14 +125,14 @@ directory when it is missing.
 - `lint` lists the configuration files it read, and `plan` ends with the same
   list; `lint` notices name the file of the level that overrode a definition.
 
-The `discover --json` entries in `workflows`, `builtin_workflows`, and
-`catchall` include additive `source` and `source_level` fields. Configured
+The `discover --json` entries in `workflows` and `builtin_workflows` include
+additive `source` and `source_level` fields. Configured
 workflows report the winning YAML definition's physical source label and its
 public level (`global`, `project`, or `local`); imported definitions keep the
 level of the file that imported them. A workflow with no configured
-YAML definition, such as an unconfigured built-in or the unconfigured
-catch-all, reports `null` for both fields; a built-in or the catch-all that a
-configuration file defines has that file as its origin. Existing workflow
+YAML definition, such as an unconfigured built-in, reports `null` for both
+fields; a built-in that a configuration file defines has that file as its
+origin. Existing workflow
 fields keep their meanings. The Markdown shows each project workflow as
 `name — [level: path] description`, sorted local, then project, then global,
 stable within a level, with the home directory written `~` and an honest
@@ -271,7 +271,7 @@ Each item in `workflows` accepts:
 | `hooks_from` | string | no | The workflow whose global hooks this one runs with: a global hook filtered with `workflows` applies here when its filter admits this workflow's own name or the named workflow, so this workflow takes that lane's branch, worktree and commit handling. Extensions receive the lane as `ExtensionContext.lane` and key per-workflow settings by it: `ww/git` takes the lane's `branch_name_formats` and `base_branches` entries, while its records and `{{ww.task.workflow}}` keep the workflow's own name and `{{ww.task.lane}}` gives its formats and argv base-branch commands the lane. Rule groups and modes filtered with `workflows` keep matching the workflow's own name only: they are the lane's conventions, not its handling. Must name another workflow that has no `hooks_from` of its own. Set it in the workflow definition in `ww.yaml`. The plan freezes it, so a run keeps its lane. |
 | `needs_hooks_from` | boolean | no | The workflow refuses to run until `hooks_from` is set: `start` (before a bootstrap request is opened), a handoff to it, and a replan of a run whose recompiled workflow lacks it (a `plan_changed` refusal). The message names `hooks_from` in the workflow definition in `ww.yaml`. Defaults to `false`. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
-| `manual` | boolean | no | The workflow is started only when the operator names it; `discover` and `lookup` leave it out (the `workflows` catalog still lists it, with `manual: true`), and `start` accepts it unchanged. Never inherited through `inherit`: a copy is listed unless it sets `manual` itself. Defaults to `false`. |
+| `manual` | boolean | no | The workflow is started only when the operator names it; `discover` leaves it out (the `workflows` catalog still lists it, with `manual: true`), and `start` accepts it unchanged. Never inherited through `inherit`: a copy is listed unless it sets `manual` itself. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a `handoff_to` transition). |
 
@@ -304,10 +304,12 @@ requirements in full, or only the pointer to `ww requirements` when it is
 once it is set. Any other value, or key, is an error. The file may
 also override the internal requests of the implicit init action, `cheapest` /
 `low`, and of the workflow-summary action, `auto` / `auto`. `workflows` switches
-off [built-in workflows](#built-in-workflows) by name, such as `catchall`; each
-entry is an object whose only key, `enabled`, defaults to `true`, and a name ww
-does not ship is an error listing the built-in ones. A workflow of the same
-name in any `ww.yaml` level replaces the built-in one instead.
+off [built-in workflows](#built-in-workflows) by name, such as `ww-suggest`;
+each entry is an object whose only key, `enabled`, defaults to `true`, and a
+name ww does not ship is an error listing the built-in ones. A workflow of the
+same name in any `ww.yaml` level replaces the built-in one instead. An entry
+for `catchall`, which ww no longer ships, is not an error: it is ignored, and
+`lint` prints a warning naming it.
 `executable` names the ww binary the project runs, a command on `PATH` or a
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
@@ -346,10 +348,8 @@ with its default, as `init` writes it:
 ### Built-in workflows
 
 ww ships workflows of its own as YAML files inside the package
-(`ww/assets/workflows/*.yaml`), written in this notation. `catchall`, which
-records a change no configured workflow covers, is one of them; ww's learning
-and setup workflows are others. Together they form a built-in level below the
-user level:
+(`ww/assets/workflows/*.yaml`), written in this notation: ww's learning and
+setup workflows. Together they form a built-in level below the user level:
 
 - A workflow, document, or mode that any configuration level defines under the
   same name replaces the built-in one. A project that declares a document of a
@@ -361,9 +361,9 @@ user level:
   nothing.
 - Built-in workflows follow the configured ones. They are added after the
   levels are composed, so `extends: false` never removes them.
-- `discover` lists `catchall` under its own heading. Its Markdown leaves the
-  other built-in workflows to the `workflows` catalog, which it points at;
-  `builtin_workflows` in JSON still lists them apart from the project's.
+- `discover`'s Markdown leaves the built-in workflows to the `workflows`
+  catalog, which it points at; `builtin_workflows` in JSON still lists them
+  apart from the project's.
 - A built-in's `recommended_next_workflow` naming a workflow that is switched
   off is dropped.
 
@@ -371,7 +371,6 @@ The built-in workflows:
 
 | Workflow | File | Purpose |
 | --- | --- | --- |
-| `catchall` | `catchall.yaml` | Records a change no configured workflow covers. |
 | `ww-learn-project` | `onboarding.yaml` | Learns the repository (purpose, stack, verify commands, CI, review and release process, conventions, pitfalls) into `project`, refreshing an existing file. |
 | `ww-suggest` | `onboarding.yaml` | Asks a few process questions (express setup skips them), designs a minimal setup with the operator, proposes it in full, and places it with `setup apply`. |
 | `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes; a workflow already defined is changed with `setup update`. |
@@ -397,6 +396,82 @@ profile:
 Workflows accept the [named-entry shorthand](#named-entry-shorthand). For
 example, `- task: Run the standard development workflow.` supplies both the
 name and description; `steps` and other workflow keys remain siblings.
+
+## Direct work
+
+Direct work is a change the operator asked for in conversation, made outside
+any workflow and registered afterwards. It replaces the former `catchall`
+workflow: nothing is started, no step page is followed, and the agent works
+exactly as in a plain conversation. ww only keeps the record.
+
+**Storage.** Each task has `.ww/tasks/<task-id>/direct-work.json`, a JSON array
+of entries, oldest first, written with the same locking and atomic replacement
+as the task's other files. A task may hold direct work without ever having run
+a workflow; registering it creates the task directory.
+
+```json
+[
+  {
+    "recorded_at": "2026-10-05T10:15:00+00:00",
+    "summary": "Fixed the typo in the README.",
+    "source": "agent",
+    "commits": [
+      {
+        "sha": "9f2c1d0a...",
+        "subject": "Fix a README typo",
+        "committed_at": "2026-10-05T10:14:12+00:00"
+      }
+    ]
+  }
+]
+```
+
+`source` is `agent` for an entry made by `record` and `reconciled` for one ww
+made itself. `commits` may be empty. The storage adapter reads and appends
+entries (`read_direct_work`, `append_direct_work`); removing the task removes
+the file.
+
+**`record <task> --summary "<text>"`** appends one `agent` entry and prints it
+with `--json`. The task ID is checked like any other and need not have a run.
+ww finds the commits itself; the agent never lists them:
+
+- With a branch recorded for the task in the `ww/git` extension's
+  `branches.jsonl`, they are the commits on that branch since its recorded
+  base (`git log <base>..<branch>`), in the task's worktree while it exists.
+  The base is the recorded one, else `base_branches.default` of `ww/git`.
+- Without a recorded branch, they are the commits on the current branch since
+  `base_branches.default` whose message names the task ID. A branch name is
+  not a mention, and `TASK-8` does not match `TASK-80`.
+- Either way, a commit whose SHA is in the extension's `commits.jsonl` (ww's
+  own commits) or already in the task's `direct-work.json` is left out, so no
+  SHA is recorded twice. Anything git cannot answer, such as a deleted branch
+  or a default base that is not a branch name, yields an empty list; the
+  entry is still recorded.
+
+**Reconciliation.** `instruction <task> --role manager` runs the same search
+before it builds the page. When it finds commits ww had not seen, it appends
+one `reconciled` entry whose summary is the commit subjects joined with `; `
+and prints one line at the top of the page, before any interruption notice:
+`ww recorded N direct-work commits it had not seen (see `ww status <task>`).`
+(`commit` for one). `--json` output carries no such line, though the entry is
+recorded. It is idempotent and ww's alone: a registration that failed or was
+forgotten is made up for on the next run, and the agent is never asked to do
+it. A task ww holds no data for is left alone, and other roles do not
+reconcile.
+
+**`status <task>`** shows direct work the way it shows other optional keys,
+only when there is some: the Markdown prints `direct work: <count>` and one
+line per entry, `- <summary> (<source>, <short SHAs>)`, and the JSON has a
+`direct_work` array of the stored entries. A task with direct work and no run
+reports `workflow: none` and the step state `direct work only`.
+
+**`lookup [<task>] --agent <agent>`** is read-only and answers one next step:
+`continue` (the task has an unfinished run: its `instruction` command),
+`direct` (work directly, then the `record` command filled in, with the task ID
+the reference resolved to, or a new one: ww-assigned from `task_format`, or
+`<task-id>` under `explicit`), or `choose` (the reference matches several
+tasks; the operator picks one). It never asks before a task ww has not seen:
+`record` creates it.
 
 ## Documents
 

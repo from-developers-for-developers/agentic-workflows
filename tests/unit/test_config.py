@@ -1873,7 +1873,7 @@ def test_a_workflow_may_declare_its_runtime(tmp_path: Path) -> None:
 """,
         )
     )
-    testing, task, _catchall = configuration.workflows
+    testing, task = configuration.workflows
     assert (testing.runtime, task.runtime) == ("single", None)
     with pytest.raises(ConfigurationError, match="runtime must be one of: single"):
         load_configuration(

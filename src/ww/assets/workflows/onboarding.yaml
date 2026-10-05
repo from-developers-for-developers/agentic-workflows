@@ -317,7 +317,7 @@ workflows:
 
               Keep each workflow as simple as its work allows and add a feature only
               for the concrete reason the guide gives. Never redefine a
-              workflow ww ships (`catchall`, `ww-*`), duplicate what is
+              workflow ww ships (`ww-*`), duplicate what is
               configured, or edit ww's configuration files yourself. A
               workflow the project already defines is changed with
               `{{ww.executable}} setup update`, not by a second definition.

@@ -623,6 +623,20 @@ def build_parser() -> argparse.ArgumentParser:
             "never rewritten."
         ),
     )
+    record = subparsers.add_parser(
+        "record",
+        parents=[_shared("json")],
+        help=(
+            "Register work done directly, outside any workflow, with the "
+            "commits ww finds for it."
+        ),
+    )
+    record.add_argument("task_id")
+    record.add_argument(
+        "--summary",
+        required=True,
+        help="What was done, in a sentence or two.",
+    )
     instruction = subparsers.add_parser(
         "instruction",
         parents=[with_run],

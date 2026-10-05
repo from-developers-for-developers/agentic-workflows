@@ -204,16 +204,16 @@ def test_an_on_request_project_lists_everything_but_says_to_wait_for_a_request(
     # The full catalog follows, so an explicit request can proceed.
     assert "- task — [project: ww.yaml] Implement a change." in output
     assert "./ww start [<task-id>] --workflow <workflow>" in output
-    catchall = output.split("## Changes no workflow covers", 1)[1]
+    direct_work = output.split("## Direct work", 1)[1]
     assert "Only when the user has asked for ww; otherwise make the change" in (
-        catchall
+        direct_work
     )
     assert report["enabled"] == "on_request"
     assert [workflow["name"] for workflow in report["workflows"]] == [
         "task",
         "bugfix",
     ]
-    assert report["catchall"]["guidance"].startswith("Only when the user has asked")
+    assert report["direct_work"]["guidance"].startswith("Only when the user has asked")
 
 
 def test_an_enabled_project_says_nothing_about_requests(
@@ -298,7 +298,7 @@ def test_the_skill_and_instructions_send_agents_to_discover() -> None:
     assert WW_SKILL.startswith("---\nname: ww\ndescription: ")
     assert "./ww discover" in WW_SKILL
     assert "./ww discover" in AGENT_INSTRUCTIONS
-    assert len(AGENT_INSTRUCTIONS.splitlines()) < 50
+    assert len(AGENT_INSTRUCTIONS.splitlines()) < 60
 
 
 def test_the_skill_and_instructions_let_discover_decide_whether_to_use_ww() -> None:
@@ -758,33 +758,44 @@ def test_discover_reports_worker_requests_as_data(
     assert requests == {"plain": [], "reviewed": ["triage", "review"]}
 
 
-def test_discover_sets_the_catchall_apart_with_when_to_use_it(
+def test_discover_describes_direct_work_instead_of_a_catchall(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     output = _discover(_project(tmp_path), capsys)
 
-    workflows, rest = output.split("## Changes no workflow covers", 1)
+    workflows, rest = output.split("## Direct work", 1)
+    assert "catchall" not in output
+    assert "## Changes no workflow covers" not in output
     assert "`catchall`" not in workflows
-    assert rest.lstrip().startswith("- `catchall` — ")
     for rule in (
-        "about to change files",
-        "read-only work needs no task",
-        "Do not start it directly",
-        "asks the operator before it creates a task ww has never seen",
+        "more than a small change",
+        "just do it, register afterwards",
+        "work directly, as in a plain conversation, and ask nothing",
+        "a series of small requests stays a series of direct-work entries",
+        "never again on a task once the operator chose direct work",
+        "Read-only work needs no task",
+        "ww records the commits it had not seen on the next run",
         "./ww lookup [<task>] --agent <agent>",
+        './ww record <task-id> --summary "<what was done>"',
     ):
         assert rule in rest
     report = json.loads(_discover(tmp_path, capsys, "--json"))
-    assert report["catchall"]["name"] == "catchall"
-    assert "catchall" not in [workflow["name"] for workflow in report["workflows"]]
+    assert "catchall" not in report
+    assert report["direct_work"]["record"] == (
+        './ww record <task-id> --summary "<what was done>"'
+    )
+    assert report["direct_work"]["lookup"] == ("./ww lookup [<task>] --agent <agent>")
 
 
-def test_discover_omits_a_switched_off_catchall(
+def test_discover_ignores_a_stale_catchall_switch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path, {"workflows": {"catchall": {"enabled": False}}})
 
-    assert "catchall" not in _discover(root, capsys)
+    output = _discover(root, capsys)
+
+    assert "catchall" not in output
+    assert "## Direct work" in output
 
 
 def test_the_noww_skill_only_turns_ww_off() -> None:
@@ -792,7 +803,7 @@ def test_the_noww_skill_only_turns_ww_off() -> None:
 
     assert noww.startswith("---\nname: noww\ndescription: ")
     assert "Do not use ww" in noww
-    assert "catchall" in noww
+    assert "./ww record" in noww
 
 
 def test_the_ww_rule_skill_carries_the_judgment_and_writes_through_the_cli() -> None:
@@ -991,18 +1002,3 @@ def test_discover_never_labels_an_unconfigured_workflow_local() -> None:
     )
 
     assert line == "- ext — [other: not from a configuration file] From an extension."
-
-
-def test_a_configured_catchall_reports_its_yaml_source(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    root = _project(tmp_path)
-    (root / "ww.yaml").write_text(
-        WORKFLOWS + "  - catchall: Mine.\n    steps:\n      - work: Do it.\n",
-        encoding="utf-8",
-    )
-
-    report = json.loads(_discover(root, capsys, "--json"))
-
-    assert report["catchall"]["source"] == "ww.yaml"
-    assert report["catchall"]["source_level"] == "project"

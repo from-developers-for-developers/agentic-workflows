@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ww.amendments import Amendment
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX
+from ww.direct_work import DirectWork
 from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
 from ww.items import WorkItem
@@ -277,6 +278,27 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             self._amendments_path(task_id), json.dumps(payload, indent=2) + "\n"
         )
 
+    def read_direct_work(self, task_id: str) -> tuple[DirectWork, ...]:
+        path = self._direct_work_path(task_id)
+        if not path.exists():
+            return ()
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, list):
+                raise ValueError("direct work must be a list")
+            return tuple(DirectWork.from_dict(entry) for entry in raw)
+        except (OSError, ValueError) as error:
+            raise StateError(
+                f"cannot read direct work of {task_id!r}: {error}"
+            ) from error
+
+    def append_direct_work(self, task_id: str, entry: DirectWork) -> None:
+        entries = (*self.read_direct_work(task_id), entry)
+        self.locks.atomic_write(
+            self._direct_work_path(task_id),
+            json.dumps([item.to_dict() for item in entries], indent=2) + "\n",
+        )
+
     def _write_task_metadata_payload(self, metadata: TaskMetadata) -> None:
         payload: dict[str, object] = {"task_id": metadata.task_id}
         if metadata.values:
@@ -299,6 +321,7 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             self._metadata_path(task_id),
             self._shared_items_path(task_id),
             self._amendments_path(task_id),
+            self._direct_work_path(task_id),
         )
         for owned in owned_paths:
             if owned.exists() and not owned.is_symlink() and owned.is_file():
@@ -344,6 +367,9 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
 
     def _amendments_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "amendments.json"
+
+    def _direct_work_path(self, task_id: str) -> Path:
+        return self.tasks_path / task_id / "direct-work.json"
 
     def _shared_items_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "items.json"

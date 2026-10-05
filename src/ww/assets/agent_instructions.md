@@ -3,8 +3,7 @@
 ww saves progress, runs handlers, and names the next role; it is only for
 development. Where ww is used by default, every file change goes through ww
 unless the user asks you not to. Reviews, questions, investigations and other
-read-only work never use ww, its skill or a task. When no workflow fits a change, run
-`./ww lookup [<task>] --agent <agent>` and follow it; it never creates a task without operator confirmation.
+read-only work never use ww, its skill or a task.
 
 ## Start here
 
@@ -22,6 +21,16 @@ materially change the work.
 
 When a request names an external ticket, use that as the task ID. Omit the ID
 only when none is named or the workflow obtains it in its first step.
+
+A request that names a ticket or clearly matches a workflow's description, and
+is more than a small change: propose that workflow, and offer the alternative in
+the same choice, "run `<workflow>`" / "just do it, register afterwards". Any
+other request is direct work: do it as in a plain conversation, ask nothing,
+then run `./ww record <task> --summary "..."` (`./ww lookup [<task>] --agent
+<agent>` names the task). Judge each prompt on its own; a series of small
+requests stays direct work, never a workflow. Ask only when genuinely ambiguous,
+and never again on a task once the operator chose direct work. If `record`
+fails or is forgotten, ww records the commits on the next run: do not retry.
 
 To continue an existing task, run `./ww instruction <task-id> --role manager`;
 a worker resuming its assignment uses `--role worker`. Check status with

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""``lookup``: which task a catch-all change belongs to, and what to do next.
+"""``lookup``: which task a direct change belongs to, and what to do next.
 
 An agent about to change files outside any workflow runs ``lookup`` with what
 the operator called the task, or with nothing when they named none. ww maps
 the reference onto the project's task format and existing tasks and answers
-with one next step: continue an unfinished run, start ``catchall`` on the task
-found, or ask the operator. A task ww has never seen is only created after the
-operator confirms it, through the agent's own choice menu.
+with one next step: continue an unfinished run, or work directly and register
+it afterwards with ``record``. Only a reference that matches several tasks
+asks the operator.
 
 ``lookup`` is read-only; the command it prints does the work.
 """
@@ -17,10 +17,8 @@ import json
 from dataclasses import dataclass
 
 from ww.agents import choice_mechanism
-from ww.builtin_workflows import CATCHALL
-from ww.config import load_configuration
 from ww.discovery import normalize_agent
-from ww.errors import ConfigurationError, StateError
+from ww.errors import StateError
 from ww.extensions import ExtensionRegistry
 from ww.hooks.notices import (
     recent_interruptions_pointer,
@@ -29,20 +27,28 @@ from ww.hooks.records import HookRecords
 from ww.instructions.commands import (
     TASK_PLACEHOLDER,
     instruction_command,
-    start_command,
+    record_command,
 )
-from ww.project_config import FILE_NAME
 from ww.storage import Storage
 from ww.storage_adapters import TaskStorageAdapter
-from ww.task_ids import EXPLICIT_TASK_FORMAT
+from ww.task_ids import (
+    EXPLICIT_TASK_FORMAT,
+    candidate_task_ids,
+    task_id_claimed,
+)
 from ww.task_references import resolve_task_reference
 
-WITHOUT_WW = "Work without ww"
 # Under ``"enabled": "on_request"`` lookup runs only because the user asked
 # for ww; an unasked change is made without it, and without asking.
 ON_REQUEST_NOTE = (
     "ww is used here only on request. Go on only if the user explicitly asked "
     "for ww; otherwise make the change without ww and do not ask."
+)
+DIRECT_NOTE = (
+    "Work directly, as you would in a plain conversation, with no workflow "
+    "and no question to the operator, then register what you did. If the "
+    "registration fails or is forgotten, ww records the commits it had not "
+    "seen on the next run; do not retry it endlessly."
 )
 
 
@@ -50,8 +56,7 @@ ON_REQUEST_NOTE = (
 class _Choice:
     label: str
     description: str
-    # ``None`` for working without ww: no command follows that choice.
-    command: str | None
+    command: str
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -68,16 +73,10 @@ def lookup(
     reference: str | None,
     agent: str,
 ) -> dict[str, object]:
-    """Resolve ``reference`` for a catch-all change and choose the next step."""
+    """Resolve ``reference`` for a direct change and choose the next step."""
     normalize_agent(agent)
-    configuration = load_configuration(storage.config_path, extensions)
-    catchall = configuration.workflows_by_name.get(CATCHALL)
-    if catchall is None or catchall.manual:
-        raise ConfigurationError(
-            f"the {CATCHALL} workflow is switched off in {FILE_NAME}"
-        )
+    del storage
     task_format = extensions.task_format()
-    explicit = task_format == EXPLICIT_TASK_FORMAT
     known = tasks.task_ids()
     if reference is not None and "/" in reference and tasks.task_exists(reference):
         # A child task is named by its full ID; top-level listing leaves it out.
@@ -96,97 +95,84 @@ def lookup(
         ],
     }
     if resolution is not None and resolution.resolved is not None:
-        task_id = resolution.resolved
-        open_run = _open_run(tasks, task_id)
-        if open_run is not None and open_run["workflow"] != CATCHALL:
-            return {
-                **report,
-                "outcome": "continue",
-                "task_id": task_id,
-                "message": (
-                    f"`{reference}` is task `{task_id}`, which has an unfinished "
-                    f"`{open_run['workflow']}` run. The change belongs to that "
-                    "run: continue it instead of starting another workflow."
-                ),
-                "command": instruction_command(task_id, role="manager"),
-            }
-        return {
-            **report,
-            "outcome": "start",
-            "task_id": task_id,
-            "message": (
-                f"`{reference}` is task `{task_id}`. Record the change there: "
-                f"start `{CATCHALL}` on it."
-            ),
-            "command": start_command(task_id, CATCHALL, agent),
-        }
+        return {**report, **_known_task(tasks, resolution.resolved, reference)}
     if resolution is not None and resolution.matches:
         choices = [
             _Choice(
                 f"Use {task_id}",
                 _describe(tasks, task_id),
-                _continue_or_start(tasks, task_id, agent),
+                _continue_or_record(tasks, task_id),
             )
             for task_id in resolution.matches
         ]
+        mechanism = choice_mechanism(agent)
+        return {
+            **report,
+            "outcome": "choose",
+            "message": (
+                f"`{reference}` matches several existing tasks. Ask the "
+                "operator which one this change belongs to."
+            ),
+            "choice_mechanism": mechanism.name,
+            "choice_instruction": mechanism.instruction,
+            "choices": [choice.to_dict() for choice in choices],
+        }
+    if resolution is not None and resolution.proposed is not None:
+        task_id = resolution.proposed
+        message = f"No task matches `{reference}`; `{task_id}` is a new task."
+    elif task_format == EXPLICIT_TASK_FORMAT:
+        task_id = TASK_PLACEHOLDER
         message = (
-            f"`{reference}` matches several existing tasks. Ask the operator "
-            "which one this change belongs to."
+            "The request names no task, and this project requires an explicit "
+            "task ID: use the external ticket key the request or conversation "
+            f"works on in place of `{TASK_PLACEHOLDER}`."
         )
-        outcome = "choose"
-    elif resolution is not None and resolution.proposed is not None:
-        proposed = resolution.proposed
-        choices = [
-            _Choice(
-                f"Create {proposed}",
-                f"Start a new ww task `{proposed}` and record this change in it.",
-                start_command(proposed, CATCHALL, agent),
-            )
-        ]
-        message = (
-            f"No task matches `{reference}`; ww has never seen `{proposed}`. "
-            "Do not create it on your own: ask the operator to confirm."
-        )
-        outcome = "confirm"
     else:
-        choices = [_new_task_choice(explicit, agent)]
+        task_id = _new_task_id(tasks, extensions, task_format)
         message = (
-            "The request names no task. Do not create one on your own: ask the "
-            "operator whether to record this change in a new task."
-            if resolution is None
-            else f"`{reference}` is not a valid task ID. Ask the operator "
-            "whether to record this change in a new task."
+            f"The request names no task; ww assigned one for this change: `{task_id}`."
         )
-        outcome = "confirm"
-    choices.append(
-        _Choice(WITHOUT_WW, "Make the change without recording it in ww.", None)
-    )
-    mechanism = choice_mechanism(agent)
     return {
         **report,
-        "outcome": outcome,
-        "message": message,
-        "choice_mechanism": mechanism.name,
-        "choice_instruction": mechanism.instruction,
-        "choices": [choice.to_dict() for choice in choices],
+        "outcome": "direct",
+        "task_id": task_id,
+        "message": f"{message} {DIRECT_NOTE}",
+        "command": record_command(task_id),
     }
 
 
-def _new_task_choice(explicit: bool, agent: str) -> _Choice:
-    if explicit:
-        # The project never generates IDs; the operator types the key through
-        # the menu's free-form answer, and the agent fills it in.
-        return _Choice(
-            "Create a task",
-            "Start a new ww task under the ID the operator gives, such as a "
-            "tracker key; ask for it if they did not type one.",
-            start_command(TASK_PLACEHOLDER, CATCHALL, agent),
-        )
-    return _Choice(
-        "Create a new task",
-        "Start a new ww task, with an ID ww assigns, and record this change in it.",
-        start_command(None, CATCHALL, agent),
-    )
+def _known_task(
+    tasks: TaskStorageAdapter, task_id: str, reference: str | None
+) -> dict[str, object]:
+    open_run = _open_run(tasks, task_id)
+    if open_run is not None:
+        return {
+            "outcome": "continue",
+            "task_id": task_id,
+            "message": (
+                f"`{reference}` is task `{task_id}`, which has an unfinished "
+                f"`{open_run['workflow']}` run. The change belongs to that "
+                "run: continue it instead of working outside it."
+            ),
+            "command": instruction_command(task_id, role="manager"),
+        }
+    return {
+        "outcome": "direct",
+        "task_id": task_id,
+        "message": f"`{reference}` is task `{task_id}`. {DIRECT_NOTE}",
+        "command": record_command(task_id),
+    }
+
+
+def _new_task_id(
+    tasks: TaskStorageAdapter,
+    extensions: ExtensionRegistry,
+    task_format: str | None,
+) -> str:
+    for candidate in candidate_task_ids(task_format):
+        if not task_id_claimed(candidate, tasks=tasks, extensions=extensions):
+            return candidate
+    raise StateError("could not generate an unused task ID")
 
 
 def _open_run(tasks: TaskStorageAdapter, task_id: str) -> dict[str, str] | None:
@@ -217,11 +203,10 @@ def _describe(tasks: TaskStorageAdapter, task_id: str) -> str:
     return "Existing task with no runs yet."
 
 
-def _continue_or_start(tasks: TaskStorageAdapter, task_id: str, agent: str) -> str:
-    open_run = _open_run(tasks, task_id)
-    if open_run is not None and open_run["workflow"] != CATCHALL:
+def _continue_or_record(tasks: TaskStorageAdapter, task_id: str) -> str:
+    if _open_run(tasks, task_id) is not None:
         return instruction_command(task_id, role="manager")
-    return start_command(task_id, CATCHALL, agent)
+    return record_command(task_id)
 
 
 def render_lookup(
@@ -251,7 +236,12 @@ def _markdown(report: dict[str, object], days: int) -> list[str]:
         lines.extend(["", pointer])
     command = report.get("command")
     if isinstance(command, str):
-        return [*lines, "", "```console", command, "```"]
+        lead = (
+            ["When the work is done, register it:", ""]
+            if report.get("outcome") == "direct"
+            else []
+        )
+        return [*lines, "", *lead, "```console", command, "```"]
     choices = report["choices"]
     if not isinstance(choices, list):  # pragma: no cover - built above
         raise StateError("lookup choices are missing")
@@ -263,26 +253,21 @@ def _markdown(report: dict[str, object], days: int) -> list[str]:
     )
     lines.extend(["", "### After the answer", ""])
     for choice in choices:
-        if choice["command"] is None:
-            lines.append(
-                f"- **{choice['label']}**: make the change directly, without "
-                "any ww command."
-            )
-        else:
-            lines.extend(
-                [
-                    f"- **{choice['label']}**:",
-                    "",
-                    "  ```console",
-                    f"  {choice['command']}",
-                    "  ```",
-                ]
-            )
+        lines.extend(
+            [
+                f"- **{choice['label']}**:",
+                "",
+                "  ```console",
+                f"  {choice['command']}",
+                "  ```",
+            ]
+        )
     lines.extend(
         [
             "",
             "Run a command only after the operator picked its choice, and follow "
-            "each ww response from there.",
+            "each ww response from there. A `record` command comes after the "
+            "work it registers.",
         ]
     )
     return lines

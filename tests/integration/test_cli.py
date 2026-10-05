@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from ww.builtin_workflows import CATCHALL, builtin_workflow
 from ww.cli import build_parser, main
 from ww.defaults import DEFAULT_PROJECT_CONFIG_JSON
 from ww.storage import Storage
@@ -280,13 +279,6 @@ workflows:
             "description": "",
             "modes": ["economy"],
             "runtime": None,
-            "manual": False,
-        },
-        {
-            "name": "catchall",
-            "description": builtin_workflow(CATCHALL).description,
-            "modes": [],
-            "runtime": "auto",
             "manual": False,
         },
     ]

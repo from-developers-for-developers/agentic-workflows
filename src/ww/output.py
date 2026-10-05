@@ -9,6 +9,7 @@ import textwrap
 
 from ww import BETA_NOTICE
 from ww.actions import InstructionContent, InstructionContext, PlannedAction, actions
+from ww.direct_work import SHORT_SHA
 from ww.instructions import Instruction
 from ww.operations import ChildWorkflowRun, LoopBoundary, WorkflowHandoff
 from ww.output_adapters import (
@@ -39,10 +40,16 @@ def render_status(status: TaskStatus, json_output: bool) -> str:
     if json_output:
         return json.dumps(status.to_dict(), indent=2)
     values = status.to_dict()
-    return (
-        "\n".join(f"{key.replace('_', ' ')}: {value}" for key, value in values.items())
-        + "\n"
-    )
+    direct_work = values.pop("direct_work", [])
+    lines = [f"{key.replace('_', ' ')}: {value}" for key, value in values.items()]
+    if direct_work:
+        lines.append(f"direct work: {len(direct_work)}")
+        for entry in direct_work:
+            shas = ", ".join(commit["sha"][:SHORT_SHA] for commit in entry["commits"])
+            lines.append(
+                f"- {entry['summary']} ({entry['source']}, {shas or 'no commits'})"
+            )
+    return "\n".join(lines) + "\n"
 
 
 def render_reset(result: ResetResult, json_output: bool) -> str:

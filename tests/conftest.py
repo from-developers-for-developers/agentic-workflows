@@ -56,18 +56,18 @@ def isolated_user_configuration(
 
 
 # The built-in files every test sees unless it asks for all of them.
-DEFAULT_TEST_BUILTINS = ("catchall.yaml",)
+DEFAULT_TEST_BUILTINS: tuple[str, ...] = ()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def catchall_only_builtins(
+def no_builtins(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[None]:
-    """Compose only the catch-all below the tests' configurations.
+    """Compose no built-in workflow below the tests' configurations.
 
-    ww's learning workflows are built-ins too; most tests describe a
-    project's own workflows and would otherwise list them everywhere. Tests
-    of the shipped set use the ``shipped_builtins`` fixture.
+    ww's learning workflows are built-ins; most tests describe a project's
+    own workflows and would otherwise list them everywhere. Tests of the
+    shipped set use the ``shipped_builtins`` fixture.
     """
     from ww import builtin_workflows
 

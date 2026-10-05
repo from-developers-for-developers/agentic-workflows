@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ww.builtin_workflows import CATCHALL, is_builtin
+from ww.builtin_workflows import is_builtin
 from ww.config import load_configuration, load_modes
 from ww.contracts import CALLER_ROLES
 from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
@@ -24,7 +24,11 @@ from ww.hooks.notices import (
     task_line,
 )
 from ww.hooks.records import HookRecords
-from ww.instructions.commands import TASK_PLACEHOLDER, instruction_command
+from ww.instructions.commands import (
+    TASK_PLACEHOLDER,
+    instruction_command,
+    record_command,
+)
 from ww.onboarding import Onboarding, OnboardingState
 from ww.open_work import OpenTask, open_work
 from ww.project_config import FILE_NAME, ON_REQUEST
@@ -59,8 +63,8 @@ ROLE_DESCRIPTIONS = {
         "Performs one assignment and runs only the --role worker commands ww shows it."
     ),
 }
-# Under ``"on_request"`` an unasked change never reaches the catch-all.
-ON_REQUEST_CATCHALL_PREFIX = (
+# Under ``"on_request"`` an unasked change never reaches direct work.
+ON_REQUEST_DIRECT_WORK_PREFIX = (
     "Only when the user has asked for ww; otherwise make the change without ww. "
 )
 SETUP_GUIDANCE = (
@@ -93,13 +97,18 @@ BUILTIN_POINTER = (
     "`{command} workflows` lists every workflow. Start one when the operator asks "
     "for what it does or a ww skill says to."
 )
-CATCHALL_GUIDANCE = (
-    "Use it only when no workflow above fits and you are about to change files; "
-    "read-only work needs no task. Do not start it directly: run `lookup` with "
-    "the task this conversation works on, as the operator wrote it, such as "
-    "`12345`, or without one when there is none. It continues an unfinished run, "
-    "starts the catch-all on the task it found, or asks the operator before it "
-    "creates a task ww has never seen."
+DIRECT_WORK_GUIDANCE = (
+    "A request that changes files and names a ticket, or clearly matches a "
+    "workflow above, and is more than a small change: propose that workflow, "
+    'and offer the alternative in the same choice, "run `<workflow>`" or '
+    '"just do it, register afterwards". Any other request: work directly, as '
+    "in a plain conversation, and ask nothing; when done, register it. Judge "
+    "each prompt on its own: a series of small requests stays a series of "
+    "direct-work entries, never a workflow because they add up. Ask only "
+    "when it is genuinely ambiguous, and never again on a task once the "
+    "operator chose direct work. Read-only work needs no task. If `record` "
+    "fails or is forgotten, ww records the commits it had not seen on the "
+    "next run; do not retry it endlessly."
 )
 PROJECTS_GUIDANCE = (
     "`--project <name>` works in that project's directory; without it the task "
@@ -144,10 +153,6 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     default_runtime = extensions.config.runtime
     modes = load_modes(storage.config_path, extensions)
     modes.update({mode.name: mode for mode in extensions.qualified_modes()})
-    catchall = configuration.workflows_by_name.get(CATCHALL)
-    if catchall is not None and catchall.manual:
-        # A manual catch-all is never offered; ``catchall`` is then null.
-        catchall = None
     onboarding = Onboarding(storage.root, storage.project_metadata).read()
     return {
         # ``"on_request"`` still lists everything, so an explicit request can
@@ -181,12 +186,9 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 "delegation_requests": list(delegation_requests(workflow)),
             }
             for workflow in configuration.workflows
-            if workflow is not catchall
-            and not workflow.manual
-            and not is_builtin(workflow)
+            if not workflow.manual and not is_builtin(workflow)
         ],
-        # ww's own workflows, such as its learning ones; the catch-all is
-        # listed apart below.
+        # ww's own workflows, such as its learning ones.
         "builtin_workflows": [
             {
                 "name": workflow.name,
@@ -194,23 +196,17 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 **_workflow_source_fields(configuration, workflow.name),
             }
             for workflow in configuration.workflows
-            if workflow is not catchall and not workflow.manual and is_builtin(workflow)
+            if not workflow.manual and is_builtin(workflow)
         ],
-        "catchall": (
-            {
-                "name": catchall.name,
-                "description": catchall.description,
-                **_workflow_source_fields(configuration, catchall.name),
-                "guidance": (
-                    ON_REQUEST_CATCHALL_PREFIX + CATCHALL_GUIDANCE
-                    if config.on_request
-                    else CATCHALL_GUIDANCE
-                ),
-                "start": f"{ww_command()} lookup [<task>] --agent <agent>",
-            }
-            if catchall is not None
-            else None
-        ),
+        "direct_work": {
+            "guidance": (
+                ON_REQUEST_DIRECT_WORK_PREFIX + DIRECT_WORK_GUIDANCE
+                if config.on_request
+                else DIRECT_WORK_GUIDANCE
+            ),
+            "record": record_command(),
+            "lookup": f"{ww_command()} lookup [<task>] --agent <agent>",
+        },
         "modes": [
             {
                 "name": mode.name,
@@ -374,26 +370,25 @@ def _markdown(report: dict[str, object], days: int, unfinished: list[str]) -> li
     if workflows:
         lines.extend([SELECTION_GUIDANCE, ""])
         lines.extend(_workflow_line(workflow) for workflow in workflows)
-    catchall = report["catchall"]
-    if not workflows and not catchall and not report["builtin_workflows"]:
+    if not workflows and not report["builtin_workflows"]:
         lines.append("No workflows are configured; ww cannot start a task.")
     if report["builtin_workflows"]:
         lines.extend(["", BUILTIN_POINTER.format(command=ww_command())])
-    if isinstance(catchall, dict):
-        lines.extend(
-            [
-                "",
-                "## Changes no workflow covers",
-                "",
-                f"- `{catchall['name']}` — {catchall['description']}",
-                "",
-                str(catchall["guidance"]),
-                "",
-                "```console",
-                str(catchall["start"]),
-                "```",
-            ]
-        )
+    direct_work = report["direct_work"]
+    assert isinstance(direct_work, dict)
+    lines.extend(
+        [
+            "",
+            "## Direct work",
+            "",
+            str(direct_work["guidance"]),
+            "",
+            "```console",
+            str(direct_work["lookup"]),
+            str(direct_work["record"]),
+            "```",
+        ]
+    )
     if projects:
         lines.extend(["", "## Projects", ""])
         lines.extend(_project_line(project, strategies) for project in projects)
