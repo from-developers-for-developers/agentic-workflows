@@ -38,21 +38,6 @@ class HookPayload:
     # ``False`` when the agent calls the session-start hook for a later turn
     # that needs no context (Antigravity's pre-invocation hook runs per call).
     wants_context: bool = True
-    # The agent already continued once because of a stop hook.
-    continued: bool = False
-    # The stop is really an interruption: the user aborted the turn.
-    interrupted: bool = False
-    # The stop is a worker's, which the session delegated a step to, rather
-    # than the session's own; only agents that tell the two apart set it.
-    from_worker: bool = False
-    # The agent's own word for why a session ended or was interrupted.
-    reason: str | None = None
-    # The session's own transcript file, which the ``interrupt`` hook reads
-    # to recover a conversation; only agents whose format ww reads set it.
-    transcript_path: Path | None = None
-    # The agent's final reply of the turn, which a transcript written
-    # asynchronously may not hold yet.
-    last_agent_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,11 +180,6 @@ class ClaudeCode(HookAgent):
         return HookPayload(
             directory=_path(payload.get("cwd")),
             source=_text(payload.get("source")),
-            continued=payload.get("stop_hook_active") is True,
-            reason=_text(payload.get("reason")),
-            from_worker=payload.get("hook_event_name") == "SubagentStop",
-            transcript_path=_path(payload.get("transcript_path")),
-            last_agent_message=_text(payload.get("last_assistant_message")),
         )
 
 
@@ -210,16 +190,9 @@ class Codex(HookAgent):
     registrations = (Registration("SessionStart", "session-start"),)
 
     def parse(self, event: HookEvent, payload: dict[str, Any]) -> HookPayload:
-        native = _text(payload.get("hook_event_name"))
         return HookPayload(
             directory=_path(payload.get("cwd")),
             source=_text(payload.get("source")),
-            continued=payload.get("stop_hook_active") is True,
-            reason=(
-                "interrupted" if native == "Interrupt" else _text(payload.get("reason"))
-            ),
-            from_worker=native == "SubagentStop",
-            transcript_path=_path(payload.get("transcript_path")),
         )
 
 
@@ -236,15 +209,7 @@ class Cursor(HookAgent):
     def parse(self, event: HookEvent, payload: dict[str, Any]) -> HookPayload:
         roots = payload.get("workspace_roots")
         directory = _path(roots[0]) if isinstance(roots, list) and roots else None
-        status = _text(payload.get("status"))
-        loop_count = payload.get("loop_count")
-        return HookPayload(
-            directory=directory,
-            continued=isinstance(loop_count, int) and loop_count > 0,
-            interrupted=status == "aborted",
-            reason=_text(payload.get("reason")) or status,
-            from_worker=payload.get("hook_event_name") == "subagentStop",
-        )
+        return HookPayload(directory=directory)
 
     def context_reply(self, text: str) -> str:
         return json.dumps({"additional_context": text})
@@ -286,12 +251,6 @@ class Cursor(HookAgent):
         return result
 
 
-# Termination reasons an Antigravity Stop hook reports for a normal end. The
-# documentation names these; any reason naming a cancellation is treated as
-# an interruption, and every other one as a normal stop.
-_ANTIGRAVITY_INTERRUPTS = ("cancel", "interrupt", "abort", "user")
-
-
 class Antigravity(HookAgent):
     name = "antigravity"
     settings_file = ".agents/hooks.json"
@@ -305,15 +264,9 @@ class Antigravity(HookAgent):
     def parse(self, event: HookEvent, payload: dict[str, Any]) -> HookPayload:
         paths = payload.get("workspacePaths")
         directory = _path(paths[0]) if isinstance(paths, list) and paths else None
-        reason = _text(payload.get("terminationReason"))
         return HookPayload(
             directory=directory,
             wants_context=payload.get("invocationNum", 0) == 0,
-            interrupted=(
-                reason is not None
-                and any(word in reason.lower() for word in _ANTIGRAVITY_INTERRUPTS)
-            ),
-            reason=reason,
         )
 
     def context_reply(self, text: str) -> str:

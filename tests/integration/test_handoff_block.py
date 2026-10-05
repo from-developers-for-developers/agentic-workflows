@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -438,6 +439,54 @@ def test_a_reprint_without_a_stored_end_mark_is_not_reproducible(
     assert "Files changed: not reproducible after the assignment ended" in (
         handoff_markdown(again)
     )
+
+
+def test_a_reprint_without_the_repository_is_not_reproducible(tmp_path: Path) -> None:
+    _repository(tmp_path)
+    service = _auto(tmp_path, CHECKED)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
+    ended = _worker_complete(service, "Done.")
+    assert ended.handoff_block is not None
+    assert ended.handoff_block.files == ("feature.txt",)
+    shutil.rmtree(tmp_path / ".git")
+
+    again = service.handoff(TASK, assignment=token)
+
+    assert again.files is None and not again.files_reproducible
+
+
+def test_a_reprint_of_a_handler_repair_lists_the_repaired_step(
+    tmp_path: Path,
+) -> None:
+    service = _auto(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - work: Do the manual work.
+      - name: gate
+        shell: test -e fixed
+        on_failure: fix
+      - wrap: Wrap it up.
+""",
+    )
+    service.next(TASK, caller_role="manager")
+    result = _worker_complete(service, "Worked.")
+    while result.handler_repair is None:
+        result = service.next(TASK, caller_role="manager")
+    repair = service.next(TASK, caller_role="manager")
+    assert repair.handler_repair is not None
+    (tmp_path / "fixed").touch()
+    ended = _worker_complete(service, "Created fixed.")
+    assert ended.handoff_block is not None
+    assert [step.name for step in ended.handoff_block.steps] == ["gate"]
+
+    again = service.handoff(TASK)
+
+    assert again == ended.handoff_block
+    assert [step.name for step in again.steps] == ["gate"]
 
 
 def test_the_reprint_json_has_the_shape_of_the_block(tmp_path: Path) -> None:

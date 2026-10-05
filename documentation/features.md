@@ -825,8 +825,8 @@ The agent decides how a request is carried out in this order:
    because they add up.
 4. It asks only when the choice is genuinely ambiguous, and never again on a
    task once the operator chose direct work.
-5. If `record` fails or is forgotten, ww reconciles on the next run, so the
-   agent does not retry endlessly.
+5. If `record` fails or is forgotten, ww reconciles on the next manager page
+   (`instruction --role manager`), so the agent does not retry endlessly.
 
 `discover` states these rules under "Direct work", and the agent instructions
 repeat them. Direct work is only for a change to files: questions,

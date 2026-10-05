@@ -135,6 +135,16 @@ def test_task_ids_lists_top_level_tasks_without_requests(
     assert adapter.task_ids() == ("PROJ-1", "PROJ-2")
 
 
+def test_a_child_with_only_direct_work_is_a_child_task(
+    adapter: TaskStorageAdapter,
+) -> None:
+    assert adapter.child_task_ids("PROJ-1") == ()
+
+    adapter.append_direct_work("PROJ-1/child", DirectWork("t", "Did it.", "agent", ()))
+
+    assert adapter.child_task_ids("PROJ-1") == ("PROJ-1/child",)
+
+
 def test_metadata_round_trips_and_missing_record_is_none(
     adapter: TaskStorageAdapter,
 ) -> None:

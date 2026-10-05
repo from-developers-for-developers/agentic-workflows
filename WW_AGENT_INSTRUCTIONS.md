@@ -30,7 +30,8 @@ then run `./ww record <task> --summary "..."` (`./ww lookup [<task>] --agent
 <agent>` names the task). Judge each prompt on its own; a series of small
 requests stays direct work, never a workflow. Ask only when genuinely ambiguous,
 and never again on a task once the operator chose direct work. If `record`
-fails or is forgotten, ww records the commits on the next run: do not retry.
+fails or is forgotten, ww records the commits on the next manager
+page (`instruction --role manager`): do not retry.
 
 To continue an existing task, run `./ww instruction <task-id> --role manager`;
 a worker resuming its assignment uses `--role worker`. Check status with

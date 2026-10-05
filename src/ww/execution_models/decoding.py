@@ -39,12 +39,12 @@ def _positive_int_mapping(value: Any, context: str) -> tuple[tuple[str, int], ..
     return tuple(value.items())
 
 
-def _assignment_log(value: Any) -> tuple[tuple[str, str], ...]:
+def _assignment_log(value: Any, field: str) -> tuple[tuple[str, str], ...]:
     if not isinstance(value, list) or not all(
         isinstance(entry, list)
         and len(entry) == _PAIR
         and all(isinstance(part, str) for part in entry)
         for entry in value
     ):
-        raise ValueError("execution state.assignment_log must be a list of pairs")
+        raise ValueError(f"execution state.{field} must be a list of pairs")
     return tuple((entry[0], entry[1]) for entry in value)

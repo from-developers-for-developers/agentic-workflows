@@ -339,11 +339,12 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
         if not path.is_dir() or path.is_symlink():
             return ()
         descendants = []
-        for state in path.rglob("state.json"):
-            relative = state.parent.relative_to(self.tasks_path)
-            candidate = relative.as_posix()
-            if candidate != task_id:
-                descendants.append(candidate)
+        # A child that was only recorded, never run, has no state file.
+        for name in ("state.json", "direct-work.json"):
+            for record in path.rglob(name):
+                candidate = record.parent.relative_to(self.tasks_path).as_posix()
+                if candidate != task_id:
+                    descendants.append(candidate)
         return tuple(sorted(set(descendants)))
 
     def write_execution_artifact(self, address: ArtifactAddress, content: str) -> str:

@@ -63,6 +63,15 @@ def take_mark(workdir: Path) -> str | None:
     return tree.strip() if tree else None
 
 
+def can_diff(workdir: Path, mark_a: str | None, mark_b: str | None) -> bool:
+    """Whether ``workdir`` is still a repository that holds both marks."""
+    return all(
+        mark is not None
+        and _git(workdir, "cat-file", "-e", f"{mark}^{{tree}}") is not None
+        for mark in (mark_a, mark_b)
+    )
+
+
 def changed_files(workdir: Path, mark_a: str, mark_b: str) -> tuple[str, ...]:
     """Files added, copied, modified, or renamed between two marks, sorted.
 

@@ -113,21 +113,24 @@ def lookup(
             "choice_instruction": mechanism.instruction,
             "choices": [choice.to_dict() for choice in choices],
         }
+    unnamed = (
+        "The request names no task"
+        if reference is None
+        else f"`{reference}` is not a valid task ID"
+    )
     if resolution is not None and resolution.proposed is not None:
         task_id = resolution.proposed
         message = f"No task matches `{reference}`; `{task_id}` is a new task."
     elif task_format == EXPLICIT_TASK_FORMAT:
         task_id = TASK_PLACEHOLDER
         message = (
-            "The request names no task, and this project requires an explicit "
+            f"{unnamed}, and this project requires an explicit "
             "task ID: use the external ticket key the request or conversation "
             f"works on in place of `{TASK_PLACEHOLDER}`."
         )
     else:
         task_id = _new_task_id(tasks, extensions, task_format)
-        message = (
-            f"The request names no task; ww assigned one for this change: `{task_id}`."
-        )
+        message = f"{unnamed}; ww assigned one for this change: `{task_id}`."
     return {
         **report,
         "outcome": "direct",

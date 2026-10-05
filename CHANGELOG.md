@@ -57,12 +57,13 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 - `complete` and `loop` take `--adjustments "<text>"` for the changes the operator asked for during a step. ww
   stores it on the step record, shows it in `status`, beside the summary on the next step's page and on the
   verifier's page, and hands it to feedback deduction as a labelled `adjustments` field; a repair completion
-  refuses it. Every agent step page now asks the worker to record such requests in the artifact and in the flag.
+  refuses it. Every worker step page now asks the worker to record such requests in the artifact and in the flag.
 - A workflow can set `manual: true`: `discover` and `lookup` leave it out, `start` still accepts it, and `inherit`
   does not copy the setting. A workflow named `manual` in the `- name: description` shorthand must now use the
   `name:` key.
-- A handoff now gives the new run the target workflow's declared `runtime`, `model` and `reasoning`, as `start`
-  does, and keeps the source run's values for what the target does not declare.
+- A handoff now gives the new run the target workflow's declared `runtime`, and replaces the run-level `model` and
+  `reasoning` with the target's declared values, keeping the source run's values for what the target does not
+  declare.
 - The specification and features now describe how a child gets its external ID.
 - The `ww` skill and agent instructions now say ww is only for development: reviews, questions, investigations,
   status checks and other read-only requests never invoke the skill or start a task. Existing projects keep their

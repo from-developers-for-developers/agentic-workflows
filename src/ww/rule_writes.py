@@ -200,17 +200,15 @@ def plan_add_rule(
         frontmatter["check"] = check
     content = f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
     rule_id = f"{group.name}/{stem}"
+    contains_report, contains_warnings = _contains_findings(project, contains)
     return RuleWrite(
         writes=(FileWrite(file, content),),
         report=(
             f"Created {project.label(file)}: rule `{rule_id}`.",
             *_glob_report(project, paths),
-            *_contains_report(project, contains),
+            *contains_report,
         ),
-        warnings=(
-            *_glob_warnings(project, paths),
-            *_contains_warnings(project, contains),
-        ),
+        warnings=(*_glob_warnings(project, paths), *contains_warnings),
         rule=rule_id,
     )
 
@@ -285,8 +283,9 @@ def plan_edit(
     if contains is not None:
         frontmatter = _set_key(frontmatter or "", "contains", list(contains), file)
         opening, closing = opening or _DELIMITER, closing or _DELIMITER
-        report.extend(_contains_report(project, contains))
-        warnings.extend(_contains_warnings(project, contains))
+        contains_report, contains_warnings = _contains_findings(project, contains)
+        report.extend(contains_report)
+        warnings.extend(contains_warnings)
     if text is not None:
         body = _body(text)
         if rule_text_hash(body) == rule.text_hash:
@@ -849,31 +848,24 @@ def _glob_warnings(project: RuleProject, paths: tuple[str, ...]) -> tuple[str, .
     )
 
 
-def _contains_report(
+def _contains_findings(
     project: RuleProject, contains: tuple[str, ...]
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """What each ``contains`` string matches now, as report lines and warnings."""
     if not contains:
-        return ()
+        return (), ()
     files = project_files(project.root)
-    return tuple(
-        f"`{text}` is in {len(select_files(files, (), (text,), project.root))} "
-        "file(s) now."
-        for text in contains
-    )
-
-
-def _contains_warnings(
-    project: RuleProject, contains: tuple[str, ...]
-) -> tuple[str, ...]:
-    if not contains:
-        return ()
-    files = project_files(project.root)
-    return tuple(
-        f"`{text}` is in no file of the project, so the rule applies to no "
-        "file until one contains it"
-        for text in contains
-        if not select_files(files, (), (text,), project.root)
-    )
+    report: list[str] = []
+    warnings: list[str] = []
+    for text in contains:
+        count = len(select_files(files, (), (text,), project.root))
+        report.append(f"`{text}` is in {count} file(s) now.")
+        if not count:
+            warnings.append(
+                f"`{text}` is in no file of the project, so the rule applies to "
+                "no file until one contains it"
+            )
+    return tuple(report), tuple(warnings)
 
 
 def _wording_warnings(

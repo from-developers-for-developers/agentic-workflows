@@ -42,6 +42,8 @@ BRANCHES_FILE = "branches.jsonl"
 COMMITS_FILE = "commits.jsonl"
 DirectWorkSource = Literal["agent", "reconciled"]
 SOURCES: tuple[DirectWorkSource, ...] = ("agent", "reconciled")
+# How far back the base branch itself is searched for commits naming a task.
+_RECENT_LIMIT = 200
 # The fields ``git log`` prints per commit, separated by the unit separator.
 _LOG_FORMAT = "%H%x1f%s%x1f%cI"
 _LOG_FIELDS = 3
@@ -183,9 +185,15 @@ def _mentioning(root: Path, base: str | None, task_id: str) -> tuple[DirectCommi
     if base is None:
         return ()
     mention = re.compile(rf"(?<![\w/-]){re.escape(task_id)}(?![\w/-])")
+    commits = _log(root, [f"{base}..HEAD"])
+    head = _git(root, "rev-parse", "HEAD")
+    if not commits and head is not None and head == _git(root, "rev-parse", base):
+        # HEAD is the base itself, so the range is empty: look at its recent
+        # history instead.
+        commits = _log(root, ["HEAD"], _RECENT_LIMIT)
     return tuple(
         commit
-        for commit in _log(root, [f"{base}..HEAD"])
+        for commit in commits
         if mention.search(commit.subject) or mention.search(_body(root, commit.sha))
     )
 
@@ -194,10 +202,15 @@ def _body(root: Path, sha: str) -> str:
     return _git(root, "show", "-s", "--format=%B", sha) or ""
 
 
-def _log(cwd: Path, revisions: list[str]) -> tuple[DirectCommit, ...]:
+def _log(
+    cwd: Path, revisions: list[str], limit: int | None = None
+) -> tuple[DirectCommit, ...]:
     if not revisions:
         return ()
-    output = _git(cwd, "log", "--reverse", f"--format={_LOG_FORMAT}", *revisions)
+    bound = [] if limit is None else [f"--max-count={limit}"]
+    output = _git(
+        cwd, "log", "--reverse", *bound, f"--format={_LOG_FORMAT}", *revisions
+    )
     commits: list[DirectCommit] = []
     for line in (output or "").splitlines():
         fields = line.split("\x1f")

@@ -27,50 +27,14 @@ def test_claude_code_reads_its_payload() -> None:
     agent = hook_agent("claudecode")
 
     start = agent.parse("session-start", {"cwd": "/w", "source": "compact"})
-    stop = agent.parse("stop", {"cwd": "/w", "stop_hook_active": True})
-    end = agent.parse("interrupt", {"cwd": "/w", "reason": "prompt_input_exit"})
 
     assert (start.directory, start.source) == (Path("/w"), "compact")
-    assert stop.continued is True
-    assert end.reason == "prompt_input_exit"
-    assert agent.parse("stop", {}).continued is False
 
 
-def test_codex_reads_its_payload_and_names_an_interrupt() -> None:
+def test_codex_reads_its_payload() -> None:
     agent = hook_agent("codex")
 
     assert agent.parse("session-start", {"source": "compact"}).source == "compact"
-    assert agent.parse("stop", {"stop_hook_active": True}).continued is True
-    assert (
-        agent.parse("interrupt", {"hook_event_name": "Interrupt"}).reason
-        == "interrupted"
-    )
-    assert (
-        agent.parse(
-            "interrupt", {"hook_event_name": "SessionEnd", "reason": "other"}
-        ).reason
-        == "other"
-    )
-
-
-@pytest.mark.parametrize(
-    ("status", "interrupted"),
-    [("completed", False), ("error", False), ("aborted", True)],
-)
-def test_cursor_treats_an_aborted_stop_as_an_interruption(
-    status: str, interrupted: bool
-) -> None:
-    payload = hook_agent("cursor").parse(
-        "stop", {"workspace_roots": ["/w"], "status": status, "loop_count": 0}
-    )
-
-    assert payload.directory == Path("/w")
-    assert payload.interrupted is interrupted
-    assert payload.continued is False
-
-
-def test_cursor_counts_its_follow_up_loop_as_continued() -> None:
-    assert hook_agent("cursor").parse("stop", {"loop_count": 1}).continued is True
 
 
 def test_antigravity_wants_context_only_on_the_first_invocation() -> None:
@@ -81,8 +45,6 @@ def test_antigravity_wants_context_only_on_the_first_invocation() -> None:
 
     assert (first.wants_context, first.directory) == (True, Path("/w"))
     assert later.wants_context is False
-    assert agent.parse("stop", {"terminationReason": "model_stop"}).interrupted is False
-    assert agent.parse("stop", {"terminationReason": "user_cancelled"}).interrupted
 
 
 # Reply shapes

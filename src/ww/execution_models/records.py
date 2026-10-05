@@ -1176,8 +1176,12 @@ class ExecutionState:
             assignment_token=expect_optional_string(
                 data.get("assignment_token"), "assignment token"
             ),
-            assignment_log=_assignment_log(data.get("assignment_log", [])),
-            assignment_end_marks=_assignment_log(data.get("assignment_end_marks", [])),
+            assignment_log=_assignment_log(
+                data.get("assignment_log", []), "assignment_log"
+            ),
+            assignment_end_marks=_assignment_log(
+                data.get("assignment_end_marks", []), "assignment_end_marks"
+            ),
             assignment_model=expect_optional_string(
                 data.get("assignment_model"), "assignment model"
             ),

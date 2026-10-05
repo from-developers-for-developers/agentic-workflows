@@ -29,7 +29,7 @@ from ww.assignments import (
 )
 from ww.bootstrap import BootstrapCoordinator
 from ww.builtin_workflows import missing_lane, require_lane
-from ww.changes import take_mark
+from ww.changes import can_diff, take_mark
 from ww.child_coordination import ChildCoordinator
 from ww.children import ChildTask, skip_pending
 from ww.completion_artifacts import rule_outcomes, write_completion_artifacts
@@ -2478,6 +2478,7 @@ class WorkflowService:
         if not text:
             raise StateError("record requires a non-empty --summary")
         with self.tasks.lock_task(task_id):
+            runs, _, _ = self.tasks.read_task_record(task_id)
             entry = DirectWork(
                 _now(),
                 text,
@@ -2487,6 +2488,7 @@ class WorkflowService:
                     self.extensions.config,
                     task_id,
                     self.tasks.read_direct_work(task_id),
+                    _run_windows(runs),
                 ),
             )
             self.tasks.append_direct_work(task_id, entry)
@@ -4298,12 +4300,14 @@ class WorkflowService:
         task_id = state.task_id
         items = {item.id: item for item in snapshot.plan.items}
         current = {record.plan_item_id: record for record in state.item_executions}
-        if loop == "continue" or reprint:
+        if loop == "continue":
             for record in state.execution_history:
-                if (
-                    loop == "continue"
-                    or not current.get(record.plan_item_id, record).attempts
-                ):
+                current[record.plan_item_id] = record
+        elif reprint:
+            # The latest record that attempted the item stands, as it does
+            # for a live ``continue``.
+            for record in reversed(state.execution_history):
+                if not current.get(record.plan_item_id, record).attempts:
                     current[record.plan_item_id] = record
         performed = tuple(
             (items[item_id], current[item_id])
@@ -4323,7 +4327,9 @@ class WorkflowService:
                 end = dict(state.assignment_end_marks).get(ended.token)
             else:
                 end = taken = take_mark(directory)
-            if end is not None:
+            if end is not None and (
+                not reprint or can_diff(directory, marked[1].change_mark, end)
+            ):
                 files, _ = change_set(directory, marked[1].change_mark, end)
             elif reprint:
                 reproducible = False
@@ -4408,6 +4414,9 @@ class WorkflowService:
             if span is not None
             else ()
         )
+        if index is not None and plan.items[index].owner != "agent":
+            # A handler repair: the logged item is the repaired step itself.
+            item_ids = (first,)
         block, _ = self._handoff_block(
             state, snapshot, OpenAssignment(token, item_ids), reprint=True
         )

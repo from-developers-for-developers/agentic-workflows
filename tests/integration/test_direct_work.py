@@ -238,7 +238,7 @@ def test_the_manager_page_reconciles_commits_ww_had_not_seen_once(
     assert len(_entries(project, "TASK-5")) == 1
 
     # A commit registered by `record` before the next page is not reconciled.
-    third = _commit(project, "c.txt", "Tune it")
+    third = _commit(project, "c.txt", "Tune it", PAST)
     registered = _record(project, capsys, "TASK-5", "Tuned it.")
     assert [commit["sha"] for commit in registered["commits"]] == [third]
     after = _run(project, capsys, "instruction", "TASK-5", "--role", "manager")
@@ -264,10 +264,14 @@ def test_commits_made_during_an_unfinished_run_are_not_reconciled(
     assert [commit["sha"] for commit in entry["commits"]] == [before]
 
 
+def _moment(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def _window(start: str, end: str | None) -> tuple[datetime, datetime | None]:
     return (
-        datetime.fromisoformat(start),
-        datetime.fromisoformat(end) if end else None,
+        _moment(start),
+        _moment(end) if end else None,
     )
 
 
@@ -295,13 +299,13 @@ def test_a_run_is_a_window_until_it_is_completed_or_abandoned(
     _start(project, capsys, "TASK-9")
     service = WorkflowService(Storage(project))
     (run,), _, _ = service.tasks.read_task_record("TASK-9")
-    start = datetime.fromisoformat(run.state.created_at)
+    start = _moment(run.state.created_at)
     end = "2030-01-01T00:00:00+00:00"
 
     assert _run_windows((run,)) == [(start, None)]
     for status in ("completed", "abandoned"):
         closed = replace(run, state=replace(run.state, status=status, updated_at=end))
-        assert _run_windows((closed,)) == [(start, datetime.fromisoformat(end))]
+        assert _run_windows((closed,)) == [(start, _moment(end))]
     assert datetime.now(timezone.utc) > start
 
 
@@ -378,11 +382,11 @@ def test_status_lists_the_direct_work_of_a_task_with_a_run(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _branch(project, "TASK-5", "feature/task-5")
+    sha = _commit(project, "a.txt", "Add the flag", PAST)
     _start(project, capsys, "TASK-5")
     plain = _run(project, capsys, "status", "TASK-5", "--json")
     assert "direct_work" not in json.loads(plain)
     assert "direct work" not in _run(project, capsys, "status", "TASK-5")
-    sha = _commit(project, "a.txt", "Add the flag")
     _record(project, capsys, "TASK-5", "Added the flag.")
     _record(project, capsys, "TASK-5", "Looked around.")
 
@@ -401,6 +405,32 @@ def test_status_lists_the_direct_work_of_a_task_with_a_run(
     ]
     assert report["direct_work"][0]["commits"][0]["sha"] == sha
     assert report["workflow"] == "task"
+
+
+def test_record_leaves_out_commits_made_during_an_open_run(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _branch(project, "TASK-5", "feature/task-5")
+    before = _commit(project, "a.txt", "Before the run", PAST)
+    _start(project, capsys, "TASK-5")
+    _commit(project, "b.txt", "Made inside the run")
+
+    entry = _record(project, capsys, "TASK-5", "Did it.")
+
+    assert [commit["sha"] for commit in entry["commits"]] == [before]
+
+
+def test_record_finds_the_commits_naming_the_task_on_the_base_branch(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sha = _commit(project, "a.txt", "TASK-8: fix")
+    _commit(project, "b.txt", "Unrelated")
+
+    entry = _record(project, capsys, "TASK-8", "Fixed it.")
+
+    assert [commit["sha"] for commit in entry["commits"]] == [sha]
+    again = _record(project, capsys, "TASK-8", "Again.")
+    assert again["commits"] == []
 
 
 def test_status_of_a_task_with_only_direct_work(
@@ -511,6 +541,19 @@ def test_lookup_without_a_task_assigns_an_id_or_asks_for_the_key(
     assert explicit["task_id"] == "<task-id>"
     assert explicit["command"] == './ww record <task-id> --summary "<what was done>"'
     assert "requires an explicit task ID" in str(explicit["message"])
+    assert str(explicit["message"]).startswith("The request names no task")
+
+
+def test_lookup_says_when_the_reference_is_not_a_task_id(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = _lookup(project, capsys, "foo bar!", "--agent", "gemini")
+
+    assert report["outcome"] == "direct"
+    assert str(report["message"]).startswith(
+        "`foo bar!` is not a valid task ID; ww assigned one for this change"
+    )
+    assert "names no task" not in str(report["message"])
 
 
 # --------------------------------------------------------------------------- #
