@@ -4,7 +4,7 @@
 An agent about to change files outside any workflow runs ``lookup`` with what
 the operator called the task, or with nothing when they named none. ww maps
 the reference onto the project's task format and existing tasks and answers
-with one next step: continue an unfinished run, or work directly and register
+with one next step: continue an open run, or work directly and register
 it afterwards with ``record``. Only a reference that matches several tasks
 asks the operator.
 
@@ -20,10 +20,6 @@ from ww.agents import choice_mechanism
 from ww.discovery import normalize_agent
 from ww.errors import StateError
 from ww.extensions import ExtensionRegistry
-from ww.hooks.notices import (
-    recent_interruptions_pointer,
-)
-from ww.hooks.records import HookRecords
 from ww.instructions.commands import (
     TASK_PLACEHOLDER,
     instruction_command,
@@ -150,7 +146,7 @@ def _known_task(
             "outcome": "continue",
             "task_id": task_id,
             "message": (
-                f"`{reference}` is task `{task_id}`, which has an unfinished "
+                f"`{reference}` is task `{task_id}`, which has an open "
                 f"`{open_run['workflow']}` run. The change belongs to that "
                 "run: continue it instead of working outside it."
             ),
@@ -196,7 +192,7 @@ def _task(tasks: TaskStorageAdapter, task_id: str) -> dict[str, object]:
 def _describe(tasks: TaskStorageAdapter, task_id: str) -> str:
     open_run = _open_run(tasks, task_id)
     if open_run is not None:
-        return f"Existing task with an unfinished `{open_run['workflow']}` run."
+        return f"Existing task with an open `{open_run['workflow']}` run."
     runs = tasks.execution_runs(task_id)
     if runs:
         return f"Existing task; its last run was `{runs[-1].workflow}`."
@@ -218,22 +214,16 @@ def render_lookup(
     json_output: bool,
 ) -> str:
     report = lookup(storage, extensions, tasks, reference, agent)
-    days = extensions.config.agent_hooks.recent_days
-    report["interrupted_recently"] = len(HookRecords(storage, tasks).recent(days))
     if json_output:
         return json.dumps(report, indent=2)
-    return "\n".join(_markdown(report, days))
+    return "\n".join(_markdown(report))
 
 
-def _markdown(report: dict[str, object], days: int) -> list[str]:
+def _markdown(report: dict[str, object]) -> list[str]:
     lines = ["# ww lookup", ""]
     if report.get("on_request"):
         lines.extend([f"**{ON_REQUEST_NOTE}**", ""])
     lines.append(str(report["message"]))
-    count = report.get("interrupted_recently")
-    pointer = recent_interruptions_pointer(count if isinstance(count, int) else 0, days)
-    if pointer:
-        lines.extend(["", pointer])
     command = report.get("command")
     if isinstance(command, str):
         lead = (

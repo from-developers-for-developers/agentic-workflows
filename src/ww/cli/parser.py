@@ -880,23 +880,6 @@ def build_parser() -> argparse.ArgumentParser:
             "(Claude Code: .claude/settings.local.json)."
         ),
     )
-    interrupted = subparsers.add_parser(
-        "interrupted",
-        parents=[json_output],
-        help="List tasks whose last agent session stopped mid-step.",
-    )
-    interrupted.add_argument(
-        "--since",
-        type=int,
-        metavar="DAYS",
-        help=(
-            "Only interruptions of the last DAYS days "
-            "(default: the agent_hooks.recent_days setting, 3)."
-        ),
-    )
-    interrupted.add_argument(
-        "--all", action="store_true", help="Every interruption, however old."
-    )
     return parser
 
 

@@ -293,11 +293,10 @@ explicitly asks for it; `discover` says so before its workflows and reports
 round limit of a step `loop` without its own `max_rounds`, and `fixes`, the
 rejected completions a check allows when its rule sets no `max_fixes`; any
 other key in it is an error. `agent_hooks` holds `check_unfinished`, a
-boolean defaulting to `true` that decides whether the `session-start` hook
-lists unfinished tasks, and `recent_days`, a positive integer defaulting to
-`3`: the window of that hook's scan, of `ww interrupted`, and of the
-interruption pointer in `discover` and `lookup`; any other key in it is an
-error. `pages` holds `worker_requirements`, `full` (the default) or
+boolean defaulting to `true`, and `recent_days`, a positive integer defaulting
+to `3`; both are accepted for compatibility and ignored, since ww no longer
+lists unfinished tasks or interruptions, and any other key in it is an error.
+`init` does not write the key. `pages` holds `worker_requirements`, `full` (the default) or
 `pointer`: the first page of every delegated worker assignment prints the task
 requirements in full, or only the pointer to `ww requirements` when it is
 `pointer`; the manager's pages are unaffected, and `init` writes the key only
@@ -333,7 +332,6 @@ with its default, as `init` writes it:
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3, "auto_retries": 0},
-  "agent_hooks": {"check_unfinished": true, "recent_days": 3},
   "rules": {},
   "builtins": {
     "init": {"model": "cheapest", "reasoning": "low"},
@@ -451,7 +449,7 @@ ww finds the commits itself; the agent never lists them:
 **Reconciliation.** `instruction <task> --role manager` runs the same search
 before it builds the page. When it finds commits ww had not seen, it appends
 one `reconciled` entry whose summary is the commit subjects joined with `; `
-and prints one line at the top of the page, before any interruption notice:
+and prints one line at the top of the page:
 `ww recorded N direct-work commits it had not seen (see `ww status <task>`).`
 (`commit` for one). `--json` output carries no such line, though the entry is
 recorded. It is idempotent and ww's alone: a registration that failed or was
@@ -473,7 +471,7 @@ line per entry, `- <summary> (<source>, <short SHAs>)`, and the JSON has a
 reports `workflow: none` and the step state `direct work only`.
 
 **`lookup [<task>] --agent <agent>`** is read-only and answers one next step:
-`continue` (the task has an unfinished run: its `instruction` command),
+`continue` (the task has an open run: its `instruction` command),
 `direct` (work directly, then the `record` command filled in, with the task ID
 the reference resolved to, or a new one: ww-assigned from `task_format`, or
 `<task-id>` under `explicit`), or `choose` (the reference matches several

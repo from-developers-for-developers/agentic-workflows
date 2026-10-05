@@ -13,7 +13,7 @@ Before starting new work, run:
 ./ww discover
 ```
 
-It lists the project's workflows, modes, the start command, resume commands, and
+It lists the project's workflows, modes, the start command, and
 whether to use ww unasked. If disabled, stop; if used only on request, use it only when
 the user asks for ww. Choose the matching workflow and keep its default modes
 unless the request matches another mode; ask only when the choice would

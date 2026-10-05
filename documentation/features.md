@@ -217,10 +217,6 @@ defaults. Without Git, and with the uuid format:
     "rounds": 3,
     "fixes": 3
   },
-  "agent_hooks": {
-    "check_unfinished": true,
-    "recent_days": 3
-  },
   "rules": {},
   "builtins": {
     "init": {
@@ -240,7 +236,7 @@ defaults. Without Git, and with the uuid format:
 
 In an existing file init adds the keys that are missing, nested ones
 included, with these defaults and keeps every value already there. A key
-init does not ask about (`runtime`, `update_check`, `limits`, `agent_hooks`,
+init does not ask about (`runtime`, `update_check`, `limits`,
 `rules`, `builtins`, `workflows`, `projects`) that the user or local settings file
 already sets is not written, so a default in the repo file never hides it.
 
@@ -403,11 +399,10 @@ automatic modes apply themselves, `auto` honours per-step worker requests while
 `single` records them, and `--model` and `--reasoning` describe your own
 session. It ends with the resume and status commands and one optional plan
 preview. ww's own workflows are not listed there: it points at `ww workflows`,
-the catalog of every workflow. Every unfinished task is listed under
-"Unfinished tasks", newest first, in the `session-start` hook's format with any
-interruption notice, and `unfinished_tasks` in the JSON carries each one's
-`task_id`, `workflow`, `agent`, `step`, `item_status`, `workspace`,
-`updated_at`, `resume` command and whether it is `interrupted`. The Rules
+the catalog of every workflow. It lists no task: the operator names the task
+to continue. Only a task whose state ww cannot read is named, under
+"Unreadable tasks" (`unreadable_tasks` in the JSON), so the operator sees
+state ww cannot work with. The Rules
 suggestion is not part of the Markdown; `rules_notice` in the JSON and the
 first page of `start` carry it, see
 [How a rule becomes a check](#how-a-rule-becomes-a-check). The JSON keeps every
@@ -865,7 +860,7 @@ step:
 
 | Found | Next step |
 |---|---|
-| One task, with an unfinished run | Continue that run: `./ww instruction FOOBAR-12345 --role manager`. The change belongs to it. |
+| One task, with an open run | Continue that run: `./ww instruction FOOBAR-12345 --role manager`. The change belongs to it. |
 | One task, otherwise | Work directly, then `./ww record FOOBAR-12345 --summary "..."`; the printed command is ready to run. |
 | Several tasks | Ask the operator which one, through the agent's own choice menu, the same mechanism as an interactive step's [choices](#interactive-steps). |
 | No task | The reference names a new task, `FOOBAR-99` for `99`: work directly, then record on it. `record` creates it; nothing is asked. |
@@ -2746,16 +2741,9 @@ are ignored. For a manual-testing workflow, put `interactive: true` on the
 per-item stage: the manager presents each test case, waits for the operator's
 result, records it, ends the interaction, and completes the item.
 
-When a session ends in the middle of a conversation, the `interrupt` hook
-recovers what it can (see [Agent hooks](agent-hooks.md)). For Claude Code and
-Codex it reads the session's own transcript file, keeps the operator's typed
-messages and the agent's text replies since the step's attempt started, and
-appends them to the interactions file under the speakers `operator (recovered)`
-and `agent (recovered)`. The next session's notice says how many entries were
-recovered, and the step's page shows them, so the agent continues from the
-last unanswered point. The transcript formats are the agents' internal ones,
-so recovery is best effort; for other agents the conversation is not recorded
-and the notice says to ask the operator where they were.
+A conversation is recorded once, when it ends. A session that ends in the
+middle of one has not recorded it, and ww does not recover it from the
+session's transcript: the next session asks the operator where they were.
 
 ### The operator page
 
@@ -3090,7 +3078,7 @@ the assignment tells the worker which stages it covers and to do them one at a
 time. Each later stage arrives as a short instruction with only the new stage's
 work and its completion command, because the worker already has the role,
 workspace, profile, and item context. Every stage is still completed, saved,
-and recoverable on its own, so `next`, `status`, reloads, and interrupted-hook
+and recoverable on its own, so `next`, `status`, reloads, and interrupted-handler
 recovery behave exactly as with separate assignments. Because one worker
 performs the shared stages, a stage that requests a different agent, model,
 reasoning, or profile, or is the manager's (`role: manager`), starts a new assignment,
@@ -4163,7 +4151,6 @@ ww-agentic-workflows agents
 ww-agentic-workflows projects
 ww-agentic-workflows extensions
 ww-agentic-workflows artifacts TASK-123
-ww-agentic-workflows interrupted
 ```
 
 `artifacts` returns JSON references for completed step and hook artifacts. Hook
@@ -4371,16 +4358,14 @@ the closing next step, the `ww-setup` skill, are always shown.
 
 ## Agent hooks
 
-Agent hooks are the agent's own hooks (session-start, stop, interrupt),
-installed with `ww hook` and separate from the workflow hooks above. They
-carry ww's task state into a session — which task is unfinished, whether a
-step was left mid-way — without blocking the agent. `agent_hooks` in
-`ww.json` sets how many days back `session-start` looks for unfinished
-tasks (`recent_days`, 3) or switches that scan off (`check_unfinished:
-false`). See
-[documentation/agent-hooks.md](agent-hooks.md) for the events, the
-per-agent table, install/uninstall/show, failure behaviour, and interrupted
-tasks.
+Agent hooks are the agent's own hooks, installed with `ww hook` and separate
+from the workflow hooks above. ww registers one, `session-start`, which adds a
+line of context saying that ww coordinates work here and how to list its
+workflows; it lists no task and blocks nothing. The `stop` and `interrupt`
+events, and the `agent_hooks` keys `check_unfinished` and `recent_days` in
+`ww.json`, are still accepted for older installations and have no effect. See
+[documentation/agent-hooks.md](agent-hooks.md) for the per-agent table,
+install/uninstall/show, and failure behaviour.
 
 ## Choosing a runtime
 

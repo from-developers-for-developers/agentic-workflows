@@ -113,9 +113,6 @@ class HookAgent:
             }
         )
 
-    def continue_reply(self, message: str) -> str:
-        return json.dumps({"decision": "block", "reason": message})
-
     # Registration in the agent's hooks file
 
     def entries(self) -> dict[str, Any]:
@@ -181,13 +178,9 @@ class ClaudeCode(HookAgent):
     permissions_file = ".claude/settings.json"
     # No matcher on SessionStart, so it fires for every source, compaction
     # included. SubagentStart is left alone: workers get only their bootstrap.
-    registrations = (
-        Registration("SessionStart", "session-start"),
-        Registration("Stop", "stop"),
-        Registration("SubagentStop", "stop"),
-        # Esc fires no hook in Claude Code; the end of a session does.
-        Registration("SessionEnd", "interrupt", 5),
-    )
+    # ``stop`` and ``interrupt`` are no longer registered; calls from an older
+    # installation are still accepted and answered with nothing.
+    registrations = (Registration("SessionStart", "session-start"),)
 
     def command(self, event: HookEvent) -> str:
         return f'"$CLAUDE_PROJECT_DIR"/ww hook {event} --agent {self.name}'
@@ -214,14 +207,7 @@ class Codex(HookAgent):
     name = "codex"
     settings_file = ".codex/hooks.json"
     user_settings_file = "~/.codex/hooks.json"
-    registrations = (
-        Registration("SessionStart", "session-start"),
-        Registration("Stop", "stop"),
-        Registration("SubagentStop", "stop"),
-        # Codex allows its interrupt hook at most three seconds.
-        Registration("Interrupt", "interrupt", 3),
-        Registration("SessionEnd", "interrupt", 5),
-    )
+    registrations = (Registration("SessionStart", "session-start"),)
 
     def parse(self, event: HookEvent, payload: dict[str, Any]) -> HookPayload:
         native = _text(payload.get("hook_event_name"))
@@ -241,12 +227,7 @@ class Cursor(HookAgent):
     name = "cursor"
     settings_file = ".cursor/hooks.json"
     user_settings_file = "~/.cursor/hooks.json"
-    registrations = (
-        Registration("sessionStart", "session-start"),
-        Registration("stop", "stop"),
-        Registration("subagentStop", "stop"),
-        Registration("sessionEnd", "interrupt", 5),
-    )
+    registrations = (Registration("sessionStart", "session-start"),)
 
     def command(self, event: HookEvent) -> str:
         # Cursor runs project hooks from the project root.
@@ -267,9 +248,6 @@ class Cursor(HookAgent):
 
     def context_reply(self, text: str) -> str:
         return json.dumps({"additional_context": text})
-
-    def continue_reply(self, message: str) -> str:
-        return json.dumps({"followup_message": message})
 
     def entries(self) -> dict[str, Any]:
         return {
@@ -322,10 +300,7 @@ class Antigravity(HookAgent):
     group = "ww"
     # There is no session-start event: the first pre-invocation of a
     # conversation is its start.
-    registrations = (
-        Registration("PreInvocation", "session-start"),
-        Registration("Stop", "stop"),
-    )
+    registrations = (Registration("PreInvocation", "session-start"),)
 
     def parse(self, event: HookEvent, payload: dict[str, Any]) -> HookPayload:
         paths = payload.get("workspacePaths")
@@ -345,9 +320,6 @@ class Antigravity(HookAgent):
         # An ephemeral message is not kept in the trajectory, so the context
         # never accumulates even if the counter restarts every turn.
         return json.dumps({"injectSteps": [{"ephemeralMessage": text}]})
-
-    def continue_reply(self, message: str) -> str:
-        return json.dumps({"decision": "continue", "reason": message})
 
     def merged(self, document: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = json.loads(json.dumps(document))

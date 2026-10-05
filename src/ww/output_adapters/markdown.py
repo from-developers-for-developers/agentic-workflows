@@ -40,7 +40,6 @@ from ww.instructions.models import (
 )
 from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
-from ww.interactions import RECOVERED
 from ww.output_adapters.base import OutputAdapter
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
 from ww.results import (
@@ -1332,9 +1331,6 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
         _operator_page(lines, instruction, commands)
         return
     _append_section(lines, "Interaction with the operator")
-    recovered = sum(
-        entry.speaker.endswith(RECOVERED) for entry in instruction.conversation
-    )
     if instruction.interaction_ended:
         state = "The operator has ended this interaction; complete the step now."
     elif instruction.operator_paused:
@@ -1343,11 +1339,6 @@ def _interaction(lines: Lines, instruction: Instruction) -> None:
             "do not wait for them again, and do not delegate. The task keeps "
             "this state; when the operator returns, show this page with "
             f"`{commands.resume}` and go on."
-        )
-    elif recovered:
-        state = (
-            f"{recovered} entries recovered from the previous session's "
-            "transcript; read them and continue from the last unanswered point."
         )
     elif instruction.interaction_entries:
         count = instruction.interaction_entries

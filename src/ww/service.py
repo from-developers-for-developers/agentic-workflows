@@ -79,7 +79,6 @@ from ww.execution_models import (
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
 from ww.feedback import FeedbackStore
 from ww.handler_repairs import close_assignment, needs_repair, request_repair
-from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.instructions.handoff import handoff_block
@@ -326,7 +325,6 @@ class WorkflowService:
         self.documents = DocumentStore(self.storage)
         self.interactions = InteractionLog(self.storage)
         self.feedback = feedback_store or FeedbackStore(self.storage)
-        self.hook_records = HookRecords(self.storage, self.tasks)
         self.rule_store = RuleStore(self.storage.root)
         self.rule_disputes = DisputeLog(self.storage.root)
         self.instructions = InstructionBuilder(
@@ -2809,21 +2807,17 @@ class WorkflowService:
             # Side records go first, so the task directory is empty for the
             # storage adapter to remove.
             self.interactions.remove(task_id)
-            self.hook_records.remove(task_id)
+            # Older ww versions kept hook records here; nothing writes them
+            # now, but one left behind would keep the task directory alive.
+            for legacy in ("interrupted.json", "stop-reminders.json"):
+                (self.storage.runtime_path / "tasks" / task_id / legacy).unlink(
+                    missing_ok=True
+                )
             self.documents.remove_task(task_id)
             # Extension records outlive task state otherwise, and a later
             # task under the same ID would inherit them.
             self.extensions.forget_task(task_id)
             return ResetResult(task_id, self.tasks.remove_task(task_id))
-
-    def interruption(self, task_id: str) -> Interruption | None:
-        """The task's interruption while its interrupted attempt is still open."""
-        validate_task_id(task_id)
-        return self.hook_records.interruption(task_id)
-
-    def interruptions(self) -> tuple[tuple[str, Interruption], ...]:
-        """Every task still marked as interrupted, newest first."""
-        return self.hook_records.interruptions()
 
     def cleanup(self) -> CleanupResult:
         """Prune obsolete lock sidecars outside any task-specific state."""
