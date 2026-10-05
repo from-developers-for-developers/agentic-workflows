@@ -20,8 +20,10 @@ from ww.execution_models.records import (
     VerificationRule,
 )
 from ww.plan import PlanItem, WorkflowPlanCompiler
+from ww.plan.models import PlannedRule
 from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_verification import (
+    derived_check,
     effective_hints,
     parse_rule_results,
     resolve_rules,
@@ -352,3 +354,31 @@ def test_a_judged_rule_names_its_check_whose_config_is_missing(
     cli = next(need for need in needs if need.id == "develop/1")
     assert (cli.check, cli.missing) == ("lint", "lint.toml")
     assert checks == ()
+
+
+def _scoped(
+    rule_id: str, paths: tuple[str, ...] = (), contains: tuple[str, ...] = ()
+) -> PlannedRule:
+    return PlannedRule(rule_id, "Summary.", "Text.", "hash", paths, contains)
+
+
+def _derived(*rules: PlannedRule):
+    spec = CheckSpec(Commands((CommandDefinition(argv=("lint-tool",)),)), covers=())
+    return derived_check("lint", spec, list(rules))
+
+
+def test_a_derived_check_unions_the_contains_strings_of_its_rules() -> None:
+    check = _derived(
+        _scoped("a/1", ("*.php",), ("Mail", "Post")),
+        _scoped("a/2", ("*.md",), ("Post", "Send")),
+    )
+
+    assert check.paths == ("*.php", "*.md")
+    assert check.contains == ("Mail", "Post", "Send")
+
+
+def test_a_covered_rule_without_contains_means_no_content_filter() -> None:
+    check = _derived(_scoped("a/1", (), ("Mail",)), _scoped("a/2", ("*.md",)))
+
+    assert check.paths == ()
+    assert check.contains == ()

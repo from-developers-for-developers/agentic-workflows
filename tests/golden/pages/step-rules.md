@@ -38,7 +38,7 @@ Earlier steps' artifacts, listed as JSON with absolute paths: `./ww artifacts TA
 
 ### Worker completion command
 
-When the work is finished, run this with every `<...>` replaced. `--summary` is the next step's handover in a sentence or two (what you did, what it must know); the detail belongs in the artifact.
+When the work is finished, run this with every `<...>` replaced. `--summary` is the next step's handover in a sentence or two (what you did, what it must know); the detail belongs in the artifact. Any explicit change the operator asked for in this session for this step goes into the artifact and into `complete --adjustments`.
 
 ```console
 ./ww complete TASK-1 --role worker --artifact="<whole result in Markdown>" --summary="<one or two sentences for the next step>"

@@ -148,6 +148,7 @@ def test_the_step_page_lists_judged_rules_and_names_the_checked_ones(
         "id": "develop/1",
         "summary": "Keep the public CLI unchanged.",
         "paths": [],
+        "contains": [],
         "has_command": False,
         "hook": False,
         "interpretation": None,
@@ -237,6 +238,99 @@ def test_a_rule_whose_glob_matches_nothing_is_not_applicable(tmp_path: Path) -> 
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
     assert "- `docs/header`: not applicable" in artifact
     assert "No completion was rejected." in artifact
+
+
+MAIL_RULE = """---
+paths: ["*.php"]
+contains: [Mailer, Postman]
+check:
+  shell: test "$WW_STEP_CHANGED_FILES" = "mail.php"
+---
+Send mail only through the mailer.
+"""
+
+
+def _mail_project(root: Path) -> Path:
+    _project(root)
+    (root / "rules/docs/mail.md").write_text(MAIL_RULE, encoding="utf-8")
+    return root
+
+
+def test_a_rule_check_runs_on_the_files_with_the_glob_and_the_text(
+    tmp_path: Path,
+) -> None:
+    root = _mail_project(tmp_path)
+    service = _develop(root)
+    (root / "mail.php").write_text("<?php new Mailer();\n", encoding="utf-8")
+    (root / "plain.php").write_text("<?php echo 1;\n", encoding="utf-8")
+    (root / "notes.md").write_text("foo Mailer\n", encoding="utf-8")
+
+    _complete(service)
+    accepted = _verify(service)
+
+    assert accepted.item_name == "check"
+    artifact = _develop_artifact(root).read_text(encoding="utf-8")
+    assert "- `docs/mail`: passed" in artifact
+
+
+def test_a_rule_check_selecting_other_files_than_expected_fails(
+    tmp_path: Path,
+) -> None:
+    root = _mail_project(tmp_path)
+    service = _develop(root)
+    (root / "mail.php").write_text("<?php new Mailer();\n", encoding="utf-8")
+    (root / "post.php").write_text("<?php new Postman();\n", encoding="utf-8")
+
+    rejected = _complete(service)
+
+    assert rejected.fix_required is not None
+    assert [failure.id for failure in rejected.fix_required.failures] == ["docs/mail"]
+
+
+def test_a_rule_whose_text_is_in_no_changed_file_is_not_applicable(
+    tmp_path: Path,
+) -> None:
+    root = _mail_project(tmp_path)
+    service = _develop(root)
+    (root / "plain.php").write_text("<?php echo 1;\n", encoding="utf-8")
+
+    _complete(service)
+    accepted = _verify(service)
+
+    assert accepted.item_name == "check"
+    artifact = _develop_artifact(root).read_text(encoding="utf-8")
+    assert "- `docs/mail`: not applicable" in artifact
+
+
+def test_the_step_page_prints_the_strings_next_to_the_globs(tmp_path: Path) -> None:
+    root = tmp_path
+    _mail_project(root)
+    (root / "ww.yaml").write_text(
+        WORKFLOWS.replace(
+            "- Keep the public CLI unchanged.",
+            "- Keep the public CLI unchanged.\n          - rules/docs/judged.md",
+        ),
+        encoding="utf-8",
+    )
+    (root / "rules/docs/judged.md").write_text(
+        '---\npaths: ["*.php"]\ncontains: [Mailer, "Post man"]\n---\nJudge the mail.\n',
+        encoding="utf-8",
+    )
+    service = _develop(root)
+
+    page = service.status("TASK-1")
+
+    rendered = MarkdownOutputAdapter().render_instruction(page)
+    assert (
+        '- `docs/judged` — *.php; containing "Mailer", "Post man" — Judge the mail.'
+        in rendered
+    )
+    line = next(rule for rule in page.rules if rule.id == "docs/judged")
+    assert line.contains == ("Mailer", "Post man")
+    payload = json.loads(JsonOutputAdapter().render_instruction(page))["rules"]
+    assert next(rule for rule in payload if rule["id"] == "docs/judged")[
+        "contains"
+    ] == ["Mailer", "Post man"]
 
 
 def test_work_that_was_uncommitted_before_the_step_is_not_its_change(

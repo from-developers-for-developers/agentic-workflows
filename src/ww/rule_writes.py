@@ -174,6 +174,7 @@ def plan_add_rule(
     text: str,
     *,
     paths: tuple[str, ...] = (),
+    contains: tuple[str, ...] = (),
     check: dict[str, Any] | None = None,
     stem: str | None = None,
 ) -> RuleWrite:
@@ -193,6 +194,8 @@ def plan_add_rule(
     frontmatter: dict[str, Any] = {}
     if paths:
         frontmatter["paths"] = list(paths)
+    if contains:
+        frontmatter["contains"] = list(contains)
     if check is not None:
         frontmatter["check"] = check
     content = f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
@@ -202,8 +205,12 @@ def plan_add_rule(
         report=(
             f"Created {project.label(file)}: rule `{rule_id}`.",
             *_glob_report(project, paths),
+            *_contains_report(project, contains),
         ),
-        warnings=_glob_warnings(project, paths),
+        warnings=(
+            *_glob_warnings(project, paths),
+            *_contains_warnings(project, contains),
+        ),
         rule=rule_id,
     )
 
@@ -261,10 +268,11 @@ def plan_edit(
     *,
     text: str | None = None,
     paths: tuple[str, ...] | None = None,
+    contains: tuple[str, ...] | None = None,
 ) -> RuleWrite:
-    """A rule file with a new body, new globs, or both; the rest kept as it is."""
-    if text is None and paths is None:
-        raise StateError("rules edit needs --text, --paths, or both")
+    """A rule file with a new body, globs or strings; the rest kept as it is."""
+    if text is None and paths is None and contains is None:
+        raise StateError("rules edit needs --text, --paths, --contains, or a mix")
     rule, file = _rule_file(project, rule_id)
     opening, frontmatter, closing, body = _split(file.read_text(encoding="utf-8"))
     report = [f"Edited {project.label(file)}: rule `{rule_id}`."]
@@ -274,6 +282,11 @@ def plan_edit(
         opening, closing = opening or _DELIMITER, closing or _DELIMITER
         report.extend(_glob_report(project, paths))
         warnings.extend(_glob_warnings(project, paths))
+    if contains is not None:
+        frontmatter = _set_key(frontmatter or "", "contains", list(contains), file)
+        opening, closing = opening or _DELIMITER, closing or _DELIMITER
+        report.extend(_contains_report(project, contains))
+        warnings.extend(_contains_warnings(project, contains))
     if text is not None:
         body = _body(text)
         if rule_text_hash(body) == rule.text_hash:
@@ -833,6 +846,33 @@ def _glob_warnings(project: RuleProject, paths: tuple[str, ...]) -> tuple[str, .
         "file until one exists"
         for glob in paths
         if not select_files(files, (glob,))
+    )
+
+
+def _contains_report(
+    project: RuleProject, contains: tuple[str, ...]
+) -> tuple[str, ...]:
+    if not contains:
+        return ()
+    files = project_files(project.root)
+    return tuple(
+        f"`{text}` is in {len(select_files(files, (), (text,), project.root))} "
+        "file(s) now."
+        for text in contains
+    )
+
+
+def _contains_warnings(
+    project: RuleProject, contains: tuple[str, ...]
+) -> tuple[str, ...]:
+    if not contains:
+        return ()
+    files = project_files(project.root)
+    return tuple(
+        f"`{text}` is in no file of the project, so the rule applies to no "
+        "file until one contains it"
+        for text in contains
+        if not select_files(files, (), (text,), project.root)
     )
 
 

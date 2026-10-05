@@ -143,14 +143,19 @@ def _missing_config(spec: CheckSpec, directory: Path | None) -> str | None:
 def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
     """One converted store check, planned for the step rules it covers.
 
-    Its globs are the union of its rules' globs, or none when any covered
-    rule applies to every file; it may fail as often as the most lenient of
-    its rules allows.
+    Its globs, and likewise its ``contains`` strings, are the union of its
+    rules', or none when any covered rule applies to every file; it may fail
+    as often as the most lenient of its rules allows.
     """
     paths: tuple[str, ...] = (
         ()
         if any(not rule.paths for rule in rules)
         else tuple(dict.fromkeys(path for rule in rules for path in rule.paths))
+    )
+    contains: tuple[str, ...] = (
+        ()
+        if any(not rule.contains for rule in rules)
+        else tuple(dict.fromkeys(text for rule in rules for text in rule.contains))
     )
     return PlannedCheck(
         id=name,
@@ -158,6 +163,7 @@ def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> Plann
         summary=f"check {name}",
         command=spec.command,
         paths=paths,
+        contains=contains,
         max_fixes=max(rule.max_fixes for rule in rules),
         covers=tuple(rule.id for rule in rules),
     )

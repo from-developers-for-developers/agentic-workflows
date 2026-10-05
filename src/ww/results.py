@@ -63,9 +63,14 @@ class TaskStatus:
     agent: str | None
     model: str
     reasoning: str
+    # What the operator asked to change during the run's latest step that
+    # recorded any, and that step, as its worker reported them; shown only
+    # when there is something.
+    adjustments: str | None = None
+    adjustments_step: str | None = None
 
     def to_dict(self) -> dict[str, str | None]:
-        return {
+        data: dict[str, str | None] = {
             "task_id": self.task_id,
             "workflow": self.workflow,
             "step": self.step,
@@ -75,3 +80,7 @@ class TaskStatus:
             "model": self.model,
             "reasoning": self.reasoning,
         }
+        if self.adjustments is not None:
+            data["adjustments"] = self.adjustments
+            data["adjustments_step"] = self.adjustments_step
+        return data

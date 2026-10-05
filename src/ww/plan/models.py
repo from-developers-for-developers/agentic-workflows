@@ -93,6 +93,7 @@ class PlannedRule:
     text: str
     text_hash: str
     paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
     has_command: bool = False
     max_fixes: int = 1
     hints: RuleHints = RuleHints()
@@ -105,6 +106,7 @@ class PlannedRule:
             "text": self.text,
             "text_hash": self.text_hash,
             "paths": list(self.paths),
+            "contains": list(self.contains),
             "has_command": self.has_command,
             "max_fixes": self.max_fixes,
         }
@@ -134,6 +136,7 @@ class PlannedCheck:
     summary: str
     command: Commands
     paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
     max_fixes: int = 1
     covers: tuple[str, ...] = ()
     on_failure_instruction: str | None = None
@@ -153,6 +156,7 @@ class PlannedCheck:
             "summary": self.summary,
             "command": actions.get("cli").encode(self.command),
             "paths": list(self.paths),
+            "contains": list(self.contains),
             "max_fixes": self.max_fixes,
         }
         if self.covers:

@@ -323,6 +323,7 @@ def _planned_rules_from_list(value: Any, item_path: str) -> tuple[PlannedRule, .
                 text=expect_string(raw["text"], f"{path}.text"),
                 text_hash=expect_string(raw["text_hash"], f"{path}.text_hash"),
                 paths=_string_list(raw["paths"], f"{path}.paths"),
+                contains=_string_list(raw.get("contains", []), f"{path}.contains"),
                 has_command=expect_bool(raw["has_command"], f"{path}.has_command"),
                 max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
                 hints=_rule_hints(raw.get("hints", {}), f"{path}.hints"),
@@ -374,6 +375,7 @@ def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck,
                 summary=expect_string(raw["summary"], f"{path}.summary"),
                 command=decoded,
                 paths=_string_list(raw["paths"], f"{path}.paths"),
+                contains=_string_list(raw.get("contains", []), f"{path}.contains"),
                 on_failure_instruction=expect_optional_string(
                     raw.get("on_failure_instruction"), "check failure instruction"
                 ),

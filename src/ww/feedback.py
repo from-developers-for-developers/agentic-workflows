@@ -162,7 +162,9 @@ class FeedbackStore:
                         "feedback source is not a completed learnable artifact"
                     )
                 quote = _text(supplied, "quote")
-                if quote not in source["content"]:
+                if quote not in source["content"] and quote not in (
+                    source.get("adjustments") or ""
+                ):
                     raise StateError("feedback quote does not occur in its artifact")
                 events.append(
                     {

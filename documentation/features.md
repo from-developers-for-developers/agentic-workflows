@@ -1267,7 +1267,10 @@ Groups supply defaults for the working directory, repair worker guidance,
 failure policy, and failure instruction; members can override them. Each
 member uses normal ww execution and recovery. If a command with
 `on_failure: fix` fails, its agent repairs the cause and ww retries that member,
-preserving successful preceding members.
+preserving successful preceding members. The repair page also says what to do
+when the cause is the environment (a sandbox denial, a network or install error, a
+held lock): leave project files alone, fix the environment or ask the operator,
+and say so in the completion.
 
 Hooks can reference these groups and keep their existing phase and filters.
 Eligible `before_complete` members with `on_failure: fix` become completion
@@ -1557,7 +1560,10 @@ before this one. Completing an ordinary step requires
 `--summary`, one or two sentences on what was done and what the
 next step must know, at most 500 characters (a longer one is refused); ww stores it on the step record and shows it to the next
 step together with the artifact's path, so the full result stays in the
-artifact and is read only when the summary is not enough. Hooks, `init`,
+artifact and is read only when the summary is not enough. When the operator asked for changes during the step,
+the worker adds `--adjustments "<changes>"` (one or two sentences, at most 500 characters): ww stores them on the
+step record and shows them beside the summary on the next step's page, to the verifier of the step's rules, and in
+`status`. Hooks, `init`,
 and the built-in summary do not take one. Only ordinary steps count: hook results,
 the built-in summary, and `init` are never chosen, and the history of earlier
 loop rounds is included, so the first step of a later round sees the previous
@@ -2107,14 +2113,14 @@ workflows:
 ### On the step page
 
 Every agent step lists its rules after the work instruction, each with its ID,
-its globs, and its first sentence; the IDs of rules with a check are collected
+its globs and `contains` strings, and its first sentence; the IDs of rules with a check are collected
 on one line, "Checked automatically when you complete". The section names
 `ww check <task>`, to see the checks' result at any time without completing,
 and `ww rule <task> <id>`, to read a rule in full. The page asks the
 worker to say in its artifact, under a **Rules** heading, which rules it
 applied and any deviation. `init`, hooks, and the workflow summary get no
 rules. In the `auto` runtime the worker's page carries the section. JSON
-output lists them as `rules`, each with `id`, `summary`, `paths`,
+output lists them as `rules`, each with `id`, `summary`, `paths`, `contains`,
 `has_command`, `hook`, `check`, `interpretation`, and `missing`.
 
 A rule without a check is judged after completion by a verifier, never by the
@@ -2153,8 +2159,12 @@ A hook without `on_failure: fix` fails like any handler, stopping the task with
 
 A check sees the files the step changed in `WW_STEP_CHANGED_FILES`,
 newline-separated and relative to the step's directory, narrowed to its
-`paths`; a check whose globs match none of them is not applicable and does not
-run. ww measures the change set with git: when the step begins it records the
+`paths` and `contains`; a check whose globs match none of them, or whose strings
+are in none of them, is not applicable and does not run. `contains` is a list of
+plain, case-sensitive strings in a rule file's frontmatter (no regular
+expressions): a rule about "files that use the mailer" is `paths: ["*.php"]`
+with `contains: [Mailer]`, and a file must match a glob and hold a string. A
+file that is not UTF-8 text is not selected. ww measures the change set with git: when the step begins it records the
 tree of everything in the working directory, tracked or not, using a temporary
 index, so the real index, the stash, and the files are untouched; at
 completion it takes a second tree and compares. Work that was uncommitted
@@ -2371,7 +2381,8 @@ Reaches these steps (an agent step's page shows it):
 
 - `rules add <group> --text "<sentence and body>"` creates a rule file in the
   group's first directory, named after the first five words of its first
-  sentence unless `--id` names it, with `--paths` globs and a check from
+  sentence unless `--id` names it, with `--paths` globs, `--contains` strings (it reports how many files hold each)
+and a check from
   `--check-shell` or `--check-argv` and `--assert empty|eq:<value>`. It never
   overwrites a file.
 - `rules add --group <name> --dir <path>` adds a root group, with optional
@@ -2379,8 +2390,8 @@ Reaches these steps (an agent step's page shows it):
   `ww.yaml`: the group goes into `ww-rules.yaml` next to
   it, a file ww owns and rewrites whole, and the repo file gains one entry
   under `imports` the first time, checked to change nothing else.
-- `rules edit <id> --text ... --paths ...` replaces a rule file's body or
-  globs and keeps every other line. A new wording has a new hash, so the
+- `rules edit <id> --text ... --paths ... --contains ...` replaces a rule file's
+  body, globs or strings and keeps every other line. A new wording has a new hash, so the
   command says which rule-automation store entry stops matching and, when
   the old wording had an approved check, that `rules promote` keeps it.
 - `rules move <id> <group>` moves the file, unchanged, into another group's
@@ -4564,6 +4575,11 @@ meaning. It records whether enforcement could be scripted or needs reasoning,
 including a concrete approach and its limits. A candidate is an observation,
 not an obligation or an installed rule. A single encounter can be useful;
 frequency is evidence rather than a required threshold or prediction.
+
+A step's worker records what the operator asked it to change during the step with
+`complete --adjustments`. A learnable step's source carries them as a labelled
+`adjustments` field beside its artifact, and the deduction skill reads them as
+strong correction evidence; a supporting quote may come from either.
 
 The internal commands expose sources and stable point IDs:
 

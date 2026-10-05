@@ -652,6 +652,7 @@ def complete_agent_item(
     clear_selected_reasoning: bool = False,
     summary_for_next: str | None = None,
     check_report: CheckReport | None = None,
+    adjustments: str | None = None,
 ) -> ExecutionState:
     """Complete the active agent item and merge its provided values.
 
@@ -672,6 +673,7 @@ def complete_agent_item(
         supplied_values=tuple(supplied.items()),
         artifact=artifact_reference,
         summary_for_next=summary_for_next,
+        adjustments=adjustments,
         selected_agent=selected_agent or records[state.cursor].selected_agent,
         selected_model=(
             None

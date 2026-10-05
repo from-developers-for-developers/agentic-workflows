@@ -834,6 +834,16 @@ def _previous_step_result(lines: Lines, instruction: Instruction) -> None:
                 "",
             ]
         )
+    if instruction.previous_step_adjustments:
+        lines.extend(
+            [
+                "The operator asked for these changes during "
+                f"`{instruction.previous_step}`:",
+                "",
+                *_blockquote(instruction.previous_step_adjustments),
+                "",
+            ]
+        )
     lines.append(
         f"Its full result, when you need more: `{instruction.previous_step_artifact}`"
     )
@@ -907,7 +917,7 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
     if judged:
         lines.append("")
         for rule in judged:
-            scope = f" — {', '.join(rule.paths)}" if rule.paths else ""
+            scope = rule_scope(rule.paths, rule.contains)
             lines.append(f"- `{rule.id}`{scope} — {rule.summary}")
             if rule.interpretation:
                 lines.append(f"  {rule.interpretation}")
@@ -949,6 +959,19 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
             "applied and any deviation with its reason.",
         ]
     )
+
+
+def rule_scope(paths: tuple[str, ...], contains: tuple[str, ...]) -> str:
+    """What a rule line says its files are: the globs, then the strings."""
+    parts = [
+        *([", ".join(paths)] if paths else []),
+        *(
+            ["containing " + ", ".join(f'"{text}"' for text in contains)]
+            if contains
+            else []
+        ),
+    ]
+    return f" — {'; '.join(parts)}" if parts else ""
 
 
 def _fix_required(lines: Lines, instruction: Instruction) -> None:
@@ -1071,6 +1094,18 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
 
 
 def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
+    if page.adjustments:
+        lines.extend(
+            [
+                "",
+                "#### Operator adjustments",
+                "",
+                f"The operator asked the `{page.step}` worker for these changes "
+                "during the step; they are part of what it was asked to do:",
+                "",
+                *_blockquote(page.adjustments),
+            ]
+        )
     lines.extend(["", "#### Change set", ""])
     if page.all_files:
         lines.append(
@@ -1957,6 +1992,14 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
         lead.append("When the work is finished, run this with every `<...>` replaced.")
     if instruction.summary_required and instruction.item_status == "in_progress":
         lead.append(_SUMMARY_GUIDANCE)
+    if (
+        instruction.item_status == "in_progress"
+        and instruction.next_role == "worker"
+        and not instruction.manager_input
+        and instruction.verification is None
+        and not instruction.handler_repair
+    ):
+        lead.append(_ADJUSTMENTS_GUIDANCE)
     if lead:
         lines.extend([" ".join(lead), ""])
     _required_values(lines, instruction)
@@ -1967,6 +2010,12 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
 _SUMMARY_GUIDANCE = (
     "`--summary` is the next step's handover in a sentence or two (what you "
     "did, what it must know); the detail belongs in the artifact."
+)
+
+
+_ADJUSTMENTS_GUIDANCE = (
+    "Any explicit change the operator asked for in this session for this step "
+    "goes into the artifact and into `complete --adjustments`."
 )
 
 

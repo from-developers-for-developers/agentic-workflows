@@ -155,6 +155,42 @@ def test_add_warns_about_a_glob_that_matches_nothing(
     assert "Warning: `*.php` matches no file in the project" in out
 
 
+def test_add_writes_contains_and_reports_the_files_that_have_each_string(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+
+    assert (
+        _ww(
+            root,
+            "rules",
+            "add",
+            "docs",
+            "--text",
+            SERVICES,
+            "--paths",
+            "*.md",
+            "--contains",
+            "foo",
+            "no such text",
+        )
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    file = root / "rules/docs/put-every-service-under-src.md"
+    assert _text(file) == (
+        "---\npaths: ['*.md']\n\ncontains: [foo, no such text]\n---\n" + SERVICES + "\n"
+    )
+    assert "`foo` is in 2 file(s) now." in out
+    assert "`no such text` is in 0 file(s) now." in out
+    assert "Warning: `no such text` is in no file of the project" in out
+    (group,) = load_configuration(root / "ww.yaml").rule_groups
+    rule = next(rule for rule in group.rules if rule.id.endswith("under-src"))
+    assert rule.paths == ("*.md",)
+    assert rule.contains == ("foo", "no such text")
+
+
 def test_add_refuses_a_group_without_a_directory(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -394,7 +430,31 @@ def test_edit_replaces_only_the_globs(
     )
     assert "`*.md` matches 2 file(s) now." in capsys.readouterr().out
     assert _ww(root, "rules", "edit", "docs/header") == 1
-    assert "rules edit needs --text, --paths, or both" in capsys.readouterr().err
+    assert (
+        "rules edit needs --text, --paths, --contains, or a mix"
+        in capsys.readouterr().err
+    )
+
+
+def test_edit_replaces_only_the_contains_strings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+
+    assert _ww(root, "rules", "edit", "docs/header", "--contains", "foo", "bar") == 0
+
+    assert _text(root / "rules/docs/header.md") == HEADER_RULE.replace(
+        'paths: ["*.md"]\nmax_fixes: 2\n',
+        'paths: ["*.md"]\nmax_fixes: 2\ncontains: [foo, bar]\n',
+    )
+    out = capsys.readouterr().out
+    assert "`foo` is in 2 file(s) now." in out
+    assert "`bar` is in 0 file(s) now." in out
+    assert _ww(root, "rules", "edit", "docs/header", "--contains", "baz") == 0
+    assert "contains: [baz]\n" in _text(root / "rules/docs/header.md")
+    (group,) = load_configuration(root / "ww.yaml").rule_groups
+    rule = next(rule for rule in group.rules if rule.id == "docs/header")
+    assert rule.paths == ("*.md",) and rule.contains == ("baz",)
 
 
 def test_edit_notes_a_wording_that_keeps_its_hash(

@@ -428,6 +428,13 @@ def build_parser() -> argparse.ArgumentParser:
             "for a step."
         ),
     )
+    loop.add_argument(
+        "--adjustments",
+        default=None,
+        help=(
+            "Changes the operator asked for during this step, in one or two sentences."
+        ),
+    )
     complete = subparsers.add_parser(
         "complete", parents=[completion], help="Complete the current workflow step."
     )
@@ -461,6 +468,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "One or two sentences for whoever performs the next step; required "
             "for a step."
+        ),
+    )
+    complete.add_argument(
+        "--adjustments",
+        default=None,
+        help=(
+            "Changes the operator asked for during this step, in one or two sentences."
         ),
     )
     complete.add_argument(
@@ -1095,6 +1109,13 @@ def _rules_parser(
     add.add_argument("group_name", nargs="?", metavar="GROUP")
     add.add_argument("--text", help="The rule: one imperative sentence, then its body.")
     add.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
+    add.add_argument(
+        "--contains",
+        nargs="+",
+        metavar="TEXT",
+        default=None,
+        help="Apply only to files containing any of these strings (plain text).",
+    )
     command = add.add_mutually_exclusive_group()
     command.add_argument("--check-shell", metavar="SCRIPT", default=None)
     command.add_argument(
@@ -1126,6 +1147,13 @@ def _rules_parser(
     edit.add_argument("rule_id", metavar="ID")
     edit.add_argument("--text", default=None)
     edit.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
+    edit.add_argument(
+        "--contains",
+        nargs="+",
+        metavar="TEXT",
+        default=None,
+        help="Apply only to files containing any of these strings (plain text).",
+    )
     move = actions.add_parser(
         "move",
         parents=[dry_run],

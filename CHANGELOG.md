@@ -11,6 +11,19 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- The repair page for a failed automatic handler now says what to do when the cause is the environment rather than
+  the work (a sandbox or permission denial, a network or package-install error, a held lock): change no project
+  files, fix the environment or ask the operator, and say in the completion that the cause was environmental.
+- A rule file can narrow a rule to files by content with `contains`, a list of plain, case-sensitive strings (no
+  regular expressions) in its frontmatter: a file must match a `paths` glob, if any, and contain one of the
+  strings. A check whose strings are in no changed file is not applicable, a converted check covering several
+  rules takes the union of their strings, and the step page prints the strings beside the globs. `rules add` and
+  `rules edit` take `--contains <text>...` and report how many project files hold each string. Rules written in a
+  step's own `rules` list still take no `paths` or `contains`.
+- `complete` and `loop` take `--adjustments "<text>"` for the changes the operator asked for during a step. ww
+  stores it on the step record, shows it in `status`, beside the summary on the next step's page and on the
+  verifier's page, and hands it to feedback deduction as a labelled `adjustments` field; a repair completion
+  refuses it. Every agent step page now asks the worker to record such requests in the artifact and in the flag.
 - A workflow can set `manual: true`: `discover` and `lookup` leave it out, `start` still accepts it, and `inherit`
   does not copy the setting. A workflow named `manual` in the `- name: description` shorthand must now use the
   `name:` key.

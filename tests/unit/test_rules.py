@@ -120,6 +120,19 @@ Controllers must not instantiate services.
     assert rule.source == str(path)
 
 
+def test_rule_file_frontmatter_sets_contains(tmp_path: Path) -> None:
+    path = _rule(
+        tmp_path,
+        "rules/mail.md",
+        '---\npaths: ["*.php"]\ncontains: [Mail, "Mailer::send"]\n---\nText.\n',
+    )
+
+    rule = parse_rule_file(path, "php/mail")
+
+    assert rule.paths == ("*.php",)
+    assert rule.contains == ("Mail", "Mailer::send")
+
+
 def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
     rule = parse_rule_file(_rule(tmp_path, "rule.md", "Keep it short.\n"), "group/rule")
 
@@ -137,6 +150,9 @@ def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
         ("---\nscope: all\n---\nText.\n", "unknown key"),
         ("---\npaths: [x]\nText.\n", "does not close its frontmatter"),
         ("---\npaths: []\n---\nText.\n", "paths must be a non-empty list"),
+        ("---\ncontains: []\n---\nText.\n", "contains must be a non-empty list"),
+        ("---\ncontains: ['']\n---\nText.\n", "contains must be a non-empty list"),
+        ("---\ncontains: Mail\n---\nText.\n", "contains must be a non-empty list"),
         ("---\nmax_fixes: 0\n---\nText.\n", "max_fixes must be a positive integer"),
         (
             "---\ncheck:\n  argv: [true]\n  idempotent: true\n---\nText.\n",

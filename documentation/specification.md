@@ -469,6 +469,18 @@ one-line `notices` entry) when that step is `role: manager`, nothing waits for t
 operator, and no worker, assessment outcome, loop boundary, or child is to be
 chosen; `--no-dispatch` returns the pending page instead.
 
+`complete <task> --adjustments "<text>"` (also on `loop`) reports the changes the
+operator asked for during the step, in one or two sentences and at most 500
+characters. ww stores it, trimmed, as the optional `adjustments` field of the step's
+item record (`null` when absent), and shows it in `status` (`adjustments` and
+`adjustments_step`, for the latest step of the run that recorded any), on the next
+step's page under "Previous step result" (JSON: `previous_step_adjustments`), and
+on the verification page of a step held for verification (`verification.adjustments`).
+It reaches feedback deduction as the `adjustments` of the step's source. A repair
+completion, a verification, a bootstrap completion and a completion that only supplies
+values refuse it. Every agent-owned step page asks the worker to put an explicit
+operator request made in the session into the artifact and into `--adjustments`.
+
 The implicit step otherwise participates in the standard step lifecycle.
 `before_start_workflow` runs once before `init`; it belongs at global or workflow
 scope and does not accept a `steps` filter. Use `before_start` for
@@ -1078,7 +1090,12 @@ a known failure pauses that execution and opens a repair assignment:
 The repair page includes the command, failure diagnostics, full output artifact
 references, and the optional instruction. The agent fixes the cause and calls
 the displayed `complete` command with a repair artifact. ww retries the failed
-handler; only its success completes the automated step. Completed preceding
+handler; only its success completes the automated step. When the failure comes
+from the environment rather than the work (a sandbox or permission denial, a
+network or package-install error, a lock another process holds), the page tells
+the agent not to change project files, to fix the environment where it can, to
+ask the operator otherwise, and to say in the completion that the cause was
+environmental. No state, failure kind or setting records the difference. Completed preceding
 steps stay completed. Repair assignments are attached to the execution; they
 create no extra workflow steps and invoke no step hooks of their own.
 
@@ -1581,6 +1598,7 @@ Controllers must not instantiate services; inject them.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run. |
+| `contains` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, as for `paths`. The step page prints the strings after the globs. |
 | `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
 | `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
@@ -1789,9 +1807,9 @@ or `schema_version` is an error.
 | `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project and refused when absolute or with a `..` part. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
 | `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
-| `rules add <group> --text "<text>" [--paths <glob>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count among the project's files. `--assert` is repeatable, one condition each. |
+| `rules add <group> --text "<text>" [--paths <glob>...] [--contains <text>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in the group's first directory item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. Refuses an existing file, a group without a directory, and a group an extension ships. Reports each glob's match count, and the number of project files containing each `--contains` string, and warns about one found nowhere. `--assert` is repeatable, one condition each. |
 | `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |
-| `rules edit <id> [--text "<text>"] [--paths <glob>...]` | Replaces a rule file's body, its `paths`, or both, keeping every other byte; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
+| `rules edit <id> [--text "<text>"] [--paths <glob>...] [--contains <text>...]` | Replaces a rule file's body, its `paths`, its `contains`, or any of them, keeping every other byte, and reports matches as `rules add` does; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
 | `rules move <id> <group>` | Moves the rule file unchanged into the group's first directory; the rule's ID becomes `<group>/<stem>`. |
 | `rules filter <group> [--workflows <name>...] [--steps <name>...] [--all-workflows] [--all-steps]` | Sets a `ww-rules.yaml` group's filters; `--workflows '*'` / `--steps '*'` writes `"*"`, and `--all-*` removes one, which also admits all. Refuses a group declared in another file. |
 | `rules promote <check>` | Copies a `converted` store check without a pending revision into the `check` of every rule file whose wording it covers, then deletes the check and those rules' entries from the store. Refuses when a covered rule is written in a step's `rules` list or already has a check. |
