@@ -1386,14 +1386,16 @@ def append_child_lifecycle(
     current last child's items, from the templates the snapshot keeps; the
     new records are pending in the run's scope.
     """
-    template = snapshot.template_plan or snapshot.plan
+    template = snapshot.template_plan
     templates = tuple(
         entry
-        for entry in template.items
+        for entry in (template.items if template is not None else ())
         if entry.item_template and entry.child_stage is not None
     )
     if not templates:
-        return state, snapshot
+        raise StateError(
+            "the run keeps no per-child stage templates; this child cannot be expanded"
+        )
     last = next(
         (
             entry

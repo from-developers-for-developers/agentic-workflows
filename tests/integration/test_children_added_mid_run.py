@@ -206,3 +206,22 @@ def test_a_child_that_binds_its_id_added_mid_run_is_reserved_and_started(
     request = service.start_child(TASK, added.id)
     assert request.task_id == added.id
     assert request.status == "pending"
+
+
+def test_adding_a_child_is_refused_when_the_run_keeps_no_templates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    service = _service(tmp_path)
+    _collect(service, "parent", "A", "B")
+    service.next(TASK)
+    state, snapshot = service.load(TASK)
+    before = service.tasks.read_children(TASK, state.run_id)
+    stripped = replace(snapshot, template_plan=None)
+    monkeypatch.setattr(service, "load", lambda *_a, **_k: (state, stripped))
+
+    with pytest.raises(StateError, match="keeps no per-child stage templates"):
+        service.add_child(TASK, "C", "Slice C")
+
+    assert service.tasks.read_children(TASK, state.run_id) == before
