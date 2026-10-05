@@ -116,9 +116,12 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - http.server's name
         path = urlsplit(self.path).path
         if path == "/closing":
-            self._send_json(200, {"ok": True})
+            # Forget earlier polls before the tab hears back, so any poll it
+            # sends after this reply counts however late the waiter wakes.
+            self.server.polled.clear()
             self.server.closing.set()
             self.server.wake.set()
+            self._send_json(200, {"ok": True})
             return
         if path != "/act":
             self._send(404, b"not found", "text/plain")
@@ -208,6 +211,5 @@ def _wait(server: _Server, deadline: float) -> WaitOutcome:
             return server.outcome
         if server.closing.is_set():
             server.closing.clear()
-            server.polled.clear()
             if not server.polled.wait(min(_CLOSING_GRACE, deadline - time.monotonic())):
                 return "closed"

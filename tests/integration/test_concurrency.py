@@ -13,6 +13,8 @@ from ww.storage_adapters.filesystem import FileTaskStorageAdapter
 _RUNNER = "import sys; from ww.cli import main; sys.exit(main(sys.argv[1:]))"
 
 _SUMMARY = ("--summary", "ok")
+# The writer's handler runs this long; status must answer well inside it.
+_SLOW_HANDLER_SECONDS = 3.0
 
 
 def _project(root: Path) -> None:
@@ -178,9 +180,9 @@ def test_status_never_observes_a_half_written_task(tmp_path: Path) -> None:
 
 def test_status_does_not_wait_for_a_writer_that_is_mid_command(tmp_path: Path) -> None:
     (tmp_path / "ww.yaml").write_text(
-        """handlers:
+        f"""handlers:
   - name: slow
-    argv: [sleep, "1.0"]
+    argv: [sleep, "{_SLOW_HANDLER_SECONDS}"]
 workflows:
   - name: task
     steps:
@@ -222,10 +224,12 @@ workflows:
         reader = pool.submit(_run, tmp_path, "status", "TASK-5")
         reader_result = reader.result()
         elapsed = time.monotonic() - started
+        writer_still_running = not writer.done()
         writer_result = writer.result()
 
     # Reads are deliberately unlocked, so status answers while the writer is
     # still running its handler instead of queueing behind it.
     assert reader_result.returncode == 0, reader_result.stderr
-    assert elapsed < 0.7
+    assert writer_still_running
+    assert elapsed < _SLOW_HANDLER_SECONDS - 1.0
     assert writer_result.returncode == 0, writer_result.stderr
