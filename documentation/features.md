@@ -2025,6 +2025,11 @@ without children, and a retried request that already bound its child simply
 reports the bound task. A child added with an explicit `--id` skips the request,
 as an explicit ID does for `start`.
 
+A child can also be named by the parent at collection time: with the parent as
+an epic and its children as the epic's tasks, the agent creates each ticket,
+then records it with `add-child EPIC-1 --id TASK-7 --text ...`, making the
+child `EPIC-1/TASK-7`. `update-child` never changes an ID.
+
 ## Inheriting a workflow
 
 A workflow that should do exactly what another does, but branch or merge

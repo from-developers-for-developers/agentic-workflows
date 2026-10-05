@@ -11,6 +11,12 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- A workflow can set `manual: true`: `discover` and `lookup` leave it out, `start` still accepts it, and `inherit`
+  does not copy the setting. A workflow named `manual` in the `- name: description` shorthand must now use the
+  `name:` key.
+- A handoff now gives the new run the target workflow's declared `runtime`, `model` and `reasoning`, as `start`
+  does, and keeps the source run's values for what the target does not declare.
+- The specification and features now describe how a child gets its external ID.
 - The `ww` skill and agent instructions now say ww is only for development: reviews, questions, investigations,
   status checks and other read-only requests never invoke the skill or start a task. Existing projects keep their
   installed skill; `init --force` or copying the bundled one picks up the new wording.

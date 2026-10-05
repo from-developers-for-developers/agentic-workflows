@@ -145,6 +145,9 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
     modes = load_modes(storage.config_path, extensions)
     modes.update({mode.name: mode for mode in extensions.qualified_modes()})
     catchall = configuration.workflows_by_name.get(CATCHALL)
+    if catchall is not None and catchall.manual:
+        # A manual catch-all is never offered; ``catchall`` is then null.
+        catchall = None
     onboarding = Onboarding(storage.root, storage.project_metadata).read()
     return {
         # ``"on_request"`` still lists everything, so an explicit request can
@@ -178,7 +181,9 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 "delegation_requests": list(delegation_requests(workflow)),
             }
             for workflow in configuration.workflows
-            if workflow is not catchall and not is_builtin(workflow)
+            if workflow is not catchall
+            and not workflow.manual
+            and not is_builtin(workflow)
         ],
         # ww's own workflows, such as its learning ones; the catch-all is
         # listed apart below.
@@ -189,7 +194,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
                 **_workflow_source_fields(configuration, workflow.name),
             }
             for workflow in configuration.workflows
-            if workflow is not catchall and is_builtin(workflow)
+            if workflow is not catchall and not workflow.manual and is_builtin(workflow)
         ],
         "catchall": (
             {

@@ -301,6 +301,7 @@ def _parse_workflow(
         "explicit",
         "runtime",
         "restartable",
+        "manual",
         "inherit",
         "recommended_next_workflow",
         "hooks_from",
@@ -326,6 +327,9 @@ def _parse_workflow(
     restartable = mapping.get("restartable", False)
     if not isinstance(restartable, bool):
         raise ConfigurationError(f"{path}.restartable must be true or false")
+    manual = mapping.get("manual", False)
+    if not isinstance(manual, bool):
+        raise ConfigurationError(f"{path}.manual must be true or false")
     inherits = mapping.get("inherit")
     if inherits is not None and (not isinstance(inherits, str) or not inherits):
         raise ConfigurationError(f"{path}.inherit must name a workflow")
@@ -377,6 +381,7 @@ def _parse_workflow(
         explicit=_optional_bool(mapping, "explicit", f"workflow {name!r}"),
         runtime=runtime,
         restartable=restartable,
+        manual=manual,
         inherits=inherits,
         recommended_next_workflow=recommended,
         hooks_from=hooks_from,
@@ -428,6 +433,8 @@ def _resolve_inheritance(
             base,
             name=name,
             inherits=parent,
+            # Never inherited: a copy of a manual workflow is listed.
+            manual=entry.definition.manual,
             **{
                 field: getattr(entry.definition, field)
                 for field in sorted(entry.overrides)

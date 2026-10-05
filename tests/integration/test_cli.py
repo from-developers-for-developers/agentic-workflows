@@ -275,12 +275,19 @@ workflows:
     assert json.loads(capsys.readouterr().out)["modes"][0]["name"] == "economy"
     assert main(["--root", str(tmp_path), "workflows"]) == 0
     assert json.loads(capsys.readouterr().out)["workflows"] == [
-        {"name": "task", "description": "", "modes": ["economy"], "runtime": None},
+        {
+            "name": "task",
+            "description": "",
+            "modes": ["economy"],
+            "runtime": None,
+            "manual": False,
+        },
         {
             "name": "catchall",
             "description": builtin_workflow(CATCHALL).description,
             "modes": [],
             "runtime": "auto",
+            "manual": False,
         },
     ]
 

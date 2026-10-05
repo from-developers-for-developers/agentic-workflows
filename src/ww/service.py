@@ -3403,6 +3403,18 @@ class WorkflowService:
             for name, value in state.workflow_values
             if name in {PROJECT, BRANCH_NAMING_STRATEGY}
         }
+        # The target's declared settings apply to its run, as on ``start``;
+        # the source run's values fill what it leaves out.
+        declared = configuration.workflows_by_name[target]
+        target_runtime = declared.runtime or state.workflow_runtime
+        runtime_instruction(target_runtime)
+        target_model = declared.model or state.model
+        if declared.reasoning:
+            target_reasoning = declared.reasoning
+        elif target_model != state.model:
+            target_reasoning = "auto"
+        else:
+            target_reasoning = state.reasoning
         base_state = initial_state(
             new_snapshot,
             state.modes,
@@ -3411,9 +3423,9 @@ class WorkflowService:
             execution_instance_id=uuid.uuid4().hex,
             parent_task_id=state.parent_task_id,
             start_operation_id=state.start_operation_id,
-            workflow_runtime=state.workflow_runtime,
-            model=state.model,
-            reasoning=state.reasoning,
+            workflow_runtime=target_runtime,
+            model=target_model,
+            reasoning=target_reasoning,
         )
         next_state = replace(
             base_state,

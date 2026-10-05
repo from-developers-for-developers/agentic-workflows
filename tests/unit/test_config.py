@@ -1863,7 +1863,7 @@ def test_a_workflow_may_declare_its_runtime(tmp_path: Path) -> None:
         _write(
             tmp_path / "ww.yaml",
             """workflows:
-  - manual: Manual testing.
+  - testing: Manual testing.
     runtime: single
     steps:
       - test: Test it.
@@ -1873,8 +1873,8 @@ def test_a_workflow_may_declare_its_runtime(tmp_path: Path) -> None:
 """,
         )
     )
-    manual, task, _catchall = configuration.workflows
-    assert (manual.runtime, task.runtime) == ("single", None)
+    testing, task, _catchall = configuration.workflows
+    assert (testing.runtime, task.runtime) == ("single", None)
     with pytest.raises(ConfigurationError, match="runtime must be one of: single"):
         load_configuration(
             _write(
