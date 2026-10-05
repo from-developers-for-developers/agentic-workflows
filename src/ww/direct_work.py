@@ -12,6 +12,12 @@ those ww already knows, are the work ww had not seen. A task without a
 recorded branch falls back to the current branch's commits that mention the
 task ID. ``instruction --role manager`` runs the same search, so a
 registration that failed or was forgotten is made up for on the next run.
+
+Reconciliation counts only commits made outside the task's runs: agents
+commit inside a run too (a fix worker's commit, a manager's land merge), so a
+commit whose committer date falls in the active window of any run (from its
+creation to its completion or abandonment, or open-ended while it is
+unfinished) is workflow work, not direct work.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ import re
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -123,6 +130,7 @@ def unseen_commits(
     config: ProjectConfig,
     task_id: str,
     registered: Iterable[DirectWork],
+    run_windows: Iterable[RunWindow] = (),
 ) -> tuple[DirectCommit, ...]:
     """The commits made for ``task_id`` that ww has not seen, oldest first.
 
@@ -148,7 +156,26 @@ def unseen_commits(
     seen = _ww_commits(store) | {
         commit.sha for entry in registered for commit in entry.commits
     }
-    return tuple(commit for commit in found if commit.sha not in seen)
+    windows = tuple(run_windows)
+    return tuple(
+        commit
+        for commit in found
+        if commit.sha not in seen and not _inside(commit.committed_at, windows)
+    )
+
+
+# A run's active window: its start and, once it is over, its end.
+RunWindow = tuple[datetime, datetime | None]
+
+
+def _inside(committed_at: str, windows: tuple[RunWindow, ...]) -> bool:
+    try:
+        moment = datetime.fromisoformat(committed_at)
+    except ValueError:
+        return False
+    return any(
+        start <= moment and (end is None or moment <= end) for start, end in windows
+    )
 
 
 def _mentioning(root: Path, base: str | None, task_id: str) -> tuple[DirectCommit, ...]:

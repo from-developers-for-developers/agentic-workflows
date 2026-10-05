@@ -39,7 +39,12 @@ from ww.completion_inputs import (
     validate_values,
 )
 from ww.config import YamlConfigurationLoader
-from ww.contracts import CALLER_ROLES, CallerRole, run_is_open
+from ww.contracts import (
+    CALLER_ROLES,
+    CLOSED_RUN_STATUSES,
+    CallerRole,
+    run_is_open,
+)
 from ww.control import child_workflow, loop_control, workflow_transition
 from ww.defaults import (
     AGENT_INSTRUCTIONS,
@@ -51,6 +56,7 @@ from ww.defaults import (
 )
 from ww.direct_work import (
     DirectWork,
+    RunWindow,
     reconciled_summary,
     unseen_commits,
 )
@@ -2498,8 +2504,13 @@ class WorkflowService:
             return 0
         with self.tasks.lock_task(task_id):
             registered = self.tasks.read_direct_work(task_id)
+            runs, _, _ = self.tasks.read_task_record(task_id)
             commits = unseen_commits(
-                self.storage.root, self.extensions.config, task_id, registered
+                self.storage.root,
+                self.extensions.config,
+                task_id,
+                registered,
+                _run_windows(runs),
             )
             if not commits:
                 return 0
@@ -4501,6 +4512,24 @@ def _interactive_item(
             f"the interaction of {item.name!r} has ended; complete the step"
         )
     return item, record
+
+
+def _run_windows(runs: tuple[TaskRunAggregate, ...]) -> list[RunWindow]:
+    """The active window of each run: its start, and its end once closed."""
+    windows: list[RunWindow] = []
+    for run in runs:
+        state = run.state
+        try:
+            start = datetime.fromisoformat(state.created_at)
+            end = (
+                datetime.fromisoformat(state.updated_at)
+                if state.status in CLOSED_RUN_STATUSES
+                else None
+            )
+        except ValueError:
+            continue
+        windows.append((start, end))
+    return windows
 
 
 def _now() -> str:

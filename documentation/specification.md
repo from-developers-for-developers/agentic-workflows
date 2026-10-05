@@ -459,6 +459,13 @@ forgotten is made up for on the next run, and the agent is never asked to do
 it. A task ww holds no data for is left alone, and other roles do not
 reconcile.
 
+Reconciliation counts only commits made outside the task's runs. Agents commit
+inside a run too (a fix worker's commit, a manager's land merge), so a commit
+whose committer date falls inside the active window of any run of the task is
+workflow work and is skipped. A run's window starts at its creation and ends
+when it completes or is abandoned; while it is unfinished it stays open. `record`
+is the agent's own statement and does not apply the rule.
+
 **`status <task>`** shows direct work the way it shows other optional keys,
 only when there is some: the Markdown prints `direct work: <count>` and one
 line per entry, `- <summary> (<source>, <short SHAs>)`, and the JSON has a

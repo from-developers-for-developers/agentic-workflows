@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from ww.cli import main
+from ww.direct_work import unseen_commits
 from ww.errors import StateError
-from ww.service import WorkflowService
+from ww.service import WorkflowService, _run_windows
 from ww.storage import Storage
 
 WORKFLOWS = "workflows:\n  - name: task\n    steps:\n      - develop: Develop.\n"
@@ -23,10 +27,18 @@ def _git(root: Path, *arguments: str) -> str:
     ).stdout.strip()
 
 
-def _commit(root: Path, name: str, message: str) -> str:
+def _commit(root: Path, name: str, message: str, when: str | None = None) -> str:
+    """Commit ``name``; ``when`` (ISO 8601) sets the commit's date."""
     (root / name).write_text(name, encoding="utf-8")
     _git(root, "add", "-A")
-    _git(root, "commit", "-qm", message)
+    environment = {**os.environ, "GIT_COMMITTER_DATE": when} if when else None
+    subprocess.run(
+        ["git", "commit", "-qm", message],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=environment,
+    )
     return _git(root, "rev-parse", "HEAD")
 
 
@@ -49,6 +61,10 @@ def project(tmp_path: Path) -> Path:
     )
     _commit(tmp_path, "seed.txt", "seed")
     return tmp_path
+
+
+PAST = "2020-01-01T00:00:00+00:00"
+FUTURE = "2099-01-01T00:00:00+00:00"
 
 
 def _store(root: Path, name: str, *records: dict[str, object]) -> None:
@@ -201,9 +217,9 @@ def test_the_manager_page_reconciles_commits_ww_had_not_seen_once(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _branch(project, "TASK-5", "feature/task-5")
+    first = _commit(project, "a.txt", "Add the flag", PAST)
+    second = _commit(project, "b.txt", "Document the flag", PAST)
     _start(project, capsys, "TASK-5")
-    first = _commit(project, "a.txt", "Add the flag")
-    second = _commit(project, "b.txt", "Document the flag")
 
     page = _run(project, capsys, "instruction", "TASK-5", "--role", "manager")
 
@@ -233,12 +249,68 @@ def test_the_manager_page_reconciles_commits_ww_had_not_seen_once(
     ]
 
 
+def test_commits_made_during_an_unfinished_run_are_not_reconciled(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _branch(project, "TASK-9", "feature/task-9")
+    before = _commit(project, "a.txt", "Before the run", PAST)
+    _start(project, capsys, "TASK-9")
+    _commit(project, "b.txt", "Made by a worker inside the run", FUTURE)
+
+    page = _run(project, capsys, "instruction", "TASK-9", "--role", "manager")
+
+    assert "1 direct-work commit " in page
+    (entry,) = _entries(project, "TASK-9")
+    assert [commit["sha"] for commit in entry["commits"]] == [before]
+
+
+def _window(start: str, end: str | None) -> tuple[datetime, datetime | None]:
+    return (
+        datetime.fromisoformat(start),
+        datetime.fromisoformat(end) if end else None,
+    )
+
+
+def test_a_completed_runs_window_ends_and_commits_between_runs_are_reconciled(
+    project: Path,
+) -> None:
+    _branch(project, "TASK-9", "feature/task-9")
+    config = WorkflowService(Storage(project)).extensions.config
+    inside = _commit(project, "a.txt", "Inside the run", "2025-01-01T12:00:00+00:00")
+    between = _commit(project, "b.txt", "Between runs", "2025-02-01T00:00:00+00:00")
+    windows = [
+        _window("2025-01-01T00:00:00+00:00", "2025-01-02T00:00:00+00:00"),
+        _window("2025-03-01T00:00:00+00:00", None),
+    ]
+
+    found = unseen_commits(project, config, "TASK-9", (), windows)
+
+    assert [commit.sha for commit in found] == [between]
+    assert inside not in [commit.sha for commit in found]
+
+
+def test_a_run_is_a_window_until_it_is_completed_or_abandoned(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _start(project, capsys, "TASK-9")
+    service = WorkflowService(Storage(project))
+    (run,), _, _ = service.tasks.read_task_record("TASK-9")
+    start = datetime.fromisoformat(run.state.created_at)
+    end = "2030-01-01T00:00:00+00:00"
+
+    assert _run_windows((run,)) == [(start, None)]
+    for status in ("completed", "abandoned"):
+        closed = replace(run, state=replace(run.state, status=status, updated_at=end))
+        assert _run_windows((closed,)) == [(start, datetime.fromisoformat(end))]
+    assert datetime.now(timezone.utc) > start
+
+
 def test_only_the_manager_page_reconciles_and_json_stays_clean(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _branch(project, "TASK-6", "feature/task-6")
+    _commit(project, "a.txt", "Add the flag", PAST)
     _start(project, capsys, "TASK-6")
-    _commit(project, "a.txt", "Add the flag")
 
     operator = _run(project, capsys, "instruction", "TASK-6")
     assert "direct-work commit" not in operator
