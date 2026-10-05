@@ -1095,9 +1095,10 @@ from the environment rather than the work (a sandbox or permission denial, a
 network or package-install error, a lock another process holds), the page tells
 the agent not to change project files, to fix the environment where it can, to
 ask the operator otherwise, and to say in the completion that the cause was
-environmental. No state, failure kind or setting records the difference. Completed preceding
-steps stay completed. Repair assignments are attached to the execution; they
-create no extra workflow steps and invoke no step hooks of their own.
+environmental. No state, failure kind or setting records the difference.
+Completed preceding steps stay completed. Repair assignments are attached to the
+execution; they create no extra workflow steps and invoke no step hooks of their
+own.
 
 In the `single` runtime the same session receives the repair immediately. In
 `auto`, ww ends the previous assignment and the manager dispatches the repair
