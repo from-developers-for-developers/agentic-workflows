@@ -4520,9 +4520,9 @@ def _run_windows(runs: tuple[TaskRunAggregate, ...]) -> list[RunWindow]:
     for run in runs:
         state = run.state
         try:
-            start = datetime.fromisoformat(state.created_at)
+            start = datetime.fromisoformat(state.created_at.replace("Z", "+00:00"))
             end = (
-                datetime.fromisoformat(state.updated_at)
+                datetime.fromisoformat(state.updated_at.replace("Z", "+00:00"))
                 if state.status in CLOSED_RUN_STATUSES
                 else None
             )

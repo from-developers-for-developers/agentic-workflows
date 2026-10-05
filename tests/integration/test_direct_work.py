@@ -305,6 +305,37 @@ def test_a_run_is_a_window_until_it_is_completed_or_abandoned(
     assert datetime.now(timezone.utc) > start
 
 
+def test_run_windows_parse_ww_z_timestamps_and_skip_commits_inside(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _branch(project, "TASK-9", "feature/task-9")
+    _start(project, capsys, "TASK-9")
+    service = WorkflowService(Storage(project))
+    (run,), _, _ = service.tasks.read_task_record("TASK-9")
+    closed = replace(
+        run,
+        state=replace(
+            run.state,
+            status="completed",
+            created_at="2025-01-01T00:00:00Z",
+            updated_at="2025-01-02T00:00:00Z",
+        ),
+    )
+
+    windows = _run_windows((closed,))
+
+    assert windows == [
+        (
+            datetime(2025, 1, 1, tzinfo=timezone.utc),
+            datetime(2025, 1, 2, tzinfo=timezone.utc),
+        )
+    ]
+    config = service.extensions.config
+    inside = _commit(project, "a.txt", "Inside the run", "2025-01-01T12:00:00+00:00")
+    found = unseen_commits(project, config, "TASK-9", (), windows)
+    assert inside not in [commit.sha for commit in found]
+
+
 def test_only_the_manager_page_reconciles_and_json_stays_clean(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

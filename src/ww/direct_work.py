@@ -170,7 +170,7 @@ RunWindow = tuple[datetime, datetime | None]
 
 def _inside(committed_at: str, windows: tuple[RunWindow, ...]) -> bool:
     try:
-        moment = datetime.fromisoformat(committed_at)
+        moment = datetime.fromisoformat(committed_at.replace("Z", "+00:00"))
     except ValueError:
         return False
     return any(
