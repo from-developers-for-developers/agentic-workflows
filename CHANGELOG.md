@@ -11,6 +11,9 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Added: `ww handoff <task> [--run ID] [--assignment TOKEN] [--json]` prints the handoff block of an ended assignment
+  again, for a worker whose output was cut short; the completion page and the `auto` runtime instruction name it.
+  The change set is reproduced only while the assignment is the latest one, otherwise the block says so.
 - Fixed: when a child task's run has completed, its handoff block names the parent task's `next` command
   ("Manager: continue with the parent task: ...") instead of a command that fails because the child is completed;
   a child partway through its run keeps its own. The handoff JSON carries `continuation_task_id`. `6b6669c`

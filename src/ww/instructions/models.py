@@ -344,6 +344,8 @@ class HandoffBlock:
     from the worker; the worker's own words are only its short ``summary``.
     ``files`` is ``None`` when no change set was taken: no step of the
     assignment has rules or checks, or the directory has no git.
+    ``files_reproducible`` is false in a block printed again after the
+    assignment ended, when the change set can no longer be told.
     """
 
     task_id: str
@@ -353,6 +355,7 @@ class HandoffBlock:
     summary: str | None = None
     error: str | None = None
     continuation_task_id: str | None = None
+    files_reproducible: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -361,6 +364,7 @@ class HandoffBlock:
             "assignment": self.token,
             "steps": [step.to_dict() for step in self.steps],
             "files": None if self.files is None else list(self.files),
+            "files_reproducible": self.files_reproducible,
             "summary": self.summary,
             "error": self.error,
         }

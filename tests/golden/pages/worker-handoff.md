@@ -24,3 +24,5 @@ Worker summary: Added the flag.
 
 Manager: continue with `./ww next TASK-1 --role manager`
 ```
+
+Lost it? `./ww handoff TASK-1 --assignment 0a1b2c3d` prints it again.

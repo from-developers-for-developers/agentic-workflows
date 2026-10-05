@@ -36,7 +36,7 @@ from ww.validation import (
 )
 from ww.workflow_config import ProvidedVariable
 
-from .decoding import _positive_int_mapping, _variables
+from .decoding import _assignment_log, _positive_int_mapping, _variables
 from .plan_codec import _planned_checks_from_list
 
 EXECUTION_SCHEMA_VERSION = 1
@@ -996,6 +996,10 @@ class ExecutionState:
     # The open assignment's token: every worker command of the ``auto``
     # runtime must carry it, so a worker whose assignment ended cannot act.
     assignment_token: str | None = None
+    # Every assignment token the auto runtime issued, with the id of the
+    # assignment's first item, oldest first; ``ww handoff`` finds an ended
+    # assignment's items from it.
+    assignment_log: tuple[tuple[str, str], ...] = ()
     assignment_model: str | None = None
     assignment_reasoning: str | None = None
     assignment_selected_agent: str | None = None
@@ -1050,6 +1054,7 @@ class ExecutionState:
             "reasoning": self.reasoning,
             "assignment_item_id": self.assignment_item_id,
             "assignment_token": self.assignment_token,
+            "assignment_log": [list(entry) for entry in self.assignment_log],
             "assignment_model": self.assignment_model,
             "assignment_reasoning": self.assignment_reasoning,
             "assignment_selected_agent": self.assignment_selected_agent,
@@ -1165,6 +1170,7 @@ class ExecutionState:
             assignment_token=expect_optional_string(
                 data.get("assignment_token"), "assignment token"
             ),
+            assignment_log=_assignment_log(data.get("assignment_log", [])),
             assignment_model=expect_optional_string(
                 data.get("assignment_model"), "assignment model"
             ),

@@ -960,7 +960,8 @@ builds from the saved state (`instructions/handoff.py`): the items performed
 with their outcomes, artifacts, checks, fix rounds and change set, plus the
 worker's capped `--summary`. The service takes the open
 assignment's items before a worker command runs, so the block can still name
-them after the command closed the assignment. A worker's `complete` or `loop`
+them after the command closed the assignment. `WorkflowService` builds the block in one method, used by both the completion
+path and `ww handoff`, which reprints it for an ended assignment from the saved records. A worker's `complete` or `loop`
 on a `role: manager` item is refused; the manager completes it with `--role
 manager`.
 A step's `role` says who performs it, and it is resolved along the same chain

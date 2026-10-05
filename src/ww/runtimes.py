@@ -27,7 +27,8 @@ RUNTIME_INSTRUCTIONS = {
         "The worker submits its own results and associated hook results with "
         "--role worker until ww explicitly hands control back. It then "
         'returns ww\'s "Handoff to manager" block verbatim as its final '
-        "message; the manager reads the outcome there.",
+        "message; the manager reads the outcome there. If the block was lost, "
+        "`{handoff}` prints it again.",
         "A worker may delegate one bounded hook when its runtime permits, but "
         "that worker remains responsible for submitting the result. Nested "
         "workers must not complete the same item or run manager commands.",
@@ -97,7 +98,16 @@ def runtime_instruction(
             )
         else:
             role_instruction = ()
-        return (*instructions, *role_instruction, cli_ownership_warning())
+        # Imported here: the command renderers depend on modules that import
+        # this one.
+        from ww.instructions.commands import handoff_command
+
+        handoff = handoff_command("<task>", "<token>")
+        return (
+            *(line.replace("{handoff}", handoff) for line in instructions),
+            *role_instruction,
+            cli_ownership_warning(),
+        )
     except KeyError as error:
         supported = ", ".join(sorted(RUNTIME_INSTRUCTIONS))
         raise ConfigurationError(

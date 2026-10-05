@@ -1707,7 +1707,11 @@ own judgment reaches the manager only through its `--summary`.
 The worker page tells the worker to return the block verbatim as its final
 message and nothing else, and prints no further command for it. The manager's
 bootstrap page names the block by the assignment's token, so the manager knows
-which block answers which assignment. The JSON instruction carries the same
+which block answers which assignment. A worker that lost the block (its output
+was cut short) runs `ww handoff <task> --assignment <token>`, which prints it
+again from the saved state, and the completion page and the runtime instruction
+say so; only the change set may be missing then ("Files changed: not
+reproducible after the assignment ended"). The JSON instruction carries the same
 facts in `handoff_block`. The `single` runtime has no block.
 
 ### Confirmations

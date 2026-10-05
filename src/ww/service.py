@@ -83,7 +83,7 @@ from ww.hooks.records import HookRecords, Interruption
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.instructions.handoff import handoff_block
-from ww.instructions.models import CheckPreview
+from ww.instructions.models import CheckPreview, HandoffBlock
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
 from ww.item_passes import (
@@ -3671,10 +3671,15 @@ class WorkflowService:
             return state
         assigned_model = model if model != "auto" else None
         assigned_reasoning = reasoning if reasoning != "auto" else None
+        token = secrets.token_hex(4)
         state = replace(
             state,
             assignment_item_id=assignment.first_item_id,
-            assignment_token=secrets.token_hex(4),
+            assignment_token=token,
+            assignment_log=(
+                *state.assignment_log,
+                (token, assignment.first_item_id),
+            ),
             assignment_model=assigned_model,
             assignment_reasoning=assigned_reasoning,
             assignment_selected_agent=selected_agent,
@@ -3835,15 +3840,19 @@ class WorkflowService:
             selected_model=model if model != "auto" else None,
             selected_reasoning=reasoning if reasoning != "auto" else None,
         )
+        token = secrets.token_hex(4) if state.workflow_runtime == "auto" else None
         state = replace(
             close_assignment(state),
             item_executions=tuple(records),
             status="in_progress",
             active_item_id=item.id,
-            assignment_item_id=item.id if state.workflow_runtime == "auto" else None,
-            assignment_token=secrets.token_hex(4)
-            if state.workflow_runtime == "auto"
-            else None,
+            assignment_item_id=item.id if token is not None else None,
+            assignment_token=token,
+            assignment_log=(
+                (*state.assignment_log, (token, item.id))
+                if token is not None
+                else state.assignment_log
+            ),
             assignment_model=model
             if model != "auto"
             else requested_setting(item.model) or state.model,
@@ -4105,7 +4114,13 @@ class WorkflowService:
                     f"task {task_id!r} has no open assignment to reassign; "
                     "run next to dispatch one"
                 )
-            state = replace(state, assignment_token=secrets.token_hex(4))
+            token = secrets.token_hex(4)
+            # The old token is dead: its entry moves to the new one.
+            log = tuple(
+                (token if entry[0] == state.assignment_token else entry[0], entry[1])
+                for entry in state.assignment_log
+            )
+            state = replace(state, assignment_token=token, assignment_log=log)
             self.commit(state, snapshot)
             return self.render(state, snapshot)
 
@@ -4230,15 +4245,41 @@ class WorkflowService:
         if opened is None or instruction.next_role not in {"manager", "operator"}:
             return instruction
         state, snapshot = self.load(task_id)
+        block = self._handoff_block(state, snapshot, opened, loop=loop)
+        return replace(instruction, handoff_block=block)
+
+    def _handoff_block(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        ended: OpenAssignment,
+        *,
+        loop: str | None = None,
+        reprint: bool = False,
+    ) -> HandoffBlock:
+        """The handoff block of one ended assignment of the run.
+
+        ``ended`` names its token and agent items. At the moment a worker's
+        command ends the assignment, a ``continue`` has reset the round's
+        records into the history, so the items of the ended round are read
+        from there. A ``reprint`` is built later: an item whose record has
+        been reset since is read from the history, and the loop outcome and
+        the change set, which were known only then, are not reproduced
+        unless the assignment is still the latest one.
+        """
+        task_id = state.task_id
         items = {item.id: item for item in snapshot.plan.items}
         current = {record.plan_item_id: record for record in state.item_executions}
-        if loop == "continue":
-            current.update(
-                (record.plan_item_id, record) for record in state.execution_history
-            )
+        if loop == "continue" or reprint:
+            for record in state.execution_history:
+                if (
+                    loop == "continue"
+                    or not current.get(record.plan_item_id, record).attempts
+                ):
+                    current[record.plan_item_id] = record
         performed = tuple(
             (items[item_id], current[item_id])
-            for item_id in opened.items
+            for item_id in ended.items
             if item_id in items and item_id in current
         )
         marked = next(
@@ -4246,28 +4287,102 @@ class WorkflowService:
             None,
         )
         files: tuple[str, ...] | None = None
+        reproducible = True
         if marked is not None:
+            latest = (
+                not reprint
+                or (state.assignment_log or (("", ""),))[-1][0] == ended.token
+                and state.assignment_token is None
+            )
             directory = self._check_scope(state, snapshot.plan, marked[0]).directory
-            end = take_mark(directory)
+            end = take_mark(directory) if latest else None
             if end is not None:
                 files, _ = change_set(directory, marked[1].change_mark, end)
+            elif reprint:
+                reproducible = False
         parent_id, _, _ = task_id.rpartition("/")
         continuation = (
             parent_id if parent_id and not run_is_open(state.status) else None
         )
-        block = handoff_block(
+        return handoff_block(
             task_id,
-            opened.token,
+            ended.token,
             performed,
             root=self.storage.root,
             files=files,
+            files_reproducible=reproducible,
             error=(
                 state.last_error if state.status in {"failed", "interrupted"} else None
             ),
-            loop_outcome=((opened.active, loop) if loop and opened.active else None),
+            loop_outcome=((ended.active, loop) if loop and ended.active else None),
             continuation_task_id=continuation,
         )
-        return replace(instruction, handoff_block=block)
+
+    def handoff(
+        self,
+        task_id: str,
+        run_id: str | None = None,
+        assignment: str | None = None,
+    ) -> HandoffBlock:
+        """Rebuild the handoff block of an ended assignment, read only.
+
+        Without ``assignment`` it is the most recently ended one of the run.
+        """
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id, run_id)
+        log = state.assignment_log
+        if assignment is None:
+            ended = [
+                entry
+                for entry in log
+                if entry[0] != state.assignment_token or not run_is_open(state.status)
+            ]
+            if not ended:
+                if state.assignment_token is not None:
+                    raise StateError(
+                        f"assignment {state.assignment_token} has not ended; "
+                        "complete or fail its step first"
+                    )
+                raise StateError(f"task {task_id!r} has no ended assignment")
+            token, first = ended[-1]
+        else:
+            entry = next((entry for entry in log if entry[0] == assignment), None)
+            if entry is None:
+                raise StateError(
+                    f"task {task_id!r} has no assignment {assignment!r}"
+                    + (
+                        f"; its assignments: {', '.join(t for t, _ in log)}"
+                        if log
+                        else ""
+                    )
+                )
+            token, first = entry
+        if token == state.assignment_token and run_is_open(state.status):
+            raise StateError(
+                f"assignment {token} has not ended; complete or fail its step first"
+            )
+        plan = snapshot.plan
+        index = next(
+            (position for position, item in enumerate(plan.items) if item.id == first),
+            None,
+        )
+        span = (
+            assignment_at(plan, index, runtime=state.workflow_runtime)
+            if index is not None
+            else None
+        )
+        item_ids = (
+            tuple(
+                item.id
+                for item in plan.items[span.start : span.stop]
+                if item.owner == "agent"
+            )
+            if span is not None
+            else ()
+        )
+        return self._handoff_block(
+            state, snapshot, OpenAssignment(token, item_ids), reprint=True
+        )
 
     def _require_manager(self, command: str, caller_role: CallerRole | None) -> None:
         self._validate_caller_role(caller_role)
