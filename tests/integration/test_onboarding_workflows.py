@@ -237,7 +237,8 @@ def test_switching_every_learning_workflow_off_drops_its_documents(
     assert not set(ONBOARDING) & {item.name for item in configuration.workflows}
     assert "project" not in configuration.documents_by_name
     assert "ww-narrate" not in {mode.name for mode in configuration.modes}
-    assert "catchall" in configuration.workflows_by_name
+    assert "catchall" not in configuration.workflows_by_name
+    assert "task" in configuration.workflows_by_name
 
 
 def test_init_installs_the_setup_skills(

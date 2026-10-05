@@ -11,6 +11,20 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-05
 
+- Added: direct work replaces the `catchall` workflow. A change no workflow fits is made as in a plain
+  conversation and registered afterwards with `record <task> --summary "<text>"`, which appends an entry to
+  the task's `direct-work.json` with the commits ww finds itself (the task's recorded branch since its base,
+  minus the commits ww already knows; without a recorded branch, the current branch's commits that name the task
+  ID). A task needs no run, and `lookup` no longer asks before a task ww has not seen. When the manager asks for
+  a task's page with `instruction --role manager`, ww records any commits it had not seen as a `reconciled` entry
+  and prints one line at the top of the page, so a forgotten or failed `record` is made up for. `status` lists the
+  entries and short SHAs. The agent instructions, the `ww` and `noww` skills and `discover` now say: propose a
+  matching workflow with "just do it, register afterwards" as the alternative, otherwise work directly and ask
+  nothing, judge each prompt on its own, and never ask again on a task once direct work was chosen. Existing
+  projects keep their installed skills; `init --force` or copying the bundled ones picks up the new wording.
+- Removed: the `catchall` workflow, its `discover` section (`catchall` is gone from the JSON, `direct_work`
+  replaces it) and the `lookup` menu. A `catchall` entry under `workflows` in `ww.json` is ignored and `lint`
+  warns about it, instead of failing.
 - The repair page for a failed automatic handler now says what to do when the cause is the environment rather than
   the work (a sandbox or permission denial, a network or package-install error, a held lock): change no project
   files, fix the environment or ask the operator, and say in the completion that the cause was environmental.

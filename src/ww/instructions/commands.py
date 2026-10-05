@@ -122,6 +122,11 @@ def start_command(task_id: str | None, workflow: str, agent: str) -> str:
     )
 
 
+def record_command(task_id: str = TASK_PLACEHOLDER) -> str:
+    """Register direct work; the summary is the agent's to write."""
+    return _command("record", _arg(task_id), SUMMARY_FLAG, '"<what was done>"')
+
+
 def lookup_command(reference: str = "<task>", agent: str = "<agent>") -> str:
     return _command("lookup", _arg(reference), "--agent", _arg(agent))
 

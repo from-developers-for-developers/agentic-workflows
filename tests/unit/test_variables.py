@@ -52,7 +52,7 @@ def test_ww_values_compile_in_descriptions(tmp_path: Path) -> None:
     work = next(item for item in plan.items if item.name == "work")
     # Compile-time values are bound now; the rest resolve when the page is built.
     assert work.description == (
-        "T-1 in task,catchall: read {{ww.documents.plan}} and {{ww.metadata.key}}."
+        "T-1 in task: read {{ww.documents.plan}} and {{ww.metadata.key}}."
     )
     assert plan.documents[0].path == "plans/{{ww.task.id}}.md"
 

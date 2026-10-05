@@ -17,17 +17,29 @@ change, start from step 1 then.
    carry out the request without ww and do not ask.
 2. To continue an existing task, run
    `./ww instruction <task-id> --role manager` instead of starting a new one.
-3. Otherwise choose the workflow that matches the request, keep its default
-   modes unless the user's wording matches another mode, and start the task
-   with the start command `discover` shows. Pass the user's requirements,
-   normalized, as `--requirements`. When the request names an external
-   ticket, such as a Jira key, use that key as the task ID; omit the ID only
-   when there is none or the workflow obtains its own.
-   When no workflow fits and you are about to change files, do not start
-   `catchall` directly: run `./ww lookup [<task>] --agent <agent>` with the
-   task the conversation works on or the request names, as written, and
-   follow its answer, then do the work as you would without ww. Read-only work
-   needs no task.
+3. Otherwise decide how the request is carried out, in this order:
+   a. It names a ticket or clearly matches a configured workflow's
+      description, and is more than a small change: propose that workflow, and
+      offer the alternative in the same choice, "run `<workflow>`" / "just do
+      it, register afterwards". A workflow the user named is started without
+      asking. When one is chosen, keep its default
+      modes unless the user's wording matches another mode, and start the task
+      with the start command `discover` shows. Pass the user's requirements,
+      normalized, as `--requirements`. When the request names an external
+      ticket, such as a Jira key, use that key as the task ID; omit the ID
+      only when there is none or the workflow obtains its own.
+   b. Otherwise it is direct work: do it as you would in a plain conversation,
+      with no question asked, then run
+      `./ww record <task> --summary "..."`. `./ww lookup [<task>] --agent
+      <agent>` names the task and the command; pass the task the conversation
+      works on or the request names, as written. Read-only work needs no task.
+   c. Judge each prompt on its own. A series of small requests stays a series
+      of direct-work entries; never promote them into a workflow because they
+      add up.
+   d. Ask only when it is genuinely ambiguous, and never again on the same
+      task once the operator chose direct work.
+   e. If `record` fails or is forgotten, ww records the commits it had not
+      seen on the next run; say so, and do not retry it endlessly.
    When the first page of `start` says rules have no check
    yet, tell the user once and carry on: it never blocks the task, and the
    `ww-scriptize` skill builds those checks when they want it.

@@ -160,7 +160,7 @@ Add a mode only for a preference that changes how an agent works, such as
 brief updates or asking first, and a rule only for a convention no command
 checks, on the steps it governs, with a one-line check where one exists. A
 rule never restates its step, a preference or a command, and a step that
-needs none gets none. Never redefine a workflow ww ships (`catchall`, `ww-*`).
+needs none gets none. Never redefine a workflow ww ships (`ww-*`).
 
 ### Where to put workflows
 
@@ -280,7 +280,7 @@ offers to install the shipped skills at `<directory>/skills/<name>/SKILL.md`.
 The `ww` skill lets a user ask explicitly to work through ww: it tells the
 agent to run `discover` and follow ww from there. The `noww` skill is the way
 out: invoked as `/noww`, it tells the agent not to use ww for the rest of the
-conversation, `catchall` included. The `ww-rule` skill writes rules for ww's
+conversation, `record` and `lookup` included. The `ww-rule` skill writes rules for ww's
 steps from the operator's words; see [Writing rules with the ww-rule
 skill](#writing-rules-with-the-ww-rule-skill). `--skills` installs them all
 everywhere without asking and `--no-skills` skips them; an existing skill file is never
@@ -390,8 +390,9 @@ operator. The preference is guidance, not an automatic selector:
 - generic-fix — [global: ~/.config/ww/ww.yaml] General bug-fix workflow.
 ```
 
-After the workflows come the changes no workflow covers (the `catchall`,
-started through `lookup`), the configured projects when there are any, the
+After the workflows comes a "Direct work" section (how to carry out a change
+no workflow covers, and the `lookup` and `record` commands), the configured
+projects when there are any, the
 modes (an automatic mode with where it is always on), and a multiline start
 synopsis in which square brackets denote optional arguments. The task ID is
 `<task-id>` where the project requires one and `[<task-id>]` otherwise, with
@@ -418,8 +419,8 @@ In JSON, each workflow entry also carries `source` and `source_level`, naming
 the winning YAML definition and whether it came from the global user config,
 project config, or local config. Imported files keep the level of the config
 that imported them. `null` for both fields means a contribution without a
-configured definition, such as a built-in or the catch-all that no
-configuration file defines; one that a file does define reports that file.
+configured definition, such as a built-in that no configuration file defines;
+one that a file does define reports that file.
 
 A task whose state ww cannot read, such as one written by a build with another
 state schema, does not break `discover`. It is listed
@@ -796,27 +797,60 @@ A workflow of the same name in any `ww.yaml` level replaces the shipped one.
 The `ww.json` workflow settings only switch built-ins on or off; scriptizing
 needs no lane setting.
 
-## The catch-all workflow
+## Direct work
 
 Unless `enabled` is `"on_request"`, every change to files goes through ww,
-including the small ones that fit no workflow: renaming a helper, fixing a typo, adjusting a setting. For those, ww
-provides `catchall` to every project. It has one step, `work`, whose page tells
-the agent that the workflow only records the request: it carries the work out
-exactly as it would on a plain prompt, with the same judgement, tools,
-subagents, skills, and project conventions, and completes the step with what it
-changed.
+including the small ones that fit no workflow: renaming a helper, fixing a
+typo, adjusting a setting. Those are direct work: the agent does them as it
+would in a plain conversation, with the same judgement, tools, subagents,
+skills, and project conventions, and no step page to follow. When it is done,
+it registers the change:
 
-`discover` lists it apart from the configured workflows, under "Changes no
-workflow covers", together with the rules for using it, which the agent
-instructions repeat. It is only for a change to files: questions,
+```console
+./ww record FOOBAR-12345 --summary "Fixed the typo in the README."
+```
+
+ww keeps the registration in the task's `direct-work.json`: the summary and
+the commits it found for the change. The agent never lists commits. ww takes
+the commits on the task's branch since its base, minus the ones it already
+knows, or, for a task with no recorded branch, the commits on the current
+branch that mention the task ID. `ww status FOOBAR-12345` lists every entry
+with its short SHAs. See the
+[specification](specification.md#direct-work) for the storage.
+
+The agent decides how a request is carried out in this order:
+
+1. The request names a ticket or clearly matches a configured workflow's
+   description, and is more than a small change: the agent proposes that
+   workflow and offers the alternative in the same choice, "run `<workflow>`"
+   or "just do it, register afterwards".
+2. Otherwise it works directly, asking nothing, and runs `record` when done.
+3. It judges each prompt on its own. A series of small requests stays a
+   series of direct-work entries; they are never promoted into a workflow
+   because they add up.
+4. It asks only when the choice is genuinely ambiguous, and never again on a
+   task once the operator chose direct work.
+5. If `record` fails or is forgotten, ww reconciles on the next run, so the
+   agent does not retry endlessly.
+
+`discover` states these rules under "Direct work", and the agent instructions
+repeat them. Direct work is only for a change to files: questions,
 explanations, reviews, investigations, status checks and other read-only work
 never go through ww at all. The agent answers them without the ww skill and
 without a task, and a conversation that begins as a question turns to ww only
-once it reaches a change. It never replaces a matching workflow.
+once it reaches a change.
 
-The agent does not start it directly. It first runs `lookup` with the task the
-conversation works on, or with what the operator called the task, as they
-wrote it, and without one when there is none:
+**Reconciliation.** When the manager of a task asks for its page
+(`instruction --role manager`), ww first looks for commits it had not seen,
+the same search `record` does. If it finds some, it records them as one
+`reconciled` entry, whose summary is their subjects, and prints one line at
+the top of the page: "ww recorded N direct-work commits it had not seen (see
+`ww status`)." It never records a commit twice, and the agent is never asked
+to do it.
+
+**Finding the task.** The agent does not guess the task. It runs `lookup` with
+the task the conversation works on, or with what the operator called the task,
+as they wrote it, and without one when there is none:
 
 ```console
 ./ww lookup 12345 --agent claudecode
@@ -831,35 +865,15 @@ step:
 
 | Found | Next step |
 |---|---|
-| One task, with an unfinished run of another workflow | Continue that run: `./ww instruction FOOBAR-12345 --role manager`. The change belongs to it. |
-| One task, otherwise | Start `catchall` on it; the printed `start` command is ready to run. |
-| Several tasks | Ask the operator which one, then continue or start on it. |
-| No task | Ask the operator to confirm creating the ID the reference names, `FOOBAR-99` for `99`. |
-| No reference | Ask the operator whether to create a new task; under `"task_format": "explicit"` they give its ID. |
+| One task, with an unfinished run | Continue that run: `./ww instruction FOOBAR-12345 --role manager`. The change belongs to it. |
+| One task, otherwise | Work directly, then `./ww record FOOBAR-12345 --summary "..."`; the printed command is ready to run. |
+| Several tasks | Ask the operator which one, through the agent's own choice menu, the same mechanism as an interactive step's [choices](#interactive-steps). |
+| No task | The reference names a new task, `FOOBAR-99` for `99`: work directly, then record on it. `record` creates it; nothing is asked. |
+| No reference | ww assigns an ID from `task_format` and prints the `record` command; under `"task_format": "explicit"` the agent uses the ticket key in place of `<task-id>`. |
 
-Asking goes through the agent's own choice menu, the same mechanism as an
-interactive step's [choices](#interactive-steps), and every menu also offers
-"Work without ww". Each choice comes with the command to run once it is
-picked, and the page says to run nothing before then, so a task ww has never
-seen is only created when the operator says so. A `catchall` start on a task
-with an unfinished run of another workflow is refused, and the error names
-the `instruction` command that continues it.
-
-The workflow declares `runtime: auto` and its step `role: manager`: the
-session that received the prompt does the work, and whether it uses subagents
-along the way is its own choice, as without ww. It is `restartable`, so a new
-request on the same task replaces one that was never finished, and it is not
-interactive: a follow-up that changes more starts another `catchall` run on the
-same task. Every run ends with the usual workflow summary.
-
-The catch-all is one of ww's [built-in workflows](specification.md#built-in-workflows),
-shipped as YAML with ww. A project replaces it by defining its own workflow
-named `catchall` in `ww.yaml`, or switches it off in
-`ww.json`:
-
-```json
-{"workflows": {"catchall": {"enabled": false}}}
-```
+A project that still lists `catchall` under `workflows` in `ww.json`, from
+before it was replaced by direct work, is not broken: the entry is ignored and
+`lint` warns about it.
 
 ## Validate configuration and plan a workflow
 

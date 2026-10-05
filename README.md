@@ -285,14 +285,14 @@ one:
 - `--role manager` is the role driving the task; a worker performing a single
   assignment uses `--role worker`.
 
-A request no workflow fits still goes through ww once it changes files. The
-agent records it with `catchall`, a one-step workflow ww provides to every
-project, and otherwise works exactly as it would without ww. Questions and
-other read-only work never start a task. The agent first runs `./ww lookup`
-with the task you named, however you wrote it (`12345` finds `FOOBAR-12345`),
-and a task ww has never seen is only created after you confirm it in the
-agent's choice menu. Say `/noww` when you want the
-agent to leave ww out.
+A request no workflow fits is direct work: the agent does it exactly as it
+would without ww, then registers it with `./ww record <task> --summary "..."`,
+and ww keeps the summary and the commits it finds for it. Questions and other
+read-only work never start a task. The agent first runs `./ww lookup` with the
+task you named, however you wrote it (`12345` finds `FOOBAR-12345`), and asks
+you nothing unless the request clearly matches a workflow, in which case it
+offers that workflow or "just do it, register afterwards". Say `/noww` when
+you want the agent to leave ww out.
 
 If you would rather open the task yourself — to pin an external ticket key, or
 to hand a prepared task to an agent — the same command works typed in.

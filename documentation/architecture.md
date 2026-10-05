@@ -29,7 +29,7 @@ produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
 parsers do not acquire different workflow semantics. Validation is also where
 the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
-parses the YAML files shipped in `../src/ww/assets/workflows/` (`catchall`, `scriptize.yaml` with `ww-scriptize-rules`, and
+parses the YAML files shipped in `../src/ww/assets/workflows/` (`scriptize.yaml` with `ww-scriptize-rules`, and
 `onboarding.yaml` with ww's learning and setup workflows) with the same frontend, once per process, and adds each workflow the
 configuration does not define itself and `../ww.json` does not
 switch off, with the documents and modes its file declares, dropping a
@@ -43,11 +43,17 @@ it. The scriptizing workflow declares its own Git lifecycle hooks to isolate
 tool installs and configuration changes from the operator's current branch.
 `ww/git` always branches it from the required default base and follows its
 worktree settings; built-in composition needs no project lane setting.
-`lookup` (`../src/ww/cli/lookup.py`) is the catch-all's entry
-point: `../src/ww/task_references.py` maps what the operator called a task onto
-the task format and the IDs the storage port lists, and the command answers
-with one next step, asking the operator through the agent's choice menu
-(`../src/ww/agents.py`) before a new task is created. `inherit` is resolved by
+`lookup` (`../src/ww/cli/lookup.py`) is the entry point of direct work:
+`../src/ww/task_references.py` maps what the operator called a task onto the
+task format and the IDs the storage port lists, and the command answers with
+one next step, continuing an unfinished run or naming the `record` command, and
+asking the operator through the agent's choice menu (`../src/ww/agents.py`)
+only when the reference matches several tasks. `../src/ww/direct_work.py` holds
+the direct-work entries kept in each task's `direct-work.json` (a
+`TaskDirectWorkStorage` port of the storage adapters) and finds the commits for
+them from the ww/git records and `git log`; `WorkflowService.record_direct_work`
+backs `record`, and `reconcile_direct_work` runs before a manager's
+`instruction` page. `inherit` is resolved by
 the YAML frontend itself, once every workflow is parsed: the heir becomes a
 complete copy with its own settings on top, and global hooks filtered to a
 workflow are extended to its heirs, so validation, the compiler, `plan`, and

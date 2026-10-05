@@ -4,16 +4,13 @@
 from __future__ import annotations
 
 import json
-from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
 from ww import builtin_workflows
 from ww.builtin_workflows import (
-    CATCHALL,
     builtin_files,
-    builtin_workflow,
     is_builtin,
 )
 from ww.cli import main
@@ -47,13 +44,9 @@ PROJECT = """workflows:
 
 @pytest.fixture
 def builtins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A built-in directory holding the shipped catch-all and a learning file."""
+    """A built-in directory holding one learning file."""
     directory = tmp_path / "builtins"
     directory.mkdir()
-    shipped = files("ww.assets").joinpath("workflows", "catchall.yaml")
-    (directory / "catchall.yaml").write_text(
-        shipped.read_text(encoding="utf-8"), encoding="utf-8"
-    )
     (directory / "learn.yaml").write_text(LEARN, encoding="utf-8")
     monkeypatch.setattr(builtin_workflows, "BUILTIN_DIRECTORY", directory)
     return directory
@@ -75,21 +68,11 @@ def _load(root: Path) -> WorkflowConfiguration:
     return load_configuration(root / "ww.yaml", ExtensionRegistry.discover(root))
 
 
-def test_the_shipped_catchall_is_one_manager_step_that_can_restart() -> None:
-    catchall = builtin_workflow(CATCHALL)
-
-    assert catchall.runtime == "auto"
-    assert catchall.restartable is True
-    (work,) = catchall.steps
-    assert (work.name, work.role) == ("work", "manager")
-    assert "Carry out the request exactly as you would" in work.description
-
-
 @pytest.mark.usefixtures("shipped_builtins")
 def test_every_shipped_file_parses_with_unique_names() -> None:
     names = [workflow.name for item in builtin_files() for workflow in item.workflows]
 
-    assert CATCHALL in names
+    assert "catchall" not in names
     assert "ww-learn-project" in names
     assert "ww-learn" not in names
     assert len(names) == len(set(names))
@@ -102,7 +85,6 @@ def test_built_in_workflows_follow_the_configured_ones_with_their_extras(
 
     assert [workflow.name for workflow in configuration.workflows] == [
         "task",
-        "catchall",
         "learn",
     ]
     assert configuration.documents_by_name["me"].scope == "user"
@@ -160,14 +142,14 @@ def test_a_switched_off_built_in_brings_nothing_along(
     assert "learn" not in configuration.workflows_by_name
     assert "me" not in configuration.documents_by_name
     assert "gently" not in {mode.name for mode in configuration.modes}
-    assert CATCHALL in configuration.workflows_by_name
+    assert [workflow.name for workflow in configuration.workflows] == ["task"]
 
 
 def test_the_switch_accepts_only_built_in_names(builtins: Path, tmp_path: Path) -> None:
     root = _project(tmp_path, settings={"workflows": {"task": {"enabled": False}}})
 
     with pytest.raises(
-        ConfigurationError, match="unknown name.*built-in workflows: catchall, learn"
+        ConfigurationError, match="unknown name.*built-in workflows: learn"
     ):
         _load(root)
 
@@ -200,9 +182,7 @@ def test_discover_lists_ww_own_workflows_apart(
             "source_level": None,
         }
     ]
-    assert report["catchall"]["name"] == CATCHALL
-    assert report["catchall"]["source"] is None
-    assert report["catchall"]["source_level"] is None
+    assert "catchall" not in report
 
     assert main(["--root", str(root), "discover"]) == 0
     output = capsys.readouterr().out
@@ -210,4 +190,5 @@ def test_discover_lists_ww_own_workflows_apart(
     assert "Learns who the operator is." not in output
     assert "ww's own workflows" in output
     assert "workflows` lists every workflow" in output
-    assert "## Changes no workflow covers" in output
+    assert "## Changes no workflow covers" not in output
+    assert "## Direct work" in output

@@ -34,6 +34,7 @@ ROLE_COMMANDS = (
     "interact *",
     "loop *",
     "lookup *",
+    "record *",
     "discover*",
     "requirements *",
 )

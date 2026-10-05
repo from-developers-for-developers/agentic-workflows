@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from ww.direct_work import DirectWork
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.items import WorkItem
 
@@ -68,9 +70,11 @@ class TaskStatus:
     # when there is something.
     adjustments: str | None = None
     adjustments_step: str | None = None
+    # The task's direct work, oldest first; shown only when there is some.
+    direct_work: tuple[DirectWork, ...] = ()
 
-    def to_dict(self) -> dict[str, str | None]:
-        data: dict[str, str | None] = {
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
             "task_id": self.task_id,
             "workflow": self.workflow,
             "step": self.step,
@@ -83,4 +87,6 @@ class TaskStatus:
         if self.adjustments is not None:
             data["adjustments"] = self.adjustments
             data["adjustments_step"] = self.adjustments_step
+        if self.direct_work:
+            data["direct_work"] = [entry.to_dict() for entry in self.direct_work]
         return data

@@ -229,23 +229,25 @@ def test_enabled_takes_three_values_read_through_properties(
     assert config.on_request is on_request
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 def test_builtin_workflows_are_enabled_unless_switched_off(tmp_path: Path) -> None:
-    assert load_project_config(tmp_path / "absent.json").workflow_enabled("catchall")
+    assert load_project_config(tmp_path / "absent.json").workflow_enabled("ww-suggest")
     config = load_project_config(
-        write(tmp_path, {"workflows": {"catchall": {"enabled": False}}})
+        write(tmp_path, {"workflows": {"ww-suggest": {"enabled": False}}})
     )
 
-    assert not config.workflow_enabled("catchall")
+    assert not config.workflow_enabled("ww-suggest")
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 @pytest.mark.parametrize(
     ("workflows", "message"),
     [
         ([], "workflows must be an object"),
-        ({"task": {"enabled": False}}, "unknown name.*built-in workflows: catchall"),
-        ({"catchall": False}, "workflows.catchall must be an object"),
-        ({"catchall": {"model": "x"}}, "unknown key"),
-        ({"catchall": {"enabled": "no"}}, "enabled must be true or false"),
+        ({"task": {"enabled": False}}, "unknown name.*built-in workflows: ww-"),
+        ({"ww-suggest": False}, "workflows.ww-suggest must be an object"),
+        ({"ww-suggest": {"model": "x"}}, "unknown key"),
+        ({"ww-suggest": {"enabled": "no"}}, "enabled must be true or false"),
     ],
 )
 def test_the_builtin_workflow_switches_are_validated(
@@ -253,6 +255,23 @@ def test_the_builtin_workflow_switches_are_validated(
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
         load_project_config(write(tmp_path, {"workflows": workflows}))
+
+
+def test_a_stale_catchall_entry_is_ignored_and_reported(tmp_path: Path) -> None:
+    config = load_project_config(
+        write(tmp_path, {"workflows": {"catchall": {"enabled": False}}})
+    )
+
+    assert config.retired_workflows == ("catchall",)
+    assert config.disabled_workflows == frozenset()
+    assert load_project_config(tmp_path / "absent.json").retired_workflows == ()
+
+
+def test_a_stale_catchall_entry_is_still_checked_for_shape(tmp_path: Path) -> None:
+    with pytest.raises(
+        ConfigurationError, match="workflows.catchall must be an object"
+    ):
+        load_project_config(write(tmp_path, {"workflows": {"catchall": False}}))
 
 
 # A configured project's own settings files

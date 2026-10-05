@@ -64,7 +64,7 @@ your scratch directory.
    definition for them alone, and place it with `./ww setup apply <fragment>
    --for me` only when they confirm. Never create such an override silently,
    and never hide a shared edit under a local one.
-4. A workflow ww ships (`catchall`, the `ww-*` ones) is not edited: a same-named
+4. A workflow ww ships (the `ww-*` ones) is not edited: a same-named
    definition placed with `setup apply` replaces it.
 
 ## Create or improve rules
