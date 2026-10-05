@@ -4245,7 +4245,18 @@ class WorkflowService:
         if opened is None or instruction.next_role not in {"manager", "operator"}:
             return instruction
         state, snapshot = self.load(task_id)
-        block = self._handoff_block(state, snapshot, opened, loop=loop)
+        block, end_mark = self._handoff_block(state, snapshot, opened, loop=loop)
+        if end_mark is not None:
+            # Kept so a reprint can reproduce the change set without taking a
+            # new mark of a tree that has moved on.
+            state = replace(
+                state,
+                assignment_end_marks=(
+                    *state.assignment_end_marks,
+                    (opened.token, end_mark),
+                ),
+            )
+            self.runs.commit_run(state, snapshot)
         return replace(instruction, handoff_block=block)
 
     def _handoff_block(
@@ -4256,16 +4267,19 @@ class WorkflowService:
         *,
         loop: str | None = None,
         reprint: bool = False,
-    ) -> HandoffBlock:
-        """The handoff block of one ended assignment of the run.
+    ) -> tuple[HandoffBlock, str | None]:
+        """The handoff block of one ended assignment, and its end mark.
+
+        The end mark is the change mark taken when the block was first built
+        (None on a reprint or when the assignment had no marked item).
 
         ``ended`` names its token and agent items. At the moment a worker's
         command ends the assignment, a ``continue`` has reset the round's
         records into the history, so the items of the ended round are read
         from there. A ``reprint`` is built later: an item whose record has
-        been reset since is read from the history, and the loop outcome and
-        the change set, which were known only then, are not reproduced
-        unless the assignment is still the latest one.
+        been reset since is read from the history, and the loop outcome,
+        which was known only then, is not reproduced, and the change set is
+        reproduced only from the end mark stored with the assignment.
         """
         task_id = state.task_id
         items = {item.id: item for item in snapshot.plan.items}
@@ -4288,14 +4302,13 @@ class WorkflowService:
         )
         files: tuple[str, ...] | None = None
         reproducible = True
+        taken: str | None = None
         if marked is not None:
-            latest = (
-                not reprint
-                or (state.assignment_log or (("", ""),))[-1][0] == ended.token
-                and state.assignment_token is None
-            )
             directory = self._check_scope(state, snapshot.plan, marked[0]).directory
-            end = take_mark(directory) if latest else None
+            if reprint:
+                end = dict(state.assignment_end_marks).get(ended.token)
+            else:
+                end = taken = take_mark(directory)
             if end is not None:
                 files, _ = change_set(directory, marked[1].change_mark, end)
             elif reprint:
@@ -4304,7 +4317,7 @@ class WorkflowService:
         continuation = (
             parent_id if parent_id and not run_is_open(state.status) else None
         )
-        return handoff_block(
+        block = handoff_block(
             task_id,
             ended.token,
             performed,
@@ -4317,6 +4330,7 @@ class WorkflowService:
             loop_outcome=((ended.active, loop) if loop and ended.active else None),
             continuation_task_id=continuation,
         )
+        return block, taken
 
     def handoff(
         self,
@@ -4380,9 +4394,10 @@ class WorkflowService:
             if span is not None
             else ()
         )
-        return self._handoff_block(
+        block, _ = self._handoff_block(
             state, snapshot, OpenAssignment(token, item_ids), reprint=True
         )
+        return block
 
     def _require_manager(self, command: str, caller_role: CallerRole | None) -> None:
         self._validate_caller_role(caller_role)

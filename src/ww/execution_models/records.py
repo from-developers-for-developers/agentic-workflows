@@ -1000,6 +1000,9 @@ class ExecutionState:
     # assignment's first item, oldest first; ``ww handoff`` finds an ended
     # assignment's items from it.
     assignment_log: tuple[tuple[str, str], ...] = ()
+    # The change mark taken when an ended assignment's handoff block was
+    # built, by token; a reprint reproduces the change set from it.
+    assignment_end_marks: tuple[tuple[str, str], ...] = ()
     assignment_model: str | None = None
     assignment_reasoning: str | None = None
     assignment_selected_agent: str | None = None
@@ -1055,6 +1058,9 @@ class ExecutionState:
             "assignment_item_id": self.assignment_item_id,
             "assignment_token": self.assignment_token,
             "assignment_log": [list(entry) for entry in self.assignment_log],
+            "assignment_end_marks": [
+                list(entry) for entry in self.assignment_end_marks
+            ],
             "assignment_model": self.assignment_model,
             "assignment_reasoning": self.assignment_reasoning,
             "assignment_selected_agent": self.assignment_selected_agent,
@@ -1171,6 +1177,7 @@ class ExecutionState:
                 data.get("assignment_token"), "assignment token"
             ),
             assignment_log=_assignment_log(data.get("assignment_log", [])),
+            assignment_end_marks=_assignment_log(data.get("assignment_end_marks", [])),
             assignment_model=expect_optional_string(
                 data.get("assignment_model"), "assignment model"
             ),

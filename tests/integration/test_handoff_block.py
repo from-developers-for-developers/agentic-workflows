@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -399,7 +400,26 @@ def test_an_open_assignment_is_not_reprinted(tmp_path: Path) -> None:
         service.handoff(TASK, assignment="nope")
 
 
-def test_a_reprint_says_when_the_change_set_is_not_reproducible(
+def test_a_reprint_keeps_the_change_set_of_the_assignment(tmp_path: Path) -> None:
+    _repository(tmp_path)
+    service = _auto(tmp_path, CHECKED)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
+    ended = _worker_complete(service, "Done.")
+    assert ended.handoff_block is not None
+    assert ended.handoff_block.files == ("feature.txt",)
+
+    # Work after the assignment ended is not the worker's.
+    (tmp_path / "later.txt").write_text("later\n", encoding="utf-8")
+    service.next(TASK, caller_role="manager")
+    again = service.handoff(TASK, assignment=token)
+
+    assert again == ended.handoff_block
+    assert again.files == ("feature.txt",)
+
+
+def test_a_reprint_without_a_stored_end_mark_is_not_reproducible(
     tmp_path: Path,
 ) -> None:
     _repository(tmp_path)
@@ -409,11 +429,9 @@ def test_a_reprint_says_when_the_change_set_is_not_reproducible(
     (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
     ended = _worker_complete(service, "Done.")
     assert ended.handoff_block is not None
-    assert ended.handoff_block.files == ("feature.txt",)
-    assert service.handoff(TASK) == ended.handoff_block
+    state, snapshot = service.load(TASK)
+    service.runs.commit_run(replace(state, assignment_end_marks=()), snapshot)
 
-    # Once later work has begun, the tree no longer says what this one changed.
-    service.next(TASK, caller_role="manager")
     again = service.handoff(TASK, assignment=token)
 
     assert again.files is None and not again.files_reproducible
