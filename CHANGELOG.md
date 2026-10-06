@@ -9,6 +9,14 @@ The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-06
+
+- Added: three `ww.json` switches, off by default: `debug.collect` keeps a local record per run of how ww itself
+  behaved (`.ww/debug/`), `debug.report` makes `discover` offer to publish them as GitHub issues through the new
+  `debug report` command, each shown and confirmed first, and `feedback.collect` keeps a local record of how the
+  workflow was composed (`.ww/feedback/`), read with `workflow-feedback`; skills `ww-debug-report` and
+  `ww-workflow-feedback` cover the agent side. `4f11e89`
+
 ## 2026-10-05
 
 - Fixed: in the `auto` runtime, a worker's `loop --continue` below the loop's limit left the task stuck: the
