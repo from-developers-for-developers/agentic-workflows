@@ -15,6 +15,8 @@ from ww.config_files import (
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.project_config import (
     BUILTIN_DEFAULTS,
+    DebugSettings,
+    FeedbackSettings,
     Limits,
 )
 from ww.runtimes import DEFAULT_RUNTIME
@@ -37,6 +39,8 @@ def default_settings() -> dict[str, Any]:
         "runtime": DEFAULT_RUNTIME,
         "update_check": True,
         "feedback_learning": True,
+        "debug": DebugSettings().to_dict(),
+        "feedback": FeedbackSettings().to_dict(),
         "executable": DEFAULT_EXECUTABLE,
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
@@ -101,6 +105,9 @@ AGENT_INSTRUCTIONS = (
 # its own), ``ww-scriptize``, which starts ``ww-scriptize-rules``, and
 # ``ww-wizard``, which shapes workflows and rules with the operator through
 # ``setup apply``/``setup update`` and the rules skills.
+# ``ww-debug-report`` publishes collected debug records to ww's GitHub issues
+# after the operator confirms each one, and ``ww-workflow-feedback`` reviews
+# collected workflow feedback with the operator.
 WW_SKILL_NAME = "ww"
 SKILLS = {
     name: files("ww.assets").joinpath(f"{name}_skill.md").read_text(encoding="utf-8")
@@ -119,6 +126,8 @@ SKILLS = {
         "ww-automate",
         "ww-scriptize",
         "ww-wizard",
+        "ww-debug-report",
+        "ww-workflow-feedback",
     )
 }
 

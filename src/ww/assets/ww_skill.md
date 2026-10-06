@@ -14,7 +14,10 @@ change, start from step 1 then.
 1. Run `./ww discover` and read all of it. If it says ww is disabled, stop:
    do not use ww, and tell the user. If it says ww is used only on request
    and the user did not explicitly ask for ww (invoking this skill counts),
-   carry out the request without ww and do not ask.
+   carry out the request without ww and do not ask. If it lists debug
+   reports to send, ask the user once, yes or no, whether to report them
+   now; on yes use the `ww-debug-report` skill, which shows each record and
+   asks before sending it; on no, carry on and do not ask again.
 2. To continue an existing task, run
    `./ww instruction <task-id> --role manager` instead of starting a new one.
 3. Otherwise decide how the request is carried out, in this order:
@@ -42,7 +45,10 @@ change, start from step 1 then.
       seen on the next run; say so, and do not retry it endlessly.
    When the first page of `start` says rules have no check
    yet, tell the user once and carry on: it never blocks the task, and the
-   `ww-scriptize` skill builds those checks when they want it.
+   `ww-scriptize` skill builds those checks when they want it. When it says
+   ww collects debug info or workflow feedback, tell the user once that it
+   is collected at the end of the run and stays on this machine, then never
+   mention it again: the final summary step asks for it.
 4. Follow every ww response exactly: run each displayed command with all
    placeholders replaced, and keep going until ww reports that the workflow
    is complete or reports an error. On `interactive: true` steps, converse

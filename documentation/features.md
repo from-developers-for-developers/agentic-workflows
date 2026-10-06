@@ -45,6 +45,9 @@ An installation carries the same-version copies of all three: read them with
   automation.
 - Atomic persistence, task-level concurrency control, interruption recovery,
   execution logs, and lock cleanup.
+- Optional local run reports, off by default: ww's own assessment of each run
+  (`debug.collect`), published to ww's GitHub issues only on the operator's
+  confirmation, and feedback on the workflow's composition (`feedback.collect`).
 
 ## Designing a workflow
 
@@ -4683,3 +4686,96 @@ Set `"feedback_learning": false` in `ww.json` to disable completion suggestions,
 deduction recording and task-exposure tracking. Existing candidates and
 artifacts remain readable. Pruning remains an explicit maintenance operation,
 independent of that suggestion setting.
+
+## Collecting debug info and workflow feedback
+
+Two optional modes in `ww.json`, both off by default, make the built-in
+workflow summary ask the agent for an assessment at the end of every run and
+keep it on the operator's machine as one record per run:
+
+```json
+{
+  "debug": {"collect": true, "report": true},
+  "feedback": {"collect": true}
+}
+```
+
+- `debug.collect` collects **debug info about ww itself**: how the tool, its
+  pages, commands and handlers behaved during the run. The record holds two
+  arrays, `errors` (errors, bugs and blockers ww caused, first) and
+  `inconveniences` (an assessment of ww's usability), and is kept under
+  `.ww/debug/`.
+- `feedback.collect` collects **feedback about the workflow**: how well the
+  workflow that ran was composed and how effective it was. Its two arrays are
+  `problems` (application or code bugs met while the workflow ran) and
+  `improvements` (steps to add, drop, merge or reorder, prompts to clarify,
+  work to automate or script); ww's own defects do not belong here. The record
+  is kept under `.ww/feedback/`, apart from the feedback-learning store
+  `.ww/feedback.json`.
+
+Collection adds no step to the plan. The summary step's page carries the
+questions as values to supply beside `summary`, each a JSON array of objects
+with `summary`, `detail` and `step` (a bare string counts as a summary; `[]`
+when there is nothing to say); a malformed array is refused at `complete`, so
+it comes back to the agent instead of into a record. Once the run completes,
+ww writes the record: the workflow's name, the time, the task and run IDs, the
+agent, runtime and modes, the ww version with the plan and task-state schema
+versions, the workflow's definition as written in `ww.yaml` (not the compiled
+plan), and the two arrays. The record's ID is the task and run, such as
+`TASK-42--01-task`; a child task's slash becomes a plus.
+
+The agent is told about the collection exactly once: the first page of a run
+asks it to say that ww collects debug info or feedback at the end of the run,
+that it stays on this machine, and where. The collection itself is silent
+until the summary step. Nothing is ever sent by itself.
+
+```console
+./ww debug list
+./ww debug show TASK-42--01-task
+./ww workflow-feedback list
+./ww workflow-feedback show TASK-42--01-task --json
+```
+
+`list` names every record with its counts and whether it was reported;
+`show` prints one as Markdown, exactly what a report would send; `--json`
+gives the records themselves.
+
+### Reporting debug records
+
+A debug record can be published as a GitHub issue of ww's public repository,
+one issue per record, by ww itself, never by the agent on its own:
+
+```console
+./ww debug report
+./ww debug report TASK-42--01-task --yes
+```
+
+Without a record ID, every unreported record is offered in turn. Each report
+is printed in full first, then confirmed on its own at the terminal; `--yes`
+stands for a confirmation the operator already gave, as the `ww-debug-report`
+skill obtains it, and an agent's shell without a terminal is refused without
+it. GitHub accepts no anonymous issue, and ww stores and reads no credentials:
+with the `gh` CLI installed and logged in, ww creates the issue through it and
+keeps the issue's URL on the record; otherwise ww opens the browser on the
+repository's new-issue page with the title and body prefilled, the operator
+reviews and submits it logged in, and the record is marked reported once they
+confirm they did (the prefilled page drops the workflow definition when the
+URL would be too long for GitHub). A declined report stays unreported. The
+command exits non-zero when nothing was sent.
+
+With `debug.report` on, `discover` counts the unreported records and tells the
+agent to ask the operator once, yes or no, whether to report them before
+continuing; on yes the `ww-debug-report` skill shows each record and asks per
+record, on no the work carries on. With `debug.report` off, nothing is
+offered, and `ww debug report` still works on request.
+
+### Reviewing workflow feedback
+
+Feedback records are for the operator's own review and are never sent
+anywhere. The `ww-workflow-feedback` skill reads them with
+`./ww workflow-feedback --json`, groups them by workflow, separates what
+recurs from what happened once and workflow composition from application
+problems, and proposes concrete `ww.yaml` changes with their evidence. It
+applies only what the operator approves, through the usual ways of changing a
+workflow (`ww-solve`, `ww-automate`, `ww-wizard`, or direct work), and hands
+the application problems over as a separate list for the project's backlog.

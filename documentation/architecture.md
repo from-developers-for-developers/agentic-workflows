@@ -1887,3 +1887,37 @@ explicit `feedback prune` command used during the separate `ww-feedback-rules`
 review; it is never a side effect of workflow completion or deduction. Review
 judgement may retain stale candidates using their IDs. Rule installation still
 requires approval of concrete proposals through validated existing rule commands.
+
+## Run reports: debug info and workflow feedback
+
+`run_reports` holds the two optional collections `ww.json` switches on
+(`debug.collect`, `feedback.collect`) and the reporting of debug records
+(`debug.report`, `ww debug report`). Each kind is a `ReportKind`: its
+directory under the runtime path, the two `ProvidedVariable`s it adds to the
+built-in `update-workflow-summary` handler and the sentence it adds to that
+handler's prompt. The plan compiler reads the kinds from the project settings
+when it compiles the summary handler, so a run asks for exactly what was
+switched on when it started, and the saved plan keeps asking for it whatever
+the setting says later. No plan item is added: collection rides on the
+summary step's completion window.
+
+The service validates the arrays before anything is saved (`complete` on the
+summary item parses each JSON array and refuses a malformed one), writes the
+records from the run's `workflow_values` right after the completing commit,
+and adds the one-time collection notice to the first page of every start
+(`notices`, beside the rules notice). A record that cannot be written is
+dropped rather than failing a run that is already committed. The workflow
+definition in a record is the entry of the composed `ww.yaml` (or of a
+built-in file), read through `compose_configuration`, not the compiled plan.
+
+`RunReportStore` keeps one JSON file per run under `.ww/debug/` or
+`.ww/feedback/`, written atomically under the project's lock manager, with a
+`reported` field ww fills when a debug record was published. The CLI's
+`debug` and `workflow-feedback` commands read these stores; `discover`
+counts unreported debug records and offers them only while `debug.report` is
+on. Publishing goes through `report_records`, which takes the confirmation,
+browser and `gh` callables as parameters, so the CLI wires the terminal
+prompts (`confirm_operator`, `--yes`) and `webbrowser.open` while tests pass
+stubs. `gh` is used when it is installed and `gh auth status` succeeds;
+otherwise the prefilled new-issue URL is opened and the operator submits it.
+ww never holds a credential of its own.

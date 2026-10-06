@@ -569,3 +569,41 @@ def test_pages_reject_malformed_input(
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
         load_project_config(write(tmp_path, payload))
+
+
+def test_debug_and_feedback_collection_are_off_unless_switched_on(
+    tmp_path: Path,
+) -> None:
+    assert load_project_config(tmp_path / "ww.json").debug.collect is False
+    assert load_project_config(tmp_path / "ww.json").debug.report is False
+    assert load_project_config(tmp_path / "ww.json").feedback.collect is False
+
+    config = load_project_config(
+        write(
+            tmp_path,
+            {"debug": {"collect": True, "report": True}, "feedback": {"collect": True}},
+        )
+    )
+
+    assert config.debug.collect is True
+    assert config.debug.report is True
+    assert config.feedback.collect is True
+    assert config.debug.to_dict() == {"collect": True, "report": True}
+    assert config.feedback.to_dict() == {"collect": True}
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"debug": True}, r"debug must be an object"),
+        ({"debug": {"collect": "yes"}}, r"debug\.collect must be true or false"),
+        ({"debug": {"send": True}}, r"debug has unknown key\(s\): send"),
+        ({"feedback": {"report": True}}, r"feedback has unknown key\(s\): report"),
+        ({"feedback": []}, r"feedback must be an object"),
+    ],
+)
+def test_malformed_collection_settings_are_refused(
+    tmp_path: Path, payload: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        load_project_config(write(tmp_path, payload))

@@ -32,6 +32,7 @@ from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies, interpolate
 from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
+from ww.run_reports import summary_prompt, summary_variables
 from ww.variables import (
     CHILD_FIELD_PREFIX,
     CHILD_VALUE_NAMES,
@@ -394,15 +395,22 @@ class WorkflowPlanCompiler:
                     action=DefinedAction(
                         "prompt",
                         Prompt(
-                            "Provide a concise summary of this workflow run's "
-                            "goal and result."
+                            summary_prompt(
+                                "Provide a concise summary of this workflow run's "
+                                "goal and result.",
+                                self.project_config,
+                            )
                         ),
                     ),
+                    # With ``debug.collect`` or ``feedback.collect`` on, the
+                    # summary also asks for ww's and the workflow's assessment,
+                    # kept locally as run reports; no extra step appears.
                     provide=(
                         ProvidedVariable(
                             "summary",
                             "A short goal/result summary for the task workflow ledger.",
                         ),
+                        *summary_variables(self.project_config),
                     ),
                 ),
                 (),

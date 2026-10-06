@@ -291,6 +291,38 @@ class Pages:
 
 
 @dataclass(frozen=True)
+class DebugSettings:
+    """``debug`` in ``ww.json``: ww's self-assessment of each run, kept locally.
+
+    ``collect`` asks the agent, at the end of every run, how ww itself behaved
+    and keeps the answer under ``.ww/debug/``; ``report`` makes ``discover``
+    offer to publish collected records to ww's GitHub issues. Both are off by
+    default: nothing is collected or sent unless the operator switches it on.
+    """
+
+    collect: bool = False
+    report: bool = False
+
+    def to_dict(self) -> dict[str, bool]:
+        return {"collect": self.collect, "report": self.report}
+
+
+@dataclass(frozen=True)
+class FeedbackSettings:
+    """``feedback`` in ``ww.json``: the agent's assessment of the workflow.
+
+    ``collect`` asks the agent, at the end of every run, how well the workflow
+    that ran was composed and keeps the answer under ``.ww/feedback/``, for
+    the operator's own review; it is never sent anywhere. Off by default.
+    """
+
+    collect: bool = False
+
+    def to_dict(self) -> dict[str, bool]:
+        return {"collect": self.collect}
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     """Settings that apply to a project rather than to one workflow."""
 
@@ -313,6 +345,9 @@ class ProjectConfig:
     update_check: bool = True
     # Analyse operator feedback into candidates, never automatic rules.
     feedback_learning: bool = True
+    # Local collection of ww's self-assessment and of workflow feedback.
+    debug: DebugSettings = DebugSettings()
+    feedback: FeedbackSettings = FeedbackSettings()
     # Built-in workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
     # Names under ``workflows`` of workflows ww no longer provides; ignored.
@@ -490,6 +525,33 @@ def _parse_extensions(raw: dict[str, Any], path: str) -> dict[str, dict[str, Any
     return dict(extensions)
 
 
+def _parse_switches(
+    raw: object, path: str, key: str, names: tuple[str, ...]
+) -> dict[str, bool]:
+    """An object of boolean switches, each defaulting to ``false``."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigurationError(f"{path}.{key} must be an object")
+    unknown = set(raw) - set(names)
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.{key} has unknown key(s): " + ", ".join(sorted(unknown))
+        )
+    for name, value in raw.items():
+        if not isinstance(value, bool):
+            raise ConfigurationError(f"{path}.{key}.{name} must be true or false")
+    return {name: bool(value) for name, value in raw.items()}
+
+
+def _parse_debug(raw: object, path: str) -> DebugSettings:
+    return DebugSettings(**_parse_switches(raw, path, "debug", ("collect", "report")))
+
+
+def _parse_feedback(raw: object, path: str) -> FeedbackSettings:
+    return FeedbackSettings(**_parse_switches(raw, path, "feedback", ("collect",)))
+
+
 def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     unknown = set(raw) - {
         "enabled",
@@ -502,6 +564,8 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "projects",
         "update_check",
         "feedback_learning",
+        "debug",
+        "feedback",
         "workflows",
         "executable",
         "task_format",
@@ -519,6 +583,8 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     feedback_learning = raw.get("feedback_learning", True)
     if not isinstance(feedback_learning, bool):
         raise ConfigurationError(f"{path}.feedback_learning must be true or false")
+    debug = _parse_debug(raw.get("debug"), path)
+    feedback = _parse_feedback(raw.get("feedback"), path)
     runtime = raw.get("runtime", DEFAULT_RUNTIME)
     if runtime not in RUNTIME_INSTRUCTIONS:
         raise ConfigurationError(
@@ -561,6 +627,8 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         runtime=runtime,
         update_check=update_check,
         feedback_learning=feedback_learning,
+        debug=debug,
+        feedback=feedback,
         disabled_workflows=disabled_workflows,
         retired_workflows=retired_workflows,
         executable=_parse_executable(raw.get("executable"), path),

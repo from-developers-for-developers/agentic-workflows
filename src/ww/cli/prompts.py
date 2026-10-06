@@ -167,6 +167,15 @@ def _ask_operator(prompt: str, cancelled: str) -> bool:
     return confirmed
 
 
+def confirm_question(
+    question: str, cancelled: str, *, assume_yes: bool = False
+) -> bool:
+    """Ask the operator a yes/no question at a terminal; ``--yes`` answers it."""
+    if assume_yes:
+        return True
+    return _ask_operator(f"{question} [y/N] ", cancelled)
+
+
 def confirm_operator(
     command: str,
     effect: str,

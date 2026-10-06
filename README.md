@@ -361,6 +361,15 @@ default; set `"feedback_learning": false` in `ww.json` to disable it. Invoke
 stale points. See [feedback learning](documentation/features.md#learning-from-operator-feedback)
 for commands and examples.
 
+Two further switches in `ww.json`, off by default, keep local run reports:
+`debug.collect` asks the agent at the end of each run how ww itself behaved and
+keeps the answer under `.ww/debug/`, and `feedback.collect` asks how well the
+workflow was composed, kept under `.ww/feedback/`. Nothing leaves the machine
+by itself: `./ww debug report` publishes a debug record to ww's GitHub issues
+only after showing it and asking, and the `ww-workflow-feedback` skill reviews
+the feedback with you. See [collecting debug info and workflow
+feedback](documentation/features.md#collecting-debug-info-and-workflow-feedback).
+
 ### Runtimes: who actually performs a step
 
 Every task runs manager and worker responsibilities — the manager dispatches

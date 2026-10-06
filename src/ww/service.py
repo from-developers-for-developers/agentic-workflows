@@ -136,6 +136,13 @@ from ww.rule_verification import (
 )
 from ww.rule_views import RuleView, check_preview, rule_view
 from ww.run_coordination import RunCoordinator
+from ww.run_reports import (
+    KINDS,
+    RunReportStore,
+    start_notice,
+    validate_report_values,
+    workflow_source,
+)
 from ww.runtimes import requested_setting, runtime_instruction
 from ww.storage import Storage
 from ww.storage_adapters import (
@@ -325,6 +332,9 @@ class WorkflowService:
         self.documents = DocumentStore(self.storage)
         self.interactions = InteractionLog(self.storage)
         self.feedback = feedback_store or FeedbackStore(self.storage)
+        self.run_reports = {
+            name: RunReportStore(self.storage, kind) for name, kind in KINDS.items()
+        }
         self.rule_store = RuleStore(self.storage.root)
         self.rule_disputes = DisputeLog(self.storage.root)
         self.instructions = InstructionBuilder(
@@ -500,15 +510,24 @@ class WorkflowService:
         be read drops the notice rather than failing the start.
         """
         if workflow_name == SCRIPTIZE_WORKFLOW:
-            return instruction
+            return self._with_collection_notice(instruction)
         try:
             automation = self.rule_store.load()
         except StateError:
-            return instruction
-        return replace(
-            instruction,
-            rules_notice=scriptize_notice(self._load_configuration(), automation),
+            return self._with_collection_notice(instruction)
+        return self._with_collection_notice(
+            replace(
+                instruction,
+                rules_notice=scriptize_notice(self._load_configuration(), automation),
+            )
         )
+
+    def _with_collection_notice(self, instruction: Instruction) -> Instruction:
+        """Say once, on the first page, what the run collects and where it stays."""
+        notice = start_notice(load_project_config(self.storage.project_config_path))
+        if notice is None:
+            return instruction
+        return replace(instruction, notices=(*instruction.notices, notice))
 
     def _project_path(self, project: str | None) -> str | None:
         """The configured project's directory, without checking it exists."""
@@ -765,11 +784,39 @@ class WorkflowService:
             handoff=handoff,
             bootstrap_request_id=bootstrap_request_id,
         )
-        if (
-            state.status == "completed"
-            and load_project_config(self.storage.project_config_path).feedback_learning
+        if state.status == "completed":
+            if load_project_config(self.storage.project_config_path).feedback_learning:
+                self.feedback.complete_task(state.task_id)
+            self._write_run_reports(state, snapshot)
+
+    def _write_run_reports(self, state: ExecutionState, snapshot: PlanSnapshot) -> None:
+        """Keep the summary's assessments as this run's local records.
+
+        The plan asked for them when the run started, so a record is written
+        whenever its values were supplied, whatever the setting says now. The
+        run is committed already: a record that cannot be written is lost
+        rather than failing the completion.
+        """
+        values = dict(state.workflow_values)
+        if not any(
+            array.variable in values for kind in KINDS.values() for array in kind.arrays
         ):
-            self.feedback.complete_task(state.task_id)
+            return
+        definition = workflow_source(self.storage.config_path, snapshot.plan.workflow)
+        for store in self.run_reports.values():
+            try:
+                store.record(
+                    task_id=state.task_id,
+                    run_id=state.run_id,
+                    workflow=snapshot.plan.workflow,
+                    agent=snapshot.plan.agent,
+                    runtime=state.workflow_runtime,
+                    modes=snapshot.plan.modes,
+                    values=values,
+                    workflow_definition=definition,
+                )
+            except (OSError, StateError):
+                continue
 
     def _reported_items(
         self, task_id: str, state: ExecutionState, item: PlanItem, reports: bool
@@ -1823,6 +1870,10 @@ class WorkflowService:
             window_stop = assignment.stop if assignment else None
         required, _ = completion_window(snapshot.plan, state.cursor, window_stop)
         validate_requested_values(supplied, required)
+        if item.summary:
+            # The run reports' arrays are checked before anything is saved, so
+            # a malformed one comes back to the agent, not into a record.
+            validate_report_values(supplied)
         self._validate_supplied_inputs(
             state,
             completion_window_items(snapshot.plan, state.cursor, window_stop),

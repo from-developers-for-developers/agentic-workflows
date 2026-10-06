@@ -316,7 +316,14 @@ Without it, printed commands use `./ww` and the launcher runs
 missing. The launcher is ww-owned: `init` rewrites a `./ww` that differs from
 the current template, and `lint` warns about one. `runtime` (`single` or `auto`) is the runtime `start` uses when
 neither `--runtime` nor the workflow names one, `update_check: false` silences
-the notice that the ww checkout is behind its remote, `task_format` is the
+the notice that the ww checkout is behind its remote, `debug` and `feedback`
+switch on the [local run reports](features.md#collecting-debug-info-and-workflow-feedback):
+`debug.collect` makes the built-in workflow summary also ask how ww itself
+behaved and keeps one record per run under `.ww/debug/`, `debug.report` makes
+`discover` offer to report unreported records to ww's GitHub issues through
+`ww debug report`, and `feedback.collect` asks how well the workflow was
+composed and keeps the record under `.ww/feedback/`; each is a boolean, off by
+default, and any other key under them is an error. `task_format` is the
 generated task ID format, `rules` holds [the guidance for building
 checks](#guiding-checks-rulescheck_guidance), `projects` lists the
 directories a task may work in, and `extensions` holds each extension's
@@ -329,6 +336,8 @@ with its default, as `init` writes it:
   "runtime": "single",
   "update_check": true,
   "feedback_learning": true,
+  "debug": {"collect": false, "report": false},
+  "feedback": {"collect": false},
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3, "auto_retries": 0},

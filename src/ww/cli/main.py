@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from ww import rule_conversion, rule_writes, setup_apply, workflow_update
+from ww import rule_conversion, rule_writes, run_reports, setup_apply, workflow_update
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
@@ -83,6 +83,7 @@ from ww.rule_store import (
 )
 from ww.rule_verification import revoke_check
 from ww.rule_views import declared_hashes, orphans, prune, rules_listing
+from ww.run_reports import DEBUG, FEEDBACK, listing, render_listing, render_record
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.upgrade import upgrade
@@ -118,6 +119,7 @@ from .prompts import (
     _confirm_force_next,
     confirm_interrupted_retry,
     confirm_operator,
+    confirm_question,
 )
 from .updates import announce, render_updates
 
@@ -139,6 +141,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "rule",
         "requirements",
         "handoff",
+        "workflow-feedback",
     }
 )
 # Commands whose stdout is consumed by a program rather than read, whether or
@@ -1049,6 +1052,101 @@ def _feedback(context: _Context) -> _Outcome:
     return _Outcome("# Operator feedback candidates\n\n" + _json(result))
 
 
+def _show_report(text: str) -> None:
+    sys.stderr.write(text.rstrip("\n") + "\n\n")
+
+
+def _debug(context: _Context) -> _Outcome:
+    """The debug records ww collected about itself: list, show, or report."""
+    args = context.args
+    store = context.service.run_reports[DEBUG.name]
+    if args.debug_action == "list":
+        return _Outcome(
+            _json(listing(store)) if args.json_output else render_listing(store)
+        )
+    if args.debug_action == "show":
+        if not args.record_id:
+            raise StateError("debug show needs a record ID; debug list names them")
+        record = store.get(args.record_id)
+        return _Outcome(
+            _json(record) if args.json_output else render_record(record, DEBUG)
+        )
+    records = [store.get(args.record_id)] if args.record_id else store.unreported()
+    if not records:
+        text = "No unreported debug records.\n"
+        return _Outcome(_json({"reported": []}) if args.json_output else text)
+    # Every report is shown in full on stderr, so the operator sees exactly
+    # what leaves the machine, and each one is confirmed on its own.
+    outcomes = run_reports.report_records(
+        store,
+        records,
+        confirm=lambda record, method: confirm_operator(
+            "ww debug report",
+            f"send record {record['id']} to ww's GitHub issues "
+            + (
+                "through the gh CLI"
+                if method == "gh"
+                else "by opening the prefilled new-issue page in your browser"
+            ),
+            "Send this report?",
+            "Report",
+            assume_yes=args.yes,
+        ),
+        confirm_submitted=lambda identifier: confirm_question(
+            f"Did you submit the issue for {identifier}? Answer no to keep it "
+            "unreported",
+            "Report",
+            assume_yes=args.yes,
+        ),
+        show=_show_report,
+        # Looked up at call time, so tests substitute them on the module.
+        gh_available=run_reports.gh_is_authenticated,
+        create_issue=run_reports.gh_create_issue,
+        open_browser=webbrowser.open,
+    )
+    sent = any(outcome.status in {"created", "opened"} for outcome in outcomes)
+    if args.json_output:
+        return _Outcome(
+            _json({"reported": [outcome.to_dict() for outcome in outcomes]}),
+            error=None if sent else "no report sent",
+            exit_code=0 if sent else 1,
+        )
+    lines = ["# Debug reports", ""]
+    for outcome in outcomes:
+        if outcome.status == "created":
+            lines.append(f"- `{outcome.id}`: issue created at {outcome.url}")
+        elif outcome.status == "opened":
+            lines.append(f"- `{outcome.id}`: submitted through the browser")
+        elif outcome.status == "cancelled":
+            lines.append(f"- `{outcome.id}`: not submitted; still unreported")
+        else:
+            lines.append(f"- `{outcome.id}`: skipped; still unreported")
+    return _Outcome(
+        "\n".join(lines) + "\n",
+        error=None if sent else "no report sent",
+        exit_code=0 if sent else 1,
+    )
+
+
+def _workflow_feedback(context: _Context) -> _Outcome:
+    """The feedback records collected about the workflows: list or show."""
+    args = context.args
+    store = context.service.run_reports[FEEDBACK.name]
+    if args.workflow_feedback_action == "list":
+        return _Outcome(
+            _json(listing(store)) if args.json_output else render_listing(store)
+        )
+    if not args.record_id:
+        raise StateError(
+            "workflow-feedback show needs a record ID; "
+            "workflow-feedback list names them"
+        )
+    record = store.get(args.record_id)
+    return _Outcome(
+        _json(record) if args.json_output else render_record(record, FEEDBACK)
+    )
+
+
 def _interactions(context: _Context) -> _Outcome:
     text = context.service.interactions_text(context.task_id)
     return _Outcome(text if text.endswith("\n") or not text else text + "\n")
@@ -1523,6 +1621,8 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "interact": _interact,
     "interactions": _interactions,
     "feedback": _feedback,
+    "debug": _debug,
+    "workflow-feedback": _workflow_feedback,
     "fail": _fail,
     "status": _status,
     "instruction": _instruction,
@@ -1602,6 +1702,7 @@ def main(argv: list[str] | None = None) -> int:
             and (args.feedback_action not in {"record", "prune"} or args.dry_run)
         )
         or (args.command == "onboarding" and not args.assignments)
+        or (args.command == "debug" and args.debug_action != "report")
     )
 
     def log(outcome: str, error: str | None, *scope: str | None) -> None:

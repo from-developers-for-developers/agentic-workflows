@@ -593,6 +593,8 @@ def test_init_writes_every_setting_with_its_default(tmp_path: Path, capsys) -> N
         "runtime",
         "update_check",
         "feedback_learning",
+        "debug",
+        "feedback",
         "executable",
         "task_format",
         "limits",

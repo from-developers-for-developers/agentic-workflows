@@ -499,6 +499,39 @@ def build_parser() -> argparse.ArgumentParser:
     feedback.add_argument("--analysis", metavar="PATH")
     feedback.add_argument("--dry-run", action="store_true")
     feedback.add_argument("--keep", action="append", default=[], metavar="POINT-ID")
+    debug = subparsers.add_parser(
+        "debug",
+        parents=[json_output],
+        help=(
+            "List, show or report the debug records ww collected about its own "
+            "behaviour (ww.json debug.collect); report sends one GitHub issue "
+            "per record, each shown in full and confirmed first."
+        ),
+    )
+    debug.add_argument(
+        "debug_action", choices=["list", "show", "report"], nargs="?", default="list"
+    )
+    debug.add_argument("record_id", nargs="?")
+    debug.add_argument(
+        "--yes",
+        action="store_true",
+        help=(
+            "Send without asking at a terminal: the operator has seen each "
+            "record and agreed to report it."
+        ),
+    )
+    workflow_feedback = subparsers.add_parser(
+        "workflow-feedback",
+        parents=[json_output],
+        help=(
+            "List or show the feedback records collected about how each "
+            "workflow was composed (ww.json feedback.collect); never sent anywhere."
+        ),
+    )
+    workflow_feedback.add_argument(
+        "workflow_feedback_action", choices=["list", "show"], nargs="?", default="list"
+    )
+    workflow_feedback.add_argument("record_id", nargs="?")
     interact = subparsers.add_parser(
         "interact",
         parents=[json_and_role],
