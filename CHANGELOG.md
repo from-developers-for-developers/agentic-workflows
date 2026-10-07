@@ -9,6 +9,17 @@ The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-07
+
+- Fixed: a rejected completion's artifact is shown on the fix page and kept as a previous attempt in the
+  accepted artifact; a commit handler after a review loop asks for a fresh message instead of reusing the
+  earlier one; `{{ww.task.slug}}` gives a child's ID without its slash and `ww/git` no longer nests a child's
+  branch under its parent's; a failed identity request shows its text and its recoveries (`next --retry`,
+  `reset`) and accepts `PARENT/REQUEST-…`; the assignment coverage line separates completed from remaining
+  items; `Step N of M` labels match artifact file numbers; with `debug.collect` on, ww records its own
+  stops, `fail`, `next --force` and `dispute` in the debug record, and `debug note` keeps an operator's
+  observation. `3d97fa2`
+
 ## 2026-10-06
 
 - Added: three `ww.json` switches, off by default: `debug.collect` keeps a local record per run of how ww itself
