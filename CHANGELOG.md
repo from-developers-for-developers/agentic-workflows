@@ -9,6 +9,18 @@ The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-08
+
+- Fixed: after a worker's assessment, the handoff block lists one `next --outcome <label>` command per
+  outcome and a plain `next` shows the choice again instead of failing; `git-commit` no longer asks for a
+  message when the task workspace has nothing to commit, the message is optional on the step's completion,
+  and the "steps completed since" list of a commit request counts earlier commit placements; `next` on an
+  open interactive step shows its page again, and the refusal for a worker's open item names `instruction`,
+  `complete` and `next --reassign`; `rules add` and `rules move` work with a group that lists its rule files
+  one by one; `rules --json` lists every workflow's steps with the path a `steps` filter can name, loop bodies
+  and per-item stages included, which the `ww-rule` skill now reads; the assignment coverage line also names
+  the items ww runs itself, marked `(run by ww)`, and the upcoming-assignment preview lists them. `d38e52e`
+
 ## 2026-10-07
 
 - Fixed: a rejected completion's artifact is shown on the fix page and kept as a previous attempt in the
