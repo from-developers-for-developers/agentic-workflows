@@ -20,3 +20,24 @@ def test_unexpected_values_are_reported_before_missing_values() -> None:
         StateError, match="unexpected completion variable\\(s\\): extra"
     ):
         validate_requested_values({"extra": "value"}, (ProvidedVariable("task_id"),))
+
+
+def test_a_conditional_value_may_be_left_out_but_not_an_unconditional_one() -> None:
+    requested = (
+        ProvidedVariable("commit_message", conditional=True),
+        ProvidedVariable("summary"),
+    )
+
+    validate_requested_values({"summary": "Done."}, requested)
+    validate_requested_values({"summary": "Done.", "commit_message": "x"}, requested)
+    with pytest.raises(StateError, match="missing required variable\\(s\\): summary"):
+        validate_requested_values({"commit_message": "x"}, requested)
+
+
+def test_a_conditional_value_is_encoded_only_when_set() -> None:
+    assert ProvidedVariable("a", "b").to_dict() == {"name": "a", "description": "b"}
+    assert ProvidedVariable("a", conditional=True).to_dict() == {
+        "name": "a",
+        "description": "",
+        "conditional": True,
+    }

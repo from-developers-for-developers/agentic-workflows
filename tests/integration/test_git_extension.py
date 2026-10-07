@@ -417,6 +417,40 @@ def test_a_commit_with_nothing_to_stage_succeeds_without_running_hooks(
     assert _run("git", "rev-parse", "HEAD", cwd=repository).stdout == before
 
 
+def test_a_commit_on_a_clean_tree_needs_no_message(repository: Path) -> None:
+    before = _run("git", "rev-parse", "HEAD", cwd=repository).stdout
+
+    result = handler("git-commit")(context(repository))
+
+    assert result.ok, result.error
+    assert result.output == "nothing to commit; the workspace has no changes"
+    assert _run("git", "rev-parse", "HEAD", cwd=repository).stdout == before
+
+
+def test_a_commit_with_changes_requires_a_message(repository: Path) -> None:
+    (repository / "new.txt").write_text("x\n", encoding="utf-8")
+
+    result = handler("git-commit")(context(repository))
+
+    assert not result.ok
+    assert result.error == "commit_message is required"
+
+
+def test_the_commit_needs_its_message_only_with_changes(repository: Path) -> None:
+    needs_input = git_extension.EXTENSION.handlers_by_name["git-commit"].needs_input
+    assert needs_input is not None
+
+    assert needs_input(context(repository)) is False
+    (repository / ".ww").mkdir()
+    (repository / ".ww" / "ignored.txt").write_text("x\n", encoding="utf-8")
+    assert needs_input(context(repository)) is False
+    (repository / "new.txt").write_text("x\n", encoding="utf-8")
+    assert needs_input(context(repository)) is True
+    # Git trouble, such as a workspace that is not the worktree root, asks.
+    (repository / "sub").mkdir()
+    assert needs_input(context(repository, workspace=repository / "sub")) is True
+
+
 def test_a_commit_retry_checks_the_operation_trailer(repository: Path) -> None:
     (repository / "new.txt").write_text("x\n", encoding="utf-8")
     first = handler("git-commit")(

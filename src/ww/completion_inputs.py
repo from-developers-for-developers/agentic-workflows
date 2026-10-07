@@ -28,9 +28,14 @@ def group_metadata_values(
 def validate_requested_values(
     values: dict[str, str], requested: tuple[ProvidedVariable, ...]
 ) -> None:
-    """Require exactly the variables requested by a plan item."""
+    """Require the variables requested by a plan item and accept no other.
+
+    A conditional one may be left out: ww asks for it later only when the
+    handler that declared it needs it.
+    """
     expected = {item.name for item in requested}
-    unknown, missing = set(values) - expected, expected - set(values)
+    needed = {item.name for item in requested if not item.conditional}
+    unknown, missing = set(values) - expected, needed - set(values)
     if unknown:
         raise StateError(
             "unexpected completion variable(s): " + ", ".join(sorted(unknown))

@@ -14,9 +14,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from ww.actions import actions
 from ww.config.rules import rule_source
 from ww.errors import StateError
 from ww.execution_models import CheckReport, ExecutionState, PlanItemExecution
+from ww.extensions import is_extension_reference
 from ww.instructions.builder import fix_failures
 from ww.instructions.models import CheckPreview
 from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
@@ -25,11 +27,15 @@ from ww.rule_disputes import DisputeEntry
 from ww.rule_store import RuleAutomation, describe_command
 from ww.rule_verification import to_verify
 from ww.workflow_config import (
+    INIT_STEP_NAME,
+    HandlerDefinition,
     NameFilter,
     RuleDefinition,
     RuleGroupRef,
+    StepDefinition,
     WorkflowConfiguration,
     every_step,
+    step_paths,
 )
 
 
@@ -292,21 +298,52 @@ class ListedStep:
 
 
 @dataclass(frozen=True)
+class ListedTarget:
+    """One step of a workflow's flattened tree, as a step filter can name it.
+
+    ``path`` is the step's logical path, the precise selector of a group's
+    ``steps`` filter; ``step`` is its leaf name, which a filter also admits
+    wherever the tree repeats it. Only an ``agent_owned`` step receives rules;
+    ``groups`` are the root groups that reach it now, by their filters or
+    because the step names them.
+    """
+
+    workflow: str
+    step: str
+    path: str
+    agent_owned: bool
+    groups: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "workflow": self.workflow,
+            "step": self.step,
+            "path": self.path,
+            "agent_owned": self.agent_owned,
+            "groups": list(self.groups),
+        }
+
+
+@dataclass(frozen=True)
 class RulesListing:
     """The project's declared rules, for ``ww rules``.
 
-    ``check_guidance`` is the project's ``rules.check_guidance``, so an agent
-    writing a check reads it without opening ww's configuration files.
+    ``targets`` are every workflow's steps in tree order, so an agent scoping
+    a group names a step that exists. ``check_guidance`` is the project's
+    ``rules.check_guidance``, so an agent writing a check reads it without
+    opening ww's configuration files.
     """
 
     groups: tuple[ListedGroup, ...]
     steps: tuple[ListedStep, ...]
+    targets: tuple[ListedTarget, ...] = ()
     check_guidance: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "groups": [group.to_dict() for group in self.groups],
             "steps": [step.to_dict() for step in self.steps],
+            "targets": [target.to_dict() for target in self.targets],
             "check_guidance": self.check_guidance,
         }
 
@@ -321,7 +358,9 @@ def rules_listing(
 
     A step name repeated across workflows is listed once; ``disputes`` count
     how often each rule was disputed; ``automation`` names the approved
-    store check of each rule without a command.
+    store check of each rule without a command. The targets walk every
+    workflow's steps as the plan compiler does, ``init`` left out since it
+    never takes rules.
     """
     automation = automation if automation is not None else RuleAutomation()
     counts: dict[str, int] = {}
@@ -367,7 +406,64 @@ def rules_listing(
                 entry.name for entry in step.rules if isinstance(entry, RuleGroupRef)
             ),
         )
-    return RulesListing(groups, tuple(steps.values()))
+    return RulesListing(groups, tuple(steps.values()), _targets(configuration))
+
+
+def _targets(configuration: WorkflowConfiguration) -> tuple[ListedTarget, ...]:
+    targets = []
+    for workflow in configuration.workflows:
+        walked = tuple(step_paths(workflow.steps))
+        precise = frozenset(path for _, path in walked)
+        for step, path in walked:
+            if step.name == INIT_STEP_NAME:
+                continue
+            owned = _agent_owned(configuration, step)
+            applying = (
+                *(
+                    group.name
+                    for group in configuration.rule_groups
+                    if group.applies_to(workflow.name, step.name, path, precise)
+                ),
+                *(
+                    entry.name
+                    for entry in step.rules
+                    if isinstance(entry, RuleGroupRef)
+                ),
+            )
+            targets.append(
+                ListedTarget(
+                    workflow=workflow.name,
+                    step=step.name,
+                    path=path,
+                    agent_owned=owned,
+                    groups=tuple(dict.fromkeys(applying)) if owned else (),
+                )
+            )
+    return tuple(targets)
+
+
+def _agent_owned(configuration: WorkflowConfiguration, step: StepDefinition) -> bool:
+    """Whether the step has agent work of its own, as the plan compiler resolves it.
+
+    A loop or a nested sequence only holds its steps, and a handler group
+    runs automated members. Any other step performs its action, the root
+    handler it names, or an implicit skill, slash command or prompt, which
+    is always the agent's.
+    """
+    if step.loop_steps or step.child_steps:
+        return False
+    handler: HandlerDefinition = step
+    if step.is_reference:
+        if is_extension_reference(step.name):
+            return False
+        handler = configuration.handlers_by_name.get(step.name, step)
+    if handler.handlers:
+        return False
+    if handler.operation is not None:
+        return handler.operation.owner == "agent"
+    if handler.action is not None:
+        return actions.get(handler.action.identifier).owner == "agent"
+    return True
 
 
 def _store_check(automation: RuleAutomation, rule: RuleDefinition) -> str | None:

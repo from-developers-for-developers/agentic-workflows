@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from ww.changes import project_files
-from ww.config_writes import with_import
+from ww.config_writes import list_item_write, with_import, with_list_item
 from ww.errors import StateError
 from ww.rule_writes import _set_key, _split, check_mapping, rule_stem
 
@@ -65,10 +65,93 @@ def test_an_import_is_added_without_touching_the_rest(before: str, after: str) -
     assert with_import(before, raw, "ww-rules.yaml") == after
 
 
-def test_an_imports_list_ww_cannot_extend_is_returned_unchanged() -> None:
+def test_an_imports_list_ww_cannot_extend_is_none() -> None:
     text = "imports: !!seq [a.yaml]\nmodes: []\n"
 
-    assert with_import(text, yaml.safe_load(text), "ww-rules.yaml") == text
+    assert with_import(text, yaml.safe_load(text), "ww-rules.yaml") is None
+
+
+@pytest.mark.parametrize(
+    ("before", "keys", "after"),
+    [
+        (
+            "rules:\n  docs: [a/]\n  all:\n    rules:\n      - docs\n"
+            "      - a/b.md  # kept\n\n    steps: [review]\nmodes: []\n",
+            ("rules", "all", "rules"),
+            "rules:\n  docs: [a/]\n  all:\n    rules:\n      - docs\n"
+            "      - a/b.md  # kept\n      - a/c.md\n\n    steps: [review]\n"
+            "modes: []\n",
+        ),
+        (
+            "rules:\n  all:\n    - a/b.md\n  docs: [a/]\n",
+            ("rules", "all"),
+            "rules:\n  all:\n    - a/b.md\n    - a/c.md\n  docs: [a/]\n",
+        ),
+        (
+            "rules:\n  all:\n  - a/b.md\n  docs: [a/]\n",
+            ("rules", "all"),
+            "rules:\n  all:\n  - a/b.md\n  - a/c.md\n  docs: [a/]\n",
+        ),
+        (
+            "rules:\n  all:\n    - text: >\n        Long.\n      paths: [x]\n",
+            ("rules", "all"),
+            "rules:\n  all:\n    - text: >\n        Long.\n      paths: [x]\n"
+            "    - a/c.md\n",
+        ),
+    ],
+)
+def test_a_list_item_is_appended_without_touching_the_rest(
+    before: str, keys: tuple[str, ...], after: str
+) -> None:
+    assert with_list_item(before, keys, "a/c.md") == after
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "rules:\n  all: [a/b.md]\n",
+        "rules:\n  all: &all\n    - a/b.md\n",
+        "rules:\n  all: *other\n",
+        "rules:\n  all:\n    rules: [a/b.md]\n",
+        "rules:\n  all:\n    rules:\n  docs: [a/]\n",
+        "rules:\n  docs: [a/]\n",
+        "rules: {all: [a/b.md]}\n",
+        'rules:\n  "all":\n    - a/b.md\n',
+    ],
+)
+def test_a_list_ww_cannot_extend_is_none(text: str) -> None:
+    assert with_list_item(text, ("rules", "all"), "a/c.md") is None
+    assert with_list_item(text, ("rules", "all", "rules"), "a/c.md") is None
+
+
+def test_a_list_item_write_names_the_line_to_add_when_refused(tmp_path: Path) -> None:
+    text = "rules:\n  all: [a/b.md]\n"
+
+    with pytest.raises(StateError) as refused:
+        list_item_write(
+            tmp_path / "ww.yaml",
+            text,
+            yaml.safe_load(text),
+            ("rules", "all"),
+            "a/c.md",
+            "ww.yaml",
+        )
+
+    assert str(refused.value) == (
+        "ww cannot add a/c.md to rules.all in ww.yaml without changing anything "
+        "else; add the line `- a/c.md` to that list by hand"
+    )
+    # The line goes into the first `all`, and reading back shows the second wins.
+    text = "rules:\n  all:\n    - a/b.md\n  all: [a/d.md]\n"
+    with pytest.raises(StateError, match="add the line"):
+        list_item_write(
+            tmp_path / "ww.yaml",
+            text,
+            yaml.safe_load(text),
+            ("rules", "all"),
+            "a/c.md",
+            "ww.yaml",
+        )
 
 
 def test_a_frontmatter_key_is_replaced_and_every_other_line_kept(

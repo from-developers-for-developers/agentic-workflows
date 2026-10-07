@@ -283,6 +283,12 @@ class ExtensionHandler:
     ww then rejects the completion carrying a refused value before saving
     anything, so the agent corrects it instead of the handler failing later.
 
+    ``needs_input`` is a precondition: whether the handler needs its declared
+    inputs this run; ``False`` lets ww run it without asking.  ww consults it
+    with the handler's context when the inputs are missing, so an agent may
+    leave them out of a completion, and a precondition that raises counts as
+    needing them.
+
     ``arguments`` names the positional arguments a reference must pass with
     ``args``, in order; ww renders their templates when the handler runs and
     hands them over as ``ExtensionContext.arguments``.  A reference passing
@@ -296,6 +302,7 @@ class ExtensionHandler:
     check: Callable[[ExtensionContext], ExtensionCheckResult] | None = None
     outputs: tuple[str, ...] = ()
     validate: Callable[[Mapping[str, str]], str | None] | None = None
+    needs_input: Callable[[ExtensionContext], bool] | None = None
     arguments: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -309,6 +316,8 @@ class ExtensionHandler:
             raise TypeError("extension handler check must be callable")
         if self.validate is not None and not callable(self.validate):
             raise TypeError("extension handler validate must be callable")
+        if self.needs_input is not None and not callable(self.needs_input):
+            raise TypeError("extension handler needs_input must be callable")
         if not isinstance(self.provide, tuple) or not all(
             isinstance(value, ProvidedVariable) for value in self.provide
         ):

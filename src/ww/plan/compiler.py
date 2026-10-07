@@ -54,6 +54,7 @@ from ww.workflow_config import (
     WorkflowConfiguration,
     WorkflowDefinition,
     binds_task_identity,
+    step_paths,
 )
 from ww.workflow_validation import implicit_init_step, validate_configuration
 from ww.workspace import Workdir, relative_workspace
@@ -1468,18 +1469,8 @@ def _artifact_dependency_path(
     return name
 
 
-def _logical_step_paths(
-    steps: tuple[StepDefinition, ...], parent: str | None = None
-) -> frozenset[str]:
-    paths: set[str] = set()
-    for step in steps:
-        path = f"{parent}/{step.name}" if parent else step.name
-        paths.add(path)
-        item_steps = step.items.steps if step.items is not None else ()
-        child_stages = step.children.steps if step.children is not None else ()
-        for nested in (step.child_steps, step.loop_steps, item_steps, child_stages):
-            paths.update(_logical_step_paths(nested, path))
-    return frozenset(paths)
+def _logical_step_paths(steps: tuple[StepDefinition, ...]) -> frozenset[str]:
+    return frozenset(path for _, path in step_paths(steps))
 
 
 def _hook_label(handler: HandlerDefinition) -> str:

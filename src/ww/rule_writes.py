@@ -13,10 +13,12 @@ configuration, committed with the change that needs them.
 
 Rule files are edited in place. The repo's ``ww.yaml`` is
 never rewritten: a new root group goes into ``ww-rules.yaml``, a file ww owns
-and rewrites whole, which the repo file lists under ``imports``; adding that
-one list entry is the only change ww makes to the repo file, and it is checked
-to leave every other value as it was. A group declared anywhere else is the
-operator's own, so ``rules filter`` refuses it and says what to write.
+and rewrites whole, which the repo file lists under ``imports``. ww makes two
+kinds of change to the repo file, or another file of the operator's, each one
+appended list line checked to leave every other value as it was: that
+``imports`` entry, and a rule file's path in a group that lists its files one
+by one instead of a directory. A group declared anywhere else is otherwise
+the operator's own, so ``rules filter`` refuses it and says what to write.
 
 ``rules promote`` is the one write that also changes the rule-automation
 store: it copies an approved check's command into the ``check`` of every rule
@@ -44,20 +46,25 @@ from ww.config.rules import (
     rule_text_hash,
 )
 from ww.config_files import RULES_IMPORT_FILE, display_path
-from ww.config_writes import FileWrite, Transaction, dump_yaml, import_write
+from ww.config_writes import (
+    FileWrite,
+    Transaction,
+    dump_yaml,
+    import_write,
+    list_item_write,
+)
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
 from ww.rule_store import RuleAutomation, RuleStore, describe_command
 from ww.workflow_config import (
     INIT_STEP_NAME,
-    ItemFlow,
     NameFilter,
     RuleDefinition,
     RuleGroup,
     RuleGroupRef,
-    StepDefinition,
     WorkflowConfiguration,
     every_step,
+    step_paths,
 )
 
 # A rule file's stem: lower-case kebab-case, as the derived ones are, e.g.
@@ -177,15 +184,26 @@ def plan_add_rule(
     contains: tuple[str, ...] = (),
     check: dict[str, Any] | None = None,
     stem: str | None = None,
+    directory: Path | None = None,
 ) -> RuleWrite:
-    """A new rule file in the group's first directory, never over another."""
+    """A new rule file in the group's directory, never over another.
+
+    ``directory`` names where it goes, else the group's first directory, else
+    the folder of its last file; a file no listed directory holds is appended
+    to the group's ``rules`` list.
+    """
     body = _body(text)
     group = project.group(group_name)
-    directory = _group_directory(project, group)
+    folder, listed = _group_home(
+        project,
+        group,
+        directory,
+        "pass --dir, add one to it, or use a group that has one",
+    )
     if stem is not None and not STEM.fullmatch(stem):
         raise StateError(f"--id {stem!r} must be lower-case kebab-case")
     stem = stem or rule_stem(body)
-    file = directory / f"{stem}.md"
+    file = folder / f"{stem}.md"
     if file.exists():
         raise StateError(
             f"{project.label(file)} already exists; choose another --id, or "
@@ -201,13 +219,15 @@ def plan_add_rule(
     content = f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
     rule_id = f"{group.name}/{stem}"
     contains_report, contains_warnings = _contains_findings(project, contains)
+    writes = [FileWrite(file, content)]
+    report = [f"Created {project.label(file)}: rule `{rule_id}`."]
+    if listed:
+        write, line = _listing(project, group, file)
+        writes.append(write)
+        report.append(line)
     return RuleWrite(
-        writes=(FileWrite(file, content),),
-        report=(
-            f"Created {project.label(file)}: rule `{rule_id}`.",
-            *_glob_report(project, paths),
-            *contains_report,
-        ),
+        writes=tuple(writes),
+        report=(*report, *_glob_report(project, paths), *contains_report),
         warnings=(*_glob_warnings(project, paths), *contains_warnings),
         rule=rule_id,
     )
@@ -301,10 +321,17 @@ def plan_edit(
 
 
 def plan_move(project: RuleProject, rule_id: str, group_name: str) -> RuleWrite:
-    """The rule's file moved, unchanged, into another group's first directory."""
+    """The rule's file moved, unchanged, into another group's directory.
+
+    A group without a directory gets the file beside its last file, and the
+    file appended to its ``rules`` list.
+    """
     _, file = _rule_file(project, rule_id)
     group = project.group(group_name)
-    target = _group_directory(project, group) / file.name
+    folder, listed = _group_home(
+        project, group, None, "add one to it, or use a group that has one"
+    )
+    target = folder / file.name
     if target.resolve() == file.resolve():
         raise StateError(f"{project.label(file)} is already in group {group.name!r}")
     if target.exists():
@@ -313,18 +340,20 @@ def plan_move(project: RuleProject, rule_id: str, group_name: str) -> RuleWrite:
             f"{file.stem!r}"
         )
     new_id = f"{group.name}/{file.stem}"
-    return RuleWrite(
-        writes=(
-            FileWrite(target, file.read_text(encoding="utf-8")),
-            FileWrite(file, None),
-        ),
-        report=(
-            f"Moved {project.label(file)} to {project.label(target)}: rule "
-            f"`{rule_id}` is now `{new_id}`. Its wording is unchanged, so what the "
-            "rule-automation store knows about it still applies.",
-        ),
-        rule=new_id,
-    )
+    writes = [
+        FileWrite(target, file.read_text(encoding="utf-8")),
+        FileWrite(file, None),
+    ]
+    report = [
+        f"Moved {project.label(file)} to {project.label(target)}: rule "
+        f"`{rule_id}` is now `{new_id}`. Its wording is unchanged, so what the "
+        "rule-automation store knows about it still applies."
+    ]
+    if listed:
+        write, line = _listing(project, group, target)
+        writes.append(write)
+        report.append(line)
+    return RuleWrite(writes=tuple(writes), report=tuple(report), rule=new_id)
 
 
 def plan_filter(
@@ -555,21 +584,6 @@ def _without_check(
 # Where a rule applies ---------------------------------------------------------
 
 
-def _walk(
-    steps: tuple[StepDefinition, ...], parent: str | None = None
-) -> Iterator[tuple[StepDefinition, str]]:
-    """Every step with its logical path, as the plan compiler names them."""
-    for step in steps:
-        path = f"{parent}/{step.name}" if parent else step.name
-        yield step, path
-        nested = (
-            *step.child_steps,
-            *step.loop_steps,
-            *(step.items.steps if isinstance(step.items, ItemFlow) else ()),
-        )
-        yield from _walk(nested, path)
-
-
 def _placement(
     configuration: WorkflowConfiguration, write: RuleWrite
 ) -> tuple[str, ...]:
@@ -583,7 +597,7 @@ def _placement(
 
     lines = []
     for workflow in configuration.workflows:
-        walked = tuple(_walk(workflow.steps))
+        walked = tuple(step_paths(workflow.steps))
         precise = frozenset(path for _, path in walked)
         names = []
         for step, path in walked:
@@ -632,8 +646,17 @@ def _inside(project: RuleProject, path: Path) -> Path:
     return resolved
 
 
-def _group_directory(project: RuleProject, group: RuleGroup) -> Path:
-    """The first directory a group lists, where its new rules go."""
+def _group_home(
+    project: RuleProject, group: RuleGroup, directory: Path | None, hint: str
+) -> tuple[Path, bool]:
+    """Where a rule file of ``group`` goes, and whether the group must list it.
+
+    ``directory`` wins; else the first directory the group lists; else the
+    folder of its last file, since a group may name its files one by one. A
+    file in a listed directory is the group's already; any other needs an
+    entry in its ``rules`` list. ``hint`` says what to do when nothing names
+    a place.
+    """
     if group.origin != "configuration":
         origin = group.origin.removeprefix("extension ")
         raise StateError(
@@ -644,15 +667,67 @@ def _group_directory(project: RuleProject, group: RuleGroup) -> Path:
     raw = declared.get(group.name) if isinstance(declared, dict) else None
     items = _group_mapping(raw).get("rules", []) if raw is not None else []
     names = project.configuration.rule_groups_by_name
-    for item in items:
-        if isinstance(item, str) and item not in names:
-            candidate = Path(item) if Path(item).is_absolute() else project.base / item
-            if candidate.is_dir():
-                return _inside(project, candidate)
-    raise StateError(
-        f"rule group {group.name!r} lists no directory to add a rule file to; "
-        f"add one to it, or use a group that has one"
-    )
+    paths = [
+        (Path(item) if Path(item).is_absolute() else project.base / item).resolve()
+        for item in items
+        if isinstance(item, str) and item not in names
+    ]
+    directories = [path for path in paths if path.is_dir()]
+    files = [path for path in paths if path.is_file()]
+    if directory is not None:
+        folder = _inside(project, directory)
+    elif directories:
+        folder = directories[0]
+    elif files:
+        folder = files[-1].parent
+    else:
+        raise StateError(
+            f"rule group {group.name!r} lists no directory or file to put a rule "
+            f"file beside; {hint}"
+        )
+    return folder, folder not in directories
+
+
+def _listing(
+    project: RuleProject, group: RuleGroup, file: Path
+) -> tuple[FileWrite, str]:
+    """The file declaring ``group`` with ``file`` appended to its ``rules`` list.
+
+    ``ww-rules.yaml`` is rewritten whole, as ww owns it; another file gains
+    the one line, relative to it as its other entries are, and is refused
+    when that line cannot be added without touching the rest.
+    """
+    label = _declared_in(project, group)
+    if label == project.label(project.base / RULES_IMPORT_FILE):
+        imports = _RulesImport.read(project)
+        entry = _relative(file, imports.path.parent)
+        declared = imports.groups[group.name]
+        updated = (
+            [*declared, entry]
+            if isinstance(declared, list)
+            else {**declared, "rules": [*declared["rules"], entry]}
+        )
+        write = imports.write({**imports.groups, group.name: updated})
+    else:
+        path = Path(label).expanduser()
+        if not path.is_absolute():
+            path = project.base / path
+        text = path.read_text(encoding="utf-8")
+        raw = yaml.safe_load(text)
+        groups = raw.get("rules") if isinstance(raw, dict) else None
+        if not isinstance(groups, dict) or group.name not in groups:
+            raise StateError(f"{label} does not declare rule group {group.name!r}")
+        declared = groups[group.name]
+        keys = ("rules", group.name) + (
+            () if isinstance(declared, list) else ("rules",)
+        )
+        entry = _relative(file, path.parent)
+        write = list_item_write(path, text, raw, keys, entry, label)
+    return write, f"Added {entry} to rule group `{group.name}` in {label}."
+
+
+def _relative(file: Path, directory: Path) -> str:
+    return Path(os.path.relpath(file, directory)).as_posix()
 
 
 def _group_mapping(raw: Any) -> dict[str, Any]:

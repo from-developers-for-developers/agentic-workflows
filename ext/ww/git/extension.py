@@ -400,18 +400,31 @@ def _status_paths(output: str) -> tuple[str, ...]:
     return tuple(paths)
 
 
-def _validate_commit_workspace(context: ExtensionContext) -> str | None:
+def _workspace_status(
+    context: ExtensionContext,
+) -> tuple[tuple[str, ...], str | None]:
+    """The paths Git reports changed in the task workspace, or why it cannot."""
     root, error = _workspace_root(context)
     if error:
-        return error
+        return (), error
     assert root is not None
     status = _git(context, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if status.returncode:
-        return _failed(status, "git status failed")
+        return (), _failed(status, "git status failed")
     paths = _status_paths(status.stdout)
     if status.stdout and not paths:
-        return "Git reported malformed status output"
-    return _paths_inside(root, paths)
+        return (), "Git reported malformed status output"
+    return paths, _paths_inside(root, paths)
+
+
+def _validate_commit_workspace(context: ExtensionContext) -> str | None:
+    return _workspace_status(context)[1]
+
+
+def _needs_commit_message(context: ExtensionContext) -> bool:
+    """Whether the workspace has anything to commit; Git trouble asks as usual."""
+    paths, error = _workspace_status(context)
+    return bool(paths) or error is not None
 
 
 def _validate_staged_paths(context: ExtensionContext) -> str | None:
@@ -799,12 +812,6 @@ def _commit_message_error(values: Mapping[str, str]) -> str | None:
 
 def _commit(context: ExtensionContext) -> ExtensionResult:
     settings = _task_settings(context)
-    error = _commit_message_error(context.values)
-    if error is not None:
-        return ExtensionResult(False, error=error)
-    subject = _subject(context, settings, context.values["commit_message"])
-    if not subject:
-        return ExtensionResult(False, error="commit_format rendered an empty message")
     # A retry may arrive after git committed but before ww recorded the
     # result.  The operation trailer gives the checker a durable identity.
     if context.operation_id:
@@ -840,6 +847,14 @@ def _commit(context: ExtensionContext) -> ExtensionResult:
             False,
             error=_failed(has_staged_changes, "could not inspect staged changes"),
         )
+    # Only a commit needs its message: the precondition lets ww run this
+    # without asking for one when the workspace is clean.
+    error = _commit_message_error(context.values)
+    if error is not None:
+        return ExtensionResult(False, error=error)
+    subject = _subject(context, settings, context.values["commit_message"])
+    if not subject:
+        return ExtensionResult(False, error="commit_format rendered an empty message")
     commit_args = ["commit", "-m", subject]
     if context.operation_id:
         commit_args.extend(["-m", _operation_marker(context)])
@@ -1692,6 +1707,7 @@ EXTENSION = Extension(
             ),
             check=_check_commit,
             validate=_commit_message_error,
+            needs_input=_needs_commit_message,
         ),
         ExtensionHandler(
             "merge-branch",

@@ -27,6 +27,7 @@ from ww.workflow_config import (
     StepDefinition,
     WorkflowConfiguration,
     WorkflowDefinition,
+    step_paths,
     step_tree,
 )
 
@@ -1109,31 +1110,13 @@ def _validate_workflow_boundary_hooks(
                     )
 
 
-def _logical_step_paths(
-    steps: tuple[StepDefinition, ...], parent: str | None = None
-) -> set[str]:
-    result: set[str] = set()
-    for step in steps:
-        path = f"{parent}/{step.name}" if parent else step.name
-        result.add(path)
-        result.update(_logical_step_paths(step.child_steps, path))
-        result.update(_logical_step_paths(step.loop_steps, path))
-        result.update(_logical_step_paths(_template_steps(step), path))
-    return result
+def _logical_step_paths(steps: tuple[StepDefinition, ...]) -> set[str]:
+    return {path for _, path in step_paths(steps)}
 
 
-def _step_filter_references(
-    steps: tuple[StepDefinition, ...], parent: str | None = None
-) -> set[str]:
+def _step_filter_references(steps: tuple[StepDefinition, ...]) -> set[str]:
     """Return both compatible leaf names and precise logical step paths."""
-    result: set[str] = set()
-    for step in steps:
-        path = f"{parent}/{step.name}" if parent else step.name
-        result.update((step.name, path))
-        result.update(_step_filter_references(step.child_steps, path))
-        result.update(_step_filter_references(step.loop_steps, path))
-        result.update(_step_filter_references(_template_steps(step), path))
-    return result
+    return {name for step, path in step_paths(steps) for name in (step.name, path)}
 
 
 def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:

@@ -12,6 +12,7 @@ from tests.workflow_helpers import assignment_token, start_after_init
 from ww.config import load_configuration
 from ww.errors import ConfigurationError, StateError
 from ww.instructions import Instruction
+from ww.instructions.handoff import handoff_markdown
 from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
@@ -79,6 +80,11 @@ def test_the_assessment_page_names_each_outcome_and_its_effect(
     assert "- `negative` — ends the workflow here" in rendered
     # An undeclared standard answer is accepted too, and runs nothing extra.
     assert "- `mixed` — runs nothing extra and continues with `tests`." in rendered
+    # The step's performer only answers; recording the answer is the manager's.
+    assert (
+        "the manager records the outcome with "
+        "`./ww next TASK-1 --role manager --outcome <label>`." in rendered
+    )
     assert [outcome.label for outcome in page.assessment_outcomes] == [
         "positive",
         "negative",
@@ -167,8 +173,11 @@ def test_the_compact_form_gets_the_same_pages(tmp_path: Path) -> None:
 
     assert "- `positive` — continues with `tests`." in md.render_instruction(page)
     assert "--outcome negative" in md.render_instruction(after)
-    with pytest.raises(StateError, match="pending assess requires --outcome"):
-        service.next("TASK-1", caller_role="manager")
+    # A plain next runs nothing; it shows the choice again.
+    shown = service.next("TASK-1", caller_role="manager")
+    assert shown.choosing_outcome_of == "assess"
+    assert "--outcome negative" in md.render_instruction(shown)
+    assert service.status("TASK-1").choosing_outcome_of == "assess"
 
 
 def test_direct_standard_branches_use_the_existing_outcome_transitions(
@@ -280,6 +289,67 @@ def test_a_delegating_manager_chooses_without_a_worker_preview(
     assert "Upcoming assignment" not in rendered
     assert "to the selected worker" not in rendered
     assert "--outcome positive" in rendered
+
+
+def test_the_handoff_block_of_an_assessment_names_one_command_per_outcome(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(DECLARED, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    service.start(
+        "merge",
+        "TASK-1",
+        agent="codex",
+        init_artifact="Merge.",
+        workflow_runtime="auto",
+        caller_role="manager",
+    )
+    for _ in ("merge", "assess"):
+        service.next("TASK-1", caller_role="manager")
+        ended = service.complete(
+            "TASK-1",
+            artifact="Done.",
+            summary_for_next="Done.",
+            caller_role="worker",
+            assignment=assignment_token(service, "TASK-1"),
+        )
+    block = ended.handoff_block
+
+    assert block is not None
+    assert block.choosing_outcome_of == "assess"
+    assert block.outcomes == ("positive", "negative", "mixed")
+    rendered = md.render_instruction(ended)
+    assert (
+        "Manager: `assess` is complete. Read its artifact, choose the outcome "
+        "it supports, and continue with that outcome's command:\n"
+        "- positive: `./ww next TASK-1 --role manager --outcome positive`\n"
+        "- negative: `./ww next TASK-1 --role manager --outcome negative`\n"
+        "- mixed: `./ww next TASK-1 --role manager --outcome mixed`\n"
+    ) in rendered
+    # The plain command, which would run nothing, is not offered.
+    assert "continue with `./ww next TASK-1 --role manager`" not in rendered
+    assert service.handoff("TASK-1") == block
+    assert service.handoff("TASK-1").to_dict()["outcomes"] == [
+        "positive",
+        "negative",
+        "mixed",
+    ]
+
+    # A plain next dispatches nothing: it shows the choice again.
+    shown = service.next("TASK-1", caller_role="manager")
+    assert shown.choosing_outcome_of == "assess"
+    assert shown.assignment_preview is None
+    assert assignment_token(service, "TASK-1") is None
+    assert "--outcome positive" in md.render_instruction(shown)
+
+    review = service.next("TASK-1", outcome="positive", caller_role="manager")
+    assert review.item_name == "review"
+    # Once chosen, the reprinted block continues plainly.
+    reprinted = service.handoff("TASK-1")
+    assert reprinted.outcomes == ()
+    assert "Manager: continue with `./ww next TASK-1 --role manager`" in (
+        handoff_markdown(reprinted)
+    )
 
 
 @pytest.mark.parametrize(

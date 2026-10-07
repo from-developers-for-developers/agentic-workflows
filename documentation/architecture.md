@@ -27,7 +27,12 @@ The built-in frontend in `../src/ww/config/` parses `../ww.yaml` into the
 immutable definitions in `../src/ww/workflow_config.py`; another notation can
 produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
-parsers do not acquire different workflow semantics. Validation is also where
+parsers do not acquire different workflow semantics. `workflow_config.step_paths`
+is the one walk of a step tree with its logical paths (nested steps, loop
+bodies, per-item and per-child stages under their parent's path); the
+validator, the plan compiler, rule placement and the `rules` listing's
+`targets` all use it, so a step filter is checked, applied and listed against
+the same set of names. Validation is also where
 the built-in workflows join the configured ones: `../src/ww/builtin_workflows.py`
 parses the YAML files shipped in `../src/ww/assets/workflows/` (`scriptize.yaml` with `ww-scriptize-rules`, and
 `onboarding.yaml` with ww's learning and setup workflows) with the same frontend, once per process, and adds each workflow the
@@ -609,11 +614,13 @@ agent, model, reasoning, or profile, or that is reserved for the manager with
 cannot change those. The `single` runtime keeps per-step bounds. Each stage is still its own plan item
 with its own record, so completion, reload, and recovery need no span-specific
 state; only the instruction builder marks the first stage of a span with its
-scope and later stages as compact continuations. The builder also splits the
-covered items by their execution records into `completed_assignment_items`
-and the rest, and names in `running_assignment_item` the ww-owned item the
-cursor is on, so a page re-read while a hook runs describes the assignment as
-it stands rather than as it was dispatched.
+scope and later stages as compact continuations. The builder also lists every
+item of the assignment in plan order as `assignment_items`, the ones ww runs
+itself among them as `assignment_automatic_items`, splits them by their
+execution records into `completed_assignment_items` and the rest, and names in
+`running_assignment_item` the ww-owned item the cursor is on, so a page re-read
+while a hook runs describes the assignment as it stands rather than as it was
+dispatched.
 
 The same module collects the inputs of a completion window. Matching variable
 requests share one value across its automatic handlers, so overlapping project
@@ -973,10 +980,20 @@ builds from the saved state (`instructions/handoff.py`): the items performed
 with their outcomes, artifacts, checks, fix rounds and change set, plus the
 worker's capped `--summary`. The service takes the open
 assignment's items before a worker command runs, so the block can still name
-them after the command closed the assignment. `WorkflowService` builds the block in one method, used by both the completion
+them after the command closed the assignment. When the assignment ended with
+an assessment, the block also carries that step's name and its pending
+outcome labels (`choosing_outcome_of`, `outcomes`, from `pending_assessment`),
+so its manager line is one `next --outcome <label>` command per label rather
+than a plain `next`, which with an outcome pending re-renders the choose page
+instead of reaching `select_assessment_outcome` (`--force` still does, and is
+refused there). `WorkflowService` builds the block in one method, used by both the completion
 path and `ww handoff`, which reprints it for an ended assignment from the saved records. A worker's `complete` or `loop`
 on a `role: manager` item is refused; the manager completes it with `--role
-manager`.
+manager`. `next` while an item is open follows the same ownership: the page is
+shown again when the session asking holds the open item (every item in
+`single`, a `role: manager` item such as an interactive step in `auto`), and
+refused for a worker's open item with the three ways out named,
+`instruction`, `complete`, and `next --reassign`.
 A step's `role` says who performs it, and it is resolved along the same chain
 as the profile: workflow, enclosing steps, the step. For a `role: manager`
 action the compiler clears profile and execution-selection hints, so
@@ -1099,6 +1116,20 @@ that item has run; the supplied values remain on the record's
 `supplied_values`. Workflow values thus hold only what no consumer has used
 yet, and a later consumer of the same name, a commit after a review loop,
 raises its own input request instead of reusing the earlier value. A
+handler that needs its inputs only sometimes declares a precondition,
+`ExtensionHandler.needs_input`, which the compiler carries as
+`ProvidedVariable.conditional` on the plan item and `ActionExecutor.needs_input`
+evaluates through `AutomaticAction.needs_input` with the handler's ordinary
+context: `drain` consults it when the item's values are missing and runs the
+item without a request when they are not needed, and the completion window
+(`completion_inputs.py`) accepts a conditional value left out, so a commit on
+a clean workspace neither asks for a message nor stops the assignment; once
+ww has requested the value, it is required. The "steps completed since this
+handler last ran" list of a request is keyed on the handler rather than the
+plan item: the builder reads `item_executions` and `execution_history` for
+any placement of the same handler, skips a run whose result says it found
+nothing to do, and orders records completed in the same second by plan
+position. A
 reference's `args` are the other input:
 the name-only handler carries them, the compiler checks their count against
 the handler's declared `arguments` and validates their templates like shell
@@ -1851,12 +1882,18 @@ loading the configuration as any command would, and restored whole when that
 fails. Rule files are edited in place, keeping every line a change does not
 concern; the repo YAML is never rewritten whole, because PyYAML cannot round-trip
 comments, so new groups go into `ww-rules.yaml`, a ww-owned import, and the
-repo file gains only its `imports` entry, checked by reading it back.
+repo file gains only its `imports` entry, checked by reading it back. A rule
+added or moved into a group that lists its files one by one is written beside
+the group's last file (or in `--dir`) and listed the same way: `ww-rules.yaml`
+is rewritten whole, any other declaring file gains the one list line, and the
+write is refused, naming the line to add by hand, when the list cannot be
+extended without touching anything else.
 `rules promote` is the one write that also changes the store, after the rule
 files validated. The write mechanics both this and `ww setup apply` use — a
 `FileWrite` plan, the `Transaction` that restores every file, and
-`import_write`, which adds one `imports` entry and checks nothing else moved —
-live in `../src/ww/config_writes.py`, with `dump_yaml`, which writes every YAML
+`import_write`, which adds one `imports` entry, and `list_item_write`, which
+appends one item to the block list at a key path, both checking nothing else
+moved — live in `../src/ww/config_writes.py`, with `dump_yaml`, which writes every YAML
 file ww owns the way a person would: block style, no anchors or aliases, an
 empty value rather than `null` (`- run-tests:`), long text folded with `>-` and
 multi-line text as a `|` block, short scalar lists such as `argv` inline,

@@ -12,11 +12,13 @@ optional frontmatter scopes it to files (`paths`) or gives it a command
 group, `ww-rules.yaml`, `ww.yaml` or
 `ww-rule-automation.json` yourself.
 
-1. **Learn what exists.** Run `./ww rules --json` (groups, their filters and
-   directories' rules with IDs, summaries, globs, and the project's
-   `check_guidance` setting) and `./ww discover` (the
-   workflows and their steps). Use only workflow and step names they show;
-   never invent one.
+1. **Learn what exists.** Run `./ww rules --json`: groups, their filters and
+   directories' rules with IDs, summaries, globs, the project's
+   `check_guidance` setting, and `targets`, every workflow's steps with the
+   `path` a `steps` filter names to reach exactly that step (loop bodies and
+   per-item stages included) and whether the step is `agent_owned`; only
+   such a step takes rules. Use only workflow names and step names or paths
+   it shows; never invent one.
 2. **Split into atomic obligations.** One rule is one thing an agent can do
    or fail to do. Break the input into such obligations and merge the ones
    that say the same thing twice. For each, search the existing rules by ID
@@ -29,9 +31,12 @@ group, `ww-rules.yaml`, `ww.yaml` or
    or `--dry-run`, which reports the count). A glob that matches nothing is
    dropped, and you say so.
 4. **Decide placement from the real filters.** An existing group whose
-   `workflows`/`steps` fit the rule; else propose a new group with its
-   directory and filters; else, for a one-off, the step's own `rules:` list,
-   which the operator edits in the YAML by hand (say exactly what to add).
+   `workflows`/`steps` fit the rule, whether it lists a directory or its
+   files one by one (`rules add` then writes the file beside the group's
+   last one, or in `--dir`, and lists it; a group naming only other groups
+   needs `--dir`); else propose a new group with its directory and filters;
+   else, for a one-off, the step's own `rules:` list, which the operator
+   edits in the YAML by hand (say exactly what to add).
 5. **Rewrite each rule** as one imperative sentence with concrete nouns and
    no hedging; the rationale and an example go in the body below it, since
    the step page shows only the first sentence. Propose a `check` only when

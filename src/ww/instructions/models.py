@@ -348,6 +348,8 @@ class HandoffBlock:
     assignment has rules or checks, or the directory has no git.
     ``files_reproducible`` is false in a block printed again after the
     assignment ended, when the change set can no longer be told.
+    ``outcomes`` are the answers still to be chosen when the assignment ended
+    with an assessment: the manager continues with one of them.
     """
 
     task_id: str
@@ -358,6 +360,8 @@ class HandoffBlock:
     error: str | None = None
     continuation_task_id: str | None = None
     files_reproducible: bool = True
+    choosing_outcome_of: str | None = None
+    outcomes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -369,6 +373,8 @@ class HandoffBlock:
             "files_reproducible": self.files_reproducible,
             "summary": self.summary,
             "error": self.error,
+            "choosing_outcome_of": self.choosing_outcome_of,
+            "outcomes": list(self.outcomes),
         }
 
 
@@ -507,14 +513,16 @@ class Instruction:
     assignment_explicit_steps: tuple[str, ...] = ()
     continues_assignment: bool = False
     # The assignment the current item belongs to, in the ``auto`` runtime: the
-    # step that drives worker selection, every agent or input item it covers,
+    # step that drives worker selection, every item it covers in plan order,
     # and whether the current item is a later one the worker already holds.
     assignment_step: str | None = None
     assignment_items: tuple[str, ...] = ()
-    # The leading ``assignment_items`` the worker already completed.
+    # The ``assignment_items`` ww runs itself: no performer, no agent input.
+    assignment_automatic_items: tuple[str, ...] = ()
+    # The ``assignment_items`` already completed, in plan order.
     completed_assignment_items: tuple[str, ...] = ()
     # The automatic item of the assignment ww runs now, when the cursor is
-    # on one: it belongs to no performer, so it is not among the items.
+    # on one.
     running_assignment_item: str | None = None
     assignment_continues: bool = False
     manager_intro: bool = False
@@ -668,6 +676,7 @@ class Instruction:
             "continues_assignment": self.continues_assignment,
             "assignment_step": self.assignment_step,
             "assignment_items": list(self.assignment_items),
+            "assignment_automatic_items": list(self.assignment_automatic_items),
             "completed_assignment_items": list(self.completed_assignment_items),
             "running_assignment_item": self.running_assignment_item,
             "assignment_explicit_steps": list(self.assignment_explicit_steps),

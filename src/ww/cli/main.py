@@ -609,12 +609,8 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             raise StateError(
                 "rules add takes GROUP with --text, or --group NAME with --dir"
             )
-        if (
-            args.directory is not None
-            or args.workflows is not None
-            or (args.steps is not None)
-        ):
-            raise StateError("--dir, --workflows and --steps go with --group")
+        if args.workflows is not None or args.steps is not None:
+            raise StateError("--workflows and --steps go with --group")
         write = rule_writes.plan_add_rule(
             project,
             args.group_name,
@@ -627,6 +623,7 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
                 tuple(args.assertion) if args.assertion else None,
             ),
             stem=args.stem,
+            directory=args.directory,
         )
     elif action == "edit":
         write = rule_writes.plan_edit(

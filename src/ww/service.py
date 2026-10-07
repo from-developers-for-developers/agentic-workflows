@@ -1260,6 +1260,14 @@ class WorkflowService:
         caller_role: CallerRole | None = None,
     ) -> Instruction:
         state, snapshot = self.load(task_id)
+        if (
+            outcome is None
+            and not force
+            and pending_assessment(state, snapshot.plan) is not None
+        ):
+            # Nothing runs until an outcome is chosen; the page names one
+            # command per outcome, so a plain `next` shows it again.
+            return self.render(state, snapshot)
         state = select_assessment_outcome(state, snapshot.plan, outcome, _now)
         if outcome is not None:
             self.commit(state, snapshot)
@@ -1343,11 +1351,16 @@ class WorkflowService:
                 if replayed is not None:
                     return self.resume(replayed, snapshot)
                 return self.render(state, snapshot)
-            if state.workflow_runtime == "single":
-                # The same session holds every step: asking again for the one
-                # already open is harmless, so show it instead of refusing.
+            if state.workflow_runtime == "single" or item.role == "manager":
+                # The session asking holds the open item: every step in the
+                # single runtime, its own items as the manager. Asking again
+                # for it is harmless, so show it instead of refusing.
                 return self.render(state, snapshot)
-            raise StateError("an agent item is already in progress; use complete")
+            raise StateError(
+                f"{item.name!r} is in progress with a worker: `instruction "
+                f"{task_id}` shows its page, `complete` finishes it, `next "
+                f"{task_id} --reassign` dispatches it again"
+            )
         # One manager call carries through every coordinator boundary it
         # meets, so preparation hooks before a loop, or a loop nested in
         # another, never cost the manager a second `next` before the first
@@ -3649,7 +3662,9 @@ class WorkflowService:
                 for value in item.provide
                 if value.name not in dict(state.workflow_values)
             ]
-            if missing:
+            # An item whose precondition says it does not need its inputs
+            # this run (a commit on a clean tree) runs without asking.
+            if missing and self.actions.needs_input(state, snapshot, item):
                 state = await_item_input(state, item, tuple(missing), _now)
                 self.commit(state, snapshot)
                 return state, snapshot
@@ -4548,6 +4563,7 @@ class WorkflowService:
         continuation = (
             parent_id if parent_id and not run_is_open(state.status) else None
         )
+        choosing = pending_assessment(state, snapshot.plan)
         block = handoff_block(
             task_id,
             ended.token,
@@ -4560,6 +4576,12 @@ class WorkflowService:
             ),
             loop_outcome=((ended.active, loop) if loop and ended.active else None),
             continuation_task_id=continuation,
+            choosing_outcome_of=(
+                snapshot.plan.items[choosing.index].name
+                if choosing is not None
+                else None
+            ),
+            outcomes=choosing.labels if choosing is not None else (),
         )
         return block, taken
 

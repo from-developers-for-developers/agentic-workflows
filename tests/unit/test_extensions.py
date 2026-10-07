@@ -541,6 +541,15 @@ def test_extension_handler_validate_is_optional_but_must_be_callable() -> None:
         ExtensionHandler("bad", run, validate="yes")  # type: ignore[arg-type]
 
 
+def test_extension_handler_needs_input_is_optional_but_must_be_callable() -> None:
+    run = lambda context: ExtensionResult(True)  # noqa: E731
+
+    assert ExtensionHandler("plain", run).needs_input is None
+    assert ExtensionHandler("gated", run, needs_input=lambda context: True).needs_input
+    with pytest.raises(TypeError, match="needs_input must be callable"):
+        ExtensionHandler("bad", run, needs_input=True)  # type: ignore[arg-type]
+
+
 def test_extension_contribution_shapes_and_names_are_validated() -> None:
     run = lambda context: "ok"  # noqa: E731
 

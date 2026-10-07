@@ -529,6 +529,13 @@ class InputValidationContext(Protocol):
     def extensions(self) -> ExtensionHandlerService: ...
 
 
+class PreconditionContext(Protocol):
+    """What an action may consult to tell whether it needs its inputs."""
+
+    @property
+    def extensions(self) -> ExtensionService: ...
+
+
 class ExecutionContext(Protocol):
     """Read-only invocation information plus deliberately narrow effects."""
 
@@ -633,6 +640,15 @@ class AutomaticAction(Action[DefinitionT, PlannedT]):
         """
         del planned, values, context
         return None
+
+    def needs_input(self, planned: PlannedT, context: PreconditionContext) -> bool:
+        """Whether the action needs its declared inputs this run.
+
+        Core asks while they are missing and nothing is recorded; ``False``
+        runs the action without requesting them.
+        """
+        del planned, context
+        return True
 
     def check_recovery(
         self, planned: PlannedT, context: RecoveryContext

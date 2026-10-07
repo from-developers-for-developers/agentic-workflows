@@ -14,6 +14,8 @@ Selection item: `develop`
 Requested agent: `codex`  
 Requested profile: `none`
 
+The assignment covers, in order: `develop`, `inline-argv` (run by `ww`).
+
 ### Manager command
 
 To continue the workflow, run this; its worker values follow the request (`--selected-agent`, `--model`, `--reasoning`); replace them if you select a different available worker:

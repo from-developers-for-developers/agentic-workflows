@@ -10,6 +10,8 @@ You are the worker for this assignment. Do the work, run the worker completion c
 
 This assignment is addressed to you, the worker. Running the commands this page displays is expected, even where they name the parent task or another task ID than the one you were given. Change only your own branch and worktree; leave every other branch and worktree as it is.
 
+This assignment covers, in order: `develop`, `inline-argv` (run by `ww`). One worker performs those not run by `ww`; `ww` hands each one over after the previous completion.
+
 ### Task requirements
 
 Add a --verbose flag to the CLI.

@@ -272,9 +272,12 @@ class InstructionBuilder:
                 else _assignment_preview(state, plan, item, next_role)
             ),
             assignment_step=driver.name if driver else None,
-            assignment_items=tuple(entry.name for entry in covered),
+            assignment_items=tuple(entry.name for entry in span),
+            assignment_automatic_items=tuple(
+                entry.name for entry in span if entry not in covered
+            ),
             completed_assignment_items=tuple(
-                entry.name for entry in _completed_items(state, assignment, covered)
+                entry.name for entry in _completed_items(state, assignment, span)
             ),
             running_assignment_item=(
                 item.name
@@ -474,21 +477,28 @@ class InstructionBuilder:
             if name in requested
         )
         # The values describe the work done since this handler last ran in
-        # this run: an earlier loop round's execution is in the history.
+        # this run, through any of its placements: an earlier hook of the same
+        # handler, or an earlier loop round's execution in the history.  A
+        # run that found nothing to do did not consume that work.
+        by_id = {entry.id: entry for entry in plan.items}
         last_run = max(
             (
-                str(record.completed_at)
-                for record in state.execution_history
-                if record.plan_item_id == item.id and record.completed_at
+                (str(record.completed_at), record.position)
+                for record in (*state.item_executions, *state.execution_history)
+                if record.status == "completed"
+                and record.completed_at
+                and (found := by_id.get(record.plan_item_id)) is not None
+                and _same_handler(found, item)
+                and not _ran_without_effect(record)
             ),
-            default="",
+            default=("", 0),
         )
         input_context = tuple(
             StepHandover(
                 found.step, str((self.root / found.artifact).resolve()), found.summary
             )
             for found in self._handovers(state, plan)
-            if found.completed_at > last_run
+            if (found.completed_at, found.position) > last_run
         )
         assignment = active_assignment(
             plan, state.assignment_item_id, runtime=state.workflow_runtime
@@ -556,6 +566,7 @@ class InstructionBuilder:
                 record.summary_for_next,
                 str(record.completed_at),
                 record.adjustments,
+                record.position,
             )
             for _, _, entry, record in candidates
         )
@@ -1365,6 +1376,8 @@ class _StepResult:
     summary: str | None
     completed_at: str = ""
     adjustments: str | None = None
+    # The plan position orders records that completed in the same second.
+    position: int = 0
 
 
 def _result_body(artifact: str) -> str:
@@ -1433,6 +1446,22 @@ def _span(
     return item_span(plan, assignment) or loop_span(plan, assignment)
 
 
+def _same_handler(found: PlanItem, item: PlanItem) -> bool:
+    """Whether two plan items run the same handler, placed anywhere."""
+    if item.registered_handler is not None:
+        return found.registered_handler == item.registered_handler
+    return found.operation == item.operation
+
+
+# What ww/git's commit reports when the workspace had nothing to commit.
+_NOTHING_COMMITTED = "nothing to commit"
+
+
+def _ran_without_effect(record: PlanItemExecution) -> bool:
+    """Whether a completed handler found nothing to do, as its output says."""
+    return (record.result or "").startswith(_NOTHING_COMMITTED)
+
+
 def _loop_round(
     state: ExecutionState, plan: WorkflowPlan, item: PlanItem
 ) -> tuple[str, int, int] | None:
@@ -1485,6 +1514,8 @@ def _assignment_preview(
                 if item.explicit and (item.owner == "agent" or needs_repair(state))
                 else []
             ),
+            "items": [item.name],
+            "automatic_items": [],
             "repair": True,
         }
     assignment = assignment_at(plan, state.cursor, runtime=state.workflow_runtime)
@@ -1516,6 +1547,7 @@ def _assignment_preview(
                 ),
             }
         span = _span(plan, assignment)
+        items = plan.items[assignment.start : assignment.stop]
         return {
             "first_item_id": assignment.first_item_id,
             "start": assignment.start,
@@ -1529,8 +1561,14 @@ def _assignment_preview(
             "explicit": driver.explicit,
             "explicit_steps": [
                 entry.step
-                for entry in plan.items[assignment.start : assignment.stop]
+                for entry in items
                 if entry.explicit and entry.owner == "agent"
+            ],
+            "items": [entry.name for entry in items],
+            "automatic_items": [
+                entry.name
+                for entry in items
+                if entry.owner == "ww" and not entry.requires_agent_input
             ],
             **(
                 {"item_scope": span.to_dict()}

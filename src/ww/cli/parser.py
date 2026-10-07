@@ -1195,7 +1195,16 @@ def _rules_parser(
     )
     add.add_argument("--id", dest="stem", metavar="STEM", default=None)
     add.add_argument("--group", dest="new_group", metavar="NAME", default=None)
-    add.add_argument("--dir", dest="directory", type=Path, default=None)
+    add.add_argument(
+        "--dir",
+        dest="directory",
+        type=Path,
+        default=None,
+        help=(
+            "A new group's directory; with GROUP, where the rule file goes "
+            "instead of the group's directory or beside its last file."
+        ),
+    )
     _filter_options(add)
     edit = actions.add_parser(
         "edit",

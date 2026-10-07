@@ -191,23 +191,153 @@ def test_add_writes_contains_and_reports_the_files_that_have_each_string(
     assert rule.contains == ("foo", "no such text")
 
 
-def test_add_refuses_a_group_without_a_directory(
+def test_add_lists_the_file_in_a_group_of_the_import_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, "imports:\n  - ww-rules.yaml\n" + WORKFLOWS)
+    (root / "ww-rules.yaml").write_text(
+        "rules:\n  pinned:\n    rules: [rules/docs/header.md]\n    steps: [review]\n",
+        encoding="utf-8",
+    )
+
+    assert _ww(root, "rules", "add", "pinned", "--text", SERVICES) == 0
+
+    out = capsys.readouterr().out
+    file = root / "rules/docs/put-every-service-under-src.md"
+    assert _text(file) == SERVICES + "\n"
+    assert _text(root / "ww-rules.yaml").endswith(
+        "rules:\n  pinned:\n    rules:\n      - rules/docs/header.md\n"
+        "      - rules/docs/put-every-service-under-src.md\n    steps: [review]\n"
+    )
+    assert "Created rules/docs/put-every-service-under-src.md: rule " in out
+    assert (
+        "Added rules/docs/put-every-service-under-src.md to rule group `pinned` "
+        "in ww-rules.yaml."
+    ) in out
+    assert "- task: review" in out
+    group = load_configuration(root / "ww.yaml").rule_groups_by_name["pinned"]
+    assert [rule.id for rule in group.rules] == [
+        "pinned/header",
+        "pinned/put-every-service-under-src",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("group", "added"),
+    [
+        (
+            "  pinned:\n    rules:\n      - rules/docs/header.md\n"
+            "    steps: [review]\n",
+            "  pinned:\n    rules:\n      - rules/docs/header.md\n"
+            "      - rules/pinned/put-every-service-under-src.md\n"
+            "    steps: [review]\n",
+        ),
+        (
+            "  pinned:\n    - rules/docs/header.md\n",
+            "  pinned:\n    - rules/docs/header.md\n"
+            "    - rules/pinned/put-every-service-under-src.md\n",
+        ),
+    ],
+)
+def test_add_appends_one_line_to_a_group_of_the_repo_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], group: str, added: str
+) -> None:
+    workflows = WORKFLOWS.replace(
+        "  docs: [rules/docs/]\n", "  docs: [rules/docs/]\n" + group
+    )
+    root = _project(tmp_path, workflows)
+
+    assert (
+        _ww(root, "rules", "add", "pinned", "--text", SERVICES, "--dir", "rules/pinned")
+        == 0
+    )
+
+    out = capsys.readouterr().out
+    assert (
+        _text(root / "rules/pinned/put-every-service-under-src.md") == SERVICES + "\n"
+    )
+    assert _text(root / "ww.yaml") == workflows.replace(group, added)
+    assert (
+        "Added rules/pinned/put-every-service-under-src.md to rule group `pinned` "
+        "in ww.yaml."
+    ) in out
+    group_ids = [
+        rule.id
+        for rule in load_configuration(root / "ww.yaml")
+        .rule_groups_by_name["pinned"]
+        .rules
+    ]
+    assert group_ids == ["pinned/header", "pinned/put-every-service-under-src"]
+
+
+def test_add_goes_beside_the_last_file_of_a_group_without_a_directory(
+    tmp_path: Path,
+) -> None:
+    root = _project(
+        tmp_path,
+        WORKFLOWS.replace(
+            "  docs: [rules/docs/]\n",
+            "  docs: [rules/docs/]\n  pinned:\n    - rules/docs/header.md\n",
+        ),
+    )
+
+    assert _ww(root, "rules", "add", "pinned", "--text", SERVICES) == 0
+
+    assert (root / "rules/docs/put-every-service-under-src.md").is_file()
+    assert "    - rules/docs/put-every-service-under-src.md\n" in _text(
+        root / "ww.yaml"
+    )
+
+
+def test_add_refuses_a_flow_list_it_cannot_extend(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflows = WORKFLOWS.replace(
+        "  docs: [rules/docs/]",
+        "  docs: [rules/docs/]\n  pinned: [rules/docs/header.md]",
+    )
+    root = _project(tmp_path, workflows)
+
+    assert _ww(root, "rules", "add", "pinned", "--text", SERVICES) == 1
+
+    err = capsys.readouterr().err
+    assert (
+        "ww cannot add rules/docs/put-every-service-under-src.md to rules.pinned in "
+        "ww.yaml without changing anything else; add the line "
+        "`- rules/docs/put-every-service-under-src.md` to that list by hand"
+    ) in err
+    assert not (root / "rules/docs/put-every-service-under-src.md").exists()
+    assert _text(root / "ww.yaml") == workflows
+
+
+def test_add_refuses_a_group_that_names_no_file_or_directory(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(
         tmp_path,
         WORKFLOWS.replace(
-            "  docs: [rules/docs/]",
-            "  docs: [rules/docs/]\n  all: [docs, rules/docs/header.md]",
+            "  docs: [rules/docs/]", "  docs: [rules/docs/]\n  all:\n    - docs"
         ),
     )
 
     assert _ww(root, "rules", "add", "all", "--text", SERVICES) == 1
 
-    assert "lists no directory to add a rule file to" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert (
+        "rule group 'all' lists no directory or file to put a rule file beside" in err
+    )
+    assert "pass --dir" in err
     assert _ww(root, "rules", "add", "nothing", "--text", SERVICES) == 1
     assert "no rule group 'nothing'; the groups are all, docs" in (
         capsys.readouterr().err
+    )
+    # With --dir, the file goes there and the group lists it.
+    assert (
+        _ww(root, "rules", "add", "all", "--text", SERVICES, "--dir", "rules/all") == 0
+    )
+    assert (root / "rules/all/put-every-service-under-src.md").is_file()
+    assert "  all:\n    - docs\n    - rules/all/put-every-service-under-src.md\n" in (
+        _text(root / "ww.yaml")
     )
 
 
@@ -272,7 +402,7 @@ def test_add_options_are_checked(
     )
     assert "--assert takes empty or equals:<value>" in capsys.readouterr().err
     assert _ww(root, "rules", "add", "docs", "--steps", "develop", "--text", "A.") == 1
-    assert "--dir, --workflows and --steps go with --group" in capsys.readouterr().err
+    assert "--workflows and --steps go with --group" in capsys.readouterr().err
     assert _ww(root, "rules", "add", "docs") == 1
     assert "rules add takes GROUP with --text" in capsys.readouterr().err
 
@@ -508,6 +638,32 @@ def test_move_carries_the_file_unchanged_into_another_group(
     assert "- task: review" in out
     assert _ww(root, "rules", "move", "style/header", "style") == 1
     assert "is already in group 'style'" in capsys.readouterr().err
+
+
+def test_move_lists_the_file_in_a_group_without_a_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflows = WORKFLOWS.replace(
+        "  docs: [rules/docs/]\n",
+        "  docs: [rules/docs/]\n  pinned:\n    rules:\n      - rules/pinned/tone.md\n"
+        "    steps: [review]\n",
+    )
+    root = _project(tmp_path, workflows)
+    (root / "rules/pinned").mkdir()
+    (root / "rules/pinned/tone.md").write_text("Write plainly.\n", encoding="utf-8")
+
+    assert _ww(root, "rules", "move", "docs/header", "pinned") == 0
+
+    out = capsys.readouterr().out
+    assert _text(root / "rules/pinned/header.md") == HEADER_RULE
+    assert not (root / "rules/docs/header.md").exists()
+    assert _text(root / "ww.yaml") == workflows.replace(
+        "      - rules/pinned/tone.md\n",
+        "      - rules/pinned/tone.md\n      - rules/pinned/header.md\n",
+    )
+    assert "rule `docs/header` is now `pinned/header`" in out
+    assert "Added rules/pinned/header.md to rule group `pinned` in ww.yaml." in out
+    assert "- task: review" in out
 
 
 def test_move_refuses_a_name_the_target_group_has(

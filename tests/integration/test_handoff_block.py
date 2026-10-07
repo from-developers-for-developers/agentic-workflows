@@ -551,6 +551,8 @@ def test_the_reprint_json_has_the_shape_of_the_block(tmp_path: Path) -> None:
         "files_reproducible",
         "summary",
         "error",
+        "choosing_outcome_of",
+        "outcomes",
     }
 
 

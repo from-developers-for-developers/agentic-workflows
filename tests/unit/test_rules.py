@@ -844,6 +844,43 @@ workflows:
     assert [rule.id for rule in _item(plan, "refactor").rules] == ["php/one"]
 
 
+def test_groups_reach_loop_bodies_by_leaf_name_or_precise_path(
+    tmp_path: Path,
+) -> None:
+    _rule(tmp_path, "rules/fixes/small.md", "Keep fixes small.")
+    _rule(tmp_path, "rules/checks/thorough.md", "Check thoroughly.")
+    _config(
+        tmp_path,
+        """rules:
+  fixes:
+    rules: [rules/fixes/]
+    steps: [fix]
+  checks:
+    rules: [rules/checks/]
+    steps: [review/check]
+workflows:
+  - name: task
+    steps:
+      - develop: Develop.
+      - name: review
+        loop:
+          - check: Check.
+            break: Nothing to fix.
+          - fix: Fix.
+      - check: Check the whole.
+""",
+    )
+
+    plan = _compile(tmp_path)
+
+    assert _item(plan, "develop").rules == ()
+    assert [rule.id for rule in _item(plan, "review/fix").rules] == ["fixes/small"]
+    assert [rule.id for rule in _item(plan, "review/check").rules] == [
+        "checks/thorough"
+    ]
+    assert _item(plan, "check").rules == ()
+
+
 def test_init_hooks_and_the_workflow_summary_get_no_rules(tmp_path: Path) -> None:
     _rule(tmp_path, "rules/one.md", '---\ncheck:\n  argv: ["true"]\n---\nOne.')
     _config(

@@ -167,8 +167,8 @@ workflows:
         artifact="Assessment: positive.",
         summary_for_next="Done.",
     )
-    with pytest.raises(StateError, match="pending assess requires --outcome"):
-        service.next("TASK-1")
+    # A plain next runs nothing; it shows the choice again.
+    assert service.next("TASK-1").choosing_outcome_of == "assess"
 
     selected = service.next("TASK-1", outcome="positive")
     assert selected.item_name == "positive"

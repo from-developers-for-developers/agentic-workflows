@@ -400,26 +400,44 @@ def test_orchestrate_worker_status_renders_the_full_assignment() -> None:
 
 
 def _worker_page(**fields: object) -> str:
-    instruction = Instruction(
-        task_id="TASK-1",
-        workflow="task",
-        status="in_progress",
-        item_id="item-3",
-        item_name="git-push",
-        stage="Completion hook",
-        step="develop",
-        parent=None,
-        item_status="in_progress",
-        action_kind="cli",
-        action_text=None,
-        continuation_command="./ww next TASK-1",
-        workflow_runtime="auto",
-        caller_role="worker",
-        next_role="worker",
-        assignment_items=("develop", "commit", "notify", "update-workflow-summary"),
-        **fields,  # type: ignore[arg-type]
-    )
+    defaults: dict[str, object] = {
+        "task_id": "TASK-1",
+        "workflow": "task",
+        "status": "in_progress",
+        "item_id": "item-3",
+        "item_name": "git-push",
+        "stage": "Completion hook",
+        "step": "develop",
+        "parent": None,
+        "item_status": "in_progress",
+        "action_kind": "cli",
+        "action_text": None,
+        "continuation_command": "./ww next TASK-1",
+        "workflow_runtime": "auto",
+        "caller_role": "worker",
+        "next_role": "worker",
+        "assignment_items": (
+            "develop",
+            "commit",
+            "git-push",
+            "notify",
+            "update-workflow-summary",
+        ),
+        "assignment_automatic_items": ("git-push",),
+    }
+    instruction = Instruction(**{**defaults, **fields})  # type: ignore[arg-type]
     return MarkdownOutputAdapter().render_instruction(instruction)
+
+
+def test_coverage_line_marks_the_items_ww_runs() -> None:
+    rendered = _worker_page()
+
+    assert (
+        "This assignment covers, in order: `develop`, `commit`, `git-push` (run by "
+        "`ww`), `notify`, `update-workflow-summary`. One worker performs those not "
+        "run by `ww`; `ww` hands each one over after the previous completion."
+        in rendered
+    )
 
 
 def test_coverage_line_names_the_automatic_item_ww_runs_now() -> None:
@@ -430,16 +448,28 @@ def test_coverage_line_names_the_automatic_item_ww_runs_now() -> None:
 
     assert (
         "Already completed in this assignment: `develop`, `commit`. Remaining, in "
-        "order: `notify`, `update-workflow-summary`. One worker performs them all; "
-        "`ww` hands each one over after the previous completion. `ww` is now "
-        "running `git-push`." in rendered
+        "order: `git-push` (run by `ww`), `notify`, `update-workflow-summary`. One "
+        "worker performs those not run by `ww`; `ww` hands each one over after the "
+        "previous completion. `ww` is now running `git-push`." in rendered
+    )
+
+
+def test_coverage_line_lists_one_agent_item_with_its_automatic_hooks() -> None:
+    rendered = _worker_page(
+        assignment_items=("develop", "git-push"),
+        assignment_automatic_items=("git-push",),
+    )
+
+    assert (
+        "This assignment covers, in order: `develop`, `git-push` (run by `ww`). "
+        "One worker performs those not run by `ww`; `ww` hands each one over after "
+        "the previous completion." in rendered
     )
 
 
 def test_coverage_line_is_omitted_when_at_most_one_item_remains() -> None:
     rendered = _worker_page(
-        completed_assignment_items=("develop", "commit", "notify"),
-        running_assignment_item="git-push",
+        completed_assignment_items=("develop", "commit", "git-push", "notify"),
     )
 
     assert "Already completed" not in rendered

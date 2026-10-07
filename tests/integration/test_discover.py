@@ -810,7 +810,8 @@ def test_the_ww_rule_skill_carries_the_judgment_and_writes_through_the_cli() -> 
     assert skill.startswith("---\nname: ww-rule\ndescription: ")
     for duty in (
         "./ww rules --json",
-        "./ww discover",
+        "`targets`",
+        "agent_owned",
         "never invent one",
         "atomic obligations",
         "amendment",

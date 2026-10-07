@@ -878,6 +878,7 @@ class InputRequest:
                         item.get("description", ""), "provided description"
                     )
                     or "",
+                    expect_bool(item.get("conditional", False), "provided conditional"),
                 )
                 for item in values
             ),

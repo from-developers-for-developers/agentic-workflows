@@ -161,7 +161,6 @@ def render_rules_listing(listing: RulesListing) -> str:
     lines: Lines = ["# Rules"]
     if not listing.groups and not listing.steps:
         lines.extend(["", "No rules are declared."])
-        return _document(lines)
     for group in listing.groups:
         _append_section(lines, f"Group `{group.name}`")
         filters = [
@@ -190,7 +189,31 @@ def render_rules_listing(listing: RulesListing) -> str:
         if step.groups:
             lines.append(f"Names the groups {_ids(step.groups)}.")
         _rule_lines(lines, step.rules)
+    _target_lines(lines, listing)
     return _document(lines)
+
+
+def _target_lines(lines: Lines, listing: RulesListing) -> None:
+    """One line per step of each workflow: its path, and what reaches it."""
+    workflows = tuple(dict.fromkeys(target.workflow for target in listing.targets))
+    if workflows:
+        _append_section(lines, "Steps a filter can name")
+        lines.append(
+            "A `steps` filter names a step by its leaf name, or by its path "
+            "to reach exactly that step. Only an agent step takes rules."
+        )
+    for workflow in workflows:
+        lines.extend(["", f"Workflow `{workflow}`:", ""])
+        for target in listing.targets:
+            if target.workflow != workflow:
+                continue
+            if not target.agent_owned:
+                reach = "not an agent step, takes no rules"
+            elif target.groups:
+                reach = f"groups {_ids(target.groups)}"
+            else:
+                reach = "no group yet"
+            lines.append(f"- `{target.path}` — {reach}")
 
 
 # How a rule without a command is enforced when no store check runs for it.

@@ -821,14 +821,21 @@ def await_item_input(
     missing: tuple[ProvidedVariable, ...],
     now: Clock,
 ) -> ExecutionState:
-    """Pause an automatic item until all declared values are supplied."""
+    """Pause an automatic item until all declared values are supplied.
+
+    A value ww asks for is needed: the precondition that let a completion
+    leave it out has already said so.
+    """
     records = list(state.item_executions)
     records[state.cursor] = replace(records[state.cursor], status="awaiting_input")
     return replace(
         state,
         status="awaiting_input",
         item_executions=tuple(records),
-        pending_input_request=InputRequest(item_id=item.id, values=missing),
+        pending_input_request=InputRequest(
+            item_id=item.id,
+            values=tuple(replace(value, conditional=False) for value in missing),
+        ),
         updated_at=now(),
     )
 

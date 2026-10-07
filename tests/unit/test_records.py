@@ -19,7 +19,7 @@ from ww.execution_models import (
 from ww.execution_models.decoding import _from_path, _positive_int_mapping, _variables
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem
 from ww.plan import WorkflowPlan
-from ww.workflow_config import SavedMetadata
+from ww.workflow_config import ProvidedVariable, SavedMetadata
 
 
 def test_work_item_round_trips_with_every_field() -> None:
@@ -132,6 +132,22 @@ def test_saved_mappings_are_type_checked() -> None:
     for bad in ({"loop": 0}, {"loop": True}, {"loop": "2"}, None):
         with pytest.raises(ValueError, match="mapping of positive integers"):
             _positive_int_mapping(bad, "iterations")
+
+
+def test_persisted_input_request_keeps_a_conditional_value() -> None:
+    request = InputRequest(
+        "item", (ProvidedVariable("commit_message", "Why.", conditional=True),)
+    )
+
+    assert InputRequest.from_dict(request.to_dict()) == request
+    with pytest.raises(ValueError, match="provided conditional must be a boolean"):
+        InputRequest.from_dict(
+            {
+                "item_id": "item",
+                "values": [{"name": "commit_message", "conditional": "yes"}],
+                "continuation": "complete",
+            }
+        )
 
 
 def test_persisted_input_request_rejects_malformed_entries() -> None:

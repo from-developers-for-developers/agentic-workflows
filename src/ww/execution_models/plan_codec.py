@@ -398,6 +398,7 @@ def _provided_variables_from_list(
             expect_string(item.get("name"), "provided name"),
             expect_optional_string(item.get("description", ""), "provided description")
             or "",
+            expect_bool(item.get("conditional", False), "provided conditional"),
         )
         for item in value
     )

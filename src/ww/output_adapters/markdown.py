@@ -9,6 +9,7 @@ import re
 import shlex
 import shutil
 import textwrap
+from collections.abc import Collection, Iterable
 from pathlib import Path
 
 from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
@@ -644,6 +645,10 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
                 ),
             ]
         )
+        items = _strings(preview.get("items"))
+        if len(items) > 1:
+            covered = _item_list(items, _strings(preview.get("automatic_items")))
+            lines.extend(["", f"The assignment covers, in order: {covered}."])
         scope = preview.get("item_scope") or preview.get("loop_scope")
         if isinstance(scope, dict):
             lines.extend(["", f"Scope: {_scope_summary(scope)}"])
@@ -1200,6 +1205,13 @@ def _assessment_answers(lines: Lines, instruction: Instruction) -> None:
     lines.extend(
         f"- `{outcome.label}` — {_outcome_effect(outcome)}."
         for outcome in instruction.assessment_outcomes
+    )
+    lines.extend(
+        [
+            "",
+            "Once this step is complete, the manager records the outcome with "
+            f"`{next_command(instruction.task_id, outcome='<label>')}`.",
+        ]
     )
 
 
@@ -2097,6 +2109,12 @@ def _required_values(lines: Lines, instruction: Instruction) -> None:
             "",
             *(
                 f"- `{value.name}` — {value.description}"
+                + (
+                    " Optional when nothing changed: leave it out, and ww asks "
+                    "for it only if its handler needs it."
+                    if value.conditional
+                    else ""
+                )
                 for value in instruction.required_values
             ),
         ]
@@ -2286,24 +2304,36 @@ _RUN_MANAGER_COMMAND = (
 )
 
 
+def _item_list(names: Iterable[str], automatic: Collection[str]) -> str:
+    """The item names in order; the ones ww runs itself are marked."""
+    return ", ".join(
+        f"`{name}` (run by `ww`)" if name in automatic else f"`{name}`"
+        for name in names
+    )
+
+
 def _assignment_coverage(instruction: Instruction) -> Lines:
-    """Name the items one worker still performs in this assignment, when several."""
+    """List this assignment's items in plan order, while more than one remains."""
     completed = instruction.completed_assignment_items
-    first, *rest = instruction.assignment_items[len(completed) :] or ("",)
-    if not rest:
+    remaining = [name for name in instruction.assignment_items if name not in completed]
+    if not remaining[1:]:
         return []
-    names = ", ".join(f"`{name}`" for name in (first, *rest))
-    performer = "One worker performs" if instruction.role == "worker" else "You perform"
+    automatic = instruction.assignment_automatic_items
     coverage = (
-        f"Already completed in this assignment: "
-        f"{', '.join(f'`{name}`' for name in completed)}. "
-        f"Remaining, in order: {names}."
+        f"Already completed in this assignment: {_item_list(completed, automatic)}. "
+        f"Remaining, in order: {_item_list(remaining, automatic)}."
         if completed
-        else f"This assignment covers, in order: {names}."
+        else f"This assignment covers, in order: {_item_list(remaining, automatic)}."
+    )
+    performer = "One worker performs" if instruction.role == "worker" else "You perform"
+    which = (
+        "those not run by `ww`"
+        if any(name in automatic for name in remaining)
+        else "them all"
     )
     running = instruction.running_assignment_item
     return [
-        f"{coverage} {performer} them all; `ww` hands each one over after the "
+        f"{coverage} {performer} {which}; `ww` hands each one over after the "
         "previous completion."
         + (f" `ww` is now running `{running}`." if running else ""),
         "",

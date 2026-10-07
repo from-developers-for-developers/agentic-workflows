@@ -1366,13 +1366,16 @@ Direct branches and `outcomes` cannot be combined; use `outcomes` for custom
 labels.
 
 The agent sees the choice before it answers: the assessment's page lists each
-outcome and what it does, for example "`negative` — ends the workflow here".
+outcome and what it does, for example "`negative` — ends the workflow here",
+and says that once the step is complete the manager records the outcome with
+`next --outcome <label>`.
 Once the assessment is complete, the next page asks for the outcome and shows
-one `next --outcome <label>` command per outcome, never a plain `next`, which
-ww would refuse. An outcome made of an automatic command runs only after its
-outcome is chosen; ww pauses at a pending assessment rather than running any
-branch. A delegating manager chooses it itself; no worker preview is
-shown until the outcome decides which work comes next.
+one `next --outcome <label>` command per outcome; a plain `next` runs nothing
+and shows that choice again. An outcome made of an automatic command runs only
+after its outcome is chosen; ww pauses at a pending assessment rather than
+running any branch. A delegating manager chooses it itself; no worker preview
+is shown until the outcome decides which work comes next, and the worker's
+handoff block ends with the same one command per outcome.
 
 `profile` may be a name or a mapping containing `name` and/or `description`.
 The mapping form supplies an inline description. ww resolves a named profile by
@@ -1537,14 +1540,16 @@ manager continues. `awaiting_operator` means a human must decide; see
 At handoff only the manager runs the displayed `next --role manager` command.
 In the `auto` runtime the manager's delegate page and the requested worker
 describe the step that drives selection, not whichever hook the cursor is on,
-and both the manager and the worker are told every item the assignment covers:
-`This assignment covers, in order: ...` while nothing is done, then, once the
-worker has completed some of them, `Already completed in this assignment: ...
-Remaining, in order: ...`, derived from the items' execution status rather
-than from the assignment's first item. The line is omitted when one item or
-none remains; while it is shown and ww is running an automatic item of the
-assignment, a commit hook or a push, it names it: `` `ww` is now running
-`git-push`. ``
+and both the manager and the worker are told every item the assignment covers,
+in plan order, the ones ww runs itself marked: `This assignment covers, in
+order: `develop`, `git-push` (run by `ww`), `update-workflow-summary`.` while
+nothing is done, then, once some of them are completed, `Already completed in
+this assignment: ... Remaining, in order: ...`, derived from the items'
+execution status rather than from the assignment's first item. The line is
+omitted when one item or none remains; while it is shown and ww is running an
+automatic item of the assignment, a commit hook or a push, it names it: `` `ww`
+is now running `git-push`. `` The previous manager page's "Upcoming
+assignment" preview lists the same items.
 A worker moving to a later item of the same assignment is told so explicitly,
 and the end of an assignment says to stop and return to the manager.
 
@@ -1555,9 +1560,11 @@ the `awaiting_input` instruction is addressed to the manager, its command
 carries `--role manager`, and the preview before it says that no worker is
 selected. Every pending-input page also lists, under "Work these values
 describe", the handovers of the steps completed since that handler last ran
-in the run, so a commit message names this round's work rather than repeating
-an earlier one. The first page of each session shows the requirements saved by
-`init` in full under "Task requirements", so the user's wording reaches the worker
+in the run, through any of its placements, so a commit message names this
+round's work rather than repeating an earlier one; a run that found nothing to
+commit does not count as one. The first page of each session shows the
+requirements saved by `init` in full under "Task requirements", so the user's
+wording reaches the worker
 without the manager adding commentary: the manager's first page that asks for
 work, the first page of every delegated worker assignment (each is a fresh
 session; `pages.worker_requirements` in `ww.json` set to `pointer` swaps it for
@@ -1699,7 +1706,9 @@ Manager: continue with `./ww next TASK-7 --role manager`
 When the block ends a child task's run (the task ID has a `/` and no run of it
 is open any more), the last line names the parent instead: "Manager: continue
 with the parent task: `./ww next TASK-7 --role manager`". A child that is only
-partway through its run keeps its own command.
+partway through its run keeps its own command. When the assignment ended with
+an assessment, the last line instead asks the manager to choose its outcome
+and lists one `next --outcome <label>` command per outcome.
 
 It lists every agent item the worker performed in the assignment with its
 outcome (`completed`, `loop break`, `loop continue`, `held for verification`,
@@ -2389,8 +2398,13 @@ the missing file.
 froze it: its full text, globs, rule file, command, and the steps that carry
 it, and for a rule without a command what the store knows about its wording.
 `ww rules` lists the project's declared groups, with their filters and each
-rule's ID and first sentence, and each step's own rules; `--json` gives the
-same for a program. `ww rules prune` deletes store entries no declared rule
+rule's ID and first sentence, each step's own rules, and then every
+workflow's steps as a `steps` filter can name them: one line per step with
+its path, which reaches exactly that step where a leaf name would match it
+everywhere (loop bodies and per-item stages included), the groups reaching
+it, or that it is not an agent step and takes no rules. `--json` gives the
+same for a program, the steps as `targets` with `workflow`, `step`, `path`,
+`agent_owned` and `groups`. `ww rules prune` deletes store entries no declared rule
 needs any more, after listing them and asking; `--yes` skips the question.
 `ww rules revoke <check>` rejects a converted or proposed check and its rules
 the same way.
@@ -2399,8 +2413,8 @@ the same way.
 
 Rules are easiest to add in conversation. Invoked as `/ww-rule`, or when you
 ask an agent to add or change a rule, the `ww-rule` skill carries the
-judgment: it reads the groups (`ww rules --json`) and the real workflow and
-step names (`ww discover`), splits what you said into atomic obligations,
+judgment: it reads the groups and the real workflow and step names from
+`ww rules --json`, splits what you said into atomic obligations,
 tells a new rule from an amendment of an existing one or a change of where a
 group applies, gives a rule globs only when it names a kind of file and
 counts what each matches, places it in a group whose filters fit, and
@@ -2437,6 +2451,13 @@ Reaches these steps (an agent step's page shows it):
   sentence unless `--id` names it, with `--paths` globs, `--contains` strings
   (it reports how many files hold each) and a check from `--check-shell` or
   `--check-argv` and `--assert empty|eq:<value>`. It never overwrites a file.
+  A group that lists its rule files one by one instead of a directory gets
+  the file beside its last one, or in `--dir <path>`, and the file's path
+  appended to its `rules` list: `ww-rules.yaml` is rewritten whole; `ww.yaml`
+  or another file of yours gains that one line, checked to change nothing
+  else, and the command refuses with the line to add by hand when the list is
+  written in a way it cannot extend (flow style, an anchor). A group that
+  names only other groups needs `--dir`.
 - `rules add --group <name> --dir <path>` adds a root group, with optional
   `--workflows` and `--steps` filters. ww never rewrites
   `ww.yaml`: the group goes into `ww-rules.yaml` next to
@@ -2448,7 +2469,9 @@ Reaches these steps (an agent step's page shows it):
   and, when the old wording had an approved check, that `rules promote` keeps
   it.
 - `rules move <id> <group>` moves the file, unchanged, into another group's
-  directory; its wording, and so what the store knows about it, stays.
+  directory, or beside the last file of a group that lists files and into its
+  `rules` list as `rules add` does; its wording, and so what the store knows
+  about it, stays.
 - `rules filter <group> --workflows ... --steps ...` changes where a group of
   `ww-rules.yaml` applies (`--workflows '*'` writes `"*"`; `--all-workflows` and
   `--all-steps` remove a filter, which also means all); a group declared
@@ -2551,7 +2574,11 @@ review loop or one that is a step of its own, therefore requests it afresh
 (`awaiting_input`) instead of running silently with the message an earlier
 step supplied. A failed handler releases its values the same way when it is
 retried, keeping them on its record so the request can show what it was given
-last time.
+last time. A handler with a precondition asks only when it needs the value:
+`git-commit` needs no message while the task workspace has nothing to commit,
+so such a value is optional on the step's completion (the page says so), and
+when it is left out ww asks for it only if the workspace changed; a clean one
+commits nothing without a question.
 
 When several automatic completion hooks request the same variable with the
 same description, ww asks for it once and gives that value to each hook.
@@ -2787,7 +2814,12 @@ holds the conversation, the manager in the `auto` runtime: it is a
 `role: manager` step, and the step's profile, agent, model, and reasoning
 are ignored. For a manual-testing workflow, put `interactive: true` on the
 per-item stage: the manager presents each test case, waits for the operator's
-result, records it, ends the interaction, and completes the item.
+result, records it, ends the interaction, and completes the item. Running
+`next` again while such a step is open shows its page again, as it does for
+any open step in the `single` runtime; `complete` is not the way to leave an
+interactive step before the conversation ended. Only a worker's open item is
+refused, and the refusal names the ways out: `instruction` to see its page,
+`complete` to finish it, `next --reassign` to dispatch it again.
 
 A conversation is recorded once, when it ends. A session that ends in the
 middle of one has not recorded it, and ww does not recover it from the
@@ -3674,8 +3706,10 @@ An extension handler runs inside ww rather than as a shell command, so it can
 remember what it did. `ww/git`'s `git-commit` commits and then records the
 commit, and `commits` reads that back. It stages the task workspace first; when
 nothing is staged, for example after a review round that needed no fix, it
-succeeds without a commit and without invoking project pre-commit hooks such as
-Husky or lint-staged:
+succeeds without a commit, without a `commit_message`, and without invoking
+project pre-commit hooks such as Husky or lint-staged. Its precondition tells
+ww whether the workspace has anything to commit, so a clean one is committed
+without asking for a message at all:
 
 ```console
 ww-agentic-workflows extensions                          # what is installed, and what it provides
@@ -3989,6 +4023,16 @@ workspace, and no effects, and it does not replace the check the handler makes
 when it runs: `ww/git` declares one for `commit_message` and still checks the
 same rule in `git-commit`.
 
+Such a handler may also declare `needs_input`, a precondition: whether the
+handler needs its declared inputs this run; `False` lets ww run it without
+asking. ww consults it, with the handler's ordinary context, when the inputs
+are missing: the values of a handler with a precondition are optional on the
+agent's completion, and when they are left out ww asks for them only if the
+precondition says they are needed (a precondition that raises counts as
+needing them). The handler must then accept running without them: `ww/git`'s
+`git-commit` needs its message only while the task workspace has something
+to commit, and commits nothing without one otherwise.
+
 ```python
 def _subject_error(values):
     if "\n" in values.get("commit_message", ""):
@@ -3996,11 +4040,16 @@ def _subject_error(values):
     return None
 
 
+def _needs_commit_message(context):
+    return bool(_git(context, "status", "--porcelain").stdout)
+
+
 ExtensionHandler(
     "git-commit",
     _commit,
     provide=(ProvidedVariable("commit_message"),),
     validate=_subject_error,
+    needs_input=_needs_commit_message,
 )
 ```
 
@@ -4177,7 +4226,9 @@ anything is saved, ww hands each value to the handler that will consume it:
 a handler that declares a validator, such as `ww/git`'s `git-commit` for
 `commit_message`, refuses a value it would fail on, and the completion fails
 with the handler's own message and records nothing, so the agent corrects the
-value and completes again. `ww` then
+value and completes again. A value whose handler has a precondition is
+optional, and the screen says so: left out, it is requested later only when
+the handler needs it, as `git-commit` does only with something to commit. `ww` then
 executes those handlers itself before it activates the next worker item or
 returns control to the manager. If an automatic command fails, the worker stops
 and reports the failure to the manager. The response reports

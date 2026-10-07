@@ -153,7 +153,12 @@ class ActionResolver:
         return HandlerDefinition(
             handler.name,
             description=handler.description,
-            provide=handler.provide,
+            # A handler with a precondition may run without its inputs, so a
+            # completion may leave them out.
+            provide=tuple(
+                replace(variable, conditional=handler.needs_input is not None)
+                for variable in handler.provide
+            ),
             outputs=handler.outputs,
             action=DefinedAction("extension", Extension(value, arguments=arguments)),
         )

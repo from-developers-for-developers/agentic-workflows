@@ -339,6 +339,13 @@ class _InputValidationContext:
     extensions: _HandlerLookup
 
 
+@dataclass(frozen=True)
+class _PreconditionContext:
+    """Handler access and the handler's own context; nothing is recorded."""
+
+    extensions: _ExtensionService
+
+
 class _PreflightExtensions:
     def __init__(self, executor: ActionExecutor) -> None:
         self._executor = executor
@@ -720,6 +727,23 @@ class ActionExecutor:
             item.payload_as(implementation.planned_type),
             MappingProxyType(dict(values)),
             _InputValidationContext(_HandlerLookup(self)),
+        )
+
+    def needs_input(
+        self, state: ExecutionState, snapshot: PlanSnapshot, item: PlanItem
+    ) -> bool:
+        """Whether the current automatic item must get its inputs before it runs.
+
+        Asked while they are missing and before anything is recorded; an
+        action without a precondition always needs them.
+        """
+        implementation = actions.get(item.kind)
+        if not isinstance(implementation, AutomaticAction):
+            return True
+        dispatch = _Dispatch(self, state, snapshot, item)
+        return implementation.needs_input(
+            item.payload_as(implementation.planned_type),
+            _PreconditionContext(_ExtensionService(dispatch)),
         )
 
     def check_recovery(

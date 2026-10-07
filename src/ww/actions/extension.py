@@ -31,6 +31,7 @@ from .contracts import (
     InputValidationContext,
     InstructionContent,
     InstructionContext,
+    PreconditionContext,
     PreflightContext,
     RecoveryCheckResult,
     RecoveryContext,
@@ -69,6 +70,16 @@ class ExtensionAction(AutomaticAction[Extension, Extension]):
         if not isinstance(verdict, str) or not verdict.strip():
             return "extension validator returned an invalid result"
         return verdict.strip()
+
+    def needs_input(self, planned: Extension, context: PreconditionContext) -> bool:
+        """Ask the handler's precondition; one that fails needs the inputs."""
+        handler = context.extensions.handler(planned.reference)
+        if handler.needs_input is None:
+            return True
+        try:
+            return handler.needs_input(context.extensions.context(planned)) is not False
+        except Exception:  # noqa: BLE001 - a failing precondition asks as usual
+            return True
 
     def execute(self, planned: Extension, context: ExecutionContext) -> ActionResult:
         handler = context.extensions.handler(planned.reference)

@@ -33,6 +33,8 @@ def handoff_block(
     error: str | None,
     loop_outcome: tuple[str, str] | None = None,
     continuation_task_id: str | None = None,
+    choosing_outcome_of: str | None = None,
+    outcomes: tuple[str, ...] = (),
 ) -> HandoffBlock:
     """Report the agent items of one ended assignment, in plan order.
 
@@ -42,7 +44,8 @@ def handoff_block(
     ``loop_outcome`` names the item that broke or continued its loop and
     which it did. ``continuation_task_id`` names the task the manager
     continues with when that is not ``task_id``: the parent of a child whose
-    run has ended.
+    run has ended. ``outcomes`` are the answers the manager chooses from when
+    the assignment ended with the assessment ``choosing_outcome_of``.
     """
     steps = tuple(
         step
@@ -69,6 +72,8 @@ def handoff_block(
         summary=summary,
         error=error,
         continuation_task_id=continuation_task_id,
+        choosing_outcome_of=choosing_outcome_of,
+        outcomes=outcomes,
     )
 
 
@@ -149,6 +154,22 @@ def handoff_markdown(block: HandoffBlock) -> str:
     if block.summary:
         lines.extend(["", f"Worker summary: {_one_line(block.summary)}"])
     target = block.continuation_task_id or block.task_id
+    if block.outcomes:
+        # The assessment is the worker's; choosing its outcome is the
+        # manager's, with the same one command per answer as the choose page.
+        lines.extend(
+            [
+                "",
+                f"Manager: `{block.choosing_outcome_of}` is complete. Read its "
+                "artifact, choose the outcome it supports, and continue with "
+                "that outcome's command:",
+                *(
+                    f"- {label}: `{next_command(target, outcome=label)}`"
+                    for label in block.outcomes
+                ),
+            ]
+        )
+        return "\n".join(lines)
     manager = next_command(target)
     label = (
         "continue with the parent task:" if target != block.task_id else "continue with"

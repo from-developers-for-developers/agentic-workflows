@@ -629,6 +629,63 @@ def test_rules_lists_groups_and_step_rules(
     assert "scripting" not in data
 
 
+NESTED = """rules:
+  docs: [rules/docs/]
+workflows:
+  - name: task
+    steps:
+      - name: review
+        loop:
+          - check: Check.
+            break: Nothing to fix.
+          - fix: Fix.
+      - name: collect
+        description: Collect.
+        items:
+          steps:
+            - analyze: Analyze.
+              item_phase: analyze
+      - name: build
+        argv: [make]
+"""
+
+
+def test_rules_lists_every_step_a_filter_can_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, NESTED)
+
+    assert main(["--root", str(root), "rules", "--json"]) == 0
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["steps"] == []
+    assert data["targets"] == [
+        {
+            "workflow": "task",
+            "step": step,
+            "path": path,
+            "agent_owned": owned,
+            "groups": ["docs"] if owned else [],
+        }
+        for step, path, owned in (
+            ("review", "review", False),
+            ("check", "review/check", True),
+            ("fix", "review/fix", True),
+            ("collect", "collect", True),
+            ("analyze", "collect/analyze", True),
+            ("build", "build", False),
+        )
+    ]
+    assert main(["--root", str(root), "rules"]) == 0
+    out = capsys.readouterr().out
+    assert "### Steps a filter can name" in out
+    assert "Workflow `task`:" in out
+    assert "- `review` — not an agent step, takes no rules" in out
+    assert "- `review/fix` — groups `docs`" in out
+    assert "- `collect/analyze` — groups `docs`" in out
+    assert "`init`" not in out
+
+
 def test_rules_json_carries_the_rules_settings(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

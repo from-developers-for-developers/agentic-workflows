@@ -890,15 +890,17 @@ def test_coverage_line_splits_completed_from_remaining_items(tmp_path: Path) -> 
     assert dispatched.assignment_items == (
         "develop",
         "commit",
+        "git-push",
         "notify",
         "update-workflow-summary",
     )
+    assert dispatched.assignment_automatic_items == ("git-push",)
     assert dispatched.completed_assignment_items == ()
     assert dispatched.running_assignment_item is None
     assert (
-        "This assignment covers, in order: `develop`, `commit`, `notify`, "
-        "`update-workflow-summary`. One worker performs them all"
-        in md.render_instruction(dispatched)
+        "This assignment covers, in order: `develop`, `commit`, `git-push` (run by "
+        "`ww`), `notify`, `update-workflow-summary`. One worker performs those not "
+        "run by `ww`" in md.render_instruction(dispatched)
     )
 
     # The commit and push hooks ran on the step's completion; a worker that
@@ -913,19 +915,22 @@ def test_coverage_line_splits_completed_from_remaining_items(tmp_path: Path) -> 
         assignment=token,
     )
     assert (continued.item_name, continued.item_status) == ("notify", "in_progress")
-    assert continued.completed_assignment_items == ("develop", "commit")
+    assert continued.completed_assignment_items == ("develop", "commit", "git-push")
     rendered = md.render_instruction(
         service.status("TASK-1", caller_role="worker", assignment=token)
     )
     assert (
-        "Already completed in this assignment: `develop`, `commit`. Remaining, in "
-        "order: `notify`, `update-workflow-summary`. One worker performs them all; "
-        "`ww` hands each one over after the previous completion." in rendered
+        "Already completed in this assignment: `develop`, `commit`, `git-push` (run "
+        "by `ww`). Remaining, in order: `notify`, `update-workflow-summary`. One "
+        "worker performs them all; `ww` hands each one over after the previous "
+        "completion." in rendered
     )
     assert "covers, in order" not in rendered
     rendered_json = JsonOutputAdapter().render_instruction(continued)
-    assert '"completed_assignment_items": [\n    "develop",\n    "commit"' in (
-        rendered_json
+    assert '"assignment_automatic_items": [\n    "git-push"\n  ]' in rendered_json
+    assert (
+        '"completed_assignment_items": [\n    "develop",\n    "commit",\n    "git-push"'
+        in rendered_json
     )
     assert '"running_assignment_item": null' in rendered_json
 
@@ -934,7 +939,12 @@ def test_coverage_line_splits_completed_from_remaining_items(tmp_path: Path) -> 
         "TASK-1", artifact="Commented.", caller_role="worker", assignment=token
     )
     assert last.item_name == "update-workflow-summary"
-    assert last.completed_assignment_items == ("develop", "commit", "notify")
+    assert last.completed_assignment_items == (
+        "develop",
+        "commit",
+        "git-push",
+        "notify",
+    )
     rendered = md.render_instruction(
         service.status("TASK-1", caller_role="worker", assignment=token)
     )
@@ -982,6 +992,99 @@ def test_page_names_the_automatic_item_ww_runs_now(
     assert page.running_assignment_item == "git-push"
     assert '"running_assignment_item": "git-push"' in (
         JsonOutputAdapter().render_instruction(page)
+    )
+
+
+_PUSHED_STEP = """handlers:
+  - name: git-push
+    argv: [touch, pushed.txt]
+workflows:
+  - name: task
+    steps:
+      - name: develop
+        hooks:
+          after_complete:
+            - name: git-push
+      - name: verify
+"""
+
+
+def test_one_agent_item_with_an_automatic_hook_is_still_enumerated(
+    tmp_path: Path,
+) -> None:
+    service = configured_service(tmp_path, _PUSHED_STEP)
+    service.start(
+        "task",
+        "TASK-1",
+        agent="codex",
+        workflow_runtime="auto",
+        init_artifact="Do it.",
+        caller_role="manager",
+    )
+    md = MarkdownOutputAdapter()
+
+    dispatched = service.next("TASK-1", caller_role="manager")
+    assert dispatched.assignment_items == ("develop", "git-push")
+    assert dispatched.assignment_automatic_items == ("git-push",)
+    rendered = md.render_instruction(dispatched)
+    assert "## Manager: delegate the `develop` assignment" in rendered
+    assert (
+        "This assignment covers, in order: `develop`, `git-push` (run by `ww`). "
+        "One worker performs those not run by `ww`; `ww` hands each one over after "
+        "the previous completion." in rendered
+    )
+    token = assignment_token(service, "TASK-1")
+    worker = service.status("TASK-1", caller_role="worker", assignment=token)
+    assert "covers, in order: `develop`, `git-push` (run by `ww`)." in (
+        md.render_instruction(worker)
+    )
+
+    # The next assignment has nothing ww runs itself.
+    handoff = service.complete(
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built it.",
+        caller_role="worker",
+        assignment=token,
+    )
+    assert handoff.next_role == "manager"
+    dispatched = service.next("TASK-1", caller_role="manager")
+    assert dispatched.assignment_items == ("verify", "update-workflow-summary")
+    assert dispatched.assignment_automatic_items == ()
+    assert (
+        "This assignment covers, in order: `verify`, `update-workflow-summary`. "
+        "One worker performs them all;" in md.render_instruction(dispatched)
+    )
+
+
+def test_upcoming_assignment_preview_lists_what_it_covers(tmp_path: Path) -> None:
+    service = configured_service(tmp_path, _HOOKED_STEP)
+    md = MarkdownOutputAdapter()
+
+    started = service.start(
+        "task",
+        "TASK-1",
+        agent="codex",
+        workflow_runtime="auto",
+        init_artifact="Do it.",
+        caller_role="manager",
+    )
+    preview = started.assignment_preview
+    assert preview is not None
+    assert preview["selection_item_name"] == "develop"
+    assert preview["items"] == [
+        "develop",
+        "commit",
+        "git-push",
+        "notify",
+        "update-workflow-summary",
+    ]
+    assert preview["automatic_items"] == ["git-push"]
+    rendered = md.render_instruction(started)
+    assert "### Upcoming assignment" in rendered
+    assert (
+        "The assignment covers, in order: `develop`, `commit`, `git-push` (run by "
+        "`ww`), `notify`, `update-workflow-summary`." in rendered
     )
 
 

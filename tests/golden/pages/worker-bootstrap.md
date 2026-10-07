@@ -6,6 +6,8 @@
 
 You are the manager. Select the worker and give it the bootstrap command below:
 
+This assignment covers, in order: `develop`, `inline-argv` (run by `ww`). One worker performs those not run by `ww`; `ww` hands each one over after the previous completion.
+
 Requested worker:
 
 - Agent: `codex` (advisory)

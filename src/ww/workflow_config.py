@@ -70,9 +70,18 @@ class ProvidedVariable:
 
     name: str
     description: str = ""
+    # The handler has a precondition: ww asks for the value only when the
+    # handler needs it this run, so a completion may leave it out.
+    conditional: bool = False
 
-    def to_dict(self) -> dict[str, str]:
-        return {"name": self.name, "description": self.description}
+    def to_dict(self) -> dict[str, str | bool]:
+        data: dict[str, str | bool] = {
+            "name": self.name,
+            "description": self.description,
+        }
+        if self.conditional:
+            data["conditional"] = True
+        return data
 
 
 @dataclass(frozen=True)
@@ -803,6 +812,26 @@ def step_tree(steps: Iterable[StepDefinition]) -> Iterator[StepDefinition]:
             yield from step_tree(step.items.steps)
         if step.children is not None:
             yield from step_tree(step.children.steps)
+
+
+def step_paths(
+    steps: Iterable[StepDefinition], parent: str | None = None
+) -> Iterator[tuple[StepDefinition, str]]:
+    """Every step of a tree with its logical path, as the plan compiler names it.
+
+    Nested steps, loop bodies, per-item and per-child stages take their
+    parent's path as a prefix; a step filter that names such a path matches
+    exactly that step.
+    """
+    for step in steps:
+        path = f"{parent}/{step.name}" if parent else step.name
+        yield step, path
+        yield from step_paths(step.child_steps, path)
+        yield from step_paths(step.loop_steps, path)
+        if step.items is not None:
+            yield from step_paths(step.items.steps, path)
+        if step.children is not None:
+            yield from step_paths(step.children.steps, path)
 
 
 @dataclass(frozen=True)

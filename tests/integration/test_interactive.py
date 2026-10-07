@@ -138,6 +138,49 @@ def test_an_interactive_step_is_held_by_the_manager_and_gated_on_the_record(
         service.interact("TASK-1", operator="hello", caller_role="manager")
 
 
+def test_next_shows_the_managers_open_item_again_but_not_a_workers(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    service.start(
+        "task",
+        "TASK-1",
+        agent="codex",
+        workflow_runtime="auto",
+        init_artifact="Do it.",
+        caller_role="manager",
+    )
+    discuss = service.next("TASK-1", caller_role="manager")
+    assert (discuss.item_name, discuss.role) == ("discuss", "manager")
+
+    # The manager holds the conversation itself: asking again is harmless.
+    again = service.next("TASK-1", caller_role="manager")
+    assert (again.item_name, again.item_status) == ("discuss", "in_progress")
+    assert again.interactive is True
+
+    service.interact(
+        "TASK-1",
+        transcript="Agent: Hi.\nOperator: Done.",
+        end=True,
+        caller_role="manager",
+    )
+    service.complete(
+        "TASK-1", artifact="Agreed.", summary_for_next="Agreed.", caller_role="manager"
+    )
+    build = service.next("TASK-1", caller_role="manager")
+    assert (build.item_name, build.role) == ("build", "worker")
+
+    with pytest.raises(
+        StateError,
+        match=(
+            "'build' is in progress with a worker: `instruction TASK-1` shows its "
+            "page, `complete` finishes it, `next TASK-1 --reassign` dispatches it "
+            "again"
+        ),
+    ):
+        service.next("TASK-1", caller_role="manager")
+
+
 def test_the_cli_records_and_prints_interactions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
