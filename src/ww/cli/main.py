@@ -1071,6 +1071,21 @@ def _debug(context: _Context) -> _Outcome:
         return _Outcome(
             _json(record) if args.json_output else render_record(record, DEBUG)
         )
+    if args.debug_action == "note":
+        if not args.record_id:
+            raise StateError("debug note needs a record, task or request ID")
+        if not (args.summary or "").strip():
+            raise StateError("debug note needs --summary")
+        noted = context.service.debug_note(
+            args.record_id, summary=args.summary, detail=args.detail
+        )
+        where = (
+            f"kept with the pending events of `{noted['target']}` and in the "
+            f"standalone record `{noted['record']}` until its run completes"
+            if noted["pending"]
+            else f"added to record `{noted['record']}`"
+        )
+        return _Outcome(_json(noted) if args.json_output else f"Note {where}.\n")
     records = [store.get(args.record_id)] if args.record_id else store.unreported()
     if not records:
         text = "No unreported debug records.\n"
@@ -1702,7 +1717,7 @@ def main(argv: list[str] | None = None) -> int:
             and (args.feedback_action not in {"record", "prune"} or args.dry_run)
         )
         or (args.command == "onboarding" and not args.assignments)
-        or (args.command == "debug" and args.debug_action != "report")
+        or (args.command == "debug" and args.debug_action not in {"report", "note"})
     )
 
     def log(outcome: str, error: str | None, *scope: str | None) -> None:

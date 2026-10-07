@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -847,6 +848,141 @@ workflows:
     )
     assert (notify.item_name, notify.item_status) == ("notify", "in_progress")
     assert (tmp_path / "commit.txt").read_text(encoding="utf-8") == "Reviewed"
+
+
+_HOOKED_STEP = """handlers:
+  - name: commit
+    variables:
+      - name: commit_message
+    shell: printf "%s" "$MESSAGE" > commit.txt
+    env:
+      MESSAGE: "{{commit_message}}"
+  - name: git-push
+    argv: [touch, pushed.txt]
+  - name: notify
+    description: Comment on the ticket.
+    kind: prompt
+workflows:
+  - name: task
+    steps:
+      - name: develop
+        hooks:
+          after_complete:
+            - name: commit
+            - name: git-push
+            - name: notify
+"""
+
+
+def test_coverage_line_splits_completed_from_remaining_items(tmp_path: Path) -> None:
+    service = configured_service(tmp_path, _HOOKED_STEP)
+    service.start(
+        "task",
+        "TASK-1",
+        agent="codex",
+        workflow_runtime="auto",
+        init_artifact="Do it.",
+        caller_role="manager",
+    )
+    md = MarkdownOutputAdapter()
+
+    dispatched = service.next("TASK-1", caller_role="manager")
+    assert dispatched.assignment_items == (
+        "develop",
+        "commit",
+        "notify",
+        "update-workflow-summary",
+    )
+    assert dispatched.completed_assignment_items == ()
+    assert dispatched.running_assignment_item is None
+    assert (
+        "This assignment covers, in order: `develop`, `commit`, `notify`, "
+        "`update-workflow-summary`. One worker performs them all"
+        in md.render_instruction(dispatched)
+    )
+
+    # The commit and push hooks ran on the step's completion; a worker that
+    # re-reads its page sees what is done and what it still performs.
+    token = assignment_token(service, "TASK-1")
+    continued = service.complete(
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built it.",
+        variables=(("commit_message", "Reviewed"),),
+        caller_role="worker",
+        assignment=token,
+    )
+    assert (continued.item_name, continued.item_status) == ("notify", "in_progress")
+    assert continued.completed_assignment_items == ("develop", "commit")
+    rendered = md.render_instruction(
+        service.status("TASK-1", caller_role="worker", assignment=token)
+    )
+    assert (
+        "Already completed in this assignment: `develop`, `commit`. Remaining, in "
+        "order: `notify`, `update-workflow-summary`. One worker performs them all; "
+        "`ww` hands each one over after the previous completion." in rendered
+    )
+    assert "covers, in order" not in rendered
+    rendered_json = JsonOutputAdapter().render_instruction(continued)
+    assert '"completed_assignment_items": [\n    "develop",\n    "commit"' in (
+        rendered_json
+    )
+    assert '"running_assignment_item": null' in rendered_json
+
+    # One item left: nothing to enumerate.
+    last = service.complete(
+        "TASK-1", artifact="Commented.", caller_role="worker", assignment=token
+    )
+    assert last.item_name == "update-workflow-summary"
+    assert last.completed_assignment_items == ("develop", "commit", "notify")
+    rendered = md.render_instruction(
+        service.status("TASK-1", caller_role="worker", assignment=token)
+    )
+    assert "Already completed" not in rendered
+    assert "Remaining, in order" not in rendered
+    assert "covers, in order" not in rendered
+
+
+def test_page_names_the_automatic_item_ww_runs_now(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = configured_service(tmp_path, _HOOKED_STEP)
+    service.start(
+        "task",
+        "TASK-1",
+        agent="codex",
+        workflow_runtime="auto",
+        init_artifact="Do it.",
+        caller_role="manager",
+    )
+    service.next("TASK-1", caller_role="manager")
+    token = assignment_token(service, "TASK-1")
+    popen = subprocess.Popen
+
+    def interrupted_push(argv: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "pushed.txt" in argv:
+            raise KeyboardInterrupt
+        return popen(argv, *args, **kwargs)
+
+    monkeypatch.setattr("ww.action_execution._PROCESS.Popen", interrupted_push)
+    with pytest.raises(KeyboardInterrupt):
+        service.complete(
+            "TASK-1",
+            artifact="Built.",
+            summary_for_next="Built it.",
+            variables=(("commit_message", "Reviewed"),),
+            caller_role="worker",
+            assignment=token,
+        )
+
+    resumed = WorkflowService(Storage(tmp_path))
+    page = resumed.status("TASK-1", caller_role="worker", assignment=token)
+    assert (page.item_name, page.item_status) == ("git-push", "in_progress")
+    assert page.completed_assignment_items == ("develop", "commit")
+    assert page.running_assignment_item == "git-push"
+    assert '"running_assignment_item": "git-push"' in (
+        JsonOutputAdapter().render_instruction(page)
+    )
 
 
 def test_init_named_preparation_hook_keeps_manager_worker_handoff(

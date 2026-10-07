@@ -910,6 +910,37 @@ def test_a_child_task_branch_uses_its_parent_task_branch(repository: Path) -> No
     assert base == parent_head
 
 
+def test_a_child_task_branch_without_a_parent_branch_has_no_slash(
+    repository: Path,
+) -> None:
+    # The parent never started a branch, yet ``feature/task-1`` exists: a
+    # ``feature/task-1/a`` branch would be refused by Git beside it.
+    _run("git", "branch", "feature/task-1", cwd=repository)
+    config = {
+        "separate_branch": True,
+        "base_branches": {"default": "main"},
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
+    }
+
+    child = handler("start-task-branch")(
+        context(repository, config, task_id="TASK-1/A")
+    )
+
+    assert child.ok, child.error
+    assert branch_of(repository) == "feature/task-1-a"
+    # The same spelling claims the ID once the record is gone, and names the
+    # worktree the child would own.
+    _run("git", "switch", "-q", "main", cwd=repository)
+    claimed = context(repository, config, task_id="TASK-1/A")
+    unclaimed = context(repository, config, task_id="TASK-1/B")
+    git_extension._forget_task(claimed)
+    assert git_extension._claims_task(claimed)
+    assert not git_extension._claims_task(unclaimed)
+    assert git_extension._reserved_paths(
+        context(repository, _worktree_config(repository), task_id="TASK-1/A")
+    ) == (repository / "trees" / "TASK-1-A",)
+
+
 def test_the_branch_format_is_chosen_per_workflow(repository: Path) -> None:
     config = {
         "separate_branch": True,

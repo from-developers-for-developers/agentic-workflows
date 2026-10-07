@@ -44,13 +44,20 @@ def render_step_artifact(
     task_id: str,
     workflow: str,
     step: str,
-    step_number: int,
+    step_number: str,
     step_total: int,
     skill: str,
     result: str,
     rules: RulesSummary | None = None,
+    previous_attempt: str | None = None,
 ) -> str:
-    """Wrap an agent result in the built-in, stable Markdown artifact format."""
+    """Wrap an agent result in the built-in, stable Markdown artifact format.
+
+    ``step_number`` is the step's dotted declaration ordinals, ``2.1`` for the
+    first step nested in the second, as ``step_label`` renders them.
+    ``previous_attempt`` is the artifact of the completion ww rejected before
+    this one; it follows the result so the file keeps the step's history.
+    """
     body = _normalize_result(result).rstrip()
     return (
         f"# {task_id} — {step}\n\n"
@@ -59,7 +66,13 @@ def render_step_artifact(
         f"- Step: {step_number} of {step_total}\n"
         f"- Skill: {skill}\n\n"
         "## Result\n\n"
-        f"{body}\n" + (_rules_section(rules) if rules is not None else "")
+        f"{body}\n"
+        + (_rules_section(rules) if rules is not None else "")
+        + (
+            f"\n## Previous attempt\n\n{_normalize_result(previous_attempt).rstrip()}\n"
+            if previous_attempt is not None
+            else ""
+        )
     )
 
 

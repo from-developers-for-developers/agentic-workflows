@@ -189,7 +189,8 @@ def test_a_violation_rejects_the_completion_and_keeps_the_step(
     assert "### `develop/sh` (hook)" in rendered
     assert 'Include "foo" in every Markdown file you change.' in rendered
     assert "    notes.md" in rendered
-    assert "your previous artifact is kept as a draft" in rendered
+    assert "it replaces the draft below entirely" in rendered
+    assert "### Draft artifact\n\n```markdown\nFirst try.\n```" in rendered
     assert "./ww complete TASK-1" in rendered
     assert "Completion recorded successfully" not in rendered
     assert service.status("TASK-1").fix_required is not None
@@ -201,7 +202,7 @@ def test_fixing_the_causes_completes_the_step_with_a_rules_section(
     root = _project(tmp_path)
     service = _develop(root)
     _violate(root)
-    _complete(service)
+    _complete(service, "First try.")
     (root / "notes.md").write_text("foo now\n", encoding="utf-8")
     (root / "broken").unlink()
 
@@ -218,6 +219,9 @@ def test_fixing_the_causes_completes_the_step_with_a_rules_section(
     assert "- `develop/1`: verified pass (by `task:develop:verify:1`)" in artifact
     assert "- `develop/sh` (hook): passed" in artifact
     assert "Completions rejected before this one: 1." in artifact
+    # The rejected draft survives the hold and the accepted completion.
+    assert artifact.endswith("## Previous attempt\n\nFirst try.\n")
+    assert artifact.index("## Result\n\nFixed.") < artifact.index("## Rules")
     _, record = _record(service)
     assert record.draft_artifact is None
     assert [bool(report.failed) for report in record.check_reports] == [True, False]

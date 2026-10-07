@@ -232,3 +232,146 @@ def test_the_identity_flow_works_through_the_cli(
     assert "# EPIC-1/PROJ-7 · story" in output
     assert main(["--root", root, "status", "EPIC-1/PROJ-7"]) == 0
     assert "implement" in capsys.readouterr().out
+
+
+def _open_request(service: WorkflowService) -> str:
+    """Add one child, finish the split, and open the child's identity request."""
+    _split(service)
+    child = service.add_child("EPIC-1", None, "Story one", project="backend")
+    service.complete("EPIC-1", artifact="split", summary_for_next="Done.")
+    service.next("EPIC-1")
+    service.start_child("EPIC-1", child.id)
+    return child.id
+
+
+def test_the_identity_page_carries_the_child_text_as_requirements(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    request_id = _open_request(service)
+
+    active = service.next(request_id)
+
+    requirements = f"Requirements for child task {request_id}: Story one"
+    assert active.task_requirements == requirements
+    assert active.requirements_command == f"./ww requirements {request_id}"
+    page = MarkdownOutputAdapter().render_instruction(active)
+    assert "### Task requirements" in page
+    assert requirements in page
+    recorded = service.requirements(request_id)
+    assert (recorded.task_id, recorded.text, recorded.amendments) == (
+        request_id,
+        requirements,
+        (),
+    )
+    # The parent's child record names the request under the parent.
+    assert service.requirements(f"EPIC-1/{request_id}").text == requirements
+    with pytest.raises(StateError, match="do not have workflow runs"):
+        service.requirements(request_id, "01-story")
+
+
+def test_a_failed_request_offers_retry_and_reset_but_never_force(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    request_id = _open_request(service)
+    service.next(request_id)
+
+    failed = service.fail(f"EPIC-1/{request_id}", "jira is down")
+
+    assert (failed.task_id, failed.status, failed.operator_reason) == (
+        request_id,
+        "failed",
+        "work_failed",
+    )
+    assert [(c.action, c.command) for c in failed.recovery_commands] == [
+        ("retry", f"./ww next {request_id} --retry --yes --role manager")
+    ]
+    page = MarkdownOutputAdapter().render_instruction(failed)
+    assert "cannot be skipped" in page
+    assert f"./ww next {request_id} --retry --yes --role manager" in page
+    assert f"./ww reset {request_id} --yes" in page
+    assert "--force" not in page
+    # Without a decision the failed page is shown again, under either name.
+    assert service.next(request_id).status == "failed"
+    assert service.status(f"EPIC-1/{request_id}").status == "failed"
+    assert service.task_status(f"EPIC-1/{request_id}").step_state == "failed"
+    with pytest.raises(StateError, match="cannot be skipped"):
+        service.next(request_id, force=True, force_reason="skip it")
+
+    reopened = service.next(f"EPIC-1/{request_id}", retry=True)
+
+    assert (reopened.task_id, reopened.item_status, reopened.error) == (
+        request_id,
+        "in_progress",
+        None,
+    )
+    assert service.storage.read_bootstrap(request_id)["status"] == "in_progress"
+    with pytest.raises(StateError, match="nothing to retry"):
+        service.next(request_id, retry=True)
+
+
+def test_reset_drops_a_request_so_start_child_opens_it_again(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    md = MarkdownOutputAdapter()
+    request_id = _open_request(service)
+    service.next(request_id)
+    service.fail(request_id, "jira is down")
+    request_file = tmp_path / ".ww" / "bootstrap" / f"{request_id}.json"
+    assert request_file.exists()
+
+    result = service.reset(f"EPIC-1/{request_id}")
+
+    assert (result.task_id, result.removed, result.identity_request) == (
+        request_id,
+        True,
+        True,
+    )
+    assert "opens a fresh request" in md.render_reset(result)
+    assert not request_file.exists()
+    children = service.tasks.read_children("EPIC-1", "01-epic")
+    assert [(c.id, c.status) for c in children] == [(request_id, "pending")]
+    assert children[0].start_operation_id is not None
+    again = service.reset(request_id)
+    assert (again.removed, again.identity_request) == (False, True)
+    assert "was not found" in md.render_reset(again)
+
+    reopened = service.start_child("EPIC-1", request_id)
+
+    assert (reopened.task_id, reopened.status, reopened.error) == (
+        request_id,
+        "pending",
+        None,
+    )
+    service.next(request_id)
+    bound = service.complete(
+        request_id,
+        variables=(("task_id", "PROJ-3"),),
+        artifact="Created PROJ-3.",
+        summary_for_next="Done.",
+    )
+    assert bound.task_id == "EPIC-1/PROJ-3"
+    with pytest.raises(StateError, match="reset that task instead"):
+        service.reset(request_id)
+
+
+def test_the_request_recovery_works_through_the_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    service = _service(tmp_path)
+    request_id = _open_request(service)
+    service.next(request_id)
+    root = str(tmp_path)
+    qualified = f"EPIC-1/{request_id}"
+
+    assert main(["--root", root, "requirements", qualified]) == 0
+    assert "Story one" in capsys.readouterr().out
+    # A page that waits for the operator exits non-zero, as any failure does.
+    assert main(["--root", root, "fail", qualified, "--error", "down"]) == 1
+    assert f"./ww next {request_id} --retry --yes" in capsys.readouterr().out
+    assert main(["--root", root, "next", qualified, "--retry", "--yes"]) == 0
+    assert f"./ww complete {request_id} --role worker" in capsys.readouterr().out
+    assert main(["--root", root, "reset", qualified, "--yes"]) == 0
+    assert f"Identity request {request_id} was reset" in capsys.readouterr().out
+    assert main(["--root", root, "start-child", "EPIC-1", request_id]) == 0
+    assert f"./ww next {request_id} --role manager" in capsys.readouterr().out

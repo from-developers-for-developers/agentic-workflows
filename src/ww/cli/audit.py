@@ -117,6 +117,14 @@ def _invocation(args: argparse.Namespace) -> str:
             values.extend(["--metadata", _redacted_variable(metadata_value)])
     if args.command == "fail":
         values.extend(["--error", "<redacted>"])
+    if args.command == "debug":
+        values.append(args.debug_action)
+        if args.record_id:
+            values.append(args.record_id)
+        if args.debug_action == "note":
+            values.extend(["--summary", "<redacted>"])
+            if args.detail is not None:
+                values.extend(["--detail", "<redacted>"])
     if args.command == "reset" and args.yes:
         values.append("--yes")
     if getattr(args, "json_output", False):

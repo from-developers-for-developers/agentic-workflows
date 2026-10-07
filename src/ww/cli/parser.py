@@ -503,15 +503,32 @@ def build_parser() -> argparse.ArgumentParser:
         "debug",
         parents=[json_output],
         help=(
-            "List, show or report the debug records ww collected about its own "
-            "behaviour (ww.json debug.collect); report sends one GitHub issue "
-            "per record, each shown in full and confirmed first."
+            "List, show, note or report the debug records ww collected about "
+            "its own behaviour (ww.json debug.collect); note keeps the "
+            "operator's observation on a record, task or request; report "
+            "sends one GitHub issue per record, each shown in full and "
+            "confirmed first."
         ),
     )
     debug.add_argument(
-        "debug_action", choices=["list", "show", "report"], nargs="?", default="list"
+        "debug_action",
+        choices=["list", "show", "report", "note"],
+        nargs="?",
+        default="list",
     )
-    debug.add_argument("record_id", nargs="?")
+    debug.add_argument(
+        "record_id",
+        nargs="?",
+        help="A record ID; for note, also a task ID or a request ID.",
+    )
+    debug.add_argument(
+        "--summary",
+        help=(
+            "note: the operator's one-sentence note on how ww behaved, kept "
+            "on the target's debug record or with its pending events."
+        ),
+    )
+    debug.add_argument("--detail", help="note: what happened, in full.")
     debug.add_argument(
         "--yes",
         action="store_true",

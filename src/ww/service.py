@@ -83,6 +83,7 @@ from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview, HandoffBlock
+from ww.instructions.policy import operator_reason
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
 from ww.item_passes import (
@@ -137,6 +138,7 @@ from ww.rule_verification import (
 from ww.rule_views import RuleView, check_preview, rule_view
 from ww.run_coordination import RunCoordinator
 from ww.run_reports import (
+    DEBUG,
     KINDS,
     RunReportStore,
     start_notice,
@@ -151,6 +153,7 @@ from ww.storage_adapters import (
     TaskStorageAdapter,
 )
 from ww.task_ids import (
+    bare_request_id,
     candidate_task_ids,
     generated_bootstrap_id,
     is_bootstrap_request,
@@ -788,6 +791,97 @@ class WorkflowService:
             if load_project_config(self.storage.project_config_path).feedback_learning:
                 self.feedback.complete_task(state.task_id)
             self._write_run_reports(state, snapshot)
+        else:
+            self._observe_stop(state, snapshot)
+
+    def _observe_stop(self, state: ExecutionState, snapshot: PlanSnapshot) -> None:
+        """Note a transition that leaves the run waiting for the operator.
+
+        Every commit of a stopped run passes here; the note is kept once per
+        stop, so a later transition that leaves the run stopped the same way
+        adds nothing.
+        """
+        reason = operator_reason(state, snapshot.plan)
+        if reason is None:
+            return
+        item = (
+            snapshot.plan.items[state.cursor].name
+            if state.cursor < len(snapshot.plan.items)
+            else None
+        )
+        self._observe(
+            state.task_id,
+            f"Stopped for the operator ({reason})" + (f" at `{item}`" if item else ""),
+            state.last_error,
+            once=True,
+        )
+
+    def _observe(
+        self, owner: str, summary: str, detail: str | None = None, *, once: bool = False
+    ) -> None:
+        """Keep an event ww observed for the debug record of ``owner``'s run.
+
+        Nothing is kept unless ``debug.collect`` is on, and an event that
+        cannot be kept never fails the command that observed it.
+        """
+        try:
+            self.run_reports[DEBUG.name].note(
+                owner, source="ww", summary=summary, detail=detail, once=once
+            )
+        except (OSError, StateError):
+            return
+
+    def debug_note(
+        self, target: str, *, summary: str, detail: str | None = None
+    ) -> dict[str, object]:
+        """Keep the operator's note on a debug record, a task or a request.
+
+        A record ID takes the note directly, as does the latest record of a
+        task that completed a run. Otherwise the note waits with the target's
+        pending events for the run's record, and a standalone record keeps it
+        meanwhile, so a note on a request or on a run that never completes is
+        not lost. Returns the note's destination for the CLI.
+        """
+        store = self.run_reports[DEBUG.name]
+        if (store.directory / f"{target}.json").is_file():
+            store.add_event(target, source="operator", summary=summary, detail=detail)
+            return {"target": target, "record": target, "pending": False}
+        target = bare_request_id(target)
+        request = (
+            self.storage.read_bootstrap(target)
+            if is_bootstrap_request(target)
+            else None
+        )
+        if request is None:
+            validate_task_id(target)
+            latest = store.latest_for(target)
+            if latest is not None:
+                store.add_event(
+                    latest["id"], source="operator", summary=summary, detail=detail
+                )
+                return {"target": target, "record": latest["id"], "pending": False}
+        store.note(target, source="operator", summary=summary, detail=detail)
+        if request is not None:
+            record = store.notes_record(
+                target,
+                workflow=str(request.get("workflow") or "") or None,
+                agent=str(request.get("agent") or "") or None,
+                runtime=str(request.get("workflow_runtime") or "") or None,
+                modes=(),
+            )
+        else:
+            try:
+                state, _ = self.load(target)
+            except StateError:
+                state = None
+            record = store.notes_record(
+                target,
+                workflow=state.workflow if state else None,
+                agent=state.agent if state else None,
+                runtime=state.workflow_runtime if state else None,
+                modes=state.modes if state else (),
+            )
+        return {"target": target, "record": record["id"], "pending": True}
 
     def _write_run_reports(self, state: ExecutionState, snapshot: PlanSnapshot) -> None:
         """Keep the summary's assessments as this run's local records.
@@ -803,6 +897,8 @@ class WorkflowService:
         ):
             return
         definition = workflow_source(self.storage.config_path, snapshot.plan.workflow)
+        runs, _ = self.tasks.read_task_aggregate(state.task_id)
+        run = next((run for run in runs if run.run_id == state.run_id), None)
         for store in self.run_reports.values():
             try:
                 store.record(
@@ -814,6 +910,7 @@ class WorkflowService:
                     modes=snapshot.plan.modes,
                     values=values,
                     workflow_definition=definition,
+                    request_id=run.bootstrap_request_id if run else None,
                 )
             except (OSError, StateError):
                 continue
@@ -944,6 +1041,7 @@ class WorkflowService:
         on with the saved plan, and either then advances as usual.
         """
         self._require_manager("next", caller_role)
+        task_id = bare_request_id(task_id)
         if (replan or keep_plan) and (
             replan == keep_plan or force or retry or outcome or reassign
         ):
@@ -969,6 +1067,11 @@ class WorkflowService:
             stop = self._plan_gate(task_id, replan=replan, keep_plan=keep_plan)
             if stop is not None:
                 return self._tag_caller(stop, caller_role)
+        forced = (
+            self.force_target(task_id)
+            if force and not is_bootstrap_request(task_id)
+            else None
+        )
         instruction = self._next_command(
             task_id,
             model,
@@ -980,6 +1083,8 @@ class WorkflowService:
             selected_agent=selected_agent,
             caller_role=caller_role,
         )
+        if forced is not None:
+            self._observe(task_id, f"Operator forced next: {forced}", force_reason)
         self.children.reconcile_after_child(task_id)
         instruction = self._start_declared_child(task_id, instruction)
         return self._tag_caller(instruction, caller_role)
@@ -1094,7 +1199,8 @@ class WorkflowService:
         if request is not None:
             return self.bootstrap.next(
                 request,
-                force,
+                retry=retry,
+                force=force,
                 selected_agent=selected_agent,
                 selected_model=None if model == "auto" else model,
                 selected_reasoning=None if reasoning == "auto" else reasoning,
@@ -1426,6 +1532,7 @@ class WorkflowService:
         assignment: str | None = None,
     ) -> Instruction:
         self._validate_caller_role(caller_role)
+        task_id = bare_request_id(task_id)
         request = (
             self.storage.read_bootstrap(task_id)
             if is_bootstrap_request(task_id)
@@ -1437,6 +1544,7 @@ class WorkflowService:
             request["status"] = "failed"
             request["error"] = error.strip()
             self.storage.write_bootstrap(task_id, request)
+            self._observe(task_id, "Worker reported the bootstrap step failed", error)
             return self._tag_caller(self.bootstrap.instruction(request), caller_role)
         validate_task_id(task_id)
         if not error.strip():
@@ -1446,6 +1554,9 @@ class WorkflowService:
             opened = self._open_assignment(task_id, caller_role)
             instruction = self._with_handoff(
                 task_id, self._fail(task_id, error.strip()), opened
+            )
+            self._observe(
+                task_id, f"Worker reported `{instruction.item_name}` failed", error
             )
         self.children.reconcile_after_child(task_id)
         return self._tag_caller(instruction, caller_role)
@@ -1694,6 +1805,7 @@ class WorkflowService:
         ):
             if value is not None and not value.strip():
                 raise StateError(f"{name} must be non-empty")
+        task_id = bare_request_id(task_id)
         request = (
             self.storage.read_bootstrap(task_id)
             if is_bootstrap_request(task_id)
@@ -2205,6 +2317,7 @@ class WorkflowService:
         assignment: str | None = None,
     ) -> Instruction:
         self._validate_caller_role(caller_role)
+        task_id = bare_request_id(task_id)
         request = (
             self.storage.read_bootstrap(task_id)
             if is_bootstrap_request(task_id)
@@ -2323,6 +2436,9 @@ class WorkflowService:
             )
             state = dispute_check(state, snapshot.plan, dispute, _now)
             self.commit(state, snapshot)
+            self._observe(
+                task_id, f"Worker disputed check `{check_id}` of `{item.name}`", reason
+            )
             instruction = self._with_handoff(
                 task_id, self.render(state, snapshot), opened
             )
@@ -2370,6 +2486,7 @@ class WorkflowService:
     ) -> TaskStatus:
         """Return a compact summary of the currently active workflow run."""
         self._validate_caller_role(caller_role)
+        task_id = bare_request_id(task_id)
         if is_bootstrap_request(task_id):
             instruction = self.instruction(task_id, run_id, caller_role=caller_role)
             return TaskStatus(
@@ -2472,7 +2589,21 @@ class WorkflowService:
         return self.render(state, snapshot), (state, snapshot)
 
     def requirements(self, task_id: str, run_id: str | None = None) -> TaskRequirements:
-        """The requirements ``init`` recorded, with their amendments, read only."""
+        """The requirements ``init`` recorded, with their amendments, read only.
+
+        An identity request has no run yet: its requirements are the text the
+        request was opened with, and nothing amends them.
+        """
+        task_id = bare_request_id(task_id)
+        request = (
+            self.storage.read_bootstrap(task_id)
+            if is_bootstrap_request(task_id)
+            else None
+        )
+        if request is not None:
+            if run_id is not None:
+                raise StateError("bootstrap requests do not have workflow runs")
+            return TaskRequirements(task_id, str(request["init_artifact"]), ())
         validate_task_id(task_id)
         state, snapshot = self.load(task_id, run_id)
         return TaskRequirements(
@@ -2849,6 +2980,9 @@ class WorkflowService:
         )
 
     def reset(self, task_id: str) -> ResetResult:
+        task_id = bare_request_id(task_id)
+        if is_bootstrap_request(task_id):
+            return self._reset_request(task_id)
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
             children = self.tasks.child_task_ids(task_id)
@@ -2871,6 +3005,26 @@ class WorkflowService:
             # task under the same ID would inherit them.
             self.extensions.forget_task(task_id)
             return ResetResult(task_id, self.tasks.remove_task(task_id))
+
+    def _reset_request(self, request_id: str) -> ResetResult:
+        """Forget an identity request, so ``start-child`` can open it afresh.
+
+        A request that has started binding owns a task under its external ID;
+        that task is what a reset removes, so the request stays.
+        """
+        request = self.storage.read_bootstrap(request_id)
+        if request is None:
+            return ResetResult(request_id, False, identity_request=True)
+        if request["status"] in {"binding", "completed"}:
+            raise StateError(
+                f"identity request {request_id!r} is bound to "
+                f"{request['resolved_task_id']!r}; reset that task instead"
+            )
+        self.storage.remove_bootstrap(request_id)
+        parent = request.get("parent_task_id")
+        if isinstance(parent, str) and self.tasks.task_exists(parent):
+            self.children.release_child(parent, request_id)
+        return ResetResult(request_id, True, identity_request=True)
 
     def cleanup(self) -> CleanupResult:
         """Prune obsolete lock sidecars outside any task-specific state."""
@@ -4569,6 +4723,12 @@ class WorkflowService:
                         raise StateError(f"cannot replan: {change.refusal}")
                     self.commit(*replan_(state, snapshot, change, _now))
                     return None
+                self._observe(
+                    task_id,
+                    "Stopped for the operator (plan_changed): the workflow "
+                    "changed since this run's plan was saved",
+                    once=True,
+                )
                 return _plan_changed_page(self.render(state, snapshot), change)
         if replan or keep_plan:
             raise StateError(

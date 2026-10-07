@@ -626,6 +626,26 @@ def number_step_paths(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:
     )
 
 
+def step_label(
+    step_ordinals: tuple[int, ...], items: tuple[PlanItem, ...]
+) -> tuple[str, int]:
+    """Return the ``Step N of M`` numbers of a step artifact.
+
+    ``N`` is the step's dotted declaration ordinals, the ones its artifact
+    path is built from, and ``M`` the number of top-level steps in the plan,
+    so a nested step reads ``2.1 of 3``. A container counts once, and
+    expanding items or children leaves the total alone. The step counts
+    even when ``items``, a run's plan, no longer holds it.
+    """
+    return (
+        ".".join(str(ordinal) for ordinal in step_ordinals),
+        max(
+            step_ordinals[0],
+            *(entry.step_ordinals[0] for entry in items if entry.step_ordinals),
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class WorkflowPlan:
     workflow: str

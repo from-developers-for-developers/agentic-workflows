@@ -17,8 +17,9 @@ and `ww docs examples` (`docs` is read-only and takes no project state).
 - **Template:** `{{variable}}`, double braces everywhere. A name without
   `ww.` is always a variable an earlier step handed back (`variables`) or an
   automatic action returned. Every value ww provides lives under `ww.`:
-  `{{ww.task.id}}`, `{{ww.task.workspace_dir}}`, `{{ww.task.workflows}}`
-  (the configured workflow names), `{{ww.project.name}}`,
+  `{{ww.task.id}}`, `{{ww.task.slug}}` (the task ID as one path component,
+  a child's `/` replaced by `-`), `{{ww.task.workspace_dir}}`,
+  `{{ww.task.workflows}}` (the configured workflow names), `{{ww.project.name}}`,
   `{{ww.project.dir}}`, `{{ww.project.names}}`, `{{ww.executable}}` (how
   printed commands invoke ww: `./ww` or the configured `executable`),
   `{{ww.documents.<name>}}`,

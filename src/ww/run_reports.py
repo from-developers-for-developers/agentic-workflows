@@ -29,7 +29,8 @@ import yaml
 from ww import __version__, builtin_workflows
 from ww.config.composition import compose_configuration
 from ww.errors import StateError
-from ww.project_config import ProjectConfig
+from ww.project_config import ProjectConfig, load_project_config
+from ww.variables import task_slug
 from ww.workflow_config import ProvidedVariable
 
 if TYPE_CHECKING:
@@ -43,6 +44,13 @@ MAX_ISSUE_URL_LENGTH = 8000
 GH_TIMEOUT_SECONDS = 60
 # What one entry of a report array may carry.
 ENTRY_KEYS = frozenset({"summary", "detail", "step"})
+# Who recorded an event: ww observing the run, or the operator noting it.
+EVENT_SOURCES = ("ww", "operator")
+# Events recorded before a run's record exists wait here, one file per task
+# or request, until the run completes or the operator notes them standalone.
+PENDING_DIRECTORY = "pending"
+# The run ID of a standalone record holding a task's or request's events.
+NOTES_RUN_ID = "notes"
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,9 @@ class ReportKind:
     title: str
     prompt: str
     arrays: tuple[ReportArray, ReportArray]
+    # Whether records of this kind carry the events ww observed and the
+    # operator noted, apart from the agent-written arrays.
+    events: bool = False
 
     @property
     def variables(self) -> tuple[ProvidedVariable, ...]:
@@ -113,6 +124,7 @@ DEBUG = ReportKind(
             ),
         ),
     ),
+    events=True,
 )
 
 FEEDBACK = ReportKind(
@@ -289,8 +301,8 @@ def _find_workflow(raw: object, name: str) -> object | None:
 
 
 def record_id(task_id: str, run_id: str) -> str:
-    """The record's ID and file stem: a child task's slash becomes a plus."""
-    return f"{task_id.replace('/', '+')}--{run_id}"
+    """The record's ID and file stem: a child task's slash becomes a dash."""
+    return f"{task_slug(task_id)}--{run_id}"
 
 
 class RunReportStore:
@@ -317,9 +329,16 @@ class RunReportStore:
         modes: tuple[str, ...],
         values: Mapping[str, str],
         workflow_definition: object,
+        request_id: str | None = None,
         now: str | None = None,
     ) -> dict[str, Any] | None:
-        """Write the run's record from the summary's values; none without them."""
+        """Write the run's record from the summary's values; none without them.
+
+        A kind with events takes over the events pending for the task and for
+        ``request_id``, the bootstrap request the run was bound from, and
+        drops their standalone notes records, now that the run's own record
+        holds them.
+        """
         parsed = validate_report_values(
             {
                 array.variable: values[array.variable]
@@ -353,8 +372,163 @@ class RunReportStore:
             "reported": None,
         }
         with self._lock():
+            if self.kind.events:
+                owners = [task_id] + ([request_id] if request_id else [])
+                record["events"] = self._take_pending(owners)
             self._save(record)
         return record
+
+    def collecting(self) -> bool:
+        """Whether the project collects this kind now."""
+        config = load_project_config(self.storage.project_config_path)
+        return self.kind.name in {kind.name for kind in collected_kinds(config)}
+
+    def note(
+        self,
+        owner: str,
+        *,
+        source: str,
+        summary: str,
+        detail: str | None = None,
+        once: bool = False,
+        now: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Keep one event for ``owner``, a task or request, until its run's record.
+
+        ``ww`` events are kept only while the kind is collected; the operator's
+        notes always are. ``once`` drops an event ``ww`` already recorded
+        with the same words, so one stop is noted once, not on every
+        transition that leaves the run stopped. The event, or ``None`` when
+        nothing was kept.
+        """
+        if not self.kind.events:
+            raise StateError(f"{self.kind.name} records carry no events")
+        if source not in EVENT_SOURCES:
+            raise StateError(f"unknown event source {source!r}")
+        if not summary.strip():
+            raise StateError("an event needs a non-empty summary")
+        if source == "ww" and not self.collecting():
+            return None
+        event = _event(source, summary, detail, now)
+        with self._lock():
+            pending = self._pending(owner)
+            if once and any(
+                (kept["source"], kept["summary"], kept.get("detail"))
+                == (event["source"], event["summary"], event.get("detail"))
+                for kept in pending
+            ):
+                return None
+            path = self._pending_path(owner)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event) + "\n")
+        return event
+
+    def add_event(
+        self,
+        identifier: str,
+        *,
+        source: str,
+        summary: str,
+        detail: str | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one event to the record ``identifier``."""
+        if source not in EVENT_SOURCES:
+            raise StateError(f"unknown event source {source!r}")
+        if not summary.strip():
+            raise StateError("an event needs a non-empty summary")
+        event = _event(source, summary, detail, now)
+        with self._lock():
+            record = self.get(identifier)
+            record.setdefault("events", []).append(event)
+            self._save(record)
+        return record
+
+    def latest_for(self, task_id: str) -> dict[str, Any] | None:
+        """The task's latest run record, if a run of it completed."""
+        runs = [
+            record
+            for record in self.records()
+            if record.get("task_id") == task_id and record.get("run_id") != NOTES_RUN_ID
+        ]
+        return runs[-1] if runs else None
+
+    def notes_record(
+        self,
+        owner: str,
+        *,
+        workflow: str | None,
+        agent: str | None,
+        runtime: str | None,
+        modes: tuple[str, ...],
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Write ``owner``'s pending events as a standalone record.
+
+        Written when the operator notes a task or request without a completed
+        run, so the note is kept even if no run ever completes; the run's own
+        record replaces it when one does.
+        """
+        from ww.execution_models.runs import PLAN_SCHEMA_VERSION
+        from ww.storage_adapters.task_document import TASK_STATE_SCHEMA_VERSION
+
+        with self._lock():
+            record: dict[str, Any] = {
+                "schema": RECORD_SCHEMA,
+                "id": record_id(owner, NOTES_RUN_ID),
+                "kind": self.kind.name,
+                "workflow": workflow or "unknown",
+                "recorded_at": now or _now(),
+                "task_id": owner,
+                "run_id": NOTES_RUN_ID,
+                "agent": agent,
+                "runtime": runtime,
+                "modes": list(modes),
+                "ww_version": __version__,
+                "plan_schema_version": PLAN_SCHEMA_VERSION,
+                "task_state_schema_version": TASK_STATE_SCHEMA_VERSION,
+                "workflow_definition": None,
+                **{array.field: [] for array in self.kind.arrays},
+                "events": self._pending(owner),
+                "reported": None,
+            }
+            self._save(record)
+        return record
+
+    def _pending_path(self, owner: str) -> Path:
+        return self.directory / PENDING_DIRECTORY / f"{task_slug(owner)}.jsonl"
+
+    def _pending(self, owner: str) -> list[dict[str, Any]]:
+        """The events kept for ``owner``; a line that cannot be read is skipped."""
+        path = self._pending_path(owner)
+        if not path.is_file():
+            return []
+        events = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and isinstance(event.get("summary"), str):
+                events.append(event)
+        return events
+
+    def _take_pending(self, owners: list[str]) -> list[dict[str, Any]]:
+        """Collect and remove the owners' pending events and notes records."""
+        events = [event for owner in owners for event in self._pending(owner)]
+        events.sort(key=lambda event: str(event.get("at", "")))
+        for owner in owners:
+            self._pending_path(owner).unlink(missing_ok=True)
+            notes = self.directory / f"{record_id(owner, NOTES_RUN_ID)}.json"
+            if notes.is_file():
+                try:
+                    reported = self._read(notes).get("reported")
+                except StateError:
+                    reported = None
+                if not reported:
+                    notes.unlink(missing_ok=True)
+        return events
 
     def records(self) -> list[dict[str, Any]]:
         """Every record, oldest first."""
@@ -392,6 +566,8 @@ class RunReportStore:
             for array in self.kind.arrays:
                 if not isinstance(data.get(array.field), list):
                     raise ValueError(f"{array.field} must be a list")
+            if self.kind.events and not isinstance(data.setdefault("events", []), list):
+                raise ValueError("events must be a list")
             data.setdefault("id", path.stem)
             return data
         except (OSError, ValueError) as error:
@@ -430,6 +606,8 @@ def render_listing(store: RunReportStore) -> str:
         counts = ", ".join(
             f"{array.field}: {len(record[array.field])}" for array in store.kind.arrays
         )
+        if store.kind.events:
+            counts += f", events: {len(record.get('events') or [])}"
         reported = record.get("reported")
         state = (
             f"reported {reported.get('at')} via {reported.get('method')}"
@@ -469,6 +647,17 @@ def render_record(record: Mapping[str, Any], kind: ReportKind) -> str:
             step = f" (step `{entry['step']}`)" if entry.get("step") else ""
             detail = f": {entry['detail']}" if entry.get("detail") else ""
             lines.append(f"- **{entry['summary']}**{step}{detail}")
+    if kind.events:
+        lines.extend(["", "## Events ww observed and the operator noted", ""])
+        events = record.get("events") or []
+        if not events:
+            lines.append("None.")
+        for event in events:
+            detail = f": {event['detail']}" if event.get("detail") else ""
+            lines.append(
+                f"- {event.get('at')} ({event.get('source')}) "
+                f"**{event['summary']}**{detail}"
+            )
     definition = record.get("workflow_definition")
     if definition is not None:
         lines.extend(
@@ -638,6 +827,19 @@ def report_records(
         else:
             outcomes.append(ReportOutcome(record["id"], "cancelled"))
     return outcomes
+
+
+def _event(
+    source: str, summary: str, detail: str | None, now: str | None
+) -> dict[str, Any]:
+    event: dict[str, Any] = {
+        "at": now or _now(),
+        "source": source,
+        "summary": summary.strip(),
+    }
+    if detail is not None and detail.strip():
+        event["detail"] = detail.strip()
+    return event
 
 
 def _now() -> str:

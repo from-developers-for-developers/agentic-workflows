@@ -9,7 +9,7 @@ def test_render_step_artifact_uses_builtin_markdown_structure() -> None:
         task_id="TASK-1",
         workflow="task",
         step="develop",
-        step_number=2,
+        step_number="2",
         step_total=3,
         skill="auto",
         result="# finished\n\n",
@@ -24,12 +24,29 @@ def test_render_step_artifact_uses_builtin_markdown_structure() -> None:
     )
 
 
-def test_render_step_artifact_restores_escaped_markdown_line_endings() -> None:
+def test_render_step_artifact_keeps_the_previous_attempt_after_the_result() -> None:
     artifact = render_step_artifact(
         task_id="TASK-1",
         workflow="task",
         step="develop",
         step_number=1,
+        step_total=1,
+        skill="auto",
+        result="Fixed.",
+        previous_attempt="First try.\\n\\nIt failed.",
+    )
+
+    assert artifact.endswith(
+        "## Result\n\nFixed.\n\n## Previous attempt\n\nFirst try.\n\nIt failed.\n"
+    )
+
+
+def test_render_step_artifact_restores_escaped_markdown_line_endings() -> None:
+    artifact = render_step_artifact(
+        task_id="TASK-1",
+        workflow="task",
+        step="develop",
+        step_number="1",
         step_total=1,
         skill="auto",
         result="## Scope\\n\\nReview the change.\\r\\n\\r\\n## Decision\\n\\nProceed.",
@@ -45,7 +62,7 @@ def test_render_step_artifact_preserves_literal_escapes_in_multiline_markdown() 
         task_id="TASK-1",
         workflow="task",
         step="develop",
-        step_number=1,
+        step_number="1",
         step_total=1,
         skill="auto",
         result="## Finding\n\nThe input contained a literal `\\n` sequence.",

@@ -273,6 +273,20 @@ class InstructionBuilder:
             ),
             assignment_step=driver.name if driver else None,
             assignment_items=tuple(entry.name for entry in covered),
+            completed_assignment_items=tuple(
+                entry.name for entry in _completed_items(state, assignment, covered)
+            ),
+            running_assignment_item=(
+                item.name
+                if item is not None
+                and assignment is not None
+                and record is not None
+                and item.owner == "ww"
+                and not item.requires_agent_input
+                and record.status in {"pending", "in_progress"}
+                and not needs_repair(state)
+                else None
+            ),
             assignment_explicit_steps=tuple(
                 dict.fromkeys(
                     entry.step
@@ -1394,6 +1408,22 @@ def _current_assignment(
     return assignment_at(plan, state.cursor, runtime=state.workflow_runtime)
 
 
+def _completed_items(
+    state: ExecutionState,
+    assignment: Assignment | None,
+    covered: tuple[PlanItem, ...],
+) -> tuple[PlanItem, ...]:
+    """The covered items before the cursor this assignment already completed."""
+    if assignment is None:
+        return ()
+    done = {
+        record.plan_item_id
+        for record in state.item_executions[assignment.start : state.cursor]
+        if record.status == "completed"
+    }
+    return tuple(entry for entry in covered if entry.id in done)
+
+
 def _span(
     plan: WorkflowPlan, assignment: Assignment | None
 ) -> ItemSpan | LoopSpan | None:
@@ -1638,9 +1668,19 @@ def build_bootstrap_instruction(request: dict[str, object], root: Path) -> Instr
             else next_command(request_id)
         ),
         error=str(request["error"]) if "error" in request else None,
+        # A request can only be retried or reset, never skipped: there is no
+        # task without the external ID this step obtains.
+        recovery_commands=(
+            (RecoveryCommand("retry", next_command(request_id, retry=True)),)
+            if reason
+            else ()
+        ),
         profile_instruction=(
             _bootstrap_profile_instruction(request, root) if in_progress else None
         ),
+        # The text the request was opened with is the task's requirements.
+        task_requirements=str(request["init_artifact"]) if in_progress else None,
+        requirements_command=requirements_command(request_id),
         workflow_runtime=str(request.get("workflow_runtime", "single")),
         workflow_runtime_instruction=runtime_instruction(
             str(request.get("workflow_runtime", "single")), next_role

@@ -549,8 +549,10 @@ safe to render before a task exists.
 Core variable names and value construction are owned by `../src/ww/variables.py`.
 Every ww-provided value lives under `ww.` (`ww.task.id`, `ww.project.dir`,
 `ww.metadata.<path>`, `ww.item.field.<name>`, ...); a user variable may not
-start with `ww`. Stable values such as `ww.task.id`
-and `ww.task.workflows` are bound during compilation; dynamic values are
+start with `ww`. Stable values such as `ww.task.id`, `ww.task.slug` (the ID
+with a child's `/` replaced by `-`, the one spelling run-report IDs and
+`ww/git` names share) and `ww.task.workflows` are bound during compilation;
+dynamic values are
 resolved from current execution state when an instruction or automatic action
 is rendered. This lets `ww.task.workspace_dir` follow a run's selected
 checkout without freezing a path into the plan snapshot. ww's own namespaces
@@ -607,7 +609,11 @@ agent, model, reasoning, or profile, or that is reserved for the manager with
 cannot change those. The `single` runtime keeps per-step bounds. Each stage is still its own plan item
 with its own record, so completion, reload, and recovery need no span-specific
 state; only the instruction builder marks the first stage of a span with its
-scope and later stages as compact continuations.
+scope and later stages as compact continuations. The builder also splits the
+covered items by their execution records into `completed_assignment_items`
+and the rest, and names in `running_assignment_item` the ww-owned item the
+cursor is on, so a page re-read while a hook runs describes the assignment as
+it stands rather than as it was dispatched.
 
 The same module collects the inputs of a completion window. Matching variable
 requests share one value across its automatic handlers, so overlapping project
@@ -677,6 +683,13 @@ bootstrap filtering, and per-item expansion recalculates them when runtime
 siblings are materialized, so artifact references remain stable representations
 of the effective workflow hierarchy. Hook artifact filenames remain keyed by
 their flat plan position because multiple hooks can share one step boundary.
+The `Step N of M` label of a step artifact comes from the same ordinals
+(`step_label` in `../src/ww/plan/models.py`): the dotted ordinal path as `N`
+and the highest top-level ordinal in the plan as `M`, so the label never
+drifts from the file name and the total survives expansion and replanning. A
+bootstrap request records its item's `step_ordinals` for the same reason: the
+bound run's plan no longer holds the identity step, and the recorded ordinals
+name both its file and its label.
 
 Loop progress uses the same flat plan and cursor rather than a second executor.
 The plan carries paired loop entry/repeat markers around normal nested plan
@@ -1078,7 +1091,15 @@ not a recorded failure. The same boundary makes retry honest about values: a
 failed automatic item that declares `provide` drops those values from the
 workflow values when it is returned to pending, keeping them on its record,
 so `drain` raises the ordinary input request again and the page can show what
-the handler was given last time. A reference's `args` are the other input:
+the handler was given last time. A successful one drops them too
+(`release_provided_values` in `../src/ww/transitions.py`, called from
+`ActionExecutor` after the handler's record is written), except the names a
+later item of the same completion window still declares, which stay until
+that item has run; the supplied values remain on the record's
+`supplied_values`. Workflow values thus hold only what no consumer has used
+yet, and a later consumer of the same name, a commit after a review loop,
+raises its own input request instead of reusing the earlier value. A
+reference's `args` are the other input:
 the name-only handler carries them, the compiler checks their count against
 the handler's declared `arguments` and validates their templates like shell
 `args`, the plan payload keeps them (omitted when empty, so older plans read
@@ -1539,7 +1560,18 @@ idempotent, so a retried request after a crash finds the bound child and only
 repairs the parent record. The compiler flags the children collection with
 `child_identity` when the child workflow binds identity, so the collection
 instruction can tell agents not to pass `--id` without loading the child plan
-at render time.
+at render time. The request's page renders the text it was opened with
+(`init_artifact`) as the task requirements, and `requirements` answers for a
+request from the bootstrap record, since no run exists yet. Every service
+entry that accepts a request ID first strips the parent qualifier the parent's
+child record uses (`bare_request_id` in `../src/ww/task_ids.py`), so
+`EPIC-1/REQUEST-…` names the request rather than falling into the run path. A
+failed request has exactly two recoveries, retry and reset: `next --retry`
+reopens it, `next --force` is refused because no task exists to skip the step
+in, and `reset` removes the bootstrap record and returns the parent's child
+record to `pending` through `ChildCoordinator.release_child`, keeping its
+start operation so `start-child` opens a fresh request; a request that has
+begun binding refuses reset and names the task to reset instead.
 
 ## Workflow items
 
@@ -1760,8 +1792,14 @@ repeatable, so they keep no command ledger; their outputs are stored like
 other command output and their reports live on the item record, one per
 attempt, which is the single authority for how often a step was rejected. A
 rejection leaves the step with its worker and the supplied artifact as a
-draft; the limit turns into an operator decision (`fix_limit`) whose two
-exits, a fresh count or a recorded waiver, are transitions like any other.
+draft, which the fix page shows in full and the next completion replaces
+entirely; when that completion is accepted, `write_completion_artifacts`
+appends the draft to the step's artifact file as a `## Previous attempt`
+section, so a rejected result is kept rather than overwritten. A held
+completion carries the draft it displaced in `HeldCompletion.previous_artifact`
+for the same purpose. The limit turns into an operator decision (`fix_limit`)
+whose two exits, a fresh count or a recorded waiver, are transitions like any
+other.
 Judged rules, those without a command, are verified by an agent that is never
 the step's worker. Completing such a step holds the completion: the
 arguments, the change set and the draft artifact stay on the item record,
@@ -1912,7 +1950,21 @@ built-in file), read through `compose_configuration`, not the compiled plan.
 
 `RunReportStore` keeps one JSON file per run under `.ww/debug/` or
 `.ww/feedback/`, written atomically under the project's lock manager, with a
-`reported` field ww fills when a debug record was published. The CLI's
+`reported` field ww fills when a debug record was published. The debug kind
+(`ReportKind.events`) also keeps events: `note` appends one JSON line to a
+pending file per task or request (`.ww/debug/pending/<slug>.jsonl`), keeping
+`ww`-sourced events only while `debug.collect` is on and dropping, with
+`once`, a repeat of an event already pending; `record` takes the pending
+events of the task and of the run's `bootstrap_request_id` into the record's
+`events` array and removes the pending files and any standalone notes record;
+`add_event` appends to an existing record; `notes_record` writes the pending
+events as a standalone `<owner>--notes` record. The service observes through
+one helper (`_observe`, never failing the command): `fail` on a task or a
+request, `next --force` with the resolved target and reason, `dispute`, the
+`plan_changed` gate, and `commit`, which notes every transition whose
+`operator_reason` is set, once per stop. `debug_note` resolves the operator's
+`ww debug note` target to a record, the task's latest record, or the pending
+file plus a standalone record. The CLI's
 `debug` and `workflow-feedback` commands read these stores; `discover`
 counts unreported debug records and offers them only while `debug.report` is
 on. Publishing goes through `report_records`, which takes the confirmation,

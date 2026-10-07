@@ -1537,7 +1537,14 @@ manager continues. `awaiting_operator` means a human must decide; see
 At handoff only the manager runs the displayed `next --role manager` command.
 In the `auto` runtime the manager's delegate page and the requested worker
 describe the step that drives selection, not whichever hook the cursor is on,
-and both the manager and the worker are told every item the assignment covers.
+and both the manager and the worker are told every item the assignment covers:
+`This assignment covers, in order: ...` while nothing is done, then, once the
+worker has completed some of them, `Already completed in this assignment: ...
+Remaining, in order: ...`, derived from the items' execution status rather
+than from the assignment's first item. The line is omitted when one item or
+none remains; while it is shown and ww is running an automatic item of the
+assignment, a commit hook or a push, it names it: `` `ww` is now running
+`git-push`. ``
 A worker moving to a later item of the same assignment is told so explicitly,
 and the end of an assignment says to stop and return to the manager.
 
@@ -2053,6 +2060,28 @@ without children, and a retried request that already bound its child simply
 reports the bound task. A child added with an explicit `--id` skips the request,
 as an explicit ID does for `start`.
 
+The identity page shows the child's text as its task requirements, and
+`requirements REQUEST-…` prints them while the request is open (a request has
+no run and no amendments). Wherever a request ID is accepted (`next`,
+`instruction`, `status`, `fail`, `complete`, `requirements`, `reset`), the
+parent-qualified name the parent's child record uses, `EPIC-1/REQUEST-…`,
+names the same request.
+
+The identity step cannot be skipped, since there is no task without the
+external ID it obtains, so a failed request has two recoveries. `fail` shows
+them both:
+
+```console
+ww-agentic-workflows next REQUEST-20260923101500123456 --retry --yes --role manager
+ww-agentic-workflows reset REQUEST-20260923101500123456 --yes
+```
+
+`next --retry` reopens the failed request and dispatches the step again;
+`next --force` is refused for a request. `reset` removes the request and
+returns the parent's child record to pending, with its start operation kept,
+so `start-child EPIC-1 REQUEST-…` opens a fresh request for the same child. A
+request that has already bound its task is not reset; that task is.
+
 A child can also be named by the parent at collection time: with the parent as
 an epic and its children as the epic's tasks, the agent creates each ticket,
 then records it with `add-child EPIC-1 --id TASK-7 --text ...`, making the
@@ -2157,8 +2186,11 @@ the completion is rejected: nothing is saved, the artifact is kept only as a
 draft, the step stays in progress with its worker, and `complete` exits
 non-zero. The response is the fix page, `## Fix required: 2 of 5 checks failed
 (attempt 1 of 3)`, with each failed check's rule text, command, and the last 40
-lines it printed, then the same completion command; `fix_required` in JSON.
-The worker fixes the causes and completes again with a revised artifact.
+lines it printed, the rejected artifact under `### Draft artifact`, then the
+same completion command; `fix_required` in JSON. The worker fixes the causes
+and completes again with the whole revised artifact, which replaces the draft
+entirely; the accepted artifact file keeps the rejected one under a
+**Previous attempt** heading.
 
 A failed check always goes back to the worker, never to the operator, until
 it has failed `max_fixes` times: the rule's own value, else `limits.fixes` in
@@ -2485,7 +2517,10 @@ hook to declare a transition.
 Interpolations use `{{name}}`, with double braces everywhere. Every value ww
 provides lives under `ww.`, so a name without it is always a variable a step
 handed back: `{{ww.task.id}}` is the task's ID and `{{ww.task.workflows}}` the
-ordered workflow-name list, joined by commas.
+ordered workflow-name list, joined by commas. `{{ww.task.slug}}` is the task ID
+as one path component, each `/` of a child task's `parent/child` ID replaced
+by `-` (`TASK-42/A` reads `TASK-42-A`), for file names, branch names and other
+places a slash would nest or split the ID.
 The core `{{ww.task.workspace_dir}}` variable is always the canonical directory for
 the task: the project root by default, the configured project directory when a
 task was started with `--project`, or the selected task checkout when an
@@ -2507,6 +2542,16 @@ or the same compact `name: description` shorthand as handlers and steps, and
 the performer passes it with `complete --variable name=<value>`. A bare string,
 `- name`, is a value an automatic action returns itself. A step's values are
 available to its completion hooks and later plan items.
+
+A value an automatic handler asks for is consumed by it: once the handler has
+run with it, ww removes the value from the run again, unless a later hook of
+the same completion asks for it too, in which case it stays until that hook
+has run. The next handler that asks for the same name, a `git-commit` after a
+review loop or one that is a step of its own, therefore requests it afresh
+(`awaiting_input`) instead of running silently with the message an earlier
+step supplied. A failed handler releases its values the same way when it is
+retried, keeping them on its record so the request can show what it was given
+last time.
 
 When several automatic completion hooks request the same variable with the
 same description, ww asks for it once and gives that value to each hook.
@@ -2949,6 +2994,14 @@ steps/
     01-plan.md
     02-fix.md
 ```
+
+The `Step N of M` line in each step artifact's workflow context uses the same
+ordinals: `N` is the file's ordinal, dotted for a nested step (`02-fix.md`
+under `03-plan-and-fix/` reads `Step 3.2 of 3`), and `M` is the number of
+top-level steps the workflow declares, so a group counts once and the total
+does not change when items, children or a replan add plan items mid-run. The
+artifact of a step performed by an identity request (`REQUEST-…`) is
+numbered the same way once it is written into the bound task.
 
 Loop bodies add an `iteration-NN` directory beneath each loop wrapper. Every
 round therefore keeps its own step and hook artifacts instead of overwriting
@@ -3727,8 +3780,12 @@ and return-to-base use one stable value. The record is trusted only while it
 names the branch being resolved and that branch exists; a record of another
 branch, or of a deleted one, is left behind by an earlier task under the same
 ID, and the configured base is resolved instead. A child task always uses its
-recorded parent task branch instead. `reset` drops the task's branch and commit
-records, and its children's.
+recorded parent task branch instead, and its branch is that branch plus
+`-<child id>`; without a recorded parent branch, the format is rendered for the
+parent ID and `-<child id>` appended, so `TASK-51/A` under
+`feature/{{ww.task.id}}` is `feature/task-51-a`, never a `feature/task-51/a`
+that Git would refuse beside `feature/task-51`. `reset` drops the task's branch
+and commit records, and its children's.
 
 `branch_name_formats` names the available branch naming strategies. Without an
 override, `start-task-branch` first looks for a strategy matching the workflow
@@ -4722,23 +4779,43 @@ ww writes the record: the workflow's name, the time, the task and run IDs, the
 agent, runtime and modes, the ww version with the plan and task-state schema
 versions, the workflow's definition as written in `ww.yaml` (not the compiled
 plan), and the two arrays. The record's ID is the task and run, such as
-`TASK-42--01-task`; a child task's slash becomes a plus.
+`TASK-42--01-task`; a child task's slash becomes a dash, as in
+`{{ww.task.slug}}` (`TASK-42-A--01-task`).
 
 The agent is told about the collection exactly once: the first page of a run
 asks it to say that ww collects debug info or feedback at the end of the run,
 that it stays on this machine, and where. The collection itself is silent
 until the summary step. Nothing is ever sent by itself.
 
+A debug record also carries an `events` array, apart from the agent's two
+arrays, with what ww itself observed while `debug.collect` was on: a `fail`
+(on a task or on an identity request, with the error), a `next --force` with
+what it forced and the operator's reason, a `dispute`, and every stop for the
+operator (the `operator_reason` and the error, once per stop, not on every
+reading of the page). Each event has `at`, `source` (`ww`, or `operator` for
+a note) and `summary`, plus `detail`. Events wait under
+`.ww/debug/pending/` until the run completes, when the record takes them
+over; the events of an identity request go to the record of the task the
+request bound.
+
 ```console
 ./ww debug list
 ./ww debug show TASK-42--01-task
+./ww debug note TASK-42 --summary "The fix page named the wrong step" --detail "..."
 ./ww workflow-feedback list
 ./ww workflow-feedback show TASK-42--01-task --json
 ```
 
 `list` names every record with its counts and whether it was reported;
 `show` prints one as Markdown, exactly what a report would send; `--json`
-gives the records themselves.
+gives the records themselves. `note` keeps the operator's own observation of
+ww's behaviour: given a record ID, or a task whose run completed, the note is
+added to that record's events; given a task still running or an identity
+request, it waits with the pending events for the run's record and is also
+written as a standalone record (`TASK-42--notes`, empty agent arrays), which
+the run's own record replaces once it completes, so a note on a run that
+never completes is still kept. The note is written whether or not
+`debug.collect` is on.
 
 ### Reporting debug records
 

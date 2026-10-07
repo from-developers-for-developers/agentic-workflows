@@ -288,6 +288,8 @@ class FixRequired:
 
     ``attempt`` is the number of rejected completions so far and
     ``max_fixes`` the most any of the step's checks allows.
+    ``draft_artifact`` is the text of the rejected artifact, shown for the
+    worker to revise; the next completion's artifact replaces it entirely.
     """
 
     attempt: int
@@ -509,6 +511,11 @@ class Instruction:
     # and whether the current item is a later one the worker already holds.
     assignment_step: str | None = None
     assignment_items: tuple[str, ...] = ()
+    # The leading ``assignment_items`` the worker already completed.
+    completed_assignment_items: tuple[str, ...] = ()
+    # The automatic item of the assignment ww runs now, when the cursor is
+    # on one: it belongs to no performer, so it is not among the items.
+    running_assignment_item: str | None = None
     assignment_continues: bool = False
     manager_intro: bool = False
     # On the first page of ``start``: the declared rules no check covers yet.
@@ -661,6 +668,8 @@ class Instruction:
             "continues_assignment": self.continues_assignment,
             "assignment_step": self.assignment_step,
             "assignment_items": list(self.assignment_items),
+            "completed_assignment_items": list(self.completed_assignment_items),
+            "running_assignment_item": self.running_assignment_item,
             "assignment_explicit_steps": list(self.assignment_explicit_steps),
             "assignment_continues": self.assignment_continues,
             "manager_intro": self.manager_intro,

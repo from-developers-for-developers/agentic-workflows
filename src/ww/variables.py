@@ -11,6 +11,9 @@ from ww.items import WorkItem
 from ww.workspace import Workdir, item_workspace, resolve_workspace
 
 TASK_ID = "ww.task.id"
+# The task ID as one path component: a child's ``parent/child`` becomes
+# ``parent-child``, for file names, branch names and the like.
+TASK_SLUG = "ww.task.slug"
 WORKFLOWS = "ww.task.workflows"
 TASK_WORKSPACE_DIR = "ww.task.workspace_dir"
 # Kept in a run's values for ww/git, which offers it as
@@ -47,6 +50,7 @@ RUNTIME_PREFIXES = (
 
 CORE_VARIABLE_NAMES = (
     TASK_ID,
+    TASK_SLUG,
     WORKFLOWS,
     TASK_WORKSPACE_DIR,
     PROJECT,
@@ -56,6 +60,11 @@ CORE_VARIABLE_NAMES = (
     CHOICES,
 )
 OVERRIDABLE_CORE_VARIABLE_NAMES = (TASK_WORKSPACE_DIR,)
+
+
+def task_slug(task_id: str) -> str:
+    """``task_id`` as a single path component: ``parent/child`` → ``parent-child``."""
+    return task_id.replace("/", "-")
 
 
 def unknown_template_message(names: set[str] | tuple[str, ...]) -> str:
@@ -232,6 +241,7 @@ def compile_variable_values(
     values = {WORKFLOWS: ",".join(workflow_names)}
     if task_id is not None:
         values[TASK_ID] = task_id
+        values[TASK_SLUG] = task_slug(task_id)
     return values
 
 
@@ -247,6 +257,7 @@ def runtime_variable_values(
     directory = (root / workspace).resolve() if workspace else root.resolve()
     return {
         TASK_ID: task_id,
+        TASK_SLUG: task_slug(task_id),
         TASK_WORKSPACE_DIR: str(directory),
         PROJECT: project or "",
         PROJECT_DIR: project_dir or "",

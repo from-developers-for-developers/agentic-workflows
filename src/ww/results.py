@@ -15,6 +15,8 @@ from ww.items import WorkItem
 class ResetResult:
     task_id: str
     removed: bool
+    # A child's identity request was reset, not a task with runs.
+    identity_request: bool = False
 
 
 # Note added by init when ww.yaml defines no workflow.

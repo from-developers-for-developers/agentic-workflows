@@ -77,6 +77,33 @@ def test_ww_executable_is_left_for_the_page_and_names_the_printed_command(
         assert runtime_variable_values(tmp_path, "T-1")[EXECUTABLE] == "'my ww'"
 
 
+def test_task_slug_is_the_task_id_without_slashes(tmp_path: Path) -> None:
+    from ww.variables import (
+        CORE_VARIABLE_NAMES,
+        TASK_SLUG,
+        compile_variable_values,
+        task_slug,
+    )
+
+    assert task_slug("TASK-42") == "TASK-42"
+    assert task_slug("TASK-42/A") == "TASK-42-A"
+    assert TASK_SLUG in CORE_VARIABLE_NAMES
+    assert compile_variable_values(("task",), "TASK-42/A")[TASK_SLUG] == "TASK-42-A"
+    assert TASK_SLUG not in compile_variable_values(("task",), None)
+    assert runtime_variable_values(tmp_path, "TASK-42/A")[TASK_SLUG] == "TASK-42-A"
+
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        task_workflow("      - work: Notes in notes/{{ww.task.slug}}.md\n"),
+        encoding="utf-8",
+    )
+    plan = WorkflowPlanCompiler(
+        load_configuration(path), tmp_path, "codex", "TASK-42/A"
+    ).compile("task")
+    work = next(item for item in plan.items if item.name == "work")
+    assert work.description == "Notes in notes/TASK-42-A.md"
+
+
 def test_unavailable_values_leave_ww_own_values_out() -> None:
     names = (
         "ww.task.workflows",

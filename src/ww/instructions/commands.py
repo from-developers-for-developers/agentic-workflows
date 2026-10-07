@@ -176,6 +176,11 @@ def requirements_command(task_id: str) -> str:
     return _command("requirements", _arg(task_id))
 
 
+def reset_command(task_id: str) -> str:
+    """Remove a task's state, or an identity request, after confirmation."""
+    return _command("reset", _arg(task_id), "--yes")
+
+
 def start_child_command(task_id: str, child_id: str) -> str:
     return _command("start-child", _arg(task_id), _arg(child_id))
 

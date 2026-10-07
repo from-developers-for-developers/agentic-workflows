@@ -235,6 +235,28 @@ class ChildCoordinator:
             agent=resolved_agent,
         )
 
+    def release_child(self, parent_task_id: str, child_id: str) -> None:
+        """Return a child whose identity request was reset to ``pending``.
+
+        The record keeps its start operation and frozen launch settings, so
+        ``start-child`` opens a fresh request for it as it did the first time.
+        """
+        with self.tasks.lock_task(parent_task_id):
+            parent, snapshot = self.lifecycle.load(parent_task_id)
+            children = list(self.tasks.read_children(parent_task_id, parent.run_id))
+            index = next(
+                (
+                    i
+                    for i, entry in enumerate(children)
+                    if entry.id == child_id and entry.status == "starting"
+                ),
+                None,
+            )
+            if index is None:
+                return
+            children[index] = replace(children[index], status="pending")
+            self.lifecycle.commit(parent, snapshot, children=tuple(children))
+
     def bind_child(
         self, parent_task_id: str, temporary_id: str, child_task_id: str
     ) -> None:

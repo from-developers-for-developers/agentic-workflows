@@ -387,6 +387,10 @@ class Storage:
             json.dumps(value, indent=2) + "\n",
         )
 
+    def remove_bootstrap(self, request_id: str) -> None:
+        """Forget an identity request, so the same ID can open a fresh one."""
+        (self.runtime_path / "bootstrap" / f"{request_id}.json").unlink(missing_ok=True)
+
 
 def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
     """``text`` keeping ``.ww`` out of Git but for the shared files.

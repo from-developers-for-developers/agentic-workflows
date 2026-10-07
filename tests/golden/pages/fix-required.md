@@ -11,12 +11,18 @@ ww did not record your completion: the checks below failed on the files this ste
 Command: sh -c 'test ! -e broken'
 Output: nothing
 
-Fix the causes, then complete again with a revised artifact (your previous artifact is kept as a draft); `./ww check TASK-1` previews the checks.
+Fix the causes, then complete again with the whole result as the artifact: it replaces the draft below entirely; `./ww check TASK-1` previews the checks.
 
 If a check is wrong for this change, do not work around it: dispute it with the evidence, and the operator decides:
 
 ```console
 ./ww dispute TASK-1 --role worker --rule <id> --reason "<why the check is wrong here>"
+```
+
+### Draft artifact
+
+```markdown
+First try.
 ```
 
 ### Worker completion command

@@ -6,9 +6,15 @@ description: Report the debug records ww collected about its own behaviour to ww
 # Report ww's debug records
 
 ww's `debug.collect` mode keeps a local record per workflow run of how ww
-itself behaved: errors, bugs and blockers first, then inconveniences. Nothing
-is sent by itself. Reporting is the operator's explicit decision, record by
-record, and ww does the sending, not you.
+itself behaved: errors, bugs and blockers first, then inconveniences, then
+the events ww observed on its own (a `fail`, a forced `next`, a dispute,
+every stop for the operator) and the operator's notes. Nothing is sent by
+itself. Reporting is the operator's explicit decision, record by record, and
+ww does the sending, not you.
+
+When the operator tells you something ww did wrong that no record holds yet,
+keep it with `./ww debug note <record-id|task-id|request-id> --summary "…"
+[--detail "…"]`; it lands on the record, or waits for the run's record.
 
 1. Run `./ww debug list`. If it shows no unreported record, say so and stop.
 2. For each unreported record, run `./ww debug show <record-id>` and show the

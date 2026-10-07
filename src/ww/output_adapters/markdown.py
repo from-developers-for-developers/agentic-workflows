@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import textwrap
@@ -14,7 +15,7 @@ from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
 from ww.config_files import SETTINGS_FILE
-from ww.contracts import OperatorReason
+from ww.contracts import BOOTSTRAP_REQUEST_PREFIX, OperatorReason
 from ww.executable import DEFAULT_EXECUTABLE, ww_command
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
@@ -27,6 +28,7 @@ from ww.instructions.commands import (
     next_command,
     remove_item_command,
     replan_command,
+    reset_command,
     reword_item_command,
     rule_command,
     set_item_fields_command,
@@ -128,6 +130,17 @@ class MarkdownOutputAdapter(OutputAdapter):
         return _document(lines)
 
     def render_reset(self, result: ResetResult) -> str:
+        if result.identity_request:
+            if result.removed:
+                return (
+                    f"Identity request {result.task_id} was reset: its record "
+                    "was removed and its parent's child is pending again, so "
+                    "`start-child` opens a fresh request.\n"
+                )
+            return (
+                f"Identity request {result.task_id} was not found; nothing was "
+                "removed.\n"
+            )
         if result.removed:
             return (
                 f"Task {result.task_id} was reset. Its state, plan, artifacts, "
@@ -995,8 +1008,8 @@ def _fix_required(lines: Lines, instruction: Instruction) -> None:
     lines.extend(
         [
             "",
-            "Fix the causes, then complete again with a revised artifact (your "
-            "previous artifact is kept as a draft); "
+            "Fix the causes, then complete again with the whole result as the "
+            "artifact: it replaces the draft below entirely; "
             f"`{check_command(instruction.task_id)}` previews the checks.",
             "",
             "If a check is wrong for this change, do not work around it: "
@@ -1009,6 +1022,15 @@ def _fix_required(lines: Lines, instruction: Instruction) -> None:
             "```",
         ]
     )
+    if fix.draft_artifact is not None:
+        lines.extend(["", "### Draft artifact", "", *_fenced(fix.draft_artifact)])
+
+
+def _fenced(text: str) -> list[str]:
+    """``text`` in a code fence longer than any backtick run it contains."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [fence + "markdown", text.rstrip(), fence]
 
 
 def _waivers(
@@ -1612,6 +1634,9 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.operator_reason == "pass_incomplete":
         _pass_incomplete(lines, instruction)
         return
+    if instruction.task_id.startswith(BOOTSTRAP_REQUEST_PREFIX):
+        _identity_failed(lines, instruction)
+        return
     child = _failed_child(instruction)
     if child is None:
         lines.extend(["", *_failed_handler_guidance(instruction)])
@@ -1855,6 +1880,54 @@ def _value_unavailable(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             ["", f"{purpose.capitalize()}:", "", "```console", command.command, "```"]
         )
+
+
+def _identity_failed(lines: Lines, instruction: Instruction) -> None:
+    """An identity request's step failed: it is retried or reset, never skipped."""
+    lines.extend(
+        [
+            "",
+            "No task exists until this step obtains the external ID, so it "
+            "cannot be skipped. Do not retry on your own.",
+        ]
+    )
+    if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
+        lines.extend(
+            [
+                "",
+                f"Stop here. {_return_phrase(instruction)}: the operator "
+                "decides how the step continues.",
+            ]
+        )
+        return
+    _append_section(lines, "Operator recovery")
+    lines.append(
+        "Tell the user, who is the `ww` operator, what failed, quoting the "
+        "error above. Then wait for their choice; do not pick for them. Run "
+        "exactly the option they choose:"
+    )
+    for command in instruction.recovery_commands:
+        lines.extend(
+            [
+                "",
+                "To run the identity step again, once they fixed the cause:",
+                "",
+                "```console",
+                command.command,
+                "```",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "To drop the request instead; `start-child` (or `start`, for a "
+            "task of its own) then opens a fresh one:",
+            "",
+            "```console",
+            reset_command(instruction.task_id),
+            "```",
+        ]
+    )
 
 
 def _pass_incomplete(lines: Lines, instruction: Instruction) -> None:
@@ -2214,15 +2287,25 @@ _RUN_MANAGER_COMMAND = (
 
 
 def _assignment_coverage(instruction: Instruction) -> Lines:
-    """Name every item one worker performs in this assignment, when several."""
-    first, *rest = instruction.assignment_items or ("",)
+    """Name the items one worker still performs in this assignment, when several."""
+    completed = instruction.completed_assignment_items
+    first, *rest = instruction.assignment_items[len(completed) :] or ("",)
     if not rest:
         return []
     names = ", ".join(f"`{name}`" for name in (first, *rest))
     performer = "One worker performs" if instruction.role == "worker" else "You perform"
+    coverage = (
+        f"Already completed in this assignment: "
+        f"{', '.join(f'`{name}`' for name in completed)}. "
+        f"Remaining, in order: {names}."
+        if completed
+        else f"This assignment covers, in order: {names}."
+    )
+    running = instruction.running_assignment_item
     return [
-        f"This assignment covers, in order: {names}. {performer} them "
-        "all; `ww` hands each one over after the previous completion.",
+        f"{coverage} {performer} them all; `ww` hands each one over after the "
+        "previous completion."
+        + (f" `ww` is now running `{running}`." if running else ""),
         "",
     ]
 

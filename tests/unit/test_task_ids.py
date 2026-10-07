@@ -17,6 +17,7 @@ from ww.storage import Storage
 from ww.storage_adapters import MemoryTaskStorageAdapter
 from ww.task_ids import (
     ID_ATTEMPT_LIMIT,
+    bare_request_id,
     candidate_task_ids,
     generated_bootstrap_id,
     generated_task_id,
@@ -57,6 +58,15 @@ def test_bootstrap_requests_are_recognised_by_prefix() -> None:
     assert is_bootstrap_request(request)
     assert re.fullmatch(r"REQUEST-\d{20}", request)
     assert not is_bootstrap_request("TASK-1")
+
+
+def test_a_parent_qualified_request_resolves_to_its_bare_id() -> None:
+    request = generated_bootstrap_id()
+
+    assert bare_request_id(f"EPIC-1/{request}") == request
+    assert bare_request_id(request) == request
+    assert bare_request_id("EPIC-1/PROJ-7") == "EPIC-1/PROJ-7"
+    assert bare_request_id("TASK-1") == "TASK-1"
 
 
 def test_generated_ids_follow_the_format() -> None:

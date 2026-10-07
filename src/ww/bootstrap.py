@@ -12,7 +12,7 @@ from ww.completion_inputs import validate_requested_values, validate_values
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionRegistry
 from ww.instructions import Instruction, action_text, build_bootstrap_instruction
-from ww.plan import PlanCompilationOptions, PlanItem, compile_workflow_plan
+from ww.plan import PlanCompilationOptions, PlanItem, compile_workflow_plan, step_label
 from ww.storage import Storage
 from ww.storage_adapters import ArtifactAddress, TaskStorageAdapter
 from ww.task_ids import validate_child_id
@@ -191,6 +191,7 @@ class BootstrapCoordinator:
             "step": item.step,
             "item_id": item.id,
             "item_name": item.name,
+            "step_ordinals": list(item.step_ordinals),
             "action_kind": item.kind,
             "action_text": action_text(item),
             "profile_instruction": item.profile_instruction,
@@ -211,8 +212,9 @@ class BootstrapCoordinator:
     def next(
         self,
         request: dict[str, object],
-        force: bool,
         *,
+        retry: bool = False,
+        force: bool = False,
         selected_agent: str | None,
         selected_model: str | None,
         selected_reasoning: str | None,
@@ -220,6 +222,16 @@ class BootstrapCoordinator:
         status_task: ReadWorkflowStatus,
         bind_child: BindChild | None = None,
     ) -> Instruction:
+        """Dispatch the identity step; ``retry`` reopens it after a failure.
+
+        The step cannot be skipped: without an external ID there is no task,
+        so ``force`` is refused and a failed request is retried or reset.
+        """
+        if force:
+            raise StateError(
+                "an identity request cannot be skipped; use next --retry to "
+                "reopen it, or reset it"
+            )
         status = request.get("status")
         if status == "completed":
             raise StateError("bootstrap request is already completed")
@@ -239,10 +251,12 @@ class BootstrapCoordinator:
                 "binding bootstrap request is missing its resolved task ID"
             )
         if status == "failed":
-            if not force:
+            if not retry:
                 return self.instruction(request)
             request["status"] = "pending"
             request.pop("error", None)
+        elif retry:
+            raise StateError("the identity request has not failed; nothing to retry")
         if request.get("status") == "in_progress":
             raise StateError("a bootstrap step is already in progress; use complete")
         request["status"] = "in_progress"
@@ -370,7 +384,19 @@ class BootstrapCoordinator:
             )
             if artifact is not None:
                 run_id = self.tasks.active_execution_run(resolved_id)
-                if run_id is not None:
+                snapshot = (
+                    self.tasks.read_plan_snapshot(resolved_id, run_id)
+                    if run_id is not None
+                    else None
+                )
+                if snapshot is not None:
+                    # The run's plan was numbered with the bootstrap step and
+                    # then dropped it: its recorded ordinals name the file
+                    # and, with the run's, the ``Step N of M`` label.
+                    step_ordinals = tuple(cast(list[int], request["step_ordinals"]))
+                    step_number, step_total = step_label(
+                        step_ordinals, snapshot.plan.items
+                    )
                     self.tasks.write_execution_artifact(
                         ArtifactAddress(
                             resolved_id,
@@ -380,14 +406,14 @@ class BootstrapCoordinator:
                             str(request["item_name"]),
                             "step",
                             run_id=run_id,
-                            step_ordinals=(2,),
+                            step_ordinals=step_ordinals,
                         ),
                         render_step_artifact(
                             task_id=resolved_id,
                             workflow=workflow,
                             step=step,
-                            step_number=1,
-                            step_total=1,
+                            step_number=step_number,
+                            step_total=step_total,
                             skill="auto",
                             result=artifact,
                         ),

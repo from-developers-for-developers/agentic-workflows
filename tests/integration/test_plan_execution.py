@@ -125,7 +125,7 @@ def test_execution_snapshot_automatic_input_nested_state_and_artifacts(
         "# TASK-1 — group/fix\n\n"
         "## Workflow context\n\n"
         "- Workflow: task\n"
-        "- Step: 3 of 3\n"
+        "- Step: 2.2 of 2\n"
         "- Skill: auto\n\n"
         "## Result\n\n"
         "# fix\n"
@@ -319,7 +319,7 @@ def test_handoff_target_run_continues_normally(tmp_path: Path) -> None:
         "# TASK-3 — init\n\n"
         "## Workflow context\n\n"
         "- Workflow: task\n"
-        "- Step: 1 of 3\n"
+        "- Step: 1 of 2\n"
         "- Skill: auto\n\n"
         "## Result\n\n"
         "Continue task requirements after handoff from choose to task.\n"
@@ -539,7 +539,10 @@ workflows:
     assert state is not None
     assert state.item_executions[2].status == "completed"
     assert state.item_executions[2].attempts == 3
-    assert dict(state.workflow_values)["value"] == "ok"
+    # The accepted value stays on the handler's record; the run-wide values
+    # release it so the next consumer asks afresh.
+    assert state.item_executions[2].supplied_values == (("value", "ok"),)
+    assert "value" not in dict(state.workflow_values)
 
 
 def test_interpolated_command_values_remain_data(tmp_path: Path) -> None:

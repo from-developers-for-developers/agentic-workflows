@@ -7,7 +7,7 @@ from ww.actions import PlannedAction, actions
 from ww.artifacts import RuleOutcome, RulesSummary, RuleStatus, render_step_artifact
 from ww.contracts import CheckStatus
 from ww.execution_models import CheckReport, ExecutionState, PlanSnapshot
-from ww.plan import PlanItem
+from ww.plan import PlanItem, step_label
 from ww.rule_checks import item_reports
 from ww.storage_adapters.base import ArtifactAddress, TaskArtifactStorage
 
@@ -94,10 +94,15 @@ def write_completion_artifacts(
     """Write the completed item and optional enclosing-loop artifacts.
 
     ``rules`` is the completed item's own rule report; a loop wrapper's
-    artifact carries none.
+    artifact carries none. The artifact of the completion rejected before
+    this one, when there was one, follows the result as the item's previous
+    attempt: a hold carries the draft it displaced, else the record does.
     """
     if artifact is None:
         return None, None
+    record = state.item_executions[state.cursor]
+    held = record.held_completion
+    previous = held.previous_artifact if held is not None else record.draft_artifact
 
     def attribution(plan_item: PlanItem) -> str:
         if not isinstance(plan_item.operation, PlannedAction):
@@ -105,24 +110,20 @@ def write_completion_artifacts(
         action = actions.get(plan_item.kind)
         return action.traits(plan_item.operation.payload).artifact_attribution
 
-    step_paths = tuple(
-        dict.fromkeys(
-            plan_item.step
-            for plan_item in snapshot.plan.items
-            if plan_item.phase == "step"
-        )
-    )
-
     def rendered(plan_item: PlanItem) -> str:
+        step_number, step_total = step_label(
+            plan_item.step_ordinals, snapshot.plan.items
+        )
         return render_step_artifact(
             task_id=task_id,
             workflow=state.workflow,
             step=plan_item.step,
-            step_number=step_paths.index(plan_item.step) + 1,
-            step_total=len(step_paths),
+            step_number=step_number,
+            step_total=step_total,
             skill=attribution(plan_item),
             result=artifact,
             rules=rules if plan_item is item else None,
+            previous_attempt=previous if plan_item is item else None,
         )
 
     def write(plan_item: PlanItem, content: str) -> str:

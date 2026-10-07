@@ -28,6 +28,7 @@ from ww.actions import (
     RecoveryExtensionService,
     actions,
 )
+from ww.assignments import completion_window_items
 from ww.errors import StateError
 from ww.execution_models import (
     CommandExecution,
@@ -49,6 +50,7 @@ from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
 from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import CommandOutputAddress
+from ww.transitions import release_provided_values
 from ww.variables import (
     PROJECT,
     item_context_error,
@@ -608,7 +610,22 @@ class ActionExecutor:
             result=bounded(result.output, STATE_OUTPUT_PREVIEW_LIMIT).strip() or None,
             output_values=tuple(result.values.items()),
         )
-        values = {**dict(dispatch.state.workflow_values), **result.values}
+        values = dict(dispatch.state.workflow_values)
+        # The values the handler consumed are asked for afresh by their next
+        # consumer, unless a later item of the same completion window still
+        # needs them; the handler's own outputs are kept as usual.
+        release_provided_values(
+            values,
+            item,
+            keep={
+                value.name
+                for later in completion_window_items(
+                    snapshot.plan, dispatch.state.cursor
+                )[1:]
+                for value in later.provide
+            },
+        )
+        values.update(result.values)
         completed = replace(
             dispatch.state,
             status="pending",

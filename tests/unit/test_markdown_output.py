@@ -399,6 +399,54 @@ def test_orchestrate_worker_status_renders_the_full_assignment() -> None:
     assert "### Worker bootstrap" not in rendered
 
 
+def _worker_page(**fields: object) -> str:
+    instruction = Instruction(
+        task_id="TASK-1",
+        workflow="task",
+        status="in_progress",
+        item_id="item-3",
+        item_name="git-push",
+        stage="Completion hook",
+        step="develop",
+        parent=None,
+        item_status="in_progress",
+        action_kind="cli",
+        action_text=None,
+        continuation_command="./ww next TASK-1",
+        workflow_runtime="auto",
+        caller_role="worker",
+        next_role="worker",
+        assignment_items=("develop", "commit", "notify", "update-workflow-summary"),
+        **fields,  # type: ignore[arg-type]
+    )
+    return MarkdownOutputAdapter().render_instruction(instruction)
+
+
+def test_coverage_line_names_the_automatic_item_ww_runs_now() -> None:
+    rendered = _worker_page(
+        completed_assignment_items=("develop", "commit"),
+        running_assignment_item="git-push",
+    )
+
+    assert (
+        "Already completed in this assignment: `develop`, `commit`. Remaining, in "
+        "order: `notify`, `update-workflow-summary`. One worker performs them all; "
+        "`ww` hands each one over after the previous completion. `ww` is now "
+        "running `git-push`." in rendered
+    )
+
+
+def test_coverage_line_is_omitted_when_at_most_one_item_remains() -> None:
+    rendered = _worker_page(
+        completed_assignment_items=("develop", "commit", "notify"),
+        running_assignment_item="git-push",
+    )
+
+    assert "Already completed" not in rendered
+    assert "covers, in order" not in rendered
+    assert "is now running" not in rendered
+
+
 def test_stop_enabled_loop_step_gives_worker_a_deterministic_exit_command() -> None:
     instruction = Instruction(
         task_id="TASK-1",

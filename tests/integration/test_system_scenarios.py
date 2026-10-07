@@ -282,7 +282,7 @@ def run_feature(project: Project) -> None:
         "# TASK-1 — develop\n\n"
         "## Workflow context\n\n"
         "- Workflow: feature\n"
-        "- Step: 2 of 8\n"
+        "- Step: 2 of 4\n"
         "- Skill: auto\n\n"
         "## Result\n\n"
         "Implemented.\n"

@@ -310,8 +310,9 @@ def hold_completion(
 ) -> ExecutionState:
     """Keep the active item's completion, unrecorded, until its rules are verified.
 
-    Verdicts of an earlier round of the same hold are kept. The worker's
-    assignment ends: the verifiers are other workers.
+    Verdicts of an earlier round of the same hold are kept, as is the
+    rejected draft the hold displaced. The worker's assignment ends: the
+    verifiers are other workers.
     """
     records = list(state.item_executions)
     record = records[state.cursor]
@@ -319,7 +320,13 @@ def hold_completion(
     records[state.cursor] = replace(
         record,
         held_completion=(
-            replace(held, verdicts=earlier.verdicts) if earlier is not None else held
+            replace(
+                held,
+                verdicts=earlier.verdicts,
+                previous_artifact=earlier.previous_artifact,
+            )
+            if earlier is not None
+            else replace(held, previous_artifact=record.draft_artifact)
         ),
         draft_artifact=artifact,
         status="pending",

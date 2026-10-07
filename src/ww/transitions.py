@@ -9,7 +9,7 @@ item, run, and step-projection invariants are changed together.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import replace
 
 from ww.assessments import outcome_region, pending_assessment
@@ -44,6 +44,22 @@ from ww.workflow_config import ProvidedVariable
 Clock = Callable[[], str]
 
 
+def release_provided_values(
+    values: dict[str, str], item: PlanItem, keep: Collection[str] = ()
+) -> tuple[tuple[str, str], ...]:
+    """Drop the values ``item`` asked for from ``values`` and return them.
+
+    A value a handler consumed is asked for afresh by its next consumer;
+    ``keep`` names those a later item of the same completion window still
+    needs, which stay until that item has run.
+    """
+    return tuple(
+        (value.name, values.pop(value.name))
+        for value in item.provide
+        if value.name in values and value.name not in keep
+    )
+
+
 def retry_failed_item(
     state: ExecutionState, plan: WorkflowPlan, now: Clock
 ) -> ExecutionState:
@@ -58,12 +74,7 @@ def retry_failed_item(
             # The handler failed with the values it was given; ask for them
             # again rather than replaying them.  They stay on the record so
             # the request can show what was supplied last time.
-            previous = tuple(
-                (value.name, values.pop(value.name))
-                for value in item.provide
-                if value.name in values
-            )
-            supplied = previous or supplied
+            supplied = release_provided_values(values, item) or supplied
         # Commands are replaced in-place when a failed automatic item is
         # retried.  Preserve the prior attempt so its stream references remain
         # discoverable through the public artifact listing.

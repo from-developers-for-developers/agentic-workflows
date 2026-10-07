@@ -74,4 +74,7 @@ change, start from step 1 then.
    handler again, `--force --reason` to skip it or leave the loop, or
    `--replan` / `--keep-plan` for a changed workflow. A `pass_incomplete`
    stop is cleared by recording what it names with `./ww update-item`, then
-   `./ww next <task-id> --retry`; `--force` is refused there.
+   `./ww next <task-id> --retry`; `--force` is refused there. A failed
+   identity request (`REQUEST-…`) is only retried with `--retry` or dropped
+   with `./ww reset <request-id> --yes`, both shown on its page; `--force`
+   is refused there too.

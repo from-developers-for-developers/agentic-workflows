@@ -26,10 +26,13 @@ from ww.plan import (
     ChildWorkflowRun,
     LoopBoundary,
     PlanCompilationOptions,
+    PlanItem,
     WorkflowHandoff,
     WorkflowPlan,
     WorkflowPlanCompiler,
     compile_workflow_plan,
+    number_step_paths,
+    step_label,
 )
 from ww.plan.constructs import (
     ExpansionResult,
@@ -1366,3 +1369,102 @@ def test_plan_snapshot_persists_explicit_and_reads_legacy_items(tmp_path: Path) 
     legacy = PlanSnapshot.from_dict(raw)
 
     assert all(item.explicit is False for item in legacy.plan.items)
+
+
+def test_step_label_numbers_nested_steps_over_the_top_level_count() -> None:
+    items = number_step_paths(
+        (
+            plan_item(id="w:init:1", step="init"),
+            plan_item(id="w:build/a:1", step="build/a", ancestors=("build",)),
+            plan_item(id="w:build/b:1", step="build/b", ancestors=("build",)),
+            plan_item(id="w:deploy:1", step="deploy"),
+        )
+    )
+
+    assert [step_label(item.step_ordinals, items) for item in items] == [
+        ("1", 3),
+        ("2.1", 3),
+        ("2.2", 3),
+        ("3", 3),
+    ]
+
+
+def test_step_label_total_survives_item_expansion() -> None:
+    template = plan_item(
+        id="w:collect/{item}/process:1",
+        step="collect/{item}/process",
+        ancestors=("collect", "collect/{item}"),
+        item_template=True,
+    )
+    before = number_step_paths((plan_item(id="w:init:1", step="init"), template))
+    expanded = number_step_paths(
+        (
+            plan_item(id="w:init:1", step="init"),
+            *(
+                plan_item(
+                    id=f"w:collect/{segment}/process:1",
+                    step=f"collect/{segment}/process",
+                    ancestors=("collect", f"collect/{segment}"),
+                )
+                for segment in ("item-1", "item-2")
+            ),
+        )
+    )
+
+    assert step_label(before[1].step_ordinals, before) == ("2.1.1", 2)
+    assert [step_label(item.step_ordinals, expanded) for item in expanded] == [
+        ("1", 2),
+        ("2.1.1", 2),
+        ("2.2.1", 2),
+    ]
+
+
+def test_step_label_counts_a_loop_once_and_ignores_hooks() -> None:
+    def boundary(suffix: str, operation: str) -> PlanItem:
+        return plan_item(
+            id=f"w:polish:loop:{suffix}:1",
+            step="polish",
+            operation=LoopBoundary("polish", operation, 3),
+            owner="ww",
+            execution="loop_control",
+        )
+
+    items = number_step_paths(
+        (
+            plan_item(id="w:init:1", step="init"),
+            boundary("enter", "enter"),
+            plan_item(
+                id="w:polish/check:1", step="polish/check", ancestors=("polish",)
+            ),
+            boundary("repeat", "repeat"),
+            plan_item(
+                id="w:polish:after_complete:lint:1",
+                step="polish",
+                name="lint",
+                phase="after_complete",
+                source="hook",
+            ),
+        )
+    )
+
+    assert [step_label(item.step_ordinals, items) for item in items] == [
+        ("1", 2),
+        ("2", 2),
+        ("2.1", 2),
+        ("2", 2),
+        ("2", 2),
+    ]
+
+
+def test_step_label_counts_a_bootstrap_step_the_run_plan_dropped() -> None:
+    plan = number_step_paths(
+        (
+            plan_item(id="w:init:1", step="init"),
+            plan_item(id="w:create-jira:1", step="create-jira"),
+            plan_item(id="w:develop:1", step="develop"),
+        )
+    )
+    run_items = tuple(item for item in plan if item.step != "create-jira")
+
+    assert step_label(plan[1].step_ordinals, run_items) == ("2", 3)
+    assert step_label((2,), plan[:1]) == ("2", 2)

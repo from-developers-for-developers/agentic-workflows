@@ -70,7 +70,7 @@ def test_start_without_id_bootstraps_and_binds_external_task_id(tmp_path: Path) 
         "# PROJ-123 — create-jira\n\n"
         "## Workflow context\n\n"
         "- Workflow: jira-task\n"
-        "- Step: 1 of 1\n"
+        "- Step: 2 of 3\n"
         "- Skill: auto\n\n"
         "## Result\n\n"
         "Created Jira issue PROJ-123.\n"

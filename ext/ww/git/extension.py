@@ -435,6 +435,23 @@ def _tokens(context: ExtensionContext) -> dict[str, str]:
     }
 
 
+def _render_for_task(context: ExtensionContext, template: str) -> str:
+    """Render ``template`` for the task as one name without the ID's slash.
+
+    A child task (``parent/child``) renders the template with the parent ID
+    and appends ``-<child>``, so its name sits beside the parent's rather than
+    under it; a template that renders empty stays empty for the caller to
+    refuse.
+    """
+    tokens = _tokens(context)
+    task_id = context.task_id or ""
+    if "/" not in task_id:
+        return interpolate(template, tokens).strip()
+    parent_id, _, child_id = task_id.rpartition("/")
+    parent = interpolate(template, {**tokens, TASK_ID: parent_id}).strip()
+    return f"{parent}-{child_id}" if parent else ""
+
+
 def _now() -> str:
     return (
         datetime.now(timezone.utc)
@@ -489,14 +506,7 @@ def _worktree_name(context: ExtensionContext, settings: Settings) -> str:
     replaced by ``-``. Names a refusal must see (empty, ``.``, absolute) are
     returned unchanged for the caller to reject.
     """
-    tokens = _tokens(context)
-    name = interpolate(settings.worktree_name_format, tokens).strip()
-    if _parent_branch(context) and context.task_id:
-        parent_id, _, child_id = context.task_id.rpartition("/")
-        parent = interpolate(
-            settings.worktree_name_format, {**tokens, TASK_ID: parent_id}
-        ).strip()
-        name = f"{parent}-{child_id}"
+    name = _render_for_task(context, settings.worktree_name_format)
     if name and not Path(name).is_absolute() and "/" in name:
         name = name.replace("/", "-")
     return name
@@ -601,9 +611,11 @@ def _branch_name(
     """Render the task's branch from ``branch_format``: (branch, parent, error).
 
     A child task's branch is its parent's recorded branch plus the child ID,
-    whatever the format says.
+    whatever the format says; without a recorded parent branch it is the
+    format rendered for the parent plus the child ID, so a child's slash
+    never nests its branch under the parent's name.
     """
-    branch = interpolate(branch_format, _tokens(context)).strip()
+    branch = _render_for_task(context, branch_format)
     if not branch:
         return None, None, "branch name format rendered empty"
     parent_branch = _parent_branch(context)

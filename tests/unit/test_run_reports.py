@@ -186,10 +186,10 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
         workflow_definition=None,
         now="2026-10-07T00:00:00Z",
     )
-    assert other is not None and other["id"] == "TASK-42+TASK-42-01A--02-task"
+    assert other is not None and other["id"] == "TASK-42-TASK-42-01A--02-task"
     assert [r["id"] for r in store.unreported()] == [
         "TASK-1--01-task",
-        "TASK-42+TASK-42-01A--02-task",
+        "TASK-42-TASK-42-01A--02-task",
     ]
 
     marked = store.mark_reported(
@@ -203,7 +203,7 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
         "method": "gh",
         "url": "https://example/1",
     }
-    assert [r["id"] for r in store.unreported()] == ["TASK-42+TASK-42-01A--02-task"]
+    assert [r["id"] for r in store.unreported()] == ["TASK-42-TASK-42-01A--02-task"]
     assert store.get("TASK-1--01-task")["reported"]["method"] == "gh"
     with pytest.raises(StateError, match="unknown debug record 'nope'"):
         store.get("nope")
@@ -211,7 +211,7 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
     listing = render_listing(store)
     assert "# Debug records" in listing
     assert "reported 2026-10-08T00:00:00Z via gh (https://example/1)" in listing
-    assert "errors: 1, inconveniences: 1; not reported" in listing
+    assert "errors: 1, inconveniences: 1, events: 0; not reported" in listing
 
 
 def test_a_malformed_record_file_is_reported_with_its_path(tmp_path: Path) -> None:
@@ -385,4 +385,5 @@ def test_without_gh_the_browser_opens_the_prefilled_issue(tmp_path: Path) -> Non
 
 def test_record_ids_name_the_task_and_run() -> None:
     assert record_id("TASK-1", "01-task") == "TASK-1--01-task"
-    assert record_id("TASK-42/TASK-42-01A", "03-task") == "TASK-42+TASK-42-01A--03-task"
+    # A child's slash becomes a dash, as ``{{ww.task.slug}}`` spells it.
+    assert record_id("TASK-42/TASK-42-01A", "03-task") == "TASK-42-TASK-42-01A--03-task"

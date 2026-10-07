@@ -391,13 +391,13 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
     service.next("P")
     service.start_child("P", "api")
     assert (
-        _git(root / "backend", "rev-parse", "--abbrev-ref", "HEAD") == "feature/p/api"
+        _git(root / "backend", "rev-parse", "--abbrev-ref", "HEAD") == "feature/p-api"
     )
     service.next("P/api")
     (root / "backend/b.txt").write_text("y\n", encoding="utf-8")
     finish("P/api", "Backend part")
     assert (
-        _git(root / "backend", "log", "--format=%s", "feature/p/api").splitlines()[0]
+        _git(root / "backend", "log", "--format=%s", "feature/p-api").splitlines()[0]
         == "P/api: Backend part"
     )
     assert _git(root / "backend", "rev-parse", "--abbrev-ref", "HEAD") == "main"

@@ -17,6 +17,7 @@ from .models import (
     VerificationTarget,
     WorkflowPlan,
     number_step_paths,
+    step_label,
 )
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "WorkflowPlanCompiler",
     "compile_workflow_plan",
     "number_step_paths",
+    "step_label",
 ]

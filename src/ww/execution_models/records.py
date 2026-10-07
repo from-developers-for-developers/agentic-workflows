@@ -244,7 +244,9 @@ class HeldCompletion:
     are the change set the verifiers look at; ``draft_ref`` is where the
     draft artifact was written for them. ``verdicts`` collect across the
     verification rounds of this hold; ``report`` is the passing check report,
-    reused while the working tree has not changed.
+    reused while the working tree has not changed. ``previous_artifact`` is
+    the rejected draft this completion displaced, kept for the artifact's
+    history.
     """
 
     variables: tuple[tuple[str, str], ...] = ()
@@ -261,6 +263,7 @@ class HeldCompletion:
     draft_ref: str | None = None
     verdicts: tuple[RuleVerdict, ...] = ()
     report: CheckReport | None = None
+    previous_artifact: str | None = None
 
     def __post_init__(self) -> None:
         if self.loop_control not in {None, "break", "continue"}:
@@ -285,6 +288,7 @@ class HeldCompletion:
             "draft_ref": self.draft_ref,
             "verdicts": [verdict.to_dict() for verdict in self.verdicts],
             "report": self.report.to_dict() if self.report else None,
+            "previous_artifact": self.previous_artifact,
         }
 
     @classmethod
@@ -307,6 +311,7 @@ class HeldCompletion:
                 "draft_ref",
                 "verdicts",
                 "report",
+                "previous_artifact",
             },
             "held completion",
         )
@@ -347,6 +352,9 @@ class HeldCompletion:
                 CheckReport.from_dict(data["report"])
                 if data["report"] is not None
                 else None
+            ),
+            previous_artifact=expect_optional_string(
+                data["previous_artifact"], "held completion.previous_artifact"
             ),
         )
 

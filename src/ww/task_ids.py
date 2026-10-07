@@ -49,6 +49,17 @@ def is_bootstrap_request(task_id: str) -> bool:
     return task_id.startswith(BOOTSTRAP_REQUEST_PREFIX)
 
 
+def bare_request_id(task_id: str) -> str:
+    """``task_id`` without the parent qualifier of a child's identity request.
+
+    A parent's child record names its child's request as ``EPIC-1/REQUEST-…``;
+    the request itself is stored and addressed by the bare ``REQUEST-…``.  Any
+    other ID is returned unchanged.
+    """
+    parent, _, last = task_id.rpartition("/")
+    return last if parent and is_bootstrap_request(last) else task_id
+
+
 def generated_task_id(task_format: str | None = None) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     if task_format is None:
