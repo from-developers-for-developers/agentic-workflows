@@ -11,6 +11,12 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-08
 
+- Added: a rule without a check is narrowed by the step's change set like a check is, so a rule scoped with
+  `paths` or `contains` that no changed file matches is reported `not applicable` and spawns no verifier, a
+  step whose judged rules are all out of scope completes without a verification item, and the verifier page
+  shows each rule's scope with the changed files in it; ww keeps per-rule counters (applied, checked, judged,
+  failures, waived, not applicable, last failure) in the local `.ww/rules/stats.json`, shown by `rules` and
+  the new `rules stats`, and `lint` hints at unscoped judged rules and rules never applied. `b4fcc17`
 - Fixed: after a worker's assessment, the handoff block lists one `next --outcome <label>` command per
   outcome and a plain `next` shows the choice again instead of failing; `git-commit` no longer asks for a
   message when the task workspace has nothing to commit, the message is optional on the step's completion,
