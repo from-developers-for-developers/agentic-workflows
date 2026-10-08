@@ -11,6 +11,14 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-08
 
+- Changed: a check that cannot run (missing declared `files`, program not found, exit 126/127) is reported
+  `check unavailable` and its rule is judged instead of the step being rejected; the fix page counts each
+  check's own failures against its own limit; `dispute --rule` is repeatable; `next --force --reason` ends a
+  running loop between its items; the handoff block shows the checks of the current attempt and, at the end
+  of a run, points at `status`; pages print `./ww` unless `ww.json` names another binary and task worktrees
+  get the launcher; the rule key `contains` is replaced by `contains_in_file` and `contains_in_diff`; debug
+  records hold only redacted ww data under a digest ID, the debug questions go to the manager in `auto`,
+  and ww never offers to send them. `9b73d79`
 - Added: a rule without a check is narrowed by the step's change set like a check is, so a rule scoped with
   `paths` or `contains` that no changed file matches is reported `not applicable` and spawns no verifier, a
   step whose judged rules are all out of scope completes without a verification item, and the verifier page
