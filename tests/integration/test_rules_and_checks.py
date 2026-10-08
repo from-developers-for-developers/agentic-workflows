@@ -149,7 +149,8 @@ def test_the_step_page_lists_judged_rules_and_names_the_checked_ones(
         "id": "develop/1",
         "summary": "Keep the public CLI unchanged.",
         "paths": [],
-        "contains": [],
+        "contains_in_file": [],
+        "contains_in_diff": [],
         "has_command": False,
         "hook": False,
         "interpretation": None,
@@ -178,6 +179,11 @@ def test_a_violation_rejects_the_completion_and_keeps_the_step(
     ]
     assert rejected.fix_required.attempt == 1
     assert rejected.fix_required.max_fixes == 3
+    assert rejected.fix_required.limiting == "docs/header"
+    assert [
+        (failure.failures, failure.max_fixes)
+        for failure in rejected.fix_required.failures
+    ] == [(1, 3), (1, 3)]
     assert rejected.fix_required.failures[0].output == "notes.md"
     assert not _develop_artifact(root).exists()
     # The ordinary hook runs only with an accepted completion.
@@ -186,8 +192,12 @@ def test_a_violation_rejects_the_completion_and_keeps_the_step(
     assert record.draft_artifact == "First try."
     assert record.status == "in_progress"
     rendered = MarkdownOutputAdapter().render_instruction(rejected)
-    assert "## Fix required: 2 of 2 checks failed (attempt 1 of 3)" in rendered
+    assert (
+        "## Fix required: 2 of 2 checks failed (attempt 1 of 3 for `docs/header`)"
+        in rendered
+    )
     assert "### `develop/sh` (hook)" in rendered
+    assert rendered.count("Failures: 1 of 3 allowed.") == 2
     assert 'Include "foo" in every Markdown file you change.' in rendered
     assert "    notes.md" in rendered
     assert "it replaces the draft below entirely" in rendered
@@ -277,11 +287,19 @@ def test_every_settled_completion_counts_in_the_rule_statistics(
 
 MAIL_RULE = """---
 paths: ["*.php"]
-contains: [Mailer, Postman]
+contains_in_file: [Mailer, Postman]
 check:
   shell: test "$WW_STEP_CHANGED_FILES" = "mail.php"
 ---
 Send mail only through the mailer.
+"""
+FLUSH_RULE = """---
+paths: ["*.php"]
+contains_in_diff: [Mailer]
+check:
+  shell: test "$WW_STEP_CHANGED_FILES" = "mail.php"
+---
+Flush the mailer after sending.
 """
 
 
@@ -337,6 +355,46 @@ def test_a_rule_whose_text_is_in_no_changed_file_is_not_applicable(
     assert "- `docs/mail`: not applicable" in artifact
 
 
+def _flush_project(root: Path) -> Path:
+    """A project with a mailer file committed and a rule on changed lines."""
+    _project(root)
+    (root / "rules/docs/flush.md").write_text(FLUSH_RULE, encoding="utf-8")
+    (root / "mail.php").write_text("<?php\nnew Mailer();\necho 1;\n", encoding="utf-8")
+    _git("add", "-A", cwd=root)
+    _git("commit", "-qm", "mail", cwd=root)
+    return root
+
+
+def test_a_diff_check_does_not_run_on_an_edit_elsewhere_in_the_file(
+    tmp_path: Path,
+) -> None:
+    root = _flush_project(tmp_path)
+    service = _develop(root)
+    (root / "mail.php").write_text("<?php\nnew Mailer();\necho 2;\n", encoding="utf-8")
+
+    _complete(service)
+    accepted = _verify(service)
+
+    assert accepted.item_name == "check"
+    artifact = _develop_artifact(root).read_text(encoding="utf-8")
+    assert "- `docs/flush`: not applicable" in artifact
+
+
+def test_a_diff_check_runs_when_a_changed_line_holds_the_string(
+    tmp_path: Path,
+) -> None:
+    root = _flush_project(tmp_path)
+    service = _develop(root)
+    (root / "mail.php").write_text("<?php\necho 1;\n", encoding="utf-8")
+
+    _complete(service)
+    accepted = _verify(service)
+
+    assert accepted.item_name == "check"
+    artifact = _develop_artifact(root).read_text(encoding="utf-8")
+    assert "- `docs/flush`: passed" in artifact
+
+
 def test_the_step_page_prints_the_strings_next_to_the_globs(tmp_path: Path) -> None:
     root = tmp_path
     _mail_project(root)
@@ -348,7 +406,8 @@ def test_the_step_page_prints_the_strings_next_to_the_globs(tmp_path: Path) -> N
         encoding="utf-8",
     )
     (root / "rules/docs/judged.md").write_text(
-        '---\npaths: ["*.php"]\ncontains: [Mailer, "Post man"]\n---\nJudge the mail.\n',
+        '---\npaths: ["*.php"]\ncontains_in_file: [Mailer, "Post man"]\n'
+        "contains_in_diff: [flush]\n---\nJudge the mail.\n",
         encoding="utf-8",
     )
     service = _develop(root)
@@ -357,15 +416,16 @@ def test_the_step_page_prints_the_strings_next_to_the_globs(tmp_path: Path) -> N
 
     rendered = MarkdownOutputAdapter().render_instruction(page)
     assert (
-        '- `docs/judged` — *.php; containing "Mailer", "Post man" — Judge the mail.'
-        in rendered
+        '- `docs/judged` — *.php; in file "Mailer", "Post man"; in diff "flush" '
+        "— Judge the mail." in rendered
     )
     line = next(rule for rule in page.rules if rule.id == "docs/judged")
-    assert line.contains == ("Mailer", "Post man")
+    assert line.contains_in_file == ("Mailer", "Post man")
+    assert line.contains_in_diff == ("flush",)
     payload = json.loads(JsonOutputAdapter().render_instruction(page))["rules"]
-    assert next(rule for rule in payload if rule["id"] == "docs/judged")[
-        "contains"
-    ] == ["Mailer", "Post man"]
+    judged = next(rule for rule in payload if rule["id"] == "docs/judged")
+    assert judged["contains_in_file"] == ["Mailer", "Post man"]
+    assert judged["contains_in_diff"] == ["flush"]
 
 
 def test_work_that_was_uncommitted_before_the_step_is_not_its_change(
@@ -408,7 +468,12 @@ def test_the_fix_limit_stops_the_task_for_the_operator(tmp_path: Path) -> None:
     ]
     rendered = MarkdownOutputAdapter().render_instruction(stopped)
     assert "the step's checks reached their fix limit" in rendered
-    assert "ww rejected this step's completion 3 times" in rendered
+    assert (
+        "ww rejected this step's completion: `docs/header` failed 3 of 3 times "
+        "allowed." in rendered
+    )
+    assert stopped.fix_required is not None
+    assert (stopped.fix_required.attempt, stopped.fix_required.max_fixes) == (3, 3)
     assert "To complete the step without these checks" in rendered
     assert not _develop_artifact(root).exists()
 
@@ -589,6 +654,186 @@ def test_lint_reports_the_rules(
         "Rules: 1 group, 2 rules\n"
         "Warning: 1 rule has no check yet (develop/1); `ww-scriptize-rules` "
         "builds checks for them.\n"
-        "Hint: 1 judged rule is verified on every step (develop/1); add paths "
-        "or contains to narrow it.\n"
+        "Hint: 1 judged rule is verified on every step (develop/1); add paths, "
+        "contains_in_file or contains_in_diff to narrow it.\n"
     )
+
+
+# Checks that cannot run here ---------------------------------------------------
+
+# A script the shell does not find, a declared file that is missing, and a
+# program that cannot be launched: each on a Markdown rule of ``docs``.
+UNAVAILABLE_RULES = {
+    "declared.md": (
+        '---\npaths: ["*.md"]\ncheck:\n  argv: [python3, tools/lint.py]\n'
+        "  files: [tools/lint.py]\n---\nLint the docs with the tool.\n"
+    ),
+    "program.md": (
+        '---\npaths: ["*.md"]\ncheck:\n  argv: [./no-such-program]\n---\n'
+        "Lint the docs with the program.\n"
+    ),
+    "script.md": (
+        '---\npaths: ["*.md"]\ncheck:\n'
+        "  shell: tools/lint.sh $WW_STEP_CHANGED_FILES\n---\n"
+        "Lint the docs with the script.\n"
+    ),
+}
+DECLARED_REASON = "`tools/lint.py` is missing in this step's directory"
+
+
+def _unavailable_project(root: Path) -> Path:
+    _project(root)
+    for name, content in UNAVAILABLE_RULES.items():
+        (root / "rules/docs" / name).write_text(content, encoding="utf-8")
+    # The script lives outside the change set, so creating it later keeps
+    # the tree the held completion was measured to.
+    with (root / ".gitignore").open("a", encoding="utf-8") as ignored:
+        ignored.write("tools/\n")
+    return root
+
+
+def _pass(*rule_ids: str) -> tuple[str, ...]:
+    return tuple(
+        json.dumps({"id": rule_id, "status": "judged", "verdict": "pass"})
+        for rule_id in rule_ids
+    )
+
+
+def test_a_check_that_cannot_run_is_unavailable_not_failed(tmp_path: Path) -> None:
+    root = _unavailable_project(tmp_path)
+    service = _develop(root)
+    _violate(root)
+
+    rejected = _complete(service, "First try.")
+
+    fix = rejected.fix_required
+    assert fix is not None
+    assert [failure.id for failure in fix.failures] == ["docs/header", "develop/sh"]
+    assert fix.limiting == "docs/header"
+    assert [check.id for check in fix.unavailable] == [
+        "docs/declared",
+        "docs/program",
+        "docs/script",
+    ]
+    reasons = dict((check.id, check.reason) for check in fix.unavailable)
+    assert reasons["docs/declared"] == DECLARED_REASON
+    assert reasons["docs/program"].startswith("could not launch the command: ")
+    assert reasons["docs/script"].startswith("command not found (exit 127): ")
+    rendered = MarkdownOutputAdapter().render_instruction(rejected)
+    assert "These checks could not run here" in rendered
+    assert f"- `docs/declared`: check unavailable: {DECLARED_REASON}" in rendered
+    assert "### `docs/declared`" not in rendered
+    data = json.loads(JsonOutputAdapter().render_instruction(rejected))
+    assert [check["id"] for check in data["fix_required"]["unavailable"]] == [
+        "docs/declared",
+        "docs/program",
+        "docs/script",
+    ]
+    _, record = _record(service)
+    assert record.check_failures("docs/script") == 0
+    assert record.check_failures("docs/header") == 1
+    stats = service.rule_stats.load()
+    assert stats["docs/header"].check_failures == 1
+    assert not {"docs/declared", "docs/program", "docs/script"} & set(stats)
+    preview = service.check("TASK-1")
+    assert [check.id for check in preview.unavailable] == [
+        "docs/declared",
+        "docs/program",
+        "docs/script",
+    ]
+    assert preview.judged == (
+        "docs/declared",
+        "docs/program",
+        "docs/script",
+        "develop/1",
+    )
+
+
+def test_a_rule_whose_check_is_unavailable_is_judged_for_that_completion(
+    tmp_path: Path,
+) -> None:
+    root = _unavailable_project(tmp_path)
+    service = _develop(root)
+    (root / "notes.md").write_text("foo now\n", encoding="utf-8")
+
+    held = _complete(service, "Done.")
+
+    assert held.item_name == "develop-verify-1"
+    assert held.verification is not None
+    assert [rule.id for rule in held.verification.rules] == [
+        "docs/declared",
+        "docs/program",
+        "docs/script",
+        "develop/1",
+    ]
+    declared = held.verification.rules[0]
+    assert (declared.check, declared.unavailable) == ("docs/declared", DECLARED_REASON)
+    rendered = MarkdownOutputAdapter().render_instruction(held)
+    assert (
+        "Its check `docs/declared` could not run here (check unavailable: "
+        f"{DECLARED_REASON}), so judge it instead." in rendered
+    )
+    # The script turns up before the verdict: the held report's unavailable
+    # result is never reused, so the check runs now and passes.
+    (root / "tools").mkdir()
+    script = root / "tools/lint.sh"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+
+    accepted = service.complete(
+        "TASK-1",
+        artifact="Verified.",
+        rule_results=_pass("docs/declared", "docs/program", "docs/script", "develop/1"),
+    )
+
+    assert accepted.item_name == "check"
+    artifact = _develop_artifact(root).read_text(encoding="utf-8")
+    assert (
+        "- `docs/declared`: verified pass (by `task:develop:verify:1`; check "
+        f"unavailable: {DECLARED_REASON})" in artifact
+    )
+    assert "- `docs/script`: passed\n" in artifact
+    assert "- `docs/header`: passed\n" in artifact
+    assert "No completion was rejected." in artifact
+    stats = service.rule_stats.load()
+    declared_stats = stats["docs/declared"]
+    assert (declared_stats.applied, declared_stats.checked, declared_stats.judged) == (
+        1,
+        0,
+        1,
+    )
+    assert (stats["docs/script"].checked, stats["docs/script"].judged) == (1, 0)
+
+
+def test_the_attempt_counts_the_check_nearest_its_own_limit(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service = _develop(root)
+    _violate(root)
+    _complete(service)
+    (root / "broken").unlink()
+
+    second = _complete(service)
+
+    assert second.fix_required is not None
+    assert (second.fix_required.attempt, second.fix_required.limiting) == (
+        2,
+        "docs/header",
+    )
+    assert [failure.id for failure in second.fix_required.failures] == ["docs/header"]
+    rendered = MarkdownOutputAdapter().render_instruction(second)
+    assert "(attempt 2 of 3 for `docs/header`)" in rendered
+    assert "Failures: 2 of 3 allowed." in rendered
+    (root / "broken").write_text("", encoding="utf-8")
+
+    stopped = _complete(service)
+
+    assert stopped.operator_reason == "fix_limit"
+    assert stopped.error == "check limit reached: docs/header"
+    assert stopped.fix_required is not None
+    assert [
+        (failure.id, failure.failures, failure.max_fixes)
+        for failure in stopped.fix_required.failures
+    ] == [("docs/header", 3, 3), ("develop/sh", 2, 3)]
+    rendered = MarkdownOutputAdapter().render_instruction(stopped)
+    assert "`docs/header` failed 3 of 3 times allowed" in rendered
+    assert "Failures: 2 of 3 allowed." in rendered

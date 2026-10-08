@@ -141,7 +141,16 @@ always deep-merges them — objects key by key, every other value replaced — a
 has no `extends`: settings are per-user and per-checkout values to adjust, not
 definitions to replace. The `./ww` launcher written by `init` repeats that
 lookup for its one key, `executable`, in a few lines of Python, because it must
-choose the binary before any ww code runs.
+choose the binary before any ww code runs. `init` writes no `executable`
+key: the default binary is ww's knowledge, not the project's. What pages
+print is decided once per command by `executable.project_command`: the
+configured binary when it names something other than the default, `./ww`
+when nothing is configured, and `./ww` as well when the key names the
+default, as an older `init` wrote into every `ww.json`, while `<root>/ww` is
+an executable file, so that name is printed only where no launcher is there
+to run; `init`'s permission list follows the same command. The launcher is git-ignored, so the ww/git
+extension copies it, mode included, into each worktree it creates
+(`_copy_launcher`), and the printed command runs from the worktree as well.
 
 Initialization is a convergent project-repair operation rather than a one-time
 state transition. It fills absent root configuration keys and recreates missing
@@ -725,7 +734,15 @@ safety stop durable and forces the manager to escalate the saved round results
 to the user instead of allowing another worker dispatch. The same force that
 skips a failed item is the operator's exit from that stop: `next --force` at an
 exhausted repeat boundary records the reason on the boundary and advances past
-the wrapper, so a capped loop is never a dead end. A break-enabled worker
+the wrapper, so a capped loop is never a dead end. Below the limit the
+operator ends a loop the same way: `next --force` on a body step or on the
+repeat boundary, where `transitions.active_loop` finds the enclosing loop,
+calls `end_loop`, which reuses the loop exit's skip to complete the items up
+to and including the boundary as skipped with the reason and records the
+boundary as ended by the operator; the loop ends between items only, so it
+is refused while a worker holds one of the loop's items, naming `--reassign`
+and `fail` as the ways to take the item away first, and `force_target`
+describes the ending before the CLI asks for confirmation. A break-enabled worker
 records a durable exit intent through `ww loop --break`; the executor finishes
 that step's normal completion hooks before skipping the rest of the body and
 advancing to the wrapper's completion lifecycle.
@@ -978,7 +995,16 @@ each assignment to a worker. The worker submits its own item and hook results
 until explicit handoff, then returns the "Handoff to manager" block that ww
 builds from the saved state (`instructions/handoff.py`): the items performed
 with their outcomes, artifacts, checks, fix rounds and change set, plus the
-worker's capped `--summary`. The service takes the open
+worker's capped `--summary`. A step's checks are read from the report that
+is current for it: a held completion's own re-check
+(`HeldCompletion.report`, noted as "checks passed; rules being verified")
+rather than the rejected attempt the record's last report still holds, and
+an open step's last report is labelled the rejected attempt it is
+(`HandoffStep.checks_note`), so the manager never reads a stale failure as
+current. `HandoffBlock.run_completed` is set when the run the manager would
+continue, the task's own or a child's parent's, has nothing left; the block
+then ends by pointing at `status`, since `next` on a completed run is
+refused and no page may name a command that errors. The service takes the open
 assignment's items before a worker command runs, so the block can still name
 them after the command closed the assignment. When the assignment ended with
 an assessment, the block also carries that step's name and its pending
@@ -1813,15 +1839,34 @@ there.
 `changes.py` measures a step's change set with git alone: a tree mark taken
 when the step begins and another at completion, both written from a temporary
 index so the real index, the stash and the worktree are untouched, and their
-difference is what the checks see in `WW_STEP_CHANGED_FILES`. Without git
-the globs select every file and the report says so; no other VCS and no
-snapshot fallback exist on purpose.
+difference is what the checks see in `WW_STEP_CHANGED_FILES`. The same two
+marks give `changed_lines`, a file's added and removed lines, so a rule's
+`contains_in_diff` selects by what the step changed in a file while
+`contains_in_file` reads its whole text; `select_files` applies the globs
+and both kinds of strings in one place for checks and judged rules alike.
+Without git the globs select every file, `contains_in_diff` reads whole
+files, and the report says so; no other VCS and no snapshot fallback exist
+on purpose.
 
 `rule_checks.RuleChecker` runs inside `complete`, after every existing
 validation and before anything is written. Checks are read-only and
 repeatable, so they keep no command ledger; their outputs are stored like
 other command output and their reports live on the item record, one per
-attempt, which is the single authority for how often a step was rejected. A
+attempt, which is the single authority for how often a step was rejected.
+A check that cannot run here is `unavailable` (`CheckStatus`) with its
+reason, never failed: a file it declares under `files` is missing in the
+step's directory (`missing_file`, tested before the command runs), the
+command could not be launched, or the shell exited 126 or 127.
+`CheckReport.failed` leaves such results out, so they reject no completion,
+count in neither `check_failures` nor the rule statistics, and are never
+reused from a held completion; `rule_verification.judged_now` hands the
+check's rule, or the rules a derived check covers, to a verifier for that
+completion, as it does for a converted check whose configuration is
+missing, and every page and the artifact list them apart from the failures.
+The fix limit is per check: `check_failures(id)` against that check's own
+`max_fixes`, and the fix page shows each failed check's own count and
+names in its heading the check nearest its limit, the one that will stop
+the step, rather than the number of rejections. A
 rejection leaves the step with its worker and the supplied artifact as a
 draft, which the fix page shows in full and the next completion replaces
 entirely; when that completion is accepted, `write_completion_artifacts`
@@ -1860,9 +1905,12 @@ with the saved arguments.
 The agent facing a check has two commands of its own. `check` runs the
 active step's checks now, through a checker without an output writer, so it
 records nothing and can be run as often as wanted; `dispute` records the
-agent's argument against a check that rejected it and stops the task for the
-operator, whose `--retry` lets the check stand and whose `--force` waives that
-one check for the step. Waivers are kept per check on the item record, and
+agent's one argument against every check it names that rejected it, all of
+them or none, as the `disputes` tuple on the item record with one dispute-log
+entry each, and stops the task for the operator, whose `--retry` lets them
+stand and whose `--force` waives each disputed check for the step
+(`_waivable` lists them for the page and for `force_target`). Waivers are
+kept per check on the item record, and
 disputes in a log beside the store, so a check that is disputed often shows
 up in `lint`. `rule` and `rules` are read-only views over the frozen plan and
 the store; `rules prune` deletes orphan store entries after asking, and
@@ -1988,22 +2036,49 @@ requires approval of concrete proposals through validated existing rule commands
 `run_reports` holds the two optional collections `ww.json` switches on
 (`debug.collect`, `feedback.collect`) and the reporting of debug records
 (`debug.report`, `ww debug report`). Each kind is a `ReportKind`: its
-directory under the runtime path, the two `ProvidedVariable`s it adds to the
-built-in `update-workflow-summary` handler and the sentence it adds to that
-handler's prompt. The plan compiler reads the kinds from the project settings
-when it compiles the summary handler, so a run asks for exactly what was
-switched on when it started, and the saved plan keeps asking for it whatever
-the setting says later. No plan item is added: collection rides on the
-summary step's completion window.
+directory under the runtime path, its two `ProvidedVariable`s, the prompt
+that asks for them and, for the debug kind, the ww-generated item that asks
+(`ReportKind.item`, `assess-ww`). The plan compiler reads the kinds from the
+project settings when it compiles the end of the workflow, so a run asks for
+exactly what was switched on when it started, and the saved plan keeps asking
+for it whatever the setting says later. The feedback kind rides on the
+built-in `update-workflow-summary` handler (`summary_variables`,
+`summary_prompt`). The debug kind is its own internal
+`before_complete_workflow` item (`debug_item`), compiled right before the
+summary with `role: manager`, so under `auto` the manager, the session that
+met ww's pages and refusals across the run, answers it itself and the summary
+follows in the same assignment; `active_assignment` ends a worker's span at an
+agent hook the manager performs, as it does at a `role: manager` step. Under
+`single` the one session performs it like any item. Its prompt asks the
+concrete questions one line each and repeats the no-project-data rule; the
+service's `render` adds a notice listing the events ww already observed for
+the run (`RunReportStore.events_notice`, from the pending file), so the agent
+adds to them rather than repeating them.
 
 The service validates the arrays before anything is saved (`complete` on the
-summary item parses each JSON array and refuses a malformed one), writes the
-records from the run's `workflow_values` right after the completing commit,
-and adds the one-time collection notice to the first page of every start
-(`notices`, beside the rules notice). A record that cannot be written is
-dropped rather than failing a run that is already committed. The workflow
-definition in a record is the entry of the composed `ww.yaml` (or of a
-built-in file), read through `compose_configuration`, not the compiled plan.
+summary item or the debug item, `asks_for_reports`, parses each JSON array
+and refuses a malformed one), writes the records from the run's
+`workflow_values` right after the completing commit, and adds the one-time
+collection notice to the first page of every start (`notices`, beside the
+rules notice). A record that cannot be written is dropped rather than failing
+a run that is already committed, and a completed run that is committed again
+does not rewrite its record (`record` keeps the first write). The workflow
+in a record is `workflow_shape(plan)`: a structural digest of the compiled
+plan (names, steps, phases, sources, kinds, owners, roles, registered
+handlers, loop, items and children markers, rule and check counts, and the
+counts of items, steps and hooks), never the `ww.yaml` text.
+
+A record holds ww-related data only. It stores no task ID: `record_id` is the
+task's `task_digest` (twelve hex digits of its SHA-256) and the run, and
+`latest_for` finds a task's records by that prefix. Every string that reaches
+a record, the agent's arrays, ww's events and the operator's notes, passes
+`redact` at write time (`record`, `notes_record`, `add_event`): the task and
+run IDs become `<task>` and `<run>`, then emails `<email>`, quoted and
+backticked values `<value>` (a backticked ww command keeps its words and is
+redacted inside), path-like tokens `<path>` and Jira-like keys `<ticket>`.
+`render_record` and the GitHub issue body therefore carry the redacted
+content only. The pending events file is local working state and keeps the
+raw words until the record takes them.
 
 `RunReportStore` keeps one JSON file per run under `.ww/debug/` or
 `.ww/feedback/`, written atomically under the project's lock manager, with a
@@ -2015,18 +2090,19 @@ pending file per task or request (`.ww/debug/pending/<slug>.jsonl`), keeping
 events of the task and of the run's `bootstrap_request_id` into the record's
 `events` array and removes the pending files and any standalone notes record;
 `add_event` appends to an existing record; `notes_record` writes the pending
-events as a standalone `<owner>--notes` record. The service observes through
+events as a standalone `<digest>--notes` record. The service observes through
 one helper (`_observe`, never failing the command): `fail` on a task or a
 request, `next --force` with the resolved target and reason, `dispute`, the
 `plan_changed` gate, and `commit`, which notes every transition whose
 `operator_reason` is set, once per stop. `debug_note` resolves the operator's
 `ww debug note` target to a record, the task's latest record, or the pending
-file plus a standalone record. The CLI's
-`debug` and `workflow-feedback` commands read these stores; `discover`
-counts unreported debug records and offers them only while `debug.report` is
-on. Publishing goes through `report_records`, which takes the confirmation,
-browser and `gh` callables as parameters, so the CLI wires the terminal
-prompts (`confirm_operator`, `--yes`) and `webbrowser.open` while tests pass
-stubs. `gh` is used when it is installed and `gh auth status` succeeds;
-otherwise the prefilled new-issue URL is opened and the operator submits it.
-ww never holds a credential of its own.
+file plus a standalone record. The CLI's `debug` and `workflow-feedback`
+commands read these stores. ww never asks to send a record during work:
+`discover` neither counts nor offers them, and the skills and agent
+instructions say nothing about reporting. `ww debug report` is refused unless
+`debug.report` is on; publishing goes through `report_records`, which takes
+the confirmation, browser and `gh` callables as parameters, so the CLI wires
+the terminal prompts (`confirm_operator`, `--yes`) and `webbrowser.open`
+while tests pass stubs. `gh` is used when it is installed and `gh auth
+status` succeeds; otherwise the prefilled new-issue URL is opened and the
+operator submits it. ww never holds a credential of its own.

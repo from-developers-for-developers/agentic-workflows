@@ -93,7 +93,8 @@ class PlannedRule:
     text: str
     text_hash: str
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     has_command: bool = False
     max_fixes: int = 1
     hints: RuleHints = RuleHints()
@@ -106,7 +107,8 @@ class PlannedRule:
             "text": self.text,
             "text_hash": self.text_hash,
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "has_command": self.has_command,
             "max_fixes": self.max_fixes,
         }
@@ -129,6 +131,10 @@ class PlannedCheck:
     store; it is never compiled into a plan but resolved when the step
     begins, and ``covers`` names the rules of the step it checks, so a check
     shared by several rules runs once.
+
+    ``files`` are the project files the command needs, relative to the
+    step's directory, such as the script it runs: when one is missing there
+    the check is unavailable and does not run.
     """
 
     id: str
@@ -136,10 +142,12 @@ class PlannedCheck:
     summary: str
     command: Commands
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     max_fixes: int = 1
     covers: tuple[str, ...] = ()
     on_failure_instruction: str | None = None
+    files: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.source not in {"rule", "hook", "derived"}:
@@ -156,13 +164,16 @@ class PlannedCheck:
             "summary": self.summary,
             "command": actions.get("cli").encode(self.command),
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "max_fixes": self.max_fixes,
         }
         if self.covers:
             data["covers"] = list(self.covers)
         if self.on_failure_instruction is not None:
             data["on_failure_instruction"] = self.on_failure_instruction
+        if self.files:
+            data["files"] = list(self.files)
         return data
 
 

@@ -36,7 +36,9 @@ from ww.documents import DocumentStore
 from ww.errors import StateError
 from ww.executable import ww_command
 from ww.execution_models import (
+    CheckReport,
     CheckResult,
+    Dispute,
     ExecutionState,
     PlanItemExecution,
     PlanSnapshot,
@@ -74,6 +76,7 @@ from .commands import (
     update_child_command,
 )
 from .models import (
+    CheckUnavailable,
     ConversationEntry,
     DisputeView,
     DocumentTask,
@@ -847,12 +850,12 @@ class InstructionBuilder:
                 and record is not None
                 else None
             ),
-            dispute=(
-                dispute_view(current, record)
+            disputes=(
+                dispute_views(current, record)
                 if state.failure_kind == "check_disputed"
                 and current is not None
                 and record is not None
-                else None
+                else ()
             ),
         )
 
@@ -877,8 +880,10 @@ class InstructionBuilder:
                     rule.interpretation,
                     rule.check,
                     rule.missing,
+                    rule.unavailable,
                     paths=rule.paths,
-                    contains=rule.contains,
+                    contains_in_file=rule.contains_in_file,
+                    contains_in_diff=rule.contains_in_diff,
                     files=rule.files,
                 )
                 for rule in record.verification
@@ -1171,7 +1176,8 @@ def rule_lines(item: PlanItem, record: PlanItemExecution) -> tuple[RuleLine, ...
             rule.id,
             rule.summary,
             rule.paths,
-            rule.contains,
+            rule.contains_in_file,
+            rule.contains_in_diff,
             rule.has_command or converted,
             interpretation=resolution.interpretation if resolution else None,
             check=(
@@ -1206,12 +1212,17 @@ def fix_required(item: PlanItem, record: PlanItemExecution) -> FixRequired | Non
     failed = tuple(result for result in report.failed if result.id not in waived)
     if not failed:
         return None
-    limits = fix_limits(item, record)
+    failures = fix_failures(item, record, failed)
+    # The check nearest its own limit stops the step first: the most
+    # failures, then the smallest limit, then plan order.
+    limiting = max(failures, key=lambda failure: (failure.failures, -failure.max_fixes))
     return FixRequired(
-        attempt=record.fix_attempts,
-        max_fixes=max(limits.values(), default=1),
+        attempt=limiting.failures,
+        max_fixes=limiting.max_fixes,
+        limiting=limiting.id,
         checks=len(report.results),
-        failures=fix_failures(item, record, failed),
+        failures=failures,
+        unavailable=checks_unavailable(report),
         draft_artifact=record.draft_artifact,
     )
 
@@ -1219,7 +1230,8 @@ def fix_required(item: PlanItem, record: PlanItemExecution) -> FixRequired | Non
 def fix_failures(
     item: PlanItem, record: PlanItemExecution, results: tuple[CheckResult, ...]
 ) -> tuple[FixFailure, ...]:
-    """Failed check results as the fix page shows them, with their rules' texts."""
+    """Failed check results as the fix page shows them, with their rules' texts
+    and each check's failures so far against its own limit."""
     texts = {rule.id: rule.text for rule in item.rules}
     texts.update(
         {
@@ -1229,6 +1241,7 @@ def fix_failures(
         }
     )
     covers = {check.id: check.covers for check in record.resolved_checks}
+    limits = fix_limits(item, record)
     return tuple(
         FixFailure(
             result.id,
@@ -1245,44 +1258,55 @@ def fix_failures(
             result.output,
             judged=result.source == "judged",
             covers=covers.get(result.id, ()),
+            failures=record.check_failures(result.id),
+            max_fixes=limits.get(result.id, 1),
         )
         for result in results
     )
 
 
-def dispute_view(item: PlanItem, record: PlanItemExecution) -> DisputeView | None:
-    """The worker's open dispute, with the disputed check as it last failed."""
-    dispute = record.dispute
-    if dispute is None:
-        return None
-    result = next(
-        (
-            result
-            for report in reversed(record.check_reports)
-            for result in report.failed
-            if result.id == dispute.check
-        ),
-        None,
+def checks_unavailable(report: CheckReport) -> tuple[CheckUnavailable, ...]:
+    """The checks of a report that could not run, each with its reason."""
+    return tuple(
+        CheckUnavailable(result.id, result.output, hook=result.source == "hook")
+        for result in report.unavailable
     )
-    (failure,) = fix_failures(
-        item,
-        record,
-        (
-            result
-            or CheckResult(
-                dispute.check,
-                "rule",
-                "failed",
-                command=dispute.command,
-                output=dispute.output,
+
+
+def dispute_views(item: PlanItem, record: PlanItemExecution) -> tuple[DisputeView, ...]:
+    """The worker's open disputes, each with its check as it last failed."""
+
+    def view(dispute: Dispute) -> DisputeView:
+        result = next(
+            (
+                result
+                for report in reversed(record.check_reports)
+                for result in report.failed
+                if result.id == dispute.check
             ),
-        ),
-    )
-    return DisputeView(
-        failure=replace(failure, command=dispute.command, output=dispute.output),
-        reason=dispute.reason,
-        attempt=dispute.attempt,
-    )
+            None,
+        )
+        (failure,) = fix_failures(
+            item,
+            record,
+            (
+                result
+                or CheckResult(
+                    dispute.check,
+                    "rule",
+                    "failed",
+                    command=dispute.command,
+                    output=dispute.output,
+                ),
+            ),
+        )
+        return DisputeView(
+            failure=replace(failure, command=dispute.command, output=dispute.output),
+            reason=dispute.reason,
+            attempt=dispute.attempt,
+        )
+
+    return tuple(view(dispute) for dispute in record.disputes)
 
 
 def worker_token(state: ExecutionState) -> str | None:

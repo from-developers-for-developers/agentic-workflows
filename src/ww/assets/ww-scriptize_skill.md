@@ -8,9 +8,11 @@ description: Turn the project's rules that have no check yet into checks, proven
 The `ww-scriptize-rules` workflow lists the rules that have no check yet,
 agrees the checks with the operator, builds and proves them in its own
 workspace, and records the approved ones with `./ww rules convert` once the
-operator confirms. It automatically creates a branch from
-`extensions.ww/git.base_branches.default` and follows ww/git's worktree
-settings; this skill starts it.
+operator confirms. Every check it builds reads the files the step changed
+from `WW_STEP_CHANGED_FILES` and examines only those, never the branch's
+diff against a base branch or the whole repository. It automatically creates
+a branch from `extensions.ww/git.base_branches.default` and follows ww/git's
+worktree settings; this skill starts it.
 
 1. Run `./ww workflows`. If it does not list `ww-scriptize-rules`, the
    operator switched it off; say so and stop.

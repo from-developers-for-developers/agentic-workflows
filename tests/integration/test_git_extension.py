@@ -1264,6 +1264,34 @@ def test_a_commit_uses_the_task_worktree_when_one_is_selected(
     assert subject == "TASK-1: worktree work"
 
 
+def test_a_new_worktree_gets_the_primary_checkouts_launcher(
+    repository: Path,
+) -> None:
+    # The launcher is git-ignored, so git never carries it into a worktree.
+    launcher = repository / "ww"
+    launcher.write_text('#!/bin/sh\nexec ww-agentic-workflows "$@"\n', encoding="utf-8")
+    launcher.chmod(0o755)
+    config = _worktree_config(repository)
+    handler("start-task-branch")(context(repository, config))
+
+    result = handler("create-worktree")(context(repository, config))
+
+    assert result.ok, result.error
+    copied = repository / "trees" / "TASK-1" / "ww"
+    assert copied.read_text(encoding="utf-8") == launcher.read_text(encoding="utf-8")
+    assert os.access(copied, os.X_OK)
+
+
+def test_a_new_worktree_without_a_launcher_to_copy_is_fine(repository: Path) -> None:
+    config = _worktree_config(repository)
+    handler("start-task-branch")(context(repository, config))
+
+    result = handler("create-worktree")(context(repository, config))
+
+    assert result.ok, result.error
+    assert not (repository / "trees" / "TASK-1" / "ww").exists()
+
+
 def test_creating_a_worktree_twice_adopts_it(repository: Path) -> None:
     config = _worktree_config(repository)
     handler("start-task-branch")(context(repository, config))

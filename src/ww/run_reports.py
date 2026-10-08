@@ -1,22 +1,27 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run reports: ww's self-assessment and workflow feedback, kept locally.
 
-Two optional modes of ``ww.json`` make the built-in workflow summary ask the
-agent for more than the summary: ``debug.collect`` for how ww itself behaved
-during the run, ``feedback.collect`` for how well the workflow that ran was
-composed. ww writes each answer as one record per run under ``.ww/debug/`` or
-``.ww/feedback/``. Nothing leaves the machine by itself: ``ww debug report``
-publishes a debug record to ww's GitHub issues only after showing it in full
-and asking, and feedback records are read by the operator and the
-``ww-workflow-feedback`` skill alone.
+Two optional modes of ``ww.json`` ask the agent for an assessment at the end
+of every run: ``debug.collect`` for how ww itself behaved, asked by a
+ww-generated item the session that drove the run performs, and
+``feedback.collect`` for how well the workflow that ran was composed, asked
+by the built-in workflow summary. ww writes each answer as one record per run
+under ``.ww/debug/`` or ``.ww/feedback/``. A debug record holds ww-related
+data only: every string that reaches it is redacted, the task is named by a
+digest, and the workflow appears as its structural shape. Nothing leaves the
+machine by itself: ``ww debug report`` publishes a debug record to ww's
+GitHub issues only after showing it in full and asking, and feedback records
+are read by the operator and the ``ww-workflow-feedback`` skill alone.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,16 +29,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
-import yaml
-
-from ww import __version__, builtin_workflows
-from ww.config.composition import compose_configuration
+from ww import __version__
+from ww.actions import DefinedAction, Prompt
 from ww.errors import StateError
 from ww.project_config import ProjectConfig, load_project_config
 from ww.variables import task_slug
-from ww.workflow_config import ProvidedVariable
+from ww.workflow_config import HandlerDefinition, ProvidedVariable
 
 if TYPE_CHECKING:
+    from ww.plan.models import PlanItem, WorkflowPlan
     from ww.storage import Storage
 
 RECORD_SCHEMA = 1
@@ -51,11 +55,18 @@ EVENT_SOURCES = ("ww", "operator")
 PENDING_DIRECTORY = "pending"
 # The run ID of a standalone record holding a task's or request's events.
 NOTES_RUN_ID = "notes"
+# How many hex digits of the task ID's SHA-256 name a record.
+TASK_DIGEST_LENGTH = 12
+# What ww-related data a record may say instead of the original words.
+NO_PROJECT_DATA_RULE = (
+    "Describe ww's behaviour only: name no project, path, ticket key, "
+    "commit message, code or person; ww redacts what slips through."
+)
 
 
 @dataclass(frozen=True)
 class ReportArray:
-    """One of a report's two arrays: the value the summary step provides."""
+    """One of a report's two arrays: the value the agent provides."""
 
     variable: str
     field: str
@@ -76,6 +87,9 @@ class ReportKind:
     # Whether records of this kind carry the events ww observed and the
     # operator noted, apart from the agent-written arrays.
     events: bool = False
+    # The ww-generated plan item that asks for the arrays, performed by the
+    # session that drove the run; ``None`` leaves them to the summary step.
+    item: str | None = None
 
     @property
     def variables(self) -> tuple[ProvidedVariable, ...]:
@@ -94,9 +108,16 @@ DEBUG = ReportKind(
     "debug info about ww itself",
     "Debug record",
     (
-        "Also assess, from this run alone, how ww itself behaved: the tool, "
-        "its pages, commands and handlers, not the project's code. Report "
-        "errors first; an empty array is a fine answer."
+        "Assess, from this run alone, how ww itself behaved: the tool, its "
+        "pages, commands and handlers, not the project's code. Answer each "
+        "question below for the whole run; an empty array is a fine answer.\n"
+        "- Which ww commands errored or were refused although they should "
+        "have passed?\n"
+        "- Which pages misled you or lacked a command you needed?\n"
+        "- Which steps did you retry, and which did the operator force past?\n"
+        "- Did you edit ww's state by hand, or work around ww in another way?\n"
+        "- Which rounds of the run were wasted on ww rather than the work?\n"
+        + NO_PROJECT_DATA_RULE
     ),
     (
         ReportArray(
@@ -109,8 +130,10 @@ DEBUG = ReportKind(
                 "should have passed, a wrong or misleading page, a crash, a "
                 "handler ww mishandled, a stop that needed the operator. Each "
                 "entry is an object with `summary` (one sentence), `detail` "
-                "(the command, the exact error and what you expected) and "
-                "`step` (the step it happened in, or null). `[]` when none."
+                "(the ww command, the exact ww error and what you expected) and "
+                "`step` (the step it happened in, or null). Describe ww's "
+                "behaviour only: no project name, path, ticket key, code, commit "
+                "message or user name. `[]` when none."
             ),
         ),
         ReportArray(
@@ -120,11 +143,13 @@ DEBUG = ReportKind(
             (
                 "A JSON array assessing ww's usability in this run: unclear or "
                 "repetitive pages, missing or awkward commands, detours ww "
-                "forced. Same entry shape as `debug_errors`. `[]` when none."
+                "forced. Same entry shape and the same rule as `debug_errors`: "
+                "ww's behaviour only, no project data. `[]` when none."
             ),
         ),
     ),
     events=True,
+    item="assess-ww",
 )
 
 FEEDBACK = ReportKind(
@@ -170,7 +195,7 @@ _VARIABLE_KINDS: dict[str, tuple[ReportKind, ReportArray]] = {
 
 
 def collected_kinds(config: ProjectConfig) -> tuple[ReportKind, ...]:
-    """The kinds the project collects, in the order the summary asks for them."""
+    """The kinds the project collects, in the order the run asks for them."""
     kinds: list[ReportKind] = []
     if config.debug.collect:
         kinds.append(DEBUG)
@@ -179,23 +204,51 @@ def collected_kinds(config: ProjectConfig) -> tuple[ReportKind, ...]:
     return tuple(kinds)
 
 
+def _summary_kinds(config: ProjectConfig) -> tuple[ReportKind, ...]:
+    return tuple(kind for kind in collected_kinds(config) if kind.item is None)
+
+
 def summary_variables(config: ProjectConfig) -> tuple[ProvidedVariable, ...]:
     """The values the workflow summary provides besides ``summary``."""
     return tuple(
-        variable for kind in collected_kinds(config) for variable in kind.variables
+        variable for kind in _summary_kinds(config) for variable in kind.variables
     )
 
 
 def summary_prompt(base: str, config: ProjectConfig) -> str:
-    """The summary prompt, extended with what the collected kinds ask for."""
-    return " ".join([base, *(kind.prompt for kind in collected_kinds(config))])
+    """The summary prompt, extended with what the summary kinds ask for."""
+    return " ".join([base, *(kind.prompt for kind in _summary_kinds(config))])
+
+
+def debug_item(config: ProjectConfig) -> HandlerDefinition | None:
+    """The item that asks for the debug assessment, when it is collected.
+
+    It is compiled right before the workflow summary and performed by the
+    session that drove the run, the manager under ``auto``, so the answers
+    come from whoever met ww's pages and commands. Its page lists the
+    events ww observed itself (``events_notice``) so the agent adds to them.
+    """
+    if DEBUG not in collected_kinds(config):
+        return None
+    assert DEBUG.item is not None
+    return HandlerDefinition(
+        DEBUG.item,
+        description="Assess how ww itself behaved during this run.",
+        action=DefinedAction("prompt", Prompt(DEBUG.prompt)),
+        provide=DEBUG.variables,
+    )
+
+
+def asks_for_reports(item: PlanItem) -> bool:
+    """Whether completing ``item`` supplies report arrays to validate."""
+    return item.summary or item.name == DEBUG.item
 
 
 def start_notice(config: ProjectConfig) -> str | None:
     """What the first page of a run tells the operator about collection.
 
-    The agent says it once, at the start; the collection itself is silent,
-    and the end-of-run summary step carries its questions.
+    The agent says it once, at the start; the collection itself is silent
+    until the end of the run asks its questions.
     """
     kinds = collected_kinds(config)
     if not kinds:
@@ -205,7 +258,7 @@ def start_notice(config: ProjectConfig) -> str | None:
         f"Tell the operator once, now, that ww collects {what} at the end of "
         "this run. It stays on this machine only; ww never sends it unless the "
         "operator explicitly reports it. Do not mention the collection again "
-        "during the run; the final summary step asks for it."
+        "during the run; ww asks for it at the end."
     )
 
 
@@ -257,52 +310,132 @@ def _entry(name: str, index: int, entry: object) -> dict[str, object]:
     return normalized
 
 
-def workflow_source(config_path: Path, name: str) -> object | None:
-    """The workflow ``name`` as written in the composed ``ww.yaml``.
+def workflow_shape(plan: WorkflowPlan) -> dict[str, Any]:
+    """The plan's structure, without any text the project wrote.
 
-    This is the definition itself, not the compiled plan: small enough for a
-    report. A built-in workflow is read from ww's own files. ``None`` when it
-    cannot be found or read; a report is still worth keeping without it.
+    Each item is its name, step, phase, source, kind, owner and role, with
+    the handler it registered and its loop, items and children markers; the
+    counts come first. Descriptions, prompts, rules, checks and artifacts
+    stay out.
     """
-    try:
-        found = _find_workflow(compose_configuration(config_path).raw, name)
-    except Exception:  # noqa: BLE001 - any configuration problem leaves it out
-        found = None
-    if found is not None:
-        return found
-    try:
-        for entry in builtin_workflows.BUILTIN_DIRECTORY.iterdir():
-            if not entry.name.endswith(".yaml"):
-                continue
-            found = _find_workflow(
-                yaml.safe_load(entry.read_text(encoding="utf-8")), name
-            )
-            if found is not None:
-                return found
-    except Exception:  # noqa: BLE001
-        return None
-    return None
+    items = [_item_shape(item) for item in plan.items]
+    return {
+        "workflow": plan.workflow,
+        "handoff": plan.handoff,
+        "counts": {
+            "items": len(items),
+            "steps": sum(1 for item in plan.items if item.phase == "step"),
+            "hooks": sum(1 for item in plan.items if item.phase != "step"),
+        },
+        "items": items,
+    }
 
 
-def _find_workflow(raw: object, name: str) -> object | None:
-    if not isinstance(raw, dict):
-        return None
-    workflows = raw.get("workflows")
-    if isinstance(workflows, dict):
-        return workflows.get(name)
-    if not isinstance(workflows, list):
-        return None
-    for entry in workflows:
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("name") == name or ("name" not in entry and name in entry):
-            return entry
-    return None
+def _item_shape(item: PlanItem) -> dict[str, Any]:
+    shape: dict[str, Any] = {
+        "name": item.name,
+        "step": item.step,
+        "phase": item.phase,
+        "source": item.source,
+        "kind": item.kind,
+        "owner": item.owner,
+        "role": item.role,
+    }
+    markers: dict[str, Any] = {
+        "handler": item.registered_handler,
+        "loop": item.loop_id,
+        "items": item.item_operation or (item.item_template or None),
+        "children": item.child_operation or item.child_stage,
+        "interactive": item.interactive or None,
+        "rules": len(item.rules) or None,
+        "checks": len(item.checks) or None,
+    }
+    shape.update({key: value for key, value in markers.items() if value})
+    return shape
+
+
+# Redaction: what a record may not keep of the project, the task or a person.
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_QUOTED = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|(?<!\w)'[^'\n]*'(?!\w)")
+_TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+# A path is a token with a slash in it or ending in a known extension; the
+# punctuation around it stays, as does ww's own launcher.
+_TOKEN = re.compile(r"[^\s'\"`()\[\]{}<>,;]+")
+_TRAILING_PUNCTUATION = re.compile(r"[.,;:!?]+$")
+_PATH_EXTENSIONS = (
+    ".py", ".pyi", ".md", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".txt",
+    ".ini", ".cfg", ".lock", ".xml", ".csv", ".sql", ".sh", ".log", ".html",
+    ".css", ".js", ".jsx", ".ts", ".tsx", ".rs", ".go", ".java", ".kt", ".rb",
+    ".php", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".swift", ".scala",
+)  # fmt: skip
+_LAUNCHERS = frozenset({"./ww", "ww"})
+_WW_COMMAND = re.compile(r"`\s*(?:\./)?ww(?:\s|`)")
+
+
+def redact(text: str, *, task_id: str | None = None, run_id: str | None = None) -> str:
+    """``text`` with the task, run, paths, quoted values, emails and keys hidden.
+
+    The task and run IDs become ``<task>`` and ``<run>``, email addresses
+    ``<email>``, quoted and backticked values ``<value>``, file paths
+    ``<path>`` and Jira-like keys ``<ticket>``. A backticked ww command keeps
+    its words, since it is ww's own structure, and is redacted inside.
+    """
+    for literal, placeholder in (
+        (task_id, "<task>"),
+        (task_slug(task_id) if task_id else None, "<task>"),
+        (run_id, "<run>"),
+    ):
+        if literal:
+            text = text.replace(literal, placeholder)
+    text = _EMAIL.sub("<email>", text)
+    text = _QUOTED.sub(_redact_quoted, text)
+    text = _TOKEN.sub(_redact_path, text)
+    return _TICKET.sub("<ticket>", text)
+
+
+def _redact_quoted(match: re.Match[str]) -> str:
+    quoted = match.group()
+    if _WW_COMMAND.match(quoted):
+        inner = _TOKEN.sub(_redact_path, quoted[1:-1])
+        return f"`{_TICKET.sub('<ticket>', inner)}`"
+    return "<value>"
+
+
+def _redact_path(match: re.Match[str]) -> str:
+    token = match.group()
+    trailing = _TRAILING_PUNCTUATION.search(token)
+    end = trailing.group() if trailing else ""
+    core = token[: len(token) - len(end)]
+    if core in _LAUNCHERS:
+        return token
+    if "/" in core or core.lower().endswith(_PATH_EXTENSIONS):
+        return "<path>" + end
+    return token
+
+
+def _redacted(
+    entries: Iterable[Mapping[str, Any]], task_id: str | None, run_id: str | None
+) -> list[dict[str, Any]]:
+    """``entries`` (report entries or events) with their free text redacted."""
+    return [
+        {
+            key: redact(value, task_id=task_id, run_id=run_id)
+            if key in {"summary", "detail"} and isinstance(value, str)
+            else value
+            for key, value in entry.items()
+        }
+        for entry in entries
+    ]
+
+
+def task_digest(task_id: str) -> str:
+    """How a record names its task: a short SHA-256 of the task ID."""
+    return hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:TASK_DIGEST_LENGTH]
 
 
 def record_id(task_id: str, run_id: str) -> str:
-    """The record's ID and file stem: a child task's slash becomes a dash."""
-    return f"{task_slug(task_id)}--{run_id}"
+    """The record's ID and file stem: the task's digest and the run."""
+    return f"{task_digest(task_id)}--{run_id}"
 
 
 class RunReportStore:
@@ -328,16 +461,18 @@ class RunReportStore:
         runtime: str | None,
         modes: tuple[str, ...],
         values: Mapping[str, str],
-        workflow_definition: object,
+        workflow_shape: Mapping[str, Any] | None,
         request_id: str | None = None,
         now: str | None = None,
     ) -> dict[str, Any] | None:
-        """Write the run's record from the summary's values; none without them.
+        """Write the run's record from the supplied values; none without them.
 
-        A kind with events takes over the events pending for the task and for
-        ``request_id``, the bootstrap request the run was bound from, and
-        drops their standalone notes records, now that the run's own record
-        holds them.
+        The record names the task by its digest only, and every string in it
+        passes ``redact``. A kind with events takes over the events pending
+        for the task and for ``request_id``, the bootstrap request the run
+        was bound from, and drops their standalone notes records, now that
+        the run's own record holds them. A run that already has its record
+        keeps it: the existing record is returned unchanged.
         """
         parsed = validate_report_values(
             {
@@ -348,18 +483,59 @@ class RunReportStore:
         )
         if len(parsed) != len(self.kind.arrays):
             return None
+        record = self._new_record(
+            task_id,
+            run_id,
+            workflow=workflow,
+            agent=agent,
+            runtime=runtime,
+            modes=modes,
+            now=now,
+        )
+        record["workflow_shape"] = dict(workflow_shape) if workflow_shape else None
+        record.update(
+            {
+                array.field: _redacted(parsed[array.variable], task_id, run_id)
+                for array in self.kind.arrays
+            }
+        )
+        with self._lock():
+            # A completed run is committed more than once under ``auto``;
+            # the first write took the pending events, so it stands.
+            existing = self.directory / f"{record['id']}.json"
+            if existing.is_file():
+                return self._read(existing)
+            if self.kind.events:
+                owners = [task_id] + ([request_id] if request_id else [])
+                record["events"] = _redacted(
+                    self._take_pending(owners), task_id, run_id
+                )
+            self._save(record)
+        return record
+
+    def _new_record(
+        self,
+        task_id: str,
+        run_id: str,
+        *,
+        workflow: str | None,
+        agent: str | None,
+        runtime: str | None,
+        modes: tuple[str, ...],
+        now: str | None,
+    ) -> dict[str, Any]:
+        """A record's fixed fields, in their order; the arrays follow."""
         # The plan compiler imports this module for the summary step's
         # variables, so the schema versions are read here, not at import.
         from ww.execution_models.runs import PLAN_SCHEMA_VERSION
         from ww.storage_adapters.task_document import TASK_STATE_SCHEMA_VERSION
 
-        record: dict[str, Any] = {
+        return {
             "schema": RECORD_SCHEMA,
             "id": record_id(task_id, run_id),
             "kind": self.kind.name,
-            "workflow": workflow,
+            "workflow": workflow or "unknown",
             "recorded_at": now or _now(),
-            "task_id": task_id,
             "run_id": run_id,
             "agent": agent,
             "runtime": runtime,
@@ -367,16 +543,10 @@ class RunReportStore:
             "ww_version": __version__,
             "plan_schema_version": PLAN_SCHEMA_VERSION,
             "task_state_schema_version": TASK_STATE_SCHEMA_VERSION,
-            "workflow_definition": workflow_definition,
-            **{array.field: parsed[array.variable] for array in self.kind.arrays},
+            "workflow_shape": None,
+            **{array.field: [] for array in self.kind.arrays},
             "reported": None,
         }
-        with self._lock():
-            if self.kind.events:
-                owners = [task_id] + ([request_id] if request_id else [])
-                record["events"] = self._take_pending(owners)
-            self._save(record)
-        return record
 
     def collecting(self) -> bool:
         """Whether the project collects this kind now."""
@@ -411,7 +581,7 @@ class RunReportStore:
             return None
         event = _event(source, summary, detail, now)
         with self._lock():
-            pending = self._pending(owner)
+            pending = self.pending(owner)
             if once and any(
                 (kept["source"], kept["summary"], kept.get("detail"))
                 == (event["source"], event["summary"], event.get("detail"))
@@ -431,26 +601,35 @@ class RunReportStore:
         source: str,
         summary: str,
         detail: str | None = None,
+        task_id: str | None = None,
         now: str | None = None,
     ) -> dict[str, Any]:
-        """Append one event to the record ``identifier``."""
+        """Append one event, redacted, to the record ``identifier``.
+
+        ``task_id`` is the task the record belongs to, when the caller knows
+        it, so the event hides it too.
+        """
         if source not in EVENT_SOURCES:
             raise StateError(f"unknown event source {source!r}")
         if not summary.strip():
             raise StateError("an event needs a non-empty summary")
-        event = _event(source, summary, detail, now)
         with self._lock():
             record = self.get(identifier)
+            (event,) = _redacted(
+                [_event(source, summary, detail, now)], task_id, record.get("run_id")
+            )
             record.setdefault("events", []).append(event)
             self._save(record)
         return record
 
     def latest_for(self, task_id: str) -> dict[str, Any] | None:
         """The task's latest run record, if a run of it completed."""
+        prefix = f"{task_digest(task_id)}--"
         runs = [
             record
             for record in self.records()
-            if record.get("task_id") == task_id and record.get("run_id") != NOTES_RUN_ID
+            if str(record["id"]).startswith(prefix)
+            and record.get("run_id") != NOTES_RUN_ID
         ]
         return runs[-1] if runs else None
 
@@ -470,36 +649,46 @@ class RunReportStore:
         run, so the note is kept even if no run ever completes; the run's own
         record replaces it when one does.
         """
-        from ww.execution_models.runs import PLAN_SCHEMA_VERSION
-        from ww.storage_adapters.task_document import TASK_STATE_SCHEMA_VERSION
-
+        record = self._new_record(
+            owner,
+            NOTES_RUN_ID,
+            workflow=workflow,
+            agent=agent,
+            runtime=runtime,
+            modes=modes,
+            now=now,
+        )
         with self._lock():
-            record: dict[str, Any] = {
-                "schema": RECORD_SCHEMA,
-                "id": record_id(owner, NOTES_RUN_ID),
-                "kind": self.kind.name,
-                "workflow": workflow or "unknown",
-                "recorded_at": now or _now(),
-                "task_id": owner,
-                "run_id": NOTES_RUN_ID,
-                "agent": agent,
-                "runtime": runtime,
-                "modes": list(modes),
-                "ww_version": __version__,
-                "plan_schema_version": PLAN_SCHEMA_VERSION,
-                "task_state_schema_version": TASK_STATE_SCHEMA_VERSION,
-                "workflow_definition": None,
-                **{array.field: [] for array in self.kind.arrays},
-                "events": self._pending(owner),
-                "reported": None,
-            }
+            record["events"] = _redacted(self.pending(owner), owner, None)
             self._save(record)
         return record
+
+    def events_notice(self, owner: str) -> str:
+        """What the page asking for the assessment says about ``owner``'s events.
+
+        The events ww observed itself are listed as they wait for the run's
+        record, so the agent adds what they miss instead of repeating them.
+        """
+        pending = self.pending(owner)
+        if not pending:
+            return (
+                "ww recorded no events of its own for this run: whatever went "
+                "wrong, only your answers will say so."
+            )
+        listed = "; ".join(
+            f"{event.get('at')} ({event.get('source')}) {event['summary']}"
+            + (f": {event['detail']}" if event.get("detail") else "")
+            for event in pending
+        )
+        return (
+            "ww already recorded these events for this run; add what they miss "
+            f"rather than repeating them: {listed}"
+        )
 
     def _pending_path(self, owner: str) -> Path:
         return self.directory / PENDING_DIRECTORY / f"{task_slug(owner)}.jsonl"
 
-    def _pending(self, owner: str) -> list[dict[str, Any]]:
+    def pending(self, owner: str) -> list[dict[str, Any]]:
         """The events kept for ``owner``; a line that cannot be read is skipped."""
         path = self._pending_path(owner)
         if not path.is_file():
@@ -516,7 +705,7 @@ class RunReportStore:
 
     def _take_pending(self, owners: list[str]) -> list[dict[str, Any]]:
         """Collect and remove the owners' pending events and notes records."""
-        events = [event for owner in owners for event in self._pending(owner)]
+        events = [event for owner in owners for event in self.pending(owner)]
         events.sort(key=lambda event: str(event.get("at", "")))
         for owner in owners:
             self._pending_path(owner).unlink(missing_ok=True)
@@ -623,7 +812,11 @@ def render_listing(store: RunReportStore) -> str:
 
 
 def render_record(record: Mapping[str, Any], kind: ReportKind) -> str:
-    """The record as Markdown: exactly what a report would send."""
+    """The record as Markdown: exactly what a report would send.
+
+    A record's strings were redacted when it was written, so the page and
+    the issue body carry nothing the record does not.
+    """
     lines = [
         f"# {kind.title}: `{record['workflow']}` at {record['recorded_at']}",
         "",
@@ -658,17 +851,15 @@ def render_record(record: Mapping[str, Any], kind: ReportKind) -> str:
                 f"- {event.get('at')} ({event.get('source')}) "
                 f"**{event['summary']}**{detail}"
             )
-    definition = record.get("workflow_definition")
-    if definition is not None:
+    shape = record.get("workflow_shape")
+    if shape is not None:
         lines.extend(
             [
                 "",
-                "<details><summary>Workflow definition</summary>",
+                "<details><summary>Workflow shape</summary>",
                 "",
-                "```yaml",
-                yaml.safe_dump(
-                    definition, sort_keys=False, allow_unicode=True
-                ).rstrip(),
+                "```json",
+                json.dumps(shape, indent=2),
                 "```",
                 "",
                 "</details>",
@@ -701,10 +892,10 @@ def new_issue_url(record: Mapping[str, Any]) -> str:
     url = _issue_url(title, body)
     if len(url) <= MAX_ISSUE_URL_LENGTH:
         return url
-    slim = {**record, "workflow_definition": None}
+    slim = {**record, "workflow_shape": None}
     body = (
         issue_body(slim)
-        + "\n_The workflow definition was left out: too long for a prefilled issue._\n"
+        + "\n_The workflow shape was left out: too long for a prefilled issue._\n"
     )
     url = _issue_url(title, body)
     if len(url) <= MAX_ISSUE_URL_LENGTH:

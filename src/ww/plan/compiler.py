@@ -32,7 +32,7 @@ from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies, interpolate
 from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
-from ww.run_reports import summary_prompt, summary_variables
+from ww.run_reports import debug_item, summary_prompt, summary_variables
 from ww.variables import (
     CHILD_FIELD_PREFIX,
     CHILD_VALUE_NAMES,
@@ -378,6 +378,26 @@ class WorkflowPlanCompiler:
         )
         if transition is not None:
             items.append(transition)
+        summary_hints = ExecutionHints.builtin(
+            self.agent, self.project_config.builtin_settings("workflow_summary")
+        )
+        assessment = debug_item(self.project_config)
+        if not workflow.hands_off and assessment is not None:
+            # With ``debug.collect`` on, the session that drove the run, the
+            # manager under ``auto``, says how ww behaved before the summary.
+            self._append_handler(
+                items,
+                workflow,
+                terminal_step,
+                terminal_step.name,
+                None,
+                "before_complete_workflow",
+                "internal",
+                assessment,
+                (),
+                boundary_hints=replace(summary_hints, role="manager"),
+                annotations=step_annotations(terminal_step),
+            )
         if not workflow.hands_off:
             self._append_handler(
                 items,
@@ -403,9 +423,8 @@ class WorkflowPlanCompiler:
                             )
                         ),
                     ),
-                    # With ``debug.collect`` or ``feedback.collect`` on, the
-                    # summary also asks for ww's and the workflow's assessment,
-                    # kept locally as run reports; no extra step appears.
+                    # With ``feedback.collect`` on, the summary also asks for
+                    # the workflow's assessment, kept locally as a run report.
                     provide=(
                         ProvidedVariable(
                             "summary",
@@ -416,9 +435,7 @@ class WorkflowPlanCompiler:
                 ),
                 (),
                 summary=True,
-                boundary_hints=ExecutionHints.builtin(
-                    self.agent, self.project_config.builtin_settings("workflow_summary")
-                ),
+                boundary_hints=summary_hints,
                 annotations=step_annotations(terminal_step),
             )
         items = self._mark_child_identity(items)
@@ -1202,7 +1219,8 @@ class WorkflowPlanCompiler:
                 text=rule.text,
                 text_hash=rule.text_hash,
                 paths=rule.paths,
-                contains=rule.contains,
+                contains_in_file=rule.contains_in_file,
+                contains_in_diff=rule.contains_in_diff,
                 has_command=rule.check is not None,
                 max_fixes=rule.max_fixes or default_fixes,
                 hints=rule.hints,
@@ -1217,8 +1235,10 @@ class WorkflowPlanCompiler:
                 summary=rule.summary,
                 command=self._plan_check(rule.check, allowed, workdir, rule.id),
                 paths=rule.paths,
-                contains=rule.contains,
+                contains_in_file=rule.contains_in_file,
+                contains_in_diff=rule.contains_in_diff,
                 max_fixes=rule.max_fixes or default_fixes,
+                files=rule.check_files,
             )
             for rule in unique.values()
             if rule.check is not None

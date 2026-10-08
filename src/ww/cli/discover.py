@@ -27,7 +27,6 @@ from ww.open_work import unreadable_tasks
 from ww.project_config import FILE_NAME, ON_REQUEST
 from ww.rule_conversion import scriptize_notice
 from ww.rule_store import RuleStore
-from ww.run_reports import DEBUG, RunReportStore
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
 from ww.task_ids import EXPLICIT_TASK_FORMAT
@@ -159,9 +158,6 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
         },
         # Declared rules no check covers yet; never a reason not to start.
         "rules_notice": _rules_notice(configuration, storage.root),
-        # Collected debug records not reported yet, offered when
-        # ``debug.report`` is on; never a reason not to start.
-        "debug_reports": _debug_reports(storage, config.debug.report),
         "projects": [
             {
                 **project.to_dict(),
@@ -325,7 +321,6 @@ def _markdown(report: dict[str, object]) -> list[str]:
         "",
         *_unreadable_lines(report),
         *_onboarding_lines(report),
-        *_debug_report_lines(report),
         "## Workflows",
         "",
     ]
@@ -548,44 +543,6 @@ def _onboarding_lines(report: dict[str, object]) -> list[str]:
     if not guidance:
         return []
     return ["## Onboarding", "", *(f"- {line}" for line in guidance), ""]
-
-
-def _debug_reports(storage: Storage, offer: bool) -> dict[str, object]:
-    """How many collected debug records await a report, and whether to offer it.
-
-    A record that cannot be read is left to ``debug list``; ``discover`` never
-    fails over it.
-    """
-    try:
-        unreported = len(RunReportStore(storage, DEBUG).unreported())
-    except StateError:
-        unreported = 0
-    return {
-        "unreported": unreported,
-        "offer": offer and unreported > 0,
-        "command": f"{ww_command()} debug report",
-        "skill": "ww-debug-report",
-    }
-
-
-def _debug_report_lines(report: dict[str, object]) -> list[str]:
-    reports = report.get("debug_reports")
-    if not isinstance(reports, dict) or not reports.get("offer"):
-        return []
-    count = int(str(reports["unreported"]))
-    noun = "record" if count == 1 else "records"
-    command = str(reports["command"])
-    return [
-        "## Debug reports to send",
-        "",
-        f"ww has {count} debug {noun} about its own behaviour, collected from "
-        "earlier runs and not reported yet. Before continuing, ask the operator "
-        "once, yes or no, whether to report them to ww's GitHub issues now. On "
-        f"yes, use the `{reports['skill']}` skill (it runs `{command}`), which "
-        "shows each record in full and asks for confirmation before sending "
-        "it; on no, carry on and do not ask again in this session.",
-        "",
-    ]
 
 
 def _rules_notice(configuration: WorkflowConfiguration, root: Path) -> str | None:

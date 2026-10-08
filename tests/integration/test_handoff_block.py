@@ -545,6 +545,7 @@ def test_the_reprint_json_has_the_shape_of_the_block(tmp_path: Path) -> None:
     assert set(payload) == {
         "task_id",
         "continuation_task_id",
+        "run_completed",
         "assignment",
         "steps",
         "files",
@@ -570,3 +571,146 @@ def test_the_completion_page_says_how_to_print_the_block_again(
     assert f"Lost it? `./ww handoff {TASK} --assignment {token}` prints it again." in (
         rendered
     )
+
+
+RULED = CHECKED.replace(
+    "        description: Develop it.\n",
+    "        description: Develop it.\n        rules:\n          - Keep the CLI.\n",
+)
+ONE = """workflows:
+  - name: task
+    steps:
+      - only: The only step.
+"""
+PARENT = """workflows:
+  - name: parent
+    steps:
+      - name: split
+        children:
+          workflow: quick
+  - name: quick
+    steps:
+      - name: work
+"""
+COMPLETE = "Manager: the workflow is complete; `./ww status {}` shows the result."
+
+
+def test_a_held_step_shows_the_checks_of_the_held_attempt(tmp_path: Path) -> None:
+    _repository(tmp_path)
+    service = _auto(tmp_path, RULED)
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    (tmp_path / "broken").write_text("", encoding="utf-8")
+    rejected = _worker_complete(service, "First try.")
+    assert rejected.fix_required is not None
+    (tmp_path / "broken").unlink()
+    (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
+
+    held = _worker_complete(service, "Second try.")
+
+    assert held.completion_held is True
+    block = held.handoff_block
+    assert block is not None
+    (develop,) = block.steps
+    assert (develop.outcome, develop.fix_rounds) == ("held for verification", 1)
+    assert develop.checks and all(status == "passed" for _, status in develop.checks)
+    assert develop.checks_note == "checks passed; rules being verified"
+    assert "  checks: develop/sh passed (checks passed; rules being verified)" in (
+        handoff_markdown(block)
+    )
+    assert block.to_dict()["steps"][0]["checks_note"] == develop.checks_note
+
+    # The verifier rejects it: the step is open again, and the block printed
+    # again names the attempt it shows.
+    assert service.next(TASK, caller_role="manager").item_name == "develop-verify-1"
+    failing = {
+        "id": "develop/1",
+        "status": "judged",
+        "verdict": "fail",
+        "failures": [{"file": "feature.txt", "what": "changes the CLI"}],
+    }
+    service.complete(
+        TASK,
+        artifact="Findings.",
+        rule_results=(json.dumps(failing),),
+        caller_role="worker",
+        assignment=assignment_token(service, TASK),
+    )
+    again = service.handoff(TASK, assignment=token)
+    (develop,) = again.steps
+    assert develop.outcome == "not completed"
+    assert dict(develop.checks)["develop/1"] == "failed"
+    assert develop.checks_note == (
+        "last rejected attempt, re-checked on the next complete"
+    )
+    assert "failed (last rejected attempt, re-checked on the next complete)" in (
+        handoff_markdown(again)
+    )
+
+
+def test_the_block_of_a_completed_run_names_the_status_command(
+    tmp_path: Path,
+) -> None:
+    service = _auto(tmp_path, ONE)
+    service.next(TASK, caller_role="manager")
+
+    ended = _finish(service, TASK)
+
+    block = ended.handoff_block
+    assert block is not None and block.run_completed
+    assert block.to_dict()["run_completed"] is True
+    text = handoff_markdown(block)
+    assert text.endswith(COMPLETE.format(TASK))
+    assert "next" not in text.splitlines()[-1]
+    assert service.handoff(TASK) == block
+    with pytest.raises(StateError, match="already completed"):
+        service.next(TASK, caller_role="manager")
+
+
+def _finish(service: WorkflowService, task_id: str) -> Instruction:
+    """Complete the worker's steps, the summary step included, to the run's end."""
+    while True:
+        # The workflow's own closing step asks for a ``summary`` variable.
+        for variables in ((), (("summary", "Done."),)):
+            try:
+                done = service.complete(
+                    task_id,
+                    variables=variables,
+                    artifact="done",
+                    caller_role="worker",
+                    assignment=assignment_token(service, task_id),
+                    summary_for_next="Done.",
+                )
+                break
+            except StateError as error:
+                if "missing required variable" not in str(error):
+                    raise
+        if done.handoff_block is not None:
+            return done
+
+
+def test_the_block_of_a_completed_child_under_a_completed_parent(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(PARENT, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    service.start("parent", TASK, agent="codex", caller_role="manager")
+    service.next(TASK, caller_role="manager")
+    service.add_child(TASK, "A", "Child work")
+    service.complete(TASK, artifact="Split.", summary_for_next="One child.")
+    assert service.next(TASK, caller_role="manager").item_name == "children"
+    service.start_child(TASK, "A", workflow_name="quick", workflow_runtime="auto")
+    service.next(f"{TASK}/A", caller_role="manager")
+
+    # The last child's end completes the parent's run too; the block, built
+    # before the parent learned of it, says so all the same.
+    done = _finish(service, f"{TASK}/A")
+
+    block = done.handoff_block
+    assert block is not None
+    assert (block.continuation_task_id, block.run_completed) == (TASK, True)
+    assert handoff_markdown(block).endswith(COMPLETE.format(TASK))
+    assert service.load(TASK)[0].status == "completed"
+    assert service.handoff(f"{TASK}/A") == block
+    with pytest.raises(StateError, match="already completed"):
+        service.next(TASK, caller_role="manager")

@@ -258,13 +258,19 @@ def test_a_dispute_needs_a_rejection_naming_the_check(tmp_path: Path) -> None:
     service = _develop(root)
 
     with pytest.raises(StateError, match="nothing to dispute.*run check first"):
-        service.dispute("TASK-1", "docs/header", "It is fine.")
+        service.dispute("TASK-1", ("docs/header",), "It is fine.")
     _violate(root)
     _complete(service)
-    with pytest.raises(StateError, match="nothing to dispute"):
-        service.dispute("TASK-1", "develop/1", "It is fine.")
+    with pytest.raises(StateError, match="nothing to dispute.*'develop/1'"):
+        service.dispute("TASK-1", ("develop/1",), "It is fine.")
+    # All or nothing: one unknown ID refuses the whole dispute.
+    with pytest.raises(StateError, match="failed 'develop/1'"):
+        service.dispute("TASK-1", ("docs/header", "develop/1"), "It is fine.")
     with pytest.raises(StateError, match="--reason must be non-empty"):
-        service.dispute("TASK-1", "docs/header", "  ")
+        service.dispute("TASK-1", ("docs/header",), "  ")
+    _, record = _record(service)
+    assert record.disputes == ()
+    assert not (root / DISPUTES_FILE).exists()
 
 
 def test_a_dispute_stops_the_task_for_the_operator(tmp_path: Path) -> None:
@@ -272,16 +278,16 @@ def test_a_dispute_stops_the_task_for_the_operator(tmp_path: Path) -> None:
     service = _rejected(root)
 
     stop = service.dispute(
-        "TASK-1", "docs/header", "notes.md is a scratch file, not documentation."
+        "TASK-1", ("docs/header",), "notes.md is a scratch file, not documentation."
     )
 
     assert stop.status == "failed"
     assert stop.control == "awaiting_operator"
     assert stop.operator_reason == "check_disputed"
     assert stop.error == "check disputed: docs/header"
-    assert stop.dispute is not None
-    assert stop.dispute.attempt == 1
-    assert stop.dispute.failure.output == "notes.md"
+    (dispute,) = stop.disputes
+    assert dispute.attempt == 1
+    assert dispute.failure.output == "notes.md"
     assert [command.action for command in stop.recovery_commands] == [
         "retry",
         "force",
@@ -295,8 +301,9 @@ def test_a_dispute_stops_the_task_for_the_operator(tmp_path: Path) -> None:
     assert "To let the check stand" in rendered
     assert "To waive `docs/header` for this step" in rendered
     data = json.loads(JsonOutputAdapter().render_instruction(stop))
-    assert data["dispute"]["reason"] == "notes.md is a scratch file, not documentation."
-    assert data["dispute"]["check"]["id"] == "docs/header"
+    (listed,) = data["disputes"]
+    assert listed["reason"] == "notes.md is a scratch file, not documentation."
+    assert listed["check"]["id"] == "docs/header"
     (entry,) = DisputeLog(root).load()
     assert (entry.check, entry.task_id, entry.step, entry.attempt) == (
         "docs/header",
@@ -306,7 +313,7 @@ def test_a_dispute_stops_the_task_for_the_operator(tmp_path: Path) -> None:
     )
     assert entry.text_hash is not None
     state, record = _record(service)
-    assert record.dispute is not None
+    assert [dispute.check for dispute in record.disputes] == ["docs/header"]
     assert state.failure_kind == "check_disputed"
     run = service.tasks.read_task_record("TASK-1")[0][0]
     assert TaskRunAggregate.from_dict(run.to_dict()) == run
@@ -334,10 +341,10 @@ def test_a_dispute_of_the_judged_rule_records_its_wording(tmp_path: Path) -> Non
     assert back.fix_required is not None
     service.next("TASK-1")
 
-    stop = service.dispute("TASK-1", "develop/1", "No flag changed.")
+    stop = service.dispute("TASK-1", ("develop/1",), "No flag changed.")
 
-    assert stop.dispute is not None
-    assert stop.dispute.failure.judged is True
+    (dispute,) = stop.disputes
+    assert dispute.failure.judged is True
     (entry,) = DisputeLog(root).load()
     assert entry.text_hash == rule_text_hash(JUDGED)
 
@@ -345,7 +352,7 @@ def test_a_dispute_of_the_judged_rule_records_its_wording(tmp_path: Path) -> Non
 def test_retry_lets_the_disputed_check_stand(tmp_path: Path) -> None:
     root = _project(tmp_path)
     service = _rejected(root)
-    service.dispute("TASK-1", "docs/header", "Scratch file.")
+    service.dispute("TASK-1", ("docs/header",), "Scratch file.")
 
     service.next("TASK-1", retry=True)
     page = service.next("TASK-1")
@@ -356,7 +363,7 @@ def test_retry_lets_the_disputed_check_stand(tmp_path: Path) -> None:
     assert page.fix_required.attempt == 1
     state, record = _record(service)
     assert state.failure_kind is None
-    assert record.dispute is None
+    assert record.disputes == ()
     assert len(record.check_reports) == 1
     again = _complete(service)
     assert again.fix_required is not None
@@ -366,7 +373,7 @@ def test_retry_lets_the_disputed_check_stand(tmp_path: Path) -> None:
 def test_force_waives_only_the_disputed_check(tmp_path: Path) -> None:
     root = _project(tmp_path)
     service = _rejected(root)
-    service.dispute("TASK-1", "docs/header", "Scratch file.")
+    service.dispute("TASK-1", ("docs/header",), "Scratch file.")
 
     page = service.next("TASK-1", force=True, force_reason="It is a scratch file.")
 
@@ -396,12 +403,85 @@ def test_force_waives_only_the_disputed_check(tmp_path: Path) -> None:
     )
 
 
+def test_one_dispute_covers_several_checks(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service = _rejected(root)
+
+    stop = service.dispute(
+        "TASK-1", ("docs/header", "develop/sh", "docs/header"), "Both expected."
+    )
+
+    assert stop.error == "check disputed: docs/header, develop/sh"
+    assert [dispute.failure.id for dispute in stop.disputes] == [
+        "docs/header",
+        "develop/sh",
+    ]
+    assert {dispute.reason for dispute in stop.disputes} == {"Both expected."}
+    rendered = _markdown(stop)
+    assert (
+        "The step's worker disputes `docs/header`, `develop/sh`, which rejected "
+        "completion attempt 1. Its argument:" in rendered
+    )
+    assert rendered.count("> Both expected.") == 1
+    assert "### `docs/header`" in rendered
+    assert "### `develop/sh` (hook)" in rendered
+    assert "To let the checks stand" in rendered
+    assert "To waive `docs/header`, `develop/sh` for this step" in rendered
+    data = json.loads(JsonOutputAdapter().render_instruction(stop))
+    assert [entry["check"]["id"] for entry in data["disputes"]] == [
+        "docs/header",
+        "develop/sh",
+    ]
+    assert [entry.check for entry in DisputeLog(root).load()] == [
+        "docs/header",
+        "develop/sh",
+    ]
+    assert "waive the disputed checks `docs/header`, `develop/sh`" in (
+        service.force_target("TASK-1")
+    )
+    _, record = _record(service)
+    assert [dispute.check for dispute in record.disputes] == [
+        "docs/header",
+        "develop/sh",
+    ]
+
+    page = service.next("TASK-1", force=True, force_reason="Both expected.")
+
+    assert page.checks_waived == (
+        ("docs/header", "Both expected."),
+        ("develop/sh", "Both expected."),
+    )
+    assert page.fix_required is None
+    _, record = _record(service)
+    assert record.disputes == ()
+
+
+def test_retry_after_a_dispute_of_several_checks_keeps_the_count(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    service = _rejected(root)
+    service.dispute("TASK-1", ("docs/header", "develop/sh"), "Both expected.")
+
+    service.next("TASK-1", retry=True)
+    page = service.next("TASK-1")
+
+    assert page.fix_required is not None
+    assert [failure.id for failure in page.fix_required.failures] == [
+        "docs/header",
+        "develop/sh",
+    ]
+    assert page.fix_required.attempt == 1
+    _, record = _record(service)
+    assert record.disputes == ()
+
+
 def test_lint_lists_disputed_checks(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
     service = _rejected(root)
-    service.dispute("TASK-1", "docs/header", "Scratch file.")
+    service.dispute("TASK-1", ("docs/header",), "Scratch file.")
 
     assert main(["--root", str(root), "lint"]) == 0
 
@@ -452,7 +532,7 @@ def test_the_worker_in_auto_returns_the_dispute(tmp_path: Path) -> None:
 
     stop = service.dispute(
         "TASK-1",
-        "docs/header",
+        ("docs/header",),
         "Scratch file.",
         caller_role="worker",
         assignment=assignment_token(service, "TASK-1"),
@@ -481,14 +561,14 @@ def test_yes_confirms_a_retry_and_a_force(
 ) -> None:
     root = _project(tmp_path)
     service = _rejected(root)
-    service.dispute("TASK-1", "docs/header", "Scratch file.")
+    service.dispute("TASK-1", ("docs/header",), "Scratch file.")
     _no_prompt(monkeypatch)
 
     assert main(["--root", str(root), "next", "TASK-1", "--retry", "--yes"]) == 0
     _, record = _record(service)
-    assert record.dispute is None
+    assert record.disputes == ()
     service.next("TASK-1")
-    service.dispute("TASK-1", "docs/header", "Scratch file, again.")
+    service.dispute("TASK-1", ("docs/header",), "Scratch file, again.")
     code = main(
         [
             "--root",
@@ -628,6 +708,42 @@ def test_rules_lists_groups_and_step_rules(
     assert data["steps"][0]["rules"][0]["id"] == "develop/1"
     assert data["check_guidance"] is None
     assert "scripting" not in data
+
+
+def test_the_listing_and_the_rule_page_show_both_kinds_of_strings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    (root / "rules/docs/mail.md").write_text(
+        '---\npaths: ["*.php"]\ncontains_in_file: [Mailer]\n'
+        "contains_in_diff: [flush]\n---\nFlush the mailer after sending.\n",
+        encoding="utf-8",
+    )
+    _develop(root)
+
+    assert main(["--root", str(root), "rules", "--json"]) == 0
+    (group,) = json.loads(capsys.readouterr().out)["groups"]
+    mail = next(rule for rule in group["rules"] if rule["id"] == "docs/mail")
+    assert (mail["paths"], mail["contains_in_file"], mail["contains_in_diff"]) == (
+        ["*.php"],
+        ["Mailer"],
+        ["flush"],
+    )
+    assert main(["--root", str(root), "rules"]) == 0
+    assert (
+        '- `docs/mail` — *.php; in file "Mailer"; in diff "flush" — Flush the '
+        "mailer after sending." in capsys.readouterr().out
+    )
+    assert main(["--root", str(root), "rule", "TASK-1", "docs/mail"]) == 0
+    out = capsys.readouterr().out
+    assert '- Applies to files whose text holds: "Mailer"' in out
+    assert '- Applies to files whose changed lines hold: "flush"' in out
+    assert main(["--root", str(root), "rule", "TASK-1", "docs/mail", "--json"]) == 0
+    view = json.loads(capsys.readouterr().out)
+    assert (view["contains_in_file"], view["contains_in_diff"]) == (
+        ["Mailer"],
+        ["flush"],
+    )
 
 
 def _counted(root: Path) -> None:

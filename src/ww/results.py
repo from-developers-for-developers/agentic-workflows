@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ww.direct_work import DirectWork
-from ww.executable import DEFAULT_EXECUTABLE
+from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
 from ww.items import WorkItem
 
 
@@ -35,6 +35,9 @@ class InitializationResult:
     permission_notice: bool = True
     # The ww binary the project is configured to run.
     executable: str = DEFAULT_EXECUTABLE
+    # How the commands ww prints for the project invoke it: the launcher, or
+    # a binary the project names.
+    command: str = PROJECT_LAUNCHER_COMMAND
     # The command prefixes an agent must allow to run ww without asking.
     commands: tuple[str, ...] = ()
     # For each set-up agent whose permission format ww knows: the agent, its

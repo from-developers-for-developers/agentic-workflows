@@ -313,18 +313,21 @@ for `catchall`, which ww no longer ships, is not an error: it is ignored, and
 `executable` names the ww binary the project runs, a command on `PATH` or a
 path; every command ww prints starts with it, and the `./ww` launcher runs it.
 Without it, printed commands use `./ww` and the launcher runs
-`ww-agentic-workflows`; `init` writes `ww-agentic-workflows` when it is
-missing. The launcher is ww-owned: `init` rewrites a `./ww` that differs from
+`ww-agentic-workflows`; `init` writes no key, and a key naming
+`ww-agentic-workflows` itself keeps printed commands on `./ww` while the
+launcher is there to run. The launcher is ww-owned: `init` rewrites a `./ww` that differs from
 the current template, and `lint` warns about one. `runtime` (`single` or `auto`) is the runtime `start` uses when
 neither `--runtime` nor the workflow names one, `update_check: false` silences
 the notice that the ww checkout is behind its remote, `debug` and `feedback`
 switch on the [local run reports](features.md#collecting-debug-info-and-workflow-feedback):
-`debug.collect` makes the built-in workflow summary also ask how ww itself
-behaved and keeps one record per run under `.ww/debug/`, `debug.report` makes
-`discover` offer to report unreported records to ww's GitHub issues through
-`ww debug report`, and `feedback.collect` asks how well the workflow was
-composed and keeps the record under `.ww/feedback/`; each is a boolean, off by
-default, and any other key under them is an error. `task_format` is the
+`debug.collect` adds the ww-generated `assess-ww` item before the workflow
+summary, which asks how ww itself behaved (the manager answers it under
+`auto`), and keeps one redacted record per run under `.ww/debug/`;
+`debug.report` enables the operator's `ww debug report` command, the only way
+a record reaches ww's GitHub issues (ww never offers it during work); and
+`feedback.collect` makes the built-in workflow summary also ask how well the
+workflow was composed and keeps the record under `.ww/feedback/`; each is a
+boolean, off by default, and any other key under them is an error. `task_format` is the
 generated task ID format, `rules` holds [the guidance for building
 checks](#guiding-checks-rulescheck_guidance), `projects` lists the
 directories a task may work in, and `extensions` holds each extension's
@@ -339,7 +342,6 @@ with its default, as `init` writes it:
   "feedback_learning": true,
   "debug": {"collect": false, "report": false},
   "feedback": {"collect": false},
-  "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
   "limits": {"rounds": 3, "fixes": 3, "auto_retries": 0},
   "rules": {},
@@ -648,7 +650,13 @@ in `../ww.json` when the wrapper omits it, and is frozen in the saved
 workflow plan. At the limit, ww does not expose a continuation command: it
 reports `awaiting_operator` with `operator_reason: loop_limit` and a warning
 that must be escalated to the user for manual resolution, and shows the operator's exit, `next --force --reason`,
-which leaves the loop and continues with the steps after it.
+which leaves the loop and continues with the steps after it. Below the
+limit the same `next --force --reason` on a body step or on the repeat
+boundary ends the loop after the current item, as long as no worker holds
+one of its items: the body up to and including the boundary is completed
+as skipped with the reason, the boundary records that the operator ended
+the loop, and the run continues with the steps after the wrapper; see
+[ending a loop early](features.md#ending-a-loop-early).
 
 `max_rounds` is invalid without `loop`; use `break` for a worker-controlled
 loop exit.
@@ -1701,9 +1709,11 @@ Controllers must not instantiate services; inject them.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run, and a rule without a check whose globs match none is not applicable and gets no verifier; a rule with neither `paths` nor `contains` applies to every change. |
-| `contains` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, and a rule without a check is not applicable then, as for `paths`. The step page prints the strings after the globs. |
-| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
+| `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run, and a rule without a check whose globs match none is not applicable and gets no verifier; a rule with none of `paths`, `contains_in_file` and `contains_in_diff` applies to every change. |
+| `contains_in_file` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, and a rule without a check is not applicable then, as for `paths`. The step page prints the strings after the globs, as `in file "<string>"`. |
+| `contains_in_diff` | non-empty list of non-empty strings | Narrows the rule to files whose changed lines contain any of the strings: the lines the step added or removed, read from the diff between its two tree marks (no context lines; a new file contributes every line, a binary file none). Plain substrings as for `contains_in_file`, and the two keys combine: a file must satisfy each key present. Without git there are no marks and the whole file is read, as for `contains_in_file`. The step page prints the strings as `in diff "<string>"`. |
+| `contains` | — | Refused: the error names `contains_in_file` and `contains_in_diff`. |
+| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. An optional `files` lists the project files the command needs, such as the script it runs, relative to the step's directory and without a `..` part: when one is missing there, the check is unavailable (see [Running checks](#running-checks)). |
 | `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
 
@@ -1754,7 +1764,7 @@ A mapping defines a rule of the step's own:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `text` | string | The rule. |
-| `argv`, `shell`, `args`, `env`, `assert` | command | Its check; a command without `text` is a pure check, summarised by the command. |
+| `argv`, `shell`, `args`, `env`, `assert`, `files` | command | Its check; a command without `text` is a pure check, summarised by the command. `files` is as in a rule file's `check`. |
 | `max_fixes`, `agent`, `model`, `reasoning` | | As in a rule file. |
 
 One of `text` or a command is required. The step's own rules have IDs
@@ -1793,15 +1803,29 @@ In a shell check, a bare `$WW_STEP_CHANGED_FILES` splits on whitespace, so a
 path containing a space needs `printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs -d '\n'`;
 an `argv` check receives the variable in its environment only.
 
+A check that cannot run is `unavailable`, never failed: a file its `files`
+lists is missing in the step's directory (tested before the command runs),
+the command could not be launched (an `argv` program that does not exist),
+or the shell exited 126 or 127 because the program was not found or not
+executable. The result carries the reason. An unavailable check rejects no
+completion, counts toward no `max_fixes`, is not reused from a held
+completion, and adds nothing to the rule statistics; the rules it checks,
+its own rule or the rules a derived check covers, are judged by a verifier
+for that completion, whose page names the check and the reason. The fix
+page, the fix-limit and dispute pages, `check` and the step artifact list
+unavailable checks apart from the failed ones, as `check unavailable:
+<reason>`.
+
 ### Verifying rules without a command
 
 A rule without a check of its own is never judged by the worker who did the
 step. When that worker completes and the step's checks pass, ww first
 narrows the step's judged rules by its change set as it narrows checks: a
-rule whose `paths` or `contains` select none of the changed files is not
-applicable, is recorded on the step as such (`not applicable (no changed
-file in scope)` in the artifact's `## Rules` section), and gets no verifier;
-a rule with neither applies to every change, even an empty one. When no
+rule whose `paths`, `contains_in_file` or `contains_in_diff` select none of
+the changed files is not applicable, is recorded on the step as such (`not
+applicable (no changed file in scope)` in the artifact's `## Rules` section),
+and gets no verifier; a rule with none of them applies to every change, even
+an empty one. When no
 judged rule remains, the completion is recorded at once. Otherwise ww holds
 the completion, records nothing yet, and inserts **verification items** right
 before the step: agent items ww generates, IDs
@@ -1810,7 +1834,8 @@ remaining rules (the rule's or group's `agent`, `model`, `reasoning`, else
 the step's). Each is an assignment of its own, and asks for a verdict on
 each of its rules; its page shows each rule's scope and, when the scope
 selects fewer than the step's changed files, the changed files in it
-(`paths`, `contains`, `files` on each verification rule in `--json`).
+(`paths`, `contains_in_file`, `contains_in_diff`, `files` on each
+verification rule in `--json`).
 
 When the step begins, each rule without a command resolves once against the
 rule-automation store, and the step keeps what it resolved: `converted` when
@@ -1841,8 +1866,9 @@ held completion as submitted.
 `ww-scriptize-rules` is switched off and when it is the workflow started,
 and never blocks anything. `lint` warns with the IDs of those rules and
 suggests `ww-scriptize-rules` only while it is switched on. `lint` also
-hints at the judged rules with neither `paths` nor `contains`, which a
-verifier judges after every step, and at a rule the local counters
+hints at the judged rules with neither `paths` nor `contains_in_file` nor
+`contains_in_diff`, which a verifier judges after every step, and at a rule
+the local counters
 (`rules stats`) show waived or left out by the change set five times or
 more without ever applying.
 
@@ -1917,8 +1943,8 @@ or `schema_version` is an error.
 | Command | Effect |
 | --- | --- |
 | `handoff <task> [--run ID] [--assignment TOKEN] [--json]` | Prints the "Handoff to manager" block of an ended assignment again, exactly as `handoff_markdown` gave it to the worker; `--json` prints the block's `to_dict()` (`task_id`, `continuation_task_id`, `assignment`, `steps`, `files`, `files_reproducible`, `summary`, `error`). Without `--assignment` it is the most recently ended assignment of the run. An assignment still open is refused with "assignment <token> has not ended; complete or fail its step first"; an unknown token is refused too. The block is built from saved state: the file list is reproduced only while the assignment is the latest one and its change mark is available, and otherwise reads "Files changed: not reproducible after the assignment ended" (`files_reproducible` false). A reprinted loop round reads each item's last record, and carries no loop break or continue outcome. Read only; not written to the audit log. |
-| `check <task> [--json]` | Runs the checks of the step in progress against its change set so far, exactly as `complete` would, and prints the failures in the fix page's shape, or `All checks pass`, plus the rules a verifier judges at completion. Records nothing: no attempt counts and no output is kept. Exits 1 when a check fails. Not written to the audit log. |
-| `dispute <task> --rule <id> --reason "<why>"` | Only while the step is in progress, and only for an ID a rejected completion of it failed: a rule, a `fix` hook, a derived check, or a judged rule. Stops the task with `operator_reason: check_disputed`; the page shows the check's text, command, and last output, and the worker's reason. |
+| `check <task> [--json]` | Runs the checks of the step in progress against its change set so far, exactly as `complete` would, and prints the failures in the fix page's shape, or `All checks pass`, plus the rules a verifier judges at completion, and lists a check that cannot run here apart as `check unavailable: <reason>`. Records nothing: no attempt counts and no output is kept. Exits 1 when a check fails; an unavailable check is no failure. Not written to the audit log. |
+| `dispute <task> --rule <id>... --reason "<why>"` | Only while the step is in progress, and only for IDs a rejected completion of it failed: a rule, a `fix` hook, a derived check, or a judged rule. `--rule` is repeated for several checks, with one reason for them all; an ID none failed refuses the whole dispute, and each disputed check gets its own entry in the dispute log. Stops the task with `operator_reason: check_disputed`; the page shows each check's text, command, and last output, and the worker's reason; `disputes` in JSON lists them. `next --retry` lets them all stand, `next --force` waives them all. |
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed, its local `stats` counters as `rules stats` lists them), then each step's own rules and the groups it names, then the `targets`: every workflow's steps in tree order, `init` left out, each with its leaf `step` name, its logical `path` (the precise `steps` selector; loop bodies, nested steps, per-item and per-child stages take their parent's path as a prefix), whether it is `agent_owned` (a loop or nested sequence only holds its steps; an extension or ww-owned action takes no rules), and the `groups` reaching it now, by filter or by name, empty for a step that is not an agent's. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
@@ -1926,9 +1952,9 @@ or `schema_version` is an error.
 | `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project and refused when absolute or with a `..` part. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
 | `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
-| `rules add <group> --text "<text>" [--paths <glob>...] [--contains <text>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in `--dir <path>`, else in the group's first directory item, else beside the group's last file item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. A file no listed directory holds is appended to the group's `rules` list, relative to the declaring file as its other entries are: in `ww-rules.yaml` by rewriting the file whole, in any other file as one added line, checked to change nothing else and refused, naming the line to add by hand, when the list cannot be extended that way (a flow list, an anchor, a tag). Refuses an existing file, a group that lists neither a directory nor a file when `--dir` is absent, and a group an extension ships. Reports each glob's match count, and the number of project files containing each `--contains` string, and warns about one found nowhere. `--assert` is repeatable, one condition each. |
+| `rules add <group> --text "<text>" [--paths <glob>...] [--contains-in-file <text>...] [--contains-in-diff <text>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in `--dir <path>`, else in the group's first directory item, else beside the group's last file item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. A file no listed directory holds is appended to the group's `rules` list, relative to the declaring file as its other entries are: in `ww-rules.yaml` by rewriting the file whole, in any other file as one added line, checked to change nothing else and refused, naming the line to add by hand, when the list cannot be extended that way (a flow list, an anchor, a tag). Refuses an existing file, a group that lists neither a directory nor a file when `--dir` is absent, and a group an extension ships. Reports each glob's match count and the number of project files containing each string, and warns about a `--contains-in-file` string found nowhere (a `--contains-in-diff` string may arrive with a change, so it only gets the count). `--assert` is repeatable, one condition each. |
 | `rules add --group <name> --dir <path> [--workflows <name>...] [--steps <name>...]` | `<path>` is relative to the project root and inside it. Adds the group `{rules: [<path>/], workflows, steps}` to `ww-rules.yaml` and, the first time, `ww-rules.yaml` to the repo file's `imports`; creates the directory. A filter option without a name writes `[]`; `'*'` alone writes `"*"`. |
-| `rules edit <id> [--text "<text>"] [--paths <glob>...] [--contains <text>...]` | Replaces a rule file's body, its `paths`, its `contains`, or any of them, keeping every other byte, and reports matches as `rules add` does; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
+| `rules edit <id> [--text "<text>"] [--paths <glob>...] [--contains-in-file <text>...] [--contains-in-diff <text>...]` | Replaces a rule file's body, its `paths`, its `contains_in_file`, its `contains_in_diff`, or any of them, keeping every other byte, and reports matches as `rules add` does; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
 | `rules move <id> <group>` | Moves the rule file unchanged into the group's first directory, or beside the group's last file item and into its `rules` list as `rules add` lists a file; the rule's ID becomes `<group>/<stem>`. |
 | `rules filter <group> [--workflows <name>...] [--steps <name>...] [--all-workflows] [--all-steps]` | Sets a `ww-rules.yaml` group's filters; `--workflows '*'` / `--steps '*'` writes `"*"`, and `--all-*` removes one, which also admits all. Refuses a group declared in another file. |
 | `rules promote <check>` | Copies a `converted` store check without a pending revision into the `check` of every rule file whose wording it covers, then deletes the check and those rules' entries from the store. Refuses when a covered rule is written in a step's `rules` list or already has a check. |
@@ -1965,7 +1991,7 @@ At a `check_disputed` stop the operator answers with `next`:
 | Option | Effect |
 | --- | --- |
 | `--retry` | The check stands: the dispute is cleared, the rejection keeps counting toward `max_fixes`, and the next `next` hands the step back to its worker. |
-| `--force --reason "<why>"` | Waives the disputed ID for this step: its check does not run, or its rule is not verified, when the worker completes again, and the artifact records the waiver. |
+| `--force --reason "<why>"` | Waives every disputed ID for this step: their checks do not run, or their rules are not verified, when the worker completes again, and the artifact records the waivers. |
 
 At the `fix_limit` stop `--force` waives every check and rule of the step. The
 step record keeps its waivers as `checks_waived`, a mapping of ID to reason.

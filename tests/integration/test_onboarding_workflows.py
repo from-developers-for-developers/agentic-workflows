@@ -17,7 +17,7 @@ from ww.cli.parser import build_parser
 from ww.config import load_configuration
 from ww.config_files import SHARED_RUNTIME_FILES
 from ww.defaults import SKILLS
-from ww.executable import printed_executable
+from ww.executable import PROJECT_LAUNCHER_COMMAND, printed_executable
 from ww.extensions import ExtensionRegistry
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -175,7 +175,7 @@ def test_steps_name_ww_commands_with_the_configured_executable(
     assert gather.item_name == "gather"
     assert "`ww-next discover`" in gather.action_text
     assert "{{" not in gather.action_text
-    with printed_executable(None):
+    with printed_executable(PROJECT_LAUNCHER_COMMAND):
         values = runtime_variable_values(root, "T-1")
     assert values[EXECUTABLE] == "./ww"
 
@@ -585,7 +585,8 @@ def test_the_rule_skill_prefers_a_scoped_rule() -> None:
     path = Path(__file__).parents[2] / "src/ww/assets/ww-rule_skill.md"
     skill = " ".join(path.read_text(encoding="utf-8").split())
     assert "Prefer a scoped rule" in skill
-    assert "give `--paths`" in skill and "`--contains`" in skill
+    assert "give `--paths`" in skill
+    assert "`--contains-in-diff`" in skill and "`--contains-in-file`" in skill
     assert (
         "an unscoped rule without a check is verified after every step that "
         "changes anything"

@@ -329,9 +329,9 @@ def test_operator_force_leaves_a_loop_at_its_limit(tmp_path: Path) -> None:
 
     # A running loop is not forceable: only a failed, interrupted, or
     # limit-stopped task is.
-    with pytest.raises(StateError, match="not stopped at a loop limit"):
+    with pytest.raises(StateError, match="is not in a loop"):
         service.force_target("TASK-EXIT")
-    with pytest.raises(StateError, match="not stopped at a loop limit"):
+    with pytest.raises(StateError, match="is not in a loop"):
         service.next("TASK-EXIT", force=True, force_reason="no", caller_role="manager")
 
     _complete_iteration(service, "TASK-EXIT")
@@ -355,6 +355,143 @@ def test_operator_force_leaves_a_loop_at_its_limit(tmp_path: Path) -> None:
     assert boundary.status == "completed"
     assert "Force reason: findings accepted by the operator" in (boundary.error or "")
     assert dict(state.loop_iterations) == {"review-and-fix": 1}
+
+
+RUNNING = """workflows:
+  - task: ~
+    steps:
+      - review-and-fix: ~
+        assignment: per_step
+        loop:
+          - review: Review the implementation.
+            break: There are no meaningful findings.
+          - fix: Fix the review findings.
+      - finish: Wrap up.
+"""
+ENDED_BY_OPERATOR = (
+    "end the `review-and-fix` loop now and continue with the steps after it"
+)
+
+
+def _loop_records(service: WorkflowService, task_id: str) -> dict[str, object]:
+    state, snapshot = service.load(task_id)
+    records = {
+        item.id.partition(":loop:")[2] or item.name: record
+        for item, record in zip(snapshot.plan.items, state.item_executions, strict=True)
+    }
+    return {**records, "iterations": dict(state.loop_iterations)}
+
+
+def test_operator_force_ends_a_running_loop_from_a_body_step(tmp_path: Path) -> None:
+    (tmp_path / "ww.yaml").write_text(RUNNING, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(
+        service,
+        "task",
+        "TASK-END",
+        agent="codex",
+        workflow_runtime="auto",
+        caller_role="manager",
+    )
+    assert service.next("TASK-END", caller_role="manager").item_name == "review"
+    reviewed = service.complete(
+        "TASK-END",
+        artifact="findings",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-END"),
+        summary_for_next="Two findings.",
+    )
+    # ``per_step``: the next body step waits for the manager, nobody holds it.
+    assert reviewed.next_role == "manager"
+    assert service.force_target("TASK-END") == ENDED_BY_OPERATOR
+
+    after = service.next(
+        "TASK-END",
+        force=True,
+        force_reason="Not worth another round.",
+        caller_role="manager",
+    )
+
+    assert after.item_name == "finish"
+    records = _loop_records(service, "TASK-END")
+    assert records["iterations"] == {"review-and-fix": 1}
+    assert records["review"].status == "completed" and records["review"].attempts
+    assert records["fix"].status == "completed" and not records["fix"].attempts
+    assert records["fix"].result == (
+        "skipped because the operator ended the 'review-and-fix' loop"
+    )
+    boundary = records["repeat:1"]
+    assert boundary.status == "completed"
+    assert boundary.error == (
+        "operator ended the loop\nForce reason: Not worth another round."
+    )
+    # The run goes on after the loop, to the workflow's own closing step.
+    done = service.complete(
+        "TASK-END",
+        artifact="wrapped up",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-END"),
+        summary_for_next="Done.",
+    )
+    assert (done.item_name, done.item_status) == (
+        "update-workflow-summary",
+        "in_progress",
+    )
+    assert _loop_records(service, "TASK-END")["finish"].status == "completed"
+
+
+def test_operator_force_ends_a_running_loop_at_its_repeat_boundary(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        RUNNING.replace("        assignment: per_step\n", ""), encoding="utf-8"
+    )
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(service, "task", "TASK-END", agent="codex", caller_role="manager")
+    _complete_iteration(service, "TASK-END")
+    before = service.status("TASK-END", caller_role="manager")
+    assert (before.action_kind, before.loop_limit_reached) == ("loop", False)
+    assert service.force_target("TASK-END") == ENDED_BY_OPERATOR
+
+    after = service.next(
+        "TASK-END", force=True, force_reason="Good enough.", caller_role="manager"
+    )
+
+    assert after.item_name == "finish"
+    records = _loop_records(service, "TASK-END")
+    assert records["iterations"] == {"review-and-fix": 1}
+    assert records["fix"].attempts
+    boundary = records["repeat:1"]
+    assert boundary.status == "completed"
+    assert boundary.error == "operator ended the loop\nForce reason: Good enough."
+
+
+def test_operator_force_is_refused_while_a_worker_holds_a_loop_item(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(RUNNING, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    start_after_init(
+        service,
+        "task",
+        "TASK-END",
+        agent="codex",
+        workflow_runtime="auto",
+        caller_role="manager",
+    )
+    assert service.next("TASK-END", caller_role="manager").item_name == "review"
+    held = "`review` is in progress with a worker"
+
+    with pytest.raises(StateError, match=held) as refused:
+        service.force_target("TASK-END")
+    with pytest.raises(StateError, match=held):
+        service.next("TASK-END", force=True, force_reason="no", caller_role="manager")
+
+    assert "`next TASK-END --reassign`" in str(refused.value)
+    assert "`fail TASK-END`" in str(refused.value)
+    assert service.status("TASK-END", caller_role="manager").item_status == (
+        "in_progress"
+    )
 
 
 def test_cli_force_is_checked_before_the_operator_is_asked(
@@ -385,7 +522,7 @@ def test_cli_force_is_checked_before_the_operator_is_asked(
 
     monkeypatch.setattr("builtins.input", refuse_prompt)
     assert main([*root, *force]) == 1
-    assert "not stopped at a loop limit" in capsys.readouterr().err
+    assert "is not in a loop" in capsys.readouterr().err
 
     service.next("TASK-CLI")
     service.complete("TASK-CLI", artifact="findings", summary_for_next="Done.")

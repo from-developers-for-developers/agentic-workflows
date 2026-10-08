@@ -16,7 +16,7 @@ from pathlib import Path
 from ww.execution_models import PlanItemExecution
 from ww.plan import PlanItem
 
-from .commands import next_command
+from .commands import next_command, status_command
 from .models import HandoffBlock, HandoffStep
 
 HANDOFF_TITLE = "Handoff to manager"
@@ -33,6 +33,7 @@ def handoff_block(
     error: str | None,
     loop_outcome: tuple[str, str] | None = None,
     continuation_task_id: str | None = None,
+    run_completed: bool = False,
     choosing_outcome_of: str | None = None,
     outcomes: tuple[str, ...] = (),
 ) -> HandoffBlock:
@@ -44,8 +45,9 @@ def handoff_block(
     ``loop_outcome`` names the item that broke or continued its loop and
     which it did. ``continuation_task_id`` names the task the manager
     continues with when that is not ``task_id``: the parent of a child whose
-    run has ended. ``outcomes`` are the answers the manager chooses from when
-    the assignment ended with the assessment ``choosing_outcome_of``.
+    run has ended; ``run_completed`` says that run has nothing left to run.
+    ``outcomes`` are the answers the manager chooses from when the
+    assignment ended with the assessment ``choosing_outcome_of``.
     """
     steps = tuple(
         step
@@ -72,6 +74,7 @@ def handoff_block(
         summary=summary,
         error=error,
         continuation_task_id=continuation_task_id,
+        run_completed=run_completed,
         choosing_outcome_of=choosing_outcome_of,
         outcomes=outcomes,
     )
@@ -98,7 +101,21 @@ def _step(
         outcome = "not completed"
     else:
         return None
-    last = record.check_reports[-1] if record.check_reports else None
+    # The results of a held completion live with it until it is recorded;
+    # the record's own last report is then the rejected attempt before it.
+    note = None
+    if record.held_completion is not None:
+        last = record.held_completion.report
+        note = "checks passed; rules being verified"
+    else:
+        last = record.check_reports[-1] if record.check_reports else None
+        if record.status in {"pending", "in_progress"}:
+            note = "last rejected attempt, re-checked on the next complete"
+    checks = (
+        tuple((result.id, result.status) for result in last.results)
+        if last is not None
+        else ()
+    )
     return HandoffStep(
         name=item.name,
         outcome=outcome,
@@ -107,11 +124,8 @@ def _step(
         else str((root / record.artifact).resolve())
         if record.artifact
         else None,
-        checks=(
-            tuple((result.id, result.status) for result in last.results)
-            if last is not None
-            else ()
-        ),
+        checks=checks,
+        checks_note=note if checks else None,
         checks_waived=tuple(check_id for check_id, _ in record.checks_waived),
         fix_rounds=record.repair_failures
         or sum(1 for report in record.check_reports if report.failed),
@@ -130,10 +144,9 @@ def handoff_markdown(block: HandoffBlock) -> str:
         if step.artifact:
             lines.append(f"  artifact: {step.artifact}")
         if step.checks:
-            lines.append(
-                "  checks: "
-                + ", ".join(f"{check} {status}" for check, status in step.checks)
-            )
+            results = ", ".join(f"{check} {status}" for check, status in step.checks)
+            note = f" ({step.checks_note})" if step.checks_note else ""
+            lines.append(f"  checks: {results}{note}")
         if step.checks_waived:
             lines.append("  waived: " + ", ".join(step.checks_waived))
         if step.fix_rounds:
@@ -167,6 +180,15 @@ def handoff_markdown(block: HandoffBlock) -> str:
                     f"- {label}: `{next_command(target, outcome=label)}`"
                     for label in block.outcomes
                 ),
+            ]
+        )
+        return "\n".join(lines)
+    if block.run_completed:
+        lines.extend(
+            [
+                "",
+                "Manager: the workflow is complete; "
+                f"`{status_command(target)}` shows the result.",
             ]
         )
         return "\n".join(lines)

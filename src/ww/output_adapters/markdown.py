@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
 from ww.assessments import AssessmentOutcome
+from ww.changes import Scope, is_scoped
 from ww.children import ChildTask
 from ww.config_files import SETTINGS_FILE
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX, OperatorReason
@@ -37,6 +38,7 @@ from ww.instructions.commands import (
 )
 from ww.instructions.handoff import HANDOFF_TITLE, handoff_markdown
 from ww.instructions.models import (
+    CheckUnavailable,
     FixFailure,
     HandoffBlock,
     VerificationPage,
@@ -203,7 +205,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                     "  " + terminal_accent("Run commands manually"),
                     "     Use the project launcher for any ww command:",
                     "",
-                    f"     {shlex.quote(result.executable)} workflows",
+                    f"     {shlex.quote(result.command)} workflows",
                     "",
                     *_initialization_shortcut(result.executable),
                 ]
@@ -938,7 +940,7 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
     if judged:
         lines.append("")
         for rule in judged:
-            scope = rule_scope(rule.paths, rule.contains)
+            scope = rule_scope(rule)
             lines.append(f"- `{rule.id}`{scope} — {rule.summary}")
             if rule.interpretation:
                 lines.append(f"  {rule.interpretation}")
@@ -982,20 +984,26 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
     )
 
 
-def rule_scope(paths: tuple[str, ...], contains: tuple[str, ...]) -> str:
+def rule_scope(scope: Scope) -> str:
     """What a rule line says its files are, as a dash-led clause, or nothing."""
-    scope = scope_text(paths, contains)
-    return f" — {scope}" if scope else ""
+    text = scope_text(scope)
+    return f" — {text}" if text else ""
 
 
-def scope_text(paths: tuple[str, ...], contains: tuple[str, ...]) -> str:
-    """A rule's scope: its globs, then the strings its files contain."""
+def scope_text(scope: Scope) -> str:
+    """A rule's scope: its globs, then the strings its files hold, in the
+    file's text (``in file``) or in the lines the step changed (``in diff``).
+    """
+    strings = (
+        ("in file", scope.contains_in_file),
+        ("in diff", scope.contains_in_diff),
+    )
     parts = [
-        *([", ".join(paths)] if paths else []),
+        *([", ".join(scope.paths)] if scope.paths else []),
         *(
-            ["containing " + ", ".join(f'"{text}"' for text in contains)]
-            if contains
-            else []
+            f"{where} " + ", ".join(f'"{text}"' for text in texts)
+            for where, texts in strings
+            if texts
         ),
     ]
     return "; ".join(parts)
@@ -1009,13 +1017,16 @@ def _fix_required(lines: Lines, instruction: Instruction) -> None:
     lines.extend(
         [
             f"## Fix required: {failed} of {fix.checks} checks failed "
-            f"(attempt {fix.attempt} of {fix.max_fixes})",
+            f"(attempt {fix.attempt} of {fix.max_fixes} for `{fix.limiting}`)",
             "",
             "ww did not record your completion: the checks below failed on the "
-            "files this step changed. The step is still yours.",
+            "files this step changed. The step is still yours. Each check "
+            "counts its own failures; the step stops for the operator when any "
+            "one reaches its limit.",
         ]
     )
     _fix_failures(lines, fix.failures)
+    _checks_unavailable(lines, fix.unavailable)
     lines.extend(
         [
             "",
@@ -1024,7 +1035,8 @@ def _fix_required(lines: Lines, instruction: Instruction) -> None:
             f"`{check_command(instruction.task_id)}` previews the checks.",
             "",
             "If a check is wrong for this change, do not work around it: "
-            "dispute it with the evidence, and the operator decides:",
+            "dispute it with the evidence, and the operator decides; repeat "
+            "`--rule` for several checks:",
             "",
             "```console",
             dispute_command(
@@ -1090,6 +1102,10 @@ def _fix_failures(lines: Lines, failures: tuple[FixFailure, ...]) -> None:
         _append_section(lines, f"`{failure.id}`{suffix}")
         if failure.text:
             lines.extend([failure.text, ""])
+        if failure.failures:
+            lines.append(
+                f"Failures: {failure.failures} of {failure.max_fixes} allowed."
+            )
         if failure.command:
             lines.append(f"Command: {failure.command}")
         output = failure.output.strip()
@@ -1098,6 +1114,25 @@ def _fix_failures(lines: Lines, failures: tuple[FixFailure, ...]) -> None:
         else:
             lines.append("Output:" if output else "Output: nothing")
         lines.extend(f"    {line}" for line in output.splitlines())
+
+
+def _checks_unavailable(lines: Lines, checks: tuple[CheckUnavailable, ...]) -> None:
+    """The checks that could not run: neither passed nor failed, judged instead."""
+    if not checks:
+        return
+    lines.extend(
+        [
+            "",
+            "These checks could not run here; they count neither as passed nor "
+            "as failed, and a verifier judges their rules instead:",
+            "",
+            *(
+                f"- `{check.id}`{' (hook)' if check.hook else ''}: check "
+                f"unavailable: {check.reason}"
+                for check in checks
+            ),
+        ]
+    )
 
 
 def _verification(lines: Lines, instruction: Instruction) -> None:
@@ -1125,8 +1160,13 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
                 f"  Its check `{rule.check}` does not run here: `{rule.missing}` "
                 "is missing in this step's directory, so judge it instead."
             )
-        if rule.paths or rule.contains:
-            lines.append(f"  Scope: {scope_text(rule.paths, rule.contains)}")
+        if rule.unavailable is not None:
+            lines.append(
+                f"  Its check `{rule.check}` could not run here (check "
+                f"unavailable: {rule.unavailable}), so judge it instead."
+            )
+        if is_scoped(rule):
+            lines.append(f"  Scope: {scope_text(rule)}")
             if rule.files != page.files:
                 lines.append(
                     f"  Changed files in its scope ({len(rule.files)}): "
@@ -1650,7 +1690,7 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
     if instruction.fix_required is not None:
         _fix_limit(lines, instruction)
         return
-    if instruction.dispute is not None:
+    if instruction.disputes:
         _check_disputed(lines, instruction)
         return
     if instruction.operator_reason == "value_unavailable":
@@ -1783,11 +1823,13 @@ def _fix_limit(lines: Lines, instruction: Instruction) -> None:
     lines.extend(
         [
             "",
-            f"ww rejected this step's completion {fix.attempt} times; the last "
-            "attempt failed these checks:",
+            f"ww rejected this step's completion: `{fix.limiting}` failed "
+            f"{fix.attempt} of {fix.max_fixes} times allowed. The last attempt "
+            "failed these checks:",
         ]
     )
     _fix_failures(lines, fix.failures)
+    _checks_unavailable(lines, fix.unavailable)
     if worker:
         lines.extend(
             [
@@ -1818,28 +1860,36 @@ def _fix_limit(lines: Lines, instruction: Instruction) -> None:
 
 
 def _check_disputed(lines: Lines, instruction: Instruction) -> None:
-    """The worker disputes a check: its argument, the check, the choices."""
-    dispute = instruction.dispute
-    assert dispute is not None
+    """The worker disputes checks: its argument, the checks, the choices."""
+    disputes = instruction.disputes
+    assert disputes
     worker = (
         instruction.workflow_runtime != "single" and instruction.caller_role == "worker"
     )
+    names = ", ".join(f"`{dispute.failure.id}`" for dispute in disputes)
+    several = len(disputes) > 1
+    attempts = ", ".join(
+        str(attempt) for attempt in dict.fromkeys(d.attempt for d in disputes)
+    )
+    # One command raises every dispute, with one argument for them all.
+    reasons = dict.fromkeys(dispute.reason for dispute in disputes)
     lines.extend(
         [
             "",
-            f"The step's worker disputes `{dispute.failure.id}`, which rejected "
-            f"completion attempt {dispute.attempt}. Its argument:",
+            f"The step's worker disputes {names}, which rejected completion "
+            f"attempt{'s' if ',' in attempts else ''} {attempts}. Its argument:",
             "",
-            *(f"> {line}" for line in dispute.reason.splitlines()),
+            *(f"> {line}" for reason in reasons for line in reason.splitlines()),
         ]
     )
-    _fix_failures(lines, (dispute.failure,))
+    _fix_failures(lines, tuple(dispute.failure for dispute in disputes))
     if worker:
         lines.extend(
             [
                 "",
                 f"Stop here. {_return_phrase(instruction)}: the operator "
-                "decides whether the check stands.",
+                f"decides whether the check{'s' if several else ''} "
+                f"stand{'' if several else 's'}.",
             ]
         )
         return
@@ -1847,17 +1897,18 @@ def _check_disputed(lines: Lines, instruction: Instruction) -> None:
     lines.extend(
         [
             "The step is paused and nothing else runs until the user, who is "
-            "the `ww` operator, decides. Show them the check, its output and "
-            "the worker's argument above, quoted, and ask for one of these "
-            "choices; do not pick for them.",
+            f"the `ww` operator, decides. Show them the check{'s' if several else ''}, "
+            f"{'their' if several else 'its'} output and the worker's argument "
+            "above, quoted, and ask for one of these choices; do not pick for "
+            "them.",
         ]
     )
     for command in instruction.recovery_commands:
         purpose = (
-            "to let the check stand: the worker fixes its work, and the "
-            "rejection still counts toward the fix limit"
+            f"to let the check{'s' if several else ''} stand: the worker fixes "
+            "its work, and the rejection still counts toward the fix limit"
             if command.action == "retry"
-            else f"to waive `{dispute.failure.id}` for this step, only with the "
+            else f"to waive {names} for this step, only with the "
             "operator's explicit approval; the artifact records the reason"
         )
         lines.extend(

@@ -139,6 +139,11 @@ def handoff_command(task_id: str, assignment: str | None = None) -> str:
     return _command(*parts)
 
 
+def status_command(task_id: str) -> str:
+    """Show the task's state and result."""
+    return _command("status", _arg(task_id))
+
+
 def artifacts_command(task_id: str, run_id: str | None = None) -> str:
     parts = ["artifacts", _arg(task_id)]
     if run_id is not None:

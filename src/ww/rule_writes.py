@@ -181,7 +181,8 @@ def plan_add_rule(
     text: str,
     *,
     paths: tuple[str, ...] = (),
-    contains: tuple[str, ...] = (),
+    contains_in_file: tuple[str, ...] = (),
+    contains_in_diff: tuple[str, ...] = (),
     check: dict[str, Any] | None = None,
     stem: str | None = None,
     directory: Path | None = None,
@@ -212,13 +213,17 @@ def plan_add_rule(
     frontmatter: dict[str, Any] = {}
     if paths:
         frontmatter["paths"] = list(paths)
-    if contains:
-        frontmatter["contains"] = list(contains)
+    if contains_in_file:
+        frontmatter["contains_in_file"] = list(contains_in_file)
+    if contains_in_diff:
+        frontmatter["contains_in_diff"] = list(contains_in_diff)
     if check is not None:
         frontmatter["check"] = check
     content = f"---\n{dump_yaml(frontmatter)}---\n{body}" if frontmatter else body
     rule_id = f"{group.name}/{stem}"
-    contains_report, contains_warnings = _contains_findings(project, contains)
+    contains_report, contains_warnings = _contains_findings(
+        project, contains_in_file, contains_in_diff
+    )
     writes = [FileWrite(file, content)]
     report = [f"Created {project.label(file)}: rule `{rule_id}`."]
     if listed:
@@ -286,11 +291,19 @@ def plan_edit(
     *,
     text: str | None = None,
     paths: tuple[str, ...] | None = None,
-    contains: tuple[str, ...] | None = None,
+    contains_in_file: tuple[str, ...] | None = None,
+    contains_in_diff: tuple[str, ...] | None = None,
 ) -> RuleWrite:
     """A rule file with a new body, globs or strings; the rest kept as it is."""
-    if text is None and paths is None and contains is None:
-        raise StateError("rules edit needs --text, --paths, --contains, or a mix")
+    strings = {
+        "contains_in_file": contains_in_file,
+        "contains_in_diff": contains_in_diff,
+    }
+    if text is None and paths is None and all(v is None for v in strings.values()):
+        raise StateError(
+            "rules edit needs --text, --paths, --contains-in-file, "
+            "--contains-in-diff, or a mix"
+        )
     rule, file = _rule_file(project, rule_id)
     opening, frontmatter, closing, body = _split(file.read_text(encoding="utf-8"))
     report = [f"Edited {project.label(file)}: rule `{rule_id}`."]
@@ -300,12 +313,15 @@ def plan_edit(
         opening, closing = opening or _DELIMITER, closing or _DELIMITER
         report.extend(_glob_report(project, paths))
         warnings.extend(_glob_warnings(project, paths))
-    if contains is not None:
-        frontmatter = _set_key(frontmatter or "", "contains", list(contains), file)
-        opening, closing = opening or _DELIMITER, closing or _DELIMITER
-        contains_report, contains_warnings = _contains_findings(project, contains)
-        report.extend(contains_report)
-        warnings.extend(contains_warnings)
+    for key, texts in strings.items():
+        if texts is not None:
+            frontmatter = _set_key(frontmatter or "", key, list(texts), file)
+            opening, closing = opening or _DELIMITER, closing or _DELIMITER
+    contains_report, contains_warnings = _contains_findings(
+        project, contains_in_file or (), contains_in_diff or ()
+    )
+    report.extend(contains_report)
+    warnings.extend(contains_warnings)
     if text is not None:
         body = _body(text)
         if rule_text_hash(body) == rule.text_hash:
@@ -924,18 +940,25 @@ def _glob_warnings(project: RuleProject, paths: tuple[str, ...]) -> tuple[str, .
 
 
 def _contains_findings(
-    project: RuleProject, contains: tuple[str, ...]
+    project: RuleProject,
+    contains_in_file: tuple[str, ...],
+    contains_in_diff: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """What each ``contains`` string matches now, as report lines and warnings."""
-    if not contains:
+    """What each string matches now, as report lines and warnings.
+
+    A string no project file holds is a warning for ``contains_in_file``,
+    where the rule applies to no file until one holds it; a change may still
+    add a line with it, so for ``contains_in_diff`` the count is only reported.
+    """
+    if not (contains_in_file or contains_in_diff):
         return (), ()
     files = project_files(project.root)
     report: list[str] = []
     warnings: list[str] = []
-    for text in contains:
-        count = len(select_files(files, (), (text,), project.root))
+    for text in (*contains_in_file, *contains_in_diff):
+        count = len(select_files(files, (), (text,), directory=project.root))
         report.append(f"`{text}` is in {count} file(s) now.")
-        if not count:
+        if not count and text in contains_in_file:
             warnings.append(
                 f"`{text}` is in no file of the project, so the rule applies to "
                 "no file until one contains it"

@@ -9,8 +9,9 @@ step's worker completes and its checks pass, ww holds the completion and
 inserts verification items right before the step: ww-generated agent items,
 one per distinct worker hint set among the judged rules, each giving a
 ``pass`` or ``fail`` verdict on its rules. A judged rule is narrowed by the
-step's change set as a check is: one whose ``paths`` or ``contains`` select
-none of the changed files is not applicable, recorded on the step so the
+step's change set as a check is: one whose ``paths``, ``contains_in_file`` or
+``contains_in_diff`` select none of the changed files is not applicable,
+recorded on the step so the
 artifact reports it, and judged by no one. A verifier never writes the store:
 turning rules into checks is ``ww-scriptize-rules``'s job, outside tasks.
 
@@ -26,11 +27,13 @@ and parsing verifier results. The service orchestrates them inside
 from __future__ import annotations
 
 import json
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from ww.actions import PlannedAction, Prompt, actions
+from ww.changes import is_scoped
 from ww.contracts import Verdict
 from ww.errors import StateError
 from ww.execution_models import (
@@ -57,8 +60,8 @@ from ww.plan import (
     WorkflowPlan,
     number_step_paths,
 )
-from ww.rule_checks import applicable_files
-from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, is_config_path
+from ww.rule_checks import applicable_files, missing_file
+from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation
 from ww.transitions import Clock, project_steps
 from ww.workflow_config import RuleHints
 
@@ -70,10 +73,28 @@ def judged_rules(item: PlanItem) -> tuple[PlannedRule, ...]:
     return tuple(rule for rule in item.rules if not rule.has_command)
 
 
-def to_verify(item: PlanItem, record: PlanItemExecution) -> tuple[PlannedRule, ...]:
-    """The step's rules without a command that the operator did not waive."""
+def judged_now(
+    item: PlanItem, record: PlanItemExecution, unavailable: Collection[str] = ()
+) -> tuple[PlannedRule, ...]:
+    """The step's rules a verifier judges for one completion.
+
+    Those without a command the operator did not waive, less the ones a
+    resolved derived check covers, plus the rules whose own or derived check
+    is among ``unavailable``, the IDs of the checks that could not run.
+    """
     waived = {key for key, _ in record.checks_waived}
-    return tuple(rule for rule in judged_rules(item) if rule.id not in waived)
+    covered = {
+        rule_id
+        for check in record.resolved_checks
+        if check.id not in unavailable
+        for rule_id in check.covers
+    }
+    return tuple(
+        rule
+        for rule in item.rules
+        if rule.id not in waived
+        and (rule.id in unavailable if rule.has_command else rule.id not in covered)
+    )
 
 
 def resolve_rules(
@@ -127,50 +148,35 @@ def resolve_rules(
 
 
 def _missing_config(spec: CheckSpec, directory: Path | None) -> str | None:
-    """The first of a check's configuration files ``directory`` lacks.
-
-    A path that would reach outside ``directory`` (absolute, or with a ``..``
-    part, as only a hand-edited store holds) counts as missing.
-    """
-    if directory is None:
-        return None
-    return next(
-        (
-            path
-            for path in spec.config
-            if not is_config_path(path) or not (directory / path).exists()
-        ),
-        None,
-    )
+    """The first of a check's configuration files ``directory`` lacks."""
+    return missing_file(spec.config, directory)
 
 
 def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
     """One converted store check, planned for the step rules it covers.
 
-    Its globs, and likewise its ``contains`` strings, are the union of its
-    rules', or none when any covered rule applies to every file; it may fail
-    as often as the most lenient of its rules allows.
+    Its globs, and likewise each kind of strings, are the union of its
+    rules', or none when any covered rule has none; it may fail as often as
+    the most lenient of its rules allows.
     """
-    paths: tuple[str, ...] = (
-        ()
-        if any(not rule.paths for rule in rules)
-        else tuple(dict.fromkeys(path for rule in rules for path in rule.paths))
-    )
-    contains: tuple[str, ...] = (
-        ()
-        if any(not rule.contains for rule in rules)
-        else tuple(dict.fromkeys(text for rule in rules for text in rule.contains))
-    )
     return PlannedCheck(
         id=name,
         source="derived",
         summary=f"check {name}",
         command=spec.command,
-        paths=paths,
-        contains=contains,
+        paths=_union(rule.paths for rule in rules),
+        contains_in_file=_union(rule.contains_in_file for rule in rules),
+        contains_in_diff=_union(rule.contains_in_diff for rule in rules),
         max_fixes=max(rule.max_fixes for rule in rules),
         covers=tuple(rule.id for rule in rules),
     )
+
+
+def _union(scopes: Iterable[tuple[str, ...]]) -> tuple[str, ...]:
+    scopes = tuple(scopes)
+    if any(not scope for scope in scopes):
+        return ()
+    return tuple(dict.fromkeys(entry for scope in scopes for entry in scope))
 
 
 def verification_needs(
@@ -178,43 +184,62 @@ def verification_needs(
     record: PlanItemExecution,
     files: tuple[str, ...],
     directory: Path,
+    report: CheckReport | None = None,
+    marks: tuple[str, str] | None = None,
 ) -> tuple[tuple[VerificationRule, ...], tuple[str, ...]]:
     """The rules of a completing step a verifier must still judge, and the
     IDs of those its change set makes not applicable.
 
     Rules checked by a resolved derived check, rules with a verdict in the
     current hold, and rules the operator waived for this step are done for
-    now. The rest are narrowed by ``files``, the step's change set, as a
-    check is: a scoped rule selecting none of them is not applicable, and
-    needs no verifier; an unscoped rule applies to every change, even none.
-    What the step began with says the rest: a rule's reading, and the
-    converted check whose configuration is missing here.
+    now; a rule whose own or derived check ``report`` found unavailable is
+    judged, with the reason. The rest are narrowed by ``files``, the step's
+    change set measured between the tree ``marks``, as a check is: a scoped
+    rule selecting none of them is not applicable, and needs no verifier; an
+    unscoped rule applies to every change, even none. What the step began
+    with says the rest: a rule's reading, and the converted check whose
+    configuration is missing here.
     """
-    covered = {rule_id for check in record.resolved_checks for rule_id in check.covers}
-    covered.update(key for key, _ in record.checks_waived)
+    unavailable = (
+        {result.id: result.output for result in report.unavailable} if report else {}
+    )
+    derived = {
+        rule_id: check.id
+        for check in record.resolved_checks
+        for rule_id in check.covers
+    }
     held = record.held_completion
     began = {resolution.id: resolution for resolution in record.rule_resolutions}
     needs: list[VerificationRule] = []
     not_applicable: list[str] = []
-    for rule in judged_rules(item):
-        if rule.id in covered or (held is not None and held.verdict(rule.id)):
+    for rule in judged_now(item, record, unavailable):
+        if held is not None and held.verdict(rule.id):
             continue
-        selected = applicable_files(files, rule.paths, rule.contains, directory)
+        selected = applicable_files(files, rule, directory, marks)
         if selected is None:
             not_applicable.append(rule.id)
             continue
         resolution = began.get(rule.id)
+        check = rule.id if rule.has_command else derived.get(rule.id)
         needs.append(
             VerificationRule(
                 id=rule.id,
                 text=rule.text,
                 text_hash=rule.text_hash,
                 interpretation=resolution.interpretation if resolution else None,
-                check=resolution.check if resolution and resolution.missing else None,
+                check=(
+                    check
+                    if check in unavailable
+                    else resolution.check
+                    if resolution and resolution.missing
+                    else None
+                ),
                 missing=resolution.missing if resolution else None,
+                unavailable=unavailable.get(check) if check is not None else None,
                 paths=rule.paths,
-                contains=rule.contains,
-                files=selected if rule.paths or rule.contains else (),
+                contains_in_file=rule.contains_in_file,
+                contains_in_diff=rule.contains_in_diff,
+                files=selected if is_scoped(rule) else (),
             )
         )
     return tuple(needs), tuple(not_applicable)

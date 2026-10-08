@@ -155,7 +155,7 @@ def test_add_warns_about_a_glob_that_matches_nothing(
     assert "Warning: `*.php` matches no file in the project" in out
 
 
-def test_add_writes_contains_and_reports_the_files_that_have_each_string(
+def test_add_writes_both_kinds_of_strings_and_reports_the_files_with_each(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
@@ -170,9 +170,11 @@ def test_add_writes_contains_and_reports_the_files_that_have_each_string(
             SERVICES,
             "--paths",
             "*.md",
-            "--contains",
+            "--contains-in-file",
             "foo",
             "no such text",
+            "--contains-in-diff",
+            "flush",
         )
         == 0
     )
@@ -180,15 +182,20 @@ def test_add_writes_contains_and_reports_the_files_that_have_each_string(
     out = capsys.readouterr().out
     file = root / "rules/docs/put-every-service-under-src.md"
     assert _text(file) == (
-        "---\npaths: ['*.md']\n\ncontains: [foo, no such text]\n---\n" + SERVICES + "\n"
+        "---\npaths: ['*.md']\n\ncontains_in_file: [foo, no such text]\n\n"
+        "contains_in_diff: [flush]\n---\n" + SERVICES + "\n"
     )
     assert "`foo` is in 2 file(s) now." in out
     assert "`no such text` is in 0 file(s) now." in out
     assert "Warning: `no such text` is in no file of the project" in out
+    # A change may still add a line with it, so only the count is reported.
+    assert "`flush` is in 0 file(s) now." in out
+    assert "Warning: `flush`" not in out
     (group,) = load_configuration(root / "ww.yaml").rule_groups
     rule = next(rule for rule in group.rules if rule.id.endswith("under-src"))
     assert rule.paths == ("*.md",)
-    assert rule.contains == ("foo", "no such text")
+    assert rule.contains_in_file == ("foo", "no such text")
+    assert rule.contains_in_diff == ("flush",)
 
 
 def test_add_lists_the_file_in_a_group_of_the_import_file(
@@ -561,30 +568,35 @@ def test_edit_replaces_only_the_globs(
     assert "`*.md` matches 2 file(s) now." in capsys.readouterr().out
     assert _ww(root, "rules", "edit", "docs/header") == 1
     assert (
-        "rules edit needs --text, --paths, --contains, or a mix"
-        in capsys.readouterr().err
+        "rules edit needs --text, --paths, --contains-in-file, --contains-in-diff, "
+        "or a mix" in capsys.readouterr().err
     )
 
 
-def test_edit_replaces_only_the_contains_strings(
+def test_edit_replaces_only_the_strings_of_the_kind_given(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _project(tmp_path)
+    edit = ("rules", "edit", "docs/header")
 
-    assert _ww(root, "rules", "edit", "docs/header", "--contains", "foo", "bar") == 0
+    assert _ww(root, *edit, "--contains-in-file", "foo", "bar") == 0
 
     assert _text(root / "rules/docs/header.md") == HEADER_RULE.replace(
         'paths: ["*.md"]\nmax_fixes: 2\n',
-        'paths: ["*.md"]\nmax_fixes: 2\ncontains: [foo, bar]\n',
+        'paths: ["*.md"]\nmax_fixes: 2\ncontains_in_file: [foo, bar]\n',
     )
     out = capsys.readouterr().out
     assert "`foo` is in 2 file(s) now." in out
     assert "`bar` is in 0 file(s) now." in out
-    assert _ww(root, "rules", "edit", "docs/header", "--contains", "baz") == 0
-    assert "contains: [baz]\n" in _text(root / "rules/docs/header.md")
+    assert _ww(root, *edit, "--contains-in-diff", "baz") == 0
+    assert "contains_in_file: [foo, bar]\ncontains_in_diff: [baz]\n" in _text(
+        root / "rules/docs/header.md"
+    )
+    assert _ww(root, *edit, "--contains-in-file", "qux") == 0
     (group,) = load_configuration(root / "ww.yaml").rule_groups
     rule = next(rule for rule in group.rules if rule.id == "docs/header")
-    assert rule.paths == ("*.md",) and rule.contains == ("baz",)
+    assert rule.paths == ("*.md",)
+    assert (rule.contains_in_file, rule.contains_in_diff) == (("qux",), ("baz",))
 
 
 def test_edit_notes_a_wording_that_keeps_its_hash(

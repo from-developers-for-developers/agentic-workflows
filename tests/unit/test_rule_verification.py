@@ -13,7 +13,7 @@ from ww.actions import CommandDefinition, Commands
 from ww.config import load_configuration
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
-from ww.execution_models import PlanItemExecution
+from ww.execution_models import CheckReport, CheckResult, PlanItemExecution
 from ww.execution_models.records import (
     HeldCompletion,
     RuleVerdict,
@@ -25,6 +25,7 @@ from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, RuleEntry
 from ww.rule_verification import (
     derived_check,
     effective_hints,
+    judged_now,
     parse_rule_results,
     resolve_rules,
     revoke_check,
@@ -198,7 +199,7 @@ def _scoped_step(develop: PlanItem) -> PlanItem:
         develop,
         rules=(
             _scoped("docs/markdown", paths=("*.md",)),
-            _scoped("docs/printing", paths=("*.py",), contains=("print",)),
+            _scoped("docs/printing", paths=("*.py",), contains_in_file=("print",)),
             develop.rules[0],
         ),
     )
@@ -215,7 +216,9 @@ def test_a_scoped_rule_selecting_no_changed_file_is_not_applicable(
     )
 
     assert not_applicable == ("docs/markdown",)
-    assert [(need.id, need.paths, need.contains, need.files) for need in needs] == [
+    assert [
+        (need.id, need.paths, need.contains_in_file, need.files) for need in needs
+    ] == [
         ("docs/printing", ("*.py",), ("print",), ("app.py",)),
         ("develop/1", (), (), ()),
     ]
@@ -416,10 +419,92 @@ def test_a_judged_rule_names_its_check_whose_config_is_missing(
     assert checks == ()
 
 
+def _unavailable(check_id: str, source: str, reason: str) -> CheckReport:
+    return CheckReport(
+        1,
+        NOW,
+        (CheckResult(check_id, source, "unavailable", output=reason),),  # type: ignore[arg-type]
+    )
+
+
+def test_a_rule_whose_own_check_is_unavailable_is_judged_with_the_reason(
+    develop: PlanItem,
+) -> None:
+    report = _unavailable("develop/4", "rule", "command not found (exit 127)")
+
+    assert [rule.id for rule in judged_now(develop, _record())] == [
+        "develop/1",
+        "develop/2",
+        "develop/3",
+    ]
+    assert [rule.id for rule in judged_now(develop, _record(), {"develop/4"})] == [
+        "develop/1",
+        "develop/2",
+        "develop/3",
+        "develop/4",
+    ]
+    needs, _ = verification_needs(develop, _record(), ("app.py",), Path(), report)
+    foo = next(need for need in needs if need.id == "develop/4")
+    assert (foo.check, foo.missing, foo.unavailable) == (
+        "develop/4",
+        None,
+        "command not found (exit 127)",
+    )
+    assert [need.unavailable for need in needs if need.id != "develop/4"] == [
+        None,
+        None,
+        None,
+    ]
+    # A verdict already given in the hold, or a waiver, still settles it.
+    judged = _record(
+        held_completion=HeldCompletion(
+            verdicts=(RuleVerdict("develop/4", "pass", "v"),)
+        )
+    )
+    needs, _ = verification_needs(develop, judged, ("app.py",), Path(), report)
+    assert "develop/4" not in [need.id for need in needs]
+    waived = _record(checks_waived=(("develop/4", "not here"),))
+    assert "develop/4" not in [
+        rule.id for rule in judged_now(develop, waived, {"develop/4"})
+    ]
+
+
+def test_rules_covered_by_an_unavailable_derived_check_are_judged(
+    develop: PlanItem,
+) -> None:
+    resolutions, lint = resolve_rules(
+        develop,
+        RuleAutomation()
+        .with_rule(rule_text_hash(CLI), RuleEntry(CLI, "converted", check="lint"))
+        .with_check("lint", _check((rule_text_hash(CLI),))),
+    )
+    record = _record(resolved_checks=lint, rule_resolutions=resolutions)
+    report = _unavailable("lint", "derived", "`lint-tool` is missing")
+
+    covered, _ = verification_needs(develop, record, ("app.py",), Path())
+    needs, _ = verification_needs(develop, record, ("app.py",), Path(), report)
+
+    assert "develop/1" not in [need.id for need in covered]
+    cli = next(need for need in needs if need.id == "develop/1")
+    assert (cli.check, cli.unavailable) == ("lint", "`lint-tool` is missing")
+    assert VerificationRule.from_dict(cli.to_dict()) == cli
+
+
 def _scoped(
-    rule_id: str, paths: tuple[str, ...] = (), contains: tuple[str, ...] = ()
+    rule_id: str,
+    paths: tuple[str, ...] = (),
+    contains_in_file: tuple[str, ...] = (),
+    contains_in_diff: tuple[str, ...] = (),
 ) -> PlannedRule:
-    return PlannedRule(rule_id, "Summary.", "Text.", "hash", paths, contains)
+    return PlannedRule(
+        rule_id,
+        "Summary.",
+        "Text.",
+        "hash",
+        paths,
+        contains_in_file,
+        contains_in_diff,
+    )
 
 
 def _derived(*rules: PlannedRule):
@@ -427,18 +512,22 @@ def _derived(*rules: PlannedRule):
     return derived_check("lint", spec, list(rules))
 
 
-def test_a_derived_check_unions_the_contains_strings_of_its_rules() -> None:
+def test_a_derived_check_unions_the_strings_of_its_rules() -> None:
     check = _derived(
-        _scoped("a/1", ("*.php",), ("Mail", "Post")),
-        _scoped("a/2", ("*.md",), ("Post", "Send")),
+        _scoped("a/1", ("*.php",), ("Mail", "Post"), ("flush",)),
+        _scoped("a/2", ("*.md",), ("Post", "Send"), ("send",)),
     )
 
     assert check.paths == ("*.php", "*.md")
-    assert check.contains == ("Mail", "Post", "Send")
+    assert check.contains_in_file == ("Mail", "Post", "Send")
+    assert check.contains_in_diff == ("flush", "send")
 
 
-def test_a_covered_rule_without_contains_means_no_content_filter() -> None:
-    check = _derived(_scoped("a/1", (), ("Mail",)), _scoped("a/2", ("*.md",)))
+def test_a_covered_rule_without_strings_means_no_content_filter() -> None:
+    check = _derived(
+        _scoped("a/1", (), ("Mail",), ("flush",)), _scoped("a/2", ("*.md",))
+    )
 
     assert check.paths == ()
-    assert check.contains == ()
+    assert check.contains_in_file == ()
+    assert check.contains_in_diff == ()

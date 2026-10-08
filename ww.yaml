@@ -26,7 +26,9 @@ handlers:
       - test: >-
           Run the whole suite with `scripts/test tests` (pytest alone, in
           parallel) and fix every failing test.
-        break: All tests pass.
+        break: >-
+          No test fails because of this change; pre-existing or environmental
+          failures are noted in the artifact.
 
   - update-documentation: >-
       Bring the documentation in line with this task's changes, editing only

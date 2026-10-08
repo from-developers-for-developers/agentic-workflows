@@ -323,7 +323,8 @@ def _planned_rules_from_list(value: Any, item_path: str) -> tuple[PlannedRule, .
                 text=expect_string(raw["text"], f"{path}.text"),
                 text_hash=expect_string(raw["text_hash"], f"{path}.text_hash"),
                 paths=_string_list(raw["paths"], f"{path}.paths"),
-                contains=_string_list(raw.get("contains", []), f"{path}.contains"),
+                contains_in_file=_contains(raw, "contains_in_file", path),
+                contains_in_diff=_contains(raw, "contains_in_diff", path),
                 has_command=expect_bool(raw["has_command"], f"{path}.has_command"),
                 max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
                 hints=_rule_hints(raw.get("hints", {}), f"{path}.hints"),
@@ -331,6 +332,10 @@ def _planned_rules_from_list(value: Any, item_path: str) -> tuple[PlannedRule, .
             )
         )
     return tuple(result)
+
+
+def _contains(raw: dict[str, Any], key: str, path: str) -> tuple[str, ...]:
+    return _string_list(raw.get(key, []), f"{path}.{key}")
 
 
 def _rule_hints(value: Any, path: str) -> RuleHints:
@@ -375,12 +380,14 @@ def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck,
                 summary=expect_string(raw["summary"], f"{path}.summary"),
                 command=decoded,
                 paths=_string_list(raw["paths"], f"{path}.paths"),
-                contains=_string_list(raw.get("contains", []), f"{path}.contains"),
+                contains_in_file=_contains(raw, "contains_in_file", path),
+                contains_in_diff=_contains(raw, "contains_in_diff", path),
                 on_failure_instruction=expect_optional_string(
                     raw.get("on_failure_instruction"), "check failure instruction"
                 ),
                 max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
                 covers=_string_list(raw.get("covers", []), f"{path}.covers"),
+                files=_string_list(raw.get("files", []), f"{path}.files"),
             )
         )
     return tuple(result)

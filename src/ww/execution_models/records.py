@@ -114,6 +114,13 @@ class CheckReport:
     def failed(self) -> tuple[CheckResult, ...]:
         return tuple(result for result in self.results if result.status == "failed")
 
+    @property
+    def unavailable(self) -> tuple[CheckResult, ...]:
+        """The checks that could not run here; ``output`` says why."""
+        return tuple(
+            result for result in self.results if result.status == "unavailable"
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "attempt": self.attempt,
@@ -410,21 +417,25 @@ class VerificationRule:
     """One rule a verification item judges, as the step began with it.
 
     ``interpretation`` is the store's reading of the rule, when it has one.
-    ``paths`` and ``contains`` are the rule's scope, and ``files`` the
-    changed files that scope selects; both are empty for an unscoped rule,
-    which applies to the whole change set.
+    ``paths``, ``contains_in_file`` and ``contains_in_diff`` are the rule's
+    scope, and ``files`` the changed files that scope selects; all are empty
+    for an unscoped rule, which applies to the whole change set.
     """
 
     id: str
     text: str
     text_hash: str
     interpretation: str | None = None
-    # A judged rule whose converted ``check`` does not apply in this step:
-    # the configuration file the step's directory lacks.
+    # A rule judged because its ``check`` does not run in this step: a
+    # converted check whose configuration file ``missing`` names the step's
+    # directory lacks, or the rule's own or derived check found
+    # ``unavailable`` for the reason given.
     check: str | None = None
     missing: str | None = None
+    unavailable: str | None = None
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
@@ -435,11 +446,14 @@ class VerificationRule:
             "interpretation": self.interpretation,
             "check": self.check,
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "files": list(self.files),
         }
         if self.missing is not None:
             data["missing"] = self.missing
+        if self.unavailable is not None:
+            data["unavailable"] = self.unavailable
         return data
 
     @classmethod
@@ -465,8 +479,16 @@ class VerificationRule:
             missing=expect_optional_string(
                 data.get("missing"), "verification rule.missing"
             ),
+            unavailable=expect_optional_string(
+                data.get("unavailable"), "verification rule.unavailable"
+            ),
             paths=_strings(data.get("paths", []), "verification rule.paths"),
-            contains=_strings(data.get("contains", []), "verification rule.contains"),
+            contains_in_file=_strings(
+                data.get("contains_in_file", []), "verification rule.contains_in_file"
+            ),
+            contains_in_diff=_strings(
+                data.get("contains_in_diff", []), "verification rule.contains_in_diff"
+            ),
             files=_strings(data.get("files", []), "verification rule.files"),
         )
 
@@ -609,8 +631,9 @@ class PlanItemExecution:
     # rule ID, each with the operator's reason: every one of the step's at
     # its fix limit, or the one a dispute named.
     checks_waived: tuple[tuple[str, str], ...] = ()
-    # The worker's open objection to a check, while the operator decides.
-    dispute: Dispute | None = None
+    # The worker's open objections, one per disputed check, raised together
+    # and decided together by the operator.
+    disputes: tuple[Dispute, ...] = ()
     # How each rule without a command is enforced, and the converted derived
     # checks that enforce the converted ones; both settled when the step
     # first begins.
@@ -626,13 +649,11 @@ class PlanItemExecution:
     # On a verification item's record: the rules it is asked about.
     verification: tuple[VerificationRule, ...] = ()
 
-    @property
-    def fix_attempts(self) -> int:
-        """How many completions of this step ww rejected for failed checks."""
-        return sum(1 for report in self.check_reports if report.failed)
-
     def check_failures(self, check_id: str) -> int:
-        """How many rejected completions this check failed."""
+        """How many rejected completions this check failed.
+
+        An unavailable result is not a failure and counts nowhere.
+        """
         return sum(
             1
             for report in self.check_reports
@@ -672,7 +693,7 @@ class PlanItemExecution:
             "check_reports": [report.to_dict() for report in self.check_reports],
             "draft_artifact": self.draft_artifact,
             "checks_waived": dict(self.checks_waived),
-            "dispute": self.dispute.to_dict() if self.dispute else None,
+            "disputes": [dispute.to_dict() for dispute in self.disputes],
             "rule_resolutions": [entry.to_dict() for entry in self.rule_resolutions],
             "resolved_checks": [check.to_dict() for check in self.resolved_checks],
             "held_completion": (
@@ -775,11 +796,7 @@ class PlanItemExecution:
                 data.get("draft_artifact"), "draft artifact"
             ),
             checks_waived=_waivers(data.get("checks_waived", {})),
-            dispute=(
-                Dispute.from_dict(data["dispute"])
-                if data.get("dispute") is not None
-                else None
-            ),
+            disputes=_disputes(data),
             rule_resolutions=tuple(
                 RuleResolution.from_dict(entry)
                 for entry in _list(data.get("rule_resolutions", []), "rule resolutions")
@@ -822,6 +839,16 @@ def _check_reports(value: Any) -> tuple[CheckReport, ...]:
     if not isinstance(value, list):
         raise ValueError("check reports must be a list")
     return tuple(CheckReport.from_dict(item) for item in value)
+
+
+def _disputes(data: dict[str, Any]) -> tuple[Dispute, ...]:
+    """The record's open disputes; the previous format held one ``dispute``."""
+    if "disputes" not in data:
+        single = data.get("dispute")
+        return (Dispute.from_dict(single),) if single is not None else ()
+    return tuple(
+        Dispute.from_dict(item) for item in _list(data["disputes"], "disputes")
+    )
 
 
 @dataclass(frozen=True)

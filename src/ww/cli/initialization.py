@@ -17,7 +17,11 @@ from ww.config_files import runtime_ignored, settings_levels
 from ww.defaults import SKILLS, WW_SKILL_NAME, default_settings, skill_location
 from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
-from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
+from ww.executable import (
+    DEFAULT_EXECUTABLE,
+    PROJECT_LAUNCHER_COMMAND,
+    project_command,
+)
 from ww.hooks import (
     HOOK_AGENTS,
     HookInstallError,
@@ -827,6 +831,7 @@ def _finish_initialization(
         if isinstance(configured, str) and configured.strip()
         else DEFAULT_EXECUTABLE
     )
+    command = project_command(executable, storage.root)
     if isinstance(git, dict) and git.get("worktrees") is True:
         configured = git.get("worktree_dir")
         if isinstance(configured, str) and configured:
@@ -859,7 +864,7 @@ def _finish_initialization(
     notice = force or _init_choices(storage).get("permission_notice_shown") is not True
     if notice and shown:
         _save_init_choice(storage, "permission_notice_shown", True)
-    commands = tuple(dict.fromkeys((executable, PROJECT_LAUNCHER_COMMAND, "ww")))
+    commands = tuple(dict.fromkeys((command, PROJECT_LAUNCHER_COMMAND, "ww")))
     permissions, others = _agent_permissions(storage, commands)
     return replace(
         result,
@@ -867,6 +872,7 @@ def _finish_initialization(
         actions=tuple(actions),
         permission_notice=notice,
         executable=executable,
+        command=command,
         commands=commands,
         permissions=permissions,
         other_agents=others,

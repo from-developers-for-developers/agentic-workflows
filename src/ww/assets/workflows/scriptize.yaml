@@ -41,7 +41,15 @@ workflows:
           convertible, with the reason. The artifact lists each proposed
           check: a kebab-case name, the tool, the rules it covers by ID, what
           it will install and configure, and how it runs, following the
-          guidance and the project's command convention; then the rules
+          guidance and the project's command convention. ww runs each check
+          with the files the step changed in `WW_STEP_CHANGED_FILES`,
+          newline-separated, relative to the step's directory and already
+          narrowed to the rule's globs and `contains_in_file` or
+          `contains_in_diff` strings: a check examines only
+          those files, passing them to its tool, and never compares the
+          branch with a base branch (`git diff master...`) or scans the whole
+          repository, because a step must not fail on files it did not
+          change. Then the rules
           proposed as not convertible. When no rule is `unscriptized`, say so;
           that is a fine result.
       - name: approaches
@@ -70,9 +78,21 @@ workflows:
               never globally, and write its configuration in the repository;
               every command follows the `check_guidance` and the project's
               command convention, written for this directory and never naming
-              another checkout. Prove each check by running it exactly as ww
-              will, from this directory: add a deliberately violating input,
-              show the command fails, remove the input, and show it passes.
+              another checkout. Every check reads the files the step changed
+              from `WW_STEP_CHANGED_FILES`, newline-separated, relative to
+              this directory and already narrowed to its rules' globs and
+              `contains_in_file` or `contains_in_diff` strings, and examines
+              only those: a shell check passes them
+              to its tool with `printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs
+              -d '\n' <tool>`, a Python check splits
+              `os.environ["WW_STEP_CHANGED_FILES"]` on newlines. A check never
+              compares the branch with a base branch (`git diff master...`)
+              or scans the whole repository, because a step must not fail on
+              files it did not change. Prove each check by running it exactly
+              as ww will, from this directory: add a deliberately violating
+              input and show the command fails with `WW_STEP_CHANGED_FILES`
+              set to just that file and passes with it set to an unrelated
+              clean file, then remove the input and show it passes.
               Then run it on a sample of real files matching its rules' globs,
               up to twenty, and report every violation it finds as
               `file:line — what`; real violations do not block the check.

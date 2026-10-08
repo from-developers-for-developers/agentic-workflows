@@ -295,9 +295,10 @@ class DebugSettings:
     """``debug`` in ``ww.json``: ww's self-assessment of each run, kept locally.
 
     ``collect`` asks the agent, at the end of every run, how ww itself behaved
-    and keeps the answer under ``.ww/debug/``; ``report`` makes ``discover``
-    offer to publish collected records to ww's GitHub issues. Both are off by
-    default: nothing is collected or sent unless the operator switches it on.
+    and keeps the answer under ``.ww/debug/``; ``report`` enables the
+    operator's ``ww debug report``, which publishes a record to ww's GitHub
+    issues; ww never offers it on its own. Both are off by default: nothing
+    is collected or sent unless the operator switches it on.
     """
 
     collect: bool = False

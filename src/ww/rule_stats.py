@@ -193,9 +193,18 @@ def evaluations(
     derived check reports its result; a verdict in the held completion judges
     its rule; and the rules the change set left out are not applicable. A
     judged rule with none of these was not evaluated: the checks rejected
-    the completion before a verifier saw it.
+    the completion before a verifier saw it. A check that was unavailable
+    decided nothing: its rule counts by the verdict, if one was given.
     """
-    results = {result.id: result.status for result in report.results} if report else {}
+    results = (
+        {
+            result.id: result.status
+            for result in report.results
+            if result.status != "unavailable"
+        }
+        if report
+        else {}
+    )
     derived = {
         rule_id: check.id
         for check in record.resolved_checks

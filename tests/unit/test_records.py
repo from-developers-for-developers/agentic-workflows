@@ -349,7 +349,8 @@ def test_rule_scope_round_trips_on_the_item_execution() -> None:
                 "Print nothing.",
                 "hash",
                 paths=("*.py",),
-                contains=("print",),
+                contains_in_file=("print",),
+                contains_in_diff=("flush",),
                 files=("app.py",),
             ),
         ),
@@ -359,7 +360,8 @@ def test_rule_scope_round_trips_on_the_item_execution() -> None:
 
     assert data["rules_not_applicable"] == ["docs/markdown"]
     assert data["verification"][0]["paths"] == ["*.py"]
-    assert data["verification"][0]["contains"] == ["print"]
+    assert data["verification"][0]["contains_in_file"] == ["print"]
+    assert data["verification"][0]["contains_in_diff"] == ["flush"]
     assert data["verification"][0]["files"] == ["app.py"]
     assert PlanItemExecution.from_dict(data) == record
 

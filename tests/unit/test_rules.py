@@ -22,6 +22,7 @@ from ww.config.composition import compose_configuration
 from ww.config.rules import (
     looks_like_reference,
     parse_rule_file,
+    parse_step_rules,
     rule_summary,
     rule_text_hash,
 )
@@ -118,19 +119,54 @@ Controllers must not instantiate services.
     assert rule.max_fixes == 5
     assert rule.hints == RuleHints(agent="codex", model="big")
     assert rule.source == str(path)
+    assert rule.check_files == ()
 
 
-def test_rule_file_frontmatter_sets_contains(tmp_path: Path) -> None:
+def test_a_check_declares_the_files_it_needs(tmp_path: Path) -> None:
+    path = _rule(
+        tmp_path,
+        "rules/lint.md",
+        "---\ncheck:\n  argv: [python3, tools/lint.py]\n"
+        "  files: [tools/lint.py, tools/lint.toml]\n---\nLint it.\n",
+    )
+
+    rule = parse_rule_file(path, "docs/lint")
+
+    assert rule.check is not None
+    assert rule.check.commands[0].argv == ("python3", "tools/lint.py")
+    assert rule.check_files == ("tools/lint.py", "tools/lint.toml")
+    inline = parse_step_rules(
+        [{"argv": ["tools/lint.sh"], "files": ["tools/lint.sh"]}], "develop", "x"
+    )
+    assert inline[0].check_files == ("tools/lint.sh",)  # type: ignore[union-attr]
+
+
+def test_rule_file_frontmatter_sets_the_strings_of_both_kinds(tmp_path: Path) -> None:
     path = _rule(
         tmp_path,
         "rules/mail.md",
-        '---\npaths: ["*.php"]\ncontains: [Mail, "Mailer::send"]\n---\nText.\n',
+        '---\npaths: ["*.php"]\ncontains_in_file: [Mail, "Mailer::send"]\n'
+        "contains_in_diff: [flush]\n---\nText.\n",
     )
 
     rule = parse_rule_file(path, "php/mail")
 
     assert rule.paths == ("*.php",)
-    assert rule.contains == ("Mail", "Mailer::send")
+    assert rule.contains_in_file == ("Mail", "Mailer::send")
+    assert rule.contains_in_diff == ("flush",)
+
+
+def test_a_bare_contains_key_names_its_two_replacements(tmp_path: Path) -> None:
+    path = _rule(tmp_path, "rules/mail.md", "---\ncontains: [Mail]\n---\nText.\n")
+
+    with pytest.raises(ConfigurationError) as error:
+        parse_rule_file(path, "php/mail")
+
+    assert str(error.value) == (
+        f"rule file {path}.contains is not a key: use contains_in_file for "
+        "strings the file's text holds, or contains_in_diff for strings in the "
+        "lines the step changed"
+    )
 
 
 def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
@@ -150,9 +186,18 @@ def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
         ("---\nscope: all\n---\nText.\n", "unknown key"),
         ("---\npaths: [x]\nText.\n", "does not close its frontmatter"),
         ("---\npaths: []\n---\nText.\n", "paths must be a non-empty list"),
-        ("---\ncontains: []\n---\nText.\n", "contains must be a non-empty list"),
-        ("---\ncontains: ['']\n---\nText.\n", "contains must be a non-empty list"),
-        ("---\ncontains: Mail\n---\nText.\n", "contains must be a non-empty list"),
+        (
+            "---\ncontains_in_file: []\n---\nText.\n",
+            "contains_in_file must be a non-empty list",
+        ),
+        (
+            "---\ncontains_in_file: ['']\n---\nText.\n",
+            "contains_in_file must be a non-empty list",
+        ),
+        (
+            "---\ncontains_in_diff: Mail\n---\nText.\n",
+            "contains_in_diff must be a non-empty list",
+        ),
         ("---\nmax_fixes: 0\n---\nText.\n", "max_fixes must be a positive integer"),
         (
             "---\ncheck:\n  argv: [true]\n  idempotent: true\n---\nText.\n",
@@ -165,6 +210,18 @@ def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
         (
             "---\ncheck:\n  assert: [empty]\n---\nText.\n",
             "require argv or shell",
+        ),
+        (
+            "---\ncheck:\n  argv: [true]\n  files: []\n---\nText.\n",
+            "files must be a non-empty list of paths",
+        ),
+        (
+            "---\ncheck:\n  argv: [true]\n  files: [../tool]\n---\nText.\n",
+            "must stay inside the step's directory",
+        ),
+        (
+            "---\ncheck:\n  argv: [true]\n  files: [/usr/bin/tool]\n---\nText.\n",
+            "must stay inside the step's directory",
         ),
         ("---\n- a list\n---\nText.\n", "must be a mapping"),
         ("---\nagent: auto\n---\nText.\n", "must not be 'auto'"),

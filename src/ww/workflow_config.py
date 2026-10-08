@@ -505,8 +505,12 @@ class RuleDefinition:
     summary: str
     text_hash: str
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     check: Commands | None = None
+    # The project files the check needs, relative to the step's directory;
+    # the check is unavailable where one is missing.
+    check_files: tuple[str, ...] = ()
     max_fixes: int | None = None
     hints: RuleHints = RuleHints()
     # The rule file, or ``None`` for a rule written inline in YAML.

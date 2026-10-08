@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -55,7 +55,8 @@ from .values import (
 
 RULE_FILE_KEYS = {
     "paths",
-    "contains",
+    "contains_in_file",
+    "contains_in_diff",
     "check",
     "max_fixes",
     "agent",
@@ -69,12 +70,15 @@ STEP_RULE_KEYS = {
     "args",
     "env",
     "assert",
+    "files",
     "max_fixes",
     "agent",
     "model",
     "reasoning",
 }
 _CHECK_KEYS = {"argv", "shell", "args", "env", "assert"}
+# Beside the command keys on a rule's own check: the files it needs.
+_CHECK_FILES_KEY = "files"
 _GROUP_KEYS = {"rules", "workflows", "steps", "agent", "model", "reasoning"}
 # A bare string shaped like this names a group or a file, never a sentence:
 # "python" and "rules/python.md" match, "Write tests first" does not.
@@ -158,8 +162,19 @@ def parse_rule_file(
     text = body.strip()
     if not text:
         raise ConfigurationError(f"rule file {label} has no rule text")
-    _only(frontmatter, RULE_FILE_KEYS, f"rule file {label}")
     context = f"rule file {label}"
+    if "contains" in frontmatter:
+        raise ConfigurationError(
+            f"{context}.contains is not a key: use contains_in_file for strings "
+            "the file's text holds, or contains_in_diff for strings in the "
+            "lines the step changed"
+        )
+    _only(frontmatter, RULE_FILE_KEYS, context)
+    check, check_files = (
+        _parse_check(_mapping(frontmatter["check"], f"{context}.check"), context)
+        if "check" in frontmatter
+        else (None, ())
+    )
     return RuleDefinition(
         id=rule_id,
         text=text,
@@ -168,18 +183,10 @@ def parse_rule_file(
         paths=(
             _paths(frontmatter.get("paths"), context) if "paths" in frontmatter else ()
         ),
-        contains=(
-            _contains(frontmatter["contains"], context)
-            if "contains" in frontmatter
-            else ()
-        ),
-        check=(
-            parse_check_command(
-                _mapping(frontmatter["check"], f"{context}.check"), f"{context}.check"
-            )
-            if "check" in frontmatter
-            else None
-        ),
+        contains_in_file=_contains(frontmatter, "contains_in_file", context),
+        contains_in_diff=_contains(frontmatter, "contains_in_diff", context),
+        check=check,
+        check_files=check_files,
         max_fixes=_max_fixes(frontmatter, context),
         hints=hints.overlay(_hints(frontmatter, context)),
         source=label,
@@ -217,14 +224,17 @@ def _paths(value: Any, context: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _contains(value: Any, context: str) -> tuple[str, ...]:
+def _contains(mapping: dict[str, Any], key: str, context: str) -> tuple[str, ...]:
+    if key not in mapping:
+        return ()
+    value = mapping[key]
     if (
         not isinstance(value, list)
         or not value
         or not all(isinstance(item, str) and item for item in value)
     ):
         raise ConfigurationError(
-            f"{context}.contains must be a non-empty list of non-empty strings"
+            f"{context}.{key} must be a non-empty list of non-empty strings"
         )
     return tuple(value)
 
@@ -253,6 +263,39 @@ def parse_check_command(mapping: dict[str, Any], context: str) -> Commands:
             raise ConfigurationError(f"{context}.{key} is not allowed on a check")
     _only(mapping, _CHECK_KEYS, context)
     return CommandAction().parse(mapping, "check", "", context)
+
+
+def _parse_check(
+    mapping: dict[str, Any], context: str
+) -> tuple[Commands, tuple[str, ...]]:
+    """A rule's own check: its command, and the ``files`` it says it needs."""
+    files = (
+        _check_files(mapping[_CHECK_FILES_KEY], context)
+        if _CHECK_FILES_KEY in mapping
+        else ()
+    )
+    command = {key: value for key, value in mapping.items() if key != _CHECK_FILES_KEY}
+    return parse_check_command(command, context), files
+
+
+def _check_files(value: Any, context: str) -> tuple[str, ...]:
+    """Paths inside the step's directory: relative, without a ``..`` part."""
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        raise ConfigurationError(
+            f"{context}.{_CHECK_FILES_KEY} must be a non-empty list of paths"
+        )
+    for item in value:
+        parts = PurePosixPath(item).parts
+        if PurePosixPath(item).is_absolute() or ".." in parts:
+            raise ConfigurationError(
+                f"{context}.{_CHECK_FILES_KEY}: {item!r} must stay inside the "
+                "step's directory"
+            )
+    return tuple(value)
 
 
 def parse_rules_root(
@@ -439,8 +482,12 @@ def _step_rule_mapping(
     text = mapping.get("text")
     if text is not None and (not isinstance(text, str) or not text.strip()):
         raise ConfigurationError(f"{path}.text must be a non-empty string")
-    command_keys = {key: mapping[key] for key in _CHECK_KEYS if key in mapping}
-    check = parse_check_command(command_keys, path) if command_keys else None
+    command_keys = {
+        key: mapping[key] for key in (*_CHECK_KEYS, _CHECK_FILES_KEY) if key in mapping
+    }
+    check, check_files = (
+        _parse_check(command_keys, path) if command_keys else (None, ())
+    )
     if text is None and check is None:
         raise ConfigurationError(f"{path} requires text or a command")
     wording = text.strip() if text is not None else _command_text(check)
@@ -450,6 +497,7 @@ def _step_rule_mapping(
         summary=rule_summary(wording),
         text_hash=rule_text_hash(wording),
         check=check,
+        check_files=check_files,
         max_fixes=_max_fixes(mapping, path),
         hints=_hints(mapping, path),
     )

@@ -90,7 +90,11 @@ def assignment_at(
                 worker = item
             stop += 1
             continue
-        if item.step not in lineage:
+        # A hook the manager performs, such as ww's own debug assessment,
+        # starts an assignment of its own, as a ``role: manager`` step does.
+        if item.step not in lineage or (item.role == "manager") != (
+            worker is not None and worker.role == "manager"
+        ):
             break
         stop += 1
     return Assignment(first.id, cursor, stop)

@@ -31,7 +31,7 @@ from ww.config_writes import FileWrite
 from ww.defaults import PROJECT_LAUNCHER
 from ww.design_docs import read_design_document
 from ww.errors import StateError, WwError
-from ww.executable import printed_executable, ww_command
+from ww.executable import printed_executable, project_command, ww_command
 from ww.extensions import ExtensionContext, ExtensionRegistry
 from ww.hooks import (
     HOOK_EVENTS,
@@ -402,7 +402,7 @@ def _unscriptized_warning(
 
 
 def _unscoped_hint(store: RuleStore, configuration: WorkflowConfiguration) -> str:
-    """Name the judged rules with no ``paths`` or ``contains``.
+    """Name the judged rules with no ``paths`` or strings to narrow them.
 
     A hint only: such a rule is verified after every step that changes
     anything, where a scoped one is skipped when none of the changed files
@@ -414,8 +414,9 @@ def _unscoped_hint(store: RuleStore, configuration: WorkflowConfiguration) -> st
     many = len(rules) != 1
     return (
         f"Hint: {len(rules)} judged rule{'s are' if many else ' is'} verified on "
-        "every step (" + ", ".join(rule.id for rule in rules) + "); add paths or "
-        f"contains to narrow {'them' if many else 'it'}.\n"
+        "every step (" + ", ".join(rule.id for rule in rules) + "); add paths, "
+        "contains_in_file or contains_in_diff to narrow "
+        f"{'them' if many else 'it'}.\n"
     )
 
 
@@ -580,7 +581,7 @@ def _dispute(context: _Context) -> _Outcome:
     return _instruction_outcome(
         context.service.dispute(
             context.task_id,
-            args.check_id,
+            tuple(args.check_ids),
             args.reason,
             caller_role=args.role,
             assignment=args.assignment,
@@ -678,7 +679,8 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             args.group_name,
             args.text,
             paths=tuple(args.paths or ()),
-            contains=tuple(args.contains or ()),
+            contains_in_file=tuple(args.contains_in_file or ()),
+            contains_in_diff=tuple(args.contains_in_diff or ()),
             check=rule_writes.check_mapping(
                 args.check_shell,
                 tuple(args.check_argv) if args.check_argv else None,
@@ -693,8 +695,9 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
             RuleStore(root).load(),
             args.rule_id,
             text=args.text,
-            paths=tuple(args.paths) if args.paths is not None else None,
-            contains=tuple(args.contains) if args.contains is not None else None,
+            paths=_option(args.paths),
+            contains_in_file=_option(args.contains_in_file),
+            contains_in_diff=_option(args.contains_in_diff),
         )
     elif action == "move":
         write = rule_writes.plan_move(project, args.rule_id, args.target_group)
@@ -714,6 +717,11 @@ def _rule_write(context: _Context, configuration: WorkflowConfiguration) -> _Out
     return _Outcome(
         rule_writes.apply_write(project, write, dry_run=args.dry_run).render()
     )
+
+
+def _option(values: list[str] | None) -> tuple[str, ...] | None:
+    """A repeatable option's values, or ``None`` when it was not given."""
+    return tuple(values) if values is not None else None
 
 
 def _filter_option(values: list[str] | None, option: str) -> NameFilter | None:
@@ -1145,6 +1153,11 @@ def _debug(context: _Context) -> _Outcome:
             else f"added to record `{noted['record']}`"
         )
         return _Outcome(_json(noted) if args.json_output else f"Note {where}.\n")
+    if not load_project_config(context.storage.project_config_path).debug.report:
+        raise StateError(
+            "debug report is off: set debug.report to true in ww.json to publish "
+            "debug records to ww's GitHub issues"
+        )
     records = [store.get(args.record_id)] if args.record_id else store.unreported()
     if not records:
         text = "No unreported debug records.\n"
@@ -1815,7 +1828,9 @@ def main(argv: list[str] | None = None) -> int:
         if logged:
             log("started", None)
         # Every command this invocation prints starts with the project's ww.
-        with printed_executable(extensions.config.executable):
+        with printed_executable(
+            project_command(extensions.config.executable, storage.root)
+        ):
             result = _HANDLERS[args.command](
                 _Context(args, storage, extensions, service)
             )
@@ -1866,7 +1881,7 @@ def _answer_hook(arguments: list[str]) -> int:
         storage = Storage(root)
         payload = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
         config = load_project_config(root / SETTINGS_FILE)
-        with printed_executable(config.executable):
+        with printed_executable(project_command(config.executable, root)):
             answer = answer_hook(
                 storage,
                 hook_agent(args.agent),

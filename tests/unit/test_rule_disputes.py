@@ -29,13 +29,9 @@ def test_a_dispute_and_waivers_round_trip_on_the_record() -> None:
         "task:develop",
         1,
         checks_waived=(("docs/header", "Scratch file."), ("develop/sh", "Known.")),
-        dispute=Dispute(
-            check="docs/header",
-            reason="Scratch file.",
-            attempt=2,
-            disputed_at="2026-09-30T10:00:00Z",
-            command="grep -L foo",
-            output="notes.md",
+        disputes=(
+            _dispute("docs/header"),
+            _dispute("develop/sh", output=""),
         ),
     )
 
@@ -45,7 +41,30 @@ def test_a_dispute_and_waivers_round_trip_on_the_record() -> None:
         "docs/header": "Scratch file.",
         "develop/sh": "Known.",
     }
+    assert [entry["check"] for entry in data["disputes"]] == [
+        "docs/header",
+        "develop/sh",
+    ]
     assert PlanItemExecution.from_dict(data) == record
+
+
+def _dispute(check: str, output: str = "notes.md") -> Dispute:
+    return Dispute(
+        check=check,
+        reason="Scratch file.",
+        attempt=2,
+        disputed_at="2026-09-30T10:00:00Z",
+        command="grep -L foo",
+        output=output,
+    )
+
+
+def test_a_record_with_the_earlier_single_dispute_is_read() -> None:
+    data = _record(dispute=_dispute("docs/header").to_dict())
+    del data["disputes"]
+
+    assert PlanItemExecution.from_dict(data).disputes == (_dispute("docs/header"),)
+    assert PlanItemExecution.from_dict(_record(dispute=None)).disputes == ()
 
 
 @pytest.mark.parametrize(
@@ -54,31 +73,36 @@ def test_a_dispute_and_waivers_round_trip_on_the_record() -> None:
         # The earlier single reason is not read as a waiver of everything.
         ({"checks_waived": "Checked by hand."}, "checks waived must map"),
         ({"checks_waived": {"docs/header": ""}}, "checks waived must map"),
-        ({"dispute": {"check": "x"}}, "dispute"),
+        ({"disputes": {"check": "x"}}, "disputes must be a list"),
+        ({"disputes": [{"check": "x"}]}, "dispute"),
         (
             {
-                "dispute": {
-                    "check": "x",
-                    "reason": "r",
-                    "attempt": 0,
-                    "disputed_at": "now",
-                    "command": "",
-                    "output": "",
-                }
+                "disputes": [
+                    {
+                        "check": "x",
+                        "reason": "r",
+                        "attempt": 0,
+                        "disputed_at": "now",
+                        "command": "",
+                        "output": "",
+                    }
+                ]
             },
             "dispute.attempt",
         ),
         (
             {
-                "dispute": {
-                    "check": "x",
-                    "reason": "r",
-                    "attempt": 1,
-                    "disputed_at": "now",
-                    "command": "",
-                    "output": "",
-                    "verdict": "mine",
-                }
+                "disputes": [
+                    {
+                        "check": "x",
+                        "reason": "r",
+                        "attempt": 1,
+                        "disputed_at": "now",
+                        "command": "",
+                        "output": "",
+                        "verdict": "mine",
+                    }
+                ]
             },
             "unknown keys",
         ),

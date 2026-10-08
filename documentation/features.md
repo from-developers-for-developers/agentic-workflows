@@ -214,7 +214,6 @@ defaults. Without Git, and with the uuid format:
   "enabled": true,
   "runtime": "single",
   "update_check": true,
-  "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{uuid}}",
   "limits": {
     "rounds": 3,
@@ -332,7 +331,8 @@ neither asks nor commits that choice for the team.
 Unless it was shown before, the summary ends with what to allow so your agents
 run ww without asking for confirmation. For each agent set up in the project
 whose permission format ww knows, it names the file and the exact entries,
-covering the configured `executable`, `./ww` and the `ww` shortcut. For Claude
+covering the command ww prints (the configured `executable`, else `./ww`),
+`./ww` and the `ww` shortcut. For Claude
 Code:
 
 ```text
@@ -655,7 +655,7 @@ for one of them.
 | `ww-wizard` | — | Shapes the setup with the operator: asks which of four branches (create a workflow, change an existing workflow, create or improve rules, choose an approach) unless the request says, adapts the depth of its questions, reads the `ww docs` sections, challenges needless complexity with a simpler alternative, drafts, validates with `--dry-run --inspect`, and places the change with `setup apply` or, for an existing workflow, `setup update` at the level `discover` reports. Rule work goes to the rules skills. |
 | `ww-solve` | `ww-solve` | Listens to a problem, proposes the smallest change that addresses it, using the step features that fit the kind of work, and applies it for the operator or the team on confirmation. |
 | `ww-rules-from-artifacts` | `ww-rules-from-artifacts` | Reads the artifacts of chosen steps across recent tasks and proposes rules from the lessons that recur, added with `rules add` on confirmation. |
-| `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (a deliberate violation, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It automatically creates a branch from `extensions.ww/git.base_branches.default`, which must be configured, and follows ww/git worktree settings, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
+| `ww-scriptize` | `ww-scriptize-rules` | Turns every rule with no check yet into checks for the whole project: collects the `unscriptized` rules and groups them into the fewest checks, agrees them with the operator in one conversation, builds and proves them (each check reads the step's changed files from `WW_STEP_CHANGED_FILES` and examines only those, never a diff against a base branch or the whole repository; the proof is a deliberate violation, failing with the variable naming that file and passing with it naming a clean one, then a sample of real files, with real violations reported and a baseline offered), previews each `rules convert` and `rules decline` with `--dry-run` in a second conversation, and records the approved ones in a step of its own after it. It automatically creates a branch from `extensions.ww/git.base_branches.default`, which must be configured, and follows ww/git worktree settings, so its tool installs and configuration land on a branch of their own. The store it records into, `ww-rule-automation.json`, is in the main checkout: commit it there with, or right after, merging the run's branch; until then `is-git-clean` refuses the next task. |
 | `ww-automate` | `ww-automate` | Looks at a step's instruction and past results for mechanical work a script could do, and proposes the script and a hook (or, for a workflow the configuration defines, the workflow with the step turned into a command step, placed with `setup update`); applies on confirmation. |
 
 ww never interviews the operator about who they are, their role, their team
@@ -1708,13 +1708,23 @@ is open any more), the last line names the parent instead: "Manager: continue
 with the parent task: `./ww next TASK-7 --role manager`". A child that is only
 partway through its run keeps its own command. When the assignment ended with
 an assessment, the last line instead asks the manager to choose its outcome
-and lists one `next --outcome <label>` command per outcome.
+and lists one `next --outcome <label>` command per outcome. When the run the
+manager would continue has nothing left, the task's own or, for a child, its
+parent's, the last line says so instead of naming a `next` that would be
+refused: "Manager: the workflow is complete; `./ww status TASK-7` shows the
+result." (`run_completed` in the JSON block).
 
 It lists every agent item the worker performed in the assignment with its
 outcome (`completed`, `loop break`, `loop continue`, `held for verification`,
 `failed` with the error, or `not completed`), each artifact's path, the checks
-of the last attempt with their status, the checks the operator waived, and the
-number of fix rounds. "Files changed" is the change set since the first step of
+that are current for the step with their status, the checks the operator
+waived, and the number of fix rounds. The checks are those of the attempt
+that counts now: a step held for verification shows its held re-check,
+`checks: lint passed (checks passed; rules being verified)`, not the rejected
+attempt before it, and a step still open after a rejection shows that
+attempt as what it is, `checks: lint failed (last rejected attempt,
+re-checked on the next complete)`; `checks_note` in the JSON block carries
+the label. "Files changed" is the change set since the first step of
 the assignment with rules or checks began; without such a step, or without git,
 it reads "not tracked". A failed handler's error is shown too. The worker's
 own judgment reaches the manager only through its `--summary`.
@@ -2173,15 +2183,17 @@ workflows:
 ### On the step page
 
 Every agent step lists its rules after the work instruction, each with its ID,
-its globs and `contains` strings, and its first sentence; the IDs of rules with
+its globs and its `contains_in_file` and `contains_in_diff` strings (`*.php; in
+file "Mailer"; in diff "flush"`), and its first sentence; the IDs of rules with
 a check are collected on one line, "Checked automatically when you complete".
 The section names `ww check <task>`, to see the checks' result at any time
 without completing, and `ww rule <task> <id>`, to read a rule in full. The page
 asks the worker to say in its artifact, under a **Rules** heading, which rules
 it applied and any deviation. `init`, hooks, and the workflow summary get no
 rules. In the `auto` runtime the worker's page carries the section. JSON output
-lists them as `rules`, each with `id`, `summary`, `paths`, `contains`,
-`has_command`, `hook`, `check`, `interpretation`, and `missing`.
+lists them as `rules`, each with `id`, `summary`, `paths`, `contains_in_file`,
+`contains_in_diff`, `has_command`, `hook`, `check`, `interpretation`, and
+`missing`.
 
 A rule without a check is judged after completion by a verifier, never by the
 worker; the page says so. A rule whose wording already has a converted
@@ -2194,18 +2206,24 @@ store's interpretation under it.
 the completion is rejected: nothing is saved, the artifact is kept only as a
 draft, the step stays in progress with its worker, and `complete` exits
 non-zero. The response is the fix page, `## Fix required: 2 of 5 checks failed
-(attempt 1 of 3)`, with each failed check's rule text, command, and the last 40
-lines it printed, the rejected artifact under `### Draft artifact`, then the
-same completion command; `fix_required` in JSON. The worker fixes the causes
-and completes again with the whole revised artifact, which replaces the draft
-entirely; the accepted artifact file keeps the rejected one under a
-**Previous attempt** heading.
+(attempt 2 of 3 for `lint`)`, with each failed check's rule text, how often it
+has failed against its own limit (`Failures: 2 of 3 allowed.`), its command,
+and the last 40 lines it printed, the rejected artifact under `### Draft
+artifact`, then the same completion command; `fix_required` in JSON, with
+`failures` and `max_fixes` on each failure and the `limiting` check. The
+worker fixes the causes and completes again with the whole revised artifact,
+which replaces the draft entirely; the accepted artifact file keeps the
+rejected one under a **Previous attempt** heading.
 
 A failed check always goes back to the worker, never to the operator, until
 it has failed `max_fixes` times: the rule's own value, else `limits.fixes` in
-`ww.json`, default 3. Then the task stops with
-`operator_reason: fix_limit` and the last failures on the page. The operator
-chooses:
+`ww.json`, default 3. Each check counts its own failures, so the heading's
+attempt is the count of the check nearest its limit, the one that will stop
+the step, not a count of rejections: a step whose `lint` failed twice and
+whose `tests` failed once is at `attempt 2 of 3 for `lint``. A verifier's
+failing verdict counts for its rule like a failed check. When any one check
+reaches its limit the task stops with `operator_reason: fix_limit` and the
+last failures on the page. The operator chooses:
 
 - `next --retry` gives the worker another round: the count starts again, and
   the next `next` hands the step back.
@@ -2221,26 +2239,36 @@ A hook without `on_failure: fix` fails like any handler, stopping the task with
 ### The change set
 
 A check sees the files the step changed in `WW_STEP_CHANGED_FILES`,
-newline-separated and relative to the step's directory, narrowed to its `paths`
-and `contains`; a check whose globs match none of them, or whose strings are in
-none of them, is not applicable and does not run. `contains` is a list of plain,
-case-sensitive strings in a rule file's frontmatter (no regular expressions): a
-rule about "files that use the mailer" is `paths: ["*.php"]` with `contains:
-[Mailer]`, and a file must match a glob and hold a string. A file that is not
-UTF-8 text is not selected. ww measures the change set with git: when the step
-begins it records the tree of everything in the working directory, tracked or
-not, using a temporary index, so the real index, the stash, and the files are
-untouched; at completion it takes a second tree and compares. Work that was
-uncommitted before the step cancels out, a commit made during it still counts,
-and deleted files, ww's own `.ww` state, and `ww-rule-automation.json` are left
-out. Without git there is no change set: the globs select every file in the
-directory, `.git` and `.ww` excepted.
+newline-separated and relative to the step's directory, narrowed to its
+`paths`, `contains_in_file` and `contains_in_diff`; a check whose globs match
+none of them, or whose strings are in none of them, is not applicable and does
+not run. Both `contains_in_file` and `contains_in_diff` are lists of plain,
+case-sensitive strings in a rule file's frontmatter (no regular expressions).
+`contains_in_file` looks at the file's whole text: a rule about "files that use
+the mailer" is `paths: ["*.php"]` with `contains_in_file: [Mailer]`.
+`contains_in_diff` looks only at the lines the step added or removed in the
+file: a rule about "a change that touches the flush call" is `paths: ["*.php"]`
+with `contains_in_diff: [flush]`, so editing another line of a file that
+mentions `flush` elsewhere does not select it, while a new file contributes all
+its lines. A file must match a glob and, for each key given, hold one of its
+strings in that place; a file that is not UTF-8 text is not selected. The old
+`contains` key is refused with a message naming the two. ww measures the
+change set with git: when the step begins it records the tree of everything in
+the working directory, tracked or not, using a temporary index, so the real
+index, the stash, and the files are untouched; at completion it takes a second
+tree and compares, and reads a file's changed lines from the diff between the
+two. Work that was uncommitted before the step cancels out, a commit made
+during it still counts, and deleted files, ww's own `.ww` state, and
+`ww-rule-automation.json` are left out. Without git there is no change set:
+the globs select every file in the directory, `.git` and `.ww` excepted, and
+`contains_in_diff` reads the whole file, as `contains_in_file` does.
 
 A rule without a check is narrowed the same way. When the step's worker
 completes, each judged rule is matched against the change set: a rule with
-`paths` or `contains` that select none of the changed files is not
-applicable, no verifier judges it, and the artifact says so; a rule with
-neither applies to every change, even when the step changed nothing, so an
+`paths`, `contains_in_file` or `contains_in_diff` that select none of the
+changed files is not applicable, no verifier judges it, and the artifact says
+so; a rule with none of them applies to every change, even when the step
+changed nothing, so an
 unscoped judged rule is verified after every step. A step that changed no
 files makes every scoped judged rule not applicable. When no judged rule
 remains, the completion is recorded at once, without a verification item.
@@ -2251,14 +2279,32 @@ suits `grep -L foo $WW_STEP_CHANGED_FILES` and `xargs`; paths with spaces need
 output is a command-output artifact: `ww artifacts` lists it under the step
 with a `check` field naming the check.
 
+### A check that cannot run
+
+A check that cannot run here is **unavailable**, not failed: the script it
+runs is not in this checkout (its `check` lists it under `files`, tested
+before anything runs), the `argv` program does not exist, or the shell
+answered `command not found` or `not executable` (exit 127 or 126), as when
+a check is written on a branch its tool has not reached yet. The worker is
+not sent back for it, it counts toward no `max_fixes`, the rule statistics
+ignore it, and a held completion never reuses it. Its rules are not left
+unchecked either: the rule it belongs to, or the rules a derived check
+covers, are judged by a verifier for that completion, as a converted check
+whose configuration is missing is, and the verification page names the
+check and the reason. The fix page, `ww check`, the operator's fix-limit and
+dispute pages, and the step artifact list such checks apart from the failed
+ones as `check unavailable: <reason>`.
+
 ### In the artifact
 
 The step's artifact gains a `## Rules` section after `## Result`: one line per
 rule with its status, `passed`, `not applicable`, `failed`, which only a
 waiver lets through, `verified pass (by <verification item>)` for a rule a
 verifier judged, `not applicable (no changed file in scope)` for a judged
-rule the change set left out, or `passed (check <name>)` for one a derived
-check covers; hook checks carry `(hook)`. A rule is `self-declared` only when the operator
+rule the change set left out, `passed (check <name>)` for one a derived
+check covers, or `check unavailable (<reason>)` for a check that could not
+run, with the verdict first when a verifier judged its rule instead; hook
+checks carry `(hook)`. A rule is `self-declared` only when the operator
 waived it, which skips its verification too. The section ends with the
 waived IDs and the operator's reason for each, if any, and how many
 completions ww rejected before this one.
@@ -2288,7 +2334,7 @@ for through `agent`, `model`, and `reasoning` (else the step's). Each is its
 own assignment: under `auto` the manager hands it to a new worker; under
 `single` the same session performs it, and its page says to read the change
 as a reviewer would. The verification page lists each rule, with its
-scope (globs and `contains` strings) and, when they are fewer than the
+scope (globs and `in file` / `in diff` strings) and, when they are fewer than the
 step's, the changed files in that scope, the step's changed files once and
 the `git diff` that shows them, and the path of the held artifact. The verifier gives each rule a verdict, `pass` or `fail` with
 `file:line — what` evidence, as one `--rule-result` per rule,
@@ -2304,8 +2350,9 @@ declared rules have no check yet and suggest the `ww-scriptize` skill, which sta
 while `ww-scriptize-rules` is switched off, and on the pages of
 `ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules,
 suggesting `ww-scriptize-rules` only while it is switched on, hints at the
-judged rules with neither `paths` nor `contains`, "verified on every step;
-add paths or contains to narrow", and lists store entries whose wording no
+judged rules with neither `paths` nor strings, "verified on every step; add
+paths, contains_in_file or contains_in_diff to narrow", and lists store
+entries whose wording no
 rule has any more; only `ww rules prune`, after listing them and asking the
 operator, deletes the orphans.
 
@@ -2350,19 +2397,25 @@ A worker need not complete to learn what the checks say: `ww check <task>`
 runs the step's checks against what it changed so far and prints the
 failures as the fix page would, or `All checks pass`, plus the rules a
 verifier will judge once it completes. Nothing is recorded: no attempt
-counts, and the output is not kept. It exits 1 when a check fails.
+counts, and the output is not kept. It exits 1 when a check fails; a check
+that cannot run here is listed apart as `check unavailable: <reason>` and is
+no failure.
 
 A check can be wrong for a change. After a rejection, instead of bending its
 work around the check, the worker may dispute it with
 `ww dispute <task> --rule <id> --reason "<why>"`, naming the ID the fix page
-shows. The task stops with `operator_reason: check_disputed`; the page shows
-the check, its last output, and the worker's argument. The operator decides:
+shows; `--rule` is repeated when several checks are wrong for the same
+reason, and the dispute is refused as a whole when any ID failed no rejected
+completion. The task stops with `operator_reason: check_disputed`; the page
+shows each disputed check, its last output, and the worker's argument, and
+`disputes` in JSON lists them with their reason. Each check gets its own
+entry in the dispute log. The operator decides for them all at once:
 
-- `next --retry`: the check stands. The rejection still counts toward
+- `next --retry`: the checks stand. The rejection still counts toward
   `max_fixes`, and the step goes back to its worker with the fix page.
-- `next --force --reason "<why>"`: the check is waived for this step
-  only; the worker completes again without it, and the artifact records the
-  waiver.
+- `next --force --reason "<why>"`: the disputed checks are waived for this
+  step only; the worker completes again without them, and the artifact
+  records the waiver.
 
 A dispute changes nothing in the rule-automation store. Every dispute is also
 kept in `.ww/rule-disputes.json`, and `ww lint` lists each disputed ID with
@@ -2387,7 +2440,15 @@ are not taken for ww's. Without `--`, `--check-argv` takes the arguments up
 to the next option.
 
 `ww-scriptize-rules` (the `ww-scriptize` skill) does this for every rule that
-needs it, on a branch of its own. `rules convert` shows the check with its command in full, its config files,
+needs it, on a branch of its own. Its collect and build steps hold the
+worker to the change set: ww runs each check with the files the step
+changed in `WW_STEP_CHANGED_FILES`, already narrowed to the rule's globs, so
+a check examines only those files and passes them to its tool, and never
+diffs the branch against a base branch or scans the whole repository, since
+a step must not fail on files it did not change. The proof runs the check
+twice with the variable set by hand, once to the violating file, which must
+fail, and once to an unrelated file, which must pass, before the sample of
+real files. `rules convert` shows the check with its command in full, its config files,
 the rules it covers with where each stands now, and anything else it
 changes, and asks; `--yes` stands for the operator's answer,
 and without a terminal it refuses. It creates the check, or replaces an
@@ -2458,8 +2519,9 @@ ask an agent to add or change a rule, the `ww-rule` skill carries the
 judgment: it reads the groups and the real workflow and step names from
 `ww rules --json`, splits what you said into atomic obligations,
 tells a new rule from an amendment of an existing one or a change of where a
-group applies, prefers a scoped rule, with `paths` globs and `contains`
-strings when the rule is about particular files or constructs, since ww
+group applies, prefers a scoped rule, with `paths` globs and strings when the
+rule is about particular files or constructs (`contains_in_diff` for what the
+change touches, `contains_in_file` for the files that use something), since ww
 skips a scoped rule the step's change set never touches, and counts what
 each glob matches, places it in a group whose filters fit, and
 rewrites it as one imperative sentence with the rationale below. It shows
@@ -2492,8 +2554,10 @@ Reaches these steps (an agent step's page shows it):
 
 - `rules add <group> --text "<sentence and body>"` creates a rule file in the
   group's first directory, named after the first five words of its first
-  sentence unless `--id` names it, with `--paths` globs, `--contains` strings
-  (it reports how many files hold each) and a check from `--check-shell` or
+  sentence unless `--id` names it, with `--paths` globs, `--contains-in-file`
+  and `--contains-in-diff` strings (it reports how many files hold each, and
+  warns about a `--contains-in-file` string found nowhere) and a check from
+  `--check-shell` or
   `--check-argv` and `--assert empty|eq:<value>`. It never overwrites a file.
   A group that lists its rule files one by one instead of a directory gets
   the file beside its last one, or in `--dir <path>`, and the file's path
@@ -2507,8 +2571,9 @@ Reaches these steps (an agent step's page shows it):
   `ww.yaml`: the group goes into `ww-rules.yaml` next to
   it, a file ww owns and rewrites whole, and the repo file gains one entry
   under `imports` the first time, checked to change nothing else.
-- `rules edit <id> --text ... --paths ... --contains ...` replaces a rule file's
-  body, globs or strings and keeps every other line. A new wording has a new
+- `rules edit <id> --text ... --paths ... --contains-in-file ...
+  --contains-in-diff ...` replaces a rule file's body, globs or strings of
+  either kind and keeps every other line. A new wording has a new
   hash, so the command says which rule-automation store entry stops matching
   and, when the old wording had an approved check, that `rules promote` keeps
   it.
@@ -3476,7 +3541,9 @@ one worker per round.
   profile: quick-developer
   loop:
     - test: Run the test suite.
-      break: No failures found.
+      break: >-
+        No test fails because of this change; pre-existing or environmental
+        failures are noted in the artifact.
     - fix-tests: Fix the failures.
 ```
 
@@ -3512,6 +3579,21 @@ has resolved or accepted the remaining findings, `next --force --reason`
 leaves the loop, records the reason on the repeat boundary, and continues with
 the steps after the loop wrapper. Nothing else starts another round; a
 further round needs a higher `max_rounds`.
+
+### Ending a loop early
+
+The operator can also end a loop that is still running, below its limit, when
+the remaining rounds are not worth their cost: `next --force --reason "<why>"`
+while the task is on a body step of the loop, a nested loop's boundary
+included, or on its repeat boundary. The loop ends between items: it is refused
+while a worker holds one of the loop's items in progress, and names `next
+--reassign` and `fail` as the ways to take the item away first. Every item
+from the current one up to and including the repeat boundary is completed as
+skipped, the boundary records that the operator ended the loop and their
+reason, and the run continues with the steps after the loop wrapper. Before
+the confirmation, `next --force` says what it would do: "end the
+`review-and-fix` loop now and continue with the steps after it". Outside a
+loop, `--force` is still refused unless the task is failed or interrupted.
 
 ## Parent and child tasks
 
@@ -3778,7 +3860,10 @@ no-op when worktrees are disabled. If the primary checkout is already on the
 exact task branch rendered from the workflow's configured branch name format,
 either handler selects it as the task workspace rather than creating a separate
 worktree. No conventional branch names such as a base or development branch
-participate in that decision.
+participate in that decision. A worktree `create-worktree` makes gets a copy
+of the primary checkout's `./ww` launcher when one is there, mode included:
+the launcher is git-ignored, so git would leave the worktree without it, and
+the commands ww prints run from the worktree too.
 
 Each extension owns `.ww/ext/<vendor>/<name>/`, reached only through the store
 object it is handed, and every write goes through ww's lock layer. Use
@@ -4590,8 +4675,10 @@ project switches installs by editing that one line. Like every setting, the key
 may also come from the user or local settings file, the local one winning,
 so one checkout can use a development install without changing the shared
 file. Without the key, printed
-commands use `./ww` and the launcher runs `ww-agentic-workflows`. `init` writes
-`"executable": "ww-agentic-workflows"` when the key is missing. The launcher
+commands use `./ww` and the launcher runs `ww-agentic-workflows`; `init`
+writes no key, and a key naming `ww-agentic-workflows` itself, as an older
+`init` wrote into every `ww.json`, keeps printed commands on `./ww` while the
+launcher is there to run. The launcher
 itself is ww-owned: `init` rewrites a `./ww` that differs from the current one
 and reports it as updated, because a launcher an older ww wrote can read old
 configuration file names and run the wrong binary, and `lint` warns about such
@@ -4865,22 +4952,46 @@ keep it on the operator's machine as one record per run:
   is kept under `.ww/feedback/`, apart from the feedback-learning store
   `.ww/feedback.json`.
 
-Collection adds no step to the plan. The summary step's page carries the
-questions as values to supply beside `summary`, each a JSON array of objects
-with `summary`, `detail` and `step` (a bare string counts as a summary; `[]`
-when there is nothing to say); a malformed array is refused at `complete`, so
-it comes back to the agent instead of into a record. Once the run completes,
-ww writes the record: the workflow's name, the time, the task and run IDs, the
-agent, runtime and modes, the ww version with the plan and task-state schema
-versions, the workflow's definition as written in `ww.yaml` (not the compiled
-plan), and the two arrays. The record's ID is the task and run, such as
-`TASK-42--01-task`; a child task's slash becomes a dash, as in
-`{{ww.task.slug}}` (`TASK-42-A--01-task`).
+Each answer is a value to supply at `complete`, a JSON array of objects with
+`summary`, `detail` and `step` (a bare string counts as a summary; `[]` when
+there is nothing to say); a malformed array is refused at `complete`, so it
+comes back to the agent instead of into a record. The workflow feedback is
+asked on the summary step's page, beside `summary`. The debug questions have
+a ww-generated item of their own, `assess-ww`, compiled right before the
+summary with `role: manager`: under `auto` the manager answers them in its
+own session, since it is the manager that met ww's pages, commands and
+refusals across the run, and the summary follows in the same assignment;
+under `single` the one session answers them like every other item. The
+page asks, one line each, which ww commands errored or were refused, which
+pages misled or lacked a needed command, which steps were retried or forced
+past, whether ww's state was edited by hand, and which rounds were wasted on
+ww; it lists the events ww already observed for the run so the agent adds
+what they miss rather than repeating them, and it repeats the rule that only
+ww's behaviour is described: no project name, path, ticket key, code, commit
+message or user name.
+
+Once the run completes, ww writes the record: the workflow's name, the time,
+the run ID, the agent, runtime and modes, the ww version with the plan and
+task-state schema versions, the workflow's *shape* and the two arrays. A
+record holds ww-related data only. It stores no task ID: its ID is a short
+SHA-256 digest of the task ID and the run, such as `05d1ca4b1083--01-task`
+(`debug list` names them). The shape is a structural digest of the compiled
+plan, never the text of `ww.yaml`: the workflow name, each item's name, step,
+phase, source, kind, owner and role, registered handler, loop, items and
+children markers and rule and check counts, plus the counts of items, steps
+and hooks; descriptions, prompts, artifacts, requirements, rule texts, commit
+messages and transcripts never enter a record. Every string that reaches a
+record, the agent's answers, ww's own events and the operator's notes, passes
+one redaction: the task and run IDs become `<task>` and `<run>`, file paths
+(a token with a slash or a known extension) `<path>`, single-, double- and
+backtick-quoted values `<value>`, email addresses `<email>` and Jira-like keys
+such as `PROJ-123` `<ticket>`. ww's own message structure stays, including a
+backticked ww command, which is redacted inside instead.
 
 The agent is told about the collection exactly once: the first page of a run
 asks it to say that ww collects debug info or feedback at the end of the run,
 that it stays on this machine, and where. The collection itself is silent
-until the summary step. Nothing is ever sent by itself.
+until the end of the run. Nothing is ever sent by itself.
 
 A debug record also carries an `events` array, apart from the agent's two
 arrays, with what ww itself observed while `debug.collect` was on: a `fail`
@@ -4895,10 +5006,10 @@ request bound.
 
 ```console
 ./ww debug list
-./ww debug show TASK-42--01-task
+./ww debug show 05d1ca4b1083--01-task
 ./ww debug note TASK-42 --summary "The fix page named the wrong step" --detail "..."
 ./ww workflow-feedback list
-./ww workflow-feedback show TASK-42--01-task --json
+./ww workflow-feedback show 05d1ca4b1083--01-task --json
 ```
 
 `list` names every record with its counts and whether it was reported;
@@ -4907,10 +5018,10 @@ gives the records themselves. `note` keeps the operator's own observation of
 ww's behaviour: given a record ID, or a task whose run completed, the note is
 added to that record's events; given a task still running or an identity
 request, it waits with the pending events for the run's record and is also
-written as a standalone record (`TASK-42--notes`, empty agent arrays), which
+written as a standalone record (`<digest>--notes`, empty agent arrays), which
 the run's own record replaces once it completes, so a note on a run that
 never completes is still kept. The note is written whether or not
-`debug.collect` is on.
+`debug.collect` is on, and redacted like everything else in a record.
 
 ### Reporting debug records
 
@@ -4919,9 +5030,10 @@ one issue per record, by ww itself, never by the agent on its own:
 
 ```console
 ./ww debug report
-./ww debug report TASK-42--01-task --yes
+./ww debug report 05d1ca4b1083--01-task --yes
 ```
 
+The command needs `debug.report` on in `ww.json`; it is refused otherwise.
 Without a record ID, every unreported record is offered in turn. Each report
 is printed in full first, then confirmed on its own at the terminal; `--yes`
 stands for a confirmation the operator already gave, as the `ww-debug-report`
@@ -4931,15 +5043,16 @@ with the `gh` CLI installed and logged in, ww creates the issue through it and
 keeps the issue's URL on the record; otherwise ww opens the browser on the
 repository's new-issue page with the title and body prefilled, the operator
 reviews and submits it logged in, and the record is marked reported once they
-confirm they did (the prefilled page drops the workflow definition when the
-URL would be too long for GitHub). A declined report stays unreported. The
-command exits non-zero when nothing was sent.
+confirm they did (the prefilled page drops the workflow shape when the URL
+would be too long for GitHub). A declined report stays unreported. The
+command exits non-zero when nothing was sent. The issue body is the record as
+`debug show` prints it: the redacted content and nothing else.
 
-With `debug.report` on, `discover` counts the unreported records and tells the
-agent to ask the operator once, yes or no, whether to report them before
-continuing; on yes the `ww-debug-report` skill shows each record and asks per
-record, on no the work carries on. With `debug.report` off, nothing is
-offered, and `ww debug report` still works on request.
+ww never asks to send debug data during work: `discover` does not list
+unreported records, no page offers a report, and the ww skill and agent
+instructions tell the agent nothing about reporting. Sending is the
+operator's own `ww debug report`, or the `ww-debug-report` skill when the
+operator invokes it.
 
 ### Reviewing workflow feedback
 

@@ -27,8 +27,9 @@ HookScope = Literal["global", "workflow", "step"]
 # What a failed ``before_complete`` hook does: stop for the operator, as any
 # failed handler does, or send the step back to its worker to fix.
 HookFailure = Literal["fix", "operator"]
-# The outcome of one check ww ran when a step completed.
-CheckStatus = Literal["passed", "failed", "not_applicable"]
+# The outcome of one check ww ran when a step completed; ``unavailable`` is a
+# check that could not run here, which neither fails nor counts.
+CheckStatus = Literal["passed", "failed", "not_applicable", "unavailable"]
 # Where a check came from: a rule's own command, a ``fix`` hook, a command
 # the operator approved into the rule-automation store, or a verifier's
 # verdict on a rule without a command.

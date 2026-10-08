@@ -123,6 +123,7 @@ from ww.rule_verification import (
     close_round,
     hold_completion,
     index_of,
+    judged_now,
     judged_report,
     judged_rules,
     open_verification_round,
@@ -133,7 +134,6 @@ from ww.rule_verification import (
     resume_held,
     round_open,
     skip_idle_verification,
-    to_verify,
     verdicts_of,
     verification_needs,
 )
@@ -143,9 +143,10 @@ from ww.run_reports import (
     DEBUG,
     KINDS,
     RunReportStore,
+    asks_for_reports,
     start_notice,
     validate_report_values,
-    workflow_source,
+    workflow_shape,
 )
 from ww.runtimes import requested_setting, runtime_instruction
 from ww.storage import Storage
@@ -164,6 +165,7 @@ from ww.task_ids import (
     validate_task_id,
 )
 from ww.transitions import (
+    active_loop,
     advance_completed_item,
     append_child_lifecycle,
     await_item_input,
@@ -172,8 +174,9 @@ from ww.transitions import (
     block_item_phase,
     complete_agent_item,
     complete_run,
-    dispute_check,
+    dispute_checks,
     enclosing_loop_entry_index,
+    end_loop,
     enter_loop,
     exit_exhausted_loop,
     fail_agent_item,
@@ -305,8 +308,7 @@ class OpenAssignment:
 
 
 FORCE_NOT_APPLICABLE = (
-    "cannot force a task that is not failed or interrupted and is not stopped "
-    "at a loop limit"
+    "cannot force a task that is not failed or interrupted and is not in a loop"
 )
 # Forcing would skip the step after the pass, not the pass's missing records.
 FORCE_PAST_PASS_GATE = (
@@ -860,7 +862,11 @@ class WorkflowService:
             latest = store.latest_for(target)
             if latest is not None:
                 store.add_event(
-                    latest["id"], source="operator", summary=summary, detail=detail
+                    latest["id"],
+                    source="operator",
+                    summary=summary,
+                    detail=detail,
+                    task_id=target,
                 )
                 return {"target": target, "record": latest["id"], "pending": False}
         store.note(target, source="operator", summary=summary, detail=detail)
@@ -899,7 +905,7 @@ class WorkflowService:
             array.variable in values for kind in KINDS.values() for array in kind.arrays
         ):
             return
-        definition = workflow_source(self.storage.config_path, snapshot.plan.workflow)
+        shape = workflow_shape(snapshot.plan)
         runs, _ = self.tasks.read_task_aggregate(state.task_id)
         run = next((run for run in runs if run.run_id == state.run_id), None)
         for store in self.run_reports.values():
@@ -912,7 +918,7 @@ class WorkflowService:
                     runtime=state.workflow_runtime,
                     modes=snapshot.plan.modes,
                     values=values,
-                    workflow_definition=definition,
+                    workflow_shape=shape,
                     request_id=run.bootstrap_request_id if run else None,
                 )
             except (OSError, StateError):
@@ -1329,9 +1335,11 @@ class WorkflowService:
                 state = retry_failed_item(state, snapshot.plan, _now)
                 self.commit(state, snapshot)
         elif force:
-            if not self._at_loop_limit(state, snapshot):
-                raise StateError(FORCE_NOT_APPLICABLE)
-            state = exit_exhausted_loop(state, snapshot.plan, _now, force_reason)
+            if self._at_loop_limit(state, snapshot):
+                state = exit_exhausted_loop(state, snapshot.plan, _now, force_reason)
+            else:
+                self._loop_to_end(state, snapshot)
+                state = end_loop(state, snapshot.plan, _now, force_reason)
             self.commit(state, snapshot)
         if state.status == "awaiting_input":
             return self.render(state, snapshot)
@@ -1450,11 +1458,11 @@ class WorkflowService:
 
     @staticmethod
     def _waivable(state: ExecutionState, plan: WorkflowPlan) -> tuple[str, ...]:
-        """What ``next --force`` waives: the disputed check, or all of them."""
+        """What ``next --force`` waives: the disputed checks, or all of them."""
         record = state.item_executions[state.cursor]
         if state.failure_kind == "check_disputed":
-            assert record.dispute is not None
-            return (record.dispute.check,)
+            assert record.disputes
+            return tuple(dispute.check for dispute in record.disputes)
         return tuple(fix_limits(plan.items[state.cursor], record))
 
     def force_target(self, task_id: str) -> str:
@@ -1477,11 +1485,14 @@ class WorkflowService:
                 "records the waiver"
             )
         if state.status == "failed" and state.failure_kind == "check_disputed":
-            (disputed,) = self._waivable(state, snapshot.plan)
+            disputed = self._waivable(state, snapshot.plan)
+            names = ", ".join(f"`{check_id}`" for check_id in disputed)
+            noun = "checks" if len(disputed) > 1 else "check"
             return (
-                f"waive the disputed check `{disputed}` of "
+                f"waive the disputed {noun} {names} of "
                 f"`{items[state.cursor].name}`: its worker completes it again "
-                "without that check, and the artifact records the waiver"
+                f"without {'them' if len(disputed) > 1 else 'that check'}, and "
+                "the artifact records the waiver"
             )
         if state.status == "failed" and state.failure_kind == "pass_incomplete":
             raise StateError(FORCE_PAST_PASS_GATE)
@@ -1501,7 +1512,27 @@ class WorkflowService:
                 f"leave the `{loop.loop_id}` loop at its limit of {loop.max_times} "
                 "iterations and continue with the steps after it"
             )
-        raise StateError(FORCE_NOT_APPLICABLE)
+        loop_id = self._loop_to_end(state, snapshot)
+        return f"end the `{loop_id}` loop now and continue with the steps after it"
+
+    @staticmethod
+    def _loop_to_end(state: ExecutionState, snapshot: PlanSnapshot) -> str:
+        """The loop ``next --force`` ends from here, or why it cannot.
+
+        The operator ends a loop between items: a worker still holding one
+        of its items keeps it, and the operator takes it away first.
+        """
+        active = active_loop(state, snapshot.plan)
+        if active is None:
+            raise StateError(FORCE_NOT_APPLICABLE)
+        if state.active_item_id is not None:
+            item = snapshot.plan.items[state.cursor]
+            raise StateError(
+                f"`{item.name}` is in progress with a worker: end the loop after "
+                f"`next {state.task_id} --reassign` dispatches it again or `fail "
+                f"{state.task_id}` records it as failed"
+            )
+        return active[0]
 
     @staticmethod
     def _stopped_at_loop_boundary(
@@ -1574,7 +1605,7 @@ class WorkflowService:
             self._observe(
                 task_id, f"Worker reported `{instruction.item_name}` failed", error
             )
-        self.children.reconcile_after_child(task_id)
+        instruction = self._reconciled(task_id, instruction)
         return self._tag_caller(instruction, caller_role)
 
     def interact(
@@ -1876,7 +1907,7 @@ class WorkflowService:
                 ),
                 opened,
             )
-        self.children.reconcile_after_child(task_id)
+        instruction = self._reconciled(task_id, instruction)
         return replace(
             self._tag_caller(instruction, caller_role),
             completion_registered=True,
@@ -1998,7 +2029,7 @@ class WorkflowService:
             window_stop = assignment.stop if assignment else None
         required, _ = completion_window(snapshot.plan, state.cursor, window_stop)
         validate_requested_values(supplied, required)
-        if item.summary:
+        if asks_for_reports(item):
             # The run reports' arrays are checked before anything is saved, so
             # a malformed one comes back to the agent, not into a record.
             validate_report_values(supplied)
@@ -2103,7 +2134,10 @@ class WorkflowService:
                 self.commit(state, snapshot)
                 self._count_rules(task_id, item, active_record, check_report)
                 return self.render(state, snapshot)
-        if to_verify(item, active_record):
+        unavailable = (
+            {result.id for result in check_report.unavailable} if check_report else ()
+        )
+        if judged_now(item, active_record, unavailable):
             state, held_page = self._hold_for_verification(
                 state,
                 snapshot,
@@ -2397,72 +2431,83 @@ class WorkflowService:
     def dispute(
         self,
         task_id: str,
-        check_id: str,
+        check_ids: tuple[str, ...],
         reason: str,
         *,
         caller_role: CallerRole | None = None,
         assignment: str | None = None,
     ) -> Instruction:
-        """Stop for the operator: the step's worker disputes a check.
+        """Stop for the operator: the step's worker disputes checks.
 
-        Only a check that rejected a completion of the step in progress can
-        be disputed. The dispute goes into the project's dispute log, then
-        onto the step's record; the operator lets the check stand or waives
-        it for this step. Nothing is written to the rule-automation store.
+        Only checks that rejected a completion of the step in progress can
+        be disputed, all of them or none. Each dispute goes into the
+        project's dispute log, then all onto the step's record; the operator
+        lets the checks stand or waives them for this step. Nothing is
+        written to the rule-automation store.
         """
         self._validate_caller_role(caller_role)
         validate_task_id(task_id)
         reason = reason.strip()
         if not reason:
             raise StateError("dispute --reason must be non-empty")
+        check_ids = tuple(dict.fromkeys(check_ids))
         with self.tasks.lock_task(task_id):
             self._authorize_worker(task_id, caller_role, assignment)
             opened = self._open_assignment(task_id, caller_role)
             state, snapshot = self.load(task_id)
             item, _ = self._active_step(state, snapshot, "nothing to dispute")
-            failed = [
-                (report, result)
+            last_failed = {
+                result.id: (report, result)
                 for report in item_reports(state)
                 for result in report.failed
-                if result.id == check_id
+            }
+            unknown = [
+                check_id for check_id in check_ids if check_id not in last_failed
             ]
-            if not failed:
+            if unknown:
                 raise StateError(
                     f"nothing to dispute: no rejected completion of {item.name!r} "
-                    f"failed {check_id!r}; run check first to see what fails, "
-                    "and dispute a check the fix page names"
+                    f"failed {', '.join(repr(check_id) for check_id in unknown)}; "
+                    "run check first to see what fails, and dispute a check the "
+                    "fix page names"
                 )
-            report, result = failed[-1]
-            dispute = Dispute(
-                check=check_id,
-                reason=reason,
-                attempt=report.attempt,
-                disputed_at=_now(),
-                command=result.command,
-                output=result.output,
-            )
-            rule = next((rule for rule in item.rules if rule.id == check_id), None)
-            self.rule_disputes.append(
-                DisputeEntry(
+            disputed_at = _now()
+            disputes = tuple(
+                Dispute(
                     check=check_id,
-                    text_hash=rule.text_hash if rule else None,
-                    task_id=task_id,
-                    run_id=state.run_id,
-                    step=item.name,
                     reason=reason,
-                    attempt=report.attempt,
-                    disputed_at=dispute.disputed_at,
+                    attempt=last_failed[check_id][0].attempt,
+                    disputed_at=disputed_at,
+                    command=last_failed[check_id][1].command,
+                    output=last_failed[check_id][1].output,
                 )
+                for check_id in check_ids
             )
-            state = dispute_check(state, snapshot.plan, dispute, _now)
+            hashes = {rule.id: rule.text_hash for rule in item.rules}
+            for dispute in disputes:
+                self.rule_disputes.append(
+                    DisputeEntry(
+                        check=dispute.check,
+                        text_hash=hashes.get(dispute.check),
+                        task_id=task_id,
+                        run_id=state.run_id,
+                        step=item.name,
+                        reason=reason,
+                        attempt=dispute.attempt,
+                        disputed_at=disputed_at,
+                    )
+                )
+            state = dispute_checks(state, snapshot.plan, disputes, _now)
             self.commit(state, snapshot)
+            names = ", ".join(f"`{check_id}`" for check_id in check_ids)
+            noun = "checks" if len(check_ids) > 1 else "check"
             self._observe(
-                task_id, f"Worker disputed check `{check_id}` of `{item.name}`", reason
+                task_id, f"Worker disputed {noun} {names} of `{item.name}`", reason
             )
             instruction = self._with_handoff(
                 task_id, self.render(state, snapshot), opened
             )
-        self.children.reconcile_after_child(task_id)
+        instruction = self._reconciled(task_id, instruction)
         return self._tag_caller(instruction, caller_role)
 
     def rule(self, task_id: str, rule_id: str) -> RuleView:
@@ -4033,8 +4078,10 @@ class WorkflowService:
             mark = check_report.mark
         else:
             mark = take_mark(directory) if record.change_mark else None
-        files, unmarked = change_set(directory, record.change_mark, mark)
-        needs, not_applicable = verification_needs(item, record, files, directory)
+        files, marks = change_set(directory, record.change_mark, mark)
+        needs, not_applicable = verification_needs(
+            item, record, files, directory, check_report, marks
+        )
         state = record_not_applicable(state, not_applicable, _now)
         if not needs:
             return state, None
@@ -4042,7 +4089,7 @@ class WorkflowService:
             request,
             mark=mark,
             files=files,
-            all_files=unmarked,
+            all_files=marks is None,
             draft_ref=self._write_draft(state, item, record, artifact),
             report=check_report,
         )
@@ -4357,7 +4404,22 @@ class WorkflowService:
         return take_mark(self._check_scope(state, plan, item).directory)
 
     def render(self, state: ExecutionState, snapshot: PlanSnapshot) -> Instruction:
-        return self.instructions.build(state, snapshot)
+        return self._with_debug_events(
+            self.instructions.build(state, snapshot), state, snapshot
+        )
+
+    def _with_debug_events(
+        self, instruction: Instruction, state: ExecutionState, snapshot: PlanSnapshot
+    ) -> Instruction:
+        """List ww's own events on the page that asks for the debug assessment."""
+        items = snapshot.plan.items
+        if state.cursor >= len(items) or items[state.cursor].name != DEBUG.item:
+            return instruction
+        try:
+            notice = self.run_reports[DEBUG.name].events_notice(state.task_id)
+        except (OSError, StateError):
+            return instruction
+        return replace(instruction, notices=(*instruction.notices, notice))
 
     def resume(self, state: ExecutionState, snapshot: PlanSnapshot) -> Instruction:
         """Commit, continue the active assignment or drain, then instruct."""
@@ -4498,6 +4560,26 @@ class WorkflowService:
             state.active_item_id,
         )
 
+    def _run_completed(self, task_id: str) -> bool:
+        """Whether the task's current run has nothing left to run."""
+        state, _ = self.load(task_id)
+        return state.status == "completed"
+
+    def _reconciled(self, task_id: str, instruction: Instruction) -> Instruction:
+        """Advance the parent after a child's worker command, and tell its block.
+
+        A child's handoff block is built before its parent learns that the
+        child has ended, so whether the parent is complete is read after.
+        """
+        self.children.reconcile_after_child(task_id)
+        block = instruction.handoff_block
+        if block is None or block.continuation_task_id is None:
+            return instruction
+        completed = self._run_completed(block.continuation_task_id)
+        return replace(
+            instruction, handoff_block=replace(block, run_completed=completed)
+        )
+
     def _with_handoff(
         self,
         task_id: str,
@@ -4603,6 +4685,11 @@ class WorkflowService:
             ),
             loop_outcome=((ended.active, loop) if loop and ended.active else None),
             continuation_task_id=continuation,
+            run_completed=(
+                self._run_completed(continuation)
+                if continuation is not None
+                else state.status == "completed"
+            ),
             choosing_outcome_of=(
                 snapshot.plan.items[choosing.index].name
                 if choosing is not None

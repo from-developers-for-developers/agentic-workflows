@@ -358,7 +358,10 @@ def build_parser() -> argparse.ArgumentParser:
     next_actions.add_argument(
         "--force",
         action="store_true",
-        help="Skip a failed or interrupted item after operator confirmation.",
+        help=(
+            "Skip a failed or interrupted item, or end the loop the task is "
+            "in, after operator confirmation."
+        ),
     )
     next_actions.add_argument(
         "--retry",
@@ -381,7 +384,10 @@ def build_parser() -> argparse.ArgumentParser:
     next_step.add_argument(
         "--reason",
         dest="force_reason",
-        help="Required explanation for --force; retained with the skipped item.",
+        help=(
+            "Required explanation for --force; retained with the skipped item "
+            "or the ended loop."
+        ),
     )
     next_step.add_argument(
         "--reassign",
@@ -629,9 +635,10 @@ def build_parser() -> argparse.ArgumentParser:
     dispute.add_argument(
         "--rule",
         required=True,
-        dest="check_id",
+        action="append",
+        dest="check_ids",
         metavar="ID",
-        help="The rule or check ID the fix page names.",
+        help="A rule or check ID the fix page names; repeat for several.",
     )
     dispute.add_argument(
         "--reason",
@@ -1175,13 +1182,7 @@ def _rules_parser(
     add.add_argument("group_name", nargs="?", metavar="GROUP")
     add.add_argument("--text", help="The rule: one imperative sentence, then its body.")
     add.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
-    add.add_argument(
-        "--contains",
-        nargs="+",
-        metavar="TEXT",
-        default=None,
-        help="Apply only to files containing any of these strings (plain text).",
-    )
+    _contains_options(add)
     command = add.add_mutually_exclusive_group()
     command.add_argument("--check-shell", metavar="SCRIPT", default=None)
     command.add_argument(
@@ -1222,13 +1223,7 @@ def _rules_parser(
     edit.add_argument("rule_id", metavar="ID")
     edit.add_argument("--text", default=None)
     edit.add_argument("--paths", nargs="+", metavar="GLOB", default=None)
-    edit.add_argument(
-        "--contains",
-        nargs="+",
-        metavar="TEXT",
-        default=None,
-        help="Apply only to files containing any of these strings (plain text).",
-    )
+    _contains_options(edit)
     move = actions.add_parser(
         "move",
         parents=[dry_run],
@@ -1260,6 +1255,26 @@ def _rules_parser(
         ),
     )
     promote.add_argument("check_name", metavar="CHECK")
+
+
+def _contains_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--contains-in-file",
+        nargs="+",
+        metavar="TEXT",
+        default=None,
+        help="Apply only to files whose text holds any of these strings (plain).",
+    )
+    parser.add_argument(
+        "--contains-in-diff",
+        nargs="+",
+        metavar="TEXT",
+        default=None,
+        help=(
+            "Apply only to files whose lines changed by the step, added or "
+            "removed, hold any of these strings (plain)."
+        ),
+    )
 
 
 def _filter_options(parser: argparse.ArgumentParser) -> None:

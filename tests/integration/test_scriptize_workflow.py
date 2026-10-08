@@ -79,7 +79,14 @@ def test_the_workflow_collects_agrees_builds_and_records() -> None:
     assert _step("approaches").interactive and _step("checks").interactive
     assert [c.label for c in _step("approaches").choices] == ["build", "nothing to do"]
     collect = _step("collect").description
-    for piece in ("rules --json", "`unscriptized`", "`check_guidance`", "fewest"):
+    for piece in (
+        "rules --json",
+        "`unscriptized`",
+        "`check_guidance`",
+        "fewest",
+        "`WW_STEP_CHANGED_FILES`",
+        "never compares the branch with a base branch (`git diff master...`)",
+    ):
         assert piece in collect, piece
     build = _step("build").description
     for piece in (
@@ -88,6 +95,12 @@ def test_the_workflow_collects_agrees_builds_and_records() -> None:
         "real violations do not block",
         "baseline",
         "config files",
+        # A check acts on the step's change set, never the repository.
+        "`printf '%s\\n' \"$WW_STEP_CHANGED_FILES\" | xargs -d '\\n' <tool>`",
+        '`os.environ["WW_STEP_CHANGED_FILES"]` on newlines',
+        "or scans the whole repository",
+        "`WW_STEP_CHANGED_FILES` set to just that file",
+        "an unrelated clean file",
     ):
         assert piece in build, piece
     checks = " ".join(_step("checks").description.split())
@@ -250,7 +263,9 @@ def test_the_skill_starts_the_workflow() -> None:
 
     assert skill.startswith("---\nname: ww-scriptize\ndescription: ")
     assert f"--workflow {NAME} " in skill
-    assert "Never edit ww's configuration files yourself" in " ".join(skill.split())
+    prose = " ".join(skill.split())
+    assert "Never edit ww's configuration files yourself" in prose
+    assert "from `WW_STEP_CHANGED_FILES` and examines only those" in prose
 
 
 def test_discover_and_the_catalog_list_it(

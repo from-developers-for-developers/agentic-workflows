@@ -9,7 +9,11 @@ step's change set in ``WW_STEP_CHANGED_FILES`` (newline-separated, relative
 to the step's directory) narrowed to the check's globs. A check whose globs
 select no changed file is not applicable and does not run; a judged rule is
 narrowed the same way (``applicable_files``), by its verifiers. A check fails
-on a non-zero exit or a failed assertion.
+on a non-zero exit or a failed assertion. A check that cannot run here is
+unavailable, not failed: a file it declares is missing, its command could
+not be launched, or the shell found no command to run (exit 126 or 127); the
+result says why, the rules it checks are judged by a verifier instead, and
+nothing counts it.
 
 Checks read the working tree and report; they change no workflow state, so
 running them again after an interruption is harmless and they keep no
@@ -27,15 +31,25 @@ from pathlib import Path
 
 from ww.action_execution import STATE_OUTPUT_PREVIEW_LIMIT, bounded
 from ww.actions.command import CommandAction
-from ww.changes import all_files, changed_files, select_files, take_mark
+from ww.changes import (
+    Scope,
+    all_files,
+    changed_files,
+    is_scoped,
+    select_files,
+    take_mark,
+)
 from ww.errors import StateError
 from ww.execution_models import CheckReport, CheckResult, ExecutionState
 from ww.plan import PlanItem, PlannedCheck
+from ww.rule_store import is_config_path
 from ww.storage_adapters import CommandOutputAddress
 
 CHANGED_FILES_VARIABLE = "WW_STEP_CHANGED_FILES"
 # Lines of a check's output kept in state and shown on the fix page.
 OUTPUT_TAIL_LINES = 40
+# Exit codes a shell reserves for a command it could not run at all.
+UNAVAILABLE_EXITS = {126: "the command is not executable", 127: "command not found"}
 
 WriteOutput = Callable[[CommandOutputAddress, str], str]
 
@@ -73,22 +87,27 @@ class RuleChecker:
 
         ``reuse`` is an earlier passing report of the same completion: while
         the working tree is still at the tree that report was measured to,
-        the checks it passed are not run again. A check the operator waived
-        for this step does not run and is not in the report.
+        the checks it passed are not run again; one that failed or was
+        unavailable is. A check the operator waived for this step does not
+        run and is not in the report.
         """
         record = state.item_executions[state.cursor]
         waived = dict(record.checks_waived)
         attempt = max((report.attempt for report in item_reports(state)), default=0) + 1
         mark_b = take_mark(scope.directory) if record.change_mark else None
-        files, unmarked = change_set(scope.directory, record.change_mark, mark_b)
+        files, marks = change_set(scope.directory, record.change_mark, mark_b)
         kept = (
-            {result.id: result for result in reuse.results if result.status != "failed"}
+            {
+                result.id: result
+                for result in reuse.results
+                if result.status not in {"failed", "unavailable"}
+            }
             if reuse is not None and mark_b is not None and reuse.mark == mark_b
             else {}
         )
         results = tuple(
             kept.get(check.id)
-            or self._run_check(state, item, check, index, attempt, files, scope)
+            or self._run_check(state, item, check, index, attempt, files, scope, marks)
             for index, check in enumerate((*item.checks, *record.resolved_checks), 1)
             if check.id not in waived
         )
@@ -97,7 +116,7 @@ class RuleChecker:
             checked_at=self.now(),
             results=results,
             mark=mark_b,
-            all_files=unmarked,
+            all_files=marks is None,
         )
 
     def _run_check(
@@ -109,10 +128,19 @@ class RuleChecker:
         attempt: int,
         files: tuple[str, ...],
         scope: CheckScope,
+        marks: tuple[str, str] | None,
     ) -> CheckResult:
-        selected = applicable_files(files, check.paths, check.contains, scope.directory)
+        selected = applicable_files(files, check, scope.directory, marks)
         if selected is None:
             return CheckResult(check.id, check.source, "not_applicable")
+        missing = missing_file(check.files, scope.directory)
+        if missing is not None:
+            return CheckResult(
+                check.id,
+                check.source,
+                "unavailable",
+                output=f"`{missing}` is missing in this step's directory",
+            )
         action = CommandAction()
         outputs: list[str] = []
         stdout_ref = stderr_ref = None
@@ -144,7 +172,7 @@ class RuleChecker:
                 return CheckResult(
                     check.id,
                     check.source,
-                    "failed",
+                    "unavailable",
                     command="\n".join(shown),
                     output=f"could not launch the command: {error}",
                 )
@@ -165,6 +193,17 @@ class RuleChecker:
                 )
             outputs.append(completed.stdout)
             exit_code = completed.returncode
+            if completed.returncode in UNAVAILABLE_EXITS:
+                return CheckResult(
+                    check.id,
+                    check.source,
+                    "unavailable",
+                    command="\n".join(shown),
+                    output=_unavailable_reason(completed),
+                    exit_code=completed.returncode,
+                    stdout_ref=stdout_ref,
+                    stderr_ref=stderr_ref,
+                )
             if completed.returncode != 0:
                 return CheckResult(
                     check.id,
@@ -193,33 +232,61 @@ class RuleChecker:
 
 def applicable_files(
     files: tuple[str, ...],
-    paths: tuple[str, ...],
-    contains: tuple[str, ...],
+    scope: Scope,
     directory: Path,
+    marks: tuple[str, str] | None,
 ) -> tuple[str, ...] | None:
     """The changed files a check or rule applies to, or ``None`` when none.
 
-    A scoped check or rule, one with globs or ``contains`` strings, applies
-    to the changed files they select and is not applicable when they select
-    none. An unscoped one applies to the whole change set, even an empty one.
+    A scoped check or rule, one with globs or strings, applies to the changed
+    files they select and is not applicable when they select none. An
+    unscoped one applies to the whole change set, even an empty one.
+    ``marks`` are the trees the change set was measured between, which
+    ``contains_in_diff`` reads the changed lines from; ``None`` without git.
     """
-    selected = select_files(files, paths, contains, directory)
-    if (paths or contains) and not selected:
+    selected = select_files(
+        files,
+        scope.paths,
+        scope.contains_in_file,
+        scope.contains_in_diff,
+        directory=directory,
+        marks=marks,
+    )
+    if is_scoped(scope) and not selected:
         return None
     return selected
 
 
+def missing_file(files: tuple[str, ...], directory: Path | None) -> str | None:
+    """The first of a check's declared files that ``directory`` lacks.
+
+    A path that would reach outside ``directory`` (absolute, or with a ``..``
+    part, as only a hand-edited file holds) counts as missing.
+    """
+    if directory is None:
+        return None
+    return next(
+        (
+            path
+            for path in files
+            if not is_config_path(path) or not (directory / path).exists()
+        ),
+        None,
+    )
+
+
 def change_set(
     directory: Path, mark_a: str | None, mark_b: str | None
-) -> tuple[tuple[str, ...], bool]:
+) -> tuple[tuple[str, ...], tuple[str, str] | None]:
     """The files changed between two marks, or every file when unmarked.
 
-    The flag is true without a change set: no git, or state written before
-    the step took its mark.
+    The marks come back as the pair the files were measured between, or
+    ``None`` without a change set: no git, or state written before the step
+    took its mark.
     """
     if mark_a and mark_b:
-        return changed_files(directory, mark_a, mark_b), False
-    return all_files(directory), True
+        return changed_files(directory, mark_a, mark_b), (mark_a, mark_b)
+    return all_files(directory), None
 
 
 def item_reports(state: ExecutionState) -> tuple[CheckReport, ...]:
@@ -240,6 +307,13 @@ def item_reports(state: ExecutionState) -> tuple[CheckReport, ...]:
         for report in entry.check_reports:
             unique.setdefault(report.attempt, report)
     return tuple(unique[attempt] for attempt in sorted(unique))
+
+
+def _unavailable_reason(completed: subprocess.CompletedProcess[str]) -> str:
+    """Why the shell could not run the command, with its last printed line."""
+    reason = f"{UNAVAILABLE_EXITS[completed.returncode]} (exit {completed.returncode})"
+    lines = (completed.stderr + completed.stdout).strip().splitlines()
+    return f"{reason}: {lines[-1].strip()}" if lines else reason
 
 
 def _tail(output: str) -> str:

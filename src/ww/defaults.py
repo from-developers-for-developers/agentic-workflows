@@ -32,7 +32,9 @@ def default_settings() -> dict[str, Any]:
     """Every root-level setting with its default, in the order init writes them.
 
     The settings file init creates holds all of them, so each option can be
-    found and changed in place.
+    found and changed in place. ``executable`` is left out: a project names
+    a binary only to run one other than the default, and printed commands
+    use the launcher otherwise.
     """
     return {
         "enabled": True,
@@ -41,7 +43,6 @@ def default_settings() -> dict[str, Any]:
         "feedback_learning": True,
         "debug": DebugSettings().to_dict(),
         "feedback": FeedbackSettings().to_dict(),
-        "executable": DEFAULT_EXECUTABLE,
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
         "rules": {},

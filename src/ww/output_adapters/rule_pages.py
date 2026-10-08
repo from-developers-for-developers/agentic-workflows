@@ -12,6 +12,7 @@ from ww.instructions.models import CheckPreview
 from ww.output_adapters.markdown import (
     Lines,
     _append_section,
+    _checks_unavailable,
     _document,
     _fix_failures,
     _waivers,
@@ -82,6 +83,7 @@ def render_check_preview(preview: CheckPreview) -> str:
     if others:
         lines.append("")
         lines.extend(f"{label}: {_ids(ids)}." for label, ids in others)
+    _checks_unavailable(lines, preview.unavailable)
     if preview.judged:
         lines.extend(
             [
@@ -120,10 +122,15 @@ def render_rule_view(view: RuleView) -> str:
     facts: Lines = []
     if view.paths:
         facts.append(f"- Applies to: {', '.join(view.paths)}")
-    if view.contains:
+    if view.contains_in_file:
         facts.append(
-            "- Applies to files containing: "
-            + ", ".join(f'"{text}"' for text in view.contains)
+            "- Applies to files whose text holds: "
+            + ", ".join(f'"{text}"' for text in view.contains_in_file)
+        )
+    if view.contains_in_diff:
+        facts.append(
+            "- Applies to files whose changed lines hold: "
+            + ", ".join(f'"{text}"' for text in view.contains_in_diff)
         )
     if view.source:
         facts.append(f"- Rule file: {view.source}")
@@ -236,7 +243,7 @@ def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
         return
     lines.append("")
     for rule in rules:
-        scope = rule_scope(rule.paths, rule.contains)
+        scope = rule_scope(rule)
         check = (
             " (checked by its command)"
             if rule.has_check

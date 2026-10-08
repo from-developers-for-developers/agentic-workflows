@@ -21,7 +21,9 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
+from itertools import dropwhile
 from pathlib import Path
+from typing import Protocol
 
 from ww.config_files import RULE_AUTOMATION_FILE
 
@@ -146,21 +148,67 @@ def project_files(workdir: Path) -> tuple[str, ...]:
     )
 
 
+def changed_lines(workdir: Path, mark_a: str, mark_b: str, path: str) -> str | None:
+    """The lines of ``path`` added or removed between two marks, joined.
+
+    No context lines and no headers: a new file contributes every line, a
+    binary file none. ``None`` when git cannot diff the file, or its diff is
+    not UTF-8 text.
+    """
+    output = _git(
+        workdir,
+        "diff",
+        "--no-renames",
+        "--no-ext-diff",
+        "--no-color",
+        "--unified=0",
+        mark_a,
+        mark_b,
+        "--",
+        f":(literal){path}",
+    )
+    if output is None:
+        return None
+    hunks = dropwhile(lambda line: not line.startswith("@@"), output.splitlines())
+    return "\n".join(line[1:] for line in hunks if line[:1] in {"+", "-"})
+
+
+class Scope(Protocol):
+    """What narrows a check or rule to some of the changed files."""
+
+    @property
+    def paths(self) -> tuple[str, ...]: ...
+    @property
+    def contains_in_file(self) -> tuple[str, ...]: ...
+    @property
+    def contains_in_diff(self) -> tuple[str, ...]: ...
+
+
+def is_scoped(scope: Scope) -> bool:
+    """Whether a check or rule narrows the change set at all."""
+    return bool(scope.paths or scope.contains_in_file or scope.contains_in_diff)
+
+
 def select_files(
     files: Iterable[str],
     globs: tuple[str, ...],
-    contains: tuple[str, ...] = (),
+    contains_in_file: tuple[str, ...] = (),
+    contains_in_diff: tuple[str, ...] = (),
+    *,
     directory: Path | None = None,
+    marks: tuple[str, str] | None = None,
 ) -> tuple[str, ...]:
-    """The files matching any glob and containing any string.
+    """The files matching any glob and holding a string of each kind given.
 
     A filter that is not given selects every file. ``*`` and ``?`` stay
     within one path segment, ``**`` spans any number of segments, and a glob
     without a ``/`` matches a file's name anywhere, so ``*.py`` and
-    ``**/*.py`` mean the same. ``contains`` strings are plain,
-    case-sensitive substrings (no regular expressions) of the file's text,
-    read under ``directory``; a file that cannot be read as text is not
-    selected.
+    ``**/*.py`` mean the same. The strings are plain, case-sensitive
+    substrings (no regular expressions): ``contains_in_file`` of the file's
+    text, read under ``directory``; ``contains_in_diff`` of the lines the
+    file gained or lost between the two tree ``marks``, or of its whole text
+    when the files were not measured with git. A file that cannot be read as
+    text is not selected.
     """
     selected: Iterable[str] = files
     if globs:
@@ -170,19 +218,38 @@ def select_files(
             for path in selected
             if any(pattern.fullmatch(path) for pattern in patterns)
         )
-    if contains:
+    if contains_in_file:
         selected = (
-            path for path in selected if _contains_any(directory, path, contains)
+            path
+            for path in selected
+            if _holds_any(_file_text(directory, path), contains_in_file)
+        )
+    if contains_in_diff:
+        selected = (
+            path
+            for path in selected
+            if _holds_any(_diff_text(directory, path, marks), contains_in_diff)
         )
     return tuple(selected)
 
 
-def _contains_any(directory: Path | None, path: str, needles: tuple[str, ...]) -> bool:
+def _holds_any(text: str | None, needles: tuple[str, ...]) -> bool:
+    return text is not None and any(needle in text for needle in needles)
+
+
+def _file_text(directory: Path | None, path: str) -> str | None:
     try:
-        text = ((directory or Path()) / path).read_text(encoding="utf-8")
+        return ((directory or Path()) / path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return False
-    return any(needle in text for needle in needles)
+        return None
+
+
+def _diff_text(
+    directory: Path | None, path: str, marks: tuple[str, str] | None
+) -> str | None:
+    if marks is None:
+        return _file_text(directory, path)
+    return changed_lines(directory or Path(), *marks, path)
 
 
 def _compile(glob: str) -> re.Pattern[str]:
@@ -241,17 +308,18 @@ def _inside_work_tree(workdir: Path) -> bool:
 def _git(
     workdir: Path, *arguments: str, environment: dict[str, str] | None = None
 ) -> str | None:
-    """Run git in ``workdir``; ``None`` when git is missing or the call fails."""
+    """Run git in ``workdir``; ``None`` when git is missing, the call fails,
+    or its output is not UTF-8 text."""
     try:
         completed = subprocess.run(
             ["git", *arguments],
             cwd=workdir,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
             env={**os.environ, **(environment or {})},
         )
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if completed.returncode != 0:
         return None

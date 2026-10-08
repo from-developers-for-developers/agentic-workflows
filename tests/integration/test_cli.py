@@ -577,8 +577,8 @@ def test_init_creates_an_empty_normalized_workflow_file(tmp_path: Path, capsys) 
     )
     assert "Create your first workflow" in output
     assert "Define the steps in ww.yaml." in output
-    # init configures the standard binary, so the summary names it.
-    assert "ww-agentic-workflows workflows" in output
+    # init writes the launcher and names no binary, so the summary uses it.
+    assert "./ww workflows" in output
     assert "Optionally keep .ww out of Git" not in output
 
 
@@ -595,7 +595,6 @@ def test_init_writes_every_setting_with_its_default(tmp_path: Path, capsys) -> N
         "feedback_learning",
         "debug",
         "feedback",
-        "executable",
         "task_format",
         "limits",
         "rules",

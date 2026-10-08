@@ -6,8 +6,8 @@ description: Add, amend, move, or re-scope the rules ww gives to workflow steps,
 # Write ww rules from the operator's words
 
 A rule is one sentence a step's agent must follow, in a Markdown file whose
-optional frontmatter scopes it to files (`paths`, `contains`) or gives it a
-command (`check`). You decide what the rules are; `./ww rules add`, `edit`, `move`,
+optional frontmatter scopes it to files (`paths`, `contains_in_file`,
+`contains_in_diff`) or gives it a command (`check`). You decide what the rules are; `./ww rules add`, `edit`, `move`,
 `filter` and `promote` write them, validated. Never edit a rule file, a
 group, `ww-rules.yaml`, `ww.yaml` or
 `ww-rule-automation.json` yourself.
@@ -36,9 +36,14 @@ group, `ww-rules.yaml`, `ww.yaml` or
    are not).
 3. **Decide the scope.** Prefer a scoped rule: when the rule is about
    particular files or constructs, give `--paths` (globs for the files it
-   concerns) and `--contains` (plain strings those files hold, such as a
-   class or function name). ww narrows every rule to the files the step
-   changed: a scoped rule whose globs and strings select none of them is not
+   concerns) and plain strings, such as a class or function name: prefer
+   `--contains-in-diff` for a rule about what the change touches ("when a
+   change adds or removes a `flush` call …"), which matches the string in
+   the lines the step added or removed, and `--contains-in-file` for a rule
+   about the files that use something ("files that use the `Mailer` must
+   …"), which matches it anywhere in the file's text. ww narrows every rule
+   to the files the step changed: a scoped rule whose globs and strings
+   select none of them is not
    applicable and is neither checked nor judged, whereas an unscoped rule
    without a check is verified after every step that changes anything, by a
    verifier that has to read the whole change. Leave a rule unscoped only
@@ -78,11 +83,12 @@ group, `ww-rules.yaml`, `ww.yaml` or
    (`./ww rules add --group <name> --dir <path> [--workflows ...] [--steps ...]`),
    promotions (`./ww rules promote <check>`), amendments
    (`./ww rules edit <id> [--text "<sentence and body>"] [--paths <glob> ...]
-   [--contains <text> ...]`),
+   [--contains-in-file <text> ...] [--contains-in-diff <text> ...]`),
    moves (`./ww rules move <id> <group>`), filter changes
    (`./ww rules filter <group> [--workflows ...] [--steps ...]`), new rules
    (`./ww rules add <group> --text "<sentence and body>" [--paths <glob> ...]
-   [--contains <text> ...] [--assert empty|equals:<v> ...] [--id <stem>]
+   [--contains-in-file <text> ...] [--contains-in-diff <text> ...]
+   [--assert empty|equals:<v> ...] [--id <stem>]
    [--check-shell "<sh>" | --check-argv -- <arg> ...]`; `--check-argv --` goes
    last, so the checked tool's own options stay its own). Each command refuses a write that would leave the
    configuration invalid and changes nothing then; `--dry-run` checks one

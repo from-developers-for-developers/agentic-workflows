@@ -56,6 +56,7 @@ changed and staged path resolves beneath it.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Mapping
@@ -502,6 +503,17 @@ def _root_uses_task_branch(context: ExtensionContext, task_branch: str) -> bool:
     branch names participate in workspace selection.
     """
     return _current_branch(context, cwd=_repository(context)) == task_branch
+
+
+def _copy_launcher(repository: Path, worktree: Path) -> None:
+    """Give a new worktree the primary checkout's ``./ww``.
+
+    The launcher is git-ignored, so a worktree starts without it, and the
+    commands ww prints would not run there.  A plain copy keeps its mode.
+    """
+    launcher = repository / "ww"
+    if launcher.is_file() and not (worktree / "ww").exists():
+        shutil.copy(launcher, worktree / "ww")
 
 
 def _worktree_path(context: ExtensionContext, settings: Settings, name: str) -> Path:
@@ -1497,6 +1509,7 @@ def _create_worktree(context: ExtensionContext) -> ExtensionResult:
     added = _git(context, "worktree", "add", str(path), branch, cwd=repository)
     if added.returncode:
         return ExtensionResult(False, error=_failed(added, "git worktree add failed"))
+    _copy_launcher(repository, path)
     _record_branch(
         context,
         task_id=context.task_id,

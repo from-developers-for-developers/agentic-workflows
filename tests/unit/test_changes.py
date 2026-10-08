@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from ww.changes import all_files, changed_files, select_files, take_mark
+from ww.changes import (
+    all_files,
+    changed_files,
+    changed_lines,
+    select_files,
+    take_mark,
+)
 
 
 def _git(*arguments: str, cwd: Path) -> str:
@@ -172,24 +178,29 @@ def _tree(root: Path) -> tuple[str, ...]:
     return tuple(sorted(files))
 
 
-def test_contains_alone_selects_the_files_with_the_text(tmp_path: Path) -> None:
+def test_contains_in_file_alone_selects_the_files_with_the_text(
+    tmp_path: Path,
+) -> None:
     files = _tree(tmp_path)
 
-    assert select_files(files, (), ("Mail",), tmp_path) == ("a.php", "notes.md")
+    assert select_files(files, (), ("Mail",), directory=tmp_path) == (
+        "a.php",
+        "notes.md",
+    )
 
 
 def test_contains_is_case_sensitive_plain_text_not_a_pattern(tmp_path: Path) -> None:
     files = _tree(tmp_path)
 
-    assert select_files(files, (), ("mail",), tmp_path) == ("mixed.txt",)
-    assert select_files(files, (), ("M.il",), tmp_path) == ()
-    assert select_files(files, (), ("Mail.*",), tmp_path) == ()
+    assert select_files(files, (), ("mail",), directory=tmp_path) == ("mixed.txt",)
+    assert select_files(files, (), ("M.il",), directory=tmp_path) == ()
+    assert select_files(files, (), ("Mail.*",), directory=tmp_path) == ()
 
 
 def test_any_of_several_strings_selects(tmp_path: Path) -> None:
     files = _tree(tmp_path)
 
-    assert select_files(files, (), ("Post", "lower case"), tmp_path) == (
+    assert select_files(files, (), ("Post", "lower case"), directory=tmp_path) == (
         "b.php",
         "mixed.txt",
     )
@@ -198,13 +209,81 @@ def test_any_of_several_strings_selects(tmp_path: Path) -> None:
 def test_globs_and_contains_both_have_to_match(tmp_path: Path) -> None:
     files = _tree(tmp_path)
 
-    assert select_files(files, ("*.php",), ("Mail",), tmp_path) == ("a.php",)
-    assert select_files(files, ("*.md",), ("Post",), tmp_path) == ()
-    assert select_files(files, ("*.php",), (), tmp_path) == ("a.php", "b.php")
+    assert select_files(files, ("*.php",), ("Mail",), directory=tmp_path) == ("a.php",)
+    assert select_files(files, ("*.md",), ("Post",), directory=tmp_path) == ()
+    assert select_files(files, ("*.php",), (), directory=tmp_path) == ("a.php", "b.php")
 
 
 def test_a_file_that_is_not_text_or_is_gone_is_not_selected(tmp_path: Path) -> None:
     files = (*_tree(tmp_path), "deleted.php")
 
-    assert "data.bin" not in select_files(files, (), ("Mail",), tmp_path)
-    assert "deleted.php" not in select_files(files, (), ("",), tmp_path)
+    assert "data.bin" not in select_files(files, (), ("Mail",), directory=tmp_path)
+    assert "deleted.php" not in select_files(files, (), ("",), directory=tmp_path)
+
+
+@pytest.fixture
+def marked(repository: Path) -> tuple[Path, tuple[str, str]]:
+    """A step that edited, created, and renamed files; its marks."""
+    _write(repository, "edited.txt", "keep Mail\nold line\nkeep Post\n")
+    _write(repository, "with space.txt", "x\n")
+    _git("add", "-A", cwd=repository)
+    _git("commit", "-qm", "before the step", cwd=repository)
+    mark_a = take_mark(repository)
+    _write(repository, "edited.txt", "keep Mail\nnew line\nkeep Post\n")
+    _write(repository, "created.txt", "Fresh Mail\nsecond\n")
+    (repository / "with space.txt").rename(repository / "with other space.txt")
+    (repository / "data.bin").write_bytes(b"Mail \x00\xff")
+    mark_b = take_mark(repository)
+    assert mark_a and mark_b
+    return repository, (mark_a, mark_b)
+
+
+def test_changed_lines_are_the_added_and_removed_lines_only(
+    marked: tuple[Path, tuple[str, str]],
+) -> None:
+    root, marks = marked
+
+    assert changed_lines(root, *marks, "edited.txt") == "old line\nnew line"
+    assert changed_lines(root, *marks, "created.txt") == "Fresh Mail\nsecond"
+    assert changed_lines(root, *marks, "with other space.txt") == "x"
+    assert changed_lines(root, *marks, "data.bin") == ""
+    assert changed_lines(root, *marks, "kept.txt") == ""
+
+
+def test_contains_in_diff_reads_the_changed_lines_with_marks(
+    marked: tuple[Path, tuple[str, str]],
+) -> None:
+    root, marks = marked
+    files = changed_files(root, *marks)
+
+    assert files == ("created.txt", "data.bin", "edited.txt", "with other space.txt")
+    # ``Mail`` is only in the unchanged lines of ``edited.txt``.
+    assert select_files(files, (), (), ("Mail",), directory=root, marks=marks) == (
+        "created.txt",
+    )
+    assert select_files(files, (), (), ("old line",), directory=root, marks=marks) == (
+        "edited.txt",
+    )
+    assert select_files(files, (), (), ("new line",), directory=root, marks=marks) == (
+        "edited.txt",
+    )
+    # Without marks the whole file counts, as it does without git.
+    assert select_files(files, (), (), ("Mail",), directory=root) == (
+        "created.txt",
+        "edited.txt",
+    )
+
+
+def test_both_kinds_of_strings_have_to_hold(
+    marked: tuple[Path, tuple[str, str]],
+) -> None:
+    root, marks = marked
+    files = changed_files(root, *marks)
+
+    assert select_files(
+        files, (), ("Post",), ("new line",), directory=root, marks=marks
+    ) == ("edited.txt",)
+    assert (
+        select_files(files, (), ("Post",), ("Fresh",), directory=root, marks=marks)
+        == ()
+    )

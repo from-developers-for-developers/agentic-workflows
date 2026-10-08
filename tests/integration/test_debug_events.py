@@ -11,7 +11,7 @@ import pytest
 from tests.workflow_helpers import configured_service
 from ww.cli import main
 from ww.errors import StateError
-from ww.run_reports import DEBUG, render_listing, render_record
+from ww.run_reports import DEBUG, record_id, render_listing, render_record
 from ww.service import WorkflowService
 
 WORKFLOW = """workflows:
@@ -29,11 +29,10 @@ WORKFLOW = """workflows:
       - name: develop
         description: Implement work for {{task_id}}.
 """
-SUMMARY = (
-    ("summary", "Done."),
-    ("debug_errors", "[]"),
-    ("debug_inconveniences", "[]"),
-)
+ASSESSMENT = (("debug_errors", "[]"), ("debug_inconveniences", "[]"))
+SUMMARY = (("summary", "Done."),)
+RECORD_1 = record_id("TASK-1", "01-task")
+NOTES_1 = record_id("TASK-1", "notes")
 
 
 def _project(root: Path, settings: dict[str, object] | None = None) -> WorkflowService:
@@ -65,6 +64,7 @@ def _failed_work(service: WorkflowService, task_id: str = "TASK-1") -> None:
 
 def _finish(service: WorkflowService, task_id: str = "TASK-1"):
     service.complete(task_id, artifact="Worked.", summary_for_next="Done.")
+    service.complete(task_id, variables=ASSESSMENT)
     return service.complete(task_id, variables=SUMMARY)
 
 
@@ -91,12 +91,17 @@ def test_fail_on_a_task_is_kept_and_reaches_the_run_record(tmp_path: Path) -> No
     done = _finish(service)
 
     assert done.status == "completed"
-    record = _record(tmp_path, "TASK-1--01-task")
+    record = _record(tmp_path, RECORD_1)
     assert record["errors"] == [] and record["inconveniences"] == []
+    # The record keeps the events redacted: quoted step names included.
     assert [event["summary"] for event in record["events"]] == [
-        "Stopped for the operator (work_failed) at `work`",
-        "Worker reported `work` failed",
+        "Stopped for the operator (work_failed) at <value>",
+        "Worker reported <value> failed",
     ]
+    assert record["events"][0]["detail"] == (
+        "agent item <value> failed: The build exploded."
+    )
+    assert "task_id" not in record and "TASK-1" not in json.dumps(record)
     assert not (tmp_path / ".ww" / "debug" / "pending" / "TASK-1.jsonl").exists()
 
 
@@ -170,7 +175,7 @@ def test_fail_on_a_request_reaches_the_record_of_the_task_it_binds(
     done = _finish(service, "PROJ-123")
 
     assert done.status == "completed"
-    record = _record(tmp_path, "PROJ-123--01-jira-task")
+    record = _record(tmp_path, record_id("PROJ-123", "01-jira-task"))
     assert [event["summary"] for event in record["events"]] == [
         "Worker reported the bootstrap step failed"
     ]
@@ -198,23 +203,24 @@ def test_the_operator_notes_a_task_without_a_completed_run(
     assert code == 0
     assert (
         "Note kept with the pending events of `TASK-1` and in the standalone "
-        "record `TASK-1--notes` until its run completes." in out
+        f"record `{NOTES_1}` until its run completes." in out
     )
     (event,) = _pending(tmp_path, "TASK-1")
     assert event["source"] == "operator"
     assert event["summary"] == "The start page repeated itself"
     assert event["detail"] == "Twice."
-    notes = _record(tmp_path, "TASK-1--notes")
+    notes = _record(tmp_path, NOTES_1)
     assert notes["kind"] == "debug" and notes["workflow"] == "task"
     assert notes["agent"] == "codex" and notes["run_id"] == "notes"
+    assert "task_id" not in notes
     assert notes["errors"] == [] and notes["events"] == [event]
 
     # The run's own record takes the note over and replaces the standalone one.
     service.next("TASK-1")
     _finish(service)
-    record = _record(tmp_path, "TASK-1--01-task")
+    record = _record(tmp_path, RECORD_1)
     assert record["events"] == [event]
-    assert not (tmp_path / ".ww" / "debug" / "TASK-1--notes.json").exists()
+    assert not (tmp_path / ".ww" / "debug" / f"{NOTES_1}.json").exists()
 
     # A later note goes onto the completed run's record.
     code, out, _ = _run(
@@ -223,12 +229,13 @@ def test_the_operator_notes_a_task_without_a_completed_run(
     assert code == 0
     assert json.loads(out) == {
         "target": "TASK-1",
-        "record": "TASK-1--01-task",
+        "record": RECORD_1,
         "pending": False,
     }
-    assert [
-        event["summary"] for event in _record(tmp_path, "TASK-1--01-task")["events"]
-    ] == ["The start page repeated itself", "Afterwards"]
+    assert [event["summary"] for event in _record(tmp_path, RECORD_1)["events"]] == [
+        "The start page repeated itself",
+        "Afterwards",
+    ]
     assert not _pending(tmp_path, "TASK-1")
 
 
@@ -242,25 +249,20 @@ def test_the_operator_notes_a_request_and_a_record(
         tmp_path, capsys, "debug", "note", request_id, "--summary", "Jira page unclear"
     )
 
-    assert code == 0 and f"standalone record `{request_id}--notes`" in out
-    notes = _record(tmp_path, f"{request_id}--notes")
-    assert notes["workflow"] == "jira-task" and notes["task_id"] == request_id
+    notes_id = record_id(request_id, "notes")
+    assert code == 0 and f"standalone record `{notes_id}`" in out
+    notes = _record(tmp_path, notes_id)
+    assert notes["workflow"] == "jira-task" and "task_id" not in notes
     assert notes["events"][0]["summary"] == "Jira page unclear"
 
     code, out, _ = _run(
-        tmp_path,
-        capsys,
-        "debug",
-        "note",
-        f"{request_id}--notes",
-        "--summary",
-        "Second thought",
+        tmp_path, capsys, "debug", "note", notes_id, "--summary", "Second thought"
     )
-    assert code == 0 and f"Note added to record `{request_id}--notes`." in out
-    assert [
-        event["summary"]
-        for event in _record(tmp_path, f"{request_id}--notes")["events"]
-    ] == ["Jira page unclear", "Second thought"]
+    assert code == 0 and f"Note added to record `{notes_id}`." in out
+    assert [event["summary"] for event in _record(tmp_path, notes_id)["events"]] == [
+        "Jira page unclear",
+        "Second thought",
+    ]
     # A note on the record itself does not wait with the pending events.
     assert len(_pending(tmp_path, request_id)) == 1
 
@@ -276,12 +278,12 @@ def test_rendering_lists_the_events_under_their_own_heading(tmp_path: Path) -> N
     service.debug_note("TASK-1", summary="I saw it too", detail="Twice.")
     service.next("TASK-1")
     _finish(service)
-    record = service.run_reports[DEBUG.name].get("TASK-1--01-task")
+    record = service.run_reports[DEBUG.name].get(RECORD_1)
 
     page = render_record(record, DEBUG)
 
     assert "## Events ww observed and the operator noted" in page
-    assert "(ww) **Worker reported `work` failed**: The build exploded." in page
+    assert "(ww) **Worker reported <value> failed**: The build exploded." in page
     assert "(operator) **I saw it too**: Twice." in page
     assert page.index("## Inconveniences") < page.index("## Events ww observed")
     listing = render_listing(service.run_reports[DEBUG.name])

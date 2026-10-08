@@ -20,14 +20,14 @@ from ww.config.rules import rule_source
 from ww.errors import StateError
 from ww.execution_models import CheckReport, ExecutionState, PlanItemExecution
 from ww.extensions import is_extension_reference
-from ww.instructions.builder import fix_failures
+from ww.instructions.builder import checks_unavailable, fix_failures
 from ww.instructions.models import CheckPreview
 from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
 from ww.rule_conversion import ScriptizeState, every_rule, scriptize_state
 from ww.rule_disputes import DisputeEntry
 from ww.rule_stats import STATS_FILE, RuleStats
 from ww.rule_store import RuleAutomation, describe_command
-from ww.rule_verification import to_verify
+from ww.rule_verification import judged_now
 from ww.workflow_config import (
     INIT_STEP_NAME,
     HandlerDefinition,
@@ -57,16 +57,16 @@ def check_preview(
         not_applicable=tuple(
             result.id for result in report.results if result.status == "not_applicable"
         ),
+        unavailable=checks_unavailable(report),
         judged=tuple(
-            rule.id for rule in to_verify(item, record) if not _covered(rule, record)
+            rule.id
+            for rule in judged_now(
+                item, record, {result.id for result in report.unavailable}
+            )
         ),
         waived=record.checks_waived,
         all_files=report.all_files,
     )
-
-
-def _covered(rule: PlannedRule, record: PlanItemExecution) -> bool:
-    return any(rule.id in check.covers for check in record.resolved_checks)
 
 
 @dataclass(frozen=True)
@@ -88,7 +88,8 @@ class RuleView:
     text: str
     steps: tuple[str, ...]
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     source: str | None = None
     command: str | None = None
     assertion: str | None = None
@@ -108,7 +109,8 @@ class RuleView:
             "text": self.text,
             "steps": list(self.steps),
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "source": self.source,
             "command": self.command,
             "assert": self.assertion,
@@ -187,7 +189,8 @@ def _rule(
         text=rule.text,
         steps=steps,
         paths=rule.paths,
-        contains=rule.contains,
+        contains_in_file=rule.contains_in_file,
+        contains_in_diff=rule.contains_in_diff,
         source=rule.source,
         command=describe_command(command.command) if command else None,
         assertion=(
@@ -212,7 +215,8 @@ def _check(check: PlannedCheck, steps: tuple[str, ...]) -> RuleView:
         text=check.summary,
         steps=steps,
         paths=check.paths,
-        contains=check.contains,
+        contains_in_file=check.contains_in_file,
+        contains_in_diff=check.contains_in_diff,
         command=describe_command(check.command),
         assertion=(
             check.command.assertion.describe() if check.command.assertion else None
@@ -236,7 +240,8 @@ class ListedRule:
     id: str
     summary: str
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     has_check: bool = False
     source: str | None = None
     disputes: int = 0
@@ -249,7 +254,8 @@ class ListedRule:
             "id": self.id,
             "summary": self.summary,
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "has_check": self.has_check,
             "source": self.source,
             "disputes": self.disputes,
@@ -379,7 +385,8 @@ def rules_listing(
             id=rule.id,
             summary=rule.summary,
             paths=rule.paths,
-            contains=rule.contains,
+            contains_in_file=rule.contains_in_file,
+            contains_in_diff=rule.contains_in_diff,
             has_check=rule.check is not None,
             source=rule_source(rule.source, root),
             disputes=counts.get(rule.id, 0),

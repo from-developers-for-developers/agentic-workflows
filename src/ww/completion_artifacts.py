@@ -15,6 +15,7 @@ _REPORTED: dict[CheckStatus, RuleStatus] = {
     "passed": "passed",
     "failed": "failed",
     "not_applicable": "not applicable",
+    "unavailable": "check unavailable",
 }
 
 
@@ -24,12 +25,13 @@ def rule_outcomes(
     """What the completing step's artifact says about its rules and checks.
 
     A rule checked by a derived check reports that check's result; one a
-    verifier judged reports the verdict and the verification item; one whose
+    verifier judged reports the verdict and the verification item, and the
+    reason when it was judged because its check was unavailable; one whose
     scope selected none of the changed files is not applicable, as a check
     that did not run is; any other rule without a check is self-declared:
     the worker states in its result how it followed it. A check reports its
-    result in ``report``, or, when
-    the operator waived it, in the last report that ran it. Rejections an
+    result in ``report``, or, when the operator waived it, in the last
+    report that ran it; one that could not run says why. Rejections an
     operator retry moved into the history still count.
     """
     record = state.item_executions[state.cursor]
@@ -47,17 +49,58 @@ def rule_outcomes(
         for rule_id in check.covers
     }
     held = record.held_completion
+
+    def reported(check_id: str, hook: bool = False) -> RuleOutcome:
+        """A check's own line: its result, or the verdict that stood in."""
+        result = results.get(check_id)
+        verdict = held.verdict(check_id) if held is not None else None
+        if result is None:
+            return RuleOutcome(check_id, "not applicable", hook=hook)
+        if result.status == "unavailable" and verdict and verdict.verdict == "pass":
+            return RuleOutcome(
+                check_id,
+                "verified pass",
+                hook=hook,
+                detail=f"by `{verdict.by}`; check unavailable: {result.output}",
+            )
+        detail = result.output if result.status == "unavailable" else None
+        return RuleOutcome(check_id, _REPORTED[result.status], hook=hook, detail=detail)
+
     outcomes = []
     for rule in item.rules:
         if rule.id in checked:
             continue
         verdict = held.verdict(rule.id) if held is not None else None
         if rule.id in derived:
-            result = results.get(derived[rule.id])
-            status = _REPORTED[result.status] if result else "not applicable"
-            outcomes.append(
-                RuleOutcome(rule.id, status, detail=f"check `{derived[rule.id]}`")
-            )
+            name = derived[rule.id]
+            result = results.get(name)
+            if result is None:
+                outcomes.append(
+                    RuleOutcome(rule.id, "not applicable", detail=f"check `{name}`")
+                )
+            elif result.status != "unavailable":
+                outcomes.append(
+                    RuleOutcome(
+                        rule.id, _REPORTED[result.status], detail=f"check `{name}`"
+                    )
+                )
+            elif verdict is not None and verdict.verdict == "pass":
+                outcomes.append(
+                    RuleOutcome(
+                        rule.id,
+                        "verified pass",
+                        detail=f"by `{verdict.by}`; check `{name}` unavailable: "
+                        f"{result.output}",
+                    )
+                )
+            else:
+                outcomes.append(
+                    RuleOutcome(
+                        rule.id,
+                        "check unavailable",
+                        detail=f"check `{name}`: {result.output}",
+                    )
+                )
         elif verdict is not None and verdict.verdict == "pass":
             outcomes.append(
                 RuleOutcome(rule.id, "verified pass", detail=f"by `{verdict.by}`")
@@ -70,15 +113,9 @@ def rule_outcomes(
             )
         else:
             outcomes.append(RuleOutcome(rule.id, "self-declared"))
-    for check in item.checks:
-        result = results.get(check.id)
-        outcomes.append(
-            RuleOutcome(
-                check.id,
-                _REPORTED[result.status] if result is not None else "not applicable",
-                hook=check.source == "hook",
-            )
-        )
+    outcomes.extend(
+        reported(check.id, hook=check.source == "hook") for check in item.checks
+    )
     order = {rule.id: index for index, rule in enumerate(item.rules)}
     outcomes.sort(key=lambda outcome: order.get(outcome.id, len(order)))
     return RulesSummary(

@@ -17,6 +17,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 
 from ww.builtin_workflows import missing_lane
+from ww.changes import is_scoped
 from ww.errors import StateError
 from ww.rule_store import (
     CheckEntry,
@@ -66,14 +67,14 @@ def unscoped_judged_rules(
     configuration: WorkflowConfiguration, automation: RuleAutomation
 ) -> tuple[RuleDefinition, ...]:
     """The declared rules a verifier judges after every step that changes
-    anything: no command, no converted check, and no ``paths`` or
-    ``contains`` to narrow them; each once, in declaration order.
+    anything: no command, no converted check, and no ``paths`` or strings to
+    narrow them; each once, in declaration order.
     """
     found: dict[str, RuleDefinition] = {}
     for rule in every_rule(configuration):
         if (
             rule.id not in found
-            and not (rule.paths or rule.contains)
+            and not is_scoped(rule)
             and scriptize_state(automation, rule) not in {"command", "converted"}
         ):
             found[rule.id] = rule

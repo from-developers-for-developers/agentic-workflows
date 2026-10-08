@@ -17,10 +17,12 @@ from ww.run_reports import (
     MAX_ISSUE_URL_LENGTH,
     NEW_ISSUE_URL,
     RunReportStore,
+    debug_item,
     issue_body,
     issue_title,
     new_issue_url,
     record_id,
+    redact,
     render_listing,
     render_record,
     report_records,
@@ -28,7 +30,6 @@ from ww.run_reports import (
     summary_prompt,
     summary_variables,
     validate_report_values,
-    workflow_source,
 )
 from ww.storage import Storage
 
@@ -41,6 +42,9 @@ ERRORS = json.dumps(
         }
     ]
 )
+SHAPE = {"workflow": "task", "items": [{"name": "work", "kind": "prompt"}]}
+RECORD_1 = record_id("TASK-1", "01-task")
+RECORD_2 = record_id("TASK-2", "01-task")
 
 
 def _config(tmp_path: Path, settings: dict[str, object]) -> ProjectConfig:
@@ -71,41 +75,84 @@ def _record(tmp_path: Path, kind=DEBUG, **overrides: str) -> dict:
         runtime="single",
         modes=("economy",),
         values=_values(**overrides),
-        workflow_definition={"task": "Implement.", "steps": [{"work": "Work."}]},
+        workflow_shape=SHAPE,
         now="2026-10-06T07:45:13Z",
     )
     assert record is not None
     return record
 
 
-def test_the_summary_asks_only_for_what_is_switched_on(tmp_path: Path) -> None:
+def test_the_run_asks_only_for_what_is_switched_on(tmp_path: Path) -> None:
     off = _config(tmp_path, {})
     assert summary_variables(off) == ()
     assert summary_prompt("Summarize.", off) == "Summarize."
     assert start_notice(off) is None
+    assert debug_item(off) is None
 
     both = _config(
         tmp_path, {"debug": {"collect": True}, "feedback": {"collect": True}}
     )
+    # The summary asks for the workflow feedback; ww's own assessment has
+    # an item of its own, performed by the session that drove the run.
     names = [variable.name for variable in summary_variables(both)]
-    assert names == [
+    assert names == ["feedback_problems", "feedback_improvements"]
+    assert summary_prompt("Summarize.", both).startswith(
+        "Summarize. Also assess, from this run alone, how well the workflow"
+    )
+    item = debug_item(both)
+    assert item is not None and item.name == "assess-ww"
+    assert [value.name for value in item.provide] == [
         "debug_errors",
         "debug_inconveniences",
-        "feedback_problems",
-        "feedback_improvements",
     ]
-    assert summary_prompt("Summarize.", both).startswith("Summarize. Also assess")
+    assert item.action is not None and item.action.identifier == "prompt"
     notice = start_notice(both)
     assert notice is not None
     assert "`.ww/debug/`" in notice and "`.ww/feedback/`" in notice
     assert "stays on this machine only" in notice
 
     debug_only = _config(tmp_path, {"debug": {"collect": True, "report": True}})
-    assert [v.name for v in summary_variables(debug_only)] == [
-        "debug_errors",
-        "debug_inconveniences",
-    ]
+    assert summary_variables(debug_only) == ()
+    assert summary_prompt("Summarize.", debug_only) == "Summarize."
+    assert debug_item(debug_only) is not None
     assert ".ww/feedback/" not in (start_notice(debug_only) or "")
+
+
+def test_the_debug_questions_ask_about_ww_alone() -> None:
+    prompt = DEBUG.prompt
+    for question in (
+        "Which ww commands errored or were refused",
+        "Which pages misled you or lacked a command",
+        "Which steps did you retry, and which did the operator force past",
+        "Did you edit ww's state by hand",
+        "Which rounds of the run were wasted on ww",
+    ):
+        assert question in prompt
+    assert "name no project, path, ticket key, commit message, code or person" in (
+        prompt
+    )
+    for array in DEBUG.arrays:
+        assert "no project" in array.description
+
+
+def test_redaction_hides_the_task_paths_values_emails_and_keys() -> None:
+    text = (
+        "`./ww complete TASK-42/TASK-42-01A --artifact docs/plan.md` refused at "
+        "`work` in run 01-task: agent item 'work' failed, see /Users/me/x.py and "
+        'notes.txt; mail dev@example.com about PROJ-7 or "the fix"; ww\'s page '
+        "didn't say why. Record TASK-42-TASK-42-01A--01-task."
+    )
+
+    redacted = redact(text, task_id="TASK-42/TASK-42-01A", run_id="01-task")
+
+    assert redacted == (
+        "`./ww complete <task> --artifact <path>` refused at <value> in run "
+        "<run>: agent item <value> failed, see <path> and <path>; mail <email> "
+        "about <ticket> or <value>; ww's page didn't say why. Record <task>--<run>."
+    )
+    # Without the IDs, a Jira-like task ID is still a ticket key.
+    assert redact("TASK-1 failed in a/b") == "<ticket> failed in <path>"
+    assert redact("plain words stay") == "plain words stay"
 
 
 def test_report_values_are_parsed_and_malformed_ones_refused() -> None:
@@ -148,22 +195,23 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
             runtime="single",
             modes=(),
             values={"summary": "Done."},
-            workflow_definition=None,
+            workflow_shape=None,
         )
         is None
     )
     assert not (tmp_path / ".ww" / "debug").exists()
 
     record = _record(tmp_path)
-    path = tmp_path / ".ww" / "debug" / "TASK-1--01-task.json"
+    path = tmp_path / ".ww" / "debug" / f"{RECORD_1}.json"
     assert path.is_file()
-    assert record["id"] == "TASK-1--01-task"
+    assert record["id"] == RECORD_1
+    assert "task_id" not in record and record["run_id"] == "01-task"
     assert record["workflow"] == "task"
     assert record["recorded_at"] == "2026-10-06T07:45:13Z"
     assert record["modes"] == ["economy"]
     assert record["plan_schema_version"] == 2
     assert record["task_state_schema_version"] == 2
-    assert record["workflow_definition"]["steps"] == [{"work": "Work."}]
+    assert record["workflow_shape"] == SHAPE
     assert record["errors"][0]["step"] == "work"
     assert record["inconveniences"] == [
         {"summary": "The page repeats the requirements"}
@@ -172,9 +220,10 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
     assert record["reported"] is None
     assert json.loads(path.read_text(encoding="utf-8")) == record
 
-    # The same run again replaces its record; another run adds one.
-    _record(tmp_path, debug_errors="[]")
-    assert [r["errors"] for r in store.records()] == [[]]
+    # A completed run committed again keeps its first record; another run
+    # adds one.
+    assert _record(tmp_path, debug_errors="[]") == record
+    assert [len(r["errors"]) for r in store.records()] == [1]
     other = store.record(
         task_id="TASK-42/TASK-42-01A",
         run_id="02-task",
@@ -183,17 +232,15 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
         runtime=None,
         modes=(),
         values=_values(),
-        workflow_definition=None,
+        workflow_shape=None,
         now="2026-10-07T00:00:00Z",
     )
-    assert other is not None and other["id"] == "TASK-42-TASK-42-01A--02-task"
-    assert [r["id"] for r in store.unreported()] == [
-        "TASK-1--01-task",
-        "TASK-42-TASK-42-01A--02-task",
-    ]
+    child = record_id("TASK-42/TASK-42-01A", "02-task")
+    assert other is not None and other["id"] == child
+    assert [r["id"] for r in store.unreported()] == [RECORD_1, child]
 
     marked = store.mark_reported(
-        "TASK-1--01-task",
+        RECORD_1,
         method="gh",
         url="https://example/1",
         now="2026-10-08T00:00:00Z",
@@ -203,8 +250,8 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
         "method": "gh",
         "url": "https://example/1",
     }
-    assert [r["id"] for r in store.unreported()] == ["TASK-42-TASK-42-01A--02-task"]
-    assert store.get("TASK-1--01-task")["reported"]["method"] == "gh"
+    assert [r["id"] for r in store.unreported()] == [child]
+    assert store.get(RECORD_1)["reported"]["method"] == "gh"
     with pytest.raises(StateError, match="unknown debug record 'nope'"):
         store.get("nope")
 
@@ -226,7 +273,7 @@ def test_a_malformed_record_file_is_reported_with_its_path(tmp_path: Path) -> No
 def test_feedback_records_use_their_own_arrays_and_directory(tmp_path: Path) -> None:
     record = _record(tmp_path, FEEDBACK)
 
-    assert (tmp_path / ".ww" / "feedback" / "TASK-1--01-task.json").is_file()
+    assert (tmp_path / ".ww" / "feedback" / f"{RECORD_1}.json").is_file()
     assert record["problems"] == []
     assert record["improvements"] == [{"summary": "Add a test step"}]
     assert "errors" not in record
@@ -236,30 +283,6 @@ def test_feedback_records_use_their_own_arrays_and_directory(tmp_path: Path) -> 
     assert "## Application and code problems met during the run\n\nNone." in rendered
 
 
-def test_the_workflow_definition_comes_from_the_composed_file(tmp_path: Path) -> None:
-    (tmp_path / "ww.yaml").write_text(
-        "workflows:\n"
-        "  - task: Implement.\n"
-        "    steps:\n"
-        "      - work: Work.\n"
-        "  - name: review\n"
-        "    steps:\n"
-        "      - look: Look.\n",
-        encoding="utf-8",
-    )
-
-    assert workflow_source(tmp_path / "ww.yaml", "task") == {
-        "task": "Implement.",
-        "steps": [{"work": "Work."}],
-    }
-    assert workflow_source(tmp_path / "ww.yaml", "review") == {
-        "name": "review",
-        "steps": [{"look": "Look."}],
-    }
-    assert workflow_source(tmp_path / "ww.yaml", "missing") is None
-    assert workflow_source(tmp_path / "absent.yaml", "task") is None
-
-
 def test_the_issue_carries_the_record_and_fits_a_prefilled_url(tmp_path: Path) -> None:
     record = _record(tmp_path)
 
@@ -267,8 +290,8 @@ def test_the_issue_carries_the_record_and_fits_a_prefilled_url(tmp_path: Path) -
     body = issue_body(record)
     assert "| Workflow | `task` |" in body
     assert "- **complete refused a valid artifact** (step `work`): ww error" in body
-    assert "<details><summary>Workflow definition</summary>" in body
-    assert "```yaml\ntask: Implement.\nsteps:\n- work: Work.\n```" in body
+    assert "<details><summary>Workflow shape</summary>" in body
+    assert "```json\n" + json.dumps(SHAPE, indent=2) + "\n```" in body
     assert body.rstrip().endswith("with `ww debug report`._")
 
     url = new_issue_url(record)
@@ -277,8 +300,8 @@ def test_the_issue_carries_the_record_and_fits_a_prefilled_url(tmp_path: Path) -
     assert query["title"] == [issue_title(record)]
     assert query["body"] == [body]
 
-    # Too long with the definition: the definition goes first, then the body.
-    long = {**record, "workflow_definition": {"steps": ["x" * 9000]}}
+    # Too long with the shape: the shape goes first, then the body.
+    long = {**record, "workflow_shape": {"items": ["x" * 9000]}}
     url = new_issue_url(long)
     assert len(url) <= MAX_ISSUE_URL_LENGTH
     assert "left out" in parse_qs(urlparse(url).query)["body"][0]
@@ -299,7 +322,7 @@ def test_reporting_shows_confirms_and_marks_each_record(tmp_path: Path) -> None:
         runtime=None,
         modes=(),
         values=_values(),
-        workflow_definition=None,
+        workflow_shape=None,
         now="2026-10-07T00:00:00Z",
     )
     assert second is not None
@@ -313,7 +336,7 @@ def test_reporting_shows_confirms_and_marks_each_record(tmp_path: Path) -> None:
     outcomes = report_records(
         store,
         [first, second],
-        confirm=lambda record, method: record["id"] == "TASK-1--01-task",
+        confirm=lambda record, method: record["id"] == RECORD_1,
         confirm_submitted=lambda identifier: True,
         show=shown.append,
         gh_available=lambda: True,
@@ -322,23 +345,16 @@ def test_reporting_shows_confirms_and_marks_each_record(tmp_path: Path) -> None:
     )
 
     assert [o.to_dict() for o in outcomes] == [
-        {
-            "id": "TASK-1--01-task",
-            "status": "created",
-            "url": "https://github.com/x/issues/1",
-        },
-        {"id": "TASK-2--01-task", "status": "skipped", "url": None},
+        {"id": RECORD_1, "status": "created", "url": "https://github.com/x/issues/1"},
+        {"id": RECORD_2, "status": "skipped", "url": None},
     ]
     assert len(shown) == 2
-    assert shown[0].startswith("## Report `TASK-1--01-task`")
+    assert shown[0].startswith(f"## Report `{RECORD_1}`")
     assert "as a new issue titled `Debug report:" in shown[0]
     assert issue_body(first) in shown[0]
     assert created == [(issue_title(first), issue_body(first))]
-    assert (
-        store.get("TASK-1--01-task")["reported"]["url"]
-        == "https://github.com/x/issues/1"
-    )
-    assert [r["id"] for r in store.unreported()] == ["TASK-2--01-task"]
+    assert store.get(RECORD_1)["reported"]["url"] == "https://github.com/x/issues/1"
+    assert [r["id"] for r in store.unreported()] == [RECORD_2]
 
 
 def test_without_gh_the_browser_opens_the_prefilled_issue(tmp_path: Path) -> None:
@@ -383,7 +399,102 @@ def test_without_gh_the_browser_opens_the_prefilled_issue(tmp_path: Path) -> Non
     }
 
 
-def test_record_ids_name_the_task_and_run() -> None:
-    assert record_id("TASK-1", "01-task") == "TASK-1--01-task"
-    # A child's slash becomes a dash, as ``{{ww.task.slug}}`` spells it.
-    assert record_id("TASK-42/TASK-42-01A", "03-task") == "TASK-42-TASK-42-01A--03-task"
+def test_record_ids_name_the_task_by_its_digest_and_the_run() -> None:
+    # Twelve hex digits of the task ID's SHA-256: the ID itself stays out.
+    assert record_id("TASK-1", "01-task") == "05d1ca4b1083--01-task"
+    assert record_id("TASK-42/TASK-42-01A", "03-task") == "c3014dd14e2f--03-task"
+    assert record_id("TASK-1", "01-task") != record_id("TASK-2", "01-task")
+
+
+def test_a_record_keeps_no_project_or_task_data(tmp_path: Path) -> None:
+    (tmp_path / "ww.json").write_text('{"debug": {"collect": true}}', "utf-8")
+    store = RunReportStore(Storage(tmp_path), DEBUG)
+    store.note(
+        "PROJ-123",
+        source="ww",
+        summary="Stopped for the operator (work_failed) at `develop`",
+        detail=(
+            "agent item 'develop' failed: tests in /Users/me/acme/tests/test_x.py "
+            'broke after commit "PROJ-123: add billing"'
+        ),
+        now="2026-10-06T07:00:00Z",
+    )
+    store.note(
+        "PROJ-123",
+        source="operator",
+        summary="The fix page for PROJ-123 named the wrong step",
+        now="2026-10-06T07:01:00Z",
+    )
+
+    record = store.record(
+        task_id="PROJ-123",
+        run_id="01-task",
+        workflow="task",
+        agent="codex",
+        runtime="auto",
+        modes=(),
+        values=_values(
+            debug_errors=json.dumps(
+                [
+                    {
+                        "summary": "complete refused PROJ-123's artifact",
+                        "detail": (
+                            "`./ww complete PROJ-123 --artifact docs/acme/plan.md` "
+                            "said 'artifact is required'; mail me@acme.com"
+                        ),
+                        "step": "develop",
+                    }
+                ]
+            )
+        ),
+        workflow_shape=SHAPE,
+        now="2026-10-06T07:45:13Z",
+    )
+
+    assert record is not None
+    text = json.dumps(record)
+    for private in (
+        "PROJ-123",
+        "/Users/me/acme",
+        "test_x.py",
+        "docs/acme/plan.md",
+        "add billing",
+        "me@acme.com",
+        "'develop'",
+        "`develop`",
+    ):
+        assert private not in text
+    assert record["id"] == "1295595878aa--01-task"
+    assert record["errors"] == [
+        {
+            "summary": "complete refused <task>'s artifact",
+            "detail": (
+                "`./ww complete <task> --artifact <path>` said <value>; mail <email>"
+            ),
+            "step": "develop",
+        }
+    ]
+    assert [event["summary"] for event in record["events"]] == [
+        "Stopped for the operator (work_failed) at <value>",
+        "The fix page for <task> named the wrong step",
+    ]
+    assert record["events"][0]["detail"] == (
+        "agent item <value> failed: tests in <path> broke after commit <value>"
+    )
+    page = render_record(record, DEBUG)
+    assert "PROJ-123" not in page and "acme" not in page
+    assert "- **complete refused <task>'s artifact** (step `develop`)" in page
+    assert "(ww) **Stopped for the operator (work_failed) at <value>**" in page
+
+    # A note added later is redacted the same way, and the task's latest
+    # record is still found by its digest.
+    store.add_event(
+        record["id"],
+        source="operator",
+        summary="PROJ-123 again, in src/x.py",
+        task_id="PROJ-123",
+    )
+    latest = store.latest_for("PROJ-123")
+    assert latest is not None
+    assert latest["events"][-1]["summary"] == "<task> again, in <path>"
+    assert store.latest_for("PROJ-124") is None

@@ -95,7 +95,7 @@ def retry_failed_item(
             check_reports=(
                 () if state.failure_kind == "fix_limit" else record.check_reports
             ),
-            dispute=None,
+            disputes=(),
         )
     else:
         history = state.execution_history
@@ -139,7 +139,7 @@ def waive_checks(
         status="pending",
         error=None,
         checks_waived=tuple(waivers.items()),
-        dispute=None,
+        disputes=(),
     )
     return project_steps(
         replace(
@@ -242,18 +242,22 @@ def reject_completion(
     )
 
 
-def dispute_check(
-    state: ExecutionState, plan: WorkflowPlan, dispute: Dispute, now: Clock
+def dispute_checks(
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    disputes: tuple[Dispute, ...],
+    now: Clock,
 ) -> ExecutionState:
-    """Stop the run for the operator: the step's worker disputes a check.
+    """Stop the run for the operator: the step's worker disputes checks.
 
-    Nothing about the rejections changes; the operator either lets the check
-    stand (``next --retry``) or waives it for this step (``next --force``).
+    Nothing about the rejections changes; the operator either lets the
+    checks stand (``next --retry``) or waives them all for this step
+    (``next --force``).
     """
-    message = f"check disputed: {dispute.check}"
+    message = "check disputed: " + ", ".join(dispute.check for dispute in disputes)
     records = list(state.item_executions)
     records[state.cursor] = replace(
-        records[state.cursor], status="failed", error=message, dispute=dispute
+        records[state.cursor], status="failed", error=message, disputes=disputes
     )
     return project_steps(
         replace(
@@ -1046,9 +1050,17 @@ def _loop_iteration(
 
 def enclosing_loop_entry_index(plan: WorkflowPlan, item_index: int) -> int:
     """Return the entry boundary for a plan item nested in a loop."""
+    entry = _enclosing_loop_entry(plan, item_index)
+    if entry is None:
+        raise StateError(f"step {plan.items[item_index].step!r} has no enclosing loop")
+    return entry
+
+
+def _enclosing_loop_entry(plan: WorkflowPlan, item_index: int) -> int | None:
+    """The entry boundary of the nearest loop around a plan item, if any."""
     item = plan.items[item_index]
     lineage = {item.step, *item.ancestors}
-    entry = next(
+    return next(
         (
             index
             for index in range(item_index - 1, -1, -1)
@@ -1058,9 +1070,71 @@ def enclosing_loop_entry_index(plan: WorkflowPlan, item_index: int) -> int:
         ),
         None,
     )
+
+
+def active_loop(state: ExecutionState, plan: WorkflowPlan) -> tuple[str, int] | None:
+    """The loop the cursor is in, as its ID and the index of its repeat boundary.
+
+    The cursor is in a loop on one of its body items, a nested loop's
+    boundary included, or on its repeat boundary; on an entry boundary it is
+    in the enclosing loop only. ``None`` outside every loop.
+    """
+    if state.cursor >= len(plan.items):
+        return None
+    loop = loop_control(plan.items[state.cursor])
+    if loop is not None and loop.boundary == "repeat":
+        return loop.loop_id, state.cursor
+    entry = _enclosing_loop_entry(plan, state.cursor)
     if entry is None:
-        raise StateError(f"step {item.step!r} has no enclosing loop")
-    return entry
+        return None
+    loop_id = _required_loop_control(plan.items[entry]).loop_id
+    return loop_id, _repeat_boundary_index(plan, loop_id, state.cursor)
+
+
+def _repeat_boundary_index(plan: WorkflowPlan, loop_id: str, start: int) -> int:
+    """The index of the repeat boundary of ``loop_id`` at or after ``start``."""
+    repeat = next(
+        (
+            index
+            for index in range(start, len(plan.items))
+            if (loop := loop_control(plan.items[index])) is not None
+            and loop.boundary == "repeat"
+            and loop.loop_id == loop_id
+        ),
+        None,
+    )
+    if repeat is None:
+        raise StateError(f"loop {loop_id!r} has no repeat boundary")
+    return repeat
+
+
+def end_loop(
+    state: ExecutionState, plan: WorkflowPlan, now: Clock, reason: str | None = None
+) -> ExecutionState:
+    """End the loop the cursor is in after an explicit operator force.
+
+    Every item from the cursor up to and including the loop's repeat boundary
+    is completed as skipped, and the boundary records the operator's reason
+    so the exit stays visible in the run history; execution continues with
+    whatever follows the loop wrapper.
+    """
+    active = active_loop(state, plan)
+    if active is None:
+        raise StateError("end_loop requires a cursor inside a loop")
+    loop_id, repeat = active
+    note = "operator ended the loop"
+    if reason:
+        note = f"{note}\nForce reason: {reason}"
+    ended = _skip_to(
+        state,
+        plan,
+        repeat + 1,
+        f"skipped because the operator ended the {loop_id!r} loop",
+        now,
+    )
+    records = list(ended.item_executions)
+    records[repeat] = replace(records[repeat], error=note)
+    return replace(ended, item_executions=tuple(records))
 
 
 def request_loop_exit(
@@ -1223,18 +1297,7 @@ def finish_loop_exit(
         )
     entry = enclosing_loop_entry_index(plan, completed_index)
     loop_id = _required_loop_control(plan.items[entry]).loop_id
-    repeat = next(
-        (
-            index
-            for index in range(state.cursor, len(plan.items))
-            if (loop := loop_control(plan.items[index])) is not None
-            and loop.boundary == "repeat"
-            and loop.loop_id == loop_id
-        ),
-        None,
-    )
-    if repeat is None:
-        raise StateError(f"loop {loop_id!r} has no repeat boundary")
+    repeat = _repeat_boundary_index(plan, loop_id, state.cursor)
     return _skip_to(
         state, plan, repeat + 1, "skipped because a loop break gate passed", now
     )

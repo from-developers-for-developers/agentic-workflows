@@ -126,7 +126,8 @@ class RuleLine:
     id: str
     summary: str
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     has_command: bool = False
     hook: bool = False
     interpretation: str | None = None
@@ -142,7 +143,8 @@ class RuleLine:
             "id": self.id,
             "summary": self.summary,
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "has_command": self.has_command,
             "hook": self.hook,
             "interpretation": self.interpretation,
@@ -153,7 +155,12 @@ class RuleLine:
 
 @dataclass(frozen=True)
 class FixFailure:
-    """One check that failed when the worker last completed the step."""
+    """One check that failed when the worker last completed the step.
+
+    ``failures`` counts the rejected completions this check failed in this
+    step, against its own ``max_fixes``: reaching it stops the step for the
+    operator.
+    """
 
     id: str
     hook: bool
@@ -164,6 +171,8 @@ class FixFailure:
     judged: bool = False
     # For a derived check: the rules it covers, whose texts are ``text``.
     covers: tuple[str, ...] = ()
+    failures: int = 0
+    max_fixes: int = 1
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -174,7 +183,24 @@ class FixFailure:
             "output": self.output,
             "judged": self.judged,
             "covers": list(self.covers),
+            "failures": self.failures,
+            "max_fixes": self.max_fixes,
         }
+
+
+@dataclass(frozen=True)
+class CheckUnavailable:
+    """One check that could not run when the step's checks ran, and why.
+
+    It is neither passed nor failed: a verifier judges the rules it checks.
+    """
+
+    id: str
+    reason: str
+    hook: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {"id": self.id, "reason": self.reason, "hook": self.hook}
 
 
 @dataclass(frozen=True)
@@ -202,8 +228,9 @@ class CheckPreview:
     """What ``ww check`` found: the step's checks run now, nothing recorded.
 
     ``failures`` are shown like a fix page; ``passed`` and ``not_applicable``
-    name the other checks; ``judged`` are the rules a verifier judges only
-    when the step completes; ``waived`` the checks the operator waived.
+    name the other checks and ``unavailable`` those that could not run;
+    ``judged`` are the rules a verifier judges only when the step completes;
+    ``waived`` the checks the operator waived.
     """
 
     task_id: str
@@ -212,6 +239,7 @@ class CheckPreview:
     failures: tuple[FixFailure, ...] = ()
     passed: tuple[str, ...] = ()
     not_applicable: tuple[str, ...] = ()
+    unavailable: tuple[CheckUnavailable, ...] = ()
     judged: tuple[str, ...] = ()
     waived: tuple[tuple[str, str], ...] = ()
     all_files: bool = False
@@ -225,6 +253,7 @@ class CheckPreview:
             "failures": [failure.to_dict() for failure in self.failures],
             "passed_checks": list(self.passed),
             "not_applicable": list(self.not_applicable),
+            "unavailable": [check.to_dict() for check in self.unavailable],
             "judged_at_completion": list(self.judged),
             "waived": dict(self.waived),
             "all_files": self.all_files,
@@ -235,20 +264,23 @@ class CheckPreview:
 class VerificationRuleLine:
     """One rule on a verification page, which the verifier judges.
 
-    ``paths`` and ``contains`` are its scope, and ``files`` the changed
-    files in that scope; all empty for an unscoped rule, which the whole
-    change set is in scope of.
+    ``paths``, ``contains_in_file`` and ``contains_in_diff`` are its scope,
+    and ``files`` the changed files in that scope; all empty for an unscoped
+    rule, which the whole change set is in scope of.
     """
 
     id: str
     text: str
     interpretation: str | None = None
-    # Its converted ``check`` does not apply here: this configuration file is
-    # missing in the step's directory.
+    # Its ``check`` does not run here: a converted check whose configuration
+    # file ``missing`` names is not in the step's directory, or the rule's
+    # own or derived check was found ``unavailable`` for the reason given.
     check: str | None = None
     missing: str | None = None
+    unavailable: str | None = None
     paths: tuple[str, ...] = ()
-    contains: tuple[str, ...] = ()
+    contains_in_file: tuple[str, ...] = ()
+    contains_in_diff: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
@@ -258,8 +290,10 @@ class VerificationRuleLine:
             "interpretation": self.interpretation,
             "check": self.check,
             "missing": self.missing,
+            "unavailable": self.unavailable,
             "paths": list(self.paths),
-            "contains": list(self.contains),
+            "contains_in_file": list(self.contains_in_file),
+            "contains_in_diff": list(self.contains_in_diff),
             "files": list(self.files),
         }
 
@@ -297,24 +331,31 @@ class VerificationPage:
 class FixRequired:
     """ww refused the step's completion: the failed checks and the count.
 
-    ``attempt`` is the number of rejected completions so far and
-    ``max_fixes`` the most any of the step's checks allows.
-    ``draft_artifact`` is the text of the rejected artifact, shown for the
-    worker to revise; the next completion's artifact replaces it entirely.
+    Each failure carries its own count; ``limiting`` is the failed check
+    nearest its limit, ``attempt`` that check's failures so far and
+    ``max_fixes`` its limit, since the step stops when any one check reaches
+    its own. ``unavailable`` are the checks that could not run, which count
+    nowhere. ``draft_artifact`` is the text of the rejected artifact, shown
+    for the worker to revise; the next completion's artifact replaces it
+    entirely.
     """
 
     attempt: int
     max_fixes: int
+    limiting: str
     checks: int
     failures: tuple[FixFailure, ...]
+    unavailable: tuple[CheckUnavailable, ...] = ()
     draft_artifact: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "attempt": self.attempt,
             "max_fixes": self.max_fixes,
+            "limiting": self.limiting,
             "checks": self.checks,
             "failures": [failure.to_dict() for failure in self.failures],
+            "unavailable": [check.to_dict() for check in self.unavailable],
             "draft_artifact": self.draft_artifact,
         }
 
@@ -325,14 +366,16 @@ class HandoffStep:
 
     ``outcome`` is ``completed``, ``loop break``, ``loop continue``,
     ``held for verification``, ``failed``, or ``not completed``; ``checks``
-    pairs each check of the last attempt with its status, and ``fix_rounds``
-    counts the completions ww rejected.
+    pairs each check of the last attempt with its status, ``checks_note``
+    says which attempt that was when it is not the one that settled the
+    step, and ``fix_rounds`` counts the completions ww rejected.
     """
 
     name: str
     outcome: str
     artifact: str | None = None
     checks: tuple[tuple[str, str], ...] = ()
+    checks_note: str | None = None
     checks_waived: tuple[str, ...] = ()
     fix_rounds: int = 0
     error: str | None = None
@@ -343,6 +386,7 @@ class HandoffStep:
             "outcome": self.outcome,
             "artifact": self.artifact,
             "checks": dict(self.checks),
+            "checks_note": self.checks_note,
             "checks_waived": list(self.checks_waived),
             "fix_rounds": self.fix_rounds,
             "error": self.error,
@@ -361,6 +405,8 @@ class HandoffBlock:
     assignment ended, when the change set can no longer be told.
     ``outcomes`` are the answers still to be chosen when the assignment ended
     with an assessment: the manager continues with one of them.
+    ``run_completed`` is true when the run the manager would continue, the
+    task's own or its parent's, has nothing left to run.
     """
 
     task_id: str
@@ -370,6 +416,7 @@ class HandoffBlock:
     summary: str | None = None
     error: str | None = None
     continuation_task_id: str | None = None
+    run_completed: bool = False
     files_reproducible: bool = True
     choosing_outcome_of: str | None = None
     outcomes: tuple[str, ...] = ()
@@ -378,6 +425,7 @@ class HandoffBlock:
         return {
             "task_id": self.task_id,
             "continuation_task_id": self.continuation_task_id,
+            "run_completed": self.run_completed,
             "assignment": self.token,
             "steps": [step.to_dict() for step in self.steps],
             "files": None if self.files is None else list(self.files),
@@ -562,7 +610,8 @@ class Instruction:
     fix_required: FixRequired | None = None
     handler_repair: dict[str, object] | None = None
     checks_waived: tuple[tuple[str, str], ...] = ()
-    dispute: DisputeView | None = None
+    # The worker's open disputes, one per check, while the operator decides.
+    disputes: tuple[DisputeView, ...] = ()
     # A worker asked for an item the manager performs itself (``role:
     # manager`` or ``interactive`` in the ``auto`` runtime): the page names it
     # and offers no completion command.
@@ -713,7 +762,7 @@ class Instruction:
                 self.fix_required.to_dict() if self.fix_required else None
             ),
             "checks_waived": dict(self.checks_waived),
-            "dispute": self.dispute.to_dict() if self.dispute else None,
+            "disputes": [dispute.to_dict() for dispute in self.disputes],
             "manager_only": self.manager_only,
             "assignment_token": self.assignment_token,
             "handoff_block": (

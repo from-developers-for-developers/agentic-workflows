@@ -64,7 +64,8 @@ MIXED = SCOPED.replace(
 )
 MARKDOWN_RULE = '---\npaths: ["*.md"]\n---\nStart every Markdown file with a heading.\n'
 PRINTING_RULE = (
-    '---\npaths: ["*.py"]\ncontains: [print]\n---\nPrint nothing in library code.\n'
+    '---\npaths: ["*.py"]\ncontains_in_file: [print]\n---\n'
+    "Print nothing in library code.\n"
 )
 FOO_CHECK = {
     "shell": "grep -L foo $WW_STEP_CHANGED_FILES || true",
@@ -262,7 +263,7 @@ def test_one_verifier_judges_only_the_applicable_rules(tmp_path: Path) -> None:
         "docs/printing",
     }
     rendered = _markdown(held)
-    assert '  Scope: *.py; containing "print"\n' in rendered
+    assert '  Scope: *.py; in file "print"\n' in rendered
     assert "Changed files in its scope" not in rendered
     assert "- `docs/markdown`" not in rendered
     assert "--rule-result='<JSON result for develop/1>'" in rendered
@@ -304,8 +305,7 @@ def test_the_verifier_page_shows_each_rules_scope_and_its_files(
     assert rendered.count("Files the step changed (2):") == 1
     assert "  Scope: *.md\n  Changed files in its scope (1): `README.md`\n" in rendered
     assert (
-        '  Scope: *.py; containing "print"\n'
-        "  Changed files in its scope (1): `app.py`\n"
+        '  Scope: *.py; in file "print"\n  Changed files in its scope (1): `app.py`\n'
     ) in rendered
     payload = json.loads(JsonOutputAdapter().render_instruction(held))
     printing = next(
@@ -313,11 +313,12 @@ def test_the_verifier_page_shows_each_rules_scope_and_its_files(
         for rule in payload["verification"]["rules"]
         if rule["id"] == "docs/printing"
     )
-    assert (printing["paths"], printing["contains"], printing["files"]) == (
-        ["*.py"],
-        ["print"],
-        ["app.py"],
-    )
+    assert (
+        printing["paths"],
+        printing["contains_in_file"],
+        printing["contains_in_diff"],
+        printing["files"],
+    ) == (["*.py"], ["print"], [], ["app.py"])
 
 
 def test_a_rule_left_out_in_one_round_is_judged_when_a_fix_reaches_its_files(
@@ -359,8 +360,8 @@ def test_lint_hints_at_judged_rules_without_a_scope(
     out = capsys.readouterr().out
 
     assert (
-        "Hint: 1 judged rule is verified on every step (develop/1); add paths or "
-        "contains to narrow it.\n"
+        "Hint: 1 judged rule is verified on every step (develop/1); add paths, "
+        "contains_in_file or contains_in_diff to narrow it.\n"
     ) in out
     assert "docs/markdown)" not in out and "docs/printing)" not in out
 
@@ -670,8 +671,8 @@ def test_lint_reports_orphan_store_entries_and_unscriptized_rules(
     # suggest.
     assert "Warning: 1 rule has no check yet (develop/2).\n" in out
     assert (
-        "Hint: 1 judged rule is verified on every step (develop/2); add paths or "
-        "contains to narrow it.\n"
+        "Hint: 1 judged rule is verified on every step (develop/2); add paths, "
+        "contains_in_file or contains_in_diff to narrow it.\n"
     ) in out
 
 
@@ -831,6 +832,72 @@ def test_a_replayed_completion_ends_the_verifiers_assignment(tmp_path: Path) -> 
     assert hook.item_name == "record-notes"
     assert hook.item_status == "in_progress"
     assert hook.assignment_items == ("record-notes",)
+
+
+def test_the_handoff_shows_the_held_re_check_after_a_rejection(
+    tmp_path: Path,
+) -> None:
+    # ``develop/1`` is checked by ``cli-surface`` at once; ``develop/2`` is judged.
+    root = _project(tmp_path, TWO_HINTS, store=_converted(CLI))
+    service = _started(root, runtime="auto")
+    service.next("TASK-1", caller_role="manager")
+    token = assignment_token(service, "TASK-1")
+    (root / "app.py").write_text("print(1)\n", encoding="utf-8")
+    rejected = service.complete(
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built.",
+        caller_role="worker",
+        assignment=token,
+    )
+    assert rejected.fix_required is not None
+    assert rejected.handoff_block is None
+    (root / "app.py").write_text("foo\n", encoding="utf-8")
+
+    held = service.complete(
+        "TASK-1",
+        artifact="Fixed.",
+        summary_for_next="Fixed.",
+        caller_role="worker",
+        assignment=token,
+    )
+
+    assert held.completion_held is True
+    assert held.handoff_block is not None
+    (develop,) = held.handoff_block.steps
+    assert develop.outcome == "held for verification"
+    assert develop.checks == (("cli-surface", "passed"),)
+    assert develop.checks_note == "checks passed; rules being verified"
+    assert develop.fix_rounds == 1
+    assert "checks: cli-surface passed (checks passed; rules being verified)" in (
+        _markdown(held)
+    )
+    assert service.handoff("TASK-1", assignment=token) == held.handoff_block
+
+    # A failing verdict reopens the step; the block now shows that attempt.
+    assert service.next("TASK-1", caller_role="manager").item_name == (
+        "develop-verify-1"
+    )
+    failing = {
+        "id": "develop/2",
+        "status": "judged",
+        "verdict": "fail",
+        "failures": [{"file": "app.py", "what": "unclear name"}],
+    }
+    service.complete(
+        "TASK-1",
+        artifact="Findings.",
+        rule_results=(json.dumps(failing),),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+    )
+    again = service.handoff("TASK-1", assignment=token)
+    (develop,) = again.steps
+    assert develop.outcome == "not completed"
+    assert dict(develop.checks)["develop/2"] == "failed"
+    assert develop.checks_note == (
+        "last rejected attempt, re-checked on the next complete"
+    )
 
 
 def test_next_no_longer_takes_rule_decisions(

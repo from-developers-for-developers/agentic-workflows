@@ -13,6 +13,7 @@ import pytest
 from ww.cli import main
 from ww.defaults import PROJECT_LAUNCHER
 from ww.errors import ConfigurationError
+from ww.executable import project_command
 from ww.project_config import load_project_config
 
 WORKFLOWS = """workflows:
@@ -150,14 +151,63 @@ def test_the_launcher_runs_the_configured_binary(
     assert result.stdout.strip() == f"{expected} status TASK-1"
 
 
-def test_init_records_the_standard_executable_and_writes_the_launcher(
+def test_init_writes_the_launcher_and_names_no_executable(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _run(tmp_path, capsys, "init", "--no-input")
+    output = _run(tmp_path, capsys, "init", "--no-input")
 
     config = json.loads((tmp_path / "ww.json").read_text())
-    assert config["executable"] == "ww-agentic-workflows"
+    assert "executable" not in config
     assert (tmp_path / "ww").read_text(encoding="utf-8") == PROJECT_LAUNCHER
+    # The summary and the permissions to allow lead with the launcher.
+    assert "     ./ww workflows\n" in output
+    assert "     ./ww\n     ww   (when the shortcut exists)\n" in output
+    assert "ww-agentic-workflows\n" not in output
+
+
+def test_init_adds_no_executable_to_an_existing_settings_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "ww.json").write_text('{"runtime": "auto"}\n', encoding="utf-8")
+
+    _run(tmp_path, capsys, "init", "--no-input")
+
+    assert "executable" not in json.loads((tmp_path / "ww.json").read_text())
+
+
+@pytest.mark.parametrize("launcher", ["executable", "plain", "missing"])
+def test_the_default_executable_defers_to_a_runnable_launcher(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], launcher: str
+) -> None:
+    """An older init wrote the default name into every ww.json."""
+    root = _project(tmp_path, {"executable": "ww-agentic-workflows"})
+    if launcher != "missing":
+        (root / "ww").write_text(PROJECT_LAUNCHER, encoding="utf-8")
+        (root / "ww").chmod(0o755 if launcher == "executable" else 0o644)
+
+    discover = _run(root, capsys, "discover")
+
+    expected = "./ww" if launcher == "executable" else "ww-agentic-workflows"
+    assert f"{expected} status <task-id>" in discover
+
+
+@pytest.mark.parametrize(
+    ("configured", "launcher", "expected"),
+    [
+        (None, False, "./ww"),
+        (None, True, "./ww"),
+        ("ww-agentic-workflows", True, "./ww"),
+        ("ww-agentic-workflows", False, "ww-agentic-workflows"),
+        ("ww-agentic-workflows-dev", True, "ww-agentic-workflows-dev"),
+    ],
+)
+def test_project_command_resolution(
+    tmp_path: Path, configured: str | None, launcher: bool, expected: str
+) -> None:
+    if launcher:
+        _fake_binary(tmp_path, "ww")
+
+    assert project_command(configured, tmp_path) == expected
 
 
 def test_init_rewrites_an_edited_launcher_and_keeps_a_configured_executable(

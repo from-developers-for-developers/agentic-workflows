@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 RuleStatus = Literal[
-    "passed", "failed", "not applicable", "self-declared", "verified pass"
+    "passed",
+    "failed",
+    "not applicable",
+    "check unavailable",
+    "self-declared",
+    "verified pass",
 ]
 
 

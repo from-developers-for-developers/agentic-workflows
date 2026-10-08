@@ -8,7 +8,7 @@ import json
 import sys
 
 from ww.errors import WwError
-from ww.executable import DEFAULT_EXECUTABLE, printed_executable
+from ww.executable import DEFAULT_EXECUTABLE, printed_executable, project_command
 from ww.package_updates import (
     PackageUpdateNotice,
     last_package_notice,
@@ -48,8 +48,11 @@ def announce(storage: Storage, *, to_stderr: bool = False) -> None:
             return
         stream = sys.stderr if to_stderr else sys.stdout
         configured = load_project_config(storage.project_config_path).executable
-        executable = configured or (
-            "./ww" if (storage.root / "ww").is_file() else DEFAULT_EXECUTABLE
+        # Without a launcher to run, the notice names the binary itself.
+        executable = (
+            project_command(configured, storage.root)
+            if configured or (storage.root / "ww").is_file()
+            else DEFAULT_EXECUTABLE
         )
         with printed_executable(executable):
             stream.write(notice.render())
