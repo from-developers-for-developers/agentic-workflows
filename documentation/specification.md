@@ -1701,8 +1701,8 @@ Controllers must not instantiate services; inject them.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run. |
-| `contains` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, as for `paths`. The step page prints the strings after the globs. |
+| `paths` | non-empty list of globs | The files the rule is about, relative to the step's directory. `*` and `?` stay within a path segment, `**` spans segments, and a glob without `/` matches a file name anywhere. A check whose globs match no changed file does not run, and a rule without a check whose globs match none is not applicable and gets no verifier; a rule with neither `paths` nor `contains` applies to every change. |
+| `contains` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, and a rule without a check is not applicable then, as for `paths`. The step page prints the strings after the globs. |
 | `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. |
 | `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
@@ -1796,12 +1796,21 @@ an `argv` check receives the variable in its environment only.
 ### Verifying rules without a command
 
 A rule without a check of its own is never judged by the worker who did the
-step. When that worker completes and the step's checks pass, ww holds the
-completion, records nothing yet, and inserts **verification items** right
+step. When that worker completes and the step's checks pass, ww first
+narrows the step's judged rules by its change set as it narrows checks: a
+rule whose `paths` or `contains` select none of the changed files is not
+applicable, is recorded on the step as such (`not applicable (no changed
+file in scope)` in the artifact's `## Rules` section), and gets no verifier;
+a rule with neither applies to every change, even an empty one. When no
+judged rule remains, the completion is recorded at once. Otherwise ww holds
+the completion, records nothing yet, and inserts **verification items** right
 before the step: agent items ww generates, IDs
-`<workflow>:<step path>:verify:<n>`, one per distinct worker among the rules
-(the rule's or group's `agent`, `model`, `reasoning`, else the step's). Each is
-an assignment of its own, and asks for a verdict on each of its rules.
+`<workflow>:<step path>:verify:<n>`, one per distinct worker among the
+remaining rules (the rule's or group's `agent`, `model`, `reasoning`, else
+the step's). Each is an assignment of its own, and asks for a verdict on
+each of its rules; its page shows each rule's scope and, when the scope
+selects fewer than the step's changed files, the changed files in it
+(`paths`, `contains`, `files` on each verification rule in `--json`).
 
 When the step begins, each rule without a command resolves once against the
 rule-automation store, and the step keeps what it resolved: `converted` when
@@ -1831,7 +1840,11 @@ held completion as submitted.
 `ww-scriptize-rules`. The notice is left out while
 `ww-scriptize-rules` is switched off and when it is the workflow started,
 and never blocks anything. `lint` warns with the IDs of those rules and
-suggests `ww-scriptize-rules` only while it is switched on.
+suggests `ww-scriptize-rules` only while it is switched on. `lint` also
+hints at the judged rules with neither `paths` nor `contains`, which a
+verifier judges after every step, and at a rule the local counters
+(`rules stats`) show waived or left out by the change set five times or
+more without ever applying.
 
 #### Guiding checks: `rules.check_guidance`
 
@@ -1907,8 +1920,9 @@ or `schema_version` is an error.
 | `check <task> [--json]` | Runs the checks of the step in progress against its change set so far, exactly as `complete` would, and prints the failures in the fix page's shape, or `All checks pass`, plus the rules a verifier judges at completion. Records nothing: no attempt counts and no output is kept. Exits 1 when a check fails. Not written to the audit log. |
 | `dispute <task> --rule <id> --reason "<why>"` | Only while the step is in progress, and only for an ID a rejected completion of it failed: a rule, a `fix` hook, a derived check, or a judged rule. Stops the task with `operator_reason: check_disputed`; the page shows the check's text, command, and last output, and the worker's reason. |
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
-| `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed), then each step's own rules and the groups it names, then the `targets`: every workflow's steps in tree order, `init` left out, each with its leaf `step` name, its logical `path` (the precise `steps` selector; loop bodies, nested steps, per-item and per-child stages take their parent's path as a prefix), whether it is `agent_owned` (a loop or nested sequence only holds its steps; an extension or ww-owned action takes no rules), and the `groups` reaching it now, by filter or by name, empty for a step that is not an agent's. |
+| `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed, its local `stats` counters as `rules stats` lists them), then each step's own rules and the groups it names, then the `targets`: every workflow's steps in tree order, `init` left out, each with its leaf `step` name, its logical `path` (the precise `steps` selector; loop bodies, nested steps, per-item and per-child stages take their parent's path as a prefix), whether it is `agent_owned` (a loop or nested sequence only holds its steps; an extension or ww-owned action takes no rules), and the `groups` reaching it now, by filter or by name, empty for a step that is not an agent's. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
+| `rules stats [--json]` | Every declared rule with the checkout's local counters from `.ww/rules/stats.json`, counted once per settled completion of a step that carried the rule: `applied` (checked or judged), `checked`, `check_failures`, `judged`, `judged_failures`, `waived`, `not_applicable`, `last_applied_at`, `last_failed_at` and `last_failure` (`task`, `step`, `kind`: `check` or `verdict`), with `text_hash` the wording last evaluated. The most failing rule first (check plus verdict failures), then the most applied, then by ID; a rule never applied is marked (`never_applied` in JSON). Read-only: not in the audit log. |
 | `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project and refused when absolute or with a `..` part. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
 | `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |

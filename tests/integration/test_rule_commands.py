@@ -18,6 +18,7 @@ from ww.instructions import Instruction
 from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.rule_disputes import DISPUTES_FILE, DisputeLog
+from ww.rule_stats import RuleEvaluation, RuleStatsStore
 from ww.rule_store import STORE_FILE, RuleStore
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -627,6 +628,138 @@ def test_rules_lists_groups_and_step_rules(
     assert data["steps"][0]["rules"][0]["id"] == "develop/1"
     assert data["check_guidance"] is None
     assert "scripting" not in data
+
+
+def _counted(root: Path) -> None:
+    """Four settled completions: the checked rule failed twice and passed
+    once; the judged rule passed once; a third rule never applied."""
+    store = RuleStatsStore(Storage(root))
+    (root / "rules/docs/never.md").write_text(
+        '---\npaths: ["*.rs"]\n---\nName Rust modules after their crate.\n',
+        encoding="utf-8",
+    )
+    for number, outcome in enumerate(
+        ("check failed", "check failed", "check passed"), 1
+    ):
+        store.record_outcomes(
+            "TASK-1",
+            "develop",
+            (
+                RuleEvaluation("docs/header", "a" * 64, outcome),
+                RuleEvaluation("docs/never", "c" * 64, "not applicable"),
+            ),
+            f"2026-10-08T0{number}:00:00+00:00",
+        )
+    store.record_outcomes(
+        "TASK-2",
+        "develop",
+        (
+            RuleEvaluation("develop/1", "b" * 64, "verdict pass"),
+            RuleEvaluation("docs/never", "c" * 64, "waived"),
+        ),
+        "2026-10-08T04:00:00+00:00",
+    )
+
+
+def test_rules_carries_each_rules_counters(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    _counted(root)
+
+    assert main(["--root", str(root), "rules"]) == 0
+
+    out = capsys.readouterr().out
+    assert (
+        "(checked by its command)\n  applied 3 (checked 3, judged 0), failed 2 "
+        "(check 2, verdict 0), waived 0, not applicable 0; last failed "
+        "2026-10-08T02:00:00+00:00 in TASK-1 `develop` (check)\n" in out
+    )
+    assert (
+        "- `docs/never` — *.rs — Name Rust modules after their crate. (judged: "
+        "not scriptized yet)\n  never applied, no failures, waived 1, not "
+        "applicable 3\n" in out
+    )
+    assert (
+        f"- `develop/1` — {JUDGED} (judged: not scriptized yet)\n  applied 1 "
+        "(checked 0, judged 1), no failures, waived 0, not applicable 0\n" in out
+    )
+    assert main(["--root", str(root), "rules", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    header, never = data["groups"][0]["rules"]
+    assert header["stats"] == {
+        "applied": 3,
+        "checked": 3,
+        "check_failures": 2,
+        "judged": 0,
+        "judged_failures": 0,
+        "waived": 0,
+        "not_applicable": 0,
+        "last_applied_at": "2026-10-08T03:00:00+00:00",
+        "last_failed_at": "2026-10-08T02:00:00+00:00",
+        "last_failure": {"task": "TASK-1", "step": "develop", "kind": "check"},
+        "text_hash": "a" * 64,
+    }
+    assert (never["stats"]["applied"], never["stats"]["not_applicable"]) == (0, 3)
+    assert data["steps"][0]["rules"][0]["stats"]["judged"] == 1
+
+
+def test_rules_stats_lists_the_most_failing_first_and_marks_the_never_applied(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    assert main(["--root", str(root), "rules", "stats"]) == 0
+    out = capsys.readouterr().out
+    assert "| `docs/header` | never | 0 (0/0) | 0 | 0 | 0 | 0 | — |" in out
+    assert "Never applied: `develop/1`, `docs/header`." in out
+    _counted(root)
+
+    assert main(["--root", str(root), "rules", "stats"]) == 0
+
+    out = capsys.readouterr().out
+    assert "# Rule statistics" in out
+    assert "kept locally in `.ww/rules/stats.json`" in out
+    rows = [line for line in out.splitlines() if line.startswith("| `")]
+    assert rows == [
+        "| `docs/header` | 3 | 2 (2/0) | 3 | 0 | 0 | 0 | 2026-10-08T02:00:00+00:00 "
+        "in TASK-1 `develop` (check) |",
+        "| `develop/1` | 1 | 0 (0/0) | 0 | 1 | 0 | 0 | — |",
+        "| `docs/never` | never | 0 (0/0) | 0 | 0 | 1 | 3 | — |",
+    ]
+    assert out.endswith("Never applied: `docs/never`.\n")
+    assert main(["--root", str(root), "rules", "stats", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["path"] == ".ww/rules/stats.json"
+    assert [(rule["id"], rule["never_applied"]) for rule in data["rules"]] == [
+        ("docs/header", False),
+        ("develop/1", False),
+        ("docs/never", True),
+    ]
+    assert data["rules"][0]["check_failures"] == 2
+    # A read-only listing is not in the audit log.
+    assert not (root / ".ww/executions.jsonl").exists()
+
+
+def test_lint_hints_at_rules_never_applied(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+    _counted(root)
+    assert main(["--root", str(root), "lint"]) == 0
+    assert "never applied" not in capsys.readouterr().out
+    RuleStatsStore(Storage(root)).record_outcomes(
+        "TASK-3",
+        "develop",
+        (RuleEvaluation("docs/never", "c" * 64, "not applicable"),),
+        "2026-10-08T05:00:00+00:00",
+    )
+
+    assert main(["--root", str(root), "lint"]) == 0
+
+    assert (
+        "Hint: 1 rule was never applied (docs/never); review whether to keep it: "
+        "`./ww rules stats`.\n"
+    ) in capsys.readouterr().out
 
 
 NESTED = """rules:

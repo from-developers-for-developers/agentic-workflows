@@ -11,6 +11,7 @@ store with its orphans removed for the caller to save.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -22,8 +23,9 @@ from ww.extensions import is_extension_reference
 from ww.instructions.builder import fix_failures
 from ww.instructions.models import CheckPreview
 from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
-from ww.rule_conversion import ScriptizeState, scriptize_state
+from ww.rule_conversion import ScriptizeState, every_rule, scriptize_state
 from ww.rule_disputes import DisputeEntry
+from ww.rule_stats import STATS_FILE, RuleStats
 from ww.rule_store import RuleAutomation, describe_command
 from ww.rule_verification import to_verify
 from ww.workflow_config import (
@@ -228,6 +230,7 @@ class ListedRule:
     rule without a command of its own, the one ``rules promote`` copies into
     its file. ``scriptize`` says where the rule stands: ``command``,
     ``converted``, ``not_convertible``, ``rejected`` or ``unscriptized``.
+    ``stats`` are the checkout's local counters for the rule.
     """
 
     id: str
@@ -239,6 +242,7 @@ class ListedRule:
     disputes: int = 0
     store_check: str | None = None
     scriptize: ScriptizeState = "unscriptized"
+    stats: RuleStats = RuleStats()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -251,6 +255,7 @@ class ListedRule:
             "disputes": self.disputes,
             "store_check": self.store_check,
             "scriptize": self.scriptize,
+            "stats": self.stats.to_dict(),
         }
 
 
@@ -353,16 +358,18 @@ def rules_listing(
     root: Path,
     disputes: tuple[DisputeEntry, ...] = (),
     automation: RuleAutomation | None = None,
+    stats: Mapping[str, RuleStats] | None = None,
 ) -> RulesListing:
     """Every root group with its filters and rules, then every step's own list.
 
     A step name repeated across workflows is listed once; ``disputes`` count
     how often each rule was disputed; ``automation`` names the approved
-    store check of each rule without a command. The targets walk every
-    workflow's steps as the plan compiler does, ``init`` left out since it
-    never takes rules.
+    store check of each rule without a command; ``stats`` are the local
+    counters by rule ID. The targets walk every workflow's steps as the
+    plan compiler does, ``init`` left out since it never takes rules.
     """
     automation = automation if automation is not None else RuleAutomation()
+    stats = stats if stats is not None else {}
     counts: dict[str, int] = {}
     for dispute in disputes:
         counts[dispute.check] = counts.get(dispute.check, 0) + 1
@@ -378,6 +385,7 @@ def rules_listing(
             disputes=counts.get(rule.id, 0),
             store_check=_store_check(automation, rule),
             scriptize=scriptize_state(automation, rule),
+            stats=stats.get(rule.id, RuleStats()),
         )
 
     groups = tuple(
@@ -464,6 +472,55 @@ def _agent_owned(configuration: WorkflowConfiguration, step: StepDefinition) -> 
     if handler.action is not None:
         return actions.get(handler.action.identifier).owner == "agent"
     return True
+
+
+@dataclass(frozen=True)
+class ListedRuleStats:
+    """One declared rule with its local counters, for ``ww rules stats``."""
+
+    id: str
+    summary: str
+    stats: RuleStats
+
+    @property
+    def never_applied(self) -> bool:
+        return self.stats.applied == 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "summary": self.summary,
+            "never_applied": self.never_applied,
+            **self.stats.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class RuleStatsListing:
+    """Every declared rule, the most failing first."""
+
+    rules: tuple[ListedRuleStats, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {"path": STATS_FILE, "rules": [rule.to_dict() for rule in self.rules]}
+
+
+def rule_stats_listing(
+    configuration: WorkflowConfiguration, stats: Mapping[str, RuleStats]
+) -> RuleStatsListing:
+    """Each declared rule once with its counters: most failures first, then
+    most applied, then by ID; a rule never evaluated has zero counters."""
+    declared: dict[str, RuleDefinition] = {}
+    for rule in every_rule(configuration):
+        declared.setdefault(rule.id, rule)
+    listed = [
+        ListedRuleStats(rule.id, rule.summary, stats.get(rule.id, RuleStats()))
+        for rule in declared.values()
+    ]
+    listed.sort(
+        key=lambda entry: (-entry.stats.failures, -entry.stats.applied, entry.id)
+    )
+    return RuleStatsListing(tuple(listed))
 
 
 def _store_check(automation: RuleAutomation, rule: RuleDefinition) -> str | None:

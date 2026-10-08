@@ -233,7 +233,12 @@ class CheckPreview:
 
 @dataclass(frozen=True)
 class VerificationRuleLine:
-    """One rule on a verification page, which the verifier judges."""
+    """One rule on a verification page, which the verifier judges.
+
+    ``paths`` and ``contains`` are its scope, and ``files`` the changed
+    files in that scope; all empty for an unscoped rule, which the whole
+    change set is in scope of.
+    """
 
     id: str
     text: str
@@ -242,6 +247,9 @@ class VerificationRuleLine:
     # missing in the step's directory.
     check: str | None = None
     missing: str | None = None
+    paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -250,6 +258,9 @@ class VerificationRuleLine:
             "interpretation": self.interpretation,
             "check": self.check,
             "missing": self.missing,
+            "paths": list(self.paths),
+            "contains": list(self.contains),
+            "files": list(self.files),
         }
 
 

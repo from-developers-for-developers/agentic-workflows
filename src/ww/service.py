@@ -117,6 +117,7 @@ from ww.results import (
 from ww.rule_checks import CheckScope, RuleChecker, change_set, item_reports
 from ww.rule_conversion import SCRIPTIZE_WORKFLOW, scriptize_notice
 from ww.rule_disputes import DisputeEntry, DisputeLog
+from ww.rule_stats import RuleStatsStore, evaluations
 from ww.rule_store import RuleStore
 from ww.rule_verification import (
     close_round,
@@ -126,6 +127,7 @@ from ww.rule_verification import (
     judged_rules,
     open_verification_round,
     parse_rule_results,
+    record_not_applicable,
     record_round,
     resolve_rules,
     resume_held,
@@ -340,6 +342,7 @@ class WorkflowService:
         }
         self.rule_store = RuleStore(self.storage.root)
         self.rule_disputes = DisputeLog(self.storage.root)
+        self.rule_stats = RuleStatsStore(self.storage)
         self.instructions = InstructionBuilder(
             self.tasks,
             self._runtime_values,
@@ -2098,9 +2101,10 @@ class WorkflowService:
                     keep_active=held is None,
                 )
                 self.commit(state, snapshot)
+                self._count_rules(task_id, item, active_record, check_report)
                 return self.render(state, snapshot)
         if to_verify(item, active_record):
-            held_page = self._hold_for_verification(
+            state, held_page = self._hold_for_verification(
                 state,
                 snapshot,
                 item,
@@ -2129,6 +2133,9 @@ class WorkflowService:
             task_id, state, item, task_metadata, project_metadata
         )
         promised_documents = self._promised_documents(snapshot.plan, item, state)
+        self._count_rules(
+            task_id, item, state.item_executions[state.cursor], check_report
+        )
         artifact_reference, wrapper_artifact_reference = write_completion_artifacts(
             self.tasks,
             task_id,
@@ -4010,24 +4017,27 @@ class WorkflowService:
         check_report: CheckReport | None,
         artifact: str | None,
         request: HeldCompletion,
-    ) -> Instruction | None:
+    ) -> tuple[ExecutionState, Instruction | None]:
         """Hold a completion whose rules still need a verifier.
 
-        Returns ``None`` when nothing is left to verify, and the completion
-        is recorded as usual. Otherwise the completion, its change set, and
-        its draft artifact are kept on the record, and a verification round
+        The step's change set first settles which judged rules apply; those
+        it leaves out are recorded on the step. Returns the state and
+        ``None`` when nothing is left to verify, and the completion is
+        recorded as usual. Otherwise the completion, its change set, and its
+        draft artifact are kept on the record, and a verification round
         opens for the rules that need one.
         """
         record = state.item_executions[state.cursor]
-        needs = verification_needs(item, record)
-        if not needs:
-            return None
         directory = self._check_scope(state, snapshot.plan, item).directory
         if check_report is not None:
             mark = check_report.mark
         else:
             mark = take_mark(directory) if record.change_mark else None
         files, unmarked = change_set(directory, record.change_mark, mark)
+        needs, not_applicable = verification_needs(item, record, files, directory)
+        state = record_not_applicable(state, not_applicable, _now)
+        if not needs:
+            return state, None
         held = replace(
             request,
             mark=mark,
@@ -4039,7 +4049,23 @@ class WorkflowService:
         state = hold_completion(state, snapshot.plan, held, artifact, _now)
         state, snapshot = open_verification_round(state, snapshot, item, needs, _now)
         self.commit(state, snapshot)
-        return replace(self.render(state, snapshot), completion_held=True)
+        return state, replace(self.render(state, snapshot), completion_held=True)
+
+    def _count_rules(
+        self,
+        task_id: str,
+        item: PlanItem,
+        record: PlanItemExecution,
+        report: CheckReport | None,
+    ) -> None:
+        """Add one settled completion of ``item`` to the local rule statistics.
+
+        ``record`` is the step's record as the completion was settled, its
+        held verdicts included; ``report`` the check results that settled it.
+        """
+        self.rule_stats.record_outcomes(
+            task_id, item.name, evaluations(item, record, report), _now()
+        )
 
     def _write_draft(
         self,
@@ -4220,6 +4246,7 @@ class WorkflowService:
                 keep_active=False,
             )
             self.commit(state, snapshot)
+            self._count_rules(state.task_id, step, step_record, held.report)
             return self._after_verification(state, snapshot, caller_role)
         if round_open(state, plan, step.id):
             self.commit(state, snapshot)

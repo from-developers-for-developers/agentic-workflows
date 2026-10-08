@@ -877,6 +877,9 @@ class InstructionBuilder:
                     rule.interpretation,
                     rule.check,
                     rule.missing,
+                    paths=rule.paths,
+                    contains=rule.contains,
+                    files=rule.files,
                 )
                 for rule in record.verification
             ),

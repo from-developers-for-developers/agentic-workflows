@@ -69,12 +69,14 @@ from ww.output_adapters.rule_pages import (
     render_orphans,
     render_revoke_preview,
     render_revoked,
+    render_rule_stats,
     render_rule_view,
     render_rules_listing,
 )
 from ww.plan import PlanCompilationOptions, compile_workflow_plan
 from ww.project_config import ProjectConfig, compose_settings, load_project_config
 from ww.rule_disputes import DisputeLog
+from ww.rule_stats import RuleStatsStore, never_applied_rules
 from ww.rule_store import (
     CheckSpec,
     RuleAutomation,
@@ -82,7 +84,13 @@ from ww.rule_store import (
     parse_command,
 )
 from ww.rule_verification import revoke_check
-from ww.rule_views import declared_hashes, orphans, prune, rules_listing
+from ww.rule_views import (
+    declared_hashes,
+    orphans,
+    prune,
+    rule_stats_listing,
+    rules_listing,
+)
 from ww.run_reports import DEBUG, FEEDBACK, listing, render_listing, render_record
 from ww.service import WorkflowService
 from ww.storage import Storage
@@ -298,6 +306,8 @@ def _lint(context: _Context) -> _Outcome:
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
         f"{_unscriptized_warning(RuleStore(context.storage.root), configuration)}"
+        f"{_unscoped_hint(RuleStore(context.storage.root), configuration)}"
+        f"{_never_applied_hint(RuleStatsStore(context.storage), configuration)}"
         f"{_disputes_summary(DisputeLog(context.storage.root))}"
     )
 
@@ -388,6 +398,45 @@ def _unscriptized_warning(
         return f"{warning}.\n"
     return (
         f"{warning}; `{rule_conversion.SCRIPTIZE_WORKFLOW}` builds checks for them.\n"
+    )
+
+
+def _unscoped_hint(store: RuleStore, configuration: WorkflowConfiguration) -> str:
+    """Name the judged rules with no ``paths`` or ``contains``.
+
+    A hint only: such a rule is verified after every step that changes
+    anything, where a scoped one is skipped when none of the changed files
+    is in its scope.
+    """
+    rules = rule_conversion.unscoped_judged_rules(configuration, store.load())
+    if not rules:
+        return ""
+    many = len(rules) != 1
+    return (
+        f"Hint: {len(rules)} judged rule{'s are' if many else ' is'} verified on "
+        "every step (" + ", ".join(rule.id for rule in rules) + "); add paths or "
+        f"contains to narrow {'them' if many else 'it'}.\n"
+    )
+
+
+def _never_applied_hint(
+    store: RuleStatsStore, configuration: WorkflowConfiguration
+) -> str:
+    """Name the rules evaluated often without ever applying.
+
+    A hint only: such a rule was waived or left out by the change set every
+    time a completed step carried it, so it may be scoped wrong or no
+    longer worth keeping.
+    """
+    rules = never_applied_rules(configuration, store.load())
+    if not rules:
+        return ""
+    many = len(rules) != 1
+    return (
+        f"Hint: {len(rules)} rule{'s were' if many else ' was'} never applied ("
+        + ", ".join(rule.id for rule in rules)
+        + f"); review whether to keep {'them' if many else 'it'}: "
+        f"`{ww_command()} rules stats`.\n"
     )
 
 
@@ -561,6 +610,8 @@ def _rules(context: _Context) -> _Outcome:
         return _convert(context, configuration)
     if args.rules_action == "decline":
         return _decline(context, configuration)
+    if args.rules_action == "stats":
+        return _rule_stats(context, configuration)
     if args.rules_action is not None:
         return _rule_write(context, configuration)
     settings = context.extensions.config
@@ -570,11 +621,22 @@ def _rules(context: _Context) -> _Outcome:
             context.storage.root,
             DisputeLog(context.storage.root).load(),
             RuleStore(context.storage.root).load(),
+            RuleStatsStore(context.storage).load(),
         ),
         check_guidance=settings.rule_check_guidance,
     )
     return _Outcome(
         _json(listing.to_dict()) if args.json_output else render_rules_listing(listing)
+    )
+
+
+def _rule_stats(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
+    """Every declared rule with its local counters, the most failing first."""
+    listing = rule_stats_listing(configuration, RuleStatsStore(context.storage).load())
+    return _Outcome(
+        _json(listing.to_dict())
+        if context.args.json_output
+        else render_rule_stats(listing)
     )
 
 
@@ -1708,7 +1770,7 @@ def main(argv: list[str] | None = None) -> int:
     workflow = cast(str | None, getattr(args, "workflow", None))
     task_id = cast(str | None, getattr(args, "task_id", None))
     logged = args.command not in _READ_ONLY_COMMANDS and not (
-        (args.command == "rules" and args.rules_action is None)
+        (args.command == "rules" and args.rules_action in {None, "stats"})
         or (
             args.command == "feedback"
             and (args.feedback_action not in {"record", "prune"} or args.dry_run)

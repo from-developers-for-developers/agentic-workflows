@@ -7,8 +7,9 @@ the rule-automation store, resolved when the step began. ww runs every check
 of the completing step in plan order, derived checks last, each seeing the
 step's change set in ``WW_STEP_CHANGED_FILES`` (newline-separated, relative
 to the step's directory) narrowed to the check's globs. A check whose globs
-select no changed file is not applicable and does not run. A check fails on
-a non-zero exit or a failed assertion.
+select no changed file is not applicable and does not run; a judged rule is
+narrowed the same way (``applicable_files``), by its verifiers. A check fails
+on a non-zero exit or a failed assertion.
 
 Checks read the working tree and report; they change no workflow state, so
 running them again after an interruption is harmless and they keep no
@@ -109,8 +110,8 @@ class RuleChecker:
         files: tuple[str, ...],
         scope: CheckScope,
     ) -> CheckResult:
-        selected = select_files(files, check.paths, check.contains, scope.directory)
-        if (check.paths or check.contains) and not selected:
+        selected = applicable_files(files, check.paths, check.contains, scope.directory)
+        if selected is None:
             return CheckResult(check.id, check.source, "not_applicable")
         action = CommandAction()
         outputs: list[str] = []
@@ -188,6 +189,24 @@ class RuleChecker:
             stdout_ref=stdout_ref,
             stderr_ref=stderr_ref,
         )
+
+
+def applicable_files(
+    files: tuple[str, ...],
+    paths: tuple[str, ...],
+    contains: tuple[str, ...],
+    directory: Path,
+) -> tuple[str, ...] | None:
+    """The changed files a check or rule applies to, or ``None`` when none.
+
+    A scoped check or rule, one with globs or ``contains`` strings, applies
+    to the changed files they select and is not applicable when they select
+    none. An unscoped one applies to the whole change set, even an empty one.
+    """
+    selected = select_files(files, paths, contains, directory)
+    if (paths or contains) and not selected:
+        return None
+    return selected
 
 
 def change_set(

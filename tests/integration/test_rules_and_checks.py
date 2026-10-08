@@ -15,6 +15,7 @@ from ww.execution_models import ExecutionState, PlanItemExecution, TaskRunAggreg
 from ww.instructions import Instruction
 from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
+from ww.rule_stats import RuleFailure
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -242,6 +243,36 @@ def test_a_rule_whose_glob_matches_nothing_is_not_applicable(tmp_path: Path) -> 
     artifact = _develop_artifact(root).read_text(encoding="utf-8")
     assert "- `docs/header`: not applicable" in artifact
     assert "No completion was rejected." in artifact
+    header = service.rule_stats.load()["docs/header"]
+    assert (header.applied, header.checked, header.not_applicable) == (0, 0, 1)
+
+
+def test_every_settled_completion_counts_in_the_rule_statistics(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    service = _develop(root)
+    _violate(root)
+    _complete(service, "First.")
+    _complete(service, "Second.")
+    (root / "notes.md").write_text("foo now\n", encoding="utf-8")
+    (root / "broken").unlink()
+    _complete(service, "Fixed.")
+    _verify(service)
+
+    stats = service.rule_stats.load()
+
+    # The hook is a check without a rule: only rules are counted.
+    assert set(stats) == {"docs/header", "develop/1"}
+    header = stats["docs/header"]
+    assert (header.applied, header.checked, header.check_failures) == (3, 3, 2)
+    assert header.last_failure == RuleFailure("TASK-1", "develop", "check")
+    assert header.last_failed_at is not None
+    assert header.last_applied_at is not None
+    assert header.last_applied_at >= header.last_failed_at
+    judged = stats["develop/1"]
+    assert (judged.applied, judged.judged, judged.failures) == (1, 1, 0)
+    assert judged.last_failure is None
 
 
 MAIL_RULE = """---
@@ -441,6 +472,10 @@ def test_force_after_the_fix_limit_waives_the_checks(tmp_path: Path) -> None:
         "`develop/sh`): Checked by hand." in artifact
     )
     assert "Completions rejected before this one: 3." in artifact
+    stats = service.rule_stats.load()
+    header = stats["docs/header"]
+    assert (header.checked, header.check_failures, header.waived) == (3, 3, 1)
+    assert (stats["develop/1"].applied, stats["develop/1"].waived) == (0, 1)
 
 
 def test_an_operator_hook_still_stops_as_a_failed_handler(tmp_path: Path) -> None:
@@ -554,4 +589,6 @@ def test_lint_reports_the_rules(
         "Rules: 1 group, 2 rules\n"
         "Warning: 1 rule has no check yet (develop/1); `ww-scriptize-rules` "
         "builds checks for them.\n"
+        "Hint: 1 judged rule is verified on every step (develop/1); add paths "
+        "or contains to narrow it.\n"
     )

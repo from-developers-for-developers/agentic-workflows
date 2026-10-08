@@ -194,6 +194,7 @@ def reject_completion(
         check_reports=(*records[state.cursor].check_reports, report),
         draft_artifact=artifact,
         held_completion=None,
+        rules_not_applicable=(),
     )
     limits = fix_limits(item, record)
     exhausted = [

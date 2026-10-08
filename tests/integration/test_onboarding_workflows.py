@@ -581,6 +581,17 @@ def test_the_rule_skill_follows_the_rules_settings() -> None:
     assert "judges it until `ww-scriptize-rules`" in skill
 
 
+def test_the_rule_skill_prefers_a_scoped_rule() -> None:
+    path = Path(__file__).parents[2] / "src/ww/assets/ww-rule_skill.md"
+    skill = " ".join(path.read_text(encoding="utf-8").split())
+    assert "Prefer a scoped rule" in skill
+    assert "give `--paths`" in skill and "`--contains`" in skill
+    assert (
+        "an unscoped rule without a check is verified after every step that "
+        "changes anything"
+    ) in skill
+
+
 def test_proposals_take_step_features_from_the_design_guide() -> None:
     design = _step("ww-suggest", "design").description
     assert "such as manual testing, which step features it" in design

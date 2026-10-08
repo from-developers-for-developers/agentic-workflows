@@ -6,8 +6,8 @@ description: Add, amend, move, or re-scope the rules ww gives to workflow steps,
 # Write ww rules from the operator's words
 
 A rule is one sentence a step's agent must follow, in a Markdown file whose
-optional frontmatter scopes it to files (`paths`) or gives it a command
-(`check`). You decide what the rules are; `./ww rules add`, `edit`, `move`,
+optional frontmatter scopes it to files (`paths`, `contains`) or gives it a
+command (`check`). You decide what the rules are; `./ww rules add`, `edit`, `move`,
 `filter` and `promote` write them, validated. Never edit a rule file, a
 group, `ww-rules.yaml`, `ww.yaml` or
 `ww-rule-automation.json` yourself.
@@ -18,7 +18,15 @@ group, `ww-rules.yaml`, `ww.yaml` or
    `path` a `steps` filter names to reach exactly that step (loop bodies and
    per-item stages included) and whether the step is `agent_owned`; only
    such a step takes rules. Use only workflow names and step names or paths
-   it shows; never invent one.
+   it shows; never invent one. Each rule's `stats` are the checkout's local
+   counters: `applied`, `checked`, `check_failures`, `judged`,
+   `judged_failures`, `waived`, `not_applicable` and `last_failure`. A rule
+   that fails often is a candidate for an amendment (clearer wording, a
+   narrower scope, a better check); one with `applied` 0 after several
+   `waived` or `not_applicable` evaluations is a candidate for retirement.
+   Propose either as such, and act only on the operator's confirmation: an
+   amendment through `rules edit`, a retirement by deleting the rule file
+   or, for a rule in a step's `rules:` list, by the operator's hand edit.
 2. **Split into atomic obligations.** One rule is one thing an agent can do
    or fail to do. Break the input into such obligations and merge the ones
    that say the same thing twice. For each, search the existing rules by ID
@@ -26,10 +34,17 @@ group, `ww-rules.yaml`, `ww.yaml` or
    **amendment** of `<id>` (same obligation, new wording or globs), or a
    **filter change** of `<group>` (the rule is right, the steps it reaches
    are not).
-3. **Decide globs.** Give `paths` only when the sentence names a kind of file
-   or a directory. Count what each glob matches (`git ls-files | grep -c`,
-   or `--dry-run`, which reports the count). A glob that matches nothing is
-   dropped, and you say so.
+3. **Decide the scope.** Prefer a scoped rule: when the rule is about
+   particular files or constructs, give `--paths` (globs for the files it
+   concerns) and `--contains` (plain strings those files hold, such as a
+   class or function name). ww narrows every rule to the files the step
+   changed: a scoped rule whose globs and strings select none of them is not
+   applicable and is neither checked nor judged, whereas an unscoped rule
+   without a check is verified after every step that changes anything, by a
+   verifier that has to read the whole change. Leave a rule unscoped only
+   when it truly concerns every file. Count what each glob matches (`git
+   ls-files | grep -c`, or `--dry-run`, which reports the count). A glob
+   that matches nothing is dropped, and you say so.
 4. **Decide placement from the real filters.** An existing group whose
    `workflows`/`steps` fit the rule, whether it lists a directory or its
    files one by one (`rules add` then writes the file beside the group's
@@ -62,11 +77,12 @@ group, `ww-rules.yaml`, `ww.yaml` or
 7. **Write only through the CLI**, in this order: new groups
    (`./ww rules add --group <name> --dir <path> [--workflows ...] [--steps ...]`),
    promotions (`./ww rules promote <check>`), amendments
-   (`./ww rules edit <id> [--text "<sentence and body>"] [--paths <glob> ...]`),
+   (`./ww rules edit <id> [--text "<sentence and body>"] [--paths <glob> ...]
+   [--contains <text> ...]`),
    moves (`./ww rules move <id> <group>`), filter changes
    (`./ww rules filter <group> [--workflows ...] [--steps ...]`), new rules
    (`./ww rules add <group> --text "<sentence and body>" [--paths <glob> ...]
-   [--assert empty|equals:<v> ...] [--id <stem>]
+   [--contains <text> ...] [--assert empty|equals:<v> ...] [--id <stem>]
    [--check-shell "<sh>" | --check-argv -- <arg> ...]`; `--check-argv --` goes
    last, so the checked tool's own options stay its own). Each command refuses a write that would leave the
    configuration invalid and changes nothing then; `--dry-run` checks one

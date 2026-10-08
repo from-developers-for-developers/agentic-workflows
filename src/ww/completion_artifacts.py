@@ -24,9 +24,11 @@ def rule_outcomes(
     """What the completing step's artifact says about its rules and checks.
 
     A rule checked by a derived check reports that check's result; one a
-    verifier judged reports the verdict and the verification item; any other
-    rule without a check is self-declared: the worker states in its result
-    how it followed it. A check reports its result in ``report``, or, when
+    verifier judged reports the verdict and the verification item; one whose
+    scope selected none of the changed files is not applicable, as a check
+    that did not run is; any other rule without a check is self-declared:
+    the worker states in its result how it followed it. A check reports its
+    result in ``report``, or, when
     the operator waived it, in the last report that ran it. Rejections an
     operator retry moved into the history still count.
     """
@@ -59,6 +61,12 @@ def rule_outcomes(
         elif verdict is not None and verdict.verdict == "pass":
             outcomes.append(
                 RuleOutcome(rule.id, "verified pass", detail=f"by `{verdict.by}`")
+            )
+        elif rule.id in record.rules_not_applicable:
+            outcomes.append(
+                RuleOutcome(
+                    rule.id, "not applicable", detail="no changed file in scope"
+                )
             )
         else:
             outcomes.append(RuleOutcome(rule.id, "self-declared"))

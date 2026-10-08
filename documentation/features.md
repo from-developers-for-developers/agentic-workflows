@@ -2236,6 +2236,15 @@ and deleted files, ww's own `.ww` state, and `ww-rule-automation.json` are left
 out. Without git there is no change set: the globs select every file in the
 directory, `.git` and `.ww` excepted.
 
+A rule without a check is narrowed the same way. When the step's worker
+completes, each judged rule is matched against the change set: a rule with
+`paths` or `contains` that select none of the changed files is not
+applicable, no verifier judges it, and the artifact says so; a rule with
+neither applies to every change, even when the step changed nothing, so an
+unscoped judged rule is verified after every step. A step that changed no
+files makes every scoped judged rule not applicable. When no judged rule
+remains, the completion is recorded at once, without a verification item.
+
 In a shell check a bare `$WW_STEP_CHANGED_FILES` splits on whitespace, which
 suits `grep -L foo $WW_STEP_CHANGED_FILES` and `xargs`; paths with spaces need
 `printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs -d '\n' …`. A check's full
@@ -2247,8 +2256,9 @@ with a `check` field naming the check.
 The step's artifact gains a `## Rules` section after `## Result`: one line per
 rule with its status, `passed`, `not applicable`, `failed`, which only a
 waiver lets through, `verified pass (by <verification item>)` for a rule a
-verifier judged, or `passed (check <name>)` for one a derived check covers;
-hook checks carry `(hook)`. A rule is `self-declared` only when the operator
+verifier judged, `not applicable (no changed file in scope)` for a judged
+rule the change set left out, or `passed (check <name>)` for one a derived
+check covers; hook checks carry `(hook)`. A rule is `self-declared` only when the operator
 waived it, which skips its verification too. The section ends with the
 waived IDs and the operator's reason for each, if any, and how many
 completions ww rejected before this one.
@@ -2277,9 +2287,10 @@ items** are inserted before the step, one per distinct worker the rules ask
 for through `agent`, `model`, and `reasoning` (else the step's). Each is its
 own assignment: under `auto` the manager hands it to a new worker; under
 `single` the same session performs it, and its page says to read the change
-as a reviewer would. The verification page lists each rule, the step's
-changed files and the `git diff` that shows them, and the path of the held
-artifact. The verifier gives each rule a verdict, `pass` or `fail` with
+as a reviewer would. The verification page lists each rule, with its
+scope (globs and `contains` strings) and, when they are fewer than the
+step's, the changed files in that scope, the step's changed files once and
+the `git diff` that shows them, and the path of the held artifact. The verifier gives each rule a verdict, `pass` or `fail` with
 `file:line — what` evidence, as one `--rule-result` per rule,
 `{"id": "<rule>", "status": "judged", "verdict": "pass"}`, and writes
 nothing to the store. A failing verdict is a rejected completion: the step
@@ -2292,10 +2303,11 @@ declared rules have no check yet and suggest the `ww-scriptize` skill, which sta
 `ww-scriptize-rules`. The notice never blocks a task; it is left out
 while `ww-scriptize-rules` is switched off, and on the pages of
 `ww-scriptize-rules` itself. `ww lint` warns with the IDs of those rules,
-suggesting `ww-scriptize-rules` only while it is switched on, and
-lists store entries whose wording no rule has any more; only
-`ww rules prune`, after listing them and asking the operator, deletes the
-orphans.
+suggesting `ww-scriptize-rules` only while it is switched on, hints at the
+judged rules with neither `paths` nor `contains`, "verified on every step;
+add paths or contains to narrow", and lists store entries whose wording no
+rule has any more; only `ww rules prune`, after listing them and asking the
+operator, deletes the orphans.
 
 ### Guiding the checks: `rules.check_guidance`
 
@@ -2402,12 +2414,42 @@ rule's ID and first sentence, each step's own rules, and then every
 workflow's steps as a `steps` filter can name them: one line per step with
 its path, which reaches exactly that step where a leaf name would match it
 everywhere (loop bodies and per-item stages included), the groups reaching
-it, or that it is not an agent step and takes no rules. `--json` gives the
-same for a program, the steps as `targets` with `workflow`, `step`, `path`,
-`agent_owned` and `groups`. `ww rules prune` deletes store entries no declared rule
+it, or that it is not an agent step and takes no rules. Each rule's local
+counters follow its line; see [Rule statistics](#rule-statistics). `--json`
+gives the same for a program, the steps as `targets` with `workflow`, `step`,
+`path`, `agent_owned` and `groups`, and the counters as each rule's `stats`.
+`ww rules prune` deletes store entries no declared rule
 needs any more, after listing them and asking; `--yes` skips the question.
 `ww rules revoke <check>` rejects a converted or proposed check and its rules
 the same way.
+
+### Rule statistics
+
+ww counts what every settled completion of a step decided about each of the
+step's rules: a completion accepted, or one rejected because a check or a
+verifier's verdict failed. A rule counts once per settlement: `applied` when
+it was evaluated, `checked` or `judged` by how, `check_failures` or
+`judged_failures` when that evaluation failed it, `waived` when the operator
+let the step complete without it, and `not_applicable` when the change set
+selected none of its files. A step rejected three times by one rule's check
+and then accepted counts that rule as applied 4, checked 4, check failures
+3. Each rule also keeps when it last applied and last failed, and the task,
+step and kind (`check` or `verdict`) of the last failure.
+
+The counts live in `.ww/rules/stats.json`, keyed by rule ID with the hash
+of the wording last evaluated alongside, so they follow a rule through
+rewordings. The file is ww-owned, local to the checkout, and never
+committed: `.ww` is ignored. ww writes it under its own lock, and a count it
+cannot write is dropped; it never fails the completion.
+
+`ww rules` shows each rule's counters and last failure under its line, and
+`--json` carries them as `stats`. `ww rules stats [--json]` lists every
+declared rule, the most failing first (check and verdict failures together),
+then the most applied, then by ID, and marks the rules never applied. `ww
+lint` hints at a rule waived or left out five times or more without ever
+applying: it may be scoped wrong, or no longer worth keeping. The ww-rule
+skill reads the counters to propose amending a rule that fails often and
+retiring one that is never applied, each on the operator's confirmation.
 
 ### Writing rules with the ww-rule skill
 
@@ -2416,8 +2458,10 @@ ask an agent to add or change a rule, the `ww-rule` skill carries the
 judgment: it reads the groups and the real workflow and step names from
 `ww rules --json`, splits what you said into atomic obligations,
 tells a new rule from an amendment of an existing one or a change of where a
-group applies, gives a rule globs only when it names a kind of file and
-counts what each matches, places it in a group whose filters fit, and
+group applies, prefers a scoped rule, with `paths` globs and `contains`
+strings when the rule is about particular files or constructs, since ww
+skips a scoped rule the step's change set never touches, and counts what
+each glob matches, places it in a group whose filters fit, and
 rewrites it as one imperative sentence with the rationale below. It shows
 you one confirmation block, with each rule's ID, group, filters, globs and
 match counts, sentence, and whether it is new or replaces an existing one,

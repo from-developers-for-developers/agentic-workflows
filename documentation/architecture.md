@@ -1832,11 +1832,19 @@ for the same purpose. The limit turns into an operator decision (`fix_limit`)
 whose two exits, a fresh count or a recorded waiver, are transitions like any
 other.
 Judged rules, those without a command, are verified by an agent that is never
-the step's worker. Completing such a step holds the completion: the
-arguments, the change set and the draft artifact stay on the item record,
-and ww inserts one verification item per distinct worker setting before the
-step as a new plan revision, each an assignment of its own. A verifier only
-judges: it gives verdicts with evidence and never writes anything else.
+the step's worker. Completing such a step first narrows them by the step's
+change set through the one applicability test checks use,
+`rule_checks.applicable_files`: `verification_needs` returns the rules a
+verifier must still judge, each with its scope and the changed files in it,
+and the IDs the change set left out, which `record_not_applicable` keeps on
+the item record (`rules_not_applicable`) so the artifact reports them and
+the statistics count them; `reject_completion` clears that set. When no
+rule remains, the completion is recorded as usual. Otherwise ww holds the
+completion: the arguments, the change set and the draft artifact stay on
+the item record, and ww inserts one verification item per distinct worker
+setting before the step as a new plan revision, each an assignment of its
+own. A verifier only judges: it gives verdicts with evidence and never
+writes anything else.
 Turning rules into checks is a project task of its own,
 `ww-scriptize-rules`, whose checks the operator records with `rules
 convert`. They live in `ww-rule-automation.json` at the project root, keyed
@@ -1873,6 +1881,18 @@ the one approval path. `rules.check_guidance` in
 `ww-scriptize-rules` is switched off or is the workflow started, and `lint`
 lists the same rules from `unscriptized_rules`. The notice is a view; it
 selects no work.
+
+`rule_stats.py` keeps the per-rule counters in `.ww/rules/stats.json`, a
+ww-owned local file keyed by rule ID. The service counts at the three points
+a completion settles: a rejection by checks, a rejection by a verifier's
+verdict, and the acceptance; `evaluations` derives from the step's record and
+the settling check report what that settlement decided about each rule, so
+each rule counts once per settlement (applied and checked or judged, failed,
+waived, or not applicable), and `reject_completion` clears the record's
+not-applicable rules so a later settlement never counts a stale set. The
+store writes under its own lock and drops a write it cannot make: statistics
+never fail a completion. `rules` and `rules stats` read it through
+`rule_views`, and `lint` hints at rules never applied (`never_applied_rules`).
 
 Rules are written by the operator, through the `ww-rule` skill, never by a
 running task. The skill holds the judgment (atomic rules, amendments, globs,

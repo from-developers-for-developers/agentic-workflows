@@ -410,6 +410,9 @@ class VerificationRule:
     """One rule a verification item judges, as the step began with it.
 
     ``interpretation`` is the store's reading of the rule, when it has one.
+    ``paths`` and ``contains`` are the rule's scope, and ``files`` the
+    changed files that scope selects; both are empty for an unscoped rule,
+    which applies to the whole change set.
     """
 
     id: str
@@ -420,6 +423,9 @@ class VerificationRule:
     # the configuration file the step's directory lacks.
     check: str | None = None
     missing: str | None = None
+    paths: tuple[str, ...] = ()
+    contains: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -428,6 +434,9 @@ class VerificationRule:
             "text_hash": self.text_hash,
             "interpretation": self.interpretation,
             "check": self.check,
+            "paths": list(self.paths),
+            "contains": list(self.contains),
+            "files": list(self.files),
         }
         if self.missing is not None:
             data["missing"] = self.missing
@@ -456,6 +465,9 @@ class VerificationRule:
             missing=expect_optional_string(
                 data.get("missing"), "verification rule.missing"
             ),
+            paths=_strings(data.get("paths", []), "verification rule.paths"),
+            contains=_strings(data.get("contains", []), "verification rule.contains"),
+            files=_strings(data.get("files", []), "verification rule.files"),
         )
 
 
@@ -607,6 +619,10 @@ class PlanItemExecution:
     # A completion accepted by the checks and held while verifiers judge the
     # step's rules; its artifact is ``draft_artifact``.
     held_completion: HeldCompletion | None = None
+    # The judged rules whose scope selects none of the files the step changed,
+    # settled against the change set each time a completion is evaluated: no
+    # verifier judges them, and the artifact reports them as not applicable.
+    rules_not_applicable: tuple[str, ...] = ()
     # On a verification item's record: the rules it is asked about.
     verification: tuple[VerificationRule, ...] = ()
 
@@ -662,6 +678,7 @@ class PlanItemExecution:
             "held_completion": (
                 self.held_completion.to_dict() if self.held_completion else None
             ),
+            "rules_not_applicable": list(self.rules_not_applicable),
             "verification": [rule.to_dict() for rule in self.verification],
             **(
                 {"assessment_outcome": self.assessment_outcome}
@@ -774,6 +791,9 @@ class PlanItemExecution:
                 HeldCompletion.from_dict(data["held_completion"])
                 if data.get("held_completion") is not None
                 else None
+            ),
+            rules_not_applicable=_strings(
+                data.get("rules_not_applicable", []), "rules not applicable"
             ),
             verification=tuple(
                 VerificationRule.from_dict(entry)

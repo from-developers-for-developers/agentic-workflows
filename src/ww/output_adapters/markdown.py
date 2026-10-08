@@ -983,7 +983,13 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
 
 
 def rule_scope(paths: tuple[str, ...], contains: tuple[str, ...]) -> str:
-    """What a rule line says its files are: the globs, then the strings."""
+    """What a rule line says its files are, as a dash-led clause, or nothing."""
+    scope = scope_text(paths, contains)
+    return f" — {scope}" if scope else ""
+
+
+def scope_text(paths: tuple[str, ...], contains: tuple[str, ...]) -> str:
+    """A rule's scope: its globs, then the strings its files contain."""
     parts = [
         *([", ".join(paths)] if paths else []),
         *(
@@ -992,7 +998,7 @@ def rule_scope(paths: tuple[str, ...], contains: tuple[str, ...]) -> str:
             else []
         ),
     ]
-    return f" — {'; '.join(parts)}" if parts else ""
+    return "; ".join(parts)
 
 
 def _fix_required(lines: Lines, instruction: Instruction) -> None:
@@ -1119,6 +1125,13 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
                 f"  Its check `{rule.check}` does not run here: `{rule.missing}` "
                 "is missing in this step's directory, so judge it instead."
             )
+        if rule.paths or rule.contains:
+            lines.append(f"  Scope: {scope_text(rule.paths, rule.contains)}")
+            if rule.files != page.files:
+                lines.append(
+                    f"  Changed files in its scope ({len(rule.files)}): "
+                    + ", ".join(f"`{path}`" for path in rule.files)
+                )
     _verification_evidence(lines, page)
     _verification_results(lines)
 

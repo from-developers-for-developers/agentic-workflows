@@ -1070,6 +1070,14 @@ def _rules_parser(
         action="store_true",
         help="Revoke without the y/N prompt, on the operator's word.",
     )
+    actions.add_parser(
+        "stats",
+        parents=[after],
+        help=(
+            "List every declared rule with the checkout's local counters, "
+            "the most failing first; rules never applied are marked."
+        ),
+    )
     dry_run = _Parser(add_help=False)
     dry_run.add_argument(
         "--dry-run",

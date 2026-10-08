@@ -18,12 +18,19 @@ from ww.output_adapters.markdown import (
     rule_scope,
 )
 from ww.rule_conversion import StoreChange, scriptize_state
+from ww.rule_stats import STATS_FILE, RuleStats
 from ww.rule_store import (
     CheckEntry,
     RuleAutomation,
     describe_command,
 )
-from ww.rule_views import ListedRule, Orphans, RulesListing, RuleView
+from ww.rule_views import (
+    ListedRule,
+    Orphans,
+    RulesListing,
+    RuleStatsListing,
+    RuleView,
+)
 from ww.workflow_config import RuleDefinition
 
 
@@ -243,6 +250,73 @@ def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
             else ""
         )
         lines.append(f"- `{rule.id}`{scope} — {rule.summary}{check}{disputed}")
+        counted = stats_clause(rule.stats)
+        if counted:
+            lines.append(f"  {counted}")
+
+
+def stats_clause(stats: RuleStats) -> str:
+    """A rule's counters in one phrase; nothing before any completion counted it."""
+    if not (stats.applied or stats.waived or stats.not_applicable):
+        return ""
+    parts = [
+        (
+            f"applied {stats.applied} (checked {stats.checked}, judged {stats.judged})"
+            if stats.applied
+            else "never applied"
+        ),
+        (
+            f"failed {stats.failures} (check {stats.check_failures}, "
+            f"verdict {stats.judged_failures})"
+            if stats.failures
+            else "no failures"
+        ),
+        f"waived {stats.waived}",
+        f"not applicable {stats.not_applicable}",
+    ]
+    return ", ".join(parts) + _last_failure(stats, "; last failed ")
+
+
+def _last_failure(stats: RuleStats, lead: str) -> str:
+    failure = stats.last_failure
+    if failure is None:
+        return ""
+    return (
+        f"{lead}{stats.last_failed_at} in {failure.task} `{failure.step}` "
+        f"({failure.kind})"
+    )
+
+
+def render_rule_stats(listing: RuleStatsListing) -> str:
+    """``ww rules stats``: one row per declared rule, the most failing first."""
+    lines: Lines = ["# Rule statistics", ""]
+    if not listing.rules:
+        lines.append("No rules are declared.")
+        return _document(lines)
+    lines.extend(
+        [
+            "Counted from every settled completion of a step, accepted or "
+            f"rejected, and kept locally in `{STATS_FILE}`. A rule never "
+            "applied was waived or left out by the change set every time, or "
+            "never reached by a completed step.",
+            "",
+            "| Rule | Applied | Failed (check/verdict) | Checked | Judged | "
+            "Waived | Not applicable | Last failure |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for entry in listing.rules:
+        stats = entry.stats
+        lines.append(
+            f"| `{entry.id}` | {'never' if entry.never_applied else stats.applied} "
+            f"| {stats.failures} ({stats.check_failures}/{stats.judged_failures}) "
+            f"| {stats.checked} | {stats.judged} | {stats.waived} "
+            f"| {stats.not_applicable} | {_last_failure(stats, '').strip() or '—'} |"
+        )
+    never = tuple(entry.id for entry in listing.rules if entry.never_applied)
+    if never:
+        lines.extend(["", f"Never applied: {_ids(never)}."])
+    return _document(lines)
 
 
 def render_orphans(listed: Orphans, automation: RuleAutomation) -> str:

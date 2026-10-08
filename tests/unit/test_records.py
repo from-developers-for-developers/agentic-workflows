@@ -14,9 +14,11 @@ from ww.execution_models import (
     PLAN_SCHEMA_VERSION,
     CommandExecution,
     InputRequest,
+    PlanItemExecution,
     PlanSnapshot,
 )
 from ww.execution_models.decoding import _from_path, _positive_int_mapping, _variables
+from ww.execution_models.records import VerificationRule
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem
 from ww.plan import WorkflowPlan
 from ww.workflow_config import ProvidedVariable, SavedMetadata
@@ -334,3 +336,44 @@ def test_persisted_plan_rejects_non_list_commands_with_field_path() -> None:
 
     with pytest.raises(ValueError, match=r"action\.commands"):
         PlanSnapshot.from_dict(snapshot)
+
+
+def test_rule_scope_round_trips_on_the_item_execution() -> None:
+    record = PlanItemExecution(
+        "task:develop",
+        2,
+        rules_not_applicable=("docs/markdown",),
+        verification=(
+            VerificationRule(
+                "docs/printing",
+                "Print nothing.",
+                "hash",
+                paths=("*.py",),
+                contains=("print",),
+                files=("app.py",),
+            ),
+        ),
+    )
+
+    data = record.to_dict()
+
+    assert data["rules_not_applicable"] == ["docs/markdown"]
+    assert data["verification"][0]["paths"] == ["*.py"]
+    assert data["verification"][0]["contains"] == ["print"]
+    assert data["verification"][0]["files"] == ["app.py"]
+    assert PlanItemExecution.from_dict(data) == record
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rules_not_applicable", "docs/markdown", "rules not applicable"),
+        ("verification", [{"id": "x"}], "verification rule"),
+    ],
+)
+def test_malformed_rule_scope_is_rejected(field: str, value: Any, message: str) -> None:
+    data = PlanItemExecution("task:develop", 2).to_dict()
+    data[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        PlanItemExecution.from_dict(data)

@@ -172,13 +172,14 @@ def test_needs_skip_checked_verified_and_waived_rules(develop: PlanItem) -> None
     )
     record = _record(resolved_checks=lint, rule_resolutions=resolutions)
 
-    needs = verification_needs(develop, record)
+    needs, not_applicable = verification_needs(develop, record, ("app.py",), Path())
 
     assert [(need.id, need.interpretation) for need in needs] == [
         ("develop/2", "Clear."),
         ("develop/3", None),
     ]
     assert [need.check for need in needs] == [None, None]
+    assert not_applicable == ()
     done = _record(
         resolved_checks=lint,
         rule_resolutions=resolutions,
@@ -187,7 +188,64 @@ def test_needs_skip_checked_verified_and_waived_rules(develop: PlanItem) -> None
         ),
         checks_waived=(("develop/2", "not here"),),
     )
-    assert verification_needs(develop, done) == ()
+    assert verification_needs(develop, done, ("app.py",), Path()) == ((), ())
+
+
+def _scoped_step(develop: PlanItem) -> PlanItem:
+    """``develop`` with a Markdown rule, a rule on files printing, and the
+    unscoped CLI rule."""
+    return replace(
+        develop,
+        rules=(
+            _scoped("docs/markdown", paths=("*.md",)),
+            _scoped("docs/printing", paths=("*.py",), contains=("print",)),
+            develop.rules[0],
+        ),
+    )
+
+
+def test_a_scoped_rule_selecting_no_changed_file_is_not_applicable(
+    develop: PlanItem, tmp_path: Path
+) -> None:
+    (tmp_path / "app.py").write_text("print(1)\n", encoding="utf-8")
+    (tmp_path / "quiet.py").write_text("pass\n", encoding="utf-8")
+
+    needs, not_applicable = verification_needs(
+        _scoped_step(develop), _record(), ("app.py", "quiet.py"), tmp_path
+    )
+
+    assert not_applicable == ("docs/markdown",)
+    assert [(need.id, need.paths, need.contains, need.files) for need in needs] == [
+        ("docs/printing", ("*.py",), ("print",), ("app.py",)),
+        ("develop/1", (), (), ()),
+    ]
+
+
+def test_without_changed_files_only_unscoped_rules_are_judged(
+    develop: PlanItem,
+) -> None:
+    needs, not_applicable = verification_needs(
+        _scoped_step(develop), _record(), (), Path()
+    )
+
+    assert [need.id for need in needs] == ["develop/1"]
+    assert not_applicable == ("docs/markdown", "docs/printing")
+
+
+def test_a_rule_already_settled_is_not_scoped_again(develop: PlanItem) -> None:
+    record = _record(
+        checks_waived=(("docs/markdown", "scratch"),),
+        held_completion=HeldCompletion(
+            verdicts=(RuleVerdict("docs/printing", "pass", "v"),)
+        ),
+    )
+
+    needs, not_applicable = verification_needs(
+        _scoped_step(develop), record, (), Path()
+    )
+
+    assert [need.id for need in needs] == ["develop/1"]
+    assert not_applicable == ()
 
 
 def test_a_verification_item_per_hint_set(develop: PlanItem) -> None:
@@ -349,7 +407,9 @@ def test_a_judged_rule_names_its_check_whose_config_is_missing(
         develop, _converted(("lint.toml",)), directory=Path("/nonexistent")
     )
 
-    needs = verification_needs(develop, _record(rule_resolutions=resolutions))
+    needs, _ = verification_needs(
+        develop, _record(rule_resolutions=resolutions), ("app.py",), Path()
+    )
 
     cli = next(need for need in needs if need.id == "develop/1")
     assert (cli.check, cli.missing) == ("lint", "lint.toml")

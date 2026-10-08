@@ -8,7 +8,10 @@ check's configuration files exist; every other rule is judged. When the
 step's worker completes and its checks pass, ww holds the completion and
 inserts verification items right before the step: ww-generated agent items,
 one per distinct worker hint set among the judged rules, each giving a
-``pass`` or ``fail`` verdict on its rules. A verifier never writes the store:
+``pass`` or ``fail`` verdict on its rules. A judged rule is narrowed by the
+step's change set as a check is: one whose ``paths`` or ``contains`` select
+none of the changed files is not applicable, recorded on the step so the
+artifact reports it, and judged by no one. A verifier never writes the store:
 turning rules into checks is ``ww-scriptize-rules``'s job, outside tasks.
 
 A failing verdict sends the step back to its worker through the fix loop;
@@ -54,6 +57,7 @@ from ww.plan import (
     WorkflowPlan,
     number_step_paths,
 )
+from ww.rule_checks import applicable_files
 from ww.rule_store import CheckEntry, CheckSpec, RuleAutomation, is_config_path
 from ww.transitions import Clock, project_steps
 from ww.workflow_config import RuleHints
@@ -170,13 +174,20 @@ def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> Plann
 
 
 def verification_needs(
-    item: PlanItem, record: PlanItemExecution
-) -> tuple[VerificationRule, ...]:
-    """The rules of a completing step that a verifier must still judge.
+    item: PlanItem,
+    record: PlanItemExecution,
+    files: tuple[str, ...],
+    directory: Path,
+) -> tuple[tuple[VerificationRule, ...], tuple[str, ...]]:
+    """The rules of a completing step a verifier must still judge, and the
+    IDs of those its change set makes not applicable.
 
     Rules checked by a resolved derived check, rules with a verdict in the
     current hold, and rules the operator waived for this step are done for
-    now. What the step began with says the rest: a rule's reading, and the
+    now. The rest are narrowed by ``files``, the step's change set, as a
+    check is: a scoped rule selecting none of them is not applicable, and
+    needs no verifier; an unscoped rule applies to every change, even none.
+    What the step began with says the rest: a rule's reading, and the
     converted check whose configuration is missing here.
     """
     covered = {rule_id for check in record.resolved_checks for rule_id in check.covers}
@@ -184,8 +195,13 @@ def verification_needs(
     held = record.held_completion
     began = {resolution.id: resolution for resolution in record.rule_resolutions}
     needs: list[VerificationRule] = []
+    not_applicable: list[str] = []
     for rule in judged_rules(item):
         if rule.id in covered or (held is not None and held.verdict(rule.id)):
+            continue
+        selected = applicable_files(files, rule.paths, rule.contains, directory)
+        if selected is None:
+            not_applicable.append(rule.id)
             continue
         resolution = began.get(rule.id)
         needs.append(
@@ -196,9 +212,23 @@ def verification_needs(
                 interpretation=resolution.interpretation if resolution else None,
                 check=resolution.check if resolution and resolution.missing else None,
                 missing=resolution.missing if resolution else None,
+                paths=rule.paths,
+                contains=rule.contains,
+                files=selected if rule.paths or rule.contains else (),
             )
         )
-    return tuple(needs)
+    return tuple(needs), tuple(not_applicable)
+
+
+def record_not_applicable(
+    state: ExecutionState, rule_ids: tuple[str, ...], now: Clock
+) -> ExecutionState:
+    """Settle on the active item which judged rules its change set left out."""
+    records = list(state.item_executions)
+    records[state.cursor] = replace(
+        records[state.cursor], rules_not_applicable=rule_ids
+    )
+    return replace(state, item_executions=tuple(records), updated_at=now())
 
 
 def effective_hints(rule: PlannedRule, item: PlanItem) -> RuleHints:

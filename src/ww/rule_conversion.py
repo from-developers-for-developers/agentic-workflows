@@ -56,8 +56,26 @@ def unscriptized_rules(
 ) -> tuple[RuleDefinition, ...]:
     """The declared rules not scriptized yet, each once, in declaration order."""
     found: dict[str, RuleDefinition] = {}
-    for rule in _every_rule(configuration):
+    for rule in every_rule(configuration):
         if rule.id not in found and scriptize_state(automation, rule) == "unscriptized":
+            found[rule.id] = rule
+    return tuple(found.values())
+
+
+def unscoped_judged_rules(
+    configuration: WorkflowConfiguration, automation: RuleAutomation
+) -> tuple[RuleDefinition, ...]:
+    """The declared rules a verifier judges after every step that changes
+    anything: no command, no converted check, and no ``paths`` or
+    ``contains`` to narrow them; each once, in declaration order.
+    """
+    found: dict[str, RuleDefinition] = {}
+    for rule in every_rule(configuration):
+        if (
+            rule.id not in found
+            and not (rule.paths or rule.contains)
+            and scriptize_state(automation, rule) not in {"command", "converted"}
+        ):
             found[rule.id] = rule
     return tuple(found.values())
 
@@ -104,7 +122,7 @@ def declared_rules(
         raise StateError("name at least one rule ID; `rules` lists them")
     if len(set(rule_ids)) != len(rule_ids):
         raise StateError("a rule ID is named twice")
-    by_id = {rule.id: rule for rule in _every_rule(configuration)}
+    by_id = {rule.id: rule for rule in every_rule(configuration)}
     rules = []
     for rule_id in rule_ids:
         rule = by_id.get(rule_id)
@@ -322,7 +340,7 @@ def _without(spec: CheckSpec, hashes: set[str]) -> CheckSpec:
     return replace(spec, covers=tuple(key for key in spec.covers if key not in hashes))
 
 
-def _every_rule(configuration: WorkflowConfiguration) -> Iterator[RuleDefinition]:
+def every_rule(configuration: WorkflowConfiguration) -> Iterator[RuleDefinition]:
     for group in configuration.rule_groups:
         yield from group.rules
     for step in every_step(configuration):
