@@ -1,9 +1,5 @@
 # Changelog
 
-## 2026-10-09
-
-- Remove workflow loops and their command/settings; old run schemas are refused without migration.
-
 `main` is the branch users run, so everything recorded here is live the moment
 it lands — there is no staging period and nothing is waiting to ship. Sections
 are dated by the day `main` changed, newest first, because there are no version
@@ -12,6 +8,10 @@ tags yet to group them by. Pulled a week ago? Read down to that date and stop.
 The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
+
+## 2026-10-09
+
+- Remove workflow loops and their command/settings; old run schemas are refused without migration. `c0cddf9`
 
 ## 2026-10-08
 
