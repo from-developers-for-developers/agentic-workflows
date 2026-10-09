@@ -28,8 +28,8 @@ immutable definitions in `../src/ww/workflow_config.py`; another notation can
 produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
 parsers do not acquire different workflow semantics. `workflow_config.step_paths`
-is the one walk of a step tree with its logical paths (nested steps, loop
-bodies, per-item and per-child stages under their parent's path); the
+is the one walk of a step tree with its logical paths (nested steps,
+per-item and per-child stages under their parent's path); the
 validator, the plan compiler, rule placement and the `rules` listing's
 `targets` all use it, so a step filter is checked, applied and listed against
 the same set of names. Validation is also where
@@ -129,9 +129,9 @@ rendered worktree path. This prevents a task whose persisted state is gone from
 adopting an unrelated or stale checkout with the same task-derived name.
 Project configuration has a narrower purpose: `../ww.json` contains
 ww-wide operational limits, per-extension settings, and optional execution
-settings for the implicit init and workflow-summary built-ins. The default loop
-limit is materialized during initialization because it is a user-facing safety
-boundary; built-in model defaults stay internal because they do not need
+settings for the implicit init and workflow-summary built-ins. Limits on failed
+checks and automatic retries remain distinct. Built-in model defaults stay
+internal because they do not need
 authored configuration merely to reproduce default behavior. Its `enabled`
 switch is the one setting agents act on directly: when it is false, `discover`
 tells agents not to use ww and `start` refuses, while commands for existing
@@ -273,30 +273,18 @@ item path throughout that relationship and rebuilds the recursive step
 projection. The executor therefore never has to infer hierarchy from display
 paths.
 
-`artifact_from` is deliberately an artifact-reference hint, not a scheduler. The
-semantic validator resolves it to the nearest earlier artifact-producing step
-of that name: an earlier sibling, else an earlier step of an enclosing level.
-An enclosing container is visible to its nested steps only when its own work
-has finished before them, as an assessment's has for its outcomes and an item
-collection's for its per-item stages; a running loop and an enclosing group
-are not. The compiler repeats that search over the items it has already emitted
-and records the dependency's plan step path in the immutable plan, and item
-materialization substitutes the item path in it like any other path. A group
-emits no item of its own, so the search finds an earlier group as an ancestor
-of an earlier item. The instruction builder makes that artifact an explicit
-input, named by the same path as its `ww artifacts` entry, even when the step
-supplies its own prompt. When the path names a group, or an assessment whose
-outcomes hold artifact-saving items and the dependent step is not inside it,
-the builder reads the run's records instead: the latest completed item under
-that path with an artifact in the container's current round is named with its
-file path. The live records are always the current round; a history record
-counts only when, for every loop enclosing the container, the iteration its
-operation ID encodes (`transitions.loop_iteration_of`) is that loop's current
-one, so rounds of a loop inside the container count and earlier rounds around
-it do not. An assessment whose outcome saved nothing falls back to its own
-artifact; otherwise the page says none is available. The plan stays the one authority for
-which kind of dependency it is; nothing about it is persisted beyond the path.
-Execution order remains the authored step order.
+`artifact_from` is an artifact-reference hint, not a scheduler. Validation
+resolves it to the nearest earlier artifact-producing step: an earlier sibling
+first, then an earlier step at each enclosing level. An assessment and an item
+collection are visible to their nested outcome or per-item steps after their
+own work completes; a group has no artifact of its own. The compiler records
+the resolved plan path, and item materialization substitutes its concrete item
+path. The instruction builder names the dependency as `ww artifacts` lists it.
+For a group or an assessment outside its chosen outcome, it selects the latest
+completed artifact beneath that path in the current run. An assessment with no
+artifact-producing outcome step falls back to its own artifact when available.
+The plan remains the authority for the dependency, and execution order remains
+the authored order.
 
 Assessments add a deliberately bounded form of conditional topology. The
 compiler retains every declared outcome as a labeled nested subtree in the
@@ -334,7 +322,7 @@ step's YAML `handler` reference instead copies its root handler definition while
 retaining the step's own identity and explicit overrides, so it compiles as the
 same single ordinary step rather than introducing a reference action at runtime.
 Catalog entries may carry a complete step container as well as an action; this
-lets workflows reuse a named loop or nested sequence without a second execution
+lets workflows reuse a named nested sequence without a second execution
 or container abstraction. The parser materializes that tree at the referencing
 step, leaving validation and plan compilation responsible for the same topology
 regardless of whether it was inline or shared.
@@ -357,10 +345,10 @@ needed.
 
 A compiled `PlanItem` stores one operation. Ordinary work uses `PlannedAction`
 with a stable registry identifier and action-specific payload; the closed core
-set uses `LoopBoundary`, `WorkflowHandoff`, and `ChildWorkflowRun`. The owner
+set uses `WorkflowHandoff` and `ChildWorkflowRun`. The owner
 and execution mode remain separate core policy:
 
-- CLI commands, loop boundaries, and workflow transitions are `ww`-owned.
+- CLI actions and workflow transitions are ww-owned.
 - Skills, slash commands, prompts, and MCP prompts are agent-owned.
 
 Plan items additionally carry an execution mode. CLI and extension items are automatic:
@@ -374,10 +362,7 @@ prompt text. Because ww does not execute agent-owned MCP calls itself, MCP
 failures must be reported by the agent as functional failures. That preserves a
 single task state machine where `next` retries a failed item. Workflow
 transitions are a coordinator operation, separate from automatic command
-execution. Loop entry and repeat items are another coordinator boundary, while
-the stop condition belongs to an agent-owned body step. This keeps the judgment
-with the worker that has the relevant result and makes loop exit a deterministic
-command rather than a conversational manager decision.
+execution.
 
 Skipping a failed item is an exceptional operator action rather than an agent
 retry policy. The CLI `next --force` path therefore asks the service what the
@@ -407,29 +392,19 @@ one-way and singular: skill, then slash command, then prompt fallback. CLI
 actions are already typed before discovery begins. This removes the prior
 possibility of returning both a skill and a command for one configured action.
 
-`../src/ww/actions/contracts.py` defines the typed payloads, phase contexts,
-and internal registry. Each built-in implementation has its own module in
-`../src/ww/actions/`, and `__init__.py` registers them. Parsing chooses one
-action at the notation boundary. Each
-registered action validates its definition, plans its typed payload, encodes and
-decodes plain payload data, and produces structured instruction content. The
-compiler supplies interpolation and discovery through `ResolutionContext` while
-it retains item identity, ordering, hooks, dependencies, and shared policy. The
-instruction builder supplies state, role, runtime, and requested and effective
-execution settings through `InstructionContext`; it then adds completion values,
-metadata, artifacts, and continuation commands around the action's content.
-Loop boundary and child-progress wording are core presentation helpers, as are
-their state transitions. `../src/ww/control.py` directly inspects the typed
-core operations for instructions, assignments, and lifecycle transitions; core
-keeps locks, run creation, child links, cursor updates, and reusable loop-state
-records. A persisted plan item stores its operation under `operation` with an
-explicit `type`: `action` for registered actions (with their `identifier` and
-`payload`), or `loop`, `workflow_transition`, and `child_workflow` for core
-controls, whose fields are owned by `../src/ww/operations.py`. In YAML the core
-controls have their own keys, `handoff_to`, `children.workflow`, and `loop`; the
-explicit `action: {type: ...}` form selects registered actions only and rejects
-a core control's type, so engine behaviour is never spelled as an action. This
-does not introduce a public YAML plugin format or new scheduling primitives.
+`../src/ww/actions/contracts.py` defines typed payloads, phase contexts, and
+the internal action registry. Each built-in action has a module under
+`../src/ww/actions/`; parsing chooses an action at the notation boundary. A
+registered action validates its definition, plans and encodes its payload, and
+produces instruction content. The compiler supplies interpolation and
+discovery through `ResolutionContext` while retaining item identity, ordering,
+hooks, dependencies, and shared policy. The instruction builder supplies state,
+role, runtime, and execution settings through `InstructionContext`, then adds
+completion values, metadata, artifacts, and continuation commands. Core
+operations such as workflow transitions are represented separately from
+registered actions, so persisted plans cannot mistake engine behavior for an
+extension action. YAML uses `handoff_to` and `children.workflow` for those
+operations; `action: {type: ...}` selects registered actions only.
 
 Handler references retain shared precedence in the parser, while the action's
 `override_definition` hook owns payload-specific inheritance.
@@ -448,29 +423,23 @@ records completion or failure, applies permitted values/workspace changes, and
 advances the cursor. This keeps a new automatic action from acquiring an
 accidental way to change workflow lifecycle policy.
 
-Composite definition expansion has a separate internal planning-contract
-boundary in `../src/ww/plan/constructs.py`. The compiler normalizes one
-`StepDefinition` into a typed sequence, assessment, item-flow, loop,
-child-workflow, or leaf input and dispatches it through a checked registry.
-Construct planners request only nested logical compilation, a scoped annotated
-region, a leaf emission, or a typed loop boundary; they never receive the
-compiler, mutable plan list, execution state, or persistence services. This
-keeps constructs responsible for their own topology while the compiler remains
-the single owner of lifecycle hooks, inherited policy, identities, positions,
-and the persisted flat `WorkflowPlan`. Assessment branch annotations and
-item/child collection annotations are immutable planning data, preventing a
-nested scope from leaking into later siblings. The registry is internal, not a
-new YAML plugin surface: a new built-in construct needs a normalized input,
-planner, registration, and a test that demonstrates shared lifecycle behavior.
-Runtime loop transitions, child coordination, and handoff execution deliberately
-remain consumers of the saved plan rather than construct-planner concerns.
+Composite definition expansion has an internal planning contract in
+`../src/ww/plan/constructs.py`. The compiler normalizes a `StepDefinition` as a
+sequence, assessment, item flow, child workflow, or leaf and dispatches it
+through a checked registry. Construct planners request nested compilation, a
+scoped annotated region, or a leaf emission; they do not receive the compiler,
+mutable plan list, execution state, or persistence services. The compiler
+remains the owner of lifecycle hooks, inherited policy, identities, positions,
+and the flat `WorkflowPlan`. Assessment branches and item/child collections
+carry immutable annotations, preventing nested scopes from leaking into later
+siblings. The registry is internal, not a YAML plugin surface.
 
 The `explicit` visibility setting is resolved while configuration is
 normalized: workflow inheritance runs first, then each structural group,
-loop, item stage, and child stage inherits its nearest setting while preserving
+item stage, and child stage inherits its nearest setting while preserving
 an explicit `false`. The compiler stores the effective value on each plan
-item; legacy snapshots decode a missing field as `false`. Instruction pages
-render operation and per-file diff guidance from that saved value, while
+item; current-schema snapshots decode an omitted optional field as `false`.
+Instruction pages render operation and per-file diff guidance from that saved value, while
 ww-owned automatic work keeps its existing command and result output.
 
 An automatic action may override the `preflight` hook. Core runs it before
@@ -604,32 +573,23 @@ eligible automatic and agent-owned items inside that bound. When the bound ends,
 the durable assignment marker is cleared and control returns to the manager
 before the next lifecycle starts.
 
-`../src/ww/assignments.py` is the central structural rule. It derives membership
-from step paths, ancestors, lifecycle phases, coordinator kinds, and the final
-summary marker. Execution state persists only the assignment's first plan-item
-identity and inherited model/reasoning. Recomputing the bound from the saved plan
-keeps reload and dynamic materialization deterministic without storing fragile
-cursor ranges. Parent-only preparation hooks are separate assignments; trailing
-parent completion hooks follow the final descendant. Concrete dynamic items,
+`../src/ww/assignments.py` derives assignment membership from step paths,
+ancestors, lifecycle phases, coordinator kinds, and the final summary marker.
+Execution state persists the assignment's first plan-item identity and
+inherited model and reasoning settings; recomputing its bound from the saved
+plan keeps reloads and dynamic materialization deterministic without fragile
+cursor ranges. Parent preparation hooks are separate assignments, while
+trailing parent completion hooks follow the last descendant. Dynamic items,
 child coordination, workflow transitions, and successor execution instances
-remain manager boundaries. The exceptions are an `items` step whose
-`assignment` is `per_item` or `together`, and a loop body under
-`per_round`: in the `auto` runtime the bound extends across later stages
-of the same item, of every item, or of the same loop round, and grows its
-lineage as it absorbs each stage so stage completion hooks stay inside. Both
-share one rule for where a span ends early: a stage that resolves to another
-agent, model, reasoning, or profile, or that is reserved for the manager with
-`role: manager`, starts a new assignment, because one running worker
-cannot change those. The `single` runtime keeps per-step bounds. Each stage is still its own plan item
-with its own record, so completion, reload, and recovery need no span-specific
-state; only the instruction builder marks the first stage of a span with its
-scope and later stages as compact continuations. The builder also lists every
-item of the assignment in plan order as `assignment_items`, the ones ww runs
-itself among them as `assignment_automatic_items`, splits them by their
-execution records into `completed_assignment_items` and the rest, and names in
-`running_assignment_item` the ww-owned item the cursor is on, so a page re-read
-while a hook runs describes the assignment as it stands rather than as it was
-dispatched.
+remain manager boundaries. Item-stage assignment settings can extend an
+assignment across all items, one item, or one stage according to the selected
+policy. A stage with different agent, model, reasoning, profile, or manager
+role starts a new assignment. In `single`, each step retains its own bound.
+Each stage still has its own plan item and execution record; the instruction
+builder marks the first stage of a span with its scope and later stages as
+continuations. It also lists assignment items, automatic items, completed
+items, and the currently running automatic item so a re-read page reflects
+live progress.
 
 The same module collects the inputs of a completion window. Matching variable
 requests share one value across its automatic handlers, so overlapping project
@@ -652,23 +612,16 @@ assignment or manager handoff and a live automatic operation as unfinished
 rather than guessing that its process died. Roles describe caller responsibility,
 not authorization, and omitted roles preserve the earlier service behavior.
 
-Who acts next is a separate type from who may call. `CallerRole` is `manager`
-or `worker`; `NextRole` adds `operator`, the human ww waits for, who is never a
-caller. `operator_reason` in `../src/ww/instructions/policy.py` derives from
-the saved state alone whether a task needs that human, and why: a failed item
-is `child_failed`, `work_failed`, or `handler_failed` by the kind of item at the
-cursor; an interrupted item is `handler_interrupted` unless its handler replays
-harmlessly; and a repeat boundary at its limit is `loop_limit`. The control
-decision asks that function first, so every such state is `awaiting_operator`
-with next role `operator`, and `blocked` is left to states where ww waits on
-its own work: a child workflow, a loop boundary, a running automatic handler,
-or an idempotent interrupted handler that `next` replays. `replays_harmlessly`
-in `../src/ww/control.py` is the one rule for that last case, shared with
-`RecoveryCoordinator.replay_if_idempotent`, so the instruction never asks the
-operator about a replay that recovery would perform on its own. The reason
-travels on the `Instruction`, so instruction JSON, status JSON, and Markdown
-read one value; a worker caller whose next role is the operator is still told
-to return to its manager.
+`CallerRole` (`manager` or `worker`) is separate from `NextRole`, which adds
+`operator`, a human who is never a caller. `operator_reason` derives from saved
+state whether a task needs that human and why: failed work, child failure,
+handler failure or interruption, or a disputed check. Those states use
+`awaiting_operator`; `blocked` means ww is waiting on its own work, such as a
+child workflow, a running automatic handler, or an interrupted idempotent
+handler that `next` can replay. `replays_harmlessly` is shared by control and
+recovery, so instruction pages do not ask for an operator decision when
+recovery can safely proceed. The reason is carried by `Instruction`, keeping
+instruction JSON, status JSON, and Markdown consistent.
 
 The ledger records command segments separately, so a partial CLI failure retries
 only the failed or unrun segment. Every finished segment is committed the moment
@@ -707,185 +660,83 @@ bootstrap request records its item's `step_ordinals` for the same reason: the
 bound run's plan no longer holds the identity step, and the recorded ordinals
 name both its file and its label.
 
-Loop progress uses the same flat plan and cursor rather than a second executor.
-The plan carries paired loop entry/repeat markers around normal nested plan
-items; the execution state persists an iteration counter. Reaching the repeat
-marker resets only the records inside those markers and derives a new
-iteration-scoped operation identity, so automatic side effects from different
-rounds cannot be mistaken for retries. Artifact storage uses those same durable
-counters to insert an `iteration-NN` directory beneath each enclosing loop
-wrapper. This keeps every round's results addressable and prevents a repeated
-body step from overwriting its earlier artifact; nested loops naturally add one
-directory at each loop boundary. Body items carry the enclosing loop's
-identity and its assignment (`PlanItem.loop_assignment`), so `assignment_at` can keep consecutive
-body steps of one round in one worker assignment when they resolve to the same
-worker settings; the boundaries remain coordinators and always end an
-assignment. The loop entry also represents the wrapper's
-artifact contract. A successful explicit stop keeps the stopping body's
-iteration artifact and records the same final result as the wrapper artifact
-outside the iteration directories, giving later workflow work one stable
-reference for the completed loop as a whole. The wrapper's `artifact` setting
-can disable that aggregate reference independently of body-step artifacts.
+Execution progresses through ordinary plan items. Completion-check rejection,
+judged-rule verification, handler repair, automatic retries and interrupted
+operation recovery retain their existing purpose and limits. Recovery history
+keeps prior attempts and immutable stream references. Ordinary step artifact
+paths use declaration ordinals; new runs have no iteration directories.
 
-The compiler also freezes each loop's effective maximum from its local override
-or the project-wide default. Once the persisted counter reaches that maximum,
-the repeat boundary remains pending and exposes no continuation; this makes the
-safety stop durable and forces the manager to escalate the saved round results
-to the user instead of allowing another worker dispatch. The same force that
-skips a failed item is the operator's exit from that stop: `next --force` at an
-exhausted repeat boundary records the reason on the boundary and advances past
-the wrapper, so a capped loop is never a dead end. Below the limit the
-operator ends a loop the same way: `next --force` on a body step or on the
-repeat boundary, where `transitions.active_loop` finds the enclosing loop,
-calls `end_loop`, which reuses the loop exit's skip to complete the items up
-to and including the boundary as skipped with the reason and records the
-boundary as ended by the operator; the loop ends between items only, so it
-is refused while a worker holds one of the loop's items, naming `--reassign`
-and `fail` as the ways to take the item away first, and `force_target`
-describes the ending before the CLI asks for confirmation. A break-enabled worker
-records a durable exit intent through `ww loop --break`; the executor finishes
-that step's normal completion hooks before skipping the rest of the body and
-advancing to the wrapper's completion lifecycle.
+Plan schema 3 and execution schema 2 are explicit incompatibility boundaries.
+Older runs are refused without changing state or deleting evidence. Finish or
+inspect them with the previous build before switching engines.
 
-Closed sets shared across plans, execution records, child coordination, and
-instructions are expressed as `Literal` contracts in `../src/ww/contracts.py`.
-`PlanItem` also validates combinations that would make automatic dispatch
-ambiguous, and its assertion has the concrete normalized assertion type.
-Persisted model loaders reject malformed nested records rather than filtering
-them, because silently dropping part of an execution record would turn
-corruption into changed behavior. Large cross-layer records use keyword-based
-construction so schema evolution does not depend on positional field order.
-Mypy checks the public models, ports, and extracted boundaries as a development
-release gate alongside Ruff and pytest.
+Persisted model contracts use closed `Literal` sets across plans, execution
+records, child coordination, and instructions. `PlanItem` validates
+combinations that would make automatic dispatch ambiguous. Persisted loaders
+reject malformed nested records rather than filtering them, and cross-layer
+records use keyword construction so schema changes do not depend on field
+position. Ruff, mypy, and pytest are development release gates.
 
-Automatic work is written as `in_progress` before an external side effect. A
-locked `next` that finds that boundary settles it
-(`settle_stale_automatic_item` in `../src/ww/transitions.py`): when a command
-segment had already recorded its non-zero exit, the process demonstrably
-finished and only ww's bookkeeping was cut short, so the item becomes a known
-failure with that exit code and output and takes the ordinary failed-item
-path; otherwise the item is `interrupted`, preserving completed segments and
-making the outcome explicitly unknown. This matters because a process can die
-after a remote or Git operation succeeds but before ww records completion.
-`next` never replays such work implicitly. The one exception is the author's
-own declaration: a command handler with `idempotent: true` states that a
-second run cannot do damage, so `RecoveryCoordinator.replay_if_idempotent`
-returns the interrupted and unrun segments to pending under the same
-operation identity and `next` continues, with no operator decision. Without
-it, `next --retry` offers explicit replay with the same operation identity,
-or an operator attestation; CLI attestations can supply captured output for
-assertion evaluation. A command that cannot be launched is a known failed
-attempt: ww records the process-creation error and uses the ordinary
-failed-item retry path because no external process acquired an unknown
-outcome. A checker-capable automatic action can return succeeded,
-not-succeeded, or unknown, allowing safe default recovery without claiming
-exactly-once execution. Extension contexts carry the current plan and work-item identities,
-attempt number, and stable operation identity. Successful extension results may
-return only their handler's declared structured outputs; ww records those
-outputs separately from human-readable output and adds them to the workflow
-value environment. Recovery checkers follow the same validation and output
-rules, so recovery and first execution have one result contract. Explicit
-action-versus-segment scope prevents a generic checker success from being
-mistaken for evidence that every side effect in a multi-segment action occurred.
+Automatic work is persisted as `in_progress` before an external side effect.
+A locked `next` settles that boundary: a recorded non-zero command exit is a
+known failure and follows ordinary failure handling; otherwise the item is
+`interrupted`, preserving completed segments while marking the outcome
+unknown. `next` does not replay unknown work implicitly. `idempotent: true`
+permits replay with the same operation identity; otherwise the operator chooses
+`next --retry` or attests the result. A command that cannot be launched is a
+known failure because no external process ran. Checker-capable automatic
+actions can report success, failure, or unknown. Extension results are checked
+against their declared structured outputs, and recovery checkers follow the
+same validation contract as first execution.
 
-A workflow transition (`handoff_to` in YAML) is the one supported cross-workflow operation. The
-transition itself declares a handoff workflow: `WorkflowDefinition.hands_off`
-is derived from the steps, so inheritance copies it with them and there is no
-YAML flag. Configuration validation, not the compiler, places it: at most one
-transition, as the last top-level step with no completion hook applying to it,
-or as the last `after_complete` hook of that step, never at global or workflow
-scope. `WorkflowPlan.handoff` keeps the derived value, so the plan snapshot is
-unchanged. Its terminal transition completes the selection workflow's own run and opens the successor as
-the next numbered run, rather than replacing the plan in place. Both workflows
-therefore keep their own snapshot, state, and artifacts, and the run ledger shows
-how the task got from one to the other — the selection run's summary column, which
-a handoff workflow never fills itself, records `handed off to <target>`. The
-task document's handoff value remains the guard that keeps chained handoffs out.
-General nested workflow calls are still outside the execution model; workflow-level
-`workflows` keys are rejected by the YAML frontend rather than represented in
-the normalized domain model.
+Workflow handoff (`handoff_to`) is the supported cross-workflow operation.
+Validation allows at most one, as the last top-level step with no applicable
+completion hook or as that step's final `after_complete` hook. Its terminal
+transition completes the source run and starts the successor as the task's next
+numbered run. Both runs retain separate snapshots, state, and artifacts, and
+the ledger records the source summary as `handed off to <target>`. General
+nested workflow calls remain unsupported. `recommended_next_workflow` is the
+operator-confirmed counterpart: it is frozen in the completed plan and starts
+only after the operator chooses it.
 
-`recommended_next_workflow` is the operator-confirmed counterpart of a handoff.
-The compiler freezes it into the plan, so a finished run keeps offering the
-same successor after the configuration changes, and the completed page asks the
-operator through the agent's choice menu before showing the `start` command for
-the same task. Nothing in core starts it: the agent does, with an ordinary
-`start`, only on the operator's answer. Validation rejects a recommendation
-that names no workflow or that sits on a handoff workflow, whose successor is
-already fixed.
+Task state is committed through the storage adapter as one logical transition.
+The filesystem adapter atomically publishes `.ww/tasks/<id>/state.json`, which
+contains every run, plan, execution state, item and child record, handoff, and
+ordered ledger event. It validates the active-run pointer and holds a task
+lock across read, modification, and commit, using the aggregate revision as a
+compare-and-swap guard. Stale writers are rejected without changing the
+authoritative record.
 
-Related run state is committed through the storage adapter as one logical
-transition. The filesystem storage adapter atomically publishes
-`.ww/tasks/<id>/state.json`, which contains every run, saved plan, execution state,
-item/child record, handoff, and ordered ledger event. The document stores an
-explicit active-run pointer and validates it against the sole non-completed run;
-completed tasks store an explicit null pointer. Start/run creation, dynamic item
-expansion, terminal finalization, handoff, and parent/child reconciliation use
-this boundary. Writers hold the task lock for the read/modify/commit span and
-pass the aggregate revision as a compare-and-swap guard; stale writers are
-rejected without changing the authoritative record.
+The disk codec is separate from expanded domain serializers and public output.
+It omits only versioned record defaults, deduplicates immutable extension
+settings in a content-addressed table, and stores expanded items as changes
+from the template plan. Decoding restores dense records before model and plan
+digest validation. The stored plan digest is re-derived on load because plan
+serialization and defaults vary by ww version. Run directories contain only
+artifacts and command output; they are not an execution index.
 
-The disk codec is intentionally separate from the expanded domain serializers
-and public output. It omits only versioned, record-specific defaults and moves
-repeated immutable extension identity/settings snapshots into a root
-content-addressed table. Action data stays inside its typed payload in the
-expanded plan; the compact document references extension snapshots from that
-payload. An item of the expanded plan is stored as its ID, the ID of the
-template-plan item it came from, and only the fields that differ from it, so
-the step texts are stored once per run, in `template_plan`. Decoding restores
-dense records before existing model
-and plan-digest validation, so compaction cannot change execution semantics.
-Stored data may come from another ww version, so decoders require the fields
-they read and leave any other field alone; they reject contradictions, not
-fields they do not know. For the same reason the stored plan digest is
-re-derived from this version's reading of the plan when a run is decoded: how a
-plan serializes, including which defaults are filled in, depends on the
-version, so a digest another version computed cannot be reproduced. Run
-directories exist only for artifacts and command output; their names are not an
-execution index.
+The task document has its own format discriminator and schema version; plan
+snapshots and execution states carry theirs. Readers reject unsupported
+versions rather than guessing. Plan schema 3 retains item-pass identity and
+removes loop fields; execution schema 2 removes loop state. The separate CLI
+audit log uses one invocation ID for each started/terminal pair, redacts
+user-supplied completion values and failure text from command lines, and
+rotates by size. Workflow recovery never depends on audit files.
 
-Reads recognize the document by its `ww.task-state` format discriminator.
-The document carries one schema version, and so do the plan snapshots and
-execution states inside it; a reader rejects any version but the current one.
-The plan snapshot is schema 2: it records `items` pass identity (`item_pass`,
-`item_collect_only`) on plan items, and a plan whose collection or templates
-lack a pass is refused rather than guessed at.
-Metadata publication intents are prepared first, state publication is the
-execution commit point, and their task/project projections follow that commit.
-Scoped cleanup of obsolete regular files follows. Cleanup failures are
-diagnostic because the new document has precedence.
-
-The separate CLI audit log uses one invocation ID for each `started`/terminal
-record pair. User-supplied completion values, recovery output, and failure text
-are redacted from the reconstructed command line. Size-based rotation retains a
-bounded set of complete JSONL files so operational history cannot grow without
-limit; workflow recovery never depends on those files.
-
-The public persistence boundary reflects that source of truth. It is split into
-typed run, artifact, task-metadata, and project-metadata ports. The first three
-are composed by `TaskStorageAdapter`; independent plan/state write methods are
-not part of the contract. Run queries,
-item and child reads, handoffs, and run summaries derive from the atomic
-aggregate, so a third-party storage adapter cannot satisfy the interface while omitting
-data the executor needs.
-Missing-record behavior, compare-and-swap errors, locking scope, artifact
-reference stability, and whole-task deletion are specified on the ports and
-verified by one behavioral suite against the filesystem and memory storage adapters.
-Task-scoped metadata lives in the typed metadata port rather than being coupled
-to MCP connections or read directly from a filesystem path by the service.
-Filesystem persistence projects dotted leaf paths into a nested `metadata`
-object in `metadata.json`; other storage adapters expose the same logical values without
-emulating that file. The separate project-metadata port persists its filesystem
-representation in `.ww/metadata.json`; keeping it outside the task storage adapter
-ensures task reset cannot remove shared state. Project metadata uses its own
-read/merge/write lock because unrelated task locks do not serialize concurrent
-updates. Metadata leaves are strings, and leaf/object collisions are rejected
-so interpolation has one unambiguous value for every path.
+The public persistence boundary is split into typed run, artifact,
+task-metadata, and project-metadata ports. `TaskStorageAdapter` composes the
+task-scoped ports; independent plan/state writes are not part of the contract.
+Run queries, item and child reads, handoffs, and summaries derive from the
+atomic aggregate. A behavioral suite checks missing records, compare-and-swap,
+locking, artifact stability, and whole-task deletion across filesystem and
+memory adapters. Project metadata has its own lock so unrelated task locks
+cannot race updates. Metadata leaves are strings and leaf/object collisions
+are rejected.
 
 The supported model layers are normalized authored definitions
 (`workflow_config.py`), compiled plans (`plan.py`), and persisted execution
-records (the `execution_models` package). Persisted state uses a single
-current format; any other task layout or record schema is rejected.
+records (`execution_models`). Persisted state uses one current format; every
+other task layout or record schema is rejected.
 
 ## Installation updates
 
@@ -1013,7 +864,7 @@ so its manager line is one `next --outcome <label>` command per label rather
 than a plain `next`, which with an outcome pending re-renders the choose page
 instead of reaching `select_assessment_outcome` (`--force` still does, and is
 refused there). `WorkflowService` builds the block in one method, used by both the completion
-path and `ww handoff`, which reprints it for an ended assignment from the saved records. A worker's `complete` or `loop`
+path and `ww handoff`, which reprints it for an ended assignment from the saved records. A worker's `complete`
 on a `role: manager` item is refused; the manager completes it with `--role
 manager`. `next` while an item is open follows the same ownership: the page is
 shown again when the session asking holds the open item (every item in
@@ -1065,7 +916,7 @@ state, plus runtime and execution selection, so scripts and agents can inspect
 progress without loading role-specific work instructions. `instruction` owns
 the full normalized instruction rendering for work resumption and delegation.
 `start` and explicit `instruction` service paths mark their instructions for a short
-manager introduction; internally generated responses do not, so worker loops
+manager introduction; internally generated responses do not, so worker continuations
 do not repeatedly pay that token cost. Caller role disambiguates an
 `auto` handoff from a manager inspecting the same pending state.
 
@@ -1140,7 +991,7 @@ the handler was given last time. A successful one drops them too
 later item of the same completion window still declares, which stay until
 that item has run; the supplied values remain on the record's
 `supplied_values`. Workflow values thus hold only what no consumer has used
-yet, and a later consumer of the same name, a commit after a review loop,
+yet, and a later consumer of the same name, a commit after a review group,
 raises its own input request instead of reusing the earlier value. A
 handler that needs its inputs only sometimes declares a precondition,
 `ExtensionHandler.needs_input`, which the compiler carries as
@@ -1326,8 +1177,8 @@ change point on are appended with fresh records under a `replan-<revision>`
 operation scope, the displaced records move to `execution_history`, and the
 plan revision is bumped. When the change point is at or before the cursor,
 the cursor moves to it and whatever stopped the run there (a failure, an
-input request, an open assignment) is cleared; loops entered from there on
-count their rounds anew. Expanded per-item or per-child stages, recognised
+input request, an open assignment) is cleared. Expanded per-item or per-child
+stages, recognised
 as template items (`item_template`) missing from the concrete plan, and a
 started children step in the rerun range refuse the replan. `keep_plan`
 adopts the new digest without touching the plan, which is also how a change
@@ -1444,6 +1295,21 @@ artifacts, items, hooks, and workflow summary, while the parent's run-local
 This keeps the parent status meaningful without letting either workflow mutate
 the other's plan or artifacts.
 
+With `children.steps`, the parent owns stages for its children. The parser turns
+the stage carrying `workflow:` into a `ChildWorkflowRun` stage: inside
+`children`, `workflow:` runs a child and never performs a workflow handoff.
+`ChildFlowPlanner` compiles the stages as templates under `<step>/{child}` with
+the `child_stage` marker, using the same template machinery as per-item stages.
+When collection completes, `materialize_child_plan` in
+`../src/ww/transitions.py` expands the templates once for each collected child,
+binding each copy by `child_number`, the child's position in the append-only
+children list. That position remains stable when a child binds its own task ID.
+Each per-child run leaf waits only for its own child; `ChildCoordinator` refuses
+to start another child, and completion saves that child's summary as the leaf's
+artifact. `WorkflowService._child_values` resolves `{{ww.child.*}}`, including
+the child task's extension namespace values, for agent pages, automatic
+handlers, and `value_unavailable` checks.
+
 A per-child stage may carry `start_child`, which compiles into the launch of its
 `ChildWorkflowRun` operation (templates over the child's record, saved with the
 plan). It is not an action: starting a child locks the parent, so it cannot run
@@ -1474,24 +1340,6 @@ in the child record before launch, so retrying an interrupted start cannot
 accidentally inherit a different session configuration. Identity requests carry
 the same settings into the bound run. Existing child records without these fields
 inherit the parent settings; the parent's execution state is never reconfigured.
-
-With `children.steps` the parent instead owns a loop over its children. The
-parser turns the one stage carrying `workflow:` into a `ChildWorkflowRun`
-stage (inside `children`, `workflow:` runs a child, it never hands off), and
-`ChildFlowPlanner` compiles the stages as templates under `<step>/{child}`
-marked with `child_stage`, on the same machinery as per-item stages. When
-collection completes, `materialize_child_plan` in `../src/ww/transitions.py`
-(sharing `_expand_templates` with `materialize_item_plan`) expands them once
-per child, binding each copy to its child by `child_number`, the child's
-position in the append-only children list, which survives a child binding its
-own ID. Each per-child run leaf waits for its own child only;
-`ChildCoordinator` refuses to start any other, and on completion saves the
-child's summary as that leaf's artifact. `WorkflowService._child_values`
-resolves `{{ww.child.*}}` for a per-child item, including the child task's own
-extension namespace values, for agent pages, automatic handlers, and the
-`value_unavailable` check. A `break` in a stage (`PlanItem.breaks_children`)
-reuses the loop exit: `finish_loop_exit` skips the remaining per-child items
-and the drain marks the children that never started `skipped`.
 
 `add-child` is also accepted while a per-child stage is the active item. The
 guard in `WorkflowService.add_child` refuses once the cursor has left the
@@ -1634,15 +1482,15 @@ begun binding refuses reset and names the task to reset instead.
 
 Some work is only enumerable after an agent has inspected an external source,
 such as the comments on a pull request. Items are therefore durable, run-local
-records rather than configuration-time loop values. A workflow has one item
+records rather than configuration-time values. A workflow has one item
 collection and may hold several sequential `items` passes over it. Each `items`
 declaration is a pass with a stable identity (its step path): its own action is
 the collection step (the first pass records the items; later passes reuse them),
 annotated `collect` and carrying any splitting guidance, and its completion
 expands only that pass's saved per-item templates into concrete plan items, for
-the items recorded by then. Membership is frozen for the pass, so an item added
-meanwhile joins the next pass, or the next round of a loop, whose passes expand
-again each round. A bare `items` step compiles one built-in
+the items recorded by then. Membership is frozen for each pass, so an item
+added meanwhile joins the next pass. Each pass expands once when its collection
+step completes. A bare `items` step compiles one built-in
 `handle-item` template with the combined `handle_item` operation. This
 preserves the executor's ordinary retry, artifact, and status rules while making
 each item's progress independently visible.
@@ -2014,14 +1862,13 @@ of whether a step is interactive. The instruction builder suggests the
 `ww-deduce-feedback` skill only on completed runs with eligible artifacts and
 when the default-on `feedback_learning` setting permits it.
 
-The service's source command reads eligible completed artifacts through the
-task storage boundary, including retained loop rounds. Stable source IDs and
-exact quoted evidence let the agent match meaning while ww owns identifiers,
-counting and persistence. Recording deductions validates completed-run sources
-and does not commit a run transition. Existing-point updates require their ID;
-repeated artifact/quote evidence is idempotent. `last_encountered_at` records
-source completion time rather than analysis time, preserving the chronology
-of feedback even when deduction happens later.
+The source command reads eligible completed artifacts through task storage.
+Stable source IDs and exact quoted evidence let the agent match meaning while
+ww owns identifiers, counting, and persistence. Recording deductions validates
+completed-run sources and does not commit a run transition. Existing-point
+updates require their ID, and repeated artifact/quote evidence is idempotent.
+`last_encountered_at` records source completion time rather than analysis time,
+preserving feedback chronology when deduction happens later.
 
 `FeedbackStore` writes candidates under a dedicated lock with atomic replacement;
 `MemoryFeedbackStore` supports embedded execution without candidate-file writes.
@@ -2065,7 +1912,7 @@ a run that is already committed, and a completed run that is committed again
 does not rewrite its record (`record` keeps the first write). The workflow
 in a record is `workflow_shape(plan)`: a structural digest of the compiled
 plan (names, steps, phases, sources, kinds, owners, roles, registered
-handlers, loop, items and children markers, rule and check counts, and the
+handlers, items and children markers, rule and check counts, and the
 counts of items, steps and hooks), never the `ww.yaml` text.
 
 A record holds ww-related data only. It stores no task ID: `record_id` is the

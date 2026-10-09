@@ -159,7 +159,7 @@ def test_pass_identity_is_not_the_description_or_an_item_id(tmp_path: Path) -> N
     assert passes(first) == passes(second) == {"gather"}
 
 
-def test_pass_identity_covers_hooks_loops_and_nested_stages(tmp_path: Path) -> None:
+def test_pass_identity_covers_hooks_groups_and_nested_stages(tmp_path: Path) -> None:
     path = tmp_path / "ww.yaml"
     path.write_text(
         """handlers:
@@ -175,7 +175,7 @@ workflows:
         items:
           steps:
             - again: ~
-              loop:
+              steps:
                 - work: Work.
                   hooks:
                     before_complete:
@@ -187,7 +187,7 @@ workflows:
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
     members = [item for item in plan.items if item.item_template]
-    assert {item.kind for item in members} >= {"loop", "prompt", "cli"}
+    assert {item.kind for item in members} >= {"prompt", "cli"}
     assert {item.item_pass for item in members} == {"collect"}
     # The collection and the step's own hook sit outside the per-item section.
     outside = [item for item in plan.items if not item.item_template]
@@ -214,23 +214,6 @@ def test_assessment_outcomes_inside_a_per_item_stage_belong_to_the_pass(
     inside = [item for item in plan.items if item.item_template]
     assert {"assess", "review"} <= {item.name for item in inside}
     assert {item.item_pass for item in inside} == {"collect"}
-
-
-def test_a_loop_around_items_keeps_the_declaration_path_as_identity(
-    tmp_path: Path,
-) -> None:
-    plan = _plan(
-        tmp_path,
-        """      - rounds: ~
-        loop:
-          - collect: Collect.
-            items: ~
-""",
-    )
-
-    assert {item.item_pass for item in plan.items if item.item_template} == {
-        "rounds/collect"
-    }
 
 
 def test_children_expansion_metadata_is_not_pass_identity(tmp_path: Path) -> None:
@@ -260,7 +243,7 @@ def test_pass_identity_round_trips_in_the_current_schema(tmp_path: Path) -> None
     plan = _plan(tmp_path, ONE_PASS)
     raw = json.loads(json.dumps(_snapshot(plan).to_dict()))
 
-    assert raw["schema_version"] == PLAN_SCHEMA_VERSION == 2
+    assert raw["schema_version"] == PLAN_SCHEMA_VERSION == 3
     loaded = PlanSnapshot.from_dict(raw)
     assert loaded.plan == plan
     assert loaded.template_plan == plan

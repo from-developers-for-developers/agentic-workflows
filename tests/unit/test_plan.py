@@ -24,9 +24,7 @@ from ww.extensions import ExtensionRegistry
 from ww.output import render_plan
 from ww.plan import (
     ChildWorkflowRun,
-    LoopBoundary,
     PlanCompilationOptions,
-    PlanItem,
     WorkflowHandoff,
     WorkflowPlan,
     WorkflowPlanCompiler,
@@ -40,7 +38,6 @@ from ww.plan.constructs import (
     builtin_construct_planners,
     normalize_construct,
 )
-from ww.project_config import Limits, ProjectConfig
 from ww.workflow_config import INIT_STEP_PROMPT, ProvidedVariable, StepDefinition
 
 
@@ -109,12 +106,12 @@ def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
               - name: fix
                 artifact_from: plan
       - name: review
-        loop:
+        steps:
           - name: check
             artifact_from: plan
           - name: decide
             artifact_from: check
-            break: Done
+
       - assess:
           question: Is it good?
           outcomes:
@@ -242,38 +239,6 @@ workflows:
     assert step.kind == "cli"
     assert step.payload_as(Commands).commands[0].argv == ("printf", "ready")
     assert step.registered_handler is None
-
-
-def test_step_handler_compiles_a_named_loop_step(tmp_path: Path) -> None:
-    path = tmp_path / "ww.yaml"
-    path.write_text(
-        """handlers:
-  - code-review:
-      loop:
-        - code-review: Perform the review.
-          break: No meaningful remarks remain.
-        - fix: Fix the review findings.
-workflows:
-  - name: task
-    steps:
-      - code-review: ~
-        handler: code-review
-""",
-        encoding="utf-8",
-    )
-
-    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
-
-    assert [
-        (item.step, item.kind, item.loop_break)
-        for item in plan.items
-        if item.step.startswith("code-review") and item.phase == "step"
-    ] == [
-        ("code-review", "loop", None),
-        ("code-review/code-review", "prompt", "No meaningful remarks remain."),
-        ("code-review/fix", "prompt", None),
-        ("code-review", "loop", None),
-    ]
 
 
 def _configuration(tmp_path: Path):
@@ -812,9 +777,9 @@ workflows:
   - name: task
     steps:
       - name: code-review
-        loop:
+        steps:
           - name: code-review
-            break: No findings remain.
+
           - name: fix
 """,
         encoding="utf-8",
@@ -1076,68 +1041,6 @@ def test_several_hook_commands_and_explicit_missing_action_are_checked(
     )
 
 
-def test_loop_limit_uses_project_default_and_step_override(tmp_path: Path) -> None:
-    path = tmp_path / "ww.yaml"
-    path.write_text(
-        """workflows:
-  - task: ~
-    steps:
-      - project-default: ~
-        loop:
-          - work: Work.
-      - overridden: ~
-        max_rounds: 8
-        loop:
-          - work: Work.
-""",
-        encoding="utf-8",
-    )
-
-    plan = compile_workflow_plan(
-        load_configuration(path),
-        tmp_path,
-        "task",
-        "codex",
-        project_config=ProjectConfig(limits=Limits(rounds=5)),
-    )
-    boundaries = [item for item in plan.items if item.kind == "loop"]
-
-    assert [
-        (item.operation.loop_id, item.operation.max_times)
-        for item in boundaries
-        if isinstance(item.operation, LoopBoundary)
-    ] == [
-        ("project-default", 5),
-        ("project-default", 5),
-        ("overridden", 8),
-        ("overridden", 8),
-    ]
-    markdown = render_plan(plan, False)
-    assert "- Maximum rounds: `5`" in markdown
-    assert "- Maximum rounds: `8`" in markdown
-
-
-def test_loop_stop_gate_requires_an_agent_owned_body_step(tmp_path: Path) -> None:
-    path = tmp_path / "ww.yaml"
-    path.write_text(
-        """workflows:
-  - task: ~
-    steps:
-      - retry: ~
-        loop:
-          - check: ~
-            argv: [printf, done]
-            break: The check succeeded.
-""",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(
-        ConfigurationError, match="uses break/continue but is not agent-owned"
-    ):
-        compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
-
-
 def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
     path = tmp_path / "ww.yaml"
     path.write_text(
@@ -1191,7 +1094,7 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
 """,
         encoding="utf-8",
     )
-    with pytest.raises(ConfigurationError, match="is a core control"):
+    with pytest.raises(ConfigurationError, match="workflow loops were removed"):
         load_configuration(path)
 
 
@@ -1297,9 +1200,9 @@ def test_a_compiled_plan_keeps_its_item_ids_and_operations_through_a_reload(
   - name: task
     steps:
       - name: cycle
-        loop:
+        steps:
           - review: Review it.
-            break: Nothing is left to fix.
+
       - name: split
         children:
           workflow: child
@@ -1332,7 +1235,7 @@ def test_a_compiled_plan_keeps_its_item_ids_and_operations_through_a_reload(
     assert [item.id for item in compiled().items] == [item.id for item in plan.items]
     assert loaded == plan
     kinds = {type(item.operation) for item in loaded.items}
-    assert {LoopBoundary, ChildWorkflowRun, WorkflowHandoff} <= kinds
+    assert {ChildWorkflowRun, WorkflowHandoff} <= kinds
 
 
 def test_plan_snapshot_persists_explicit_and_reads_legacy_items(tmp_path: Path) -> None:
@@ -1416,43 +1319,6 @@ def test_step_label_total_survives_item_expansion() -> None:
         ("1", 2),
         ("2.1.1", 2),
         ("2.2.1", 2),
-    ]
-
-
-def test_step_label_counts_a_loop_once_and_ignores_hooks() -> None:
-    def boundary(suffix: str, operation: str) -> PlanItem:
-        return plan_item(
-            id=f"w:polish:loop:{suffix}:1",
-            step="polish",
-            operation=LoopBoundary("polish", operation, 3),
-            owner="ww",
-            execution="loop_control",
-        )
-
-    items = number_step_paths(
-        (
-            plan_item(id="w:init:1", step="init"),
-            boundary("enter", "enter"),
-            plan_item(
-                id="w:polish/check:1", step="polish/check", ancestors=("polish",)
-            ),
-            boundary("repeat", "repeat"),
-            plan_item(
-                id="w:polish:after_complete:lint:1",
-                step="polish",
-                name="lint",
-                phase="after_complete",
-                source="hook",
-            ),
-        )
-    )
-
-    assert [step_label(item.step_ordinals, items) for item in items] == [
-        ("1", 2),
-        ("2", 2),
-        ("2.1", 2),
-        ("2", 2),
-        ("2", 2),
     ]
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from tests.workflow_helpers import assignment_token, configured_service
 
 # ``commit`` and ``tag`` both want ``commit_message``; ``work`` feeds both in
-# one completion window, the loop's commit hook lies outside every window.
+# one completion window; the later commit step requests its own value.
 WORKFLOWS = """handlers:
   - name: commit
     variables:
@@ -31,12 +31,10 @@ workflows:
             - name: commit
             - name: tag
       - name: review-and-fix
-        hooks:
-          after_complete:
-            - name: commit
-        loop:
+        steps:
           - name: review
-            break: Clean.
+      - name: commit
+
 """
 
 
@@ -70,7 +68,7 @@ def test_a_later_consumer_asks_for_its_own_value(tmp_path: Path) -> None:
 
     review = service.next("TASK-1", caller_role="manager")
     assert review.item_name == "review"
-    service.loop(
+    service.complete(
         "TASK-1",
         artifact="Clean.",
         summary_for_next="Nothing to fix.",
@@ -78,7 +76,7 @@ def test_a_later_consumer_asks_for_its_own_value(tmp_path: Path) -> None:
         assignment=assignment_token(service, "TASK-1"),
     )
 
-    # The loop's commit hook asks for its own message instead of reusing the
+    # The later commit handler asks for its own message instead of reusing the
     # one ``work`` supplied.
     request = service.next("TASK-1", caller_role="manager")
     assert request.status == "awaiting_input"

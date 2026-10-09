@@ -103,7 +103,6 @@ CI_FILES += ("Jenkinsfile", ".circleci/config.yml")
 # A subject that reports a fix: it starts, after an optional tracker key, with
 # fix, fixes, fixed, hotfix or revert (so "fix:" and "fix(cli):" too), or it
 # names a regression, e.g. "Fixed the totals", "PROJ-3: fix the crash" or
-# "Guard the cache regression"; "Add the fix loop" does not match.
 FIX_SUBJECT = re.compile(
     r"^(?:\[?[A-Z][A-Z0-9]+-\d+\]?:?\s+)?(?:fix|fixes|fixed|hotfix|revert)\b"
     r"|\bregression\b",

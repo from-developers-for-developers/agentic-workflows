@@ -31,7 +31,6 @@ def handoff_block(
     files: tuple[str, ...] | None,
     files_reproducible: bool = True,
     error: str | None,
-    loop_outcome: tuple[str, str] | None = None,
     continuation_task_id: str | None = None,
     run_completed: bool = False,
     choosing_outcome_of: str | None = None,
@@ -42,7 +41,6 @@ def handoff_block(
     ``performed`` pairs each agent item of the assignment with its latest
     record; items the worker never reached are left out. ``error`` is the
     run's failure, such as a handler that failed after the last completion.
-    ``loop_outcome`` names the item that broke or continued its loop and
     which it did. ``continuation_task_id`` names the task the manager
     continues with when that is not ``task_id``: the parent of a child whose
     run has ended; ``run_completed`` says that run has nothing left to run.
@@ -52,7 +50,7 @@ def handoff_block(
     steps = tuple(
         step
         for item, record in performed
-        if (step := _step(item, record, root, loop_outcome)) is not None
+        if (step := _step(item, record, root)) is not None
     )
     summary = next(
         (
@@ -84,15 +82,11 @@ def _step(
     item: PlanItem,
     record: PlanItemExecution,
     root: Path,
-    loop_outcome: tuple[str, str] | None,
 ) -> HandoffStep | None:
     if record.status == "completed" and not record.attempts:
-        # Completed without being performed: skipped by a loop break.
         return None
     if record.status == "completed":
         outcome = "completed"
-        if loop_outcome is not None and loop_outcome[0] == item.id:
-            outcome = f"loop {loop_outcome[1]}"
     elif record.status == "failed":
         outcome = "failed"
     elif record.held_completion is not None:

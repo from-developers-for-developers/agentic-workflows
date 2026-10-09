@@ -326,8 +326,6 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         child_operation=None,
         child_identity=False,
         artifact_dependency=None,
-        loop_break=None,
-        loop_continue=None,
         assessment_question=None,
         assessment_outcomes=(),
         assessment_stops=(),
@@ -574,7 +572,7 @@ def resume_held(
 
 def skip_idle_verification(state: ExecutionState, now: Clock) -> ExecutionState:
     """Pass a verification item that no round asked anything, such as after a
-    loop reset its record."""
+    retry replaced its record."""
     records = list(state.item_executions)
     records[state.cursor] = replace(
         records[state.cursor],

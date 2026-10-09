@@ -15,12 +15,11 @@ from ww.contracts import (
     OperatorReason,
     PlanItemKind,
 )
-from ww.control import child_workflow, loop_control, replays_harmlessly
+from ww.control import child_workflow, replays_harmlessly
 from ww.errors import StateError
 from ww.execution_models import ExecutionState
 from ww.handler_repairs import needs_repair
 from ww.plan import WorkflowPlan
-from ww.transitions import loop_limit_reached
 from ww.validation import expect_literal
 
 from .models import Instruction
@@ -59,7 +58,7 @@ def manager_continues_itself(instruction: Instruction) -> bool:
 
     Then ``next`` has nothing to decide for the manager: no worker is selected,
     nothing waits for the operator, no assessment outcome is to be chosen, and
-    no loop, child, repair, or plan change needs a deliberate command.
+    no child, repair, or plan change needs a deliberate command.
     """
     return (
         instruction.workflow_runtime == "auto"
@@ -75,7 +74,6 @@ def manager_continues_itself(instruction: Instruction) -> bool:
         and instruction.fix_required is None
         and instruction.handler_repair is None
         and instruction.error is None
-        and not instruction.is_loop_control
         and not instruction.is_child_workflow_control
         and not instruction.manager_only
     )
@@ -149,12 +147,6 @@ def operator_reason(state: ExecutionState, plan: WorkflowPlan) -> OperatorReason
         if item is not None and item.owner == "agent":
             return "work_failed"
         return "handler_failed"
-    if (
-        state.status != "awaiting_input"
-        and item is not None
-        and loop_limit_reached(state, item)
-    ):
-        return "loop_limit"
     return None
 
 
@@ -193,7 +185,6 @@ def _control(state: ExecutionState, plan: WorkflowPlan) -> tuple[Control, NextRo
             return "blocked", "manager"
     if state.cursor < len(plan.items) and (
         child_workflow(plan.items[state.cursor]) is not None
-        or loop_control(plan.items[state.cursor]) is not None
     ):
         return "blocked", "manager"
     assignment = active_assignment(

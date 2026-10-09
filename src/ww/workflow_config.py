@@ -22,7 +22,6 @@ from ww.contracts import (
     HookScope,
     ItemAssignment,
     ItemOperation,
-    LoopAssignment,
     StepRole,
 )
 from ww.operations import ChildLaunch, ChildWorkflowRun, WorkflowHandoff
@@ -600,11 +599,6 @@ class StepDefinition(HandlerDefinition):
     rules: tuple[StepRule, ...] = ()
     # The compiler flattens nested steps while preserving their parent identity.
     child_steps: tuple[StepDefinition, ...] = ()
-    loop_steps: tuple[StepDefinition, ...] = ()
-    max_rounds: int | None = None
-    loop_assignment: LoopAssignment | None = None
-    loop_break: str | None = None
-    loop_continue: str | None = None
     # A step with ``items`` collects work items, then runs ``items.steps``
     # once for every collected item.
     items: ItemFlow | None = None
@@ -805,12 +799,11 @@ def _requests_worker(definition: object) -> bool:
 
 
 def step_tree(steps: Iterable[StepDefinition]) -> Iterator[StepDefinition]:
-    """Walk a step tree: nested steps, loop bodies, assessments, item and
+    """Walk a step tree: nested steps, assessments, item and
     per-child stages."""
     for step in steps:
         yield step
         yield from step_tree(step.child_steps)
-        yield from step_tree(step.loop_steps)
         yield from step_tree(step.assessment_outcomes)
         if step.items is not None:
             yield from step_tree(step.items.steps)
@@ -823,7 +816,7 @@ def step_paths(
 ) -> Iterator[tuple[StepDefinition, str]]:
     """Every step of a tree with its logical path, as the plan compiler names it.
 
-    Nested steps, loop bodies, per-item and per-child stages take their
+    Nested steps, per-item and per-child stages take their
     parent's path as a prefix; a step filter that names such a path matches
     exactly that step.
     """
@@ -831,7 +824,6 @@ def step_paths(
         path = f"{parent}/{step.name}" if parent else step.name
         yield step, path
         yield from step_paths(step.child_steps, path)
-        yield from step_paths(step.loop_steps, path)
         if step.items is not None:
             yield from step_paths(step.items.steps, path)
         if step.children is not None:

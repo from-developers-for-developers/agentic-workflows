@@ -177,32 +177,6 @@ def test_execution_artifacts_have_stable_run_aware_references(
     assert adapter.read_execution_artifact(next_run) == "next\n"
 
 
-def test_loop_iterations_have_distinct_artifact_references(
-    adapter: TaskStorageAdapter,
-) -> None:
-    review = ArtifactAddress(
-        "PROJ-1",
-        "task",
-        "review-and-fix/review",
-        1,
-        "review",
-        "step",
-        "01-task",
-        (2, 1),
-        (("review-and-fix", 1),),
-    )
-    first = adapter.write_execution_artifact(review, "first review\n")
-    second = adapter.write_execution_artifact(
-        replace(review, loop_iterations=(("review-and-fix", 2),)), "second review\n"
-    )
-
-    assert first != second
-    assert first.endswith("02-review-and-fix/iteration-01/01-review.md")
-    assert second.endswith("02-review-and-fix/iteration-02/01-review.md")
-    assert adapter.read_execution_artifact(first) == "first review\n"
-    assert adapter.read_execution_artifact(second) == "second review\n"
-
-
 def test_command_outputs_are_namespaced_by_operation_and_attempt(
     adapter: TaskStorageAdapter,
 ) -> None:

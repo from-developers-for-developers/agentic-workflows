@@ -14,12 +14,9 @@ from typing import Protocol, TypeVar, runtime_checkable
 
 from ww.actions import DefinedAction
 from ww.contracts import (
-    DEFAULT_LOOP_ASSIGNMENT,
     ChildOperation,
     ItemAssignment,
     ItemOperation,
-    LoopAssignment,
-    LoopOperation,
 )
 from ww.errors import ConfigurationError
 from ww.operations import ChildWorkflowRun
@@ -50,9 +47,6 @@ class ItemAnnotations:
     item_pass: str | None = None
     # Carried only by the collection item of an explicit ``steps: []`` pass.
     item_collect_only: bool = False
-    # Carried by every body step and hook of the nearest enclosing ``loop``.
-    loop_id: str | None = None
-    loop_assignment: LoopAssignment | None = None
     # Carried by every per-child stage and hook: the ``children`` step path.
     child_stage: str | None = None
     # Carried with ``child_stage``: the per-child stages that run before the
@@ -87,7 +81,7 @@ class ExpansionResult:
     """Explicit variable result from a construct expansion.
 
     ``available_values`` replaces the enclosing available scope for containers
-    whose bodies intentionally propagate values (sequences and loops).  Leaf,
+    whose bodies intentionally propagate values (sequences).  Leaf,
     assessment, and item-template planners instead return only direct outputs.
     """
 
@@ -102,18 +96,10 @@ class LeafRequest:
     annotations: ItemAnnotations = EMPTY_ITEM_ANNOTATIONS
 
 
-@dataclass(frozen=True)
-class LoopBoundaryRequest:
-    operation: LoopOperation
-    max_times: int
-    artifact: bool
-
-
 class PlanningContext(Protocol):
     """Small set of compiler-owned primitives exposed to construct planners."""
 
     scope: PlanningScope
-    default_max_rounds: int
 
     def derive_scope(
         self,
@@ -135,8 +121,6 @@ class PlanningContext(Protocol):
     ) -> tuple[str, ...]: ...
 
     def emit_leaf(self, request: LeafRequest) -> tuple[str, ...]: ...
-
-    def emit_loop_boundary(self, request: LoopBoundaryRequest) -> None: ...
 
 
 DefinitionT = TypeVar("DefinitionT", contravariant=True)
@@ -197,14 +181,6 @@ class AssessmentDefinition:
 class ItemFlowDefinition:
     step: StepDefinition
     flow: ItemFlow
-
-
-@dataclass(frozen=True)
-class LoopDefinition:
-    step: StepDefinition
-    body: tuple[StepDefinition, ...]
-    max_times: int | None
-    assignment: LoopAssignment | None = None
 
 
 @dataclass(frozen=True)
@@ -323,35 +299,6 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
         return ExpansionResult(outputs=outputs)
 
 
-class LoopPlanner(ConstructPlanner[LoopDefinition]):
-    def expand(
-        self, definition: LoopDefinition, context: PlanningContext
-    ) -> ExpansionResult:
-        max_times = (
-            definition.max_times
-            if definition.max_times is not None
-            else context.default_max_rounds
-        )
-        context.emit_loop_boundary(
-            LoopBoundaryRequest("enter", max_times, definition.step.artifact)
-        )
-        scope = context.derive_scope(
-            parent=context.scope.path,
-            parent_ancestors=context.scope.ancestors,
-        )
-        scope = replace(
-            scope,
-            annotations=replace(
-                scope.annotations,
-                loop_id=context.scope.path,
-                loop_assignment=definition.assignment or DEFAULT_LOOP_ASSIGNMENT,
-            ),
-        )
-        available = context.compile_steps(definition.body, scope)
-        context.emit_loop_boundary(LoopBoundaryRequest("repeat", max_times, False))
-        return ExpansionResult(available_values=available)
-
-
 class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
     """Collect child tasks with the step's own action, then run them.
 
@@ -434,10 +381,6 @@ def normalize_construct(step: StepDefinition) -> object:
         )
     if step.items is not None:
         return ItemFlowDefinition(step, step.items)
-    if step.loop_steps:
-        return LoopDefinition(
-            step, step.loop_steps, step.max_rounds, step.loop_assignment
-        )
     if step.child_steps:
         return SequenceDefinition(step, step.child_steps)
     if step.children is not None:
@@ -451,6 +394,5 @@ def builtin_construct_planners() -> ConstructPlannerRegistry:
     registry.register(SequenceDefinition, SequencePlanner())
     registry.register(AssessmentDefinition, AssessmentPlanner())
     registry.register(ItemFlowDefinition, ItemFlowPlanner())
-    registry.register(LoopDefinition, LoopPlanner())
     registry.register(ChildFlowDefinition, ChildFlowPlanner())
     return registry

@@ -460,12 +460,12 @@ def _targets(configuration: WorkflowConfiguration) -> tuple[ListedTarget, ...]:
 def _agent_owned(configuration: WorkflowConfiguration, step: StepDefinition) -> bool:
     """Whether the step has agent work of its own, as the plan compiler resolves it.
 
-    A loop or a nested sequence only holds its steps, and a handler group
+    A nested sequence only holds its steps, and a handler group
     runs automated members. Any other step performs its action, the root
     handler it names, or an implicit skill, slash command or prompt, which
     is always the agent's.
     """
-    if step.loop_steps or step.child_steps:
+    if step.child_steps:
         return False
     handler: HandlerDefinition = step
     if step.is_reference:

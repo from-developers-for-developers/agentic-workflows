@@ -358,10 +358,7 @@ def build_parser() -> argparse.ArgumentParser:
     next_actions.add_argument(
         "--force",
         action="store_true",
-        help=(
-            "Skip a failed or interrupted item, or end the loop the task is "
-            "in, after operator confirmation."
-        ),
+        help=("Skip a failed or interrupted item after operator confirmation."),
     )
     next_actions.add_argument(
         "--retry",
@@ -384,10 +381,7 @@ def build_parser() -> argparse.ArgumentParser:
     next_step.add_argument(
         "--reason",
         dest="force_reason",
-        help=(
-            "Required explanation for --force; retained with the skipped item "
-            "or the ended loop."
-        ),
+        help=("Required explanation for --force; retained with the skipped item."),
     )
     next_step.add_argument(
         "--reassign",
@@ -410,37 +404,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     completion = _shared("json", "role", "selection")
-    loop = subparsers.add_parser(
-        "loop",
-        parents=[completion],
-        help="Control the enclosing loop from an authorized worker step.",
-    )
-    loop.add_argument("task_id")
-    loop_control = loop.add_mutually_exclusive_group(required=True)
-    loop_control.add_argument("--break", action="store_true", dest="break_loop")
-    loop_control.add_argument("--continue", action="store_true", dest="continue_loop")
-    loop.add_argument("--variable", action="append", default=[])
-    loop.add_argument("--metadata", action="append", default=[])
-    loop.add_argument(
-        "--artifact",
-        default=None,
-        help="Full Markdown result produced by the break-enabled step worker.",
-    )
-    loop.add_argument(
-        "--summary",
-        default=None,
-        help=(
-            "One or two sentences for whoever performs the next step; required "
-            "for a step."
-        ),
-    )
-    loop.add_argument(
-        "--adjustments",
-        default=None,
-        help=(
-            "Changes the operator asked for during this step, in one or two sentences."
-        ),
-    )
     complete = subparsers.add_parser(
         "complete", parents=[completion], help="Complete the current workflow step."
     )

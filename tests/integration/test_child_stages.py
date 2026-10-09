@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Per-child parent stages: the parent's own loop over its children."""
+"""Per-child parent stages: the parent's own stages for each child."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ STAGES = """workflows:
                 workflow: child
             - review: Review {{ww.child.id}}.
               artifact_from: implement
-              break: Nothing more is worth doing.
+
             - land: Land {{ww.child.id}}.
   - name: child
     steps:
@@ -175,76 +175,6 @@ def test_a_failed_child_stops_the_parent(tmp_path: Path) -> None:
     assert parent.status == "failed"
     assert parent.item_name == "implement"
     assert [child.status for child in parent.child_tasks] == ["failed", "pending"]
-
-
-def test_a_break_on_a_parent_stage_skips_the_remaining_children(
-    tmp_path: Path,
-) -> None:
-    service = _service(tmp_path)
-    _collect(service, "A", "B", "C")
-    _step(service)
-    _run_child(service, "A")
-    review = service.next(TASK)
-    assert review.breaks_children
-    rendered = MarkdownOutputAdapter().render_instruction(review)
-    assert "### Children outcome" in rendered
-    assert "stop running children" in rendered
-
-    after = service.loop(TASK, artifact="Enough.", summary_for_next="Done.")
-
-    assert after.item_name == "update-workflow-summary"
-    state, snapshot = service.load(TASK)
-    assert [child.status for child in service.tasks.read_children(TASK)] == [
-        "completed",
-        "skipped",
-        "skipped",
-    ]
-    skipped = {
-        item.step
-        for item, record in zip(snapshot.plan.items, state.item_executions, strict=True)
-        if record.result == "skipped because a children break gate passed"
-    }
-    assert "slices/child-1/land" in skipped
-    assert "slices/child-3/implement" in skipped
-    with pytest.raises(StateError, match="parent workflow is not running its children"):
-        service.start_child(TASK, "B")
-
-
-def test_a_loop_inside_the_stages_runs_once_per_child(tmp_path: Path) -> None:
-    service = _service(
-        tmp_path,
-        """workflows:
-  - name: parent
-    steps:
-      - slices: Split.
-        children:
-          steps:
-            - implement:
-                workflow: child
-            - name: review
-              loop:
-                - check: Check {{ww.child.id}}.
-                  break: It is good.
-                - fix: Fix it.
-            - land: Land {{ww.child.id}}.
-  - name: child
-    steps:
-      - work: Do child work.
-""",
-    )
-    _collect(service, "A", "B")
-    _run_child(service, "A")
-    assert [_step(service), _step(service)] == ["check", "fix"]
-    second = service.next(TASK)
-    assert (second.item_name, second.loop_iteration) == ("check", 2)
-    service.loop(TASK, artifact="Good.", summary_for_next="Done.")
-    assert _step(service) == "land"
-
-    _run_child(service, "B")
-    first = service.next(TASK)
-    assert (first.item_name, first.loop_iteration) == ("check", 1)
-    service.loop(TASK, artifact="Good.", summary_for_next="Done.")
-    assert "Land B." in (service.next(TASK).action_text or "")
 
 
 def test_the_auto_manager_also_manages_each_child(tmp_path: Path) -> None:

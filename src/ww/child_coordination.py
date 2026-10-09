@@ -430,18 +430,11 @@ class ChildCoordinator:
                 parent.cursor < len(snapshot.plan.items)
                 and snapshot.plan.items[parent.cursor].summary
             ):
-                # A break in per-child stages skips the remaining children,
-                # which never ran.
                 summary = "Completed child tasks: " + ", ".join(
                     child.summary or child.id
                     for child in projected
                     if child.status == "completed"
                 )
-                skipped = [
-                    child.id for child in projected if child.status != "completed"
-                ]
-                if skipped:
-                    summary += "; skipped: " + ", ".join(skipped)
                 parent = complete_child_summary(parent, summary, self.now)
                 self.lifecycle.commit(parent, snapshot, children=projected)
                 self.lifecycle.drain(parent, snapshot)
@@ -457,17 +450,15 @@ class ChildCoordinator:
 
         Later stages read it like any step's artifact (``artifact_from``).
         """
-        artifact, _ = write_completion_artifacts(
+        return write_completion_artifacts(
             self.tasks,
             parent.task_id,
             parent,
             snapshot,
             item,
-            None,
             f"Child task `{child.task_id}` completed its `{child.workflow}` "
             f"workflow.\n\nSummary: {child.summary or 'none recorded'}",
         )
-        return artifact
 
     def _refresh_child(self, parent_task_id: str, child: ChildTask) -> ChildTask | None:
         """Return the child record as its own run records describe it."""

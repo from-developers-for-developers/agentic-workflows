@@ -63,7 +63,6 @@ _STATE_DEFAULTS = _serialized_defaults(
     modes=[],
     active_item_id=None,
     workflow_values={},
-    loop_iterations={},
     pending_task_metadata={},
 )
 _WORK_ITEM_DEFAULTS = _serialized_defaults(WorkItem)

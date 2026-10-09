@@ -117,7 +117,6 @@ class BootstrapCoordinator:
         if (
             step.hooks
             or step.child_steps
-            or step.loop_steps
             or step.items is not None
             or step.children is not None
         ):

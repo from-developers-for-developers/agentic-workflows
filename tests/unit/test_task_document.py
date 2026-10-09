@@ -240,10 +240,10 @@ def test_schema_version_must_be_the_current_strict_integer(version: object) -> N
         decode_task_document(encoded, "TASK-1")
 
 
-def test_children_round_trip_with_fields_and_skipped_status() -> None:
+def test_children_round_trip_with_fields_and_failed_status() -> None:
     children = (
         ChildTask("A", "Slice A", "child", "TASK-1/A", fields=(("area", "parser"),)),
-        ChildTask("B", "Slice B", "", "TASK-1/B", status="skipped"),
+        ChildTask("B", "Slice B", "", "TASK-1/B", status="failed"),
     )
     run = replace(_run(), children=children)
 
@@ -264,10 +264,10 @@ _EXPANDED_WORKFLOW = """workflows:
             - resolve: Resolve {{ww.item.id}} with tests and a minimal change.
               item_phase: resolve
             - review: Review the change.
-              max_rounds: 2
-              loop:
+
+              steps:
                 - fix: Fix what the review found.
-                  break: The review found nothing.
+
             - name: ext/ww/git/handlers:git-commit
       - slices: Split the stories into child tasks.
         children:
@@ -328,7 +328,7 @@ def test_expanded_plan_items_are_stored_as_a_diff_against_their_template(
     plan_items = run.snapshot.plan.items
     assert any(item.item_id == "story-3" for item in plan_items)
     assert any(item.child_number == 2 for item in plan_items)
-    assert any(item.kind == "loop" and item.item_id for item in plan_items)
+    assert any(item.kind == "prompt" and item.item_id for item in plan_items)
     assert sum(item.kind == "extension" for item in plan_items) == 3
 
     encoded = encode_task_document("TASK-1", (run,), None, 1, {})

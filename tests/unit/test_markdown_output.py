@@ -475,37 +475,3 @@ def test_coverage_line_is_omitted_when_at_most_one_item_remains() -> None:
     assert "Already completed" not in rendered
     assert "covers, in order" not in rendered
     assert "is now running" not in rendered
-
-
-def test_stop_enabled_loop_step_gives_worker_a_deterministic_exit_command() -> None:
-    instruction = Instruction(
-        task_id="TASK-1",
-        workflow="task",
-        status="in_progress",
-        item_id="review",
-        item_name="review",
-        stage="Nested workflow step",
-        step="review-and-fix/review",
-        parent="review-and-fix",
-        item_status="in_progress",
-        action_kind="prompt",
-        action_text="Review the implementation.",
-        loop_break_prompt="There are no meaningful findings.",
-        loop_break_command=(
-            './ww loop TASK-1 --break --role worker --artifact="<result>"'
-        ),
-        continuation_command=(
-            './ww complete TASK-1 --role worker --artifact="<result>"'
-        ),
-        workflow_runtime="auto",
-        caller_role="worker",
-        next_role="worker",
-    )
-
-    rendered = MarkdownOutputAdapter().render_instruction(instruction)
-
-    assert "Break condition: There are no meaningful findings." in rendered
-    assert "./ww loop TASK-1 --break --role worker" in rendered
-    assert "Condition met — break the loop:" in rendered
-    assert "Condition not met — use the worker completion command below." in rendered
-    assert "deterministically exits" not in rendered

@@ -307,7 +307,7 @@ class Action(ABC, Generic[DefinitionT, PlannedT]):
     YAML shape, validating and planning it, rendering the instruction, and
     encoding the planned payload for the saved plan.  The two hooks at the end
     have safe defaults; override them only when the action has that behaviour.
-    Workflow structure (loops, handoffs, children) is not an action.
+    Workflow structure (groups, handoffs, children) is not an action.
     """
 
     identifier: ClassVar[str]

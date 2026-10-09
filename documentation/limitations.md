@@ -105,21 +105,16 @@ always uses the filesystem one.
 ## Workflow modelling
 
 - A workflow has one item collection. Several `items` steps are sequential
-  passes over it; an `items` step inside another's per-item stages is
-  rejected. An `items` step cannot also declare `steps`, `loop`, an item
-  operation marker, or child tasks.
-- Each started run executes from its saved plan snapshot. An edit to
-  `ww.yaml` reaches a running task only when the operator takes it at the
-  `plan_changed` stop (`next --replan`); it cannot reach per-item or
-  per-child stages the run has already expanded, or rewind past a children
-  step whose child tasks exist. For those, reset the task and start it
-  again.
-- A loop has a round limit (`max_rounds`). Reaching it escalates rather than
-  failing silently, and leaving the loop requires an explicit
-  `next --force --reason "<reason>"`.
+  passes over it; an `items` step inside another's per-item stages is rejected.
+  An `items` step cannot also declare `steps`, `item_phase`, or child tasks.
+- Each started run executes from its saved plan snapshot. An edit to `ww.yaml`
+  reaches a running task only when the operator takes it at the `plan_changed`
+  stop (`next --replan`); it cannot reach per-item or per-child stages the run
+  already expanded, or rewind past a children step whose child tasks exist.
+  For those, reset the task and start it again.
 - The operator page is a local page served only for as long as a wait is in
-  progress. There is no persistent web UI, no multi-user access control, and
-  no remote operator.
+  progress. There is no persistent web UI, multi-user access control, or
+  remote operator.
 
 ## Agent limitations
 

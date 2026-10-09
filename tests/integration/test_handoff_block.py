@@ -33,12 +33,10 @@ TWO = """workflows:
 ROUND = """workflows:
   - task: ~
     steps:
-      - review-and-fix: ~
-        loop:
-          - review: Review the implementation.
-            break: There are no meaningful findings.
-          - fix: Fix the review findings.
-            continue: Findings remain for another round.
+      - review: Review the implementation.
+        hooks:
+          after_complete:
+            - fix: Fix the review findings.
       - wrap-up: Wrap it up.
 """
 
@@ -141,93 +139,6 @@ def test_the_block_reports_every_step_of_the_assignment(tmp_path: Path) -> None:
         "review",
         "fix",
     ]
-
-
-def test_the_block_names_a_loop_break(tmp_path: Path) -> None:
-    service = _auto(tmp_path, ROUND)
-    service.next(TASK, caller_role="manager")
-
-    ended = service.loop(
-        TASK,
-        artifact="No findings.",
-        summary_for_next="Clean.",
-        caller_role="worker",
-        assignment=assignment_token(service, TASK),
-    )
-
-    assert ended.handoff_block is not None
-    assert [(s.name, s.outcome) for s in ended.handoff_block.steps] == [
-        ("review", "loop break")
-    ]
-
-
-def test_a_loop_continue_below_the_limit_hands_the_next_round_to_the_manager(
-    tmp_path: Path,
-) -> None:
-    service = _auto(tmp_path, ROUND)
-    service.next(TASK, caller_role="manager")
-    first = assignment_token(service, TASK)
-    _worker_complete(service, "Findings.")
-
-    ended = service.loop(
-        TASK,
-        artifact="Fixed some.",
-        summary_for_next="More to do.",
-        continue_loop=True,
-        caller_role="worker",
-        assignment=first,
-    )
-
-    # The round is over: the worker's assignment ends with its block, and no
-    # step is left open for a worker without a token.
-    assert ended.next_role == "manager"
-    assert not ended.loop_limit_reached
-    assert ended.handoff_block is not None
-    assert ended.handoff_block.token == first
-    assert [(s.name, s.outcome) for s in ended.handoff_block.steps] == [
-        ("review", "completed"),
-        ("fix", "loop continue"),
-    ]
-    state = service.tasks.read_execution_state(TASK, "01-task")
-    assert state is not None
-    assert (state.active_item_id, state.assignment_token) == (None, None)
-    assert dict(state.loop_iterations) == {"review-and-fix": 2}
-    with pytest.raises(StateError, match="no assignment is open"):
-        _worker_complete(service, "Stray.")
-
-    # The manager dispatches the next round as a new assignment.
-    second = service.next(TASK, caller_role="manager")
-    assert (second.item_name, second.next_role) == ("review", "worker")
-    token = assignment_token(service, TASK)
-    assert token is not None and token != first
-    review = service.status(TASK, caller_role="worker", assignment=token)
-    assert review.loop_iteration == 2
-
-
-def test_the_block_names_a_loop_continue(tmp_path: Path) -> None:
-    # A continue at the loop's limit stops the task for the operator, which
-    # ends the worker's assignment as a continue below the limit does.
-    service = _auto(tmp_path, ROUND.replace("loop:", "max_rounds: 1\n        loop:", 1))
-    service.next(TASK, caller_role="manager")
-    _worker_complete(service, "Findings.")
-
-    ended = service.loop(
-        TASK,
-        artifact="Fixed some.",
-        summary_for_next="More to do.",
-        continue_loop=True,
-        caller_role="worker",
-        assignment=assignment_token(service, TASK),
-    )
-
-    # The round's records moved to the history; the block still has them.
-    assert ended.loop_limit_reached
-    assert ended.handoff_block is not None
-    assert [(s.name, s.outcome) for s in ended.handoff_block.steps] == [
-        ("review", "completed"),
-        ("fix", "loop continue"),
-    ]
-    assert ended.handoff_block.summary == "More to do."
 
 
 def test_the_block_reports_checks_fix_rounds_and_files(tmp_path: Path) -> None:

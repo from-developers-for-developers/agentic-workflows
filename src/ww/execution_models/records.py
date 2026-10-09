@@ -36,10 +36,10 @@ from ww.validation import (
 )
 from ww.workflow_config import ProvidedVariable
 
-from .decoding import _assignment_log, _positive_int_mapping, _variables
+from .decoding import _assignment_log, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 1
+EXECUTION_SCHEMA_VERSION = 2
 
 PAIR_SIZE = 2
 
@@ -263,7 +263,6 @@ class HeldCompletion:
     selected_reasoning: str | None = None
     summary_for_next: str | None = None
     adjustments: str | None = None
-    loop_control: str | None = None
     mark: str | None = None
     files: tuple[str, ...] = ()
     all_files: bool = False
@@ -271,10 +270,6 @@ class HeldCompletion:
     verdicts: tuple[RuleVerdict, ...] = ()
     report: CheckReport | None = None
     previous_artifact: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.loop_control not in {None, "break", "continue"}:
-            raise ValueError(f"invalid held loop control: {self.loop_control!r}")
 
     def verdict(self, rule_id: str) -> RuleVerdict | None:
         return next((entry for entry in self.verdicts if entry.id == rule_id), None)
@@ -288,7 +283,6 @@ class HeldCompletion:
             "selected_reasoning": self.selected_reasoning,
             "summary_for_next": self.summary_for_next,
             "adjustments": self.adjustments,
-            "loop_control": self.loop_control,
             "mark": self.mark,
             "files": list(self.files),
             "all_files": self.all_files,
@@ -311,7 +305,6 @@ class HeldCompletion:
                 "selected_model",
                 "selected_reasoning",
                 "summary_for_next",
-                "loop_control",
                 "mark",
                 "files",
                 "all_files",
@@ -344,9 +337,6 @@ class HeldCompletion:
             ),
             adjustments=expect_optional_string(
                 data.get("adjustments"), "held completion.adjustments"
-            ),
-            loop_control=expect_optional_string(
-                data["loop_control"], "held completion.loop_control"
             ),
             mark=expect_optional_string(data["mark"], "held completion.mark"),
             files=_strings(data["files"], "held completion.files"),
@@ -1033,8 +1023,7 @@ class ExecutionState:
     active_item_id: str | None
     item_executions: tuple[PlanItemExecution, ...]
     steps: tuple[StepProgress, ...]
-    # Completed records displaced by a loop reset.  They retain the operation
-    # IDs and stream references needed to inspect earlier iterations.
+    # Prior attempts retained for recovery, checks, and immutable command streams.
     execution_history: tuple[PlanItemExecution, ...] = ()
     workflow_values: tuple[tuple[str, str], ...] = ()
     pending_input_request: InputRequest | None = None
@@ -1064,9 +1053,6 @@ class ExecutionState:
     assignment_selected_agent: str | None = None
     assignment_selected_model: str | None = None
     assignment_selected_reasoning: str | None = None
-    loop_iterations: tuple[tuple[str, int], ...] = ()
-    loop_exit_item_id: str | None = None
-    loop_continue_item_id: str | None = None
     # The requirements submitted with start survive preparation hooks and are
     # consumed only by the compiler-owned init item.
     pending_init_artifact: str | None = None
@@ -1122,9 +1108,6 @@ class ExecutionState:
             "assignment_selected_agent": self.assignment_selected_agent,
             "assignment_selected_model": self.assignment_selected_model,
             "assignment_selected_reasoning": self.assignment_selected_reasoning,
-            "loop_iterations": dict(self.loop_iterations),
-            "loop_exit_item_id": self.loop_exit_item_id,
-            "loop_continue_item_id": self.loop_continue_item_id,
             "pending_init_artifact": self.pending_init_artifact,
             "pending_task_metadata": _metadata_leaves_to_dict(
                 self.pending_task_metadata
@@ -1142,7 +1125,11 @@ class ExecutionState:
             raise ValueError("execution state must be a mapping")
         version = data.get("schema_version")
         if not is_strict_int(version) or version != EXECUTION_SCHEMA_VERSION:
-            raise ValueError(f"unsupported execution state schema: {version!r}")
+            raise ValueError(
+                f"unsupported execution state schema: {version!r}; "
+                "finish or inspect this run using the previous WW build; "
+                "saved state, artifacts and logs were left untouched"
+            )
         required = {
             "schema_version",
             "task_id",
@@ -1253,16 +1240,6 @@ class ExecutionState:
             assignment_selected_reasoning=expect_optional_string(
                 data.get("assignment_selected_reasoning"),
                 "assignment selected reasoning",
-            ),
-            loop_iterations=_positive_int_mapping(
-                data.get("loop_iterations", {}), "execution state.loop_iterations"
-            ),
-            loop_exit_item_id=expect_optional_string(
-                data.get("loop_exit_item_id"), "execution state.loop_exit_item_id"
-            ),
-            loop_continue_item_id=expect_optional_string(
-                data.get("loop_continue_item_id"),
-                "execution state.loop_continue_item_id",
             ),
             pending_init_artifact=expect_optional_string(
                 data.get("pending_init_artifact"),

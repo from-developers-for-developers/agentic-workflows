@@ -69,7 +69,7 @@ def _steps(steps: tuple[StepDefinition, ...]) -> Iterator[StepDefinition]:
     for step in steps:
         yield step
         yield from _steps(step.child_steps)
-        yield from _steps(step.loop_steps)
+        yield from _steps(step.child_steps)
         yield from _steps(step.assessment_outcomes)
 
 
@@ -402,6 +402,8 @@ def test_ww_suggest_designs_with_the_operator_before_proposing() -> None:
         "setup",
         "propose",
         "apply",
+        "propose",
+        "apply",
     ]
     design = _step("ww-suggest", "design")
     assert design.interactive
@@ -605,7 +607,7 @@ def test_proposals_take_step_features_from_the_design_guide() -> None:
         assert '"Designing a workflow"' in propose, workflow
         assert "`{{ww.executable}} docs features`" in propose, workflow
         # The guide owns the feature catalog; the prompt does not repeat it.
-        for feature in ("`interactive: page` with `choices`", "`loop` with a `break`"):
+        for feature in ("`interactive: page` with `choices`", "`items` with `steps`"):
             assert feature not in propose, (workflow, feature)
 
 

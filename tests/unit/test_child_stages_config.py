@@ -27,7 +27,7 @@ STAGES = """      - slices: One child per slice.
                 workflow: child
             - review: Review {{ww.child.field.area}} in {{ww.child.project}}.
               artifact_from: implement
-              break: Nothing is left worth doing.
+
             - land: Land {{ww.child.id}}.
 """
 
@@ -83,29 +83,10 @@ def test_per_child_stages_compile_as_templates_after_the_collection(
     assert run.owner == "ww"
     review = stages[2]
     assert review.artifact_dependency == "slices/{child}/implement"
-    assert review.breaks_children
     assert set(review.dependencies) == {"ww.child.field.area", "ww.child.project"}
     assert "**Per-child stage:** repeats for every collected child" in render_plan(
         plan, False
     )
-
-
-def test_a_break_inside_a_stage_loop_ends_that_loop_only(tmp_path: Path) -> None:
-    configuration = _load(
-        tmp_path,
-        "      - slices: Split.\n        children:\n          steps:\n"
-        "            - implement:\n                workflow: child\n"
-        "            - name: review\n              loop:\n"
-        "                - check: Check it.\n                  break: It is good.\n"
-        "                - fix: Fix it.\n",
-    )
-    plan = compile_workflow_plan(configuration, tmp_path, "parent", "codex")
-
-    check = next(item for item in plan.items if item.name == "check")
-    assert check.loop_id == "slices/{child}/review"
-    assert not check.breaks_children
-    boundaries = [item for item in plan.items if item.kind == "loop"]
-    assert all(item.item_template and item.child_stage for item in boundaries)
 
 
 def test_per_child_stages_read_the_childs_extension_values(tmp_path: Path) -> None:
@@ -197,8 +178,8 @@ def test_a_per_child_stage_can_land_the_child_with_merge_branch(
         (
             "      - slices: Split.\n        children:\n          steps:\n"
             "            - implement:\n                workflow: child\n"
-            "            - again: Again.\n              continue: Once more.\n",
-            "uses continue outside a loop",
+            "            - name: again\n              loop: []\n",
+            "removed",
         ),
         (
             "      - slices: Split.\n        children:\n          steps:\n"
@@ -233,29 +214,6 @@ def test_a_children_step_cannot_repeat_per_item(tmp_path: Path) -> None:
             "            - split: Split.\n              children:\n"
             "                workflow: child\n",
         )
-
-
-def test_children_steps_cannot_sit_inside_a_loop(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="runs children.steps of 'slices'"):
-        _load(
-            tmp_path,
-            "      - name: rounds\n        loop:\n"
-            "          - slices: Split.\n            children:\n              steps:\n"
-            "                - implement:\n                    workflow: child\n"
-            "          - check: Check.\n            break: Done.\n",
-        )
-
-
-def test_the_simple_children_form_still_works_inside_a_loop(tmp_path: Path) -> None:
-    configuration = _load(
-        tmp_path,
-        "      - name: rounds\n        loop:\n"
-        "          - slices: Split.\n            children:\n"
-        "              workflow: child\n"
-        "          - check: Check.\n            break: Done.\n",
-    )
-
-    compile_workflow_plan(configuration, tmp_path, "parent", "codex")
 
 
 def test_a_stage_before_the_run_cannot_read_child_extension_values(

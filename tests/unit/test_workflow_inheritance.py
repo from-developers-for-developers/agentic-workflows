@@ -91,8 +91,8 @@ def test_explicit_visibility_inherits_through_workflows_and_structures(
           - private: Keep default visibility.
             explicit: false
       - repeat: ~
-        loop:
-          - repeated: Inherit from loop.
+        steps:
+          - repeated: Inherit from group.
       - collect: Collect items.
         items:
           steps:
@@ -111,7 +111,7 @@ def test_explicit_visibility_inherits_through_workflows_and_structures(
     group, repeat, collect = base.steps
     assert group.explicit is True
     assert [step.explicit for step in group.child_steps] == [True, False]
-    assert repeat.loop_steps[0].explicit is True
+    assert repeat.child_steps[0].explicit is True
     assert collect.items is not None
     assert collect.items.steps[0].explicit is False
 

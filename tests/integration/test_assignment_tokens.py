@@ -114,7 +114,7 @@ def test_a_worker_whose_assignment_ended_cannot_act_on_the_next_one(
     for call in (
         lambda: service.instruction(TASK, caller_role="worker", assignment=old),
         lambda: _complete(service, old),
-        lambda: service.loop(
+        lambda: service.complete(
             TASK, artifact="Done.", caller_role="worker", assignment=old
         ),
     ):
@@ -142,7 +142,7 @@ def test_the_managers_step_has_a_token_no_worker_holds(tmp_path: Path) -> None:
     with pytest.raises(StateError, match="this step is the manager's"):
         _complete(service, review.assignment_token)
     with pytest.raises(StateError, match="this step is the manager's"):
-        service.loop(
+        service.complete(
             TASK,
             artifact="Done.",
             caller_role="worker",

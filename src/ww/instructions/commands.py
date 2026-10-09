@@ -280,21 +280,18 @@ def complete_command(
     selected_agent: str | None = None,
     selected_model: str | None = None,
     selected_reasoning: str | None = None,
-    loop_control: str | None = None,
     role: CallerRole = "worker",
     summary: bool = False,
     rule_results: tuple[str, ...] = (),
     assignment: str | None = None,
 ) -> str:
-    """The command that submits a step or breaks/continues its loop.
+    """The command that submits a step.
 
     ``role`` is the manager only when the pending input belongs to an
     input-only assignment that the manager supplies itself. A verification
     item reports one ``--rule-result`` per rule ID in ``rule_results``.
     """
-    parts = ["loop" if loop_control else "complete", _arg(task_id)]
-    if loop_control:
-        parts.append(f"--{loop_control}")
+    parts = ["complete", _arg(task_id)]
     parts.extend(_worker(role, assignment))
     parts.extend(f'--variable {value.name}="<{value.name}>"' for value in values)
     parts.extend(f'--metadata {value.name}="<{value.name}>"' for value in metadata)
@@ -346,7 +343,7 @@ def interact_commands(
 
 
 def force_command(task_id: str) -> RecoveryCommand:
-    """The operator's force: skip a failed item, or leave a loop at its limit."""
+    """The operator's force: skip a failed or interrupted item."""
     return RecoveryCommand("force", next_command(task_id, force_reason='"<reason>"'))
 
 

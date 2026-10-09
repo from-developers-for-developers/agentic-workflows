@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-09
+
+- Remove workflow loops and their command/settings; old run schemas are refused without migration.
+
 `main` is the branch users run, so everything recorded here is live the moment
 it lands — there is no staging period and nothing is waiting to ship. Sections
 are dated by the day `main` changed, newest first, because there are no version

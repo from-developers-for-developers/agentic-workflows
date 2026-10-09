@@ -3,7 +3,7 @@
 
 The golden pages pin the exact text; this list pins what may never be cut
 when that text is shortened: the command that records the work, what it must
-carry, the checks, the loop and interaction commands, ww's handoff block, the
+carry, the checks, the interaction commands, ww's handoff block, the
 subagent ban, and the operator's stop.
 """
 
@@ -51,20 +51,6 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
             "run no further `ww` command",
             f"```text\nHandoff to manager · assignment {TOKEN}",
             "Manager: continue with `./ww next TASK-1 --role manager`",
-        ),
-    },
-    "loop-body": {
-        "completion command": (COMPLETE, ARTIFACT, SUMMARY),
-        "break": (
-            "Break condition: There are no meaningful findings.",
-            "./ww loop TASK-1 --break --role worker",
-        ),
-    },
-    "loop-continue": {
-        "completion command": (COMPLETE, ARTIFACT, SUMMARY),
-        "continue": (
-            "Continue condition: Findings remain for another round.",
-            "./ww loop TASK-1 --continue --role worker",
         ),
     },
     "item-stage": {

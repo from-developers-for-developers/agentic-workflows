@@ -234,7 +234,7 @@ workflows:
           operator wants to be involved: for a solo team shape, no interactive
           review by default but an agent self-review step, and for a small
           team or a team, the operator keeping the review in an interactive
-          step by default, an agent review loop being the alternative; (7) for each workflow whose work is not
+          step by default, an agent review-and-fix assignment being the alternative; (7) for each workflow whose work is not
           a plain code change, such as manual testing, which step features it
           needs and why, as the features guide's "Designing a workflow"
           section says; (8) what the process answers turn into modes, such as brief
@@ -296,7 +296,7 @@ workflows:
               features`, "Designing a workflow") and write exact syntax by the
               specification (`{{ww.executable}} docs specification`): they say
               where a command belongs (an ordinary step, a reusable handler or
-              a hook), when items, assessments, loops and modes are warranted,
+              a hook), when items, assessments and modes are warranted,
               and how ww/git lifecycle handlers attach to lanes; nothing
               pushes. Give each lane a workflow: investigate, implement or
               fix, and the review chosen in design; `inherit` for a lane that

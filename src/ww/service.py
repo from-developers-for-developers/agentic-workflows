@@ -31,7 +31,7 @@ from ww.bootstrap import BootstrapCoordinator
 from ww.builtin_workflows import missing_lane, require_lane
 from ww.changes import can_diff, take_mark
 from ww.child_coordination import ChildCoordinator
-from ww.children import ChildTask, skip_pending
+from ww.children import ChildTask
 from ww.completion_artifacts import rule_outcomes, write_completion_artifacts
 from ww.completion_inputs import (
     group_metadata_values,
@@ -45,7 +45,7 @@ from ww.contracts import (
     CallerRole,
     run_is_open,
 )
-from ww.control import child_workflow, loop_control, workflow_transition
+from ww.control import child_workflow, workflow_transition
 from ww.defaults import (
     AGENT_INSTRUCTIONS,
     DEFAULT_PROJECT_CONFIG_JSON,
@@ -165,7 +165,6 @@ from ww.task_ids import (
     validate_task_id,
 )
 from ww.transitions import (
-    active_loop,
     advance_completed_item,
     append_child_lifecycle,
     await_item_input,
@@ -175,25 +174,15 @@ from ww.transitions import (
     complete_agent_item,
     complete_run,
     dispute_checks,
-    enclosing_loop_entry_index,
-    end_loop,
-    enter_loop,
-    exit_exhausted_loop,
     fail_agent_item,
     fail_child_workflow,
-    finish_loop_continue,
-    finish_loop_exit,
     finish_selection,
     fix_limits,
-    loop_limit_reached,
     materialize_child_plan,
     materialize_item_plan,
     pause_for_agent,
     project_steps,
     reject_completion,
-    repeat_loop,
-    request_loop_continue,
-    request_loop_exit,
     retry_failed_item,
     select_assessment_outcome,
     settle_stale_automatic_item,
@@ -307,9 +296,7 @@ class OpenAssignment:
     active: str | None = None
 
 
-FORCE_NOT_APPLICABLE = (
-    "cannot force a task that is not failed or interrupted and is not in a loop"
-)
+FORCE_NOT_APPLICABLE = "cannot force a task that is not failed or interrupted"
 # Forcing would skip the step after the pass, not the pass's missing records.
 FORCE_PAST_PASS_GATE = (
     "an items pass gate cannot be forced: record what each item lacks with "
@@ -1335,12 +1322,7 @@ class WorkflowService:
                 state = retry_failed_item(state, snapshot.plan, _now)
                 self.commit(state, snapshot)
         elif force:
-            if self._at_loop_limit(state, snapshot):
-                state = exit_exhausted_loop(state, snapshot.plan, _now, force_reason)
-            else:
-                self._loop_to_end(state, snapshot)
-                state = end_loop(state, snapshot.plan, _now, force_reason)
-            self.commit(state, snapshot)
+            raise StateError(FORCE_NOT_APPLICABLE)
         if state.status == "awaiting_input":
             return self.render(state, snapshot)
         if needs_repair(state):
@@ -1372,62 +1354,32 @@ class WorkflowService:
                 f"{task_id}` shows its page, `complete` finishes it, `next "
                 f"{task_id} --reassign` dispatches it again"
             )
-        # One manager call carries through every coordinator boundary it
-        # meets, so preparation hooks before a loop, or a loop nested in
-        # another, never cost the manager a second `next` before the first
-        # worker step can start.  Each pass enters or repeats at most one
-        # boundary, so the plan length bounds the passes.
-        for _ in range(len(snapshot.plan.items) + 1):
-            if state.cursor < len(snapshot.plan.items):
-                boundary = snapshot.plan.items[state.cursor]
-                loop = loop_control(boundary)
-                if loop is not None:
-                    if loop_limit_reached(state, boundary):
-                        # The escalation instruction names the operator's
-                        # exit, ``next --force``; nothing else may start
-                        # another round.
-                        return self.render(state, snapshot)
-                    state = (
-                        enter_loop(state, snapshot.plan, boundary, _now)
-                        if loop.boundary == "enter"
-                        else repeat_loop(state, snapshot.plan, boundary, _now)
-                    )
-                    self.commit(state, snapshot)
-            if caller_role == "manager" and state.assignment_item_id is None:
-                state = self._begin_assignment(
-                    state,
-                    snapshot,
-                    model=model,
-                    reasoning=reasoning,
-                    selected_agent=selected_agent,
-                )
-            state, snapshot = self.drain(
+        if caller_role == "manager" and state.assignment_item_id is None:
+            state = self._begin_assignment(
                 state,
                 snapshot,
-                state.assignment_item_id if caller_role == "manager" else None,
+                model=model,
+                reasoning=reasoning,
+                selected_agent=selected_agent,
             )
-            if caller_role == "manager" and (
-                state.execution_instance_id != starting_instance
-                or state.assignment_item_id is not None
-            ):
-                state, snapshot = self._activate_or_handoff(state, snapshot)
-                if self._stopped_at_loop_boundary(state, snapshot):
-                    continue
-                return self.render(state, snapshot)
-            if state.status in {"completed", "awaiting_input", "failed"}:
-                return self.render(state, snapshot)
-            if (
-                state.active_item_id
-                and child_workflow(snapshot.plan.items[state.cursor]) is not None
-            ):
-                return self.render(state, snapshot)
-            if loop_control(snapshot.plan.items[state.cursor]) is not None:
-                if self._stopped_at_loop_boundary(state, snapshot):
-                    continue
-                return self.render(state, snapshot)
-            break
-        else:  # pragma: no cover - every pass consumes a boundary
-            raise StateError("next did not reach an agent item")
+        state, snapshot = self.drain(
+            state,
+            snapshot,
+            state.assignment_item_id if caller_role == "manager" else None,
+        )
+        if caller_role == "manager" and (
+            state.execution_instance_id != starting_instance
+            or state.assignment_item_id is not None
+        ):
+            state, snapshot = self._activate_or_handoff(state, snapshot)
+            return self.render(state, snapshot)
+        if state.status in {"completed", "awaiting_input", "failed"}:
+            return self.render(state, snapshot)
+        if (
+            state.active_item_id
+            and child_workflow(snapshot.plan.items[state.cursor]) is not None
+        ):
+            return self.render(state, snapshot)
         if needs_repair(state):
             return self._dispatch_repair(
                 state, snapshot, model, reasoning, selected_agent
@@ -1505,54 +1457,7 @@ class WorkflowService:
                 f"skip the {state.status} item `{items[state.cursor].name}` "
                 "without running it"
             )
-        if self._at_loop_limit(state, snapshot):
-            loop = loop_control(items[state.cursor])
-            assert loop is not None
-            return (
-                f"leave the `{loop.loop_id}` loop at its limit of {loop.max_times} "
-                "iterations and continue with the steps after it"
-            )
-        loop_id = self._loop_to_end(state, snapshot)
-        return f"end the `{loop_id}` loop now and continue with the steps after it"
-
-    @staticmethod
-    def _loop_to_end(state: ExecutionState, snapshot: PlanSnapshot) -> str:
-        """The loop ``next --force`` ends from here, or why it cannot.
-
-        The operator ends a loop between items: a worker still holding one
-        of its items keeps it, and the operator takes it away first.
-        """
-        active = active_loop(state, snapshot.plan)
-        if active is None:
-            raise StateError(FORCE_NOT_APPLICABLE)
-        if state.active_item_id is not None:
-            item = snapshot.plan.items[state.cursor]
-            raise StateError(
-                f"`{item.name}` is in progress with a worker: end the loop after "
-                f"`next {state.task_id} --reassign` dispatches it again or `fail "
-                f"{state.task_id}` records it as failed"
-            )
-        return active[0]
-
-    @staticmethod
-    def _stopped_at_loop_boundary(
-        state: ExecutionState, snapshot: PlanSnapshot
-    ) -> bool:
-        """Whether ``next`` idles on a loop boundary it may still pass now."""
-        return (
-            state.status == "pending"
-            and state.active_item_id is None
-            and state.assignment_item_id is None
-            and state.cursor < len(snapshot.plan.items)
-            and loop_control(snapshot.plan.items[state.cursor]) is not None
-            and not loop_limit_reached(state, snapshot.plan.items[state.cursor])
-        )
-
-    @staticmethod
-    def _at_loop_limit(state: ExecutionState, snapshot: PlanSnapshot) -> bool:
-        return state.cursor < len(snapshot.plan.items) and loop_limit_reached(
-            state, snapshot.plan.items[state.cursor]
-        )
+        raise StateError(FORCE_NOT_APPLICABLE)
 
     def mark_interrupted(
         self, state: ExecutionState, snapshot: PlanSnapshot
@@ -1751,61 +1656,6 @@ class WorkflowService:
         validate_task_id(task_id)
         return self.interactions.read(task_id)
 
-    def loop(
-        self,
-        task_id: str,
-        variables: tuple[tuple[str, str], ...] = (),
-        artifact: str | None = None,
-        metadata_values: tuple[tuple[str, str], ...] = (),
-        selected_agent: str | None = None,
-        selected_model: str | None = None,
-        selected_reasoning: str | None = None,
-        continue_loop: bool = False,
-        *,
-        summary_for_next: str | None = None,
-        adjustments: str | None = None,
-        caller_role: CallerRole | None = None,
-        assignment: str | None = None,
-    ) -> Instruction:
-        """Complete a loop-control worker step."""
-        self._validate_caller_role(caller_role)
-        self._validate_selected_agent(selected_agent)
-        for name, value in (
-            ("selected model", selected_model),
-            ("selected reasoning", selected_reasoning),
-        ):
-            if value is not None and not value.strip():
-                raise StateError(f"{name} must be non-empty")
-        validate_task_id(task_id)
-        with self.tasks.lock_task(task_id):
-            self._authorize_worker(task_id, caller_role, assignment)
-            self._check_performer(task_id, caller_role, loop=True)
-            opened = self._open_assignment(task_id, caller_role)
-            instruction = self._complete(
-                task_id,
-                variables,
-                artifact,
-                metadata_values,
-                selected_agent=selected_agent,
-                selected_model=selected_model,
-                selected_reasoning=selected_reasoning,
-                summary_for_next=summary_for_next,
-                adjustments=adjustments,
-                caller_role=caller_role,
-                stopping_loop=not continue_loop,
-                continuing_loop=continue_loop,
-            )
-            instruction = self._with_handoff(
-                task_id,
-                self._open_next_in_single(task_id, instruction),
-                opened,
-                loop="continue" if continue_loop else "break",
-            )
-        return replace(
-            self._tag_caller(instruction, caller_role),
-            completion_registered=True,
-        )
-
     def _fail(self, task_id: str, error: str) -> Instruction:
         state, snapshot = self.load(task_id)
         if not state.active_item_id or state.cursor >= len(snapshot.plan.items):
@@ -1955,8 +1805,6 @@ class WorkflowService:
         summary_for_next: str | None = None,
         adjustments: str | None = None,
         caller_role: CallerRole | None = None,
-        stopping_loop: bool = False,
-        continuing_loop: bool = False,
         initialization: bool = False,
         drain_stop: int | None = None,
         rule_results: tuple[str, ...] = (),
@@ -1974,14 +1822,7 @@ class WorkflowService:
         if state.status == "failed":
             return self.render(state, snapshot)
         if needs_repair(state):
-            if (
-                variables
-                or metadata_values
-                or rule_results
-                or adjustments
-                or stopping_loop
-                or continuing_loop
-            ):
+            if variables or metadata_values or rule_results or adjustments:
                 raise StateError(
                     "repair completion accepts only an artifact and summary"
                 )
@@ -2010,16 +1851,6 @@ class WorkflowService:
         item = snapshot.plan.items[state.cursor]
         if item.id != state.active_item_id or item.owner != "agent":
             raise StateError("active plan item does not match the execution cursor")
-        if stopping_loop and item.loop_break is None:
-            raise StateError("active step is not permitted to break a loop")
-        if continuing_loop and item.loop_continue is None:
-            raise StateError("active step is not permitted to continue a loop")
-        # A break that ends per-child stages has no loop wrapper.
-        loop_entry = (
-            snapshot.plan.items[enclosing_loop_entry_index(snapshot.plan, state.cursor)]
-            if (stopping_loop and not item.breaks_children) or continuing_loop
-            else None
-        )
         assignment = active_assignment(
             snapshot.plan, state.assignment_item_id, runtime=state.workflow_runtime
         )
@@ -2046,7 +1877,7 @@ class WorkflowService:
             and item.artifact
             and item.item_operation is None
             and item.child_operation is None
-        ) or bool(loop_entry is not None and loop_entry.artifact)
+        )
         if artifact_required and (artifact is None or not artifact.strip()):
             raise StateError(
                 f"artifact is required to complete {item.name!r}; "
@@ -2152,13 +1983,6 @@ class WorkflowService:
                     selected_reasoning=selected_reasoning,
                     summary_for_next=summary_for_next,
                     adjustments=adjustments,
-                    loop_control=(
-                        "break"
-                        if stopping_loop
-                        else "continue"
-                        if continuing_loop
-                        else None
-                    ),
                 ),
             )
             if held_page is not None:
@@ -2170,13 +1994,12 @@ class WorkflowService:
         self._count_rules(
             task_id, item, state.item_executions[state.cursor], check_report
         )
-        artifact_reference, wrapper_artifact_reference = write_completion_artifacts(
+        artifact_reference = write_completion_artifacts(
             self.tasks,
             task_id,
             state,
             snapshot,
             item,
-            loop_entry,
             artifact,
             rules=rule_outcomes(state, item, check_report),
         )
@@ -2215,17 +2038,7 @@ class WorkflowService:
             pending_task_metadata=(updated_metadata.values if updated_metadata else ()),
             pending_project_metadata=project_publication,
         )
-        if stopping_loop:
-            state = request_loop_exit(
-                state,
-                snapshot.plan,
-                item,
-                wrapper_artifact_reference,
-                _now,
-            )
-        elif continuing_loop:
-            state = request_loop_continue(state, snapshot.plan, item, _now)
-        elif item.item_operation == "collect":
+        if item.item_operation == "collect":
             state, snapshot = materialize_item_plan(
                 state,
                 snapshot,
@@ -2407,8 +2220,6 @@ class WorkflowService:
                 instruction,
                 manager_only=True,
                 continuation_command=None,
-                loop_break_command=None,
-                loop_continue_command=None,
                 interact_commands=None,
             )
         return replace(self._tag_caller(instruction, caller_role), manager_intro=True)
@@ -3603,30 +3414,6 @@ class WorkflowService:
         while state.cursor < len(plan.items):
             if stop_at is not None and state.cursor >= stop_at:
                 return state, snapshot
-            prior = state
-            state = finish_loop_continue(state, plan, _now)
-            if state is not prior:
-                self.commit(state, snapshot)
-                if assignment_item_id is not None and state.assignment_item_id is None:
-                    # The continue reset the round, which ended the assignment
-                    # being drained: the next round is a new assignment.
-                    return state, snapshot
-            exiting_children = _exiting_children(state, plan)
-            state = finish_loop_exit(state, plan, _now)
-            if state is not prior:
-                self.commit(
-                    state,
-                    snapshot,
-                    children=(
-                        skip_pending(
-                            self.tasks.read_children(state.task_id, state.run_id)
-                        )
-                        if exiting_children and state.loop_exit_item_id is None
-                        else None
-                    ),
-                )
-            if state.cursor >= len(plan.items):
-                break
             assignment = active_assignment(
                 plan, assignment_item_id, runtime=state.workflow_runtime
             )
@@ -3652,8 +3439,6 @@ class WorkflowService:
                 continue
             if workflow_transition(item) is not None:
                 return self._handoff(state, snapshot, item)
-            if loop_control(item) is not None:
-                return state, snapshot
             if (
                 item.name == INIT_STEP_NAME
                 and item.step == INIT_STEP_NAME
@@ -3673,7 +3458,6 @@ class WorkflowService:
                 return self._complete_initialization_item(state, snapshot, stop_at)
             if item.verifies is not None and not record.verification:
                 # No round asks this verifier anything, for example after a
-                # loop reset its record.
                 state = skip_idle_verification(state, _now)
                 self.commit(state, snapshot)
                 continue
@@ -4009,7 +3793,6 @@ class WorkflowService:
             or state.status == "completed"
             or assignment is None
             or state.cursor >= assignment.stop
-            # A loop continue reset the round and ended the assignment.
             or state.assignment_item_id is None
         ):
             # Records an assessment skipped sit right after the assignment's
@@ -4271,8 +4054,8 @@ class WorkflowService:
         index = index_of(plan, target.item_id)
         step = plan.items[index]
         results = parse_rule_results(rule_results, record.verification)
-        artifact_reference, _ = write_completion_artifacts(
-            self.tasks, state.task_id, state, snapshot, item, None, artifact
+        artifact_reference = write_completion_artifacts(
+            self.tasks, state.task_id, state, snapshot, item, artifact
         )
         state = complete_agent_item(state, plan, {}, artifact_reference, _now)
         verdicts = verdicts_of(results, item.id)
@@ -4354,8 +4137,6 @@ class WorkflowService:
             summary_for_next=held.summary_for_next,
             adjustments=held.adjustments,
             caller_role=caller_role,
-            stopping_loop=held.loop_control == "break",
-            continuing_loop=held.loop_control == "continue",
             replayed=True,
         )
 
@@ -4497,14 +4278,12 @@ class WorkflowService:
                 "ww command."
             )
 
-    def _check_performer(
-        self, task_id: str, caller_role: CallerRole | None, *, loop: bool = False
-    ) -> None:
+    def _check_performer(self, task_id: str, caller_role: CallerRole | None) -> None:
         """Refuse a completion by the role that does not perform the open step.
 
         In ``auto`` the manager performs its own steps (``role: manager``, and
         interactive ones), so a worker never completes one. The manager keeps
-        every override on the other steps; ``loop`` stays a worker command
+        every override on the other steps;
         there, as the pages give it only to the step's worker.
         """
         state, snapshot = self.load(task_id)
@@ -4527,8 +4306,6 @@ class WorkflowService:
                 "manager in its own session, so a worker cannot complete it. "
                 "Stop here and return to your manager; run no further ww command."
             )
-        if loop and caller_role == "manager" and not managers:
-            raise StateError("loop --break/--continue is a worker-role command")
 
     def _open_assignment(
         self, task_id: str, caller_role: CallerRole | None
@@ -4585,18 +4362,12 @@ class WorkflowService:
         task_id: str,
         instruction: Instruction,
         opened: OpenAssignment | None,
-        *,
-        loop: str | None = None,
     ) -> Instruction:
-        """Add ww's handoff block when the worker's command ended its turn.
-
-        A ``continue`` resets the round's records into the history, so the
-        items of the ended round are read from there.
-        """
+        """Add ww's handoff block when the worker's command ended its turn."""
         if opened is None or instruction.next_role not in {"manager", "operator"}:
             return instruction
         state, snapshot = self.load(task_id)
-        block, end_mark = self._handoff_block(state, snapshot, opened, loop=loop)
+        block, end_mark = self._handoff_block(state, snapshot, opened)
         if end_mark is not None:
             # Kept so a reprint can reproduce the change set without taking a
             # new mark of a tree that has moved on.
@@ -4616,7 +4387,6 @@ class WorkflowService:
         snapshot: PlanSnapshot,
         ended: OpenAssignment,
         *,
-        loop: str | None = None,
         reprint: bool = False,
     ) -> tuple[HandoffBlock, str | None]:
         """The handoff block of one ended assignment, and its end mark.
@@ -4624,26 +4394,12 @@ class WorkflowService:
         The end mark is the change mark taken when the block was first built
         (None on a reprint or when the assignment had no marked item).
 
-        ``ended`` names its token and agent items. At the moment a worker's
-        command ends the assignment, a ``continue`` has reset the round's
-        records into the history, so the items of the ended round are read
-        from there. A ``reprint`` is built later: an item whose record has
-        been reset since is read from the history, and the loop outcome,
-        which was known only then, is not reproduced, and the change set is
-        reproduced only from the end mark stored with the assignment.
+        ``ended`` names its token and agent items. Reprints use the
+        recorded end mark to reproduce the change set.
         """
         task_id = state.task_id
         items = {item.id: item for item in snapshot.plan.items}
         current = {record.plan_item_id: record for record in state.item_executions}
-        if loop == "continue":
-            for record in state.execution_history:
-                current[record.plan_item_id] = record
-        elif reprint:
-            # The latest record that attempted the item stands, as it does
-            # for a live ``continue``.
-            for record in reversed(state.execution_history):
-                if not current.get(record.plan_item_id, record).attempts:
-                    current[record.plan_item_id] = record
         performed = tuple(
             (items[item_id], current[item_id])
             for item_id in ended.items
@@ -4683,7 +4439,6 @@ class WorkflowService:
             error=(
                 state.last_error if state.status in {"failed", "interrupted"} else None
             ),
-            loop_outcome=((ended.active, loop) if loop and ended.active else None),
             continuation_task_id=continuation,
             run_completed=(
                 self._run_completed(continuation)
@@ -5067,14 +4822,6 @@ def _child_fields(fields: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str],
         return validate_item_fields(dict(fields))
     except ValueError as error:
         raise StateError(str(error).replace("item field", "child field")) from error
-
-
-def _exiting_children(state: ExecutionState, plan: WorkflowPlan) -> bool:
-    """Whether a pending break ends the per-child stages."""
-    stopped = next(
-        (item for item in plan.items if item.id == state.loop_exit_item_id), None
-    )
-    return stopped is not None and stopped.breaks_children
 
 
 def _index_for_id(plan: WorkflowPlan, item_id: str) -> int:

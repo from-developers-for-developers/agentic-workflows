@@ -488,7 +488,7 @@ def test_a_file_cannot_be_imported_by_two_levels(user: Path, repo: Path) -> None
 def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
     _write(
         user / "ww.json",
-        '{"limits": {"rounds": 5}, "extensions": {"ww/git": '
+        '{"limits": {"fixes": 5}, "extensions": {"ww/git": '
         '{"worktrees": true, "base_branches": {"default": "main"}}}, '
         '"projects": [{"name": "a", "path": "./a"}]}',
     )
@@ -504,7 +504,7 @@ def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
     raw, sources = compose_settings(repo_file)
 
     assert raw == {
-        "limits": {"rounds": 5, "fixes": 2},
+        "limits": {"fixes": 2},
         "extensions": {
             "ww/git": {"worktrees": False, "base_branches": {"default": "main"}}
         },
@@ -516,21 +516,21 @@ def test_settings_deep_merge_across_levels(user: Path, repo: Path) -> None:
         repo / "ww.local.json",
     )
     settings = load_project_config(repo_file)
-    assert settings.limits == Limits(rounds=5, fixes=2)
+    assert settings.limits == Limits(fixes=2)
     assert [project.name for project in settings.projects] == ["b"]
 
 
 def test_settings_apply_from_the_user_level_without_a_repo_file(
     user: Path, repo: Path
 ) -> None:
-    _write(user / "ww.json", '{"limits": {"rounds": 7}}')
+    _write(user / "ww.json", '{"limits": {"fixes": 7}}')
 
     settings = load_project_config(repo / "ww.json")
-    assert settings.limits.rounds == 7
+    assert settings.limits.fixes == 7
 
 
 def test_settings_errors_name_the_files_read(user: Path, repo: Path) -> None:
-    _write(user / "ww.json", '{"limits": {"rounds": 0}}')
+    _write(user / "ww.json", '{"limits": {"fixes": 0}}')
     repo_file = _write(repo / "ww.json", "{}")
 
     with pytest.raises(ConfigurationError) as error:
@@ -538,7 +538,7 @@ def test_settings_errors_name_the_files_read(user: Path, repo: Path) -> None:
 
     message = str(error.value)
     assert "ww.json + " in message
-    assert "limits.rounds must be a positive integer" in message
+    assert "limits.fixes must be a positive integer" in message
 
 
 def test_an_invalid_settings_level_is_reported_by_path(user: Path, repo: Path) -> None:

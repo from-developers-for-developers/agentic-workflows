@@ -120,9 +120,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _documents(lines, instruction)
         _run_handovers(lines, instruction)
         _input_context(lines, instruction)
-        _loop_limit_recovery(lines, instruction)
         _next_steps(lines, instruction)
-        _loop_outcome(lines, instruction)
         _previous_artifacts(lines, instruction)
         _error(lines, instruction)
         _failure(lines, instruction)
@@ -534,7 +532,6 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "work_failed": "the step's work failed",
     "child_failed": "a child task failed",
     "handler_interrupted": "an automatic handler was interrupted",
-    "loop_limit": "the loop reached its iteration limit",
     "fix_limit": "the step's checks reached their fix limit",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
@@ -651,7 +648,7 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
         if len(items) > 1:
             covered = _item_list(items, _strings(preview.get("automatic_items")))
             lines.extend(["", f"The assignment covers, in order: {covered}."])
-        scope = preview.get("item_scope") or preview.get("loop_scope")
+        scope = preview.get("item_scope")
         if isinstance(scope, dict):
             lines.extend(["", f"Scope: {_scope_summary(scope)}"])
     else:
@@ -663,11 +660,6 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
 
 def _scope_summary(scope: dict[str, object]) -> str:
     stages = ", ".join(f"`{name}`" for name in _strings(scope["stages"]))
-    if "loop_assignment" in scope:
-        return (
-            f"one worker performs these steps ({stages}) of one round of the "
-            f"`{scope['loop']}` loop."
-        )
     item_ids = _strings(scope["item_ids"])
     if scope["item_assignment"] == "together":
         return (
@@ -685,7 +677,7 @@ def _assignment_scope(lines: Lines, instruction: Instruction) -> None:
     if scope is None or audience(instruction) is not Audience.WORKER:
         return
     _append_section(lines, "Assignment scope")
-    unit = "step" if "loop_assignment" in scope else "stage"
+    unit = "stage"
     lines.extend(
         [
             f"In this assignment, {_scope_summary(scope)}",
@@ -725,7 +717,7 @@ def _continues_assignment(instruction: Instruction) -> bool:
 def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
     """The compact instruction for a later stage of the same assignment.
 
-    The worker already holds the role, workspace, profile, and item or loop
+    The worker already holds the role, workspace, profile, and item
     context, so only the new stage's work and its completion command are
     repeated.
     """
@@ -742,7 +734,6 @@ def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
     _modes(lines, instruction)
     _rules(lines, instruction)
     _documents(lines, instruction)
-    _loop_outcome(lines, instruction)
     _continuation(lines, instruction)
     return lines
 
@@ -877,7 +868,7 @@ def _work(lines: Lines, instruction: Instruction) -> None:
         return
     _append_section(
         lines,
-        "Loop limit reached" if instruction.loop_limit_reached else "Work instruction",
+        "Work instruction",
     )
     if instruction.ui and instruction.item_status == "in_progress":
         lines.extend(
@@ -892,7 +883,6 @@ def _work(lines: Lines, instruction: Instruction) -> None:
     lines.append(instruction.action_text)
     if not instruction.subagents and instruction.item_status == "in_progress":
         lines.extend(["", f"> **No subagents.** {NO_SUBAGENTS}"])
-    _loop_round(lines, instruction)
     _assessment_answers(lines, instruction)
 
 
@@ -1268,40 +1258,6 @@ def _assessment_answers(lines: Lines, instruction: Instruction) -> None:
     )
 
 
-def _loop_round(lines: Lines, instruction: Instruction) -> None:
-    """Tell a loop body step which round it is in and what that round covers."""
-    if (
-        instruction.loop_name is None
-        or instruction.loop_iteration is None
-        or instruction.is_loop_control
-    ):
-        return
-    name = instruction.loop_name
-    if instruction.loop_iteration <= 1:
-        lines.extend(
-            [
-                "",
-                f"This is the first round of the `{name}` loop. It builds on the "
-                "work of the steps before the loop.",
-            ]
-        )
-        return
-    lines.extend(
-        [
-            "",
-            f"This is round {instruction.loop_iteration} of the `{name}` loop, "
-            f"limit {instruction.max_rounds}. Concentrate on the work done "
-            "in the previous rounds of this loop, not on the whole task. Their "
-            "results are the artifacts in the loop's earlier iteration "
-            "directories; list them with:",
-            "",
-            "```console",
-            artifacts_command(instruction.task_id, instruction.run_id),
-            "```",
-        ]
-    )
-
-
 def _item_fields(lines: Lines, instruction: Instruction) -> None:
     """Custom item fields: what this step must set, and the flow's rules."""
     if instruction.item_status != "in_progress":
@@ -1596,74 +1552,11 @@ def _input_context(lines: Lines, instruction: Instruction) -> None:
         lines.append(f"- `{handover.step}`: {text} (artifact: `{handover.artifact}`)")
 
 
-def _loop_limit_recovery(lines: Lines, instruction: Instruction) -> None:
-    """The operator's only way past a loop that reached its iteration limit."""
-    if not instruction.loop_limit_reached or not instruction.recovery_commands:
-        return
-    if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
-        return
-    _append_section(lines, "Operator recovery")
-    lines.append(
-        "Wait for the decision of the user, who is the `ww` operator. If they "
-        "resolve the remaining findings themselves, or accept them, run exactly "
-        "this to leave the loop and continue with the steps after it:"
-    )
-    for command in instruction.recovery_commands:
-        lines.extend(["", "```console", command.command, "```"])
-    lines.extend(
-        [
-            "",
-            "Do not run it without the operator's explicit approval. A further "
-            "iteration needs a higher `max_rounds` in the configuration.",
-        ]
-    )
-
-
 def _next_steps(lines: Lines, instruction: Instruction) -> None:
     if instruction.next_steps:
         _append_section(lines, "Next steps")
         lines.extend(["Leave to them the work they cover:", ""])
         lines.extend(f"- {step}" for step in instruction.next_steps)
-
-
-def _loop_outcome(lines: Lines, instruction: Instruction) -> None:
-    if instruction.loop_break_prompt and instruction.loop_break_command:
-        _append_section(
-            lines, "Children outcome" if instruction.breaks_children else "Loop outcome"
-        )
-        lines.extend(
-            [
-                f"Break condition: {instruction.loop_break_prompt}",
-                "",
-                (
-                    "Condition met — stop running children; the ones not started "
-                    "yet are skipped:"
-                    if instruction.breaks_children
-                    else "Condition met — break the loop:"
-                ),
-                "",
-                "```console",
-                instruction.loop_break_command,
-                "```",
-                "",
-                "Condition not met — use the worker completion command below.",
-            ]
-        )
-    if instruction.loop_continue_prompt and instruction.loop_continue_command:
-        _append_section(lines, "Loop control")
-        lines.extend(
-            [
-                f"Continue condition: {instruction.loop_continue_prompt}",
-                "",
-                "Condition met — continue from the beginning of the loop:",
-                "",
-                "```console",
-                instruction.loop_continue_command,
-                "```",
-                "",
-                "Condition not met — use the worker completion command below.",
-            ]
-        )
 
 
 def _previous_artifacts(lines: Lines, instruction: Instruction) -> None:
@@ -2281,8 +2174,6 @@ def _blockquote(value: str) -> Lines:
 
 
 def _role(instruction: Instruction) -> str:
-    if instruction.loop_limit_reached:
-        return "Manager"
     match audience(instruction):
         case Audience.SINGLE_SESSION:
             return "Manager and worker"
@@ -2327,10 +2218,6 @@ def _action_heading(instruction: Instruction) -> str:
         if reader is Audience.WORKER_RETURNING:
             return "return control to the manager"
         return f"choose the outcome of `{instruction.choosing_outcome_of}`"
-    if instruction.loop_limit_reached:
-        return f"escalate the `{name}` loop limit"
-    if instruction.is_loop_control:
-        return f"advance the `{name}` loop"
     if reader is Audience.MANAGER_DELEGATING:
         verb = "delegate" if instruction.role == "worker" else "perform"
         return f"{verb} the `{instruction.assignment_step or name}` assignment"
@@ -2406,32 +2293,6 @@ def _assignment_coverage(instruction: Instruction) -> Lines:
 
 def _role_instruction(instruction: Instruction) -> Lines:
     reader = audience(instruction)
-    if instruction.loop_limit_reached:
-        worker_caller = (
-            instruction.workflow_runtime == "auto"
-            and instruction.caller_role == "worker"
-        )
-        if worker_caller:
-            returned = (
-                _return_phrase(instruction)
-                if instruction.handoff_block is not None
-                else "Return this response and the saved iteration results to "
-                "the manager"
-            )
-            return [
-                "This loop has reached its configured limit. Do not start another "
-                f"iteration. {returned} for user escalation.",
-                "",
-            ]
-        return [
-            "Do not start another iteration. Report the saved loop results and "
-            "this warning to the user for manual resolution.",
-            "",
-        ]
-    if instruction.is_loop_control:
-        if reader is Audience.WORKER_RETURNING:
-            return _assignment_complete(instruction)
-        return [_RUN_MANAGER_COMMAND, ""]
     if instruction.manager_input:
         return [
             "This assignment only supplies values to an automatic handler. You "

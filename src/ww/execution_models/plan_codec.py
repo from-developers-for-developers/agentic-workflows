@@ -17,7 +17,6 @@ from ww.contracts import (
     ExecutionKind,
     ItemAssignment,
     ItemOperation,
-    LoopAssignment,
     PlanItemOwner,
     PlanItemPhase,
     StepRole,
@@ -228,8 +227,6 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             raw.get("item_collect_only", False), f"{item_path}.item_collect_only"
         ),
         item_assignment=_item_assignment(raw.get("item_assignment", "per_step")),
-        loop_id=expect_optional_string(raw.get("loop_id"), "loop ID"),
-        loop_assignment=_loop_assignment(raw.get("loop_assignment")),
         shared_items=expect_bool(
             raw.get("shared_items", False), f"{item_path}.shared_items"
         ),
@@ -252,8 +249,6 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         artifact_dependency=expect_optional_string(
             raw.get("artifact_dependency"), "artifact dependency"
         ),
-        loop_break=expect_optional_string(raw.get("loop_break"), "loop break"),
-        loop_continue=expect_optional_string(raw.get("loop_continue"), "loop continue"),
         assessment_question=expect_optional_string(
             raw.get("assessment_question"), "assessment question"
         ),
@@ -541,14 +536,6 @@ def _metadata_scope(value: Any) -> MetadataScope:
 
 def _plan_item_phase(value: Any) -> PlanItemPhase:
     return cast(PlanItemPhase, expect_literal(value, PlanItemPhase, "plan item phase"))
-
-
-def _loop_assignment(value: Any) -> LoopAssignment | None:
-    if value is None:
-        return None
-    return cast(
-        LoopAssignment, expect_literal(value, LoopAssignment, "loop assignment")
-    )
 
 
 def _item_assignment(value: Any) -> ItemAssignment:

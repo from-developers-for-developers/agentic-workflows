@@ -27,7 +27,7 @@ import json
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from ww.control import child_workflow, loop_control
+from ww.control import child_workflow
 from ww.execution_models import ExecutionState, PlanSnapshot
 from ww.execution_models.construction import (
     build_step_projection,
@@ -182,12 +182,6 @@ def replan(
         configuration_digest=change.configuration_digest,
         compiled_at=now(),
     )
-    kept_ids = {item.id for item in kept}
-    entries = {
-        loop.loop_id: index
-        for index, item in enumerate(old.items)
-        if (loop := loop_control(item)) is not None and loop.boundary == "enter"
-    }
     reaches_cursor = splice <= state.cursor
     state = replace(
         state,
@@ -197,14 +191,6 @@ def replan(
         snapshot_digest=change.configuration_digest,
         plan_revision=revision,
         plan_digest=revised.plan_digest,
-        # A loop entered at or after the change point starts counting anew.
-        loop_iterations=tuple(
-            (loop_id, count)
-            for loop_id, count in state.loop_iterations
-            if entries.get(loop_id, -1) < splice
-        ),
-        loop_exit_item_id=_kept(state.loop_exit_item_id, kept_ids),
-        loop_continue_item_id=_kept(state.loop_continue_item_id, kept_ids),
         updated_at=now(),
     )
     if reaches_cursor:

@@ -15,7 +15,7 @@ group, `ww-rules.yaml`, `ww.yaml` or
 1. **Learn what exists.** Run `./ww rules --json`: groups, their filters and
    directories' rules with IDs, summaries, globs, the project's
    `check_guidance` setting, and `targets`, every workflow's steps with the
-   `path` a `steps` filter names to reach exactly that step (loop bodies and
+   `path` a `steps` filter names to reach exactly that step (nested groups and
    per-item stages included) and whether the step is `agent_owned`; only
    such a step takes rules. Use only workflow names and step names or paths
    it shows; never invent one. Each rule's `stats` are the checkout's local

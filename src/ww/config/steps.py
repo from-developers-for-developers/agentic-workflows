@@ -12,7 +12,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
-from ww.contracts import ItemAssignment, ItemOperation, LoopAssignment, StepRole
+from ww.contracts import ItemAssignment, ItemOperation, StepRole
 from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
 from ww.operations import (
@@ -21,7 +21,6 @@ from ww.operations import (
     ChildWorkflowRun,
     WorkflowHandoff,
 )
-from ww.validation import is_positive_int
 from ww.workflow_config import (
     ChildFlow,
     ChoiceDefinition,
@@ -59,11 +58,6 @@ from .values import (
 STEP_ONLY_KEYS: set[str] = {
     "hooks",
     "steps",
-    "loop",
-    "max_rounds",
-    "assignment",
-    "break",
-    "continue",
     "role",
     "subagents",
     "interactive",
@@ -88,9 +82,9 @@ STEP_ONLY_KEYS: set[str] = {
 
 CHILD_FLOW_KEYS = {"description", "workflow", "steps", "assignment"}
 ITEM_FLOW_KEYS = {
+    "assignment",
     "description",
     "steps",
-    "assignment",
     "persistent",
     "analyze",
     "resolve",
@@ -127,7 +121,6 @@ ITEM_PHASES: dict[str, ItemOperation] = {
 }
 # ``interactive`` takes true (a conversation) or ``page`` (the operator page).
 INTERACTIVE_PAGE = "page"
-LOOP_ASSIGNMENTS: tuple[LoopAssignment, ...] = ("per_round", "per_step")
 CHILD_ASSIGNMENTS = ("per_step",)
 
 
@@ -146,7 +139,7 @@ def _parse_handlers(data: Any) -> tuple[HandlerDefinition, ...]:
         raw_mapping = _mapping(item, path)
         # Unlike an action-only handler, a reusable step may use its
         # named-entry value for the container definition itself:
-        # ``- review: {loop: [...]}``.
+        # ``- review: {steps: [...]}``.
         if "name" not in raw_mapping and raw_mapping:
             name, value = next(iter(raw_mapping.items()))
             if isinstance(value, dict):
@@ -195,7 +188,6 @@ _STEP_CONTENT_KEYS = frozenset(
         "saves",
         "handlers",
         "steps",
-        "loop",
         "items",
         "children",
         "explicit",
@@ -264,11 +256,6 @@ def _parse_step(
     children = _parse_nested_steps(mapping, "steps", path, handlers_by_name)
     if "steps" not in mapping and referenced is not None:
         children = referenced.child_steps
-    loop_steps, max_rounds, loop_assignment = _parse_loop(
-        mapping, path, handlers_by_name, referenced
-    )
-    loop_break, loop_continue = _parse_loop_controls(mapping, path, referenced)
-    _check_loop_wrapper(mapping, path, base, loop_steps)
     item_operation = _parse_item_phase(mapping, path)
     child_launch = _parse_child_launch(mapping, path)
     child_flow = _parse_child_flow(mapping, path, handlers_by_name, referenced)
@@ -305,17 +292,14 @@ def _parse_step(
         else None
     )
     containers = sum(
-        bool(value)
-        for value in (children, loop_steps, items is not None, child_flow is not None)
+        bool(value) for value in (children, items is not None, child_flow is not None)
     )
     if base.handlers and containers:
         raise ConfigurationError(
-            f"{path} cannot combine handlers with steps, loop, items, or children"
+            f"{path} cannot combine handlers with steps, items, or children"
         )
     if containers > 1:
-        raise ConfigurationError(
-            f"{path} cannot combine steps, loop, items, and children"
-        )
+        raise ConfigurationError(f"{path} cannot combine steps, items, and children")
     if items is not None and item_operation is not None:
         raise ConfigurationError(f"{path} cannot combine items with item_phase")
     if item_operation is None and referenced is not None:
@@ -350,11 +334,6 @@ def _parse_step(
         hooks=hooks,
         rules=rules,
         child_steps=children,
-        loop_steps=loop_steps,
-        max_rounds=max_rounds,
-        loop_assignment=loop_assignment,
-        loop_break=loop_break,
-        loop_continue=loop_continue,
         items=items,
         item_operation=item_operation,
         child_launch=child_launch,
@@ -415,6 +394,11 @@ def _step_mapping(
                 f"{path}.{label} is not a direct assessment branch; "
                 "use positive, negative, mixed, or outcomes"
             )
+    if "assignment" in mapping:
+        raise ConfigurationError(
+            f"{path}.assignment on a step was removed with workflow loops; "
+            "item and child assignment belongs inside items or children"
+        )
     _only(mapping, allowed, path)
     return mapping
 
@@ -459,7 +443,6 @@ def _parse_assessment(
             base.operation is not None,
             "handler" in mapping,
             "steps" in mapping,
-            "loop" in mapping,
         )
     ):
         raise ConfigurationError(
@@ -494,93 +477,6 @@ def _resolve_handler(
         ) from error
     base = _step_handler_reference(mapping, base, referenced)
     return base, referenced if isinstance(referenced, StepDefinition) else None
-
-
-def _parse_loop(
-    mapping: dict[str, Any],
-    path: str,
-    handlers_by_name: dict[str, HandlerDefinition],
-    referenced: StepDefinition | None,
-) -> tuple[tuple[StepDefinition, ...], int | None, LoopAssignment | None]:
-    """Parse ``loop`` with its ``max_rounds`` and ``assignment``."""
-    loop_steps = _parse_nested_steps(
-        mapping, "loop", path, handlers_by_name, require_nonempty=True
-    )
-    max_rounds: int | None = mapping.get("max_rounds")
-    if max_rounds is not None and (not is_positive_int(max_rounds)):
-        raise ConfigurationError(f"{path}.max_rounds must be a positive integer")
-    if "max_rounds" in mapping and not loop_steps:
-        raise ConfigurationError(f"{path}.max_rounds requires a loop")
-    assignment: LoopAssignment | None = None
-    if "assignment" in mapping:
-        if not loop_steps:
-            raise ConfigurationError(
-                f"{path}.assignment on a step goes beside a loop; for items or "
-                "children, write it inside that mapping"
-            )
-        assignment = cast(
-            LoopAssignment,
-            _assignment(mapping["assignment"], f"{path}.assignment", LOOP_ASSIGNMENTS),
-        )
-    if referenced is not None:
-        if "loop" not in mapping:
-            loop_steps = referenced.loop_steps
-        if "max_rounds" not in mapping:
-            max_rounds = referenced.max_rounds
-        if "assignment" not in mapping:
-            assignment = referenced.loop_assignment
-    return loop_steps, max_rounds, assignment
-
-
-def _parse_loop_controls(
-    mapping: dict[str, Any], path: str, referenced: StepDefinition | None
-) -> tuple[str | None, str | None]:
-    """Parse the loop's ``break`` and ``continue`` conditions."""
-    loop_break = mapping.get("break")
-    loop_continue = mapping.get("continue")
-    for control_name, control_value in (
-        ("break", loop_break),
-        ("continue", loop_continue),
-    ):
-        if control_value is not None and (
-            not isinstance(control_value, str) or not control_value.strip()
-        ):
-            raise ConfigurationError(
-                f"{path}.{control_name} must be a non-empty string"
-            )
-    if referenced is not None:
-        if "break" not in mapping:
-            loop_break = referenced.loop_break
-        if "continue" not in mapping:
-            loop_continue = referenced.loop_continue
-    return loop_break, loop_continue
-
-
-def _check_loop_wrapper(
-    mapping: dict[str, Any],
-    path: str,
-    base: HandlerDefinition,
-    loop_steps: tuple[StepDefinition, ...],
-) -> None:
-    """Reject a loop step that also acts or collects."""
-    if loop_steps and any(
-        (
-            base.action is not None,
-            base.operation is not None,
-            bool(base.provide),
-            bool(base.save_metadata),
-            bool(base.update_document),
-            bool(base.update_item),
-            bool(base.outputs),
-            "items" in mapping,
-            "item_phase" in mapping,
-            "children" in mapping,
-            "artifact_from" in mapping,
-        )
-    ):
-        raise ConfigurationError(
-            f"{path} loop wrapper cannot also declare an action or collection"
-        )
 
 
 def _parse_item_phase(mapping: dict[str, Any], path: str) -> ItemOperation | None:

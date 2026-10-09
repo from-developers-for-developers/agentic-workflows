@@ -532,28 +532,6 @@ def _next(context: _Context) -> _Outcome:
     )
 
 
-def _loop(context: _Context) -> _Outcome:
-    args = context.args
-    return _instruction_outcome(
-        context.service.loop(
-            context.task_id,
-            _variables(args.variable),
-            args.artifact,
-            _metadata_values(args.metadata),
-            selected_agent=args.selected_agent,
-            selected_model=args.selected_model,
-            selected_reasoning=args.selected_reasoning,
-            continue_loop=args.continue_loop,
-            summary_for_next=args.summary,
-            adjustments=args.adjustments,
-            caller_role=args.role,
-            assignment=args.assignment,
-        ),
-        args.json_output,
-        completing=True,
-    )
-
-
 def _check(context: _Context) -> _Outcome:
     """Run the active step's checks now; exits 1 when any would fail."""
     preview = context.service.check(context.task_id)
@@ -1699,7 +1677,6 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "lint": _lint,
     "start": _start,
     "next": _next,
-    "loop": _loop,
     "complete": _complete,
     "check": _check,
     "dispute": _dispute,

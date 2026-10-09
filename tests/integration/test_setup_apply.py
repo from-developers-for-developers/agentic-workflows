@@ -44,7 +44,7 @@ def root(tmp_path: Path) -> Path:
     project.mkdir()
     (project / "ww.yaml").write_text(REPO, encoding="utf-8")
     (project / "ww.json").write_text(
-        json.dumps({"limits": {"rounds": 3}}, indent=2) + "\n", encoding="utf-8"
+        json.dumps({"limits": {"fixes": 3}}, indent=2) + "\n", encoding="utf-8"
     )
     return project
 
@@ -95,7 +95,7 @@ def test_for_team_writes_the_shared_import_and_settings(
     setup = yaml.safe_load((root / "ww-setup.yaml").read_text(encoding="utf-8"))
     assert set(setup) == {"workflows", "modes"}
     assert json.loads((root / "ww.json").read_text()) == {
-        "limits": {"rounds": 3},
+        "limits": {"fixes": 3},
         "runtime": "auto",
         "extensions": {"ww/git": {"separate_branch": True}},
     }
@@ -194,13 +194,13 @@ def test_a_setting_with_another_value_refuses_the_whole_apply(
     root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     before = _snapshot(root)
-    fragment = _fragment(tmp_path, FRAGMENT + "  limits:\n    rounds: 5\n")
+    fragment = _fragment(tmp_path, FRAGMENT + "  limits:\n    fixes: 5\n")
 
     assert _apply(root, str(fragment), "--for", "team", "--yes") == 1
 
     err = capsys.readouterr().err
     assert "does not overwrite them" in err
-    assert "- limits.rounds is 3, the fragment proposes 5" in err
+    assert "- limits.fixes is 3, the fragment proposes 5" in err
     assert _snapshot(root) == before
 
 
@@ -283,7 +283,7 @@ def test_the_json_report_after_applying(
         ("workflows:\n  - 42\n", "workflows[0] needs a name"),
         ("settings: [1]\n", "settings must be a mapping"),
         ("[]\n", "must be a mapping of configuration keys"),
-        ("settings:\n  limits:\n    rounds: 3\n", "changes nothing"),
+        ("settings:\n  limits:\n    fixes: 3\n", "changes nothing"),
     ],
 )
 def test_a_malformed_fragment_is_refused(

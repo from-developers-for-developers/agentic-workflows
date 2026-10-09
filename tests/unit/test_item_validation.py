@@ -155,7 +155,7 @@ def test_identity_alone_still_makes_its_field_unique_at_runtime(
     assert (collector.item_identity, collector.item_unique) == ("source", ("source",))
 
 
-def test_settings_conflicts_are_found_in_loops_and_outcomes(tmp_path: Path) -> None:
+def test_settings_conflicts_are_found_in_groups_and_outcomes(tmp_path: Path) -> None:
     text = """workflows:
   - name: review
     steps:
@@ -164,7 +164,7 @@ def test_settings_conflicts_are_found_in_loops_and_outcomes(tmp_path: Path) -> N
           persistent: true
           steps: []
       - rounds: Review in rounds.
-        loop:
+        steps:
           - assess:
               question: Anything left?
               outcomes:
@@ -175,7 +175,7 @@ def test_settings_conflicts_are_found_in_loops_and_outcomes(tmp_path: Path) -> N
                         persistent: false
                         steps: []
           - decide: Decide.
-            break: Done.
+
 """
     with pytest.raises(ConfigurationError) as error:
         _load(tmp_path, text)
@@ -255,10 +255,10 @@ def test_collector_and_per_item_stage_saves_are_valid(tmp_path: Path) -> None:
             - reply: Reply.
               {_with_save(14)}
             - check: Check it.
-              loop:
+              steps:
                 - attempt: Try.
                   {_with_save(18)}
-                  break: Holds.
+
             - assess:
                 question: Needs more?
                 outcomes:
@@ -288,10 +288,10 @@ def test_collector_and_per_item_stage_saves_are_valid(tmp_path: Path) -> None:
         ),
         (
             f"""      - rounds: Rounds.
-        loop:
+        steps:
           - batch: Batch.
             {_with_save(12)}
-            break: Done.
+
 """,
             "step 'rounds/batch'",
         ),
@@ -307,7 +307,7 @@ def test_collector_and_per_item_stage_saves_are_valid(tmp_path: Path) -> None:
             "step 'assess/positive/fix'",
         ),
     ],
-    ids=["between-passes", "in-a-loop", "in-an-outcome"],
+    ids=["between-passes", "in-a-group", "in-an-outcome"],
 )
 def test_unbound_item_saves_are_rejected(
     tmp_path: Path, steps: str, where: str
@@ -562,8 +562,8 @@ _PHASE_OUTSIDE = {
         + "      - fix-together: Fix.\n        item_phase: resolve\n"
         + "      - again: Reuse.\n        items:\n          steps: []\n"
     ),
-    "loop-outside-items": (
-        "      - repeat: Repeat.\n        loop:\n"
+    "group-outside-items": (
+        "      - repeat: Repeat.\n        steps:\n"
         "          - fix: Fix it.\n            item_phase: report\n"
     ),
     "through-a-handler": ("      - fix:\n        handler: phased\n"),
@@ -619,7 +619,7 @@ workflows:
             - handled:
               handler: phased
             - repeat: Repeat.
-              loop:
+              steps:
                 - inner: Inner.
                   item_phase: resolve
             - assess:

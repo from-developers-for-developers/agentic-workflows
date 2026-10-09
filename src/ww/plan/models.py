@@ -13,13 +13,12 @@ from ww.contracts import (
     ExecutionKind,
     ItemAssignment,
     ItemOperation,
-    LoopAssignment,
     PlanItemKind,
     PlanItemOwner,
     PlanItemPhase,
     StepRole,
 )
-from ww.operations import LoopBoundary, PlanOperation, encode_operation
+from ww.operations import PlanOperation, encode_operation
 from ww.validation import is_positive_int
 from ww.workflow_config import (
     ChoiceDefinition,
@@ -267,9 +266,6 @@ class PlanItem:
     # has no per-item stages (explicit ``items: {steps: []}``).
     item_collect_only: bool = False
     item_assignment: ItemAssignment = "per_step"
-    # Set on every body step and hook of the nearest enclosing ``loop``.
-    loop_id: str | None = None
-    loop_assignment: LoopAssignment | None = None
     split_instruction: str | None = None
     # On a collection item: the items outlive the run and are reconciled.
     shared_items: bool = False
@@ -296,8 +292,6 @@ class PlanItem:
     # Artifact storage uses these values to produce stable, ordered paths.
     step_ordinals: tuple[int, ...] = ()
     artifact_dependency: str | None = None
-    loop_break: str | None = None
-    loop_continue: str | None = None
     assessment_question: str | None = None
     assessment_outcomes: tuple[str, ...] = ()
     # The outcomes that end the workflow; they emit no items of their own.
@@ -321,19 +315,6 @@ class PlanItem:
     @property
     def kind(self) -> PlanItemKind:
         return self.operation.kind
-
-    @property
-    def breaks_children(self) -> bool:
-        """Whether this step's ``break`` ends the per-child stages.
-
-        A ``break`` ends the nearest enclosing construct: a loop inside the
-        per-child stage, else the children, whose remaining ones are skipped.
-        """
-        if self.loop_break is None or self.child_stage is None:
-            return False
-        return self.loop_id is None or not self.loop_id.startswith(
-            f"{self.child_stage}/"
-        )
 
     @property
     def hands_over(self) -> bool:
@@ -391,12 +372,6 @@ class PlanItem:
             raise ValueError(f"invalid item operation: {self.item_operation!r}")
         if self.item_assignment not in get_args(ItemAssignment):
             raise ValueError(f"invalid item assignment: {self.item_assignment!r}")
-        if self.loop_assignment is not None and self.loop_assignment not in get_args(
-            LoopAssignment
-        ):
-            raise ValueError(f"invalid loop assignment: {self.loop_assignment!r}")
-        if (self.loop_id is None) != (self.loop_assignment is None):
-            raise ValueError("loop ID and loop assignment must be set together")
         if self.workdir not in WORKDIRS:
             raise ValueError(f"invalid workdir: {self.workdir!r}")
         if self.child_operation not in {None, "collect"}:
@@ -435,18 +410,6 @@ class PlanItem:
         # ``validate`` accepts the pre-planning definition.  Planned payloads
         # may deliberately have a distinct type, and their strict boundary is
         # the action's decoder (used for persisted snapshots).
-        if isinstance(self.operation, LoopBoundary) and (
-            self.loop_break is not None or self.loop_continue is not None
-        ):
-            raise ValueError("loop control items cannot define a worker break gate")
-        if self.loop_break is not None and (
-            self.owner != "agent" or self.phase != "step"
-        ):
-            raise ValueError("loop break gates require agent-owned step work")
-        if self.loop_continue is not None and (
-            self.owner != "agent" or self.phase != "step"
-        ):
-            raise ValueError("loop continue gates require agent-owned step work")
         expected_agent_input = self.execution == "automatic" and bool(self.provide)
         if self.requires_agent_input != expected_agent_input:
             raise ValueError(
@@ -497,10 +460,6 @@ class PlanItem:
             data["max_handler_fixes"] = self.max_handler_fixes
         if self.on_failure_instruction is not None:
             data["on_failure_instruction"] = self.on_failure_instruction
-        # Loop membership is written only where it applies, so plans saved
-        # before it existed re-serialize byte for byte and keep their digest.
-        if self.loop_id is None:
-            del data["loop_id"], data["loop_assignment"]
         if self.profile_path is None:
             del data["profile_path"]
         if self.workdir == "task":
@@ -579,8 +538,6 @@ class PlanItem:
             "item_template": self.item_template,
             "item_id": self.item_id,
             "item_assignment": self.item_assignment,
-            "loop_id": self.loop_id,
-            "loop_assignment": self.loop_assignment,
             "split_instruction": self.split_instruction,
             "shared_items": self.shared_items,
             "update_item": [item.to_dict() for item in self.update_item],
@@ -594,8 +551,6 @@ class PlanItem:
             "ancestors": list(self.ancestors),
             "step_ordinals": list(self.step_ordinals),
             "artifact_dependency": self.artifact_dependency,
-            "loop_break": self.loop_break,
-            "loop_continue": self.loop_continue,
             "assessment_question": self.assessment_question,
             "assessment_outcomes": list(self.assessment_outcomes),
             "assessment_parent": self.assessment_parent,

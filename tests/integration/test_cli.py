@@ -615,14 +615,14 @@ def test_init_adds_missing_settings_and_leaves_user_level_ones(
     project = tmp_path / "project"
     project.mkdir()
     (project / "ww.json").write_text(
-        '{"limits": {"rounds": 5}, "extensions": {}}', encoding="utf-8"
+        '{"limits": {"fixes": 5}, "extensions": {}}', encoding="utf-8"
     )
 
     assert main(["--root", str(project), "init", "--no-input"]) == 0
     capsys.readouterr()
 
     settings = json.loads((project / "ww.json").read_text())
-    assert settings["limits"] == {"rounds": 5, "fixes": 3}
+    assert settings["limits"] == {"fixes": 5}
     assert settings["rules"] == {}
     assert "runtime" not in settings
 

@@ -480,8 +480,8 @@ NESTED = """workflows:
   - name: review
     steps:
       - rounds: Review in rounds.
-        max_rounds: 3
-        loop:
+
+        steps:
           - collect: Record new comments.
             items:
               steps: []
@@ -491,55 +491,10 @@ NESTED = """workflows:
                 - analyze: Analyze it.
                   item_phase: analyze
                 - attempts: Try until it holds.
-                  loop:
+                  steps:
                     - attempt: Try a fix.
-                      break: The fix holds.
+
           - decide: Decide whether another round is needed.
-            break: No new comments.
+
       - wrap: Wrap up.
 """
-
-
-def test_nested_loops_gate_each_round_and_break_the_nearest_loop(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path
-    service = _service(root, NESTED)
-    assert service.next(TASK).item_name == "collect"
-    service.add_item(TASK, WorkItem("c1", "First"))
-    service.complete(TASK, artifact="Collected.", summary_for_next="Done.")
-    _step(service, "triage")
-    _step(service, "analyze")  # without the analysis
-    assert service.next(TASK).item_name == "attempt"
-    service = _reloaded(root)
-    # The break leaves only the per-item loop, which ends the pass.
-    service.loop(TASK, artifact="Holds.", summary_for_next="Done.")
-    _stopped_at_gate(service, "c1 (analyze): processed_item")
-    service = _reloaded(root)
-    service.update_item(TASK, "c1", processed_item="Analysis.")
-    assert service.next(TASK, retry=True).item_name == "decide"
-    _step(service, "decide")  # another round
-
-    # Round two: the pass expands anew, for both items, with fresh records.
-    service = _reloaded(root)
-    assert service.next(TASK).item_name == "collect"
-    service.add_item(TASK, WorkItem("c2", "Second"))
-    service = _reloaded(root)
-    service.complete(TASK, artifact="Collected.", summary_for_next="Done.")
-    _step(service, "triage")
-    for item_id in ("c1", "c2"):
-        service = _reloaded(root)
-        assert service.next(TASK).item_name == "analyze"
-        if item_id == "c2":
-            service.update_item(TASK, item_id, processed_item="Analysis.")
-        service.complete(TASK, artifact="Analyzed.", summary_for_next="Done.")
-        assert service.next(TASK).item_name == "attempt"
-        service.loop(TASK, artifact="Holds.", summary_for_next="Done.")
-    # c1 kept its analysis from round one, so the gate passes.
-    service = _reloaded(root)
-    assert service.next(TASK).item_name == "decide"
-    service.loop(TASK, artifact="No new comments.", summary_for_next="Done.")
-    service = _reloaded(root)
-    assert service.next(TASK).item_name == "wrap"
-    state, _ = service.load(TASK)
-    assert dict(state.loop_iterations)["rounds"] == 2

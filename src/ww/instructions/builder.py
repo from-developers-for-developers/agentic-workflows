@@ -13,13 +13,11 @@ from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
     ItemSpan,
-    LoopSpan,
     active_assignment,
     assignment_at,
     completion_window,
     input_only,
     item_span,
-    loop_span,
     selection_item,
 )
 from ww.config_files import WORKFLOWS_FILE
@@ -31,7 +29,7 @@ from ww.contracts import (
     NextRole,
     OperatorReason,
 )
-from ww.control import child_workflow, is_coordinator, loop_control
+from ww.control import child_workflow, is_coordinator
 from ww.documents import DocumentStore
 from ww.errors import StateError
 from ww.executable import ww_command
@@ -46,17 +44,13 @@ from ww.execution_models import (
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
 from ww.item_passes import item_collection
-from ww.operations import LoopBoundary
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
 from ww.runtimes import requested_setting, runtime_instruction
 from ww.step_values import StepValues, no_step_values
 from ww.storage_adapters import TaskStorageAdapter
 from ww.transitions import (
-    enclosing_loop_entry_index,
     fix_limits,
-    loop_iteration_of,
-    loop_limit_reached,
 )
 from ww.variables import (
     item_workspace_values,
@@ -66,7 +60,6 @@ from ww.workspace import resolve_workspace
 
 from .commands import (
     complete_command,
-    force_command,
     instruction_command,
     interact_commands,
     next_command,
@@ -325,7 +318,6 @@ class InstructionBuilder:
             workflow_runtime_instruction=_guidance(state, shape, selection, next_role),
             is_child_workflow_control=item is not None
             and child_workflow(item) is not None,
-            is_loop_control=item is not None and loop_control(item) is not None,
         )
 
     def _build(self, state: ExecutionState, snapshot: PlanSnapshot) -> Instruction:
@@ -370,9 +362,6 @@ class InstructionBuilder:
             return self._repair(state, plan, item, record)
         if child_workflow(item) is not None:
             return self._child_control(state, item, record)
-        loop = loop_control(item)
-        if loop is not None:
-            return _loop_control(state, item, loop)
         if record.status == "in_progress":
             if item.owner == "ww" and item.execution == "automatic":
                 return _automatic_running(state, item, record)
@@ -481,7 +470,6 @@ class InstructionBuilder:
         )
         # The values describe the work done since this handler last ran in
         # this run, through any of its placements: an earlier hook of the same
-        # handler, or an earlier loop round's execution in the history.  A
         # run that found nothing to do did not consume that work.
         by_id = {entry.id: entry for entry in plan.items}
         last_run = max(
@@ -546,8 +534,8 @@ class InstructionBuilder:
         """Every completed ordinary step's handover in this run, oldest first.
 
         Only ordinary steps count: hooks, the built-in summary, and ``init``
-        (already shown as the requirements) are skipped.  Loop history is
-        included, so every round of a loop is present in order.
+        (already shown as the requirements) are skipped. Recovery history
+        retains evidence from earlier attempts.
         """
         by_id = {entry.id: entry for entry in plan.items}
         candidates = sorted(
@@ -577,19 +565,7 @@ class InstructionBuilder:
     def _container_artifact(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> ContainerArtifact | None:
-        """What ``artifact_from`` supplies when it names a group or assessment.
-
-        A group emits no item of its own; an assessment named after its
-        outcomes has run one of them.  Either supplies the artifact of the
-        latest step inside it that saved one in its current round: inside a
-        loop, only the records of the loop's current iteration count, while
-        the rounds of a loop inside the container all do.  An assessment
-        whose chosen outcome saved nothing supplies its own artifact, when it
-        saved one; otherwise none is available.  ``None`` means the
-        dependency is a single step, including an assessment named from
-        inside its own outcomes, and one whose outcomes cannot save an
-        artifact.
-        """
+        """Resolve the latest artifact inside a group or selected outcome."""
         path = item.artifact_dependency
         if path is None:
             return None
@@ -610,29 +586,7 @@ class InstructionBuilder:
             own is not None and (not own.assessment_outcomes or path in item.ancestors)
         ):
             return None
-        some = next(iter(inside.values()))
-        enclosing = some.ancestors[: some.ancestors.index(path)]
-        iterations = dict(state.loop_iterations)
-        loops = {
-            loop.loop_id: iterations.get(loop.loop_id, 1)
-            for entry in plan.items
-            if (loop := loop_control(entry)) is not None
-            and loop.boundary == "enter"
-            and loop.loop_id in enclosing
-        }
-        # The live records are the current round's; the history holds earlier
-        # rounds, of loops inside the container (this round's) or around it.
-        current = (
-            *state.item_executions,
-            *(
-                record
-                for record in state.execution_history
-                if all(
-                    loop_iteration_of(record, loop_id) == iteration
-                    for loop_id, iteration in loops.items()
-                )
-            ),
-        )
+        current = state.item_executions
         latest = max(
             (
                 record
@@ -988,7 +942,6 @@ class InstructionBuilder:
         selection = _Selection.effective(record, state)
         span = _span(plan, assignment)
         span_ids = tuple(stage.id for stage in span.stages) if span else ()
-        loop_round = _loop_round(state, plan, item)
         role: CallerRole = "manager" if state.workflow_runtime == "auto" else "worker"
         # Under ``auto`` the manager performs its own step and completes it
         # as the manager; a worker's completion of it is refused.
@@ -1005,7 +958,7 @@ class InstructionBuilder:
 
         verification = self._verification(state, plan, item)
 
-        def completion(artifact: bool, loop_control: str | None = None) -> str:
+        def completion(artifact: bool) -> str:
             return complete_command(
                 state.task_id,
                 required,
@@ -1014,7 +967,6 @@ class InstructionBuilder:
                 selected_agent=selection.agent,
                 selected_model=selection.model,
                 selected_reasoning=selection.reasoning,
-                loop_control=loop_control,
                 role=completer,
                 summary=item.hands_over,
                 rule_results=(
@@ -1025,15 +977,6 @@ class InstructionBuilder:
                 assignment=worker_token(state),
             )
 
-        loop_break_command = None
-        if item.loop_break is not None:
-            # A break ending per-child stages has no loop wrapper to save.
-            wrapper_artifact = (
-                False
-                if item.breaks_children
-                else plan.items[enclosing_loop_entry_index(plan, state.cursor)].artifact
-            )
-            loop_break_command = completion(item.artifact or wrapper_artifact, "break")
         later_pass = _later_item_pass(plan, item)
         # A collection step's identity and unique fields are the collection's.
         collection = item_collection(plan) if item.item_operation == "collect" else None
@@ -1074,18 +1017,6 @@ class InstructionBuilder:
             next_steps=_next_steps(state, plan),
             artifact=record.artifact,
             continuation_command=completion(item.artifact),
-            loop_break_prompt=item.loop_break,
-            loop_break_command=loop_break_command,
-            breaks_children=item.breaks_children,
-            loop_continue_prompt=item.loop_continue,
-            loop_continue_command=(
-                completion(item.artifact, "continue")
-                if item.loop_continue is not None
-                else None
-            ),
-            loop_name=loop_round[0] if loop_round else None,
-            loop_iteration=loop_round[1] if loop_round else None,
-            max_rounds=loop_round[2] if loop_round else None,
             task_requirements=requirements.text,
             requirements_in_full=requirements.in_full,
             requirements_command=requirements.command,
@@ -1341,45 +1272,6 @@ def _base(
     )
 
 
-def _loop_control(
-    state: ExecutionState, item: PlanItem, loop: LoopBoundary
-) -> Instruction:
-    iteration = dict(state.loop_iterations).get(loop.loop_id, 0)
-    limit_reached = loop_limit_reached(state, item)
-    continuation: str | None = next_command(state.task_id)
-    recovery: tuple[RecoveryCommand, ...] = ()
-    if loop.boundary == "enter":
-        text = (
-            "Dispatch the first loop step. The loop remains active until "
-            "a child step explicitly breaks it."
-        )
-    elif limit_reached:
-        text = (
-            f"Warning: loop `{loop.loop_id}` reached its maximum of "
-            f"{loop.max_times} iterations. ww will not start another "
-            "iteration. Escalate this result to the user for manual resolution."
-        )
-        continuation = None
-        recovery = (force_command(state.task_id),)
-    else:
-        text = (
-            f"Iteration {iteration} is complete. Dispatch the first step "
-            "of the next iteration. The loop remains active until a child "
-            "step explicitly breaks it."
-        )
-    return replace(
-        _base(state, item, item_status="pending"),
-        stage="Loop boundary",
-        action_text=text,
-        continuation_command=continuation,
-        loop_iteration=iteration,
-        max_rounds=loop.max_times,
-        loop_limit_reached=limit_reached,
-        recovery_commands=recovery,
-        is_loop_control=True,
-    )
-
-
 def _automatic_running(
     state: ExecutionState, item: PlanItem, record: PlanItemExecution
 ) -> Instruction:
@@ -1464,13 +1356,11 @@ def _completed_items(
     return tuple(entry for entry in covered if entry.id in done)
 
 
-def _span(
-    plan: WorkflowPlan, assignment: Assignment | None
-) -> ItemSpan | LoopSpan | None:
-    """The several stages or loop steps one worker performs in this assignment."""
+def _span(plan: WorkflowPlan, assignment: Assignment | None) -> ItemSpan | None:
+    """The several item stages one worker performs in this assignment."""
     if assignment is None:
         return None
-    return item_span(plan, assignment) or loop_span(plan, assignment)
+    return item_span(plan, assignment)
 
 
 def _same_handler(found: PlanItem, item: PlanItem) -> bool:
@@ -1487,29 +1377,6 @@ _NOTHING_COMMITTED = "nothing to commit"
 def _ran_without_effect(record: PlanItemExecution) -> bool:
     """Whether a completed handler found nothing to do, as its output says."""
     return (record.result or "").startswith(_NOTHING_COMMITTED)
-
-
-def _loop_round(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-) -> tuple[str, int, int] | None:
-    """The enclosing loop's name, current round, and limit for a body step."""
-    if item.loop_id is None:
-        return None
-    entry = next(
-        (
-            candidate
-            for candidate in plan.items
-            if (loop := loop_control(candidate)) is not None
-            and loop.loop_id == item.loop_id
-            and loop.boundary == "enter"
-        ),
-        None,
-    )
-    boundary = loop_control(entry) if entry is not None else None
-    if entry is None or boundary is None:  # pragma: no cover - compiler invariant
-        raise ValueError(f"loop {item.loop_id!r} has no entry boundary")
-    iteration = dict(state.loop_iterations).get(item.loop_id, 1)
-    return entry.name, iteration, boundary.max_times
 
 
 def _assignment_preview(
@@ -1597,13 +1464,7 @@ def _assignment_preview(
                 for entry in items
                 if entry.owner == "ww" and not entry.requires_agent_input
             ],
-            **(
-                {"item_scope": span.to_dict()}
-                if isinstance(span, ItemSpan)
-                else {"loop_scope": span.to_dict()}
-                if span is not None
-                else {}
-            ),
+            **({"item_scope": span.to_dict()} if isinstance(span, ItemSpan) else {}),
         }
     if item is not None and is_coordinator(item):
         return {

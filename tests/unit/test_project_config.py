@@ -31,7 +31,7 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
 
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
-    assert config.limits == Limits(rounds=3, fixes=3)
+    assert config.limits == Limits(fixes=3)
     assert config.agent_hooks == AgentHooks(check_unfinished=True, recent_days=3)
     assert config.rule_check_guidance is None
 
@@ -49,13 +49,7 @@ def test_the_check_guidance_loads_trimmed_and_blank_means_unset(
 def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
     path = write(tmp_path, {"limits": {"fixes": 5}})
 
-    assert load_project_config(path).limits == Limits(rounds=3, fixes=5)
-
-
-def test_global_loop_limit_loads_from_project_config(tmp_path: Path) -> None:
-    path = write(tmp_path, {"limits": {"rounds": 7}})
-
-    assert load_project_config(path).limits == Limits(rounds=7, fixes=3)
+    assert load_project_config(path).limits == Limits(fixes=5)
 
 
 def test_the_agent_hooks_settings_are_accepted_for_compatibility(
@@ -150,9 +144,9 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"max_rounds": 3}, "unknown key(s): max_rounds"),
         ({"limits": 3}, "limits must be an object"),
         ({"limits": {"max_fixes": 3}}, "limits has unknown key(s): max_fixes"),
-        ({"limits": {"rounds": 0}}, "limits.rounds must be a positive integer"),
-        ({"limits": {"rounds": True}}, "limits.rounds must be a positive integer"),
-        ({"limits": {"rounds": "3"}}, "limits.rounds must be a positive integer"),
+        ({"limits": {"rounds": 0}}, "limits.rounds was removed"),
+        ({"limits": {"rounds": True}}, "limits.rounds was removed"),
+        ({"limits": {"rounds": "3"}}, "limits.rounds was removed"),
         ({"limits": {"fixes": 0}}, "limits.fixes must be a positive integer"),
         ({"limits": {"fixes": False}}, "limits.fixes must be a positive integer"),
         (
@@ -538,8 +532,8 @@ def _settings(tmp_path: Path, settings: dict[str, object]) -> Path:
 
 
 def test_json_limits_are_read(tmp_path: Path) -> None:
-    settings = _settings(tmp_path, {"limits": {"rounds": 4}})
-    assert load_project_config(settings).limits.rounds == 4
+    settings = _settings(tmp_path, {"limits": {"fixes": 4}})
+    assert load_project_config(settings).limits.fixes == 4
 
 
 def test_task_format_placeholders_take_double_braces(tmp_path: Path) -> None:

@@ -11,24 +11,18 @@ documents:
       slices must do now.
 
 handlers:
-  - check-code-quality:
+  - name: check-code-quality
     model: cheapest
     reasoning: lowest
-    loop:
-      - run: >-
-          Run `.venv/bin/python -m ruff check src tests scripts ext/ww/git`
-          and `.venv/bin/python -m mypy` with no arguments (pyproject.toml
-          names its targets), and fix what they report.
-        break: Neither tool reports a finding.
+    description: >-
+      Run `.venv/bin/python -m ruff check src tests scripts ext/ww/git`
+      and `.venv/bin/python -m mypy` with no arguments, and fix all findings.
+      Complete only when both tools report no findings.
 
-  - run-tests:
-    loop:
-      - test: >-
-          Run the whole suite with `scripts/test tests` (pytest alone, in
-          parallel) and fix every failing test.
-        break: >-
-          No test fails because of this change; pre-existing or environmental
-          failures are noted in the artifact.
+  - run-tests: >-
+      Run the whole suite with `scripts/test tests` and fix every failing test.
+      Complete when no test fails because of this change; document any
+      pre-existing or environmental failures in the artifact.
 
   - update-documentation: >-
       Bring the documentation in line with this task's changes, editing only
@@ -153,7 +147,7 @@ workflows:
       - run-tests: ~
 
       - finish: >-
-          If the quality and test rounds changed anything, commit it on dev as
+          If the quality and test steps changed anything, commit it on dev as
           "{{ww.task.id}}: Fix the build after merging <branch>", naming the
           merged branch. Then switch the primary checkout back to the branch it
           was on before the merge. Do not push.
@@ -200,30 +194,21 @@ workflows:
             - implement:
                 workflow: task
 
-            - name: review
-              loop:
-                - review-slice: >-
-                    Review the diff of {{ww.child.git.branch}} against
-                    {{ww.child.git.base_branch}}: does it do what the child's
-                    text asks, meet the slice's acceptance criteria in
-                    {{ww.documents.plan}}, and follow
-                    documentation/python-agent-rules.md? List every finding as
-                    file:line and what to change; an empty list accepts the
-                    slice.
-                  role: manager
-                  break: There are no findings.
+            - review-slice: >-
+                Review the diff of {{ww.child.git.branch}} against
+                {{ww.child.git.base_branch}} against the child's text,
+                the slice's acceptance criteria in {{ww.documents.plan}},
+                and documentation/python-agent-rules.md. Record every finding
+                as file:line and what to change; an empty list accepts the slice.
+              role: manager
 
-                - fix: >-
-                    Apply every finding of the review artifact on
-                    {{ww.child.git.branch}}, in the worktree that `git worktree
-                    list` shows for that branch, not in this task's workspace.
-                    Run ruff, mypy and the whole pytest suite there in their
-                    least verbose mode that still shows every finding, fix
-                    what they report, and commit on that branch with the
-                    subject prefixed with {{ww.child.id}} followed by `: `, as
-                    the child's own commits are.
-                  artifact_from: review-slice
-              max_rounds: 3
+            - fix: >-
+                Address the review-slice findings on {{ww.child.git.branch}}
+                in that branch's worktree. Run ruff, mypy and the full pytest
+                suite there, fix failures, and verify that each finding is
+                resolved. Commit changes with {{ww.child.id}} followed by `: `.
+                If there are no findings, record acceptance without changes.
+              artifact_from: review-slice
 
             - land: >-
                 Merge {{ww.child.git.branch}} into {{ww.git.branch}} with

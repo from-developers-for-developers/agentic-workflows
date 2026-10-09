@@ -78,7 +78,6 @@ def test_init_is_a_reserved_step_name() -> None:
     "container",
     [
         StepDefinition("group", child_steps=(StepDefinition("child"),)),
-        StepDefinition("loop", loop_steps=(StepDefinition("child"),)),
     ],
 )
 def test_interactive_is_rejected_on_pure_structural_containers(
@@ -219,11 +218,11 @@ def test_a_switched_off_builtin_workflow_is_not_added() -> None:
     assert with_builtin_workflows(configuration, config) == configuration
 
 
-LOOPING_HANDLER = """handlers:
+STEP_TREE_HANDLER = """handlers:
   - run-tests:
-    loop:
+    steps:
       - test: Run the tests and fix the failures.
-        break: All tests pass.
+
 """
 
 
@@ -267,14 +266,14 @@ def test_a_hook_may_not_run_a_handler_that_is_a_step_tree(
     tmp_path: Path, hooked: str
 ) -> None:
     path = tmp_path / "ww.yaml"
-    path.write_text(LOOPING_HANDLER + hooked, encoding="utf-8")
+    path.write_text(STEP_TREE_HANDLER + hooked, encoding="utf-8")
 
-    # As a hook the loop would be dropped; as a step it runs.
+    # A hook cannot run an agent step tree; an ordinary step can.
     with pytest.raises(ConfigurationError, match="use 'run-tests' as a workflow step"):
         load_configuration(path)
     path.write_text(
-        LOOPING_HANDLER
+        STEP_TREE_HANDLER
         + "workflows:\n  - name: task\n    steps:\n      - run-tests: ~\n",
         encoding="utf-8",
     )
-    assert load_configuration(path).workflows[0].steps[0].loop_steps
+    assert load_configuration(path).workflows[0].steps[0].child_steps

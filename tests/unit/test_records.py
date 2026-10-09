@@ -17,7 +17,7 @@ from ww.execution_models import (
     PlanItemExecution,
     PlanSnapshot,
 )
-from ww.execution_models.decoding import _from_path, _positive_int_mapping, _variables
+from ww.execution_models.decoding import _from_path, _variables
 from ww.execution_models.records import VerificationRule
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem
 from ww.plan import WorkflowPlan
@@ -127,13 +127,9 @@ def test_from_path_prefixes_decoding_errors() -> None:
 
 def test_saved_mappings_are_type_checked() -> None:
     assert _variables({"a": "b"}, "values") == (("a", "b"),)
-    assert _positive_int_mapping({"loop": 2}, "iterations") == (("loop", 2),)
     for bad in ([], {"a": 1}, {1: "b"}):
         with pytest.raises(ValueError, match="values must be a mapping of strings"):
             _variables(bad, "values")
-    for bad in ({"loop": 0}, {"loop": True}, {"loop": "2"}, None):
-        with pytest.raises(ValueError, match="mapping of positive integers"):
-            _positive_int_mapping(bad, "iterations")
 
 
 def test_persisted_input_request_keeps_a_conditional_value() -> None:
@@ -303,7 +299,7 @@ def test_project_metadata_scope_round_trips_through_persisted_plan() -> None:
     assert loaded.plan.items[0].save_metadata[0].scope == "project"
 
 
-@pytest.mark.parametrize("version", [3, 0, True, "1"])
+@pytest.mark.parametrize("version", [2, 0, True, "1"])
 def test_a_plan_at_another_schema_version_is_not_loaded(version: object) -> None:
     snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
     snapshot["schema_version"] = version

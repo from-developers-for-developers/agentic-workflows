@@ -45,7 +45,7 @@ hooks:
         - ext/ww/git/handlers:is-git-clean: ~
         - ext/ww/git/handlers:start-task-branch: ~
   before_complete_workflow:
-    - workflows: [feature, docs, child]
+    - workflows: [docs, child]
       handlers:
         - ext/ww/git/handlers:git-commit: ~
     - workflows: [feature, docs, parent, child]
@@ -71,10 +71,10 @@ workflows:
             - reply: Report the outcome.
               item_phase: report
       - polish:
-        max_rounds: 3
-        loop:
+
+        steps:
           - check: Check the greeting once more.
-            break: Nothing is left to polish.
+      - ext/ww/git/handlers:git-commit: ~
 
   - name: triage
     steps:
@@ -245,7 +245,7 @@ def project(repository: Path) -> Project:
 
 
 def run_feature(project: Project) -> None:
-    """A standalone workflow with a command hook, items, and a loop (auto)."""
+    """A standalone workflow with a command hook, items, and a group (auto)."""
     service, task = project.service, "TASK-1"
 
     started = service.start(
@@ -282,7 +282,7 @@ def run_feature(project: Project) -> None:
         "# TASK-1 — develop\n\n"
         "## Workflow context\n\n"
         "- Workflow: feature\n"
-        "- Step: 2 of 4\n"
+        "- Step: 2 of 5\n"
         "- Skill: auto\n\n"
         "## Result\n\n"
         "Implemented.\n"
@@ -343,26 +343,10 @@ def run_feature(project: Project) -> None:
         assert after.next_role == "manager"
     assert all(item.resolved and item.reported for item in service.items(task))
 
-    # polish loops once, then the worker breaks it.
     first = service.next(task, caller_role="manager")
     assert first.item_name == "check"
-    assert first.loop_break_prompt == "Nothing is left to polish."
-    assert "./ww loop TASK-1 --break --role worker" in project.render(
-        service.status(
-            task, caller_role="worker", assignment=assignment_token(service, task)
-        )
-    )
-    repeat = service.complete(
-        task,
-        artifact="Checked once.",
-        caller_role="worker",
-        assignment=assignment_token(service, task),
-        summary_for_next="Done.",
-    )
-    assert (repeat.item_name, repeat.control) == ("polish", "blocked")
-    service.next(task, caller_role="manager")
     project.edit("greeting.txt", "Hello!\n")
-    commit = service.loop(
+    commit = service.complete(
         task,
         artifact="Nothing left.",
         caller_role="worker",
@@ -503,7 +487,7 @@ def run_parent(project: Project) -> None:
     assert project.branch() == "main"
 
 
-def test_standalone_workflow_with_items_loop_and_command_hook(
+def test_standalone_workflow_with_items_group_and_command_hook(
     project: Project,
 ) -> None:
     run_feature(project)

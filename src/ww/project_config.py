@@ -12,7 +12,7 @@ contains ww-wide settings, built-in execution hints, and extension settings.
   "runtime": "single",
   "update_check": true,
   "executable": "ww-agentic-workflows-dev",
-  "limits": {"rounds": 3, "fixes": 3},
+  "limits": {"fixes": 3},
   "pages": {"worker_requirements": "pointer"},
   "workflows": {"ww-suggest": {"enabled": false}},
   "projects": [
@@ -28,9 +28,8 @@ contains ww-wide settings, built-in execution hints, and extension settings.
 never do), or ``"on_request"`` (ww is available, but agents use it only when
 the user explicitly asks for it).
 
-``limits`` holds positive integers ``rounds`` and ``fixes`` and the non-negative
-``auto_retries``. ``rounds`` is the round limit of a
-step ``loop`` that sets no ``max_rounds`` of its own. ``fixes`` is how many
+``limits`` holds the positive integer ``fixes`` and the non-negative
+``auto_retries``. ``fixes`` is how many
 times a step's completion may be rejected for a failed check before ww stops
 for the operator, unless a rule sets its own ``max_fixes``. ``auto_retries``
 (default 0) is how many times ww retries a failed automatic step itself,
@@ -110,7 +109,6 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "init": {"model": "cheapest", "reasoning": "low"},
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
-DEFAULT_ROUNDS = 3
 DEFAULT_FIXES = 3
 DEFAULT_RECENT_DAYS = 3
 # A ``task_format`` that forbids generated IDs: every task is started with an
@@ -238,8 +236,6 @@ class ProjectSettings:
 class Limits:
     """The ``limits`` setting: how far ww goes before the operator decides."""
 
-    # A step loop's rounds when it sets no ``max_rounds`` of its own.
-    rounds: int = DEFAULT_ROUNDS
     # Rejected completions a check allows when its rule sets no ``max_fixes``.
     fixes: int = DEFAULT_FIXES
     # How often ww itself retries a failed automatic step before the step's
@@ -249,7 +245,6 @@ class Limits:
     def to_dict(self) -> dict[str, int]:
         # The retries appear once set, so a default file stays as ``init`` wrote it.
         return {
-            "rounds": self.rounds,
             "fixes": self.fixes,
             **({"auto_retries": self.auto_retries} if self.auto_retries else {}),
         }
@@ -639,12 +634,16 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
 
 
 def _parse_limits(data: Any, path: str) -> Limits:
-    """``limits``: optional positive ``rounds`` and ``fixes``, and ``auto_retries``."""
+    """``limits``: optional positive ``fixes``, and ``auto_retries``."""
     if data is None:
         return Limits()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.limits must be an object")
-    unknown = set(data) - {"rounds", "fixes", "auto_retries"}
+    if "rounds" in data:
+        raise ConfigurationError(
+            f"{path}.limits.rounds was removed with workflow loops"
+        )
+    unknown = set(data) - {"fixes", "auto_retries"}
     if unknown:
         raise ConfigurationError(
             f"{path}.limits has unknown key(s): {', '.join(sorted(unknown))}"

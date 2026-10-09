@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ww.actions import PlannedAction, actions
-from ww.operations import ChildWorkflowRun, LoopBoundary, WorkflowHandoff
+from ww.operations import ChildWorkflowRun, WorkflowHandoff
 
 if TYPE_CHECKING:
     from ww.plan import PlanItem
@@ -20,12 +20,8 @@ def child_workflow(item: PlanItem) -> ChildWorkflowRun | None:
     return item.operation if isinstance(item.operation, ChildWorkflowRun) else None
 
 
-def loop_control(item: PlanItem) -> LoopBoundary | None:
-    return item.operation if isinstance(item.operation, LoopBoundary) else None
-
-
 def is_coordinator(item: PlanItem) -> bool:
-    return isinstance(item.operation, (WorkflowHandoff, ChildWorkflowRun, LoopBoundary))
+    return isinstance(item.operation, (WorkflowHandoff, ChildWorkflowRun))
 
 
 def replays_harmlessly(item: PlanItem) -> bool:

@@ -32,7 +32,6 @@ ROLE_COMMANDS = (
     "add-item *",
     "update-item *",
     "interact *",
-    "loop *",
     "lookup *",
     "record *",
     "discover*",

@@ -5,7 +5,7 @@ This is a leaf module: it depends only on ``ww.contracts`` so that the
 engine, the parser, the validator, and the plan compiler can all import it
 without pulling in the ``ww.plan`` package.
 
-Loops, workflow handoffs, and child-workflow runs are behaviour of the workflow
+Workflow handoffs and child-workflow runs are behaviour of the workflow
 engine itself.  Core code plans, persists, and dispatches them directly; they
 are deliberately not part of the ordinary action registry and cannot be added
 or replaced through it.
@@ -16,44 +16,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
-from ww.contracts import ExecutionKind, LoopOperation, PlanItemOwner
-from ww.validation import expect_keys, is_positive_int
+from ww.contracts import ExecutionKind, PlanItemOwner
+from ww.validation import expect_keys
 
 if TYPE_CHECKING:
     from ww.actions.contracts import PlannedAction
-
-
-@dataclass(frozen=True)
-class LoopBoundary:
-    """Manager-owned entry or repeat boundary generated for a ``loop`` step."""
-
-    kind: ClassVar[str] = "loop"
-    owner: ClassVar[PlanItemOwner] = "ww"
-    execution: ClassVar[ExecutionKind] = "loop_control"
-
-    loop_id: str
-    boundary: LoopOperation
-    max_times: int
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.loop_id, str) or not self.loop_id.strip():
-            raise ValueError("loop boundary requires a non-empty loop ID")
-        if self.boundary not in {"enter", "repeat"}:
-            raise ValueError("loop boundary must be enter or repeat")
-        if not is_positive_int(self.max_times):
-            raise ValueError("loop boundary requires a positive integer limit")
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "loop_id": self.loop_id,
-            "boundary": self.boundary,
-            "max_times": self.max_times,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LoopBoundary:
-        expect_keys(data, {"loop_id", "boundary", "max_times"}, f"{cls.kind} operation")
-        return cls(data["loop_id"], data["boundary"], data["max_times"])
 
 
 @dataclass(frozen=True)
@@ -156,11 +123,10 @@ class ChildWorkflowRun:
         )
 
 
-CoreOperation: TypeAlias = "LoopBoundary | WorkflowHandoff | ChildWorkflowRun"
+CoreOperation: TypeAlias = "WorkflowHandoff | ChildWorkflowRun"
 PlanOperation: TypeAlias = "PlannedAction | CoreOperation"
 
-_CORE_OPERATIONS: dict[str, type[LoopBoundary | WorkflowHandoff | ChildWorkflowRun]] = {
-    LoopBoundary.kind: LoopBoundary,
+_CORE_OPERATIONS: dict[str, type[WorkflowHandoff | ChildWorkflowRun]] = {
     WorkflowHandoff.kind: WorkflowHandoff,
     ChildWorkflowRun.kind: ChildWorkflowRun,
 }

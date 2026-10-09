@@ -11,7 +11,7 @@ from ww import BETA_NOTICE
 from ww.actions import InstructionContent, InstructionContext, PlannedAction, actions
 from ww.direct_work import SHORT_SHA
 from ww.instructions import Instruction
-from ww.operations import ChildWorkflowRun, LoopBoundary, WorkflowHandoff
+from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.output_adapters import (
     JsonOutputAdapter,
     MarkdownOutputAdapter,
@@ -247,15 +247,7 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
             )
         else:
             markdown: tuple[str, ...]
-            if isinstance(item.operation, LoopBoundary):
-                markdown = (
-                    "**Loop control**",
-                    "",
-                    f"- Boundary: `{item.operation.boundary}`",
-                    f"- Maximum rounds: `{item.operation.max_times}`",
-                    "",
-                )
-            elif isinstance(item.operation, WorkflowHandoff):
+            if isinstance(item.operation, WorkflowHandoff):
                 markdown = ("**Start workflow**", "", f"`{item.operation.target}`", "")
             elif isinstance(item.operation, ChildWorkflowRun):
                 markdown = (

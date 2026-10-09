@@ -519,7 +519,7 @@ workflows:
     assert service.next("TASK-DIRECT-ITEM", outcome="mixed").item_name == "resolve"
 
 
-def test_direct_assessment_branches_resume_inside_a_loop(tmp_path: Path) -> None:
+def test_direct_assessment_branches_resume_inside_a_group(tmp_path: Path) -> None:
     (tmp_path / "ww.yaml").write_text(
         """handlers:
   - discuss: Discuss this round.
@@ -527,7 +527,7 @@ workflows:
   - task: ~
     steps:
       - reconsider: ~
-        loop:
+        steps:
           - assess:
               question: Did the round resolve the issue?
               positive:
@@ -536,24 +536,23 @@ workflows:
                 handlers:
                   - argv: [printf, recorded]
           - review: Review the result.
-            break: The round is complete.
+
 """,
         encoding="utf-8",
     )
     service = WorkflowService(Storage(tmp_path))
-    entry = start_after_init(service, "task", "TASK-DIRECT-LOOP", agent="codex")
-    assert entry.action_kind == "loop"
+    start_after_init(service, "task", "TASK-DIRECT-GROUP", agent="codex")
 
-    assert service.next("TASK-DIRECT-LOOP").item_name == "assess"
+    assert service.next("TASK-DIRECT-GROUP").item_name == "assess"
     service.complete(
-        "TASK-DIRECT-LOOP", artifact="Positive.", summary_for_next="Choose."
+        "TASK-DIRECT-GROUP", artifact="Positive.", summary_for_next="Choose."
     )
-    waiting = service.status("TASK-DIRECT-LOOP")
+    waiting = service.status("TASK-DIRECT-GROUP")
     assert waiting.choosing_outcome_of == "assess"
-    assert service.resume(*service.load("TASK-DIRECT-LOOP")).choosing_outcome_of == (
+    assert service.resume(*service.load("TASK-DIRECT-GROUP")).choosing_outcome_of == (
         "assess"
     )
-    assert service.next("TASK-DIRECT-LOOP", outcome="positive").item_name == "positive"
+    assert service.next("TASK-DIRECT-GROUP", outcome="positive").item_name == "positive"
 
 
 AUTOMATIC = """workflows:

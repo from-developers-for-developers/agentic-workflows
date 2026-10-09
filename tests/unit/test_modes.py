@@ -199,7 +199,7 @@ def test_modes_reach_only_agent_steps(tmp_path: Path) -> None:
             assert item.modes == (), item.id
 
 
-def test_item_stages_and_loop_steps_get_their_modes(tmp_path: Path) -> None:
+def test_item_stages_and_group_steps_get_their_modes(tmp_path: Path) -> None:
     plan = _plan(
         tmp_path,
         text="""modes:
@@ -212,10 +212,10 @@ workflows:
         items:
           steps:
             - analyze: Analyze.
-      - name: review-loop
-        loop:
+      - name: review-group
+        steps:
           - review: Review.
-            break: No findings.
+
           - fix: Fix.
 """,
     )

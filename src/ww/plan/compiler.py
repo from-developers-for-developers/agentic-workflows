@@ -30,7 +30,7 @@ from ww.discovery import AgentDiscovery
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies, interpolate
-from ww.operations import LoopBoundary, PlanOperation, WorkflowHandoff
+from ww.operations import PlanOperation, WorkflowHandoff
 from ww.project_config import ProjectConfig
 from ww.run_reports import debug_item, summary_prompt, summary_variables
 from ww.variables import (
@@ -65,7 +65,6 @@ from .constructs import (
     ConstructPlannerRegistry,
     ItemAnnotations,
     LeafRequest,
-    LoopBoundaryRequest,
     PlanningContext,
     PlanningScope,
     builtin_construct_planners,
@@ -87,7 +86,7 @@ class ExecutionHints:
     """The worker shape a step requests: agent, model, reasoning, and profile.
 
     Every field is inherited along the same chain, workflow, then each
-    enclosing step, then the step itself, so a loop wrapper or a parent step
+    enclosing step, then the step itself, so a parent step
     can set the profile for its whole body.  ``workdir`` follows the same
     chain, but only steps declare it: a hook chooses its own directory.
     """
@@ -171,13 +170,11 @@ class _CompilerPlanningContext(PlanningContext):
     """Compiler-private implementation of the construct planning primitives."""
 
     scope: PlanningScope
-    default_max_rounds: int
     _compile: Callable[[tuple[StepDefinition, ...], PlanningScope], tuple[str, ...]]
     _compile_region: Callable[
         [tuple[StepDefinition, ...], PlanningScope, ItemAnnotations], tuple[str, ...]
     ]
     _emit_leaf: Callable[[LeafRequest], tuple[str, ...]]
-    _emit_boundary: Callable[[LoopBoundaryRequest], None]
 
     def derive_scope(
         self,
@@ -210,9 +207,6 @@ class _CompilerPlanningContext(PlanningContext):
 
     def emit_leaf(self, request: LeafRequest) -> tuple[str, ...]:
         return self._emit_leaf(request)
-
-    def emit_loop_boundary(self, request: LoopBoundaryRequest) -> None:
-        self._emit_boundary(request)
 
 
 class WorkflowPlanCompiler:
@@ -639,33 +633,11 @@ class WorkflowPlanCompiler:
                     ),
                 )
 
-            def emit_boundary(
-                request: LoopBoundaryRequest,
-                current_step: StepDefinition = step,
-                current_path: str = path,
-                current_ancestors: tuple[str, ...] = ancestors,
-                current_annotations: ItemAnnotations = annotations,
-                current_item_template: bool = item_template,
-            ) -> None:
-                self._append_loop_control(
-                    items,
-                    workflow,
-                    current_step,
-                    current_path,
-                    parent,
-                    current_ancestors,
-                    request,
-                    current_annotations,
-                    current_item_template,
-                )
-
             context = _CompilerPlanningContext(
                 scope,
-                self.project_config.limits.rounds,
                 compile_nested,
                 compile_region,
                 emit_leaf,
-                emit_boundary,
             )
             expansion = self.construct_planners.expand(
                 self.construct_normalizer(step), context
@@ -720,56 +692,6 @@ class WorkflowPlanCompiler:
                 )
             values = available_after
         return values
-
-    def _append_loop_control(
-        self,
-        items: list[PlanItem],
-        workflow: WorkflowDefinition,
-        step: StepDefinition,
-        path: str,
-        parent: str | None,
-        ancestors: tuple[str, ...],
-        request: LoopBoundaryRequest,
-        annotations: ItemAnnotations,
-        item_template: bool = False,
-    ) -> None:
-        """Add a manager-owned boundary around an otherwise ordinary step tree.
-
-        Inside repeated stages the boundary is a template like the stages,
-        so each item or child gets its own loop.
-        """
-        suffix = request.operation
-        description = step.description or f"Run the {step.name!r} loop."
-        items.append(
-            PlanItem(
-                id=f"{workflow.name}:{path}:loop:{suffix}:1",
-                position=len(items) + 1,
-                name=step.name,
-                description=description,
-                operation=LoopBoundary(path, request.operation, request.max_times),
-                owner="ww",
-                execution="loop_control",
-                requires_agent_input=False,
-                workflow=workflow.name,
-                step=path,
-                parent=parent,
-                phase="step",
-                source="step",
-                registered_handler=None,
-                artifact=request.artifact,
-                item_template=item_template,
-                item_pass=annotations.item_pass,
-                child_stage=annotations.child_stage,
-                ancestors=ancestors,
-                loop_break=None,
-                loop_continue=None,
-                assessment_question=annotations.assessment_question,
-                assessment_outcomes=annotations.assessment_outcomes,
-                assessment_stops=annotations.assessment_stops,
-                assessment_parent=annotations.assessment_parent,
-                assessment_outcome=annotations.assessment_outcome,
-            )
-        )
 
     def _append_hooks(
         self,
@@ -936,14 +858,6 @@ class WorkflowPlanCompiler:
                 owner = actions.get(kind).owner
                 action = action_override
             execution = _execution_kind(kind)
-        if (
-            phase == "step"
-            and (step.loop_break is not None or step.loop_continue is not None)
-            and owner != "agent"
-        ):
-            raise ConfigurationError(
-                f"step {step.name!r} uses break/continue but is not agent-owned"
-            )
         if phase == "step" and step.role is not None and owner != "agent":
             raise ConfigurationError(
                 f"step {step.name!r} sets role, but ww runs it: role applies to "
@@ -1108,8 +1022,6 @@ class WorkflowPlanCompiler:
                 item_pass=annotations.item_pass,
                 item_collect_only=annotations.item_collect_only,
                 item_assignment=annotations.item_assignment or "per_step",
-                loop_id=annotations.loop_id,
-                loop_assignment=annotations.loop_assignment,
                 split_instruction=annotations.split_instruction,
                 shared_items=annotations.shared_items,
                 item_identity=annotations.item_identity,
@@ -1125,8 +1037,6 @@ class WorkflowPlanCompiler:
                     if phase == "step" and step.artifact_dependency is not None
                     else None
                 ),
-                loop_break=step.loop_break if phase == "step" else None,
-                loop_continue=step.loop_continue if phase == "step" else None,
                 assessment_question=annotations.assessment_question,
                 assessment_outcomes=annotations.assessment_outcomes,
                 assessment_stops=annotations.assessment_stops,
@@ -1427,7 +1337,6 @@ def _merge_annotations(
             emitted.item_pass if emitted.item_pass is not None else inherited.item_pass
         ),
         item_collect_only=emitted.item_collect_only,
-        loop_id=emitted.loop_id if emitted.loop_id is not None else inherited.loop_id,
         child_stage=(
             emitted.child_stage
             if emitted.child_stage is not None
@@ -1437,11 +1346,6 @@ def _merge_annotations(
             emitted.child_before_run
             if emitted.child_stage is not None
             else inherited.child_before_run
-        ),
-        loop_assignment=(
-            emitted.loop_assignment
-            if emitted.loop_assignment is not None
-            else inherited.loop_assignment
         ),
         split_instruction=emitted.split_instruction,
         shared_items=emitted.shared_items,
@@ -1466,8 +1370,7 @@ def _artifact_dependency_path(
 
     Validation has already chosen the step: an earlier sibling, else an
     earlier step of the nearest enclosing level.  The same search over the
-    already-compiled items gives its path, skipping a loop that is still
-    running around the dependent step.  A group emits no item of its own, so
+    already-compiled items gives its path. A group emits no item of its own, so
     it is found as the ancestor of an earlier item, never as one enclosing
     the dependent step.
     """
@@ -1482,7 +1385,7 @@ def _artifact_dependency_path(
     for container in (*reversed(ancestors), None):
         path = f"{container}/{name}" if container else name
         found = earlier.get(path)
-        if found is not None and not (path in ancestors and found.kind == "loop"):
+        if found is not None:
             return path
         if found is None and path in groups:
             return path

@@ -63,11 +63,6 @@ ItemOperation = Literal[
 # How the per-item stages of an ``items`` step are split into worker
 # assignments in the ``auto`` runtime.
 ItemAssignment = Literal["together", "per_item", "per_step"]
-# How the body steps of a ``loop`` are split into worker assignments in the
-# ``auto`` runtime: one assignment per body step, or one per loop round for
-# consecutive steps that resolve to the same worker settings.
-LoopAssignment = Literal["per_round", "per_step"]
-DEFAULT_LOOP_ASSIGNMENT: LoopAssignment = "per_round"
 ChildOperation = Literal["collect"]
 
 # Action identifiers are registry keys; third-party internal registrations may
@@ -76,10 +71,7 @@ PlanItemKind = str
 # Task IDs issued while an external identity is still being bound.
 BOOTSTRAP_REQUEST_PREFIX = "REQUEST-"
 PlanItemOwner = Literal["agent", "ww"]
-ExecutionKind = Literal[
-    "agent_instruction", "automatic", "loop_control", "workflow_transition"
-]
-LoopOperation = Literal["enter", "repeat"]
+ExecutionKind = Literal["agent_instruction", "automatic", "workflow_transition"]
 
 CommandStatus = Literal["pending", "in_progress", "interrupted", "completed", "failed"]
 ItemStatus = Literal[
@@ -110,11 +102,7 @@ def run_is_open(status: str) -> bool:
 
 
 StepStatus = Literal["pending", "in_progress", "interrupted", "completed", "failed"]
-# ``skipped``: a ``break`` on a per-child parent stage ended the children
-# before this one started.
-ChildStatus = Literal[
-    "pending", "starting", "in_progress", "completed", "failed", "skipped"
-]
+ChildStatus = Literal["pending", "starting", "in_progress", "completed", "failed"]
 RunStatus = Literal["pending", "in_progress", "completed", "failed"]
 InstructionStatus = Literal[
     "pending",
@@ -140,7 +128,6 @@ OperatorReason = Literal[
     "work_failed",
     "child_failed",
     "handler_interrupted",
-    "loop_limit",
     "fix_limit",
     "check_disputed",
     "value_unavailable",

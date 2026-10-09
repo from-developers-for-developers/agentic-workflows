@@ -109,7 +109,6 @@ class ActionResolver:
             or isinstance(handler, StepDefinition)
             and (
                 handler.child_steps
-                or handler.loop_steps
                 or handler.items
                 or handler.children
                 or handler.assessment_outcomes

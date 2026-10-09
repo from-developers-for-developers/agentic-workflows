@@ -535,7 +535,6 @@ def resolve_step_rules(
             step,
             rules=rules,
             child_steps=tuple(map(resolve, step.child_steps)),
-            loop_steps=tuple(map(resolve, step.loop_steps)),
             assessment_outcomes=tuple(map(resolve, step.assessment_outcomes)),
             items=(
                 replace(step.items, steps=tuple(map(resolve, step.items.steps)))

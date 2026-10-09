@@ -381,26 +381,20 @@ workflows:
         artifact_from: analyze
 ```
 
-## 12. Loops with break and continue
+## 12. Review and remediation
 
-A `loop` repeats its body until a worker breaks it or the round limit is
-reached. `break` and `continue` are natural-language conditions the worker
-evaluates after doing the step. `max_rounds` overrides the project default, `limits.rounds` in
-`ww.json`.
+Review and remediation can be performed in one ordinary assignment. Where
+reviewer roles differ, keep a linear review followed by remediation and verification.
 
 ```yaml
 workflows:
-  - name: review-and-fix
+  - task: ~
     steps:
-      - implement: Implement the change.
-      - polish:
-        max_rounds: 4
-        loop:
-          - review: Review the current state of the change.
-            break: There are no meaningful findings left.
-          - triage: Decide whether the findings are worth fixing now.
-            continue: The findings are cosmetic and can be batched into the next review.
-          - fix: Fix the findings.
+      - review: Review the implementation and record findings.
+        profile: code-reviewer
+      - fix: Address every finding and verify the result.
+        profile: developer
+        artifact_from: review
 ```
 
 ## 13. A handoff workflow that chooses the next one
@@ -459,8 +453,7 @@ When the parent has work of its own around each child, list its stages under
 `children.steps` instead of naming one workflow. The parent runs them once per
 child, one child at a time; the stage with `workflow:` runs the child and waits
 for it, and its artifact is the child's summary. Here the parent refines each
-story before it starts, reviews it afterwards, and a `break` on the review ends
-the epic early: the stories not started yet are skipped.
+story before it starts and reviews it afterwards.
 
 ```yaml
 workflows:
@@ -476,7 +469,7 @@ workflows:
                 workflow: story
             - review: Check that {{ww.child.id}} delivered what it promised.
               artifact_from: implement
-              break: The epic is complete; no remaining story is worth building.
+
       - summarize: Summarize what the stories delivered.
 
   - name: story
@@ -560,7 +553,7 @@ workflows:
 ```json
 {
   "enabled": true,
-  "limits": {"rounds": 3, "fixes": 3},
+  "limits": {"fixes": 3},
   "extensions": {
     "ww/git": {
       "commit_format": "{{ww.task.id}}: {{commit_message}}",

@@ -6,7 +6,7 @@ separates work performed by the agent from automation performed by `ww`, and
 saves task state so work can be inspected and resumed.
 
 Use it when a development process needs more structure than a prompt: workflow
-hooks, reusable handlers, worker-stoppable review/fix loops, MCP-backed
+hooks, reusable handlers, review and remediation steps, MCP-backed
 actions, saved artifacts, and a durable record of what ran.
 
 Website: <https://agenticworkflows.dev>
@@ -250,7 +250,7 @@ exact, ordered plan that would run — every step, hook, and handler — without
 creating any task state.
 
 [documentation/examples.md](documentation/examples.md) has twenty-one complete,
-tested `ww.yaml` examples, from this one up to loops, per-item work,
+tested `ww.yaml` examples, from this one up to groups, per-item work,
 child tasks, and Git integration.
 
 ### 4. Ask your agent to do the work

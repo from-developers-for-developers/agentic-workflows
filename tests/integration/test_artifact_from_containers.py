@@ -98,54 +98,6 @@ def test_a_group_holding_an_assessment_supplies_the_chosen_outcomes_artifact(
     assert Path(artifact).read_text(encoding="utf-8").endswith(f"{result}\n")
 
 
-def test_a_plain_group_supplies_its_latest_loop_rounds_artifact(
-    tmp_path: Path,
-) -> None:
-    service = _service(
-        tmp_path,
-        """workflows:
-  - name: task
-    steps:
-      - name: prepare
-        steps:
-          - name: draft
-          - name: refine
-            artifact: false
-            loop:
-              - name: polish
-                break: Nothing is left to polish.
-          - name: note
-            artifact: false
-      - name: build
-        description: Build it.
-        artifact_from: prepare
-""",
-    )
-    start_after_init(service, "task", "TASK-1", agent="codex")
-    _open(service)
-    _complete(service, "Drafted.")
-    assert _open(service).item_name == "polish"
-    _complete(service, "Round one.")
-    assert _open(service).item_name == "polish"
-    service.loop(
-        "TASK-1",
-        artifact="Round two.",
-        summary_for_next="Done.",
-        caller_role="worker",
-        assignment=assignment_token(service, "TASK-1"),
-    )
-    assert _open(service).item_name == "note"
-    _complete(service, "Noted.")
-
-    build = _open(service)
-
-    text = build.action_text or ""
-    assert "artifact produced by the `prepare/refine/polish` step" in text
-    artifact = text.rsplit("`", 2)[-2]
-    assert "iteration-02" in artifact
-    assert Path(artifact).read_text(encoding="utf-8").endswith("Round two.\n")
-
-
 def test_an_assessment_whose_outcome_saved_nothing_supplies_its_own_artifact(
     tmp_path: Path,
 ) -> None:
@@ -211,65 +163,6 @@ def test_an_assessment_without_an_artifact_whose_outcome_saved_nothing_offers_no
     assert "No artifact is available from `assess`: no step inside it" in (
         ship.action_text or ""
     )
-
-
-ASSESS_IN_LOOP = """
-                  artifact: false
-                  question: Investigate?
-                  outcomes:
-                    positive:
-                      steps:
-                        - investigate: Investigate it."""
-LOOPED = """workflows:
-  - name: task
-    steps:
-      - name: rounds
-        artifact: false
-        loop:
-          {container}
-          - name: report
-            description: Report.
-            artifact_from: {target}
-            break: Nothing left.
-"""
-IN_GROUP = "- name: check\n            steps:\n              - assess:" + ASSESS_IN_LOOP
-ALONE = "- assess:" + ASSESS_IN_LOOP.replace("\n    ", "\n")
-
-
-@pytest.mark.parametrize(
-    ("container", "target"),
-    [(IN_GROUP, "check"), (ALONE, "assess")],
-    ids=["group", "assessment"],
-)
-def test_a_container_in_a_loop_offers_only_its_current_rounds_artifact(
-    tmp_path: Path, container: str, target: str
-) -> None:
-    service = _service(tmp_path, LOOPED.format(container=container, target=target))
-    start_after_init(service, "task", "TASK-1", agent="codex")
-    assert _open(service).item_name == "assess"
-    choosing = _complete_bare(service)
-    assert choosing.choosing_outcome_of == "assess"
-    assert "--outcome positive" in md.render_instruction(choosing)
-    restarted = _service(tmp_path, LOOPED.format(container=container, target=target))
-    assert restarted.status("TASK-1").choosing_outcome_of == "assess"
-    choosing = restarted.instruction("TASK-1")
-    assert choosing.choosing_outcome_of == "assess"
-    service = restarted
-    assert _open(service, "positive").item_name == "investigate"
-    _complete(service, "Investigated in round one.")
-    first = _open(service)
-    assert first.item_name == "report"
-    assert "iteration-01" in (first.action_text or "")
-    _complete(service, "Reported round one.")
-
-    assert _open(service).item_name == "assess"
-    _complete_bare(service)
-    second = _open(service, "negative")
-
-    assert second.item_name == "report"
-    text = second.action_text or ""
-    assert f"No artifact is available from `rounds/{target}`" in text
-    assert "Investigated" not in text and "iteration-01" not in text
 
 
 def test_an_outcome_naming_its_assessment_still_gets_the_assessment_artifact(

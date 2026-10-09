@@ -901,7 +901,7 @@ workflows:
     assert [rule.id for rule in _item(plan, "refactor").rules] == ["php/one"]
 
 
-def test_groups_reach_loop_bodies_by_leaf_name_or_precise_path(
+def test_groups_reach_nested_groups_by_leaf_name_or_precise_path(
     tmp_path: Path,
 ) -> None:
     _rule(tmp_path, "rules/fixes/small.md", "Keep fixes small.")
@@ -920,9 +920,9 @@ workflows:
     steps:
       - develop: Develop.
       - name: review
-        loop:
+        steps:
           - check: Check.
-            break: Nothing to fix.
+
           - fix: Fix.
       - check: Check the whole.
 """,

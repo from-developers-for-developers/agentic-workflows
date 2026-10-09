@@ -6,7 +6,7 @@
 # The first run creates .venv and installs the project with its development
 # dependencies; later runs reuse it. With no arguments it runs ruff, mypy and
 # the whole test suite; any arguments are passed to pytest alone, as in
-# `scripts/test tests/unit -k loops`.
+# `scripts/test tests/unit -k assignments`.
 set -eu
 
 cd "$(dirname "$0")/.."

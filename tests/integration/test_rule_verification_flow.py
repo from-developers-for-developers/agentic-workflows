@@ -19,7 +19,6 @@ from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.rule_stats import RuleFailure
 from ww.rule_store import STORE_FILE, RuleStore
-from ww.rule_verification import SKIPPED_ROUND
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -744,43 +743,6 @@ def test_an_interruption_before_the_held_completion_is_recorded_recovers_once(
     ]
     again = service.next("TASK-1")
     assert again.item_name == "check"
-
-
-LOOPED = f"""workflows:
-  - name: task
-    steps:
-      - rounds: ~
-        loop:
-          - name: develop
-            description: Develop it.
-            rules:
-              - {CLI}
-          - review: Review it.
-            break: Nothing is left to do.
-"""
-
-
-def test_a_loop_round_skips_the_verifier_its_reset_left_idle(tmp_path: Path) -> None:
-    root = _project(tmp_path, LOOPED)
-    service, held = _developed(root)
-    assert held.item_name == "develop-verify-1"
-    review = _report(service, PASS)
-    assert review.item_name == "review"
-    service.complete("TASK-1", artifact="Another round.", summary_for_next="More.")
-
-    again = service.next("TASK-1")
-
-    assert again.item_name == "develop"
-    assert again.item_status == "in_progress"
-    state, snapshot = service.load("TASK-1")
-    index = next(
-        index
-        for index, item in enumerate(snapshot.plan.items)
-        if item.verifies is not None
-    )
-    record = state.item_executions[index]
-    assert record.verification == ()
-    assert (record.status, record.result) == ("completed", SKIPPED_ROUND)
 
 
 AFTER_HOOK = f"""workflows:

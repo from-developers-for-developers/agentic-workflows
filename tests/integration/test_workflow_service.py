@@ -153,10 +153,10 @@ def test_nested_artifact_from_names_the_upper_level_step_path(tmp_path: Path) ->
         steps:
           - name: research
           - name: review
-            loop:
+            steps:
               - name: fix
                 artifact_from: research
-                break: Done
+
 """,
         encoding="utf-8",
     )

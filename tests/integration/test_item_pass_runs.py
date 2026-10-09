@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Real runs of `items` passes: scoped expansion, pass gates, loops."""
+"""Real runs of `items` passes: scoped expansion, pass gates, groups."""
 
 from __future__ import annotations
 
@@ -361,85 +361,6 @@ def test_items_added_during_a_pass_join_the_next_pass(tmp_path: Path) -> None:
         "c3",
         "c3",
     ]
-
-
-LOOPED = """workflows:
-  - name: review
-    steps:
-      - rounds: Review in rounds.
-        max_rounds: 3
-        loop:
-          - collect: Record new comments.
-            items:
-              steps: []
-          - triage: Reuse the collected items.
-            items:
-              steps:
-                - assess:
-                    question: Does this comment need a fix?
-                    outcomes:
-                      positive:
-                        steps:
-                          - analyze: Analyze it.
-                            item_phase: analyze
-                - attempts: Try until it holds.
-                  loop:
-                    - attempt: Try a fix.
-                      break: The fix holds.
-          - decide: Decide whether another round is needed.
-            break: No new comments.
-"""
-
-
-def test_passes_in_a_loop_expand_again_each_round(tmp_path: Path) -> None:
-    service = _service(tmp_path, LOOPED)
-    assert service.next(TASK).item_name == "collect"
-    service.add_item(TASK, WorkItem("c1", "First comment"))
-    service.complete(TASK, artifact="Collected.", summary_for_next="Done.")
-    _step(service)  # triage
-    assert service.next(TASK).item_name == "assess"
-    service = _resumed(tmp_path)
-    service.complete(TASK, artifact="Needs a fix.", summary_for_next="Done.")
-    assert service.status(TASK).choosing_outcome_of == "assess"
-    service = _resumed(tmp_path)
-    assert service.next(TASK, outcome="positive").item_name == "analyze"
-    service.update_item(TASK, "c1", processed_item="Analysis.")
-    service.complete(TASK, artifact="Analyzed.", summary_for_next="Done.")
-    assert service.next(TASK).item_name == "attempt"
-    # The nearest loop is the per-item one: its break leaves only it.
-    service.loop(TASK, artifact="Holds.", summary_for_next="Done.")
-    assert service.next(TASK).item_name == "decide"
-    service.complete(TASK, artifact="More comments.", summary_for_next="Done.")
-
-    assert service.next(TASK).item_name == "collect"  # round 2
-    service = _resumed(tmp_path)
-    service.add_item(TASK, WorkItem("c2", "New comment"))
-    service.complete(TASK, artifact="Collected.", summary_for_next="Done.")
-    _step(service)  # triage
-    state, snapshot = service.load(TASK)
-    round_two = [
-        (item.name, item.item_id)
-        for item in snapshot.plan.items
-        if item.item_pass == "rounds/triage" and item.phase == "step" and item.item_id
-    ]
-    stage_names = ["assess", "analyze", "attempts", "attempt", "attempts"]
-    assert round_two == [
-        *((name, "c1") for name in stage_names),
-        *((name, "c2") for name in stage_names),
-    ]
-    # Fresh records for the round: only the stage now open has begun.
-    statuses = [
-        record.status if record.started_at is None else "begun"
-        for item, record in zip(snapshot.plan.items, state.item_executions, strict=True)
-        if item.item_pass == "rounds/triage" and item.item_id
-    ]
-    assert statuses[0] == "begun"
-    assert set(statuses[1:]) == {"pending"}
-    assert dict(state.loop_iterations)["rounds"] == 2
-    assert service.next(TASK).item_name == "assess"
-    service.complete(TASK, artifact="Fine.", summary_for_next="Done.")
-    assert service.next(TASK, outcome="negative").item_name == "attempt"
-    assert service.load(TASK)[0].item_executions  # stays loadable
 
 
 def test_a_later_pass_still_replans_while_an_earlier_one_is_expanded(

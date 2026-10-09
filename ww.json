@@ -5,7 +5,6 @@
   "executable": "ww-agentic-workflows",
   "task_format": "TASK-{{digit}}",
   "limits": {
-    "rounds": 3,
     "fixes": 3
   },
   "agent_hooks": {

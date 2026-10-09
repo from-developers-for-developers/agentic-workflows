@@ -72,7 +72,7 @@ workflows:
     assert found["task"] == ("task",)
 
 
-def test_requests_nested_in_loops_items_and_assessments_are_found(
+def test_requests_nested_in_groups_items_and_assessments_are_found(
     tmp_path: Path,
 ) -> None:
     found = _workflows(
@@ -82,7 +82,7 @@ workflows:
   - name: deep
     steps:
       - polish:
-        loop:
+        steps:
           - fix: Fix what the review found.
             reasoning: high
       - collect: Review the change.

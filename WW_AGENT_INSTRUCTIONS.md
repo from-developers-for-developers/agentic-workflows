@@ -40,7 +40,7 @@ To continue a task, run `./ww instruction <task-id> --role manager` (a resuming 
   <task-id>` previews checks; an unavailable check is no failure) or `./ww dispute` with one `--rule`
   per wrong check; record impossible work with `./ww fail` and the page's role/assignment. On
   `awaiting_operator`, stop and report the reason and exact error; run only the operator's chosen
-  recovery option (`next --force --reason` also ends a running loop); never reset unasked. A standing
+  recovery option; never reset unasked. A standing
   operator authorization for routine repairs (dependency installation, formatting, retries) covers
   such stops; ask only for a material decision.
 - Relay feedback-deduction suggestions after completion; rule approval and pruning are separate follow-ups.

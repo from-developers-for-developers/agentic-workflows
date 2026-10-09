@@ -6,7 +6,7 @@ Known open boundaries. None of them blocks the beta.
 
 `src/ww/service.py` is 3,874 lines; the `plan/` package is 2,610 lines, `config/`
 3,237, and `instructions/` 3,298. Size alone is not a defect. The practical
-issue is that init completion, assignment boundaries, loops, and cross-task
+issue is that init completion, assignment boundaries, and cross-task
 publication interact inside the service without one obvious invariant
 boundary, so a change to one of them has to be checked against the others by
 reading.

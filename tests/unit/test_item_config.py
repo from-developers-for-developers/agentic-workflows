@@ -195,7 +195,7 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
         (
             "      - review: Review.\n        items: ~\n"
             "        steps:\n          - fix: Fix.\n",
-            "cannot combine steps, loop, items, and children",
+            "cannot combine steps, items, and children",
         ),
         (
             "      - review: Review.\n        items: ~\n        item_phase: analyze\n",
@@ -213,7 +213,7 @@ def test_handler_reference_inherits_the_item_flow(tmp_path: Path) -> None:
         ),
         (
             "      - review: Review.\n        items:\n          steps:\n"
-            "            - rounds: Rounds.\n              loop:\n"
+            "            - rounds: Rounds.\n              steps:\n"
             "                - triage: Triage.\n                  items: ~\n",
             "items step 'triage' is nested inside the per-item steps",
         ),

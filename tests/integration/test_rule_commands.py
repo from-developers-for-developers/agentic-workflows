@@ -884,9 +884,9 @@ workflows:
   - name: task
     steps:
       - name: review
-        loop:
+        steps:
           - check: Check.
-            break: Nothing to fix.
+
           - fix: Fix.
       - name: collect
         description: Collect.

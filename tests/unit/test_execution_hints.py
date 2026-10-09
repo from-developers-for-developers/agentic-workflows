@@ -327,9 +327,9 @@ workflows:
     steps:
       - name: run-tests
         profile: tester
-        loop:
+        steps:
           - name: test
-            break: Green.
+
           - name: fix
           - name: review
             profile: reviewer

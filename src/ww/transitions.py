@@ -8,14 +8,12 @@ item, run, and step-projection invariants are changed together.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Collection
 from dataclasses import replace
 
 from ww.assessments import outcome_region, pending_assessment
 from ww.children import ChildTask
 from ww.contracts import StepStatus
-from ww.control import loop_control
 from ww.errors import StateError
 from ww.execution_models import (
     CheckReport,
@@ -33,7 +31,6 @@ from ww.execution_models import (
 from ww.execution_models.records import RuleResolution
 from ww.items import WorkItem
 from ww.plan import (
-    LoopBoundary,
     PlanItem,
     PlannedCheck,
     WorkflowPlan,
@@ -870,463 +867,6 @@ def pause_for_agent(state: ExecutionState, now: Clock) -> ExecutionState:
     return replace(state, status="pending", updated_at=now())
 
 
-def enter_loop(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem, now: Clock
-) -> ExecutionState:
-    """Enter a loop once and advance to its first ordinary nested step."""
-    loop = loop_control(item)
-    if loop is None or loop.boundary != "enter":
-        raise StateError("enter_loop requires a loop entry item")
-    records = list(state.item_executions)
-    records[state.cursor] = replace(
-        records[state.cursor], status="completed", completed_at=now()
-    )
-    iterations = {
-        **dict(state.loop_iterations),
-        loop.loop_id: 1,
-    }
-    return project_steps(
-        replace(
-            state,
-            cursor=state.cursor + 1,
-            status="pending",
-            item_executions=tuple(records),
-            loop_iterations=tuple(iterations.items()),
-            updated_at=now(),
-        ),
-        plan,
-        now,
-    )
-
-
-def repeat_loop(
-    state: ExecutionState, plan: WorkflowPlan, item: PlanItem, now: Clock
-) -> ExecutionState:
-    """Reset a completed loop body for its next durable iteration."""
-    loop = loop_control(item)
-    if loop is None or loop.boundary != "repeat":
-        raise StateError("repeat_loop requires a loop repeat item")
-    records = list(state.item_executions)
-    entry = next(
-        (
-            index
-            for index in range(state.cursor - 1, -1, -1)
-            if (candidate := loop_control(plan.items[index])) is not None
-            and candidate.loop_id == loop.loop_id
-            and candidate.boundary == "enter"
-        ),
-        None,
-    )
-    if entry is None:
-        raise StateError(f"loop {loop.loop_id!r} has no entry boundary")
-    iteration = dict(state.loop_iterations).get(loop.loop_id, 1) + 1
-    scope = loop_operation_scope(state, plan, entry, iteration)
-    history = [*state.execution_history, *records[entry + 1 : state.cursor + 1]]
-    for index in range(entry + 1, state.cursor + 1):
-        records[index] = new_item_execution(state.task_id, scope, plan.items[index])
-    iterations = {
-        **dict(state.loop_iterations),
-        loop.loop_id: iteration,
-    }
-    return project_steps(
-        replace(
-            state,
-            cursor=entry + 1,
-            status="pending",
-            active_item_id=None,
-            item_executions=tuple(records),
-            execution_history=tuple(history),
-            assignment_item_id=None,
-            assignment_token=None,
-            loop_iterations=tuple(iterations.items()),
-            updated_at=now(),
-        ),
-        plan,
-        now,
-    )
-
-
-def loop_limit_reached(state: ExecutionState, item: PlanItem) -> bool:
-    """Return whether a repeat boundary has exhausted its saved iteration limit."""
-    loop = loop_control(item)
-    if loop is None or loop.boundary != "repeat":
-        return False
-    return dict(state.loop_iterations).get(loop.loop_id, 0) >= loop.max_times
-
-
-def exit_exhausted_loop(
-    state: ExecutionState, plan: WorkflowPlan, now: Clock, reason: str | None = None
-) -> ExecutionState:
-    """Leave a loop at its iteration limit after an explicit operator force.
-
-    The repeat boundary is recorded as completed with the operator's reason so
-    the exit stays visible in the run history, and execution continues with
-    whatever follows the loop wrapper.
-    """
-    boundary = plan.items[state.cursor] if state.cursor < len(plan.items) else None
-    if boundary is None or not loop_limit_reached(state, boundary):
-        raise StateError("exit_exhausted_loop requires a loop at its iteration limit")
-    records = list(state.item_executions)
-    note = "operator force-exited the loop at its iteration limit"
-    if reason:
-        note = f"{note}\nForce reason: {reason}"
-    records[state.cursor] = replace(
-        records[state.cursor], status="completed", completed_at=now(), error=note
-    )
-    return project_steps(
-        replace(
-            state,
-            status="pending",
-            active_item_id=None,
-            assignment_item_id=None,
-            assignment_token=None,
-            cursor=state.cursor + 1,
-            item_executions=tuple(records),
-            last_error=None,
-            updated_at=now(),
-        ),
-        plan,
-        now,
-    )
-
-
-def loop_operation_scope(
-    state: ExecutionState,
-    plan: WorkflowPlan,
-    entry: int,
-    iteration: int,
-) -> str:
-    """Return an operation namespace including every enclosing loop iteration."""
-    loop_entry = plan.items[entry]
-    active = loop_control(loop_entry)
-    if active is None:  # pragma: no cover - caller invariant
-        raise StateError("loop entry has no loop ID")
-    enclosing = set(loop_entry.ancestors)
-    lineage = [
-        loop.loop_id
-        for item in plan.items[: entry + 1]
-        if (loop := loop_control(item)) is not None
-        and loop.boundary == "enter"
-        and (loop.loop_id in enclosing or loop.loop_id == active.loop_id)
-    ]
-    iterations = dict(state.loop_iterations)
-    encoded_segments = []
-    for loop_id in lineage:
-        value = _loop_iteration(loop_id, active.loop_id, iteration, iterations)
-        encoded_segments.append(f"{loop_id}:{value}")
-    encoded = ":".join(encoded_segments)
-    return f"{operation_scope_for(state)}{LOOP_SCOPE_MARKER}{encoded}"
-
-
-# What ``loop_operation_scope`` puts between the run's scope and the loops.
-LOOP_SCOPE_MARKER = ":loop:"
-
-
-def loop_iteration_of(record: PlanItemExecution, loop_id: str) -> int | None:
-    """The iteration of ``loop_id`` an execution record was made for.
-
-    Read back from the record's operation ID, which ``loop_operation_scope``
-    encodes as ``loop:<loop>:<iteration>:...``; a record without a segment
-    for the loop belongs to its first iteration. ``None`` when the record has
-    no operation ID to read.
-    """
-    if record.operation_id is None:
-        return None
-    scope = record.operation_id.removesuffix(f":{record.plan_item_id}")
-    _, marker, encoded = scope.partition(LOOP_SCOPE_MARKER)
-    if not marker:
-        return 1
-    # The loop's "<loop>:<iteration>" pair, e.g. "review:3" in "build:1:review:3".
-    found = re.search(rf"(?:^|:){re.escape(loop_id)}:(\d+)(?=:|$)", encoded)
-    return int(found.group(1)) if found else 1
-
-
-def _loop_iteration(
-    loop_id: str, active_loop_id: str, iteration: int, iterations: dict[str, int]
-) -> int:
-    """Select the reset iteration or its enclosing loop's saved iteration."""
-    return iteration if loop_id == active_loop_id else iterations[loop_id]
-
-
-def enclosing_loop_entry_index(plan: WorkflowPlan, item_index: int) -> int:
-    """Return the entry boundary for a plan item nested in a loop."""
-    entry = _enclosing_loop_entry(plan, item_index)
-    if entry is None:
-        raise StateError(f"step {plan.items[item_index].step!r} has no enclosing loop")
-    return entry
-
-
-def _enclosing_loop_entry(plan: WorkflowPlan, item_index: int) -> int | None:
-    """The entry boundary of the nearest loop around a plan item, if any."""
-    item = plan.items[item_index]
-    lineage = {item.step, *item.ancestors}
-    return next(
-        (
-            index
-            for index in range(item_index - 1, -1, -1)
-            if (loop := loop_control(plan.items[index])) is not None
-            and loop.boundary == "enter"
-            and loop.loop_id in lineage
-        ),
-        None,
-    )
-
-
-def active_loop(state: ExecutionState, plan: WorkflowPlan) -> tuple[str, int] | None:
-    """The loop the cursor is in, as its ID and the index of its repeat boundary.
-
-    The cursor is in a loop on one of its body items, a nested loop's
-    boundary included, or on its repeat boundary; on an entry boundary it is
-    in the enclosing loop only. ``None`` outside every loop.
-    """
-    if state.cursor >= len(plan.items):
-        return None
-    loop = loop_control(plan.items[state.cursor])
-    if loop is not None and loop.boundary == "repeat":
-        return loop.loop_id, state.cursor
-    entry = _enclosing_loop_entry(plan, state.cursor)
-    if entry is None:
-        return None
-    loop_id = _required_loop_control(plan.items[entry]).loop_id
-    return loop_id, _repeat_boundary_index(plan, loop_id, state.cursor)
-
-
-def _repeat_boundary_index(plan: WorkflowPlan, loop_id: str, start: int) -> int:
-    """The index of the repeat boundary of ``loop_id`` at or after ``start``."""
-    repeat = next(
-        (
-            index
-            for index in range(start, len(plan.items))
-            if (loop := loop_control(plan.items[index])) is not None
-            and loop.boundary == "repeat"
-            and loop.loop_id == loop_id
-        ),
-        None,
-    )
-    if repeat is None:
-        raise StateError(f"loop {loop_id!r} has no repeat boundary")
-    return repeat
-
-
-def end_loop(
-    state: ExecutionState, plan: WorkflowPlan, now: Clock, reason: str | None = None
-) -> ExecutionState:
-    """End the loop the cursor is in after an explicit operator force.
-
-    Every item from the cursor up to and including the loop's repeat boundary
-    is completed as skipped, and the boundary records the operator's reason
-    so the exit stays visible in the run history; execution continues with
-    whatever follows the loop wrapper.
-    """
-    active = active_loop(state, plan)
-    if active is None:
-        raise StateError("end_loop requires a cursor inside a loop")
-    loop_id, repeat = active
-    note = "operator ended the loop"
-    if reason:
-        note = f"{note}\nForce reason: {reason}"
-    ended = _skip_to(
-        state,
-        plan,
-        repeat + 1,
-        f"skipped because the operator ended the {loop_id!r} loop",
-        now,
-    )
-    records = list(ended.item_executions)
-    records[repeat] = replace(records[repeat], error=note)
-    return replace(ended, item_executions=tuple(records))
-
-
-def request_loop_exit(
-    state: ExecutionState,
-    plan: WorkflowPlan,
-    stopped_item: PlanItem,
-    wrapper_artifact_reference: str | None,
-    now: Clock,
-) -> ExecutionState:
-    """Persist a worker's stop decision while its completion hooks still run.
-
-    A ``break`` that ends per-child stages has no loop wrapper to record.
-    """
-    if stopped_item.loop_break is None or stopped_item.owner != "agent":
-        raise StateError("request_loop_exit requires a break-enabled agent step")
-    if stopped_item.breaks_children:
-        return replace(state, loop_exit_item_id=stopped_item.id, updated_at=now())
-    stopped_index = next(
-        index for index, item in enumerate(plan.items) if item.id == stopped_item.id
-    )
-    entry = enclosing_loop_entry_index(plan, stopped_index)
-    records = list(state.item_executions)
-    records[entry] = replace(records[entry], artifact=wrapper_artifact_reference)
-    return project_steps(
-        replace(
-            state,
-            loop_exit_item_id=stopped_item.id,
-            item_executions=tuple(records),
-            updated_at=now(),
-        ),
-        plan,
-        now,
-    )
-
-
-def request_loop_continue(
-    state: ExecutionState,
-    plan: WorkflowPlan,
-    continued_item: PlanItem,
-    now: Clock,
-) -> ExecutionState:
-    """Persist a worker's continue decision until its completion hooks finish."""
-    if continued_item.loop_continue is None or continued_item.owner != "agent":
-        raise StateError("request_loop_continue requires a continue-enabled agent step")
-    return replace(state, loop_continue_item_id=continued_item.id, updated_at=now())
-
-
-def finish_loop_continue(
-    state: ExecutionState, plan: WorkflowPlan, now: Clock
-) -> ExecutionState:
-    """Restart the enclosing loop after a continue step's completion lifecycle."""
-    if state.loop_continue_item_id is None:
-        return state
-    continued_index = next(
-        index
-        for index, item in enumerate(plan.items)
-        if item.id == state.loop_continue_item_id
-    )
-    entry = enclosing_loop_entry_index(plan, continued_index)
-    repeat = next(
-        index
-        for index in range(continued_index, len(plan.items))
-        if (loop := loop_control(plan.items[index])) is not None
-        and loop.boundary == "repeat"
-        and loop.loop_id == _required_loop_control(plan.items[entry]).loop_id
-    )
-    continued_item = plan.items[continued_index]
-    # The completion hooks are still part of the continued item's lifecycle.
-    # Do not reset the body until they have run (or reported their own state).
-    if (
-        state.cursor < len(plan.items)
-        and plan.items[state.cursor].step == continued_item.step
-    ):
-        return state
-    boundary = plan.items[repeat]
-    if loop_limit_reached(state, boundary):
-        # Match the normal repeat boundary: retain the completed iteration and
-        # expose the manager escalation instead of silently starting another.
-        return project_steps(
-            replace(
-                state,
-                cursor=repeat,
-                status="pending",
-                active_item_id=None,
-                loop_continue_item_id=None,
-                updated_at=now(),
-            ),
-            plan,
-            now,
-        )
-    records = list(state.item_executions)
-    loop_iterations: dict[str, int] = dict(state.loop_iterations)
-    iteration = (
-        loop_iterations.get(_required_loop_control(plan.items[entry]).loop_id, 1) + 1
-    )
-    loop_iterations[_required_loop_control(plan.items[entry]).loop_id] = iteration
-    scope = loop_operation_scope(state, plan, entry, iteration)
-    history = [*state.execution_history, *records[entry + 1 : repeat + 1]]
-    for index in range(entry + 1, repeat + 1):
-        records[index] = new_item_execution(state.task_id, scope, plan.items[index])
-    return project_steps(
-        replace(
-            state,
-            cursor=entry + 1,
-            status="pending",
-            active_item_id=None,
-            item_executions=tuple(records),
-            execution_history=tuple(history),
-            assignment_item_id=None,
-            assignment_token=None,
-            loop_iterations=tuple(loop_iterations.items()),
-            loop_continue_item_id=None,
-            updated_at=now(),
-        ),
-        plan,
-        now,
-    )
-
-
-def finish_loop_exit(
-    state: ExecutionState, plan: WorkflowPlan, now: Clock
-) -> ExecutionState:
-    """Exit after the stopping step's own completion lifecycle has finished.
-
-    A loop is left after its repeat boundary.  A ``break`` in a per-child
-    stage skips every remaining per-child stage instead; the caller marks
-    the children that never started as skipped.
-    """
-    if state.loop_exit_item_id is None:
-        return state
-    completed_index = next(
-        (
-            index
-            for index, item in enumerate(plan.items)
-            if item.id == state.loop_exit_item_id
-        ),
-        None,
-    )
-    if completed_index is None:
-        raise StateError("loop exit references an unknown plan item")
-    stopped_item = plan.items[completed_index]
-    if (
-        state.cursor < len(plan.items)
-        and plan.items[state.cursor].step == stopped_item.step
-    ):
-        return state
-    if stopped_item.breaks_children:
-        last = max(
-            index
-            for index, item in enumerate(plan.items)
-            if item.child_stage == stopped_item.child_stage
-            and item.child_number is not None
-        )
-        return _skip_to(
-            state,
-            plan,
-            max(state.cursor, last + 1),
-            "skipped because a children break gate passed",
-            now,
-        )
-    entry = enclosing_loop_entry_index(plan, completed_index)
-    loop_id = _required_loop_control(plan.items[entry]).loop_id
-    repeat = _repeat_boundary_index(plan, loop_id, state.cursor)
-    return _skip_to(
-        state, plan, repeat + 1, "skipped because a loop break gate passed", now
-    )
-
-
-def _skip_to(
-    state: ExecutionState, plan: WorkflowPlan, stop: int, result: str, now: Clock
-) -> ExecutionState:
-    """Complete every item from the cursor up to ``stop`` as skipped by a break."""
-    records = list(state.item_executions)
-    for index in range(state.cursor, stop):
-        records[index] = replace(
-            records[index], status="completed", completed_at=now(), result=result
-        )
-    return project_steps(
-        replace(
-            state,
-            cursor=stop,
-            status="pending",
-            active_item_id=None,
-            item_executions=tuple(records),
-            loop_exit_item_id=None,
-            updated_at=now(),
-        ),
-        plan,
-        now,
-    )
-
-
 def complete_run(
     state: ExecutionState, plan: WorkflowPlan, now: Clock
 ) -> ExecutionState:
@@ -1350,9 +890,8 @@ def materialize_item_plan(
     Only the pass ``collector`` declares is expanded, right after it, from
     its own templates in the template plan; every other pass keeps its
     templates (or its concrete stages) untouched.  The pass's earlier
-    stages, from a previous loop round, are replaced: the new round runs
-    the items collected now, so an item added since joins it and the
-    membership of a running pass never changes.  A pass without stages
+    templates are replaced with stages for the items collected now.
+    Membership of a running pass never changes.  A pass without stages
     (``items: {steps: []}``), or one that collected no items, expands to
     nothing.  The snapshot is written in the current schema, whose pass
     identity the expanded plan relies on.
@@ -1404,11 +943,7 @@ def materialize_item_plan(
 
 
 def _record_scope(state: ExecutionState, index: int) -> str:
-    """The operation namespace the record at ``index`` was created in.
-
-    A loop round gives its records a namespace of their own; stages expanded
-    in that round share their collection step's.
-    """
+    """The operation namespace the collection record was created in."""
     record = state.item_executions[index]
     prefix, suffix = f"{state.task_id}:", f":{record.plan_item_id}"
     operation = record.operation_id
@@ -1536,10 +1071,6 @@ def _expand_templates(
         template: PlanItem, segment: str, suffix: str, bind: dict[str, str | int]
     ) -> PlanItem:
         operation = template.operation
-        if isinstance(operation, LoopBoundary):
-            operation = replace(
-                operation, loop_id=concrete_path(operation.loop_id, segment)
-            )
         return replace(
             template,
             id=f"{template.id}:{suffix}",
@@ -1556,11 +1087,6 @@ def _expand_templates(
             artifact_dependency=(
                 concrete_path(template.artifact_dependency, segment)
                 if template.artifact_dependency is not None
-                else None
-            ),
-            loop_id=(
-                concrete_path(template.loop_id, segment)
-                if template.loop_id is not None
                 else None
             ),
             assessment_parent=(
@@ -1691,14 +1217,6 @@ def project_steps(
         )
 
     return replace(state, steps=tuple(refresh(node) for node in state.steps))
-
-
-def _required_loop_control(item: PlanItem) -> LoopBoundary:
-    """Read a loop descriptor where the persisted state already guarantees one."""
-    loop = loop_control(item)
-    if loop is None:  # pragma: no cover - caller invariant
-        raise StateError("loop control item has no loop capability")
-    return loop
 
 
 def select_assessment_outcome(

@@ -138,17 +138,17 @@ def test_learnable_requires_an_artifact() -> None:
         )
 
 
-def test_sources_include_retained_loop_artifacts_and_saved_learnable_flag(
+def test_group_sources_keep_the_saved_learnable_flag(
     tmp_path: Path,
 ) -> None:
     workflow = """workflows:
   - task: ~
     steps:
       - review-and-fix: ~
-        loop:
+        steps:
           - review: Review the changes.
             learnable: true
-            break: No more findings.
+
           - fix: Fix the findings.
 """
     service = configured_service(tmp_path, workflow)
@@ -161,8 +161,6 @@ def test_sources_include_retained_loop_artifacts_and_saved_learnable_flag(
     service.complete(
         "TASK-1", artifact="Fixed names.", summary_for_next="Review again."
     )
-    service.next("TASK-1")
-    service.loop("TASK-1", artifact="No more findings.", summary_for_next="Done.")
     done = service.complete("TASK-1", variables=(("summary", "Reviewed."),))
     assert done.status == "completed"
     assert done.feedback_deduction_command
@@ -171,7 +169,6 @@ def test_sources_include_retained_loop_artifacts_and_saved_learnable_flag(
         workflow.replace("learnable: true", "learnable: false")
     )
     sources = service.feedback_sources("TASK-1")["sources"]
-    assert len(sources) == 2
-    assert len({source["id"] for source in sources}) == 2
+    assert len(sources) == 1
+    assert len({source["id"] for source in sources}) == 1
     assert any("Use English names." in source["content"] for source in sources)
-    assert any("No more findings." in source["content"] for source in sources)

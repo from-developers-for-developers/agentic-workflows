@@ -479,13 +479,9 @@ workflows:
   - name: task
     steps:
       - name: review-and-fix
-        hooks:
-          after_complete:
-            - name: commit
-        loop:
+        steps:
           - name: review
-            break: Clean.
-          - name: fix
+      - name: commit
 """,
         encoding="utf-8",
     )
@@ -515,8 +511,8 @@ workflows:
     )
     assert "write nothing under `.ww`" in rendered
 
-    # The break leaves only the wrapper's commit hook, which wants a value.
-    boundary = service.loop(
+    # The review leaves only the commit handler, which wants a value.
+    boundary = service.complete(
         "TASK-1",
         artifact="Clean.",
         caller_role="worker",
@@ -784,13 +780,13 @@ workflows:
   - name: task
     steps:
       - name: review-and-fix
+        steps:
+          - name: review
+      - name: commit
         hooks:
           after_complete:
-            - name: commit
             - name: notify
-        loop:
-          - name: review
-            break: Clean.
+
 """,
         encoding="utf-8",
     )
@@ -804,7 +800,7 @@ workflows:
         caller_role="manager",
     )
     service.next("TASK-1", caller_role="manager")
-    service.loop(
+    service.complete(
         "TASK-1",
         artifact="Clean.",
         summary_for_next="Nothing to fix.",

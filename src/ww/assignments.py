@@ -42,24 +42,7 @@ def selection_item(plan: WorkflowPlan, assignment: Assignment) -> PlanItem | Non
 def assignment_at(
     plan: WorkflowPlan, cursor: int, *, runtime: str
 ) -> Assignment | None:
-    """Return the assignment beginning at ``cursor``, if it is worker-owned.
-
-    Preparation hooks share an assignment with the main action at the same
-    structural step. Completion hooks on ancestors trail the final descendant.
-    A new preparation/main action, item expansion, child coordinator, workflow
-    transition, or unrelated completion lifecycle ends the assignment. The
-    built-in workflow summary is deliberately included in the final assignment.
-
-    In the ``auto`` runtime, an ``items`` step with ``item_assignment`` set to
-    ``per_item`` or ``together`` keeps later stages of the same item, or of
-    every item, in the assignment, and a ``loop`` with ``loop_assignment``
-    ``per_round`` keeps the following body steps of the same round while
-    they resolve to the same worker settings.  The ``single`` runtime keeps
-    per-step boundaries because one session already performs every assignment.
-
-    A verification item is an assignment of its own, so the worker who did a
-    step never verifies it.
-    """
+    """Select adjacent work with matching ownership and worker settings."""
     if cursor >= len(plan.items):
         return None
     first = plan.items[cursor]
@@ -82,7 +65,6 @@ def assignment_at(
             if item.step != first.step:
                 if not spans_steps or not (
                     shares_item_span(first, item, worker=worker)
-                    or shares_loop_span(first, item, worker=worker)
                 ):
                     break
                 lineage.update((item.step, *item.ancestors))
@@ -117,17 +99,6 @@ def shares_item_span(
     return _same_worker(item, worker)
 
 
-def shares_loop_span(
-    first: PlanItem, item: PlanItem, *, worker: PlanItem | None
-) -> bool:
-    """Whether ``item`` continues the loop round begun at ``first``."""
-    if first.loop_id is None or first.loop_id != item.loop_id:
-        return False
-    if item.loop_assignment != "per_round":
-        return False
-    return _same_worker(item, worker)
-
-
 def _same_worker(item: PlanItem, worker: PlanItem | None) -> bool:
     """Whether ``item`` can be performed by the assignment's current worker.
 
@@ -151,37 +122,6 @@ def _worker_settings(item: PlanItem) -> tuple[str | None, ...]:
         item.requested_reasoning,
         item.profile,
     )
-
-
-@dataclass(frozen=True)
-class LoopSpan:
-    """Several body steps of one loop round that one worker performs."""
-
-    loop_id: str
-    stages: tuple[PlanItem, ...]
-
-    @property
-    def stage_names(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(stage.name for stage in self.stages))
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "loop_assignment": "per_round",
-            "loop": self.loop_id,
-            "stages": list(self.stage_names),
-        }
-
-
-def loop_span(plan: WorkflowPlan, assignment: Assignment) -> LoopSpan | None:
-    """Return the loop body steps an assignment spans, when it spans several."""
-    stages = tuple(
-        item
-        for item in plan.items[assignment.start : assignment.stop]
-        if item.phase == "step" and item.owner == "agent" and item.loop_id is not None
-    )
-    if len(stages) <= 1:
-        return None
-    return LoopSpan(str(stages[0].loop_id), stages)
 
 
 @dataclass(frozen=True)
@@ -227,7 +167,7 @@ def input_only(plan: WorkflowPlan, assignment: Assignment) -> bool:
     """Whether an assignment holds no agent work, only values for handlers.
 
     Such a span, for example a commit hook that needs its message after a
-    loop boundary, is not worth a worker: the manager has just read the
+    group, is not worth a worker: the manager has just read the
     outcome it would summarize and supplies the values itself.
     """
     span = plan.items[assignment.start : assignment.stop]

@@ -38,7 +38,7 @@ def test_steps_are_workers_unless_they_say_otherwise(tmp_path: Path) -> None:
     assert roles["review"] == "manager"
 
 
-def test_a_group_or_loop_sets_the_role_of_its_body_and_a_step_overrides_it(
+def test_a_group_sets_the_role_of_its_body_and_a_step_overrides_it(
     tmp_path: Path,
 ) -> None:
     roles = _roles(
@@ -51,11 +51,11 @@ def test_a_group_or_loop_sets_the_role_of_its_body_and_a_step_overrides_it(
         steps:
           - reconcile: Reconcile.
           - land: Land.
-      - name: review-loop
+      - name: review-group
         role: manager
-        loop:
+        steps:
           - review: Review.
-            break: No findings.
+
           - fix: Fix.
             role: worker
 """,

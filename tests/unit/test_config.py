@@ -15,7 +15,6 @@ from ww.workflow_config import (
     HandlerDefinition,
     ProvidedVariable,
     SavedMetadata,
-    StepDefinition,
 )
 from ww.workflow_validation import validate_configuration
 
@@ -111,12 +110,12 @@ def test_depends_on_requires_an_earlier_artifact_step(tmp_path: Path) -> None:
         ),
         pytest.param(
             """      - name: review
-        loop:
+        steps:
           - name: consume
             artifact_from: review
-            break: Done
+
 """,
-            id="running-loop",
+            id="running-group",
         ),
         pytest.param(
             """      - name: group
@@ -229,11 +228,11 @@ workflows:
         artifact_from: analysis
       - name: group
         steps:
-          - name: loop-inside
+          - name: nested-group
             artifact: false
-            loop:
+            steps:
               - name: round
-                break: Done.
+
       - name: review
         artifact_from: group
 """,
@@ -683,36 +682,6 @@ workflows:
     step = configuration.workflows[0].steps[0]
     assert step.action is not None
     assert step.action.payload == Prompt("ask-again")
-
-
-def test_step_handler_inherits_a_named_loop_step(tmp_path: Path) -> None:
-    configuration = load_configuration(
-        _write(
-            tmp_path / "ww.yaml",
-            """handlers:
-  - code-review:
-      loop:
-        - code-review: Perform the review.
-          break: No meaningful remarks remain.
-          profile: code-reviewer
-        - fix: Fix the review findings.
-          profile: developer
-workflows:
-  - name: task
-    steps:
-      - code-review: ~
-        handler: code-review
-""",
-        )
-    )
-
-    handler = configuration.handlers[0]
-    step = configuration.workflows[0].steps[0]
-    assert isinstance(handler, StepDefinition)
-    assert step.name == "code-review"
-    assert step.loop_steps == handler.loop_steps
-    assert [child.name for child in step.loop_steps] == ["code-review", "fix"]
-    assert step.loop_steps[0].loop_break == "No meaningful remarks remain."
 
 
 @pytest.mark.parametrize("handler", ("missing", [], None))
@@ -1295,110 +1264,7 @@ def test_an_interactive_step_cannot_be_a_workers(tmp_path: Path) -> None:
         )
 
 
-def test_parses_loop_wrapper_with_ordinary_nested_steps(tmp_path: Path) -> None:
-    configuration = load_configuration(
-        _write(
-            tmp_path / "ww.yaml",
-            """workflows:
-  - task: ~
-    steps:
-      - review-and-fix: ~
-        max_rounds: 5
-        loop:
-          - review: Review the implementation.
-            break: There are no meaningful findings.
-          - fix: Collect and fix findings.
-            items: ~
-            break: The findings cannot be fixed meaningfully.
-""",
-        )
-    )
-
-    wrapper = configuration.workflows[0].steps[0]
-    assert wrapper.loop_break is None
-    assert wrapper.max_rounds == 5
-    assert [step.name for step in wrapper.loop_steps] == ["review", "fix"]
-    assert wrapper.loop_steps[0].loop_break == "There are no meaningful findings."
-    items = wrapper.loop_steps[1].items
-    assert items is not None
-    assert [step.name for step in items.steps] == ["handle-item"]
-    assert wrapper.loop_steps[1].loop_break == (
-        "The findings cannot be fixed meaningfully."
-    )
-
-
-def test_loop_assignment_is_parsed_and_inherited_from_a_handler(
-    tmp_path: Path,
-) -> None:
-    configuration = load_configuration(
-        _write(
-            tmp_path / "ww.yaml",
-            """handlers:
-  - handle_tests:
-    assignment: per_step
-    loop:
-      - test: Run the tests.
-        break: No failures.
-      - fix: Fix the failures.
-workflows:
-  - task: ~
-    steps:
-      - run-tests:
-        handler: handle_tests
-      - review-and-fix: ~
-        loop:
-          - review: Review.
-            break: Clean.
-          - fix: Fix.
-""",
-        )
-    )
-
-    inherited, plain = configuration.workflows[0].steps
-    assert inherited.loop_assignment == "per_step"
-    assert plain.loop_assignment is None
-
-
-@pytest.mark.parametrize(
-    ("body", "message"),
-    [
-        ("loop: []\n        break: Done.", "loop must contain at least one step"),
-        ("break: Done.", "uses break outside a loop"),
-        ("max_rounds: 3", "max_rounds requires a loop"),
-        ("assignment: per_step", "assignment on a step goes beside a loop"),
-        (
-            "assignment: together\n        loop:\n          - work: Do it.",
-            "assignment must be one of: per_round, per_step",
-        ),
-        (
-            "max_rounds: 0\n        loop:\n          - work: Do it.",
-            "max_rounds must be a positive integer",
-        ),
-        (
-            "max_rounds: true\n        loop:\n          - work: Do it.",
-            "max_rounds must be a positive integer",
-        ),
-    ],
-)
-def test_rejects_incomplete_loop_syntax(
-    tmp_path: Path, body: str, message: str
-) -> None:
-    path = _write(
-        tmp_path / "ww.yaml",
-        (
-            "workflows:\n  - task: ~\n    steps:\n      - wrapper: ~\n        "
-            + body
-            + "\n"
-        ),
-    )
-
-    with pytest.raises(ConfigurationError, match=message):
-        validate_configuration(load_configuration(path))
-
-
-@pytest.mark.parametrize(
-    "identifier", ["workflow_transition", "child_workflow", "loop"]
-)
+@pytest.mark.parametrize("identifier", ["workflow_transition", "child_workflow"])
 def test_core_controls_are_not_selectable_as_action_types(
     tmp_path: Path, identifier: str
 ) -> None:
@@ -2041,34 +1907,6 @@ def test_idempotent_needs_a_command_and_a_boolean(
     with pytest.raises(ConfigurationError, match=message):
         config_path = tmp_path / "ww.yaml"
         load_configuration(_write(config_path, f"handlers:\n{handler}{workflows}"))
-
-
-def test_assignment_takes_the_values_of_its_construct() -> None:
-    (loop,) = task_steps(
-        task_workflow(
-            "      - name: fix\n        loop: [{work: Do it.}]\n"
-            "        max_rounds: 4\n        assignment: per_step\n"
-        )
-    )
-    (collect,) = task_steps(
-        task_workflow(
-            "      - collect:\n        items:\n          assignment: per_item\n"
-        )
-    )
-
-    assert (loop.max_rounds, loop.loop_assignment) == (4, "per_step")
-    assert collect.items is not None and collect.items.assignment == "per_item"
-    with pytest.raises(ConfigurationError, match="must be one of: per_round, per_step"):
-        parse_yaml_text(
-            task_workflow(
-                "      - name: fix\n        loop: [{work: Do it.}]\n"
-                "        assignment: per_item\n"
-            )
-        )
-    with pytest.raises(ConfigurationError, match="goes beside a loop"):
-        parse_yaml_text(
-            task_workflow("      - work: Work.\n        assignment: per_step\n")
-        )
 
 
 def test_kind_chooses_the_agent_action() -> None:

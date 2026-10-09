@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tests.workflow_helpers import start_after_init
 from ww.cli import main
@@ -49,9 +51,9 @@ print(reply_id)
 REVIEW = """workflows:
   - name: review
     steps:
-      - rounds: Review in rounds.
-        max_rounds: 2
-        loop:
+      - review-pass: Review the comments received so far.
+
+        steps:
           - fetch: ~
             argv: [python3, fetch.py]
             saves:
@@ -92,13 +94,24 @@ REVIEW = """workflows:
                               - "{{ww.item.field.reply_id}}"
                             saves:
                               - item.field.reply_id: The reply ID the script printed.
-          - decide: Stop when no new comment arrived.
-            break: No new comments.
+          - decide: Summarize the review outcome.
+
 """
 
 
 def _project(root: Path, policy: str = "fix") -> WorkflowService:
-    (root / "ww.yaml").write_text(REVIEW.replace("POLICY", policy), encoding="utf-8")
+    configuration = yaml.safe_load(REVIEW.replace("POLICY", policy))
+    # Two explicitly authored item passes: arrivals during the first pass are
+    # handled by the later pass, with no automatic repetition.
+    first_pass = deepcopy(configuration["workflows"][0]["steps"][0])
+    _, *body = first_pass.items()
+    followup = {
+        "follow-up": "Check for comments added during the first pass.",
+        **dict(body),
+    }
+    configuration["workflows"][0]["steps"].append(followup)
+    serialized = yaml.safe_dump(configuration, sort_keys=False)
+    (root / "ww.yaml").write_text(serialized, encoding="utf-8")
     (root / "fetch.py").write_text(FETCH_SCRIPT, encoding="utf-8")
     (root / "reply.py").write_text(REPLY_SCRIPT, encoding="utf-8")
     service = WorkflowService(Storage(root))
@@ -289,7 +302,7 @@ def test_a_review_runs_from_fetch_to_replies_with_a_repair_a_resume_and_a_new_co
     assert _lines(tmp_path / "calls.log") == ["101", "102", "102", "103", "104"]
     assert set(_ledger(tmp_path)) == {"r1", "r2", "r3", "r4"}
     assert _step_name(service) == "decide"
-    service.loop(TASK, artifact="No new comments.", summary_for_next="Done.")
+    service.complete(TASK, artifact="No new comments.", summary_for_next="Done.")
     assert service.next(TASK).item_name == "update-workflow-summary"
     service.complete(TASK, (("summary", "Reviewed."),))
     assert service.load(TASK)[0].status == "completed"

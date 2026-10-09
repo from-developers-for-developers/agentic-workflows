@@ -69,16 +69,6 @@ INTERACTIVE = """workflows:
           - reject: The result needs more work.
 """
 
-LOOP = """workflows:
-  - name: task
-    steps:
-      - review-and-fix: ~
-        loop:
-          - review: Review the implementation.
-            break: There are no meaningful findings.
-          - fix: Fix the review findings.
-            continue: Findings remain for another round.
-"""
 
 ITEMS = """workflows:
   - name: task
@@ -183,20 +173,6 @@ def worker_handoff(root: Path) -> Instruction:
     )
 
 
-def loop_body(root: Path) -> Instruction:
-    """A loop body step that may break the loop."""
-    service, _ = _start(root, LOOP)
-    return service.next(TASK)
-
-
-def loop_continue(root: Path) -> Instruction:
-    """A loop body step that may start the loop over."""
-    service, _ = _start(root, LOOP)
-    service.next(TASK)
-    service.complete(TASK, artifact="Two findings.", summary_for_next="Two findings.")
-    return service.next(TASK)
-
-
 def item_stage(root: Path) -> Instruction:
     """A per-item stage after the items were collected."""
     service, _ = _start(root, ITEMS)
@@ -292,8 +268,6 @@ SCENARIOS: dict[str, Callable[[Path], Instruction]] = {
     "worker-bootstrap": worker_bootstrap,
     "step-auto-worker": step_auto_worker,
     "worker-handoff": worker_handoff,
-    "loop-body": loop_body,
-    "loop-continue": loop_continue,
     "item-stage": item_stage,
     "values-and-metadata": values_and_metadata,
     "interactive": interactive,

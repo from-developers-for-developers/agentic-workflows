@@ -131,20 +131,13 @@ def write_completion_artifacts(
     state: ExecutionState,
     snapshot: PlanSnapshot,
     item: PlanItem,
-    loop_entry: PlanItem | None,
     artifact: str | None,
     *,
     rules: RulesSummary | None = None,
-) -> tuple[str | None, str | None]:
-    """Write the completed item and optional enclosing-loop artifacts.
-
-    ``rules`` is the completed item's own rule report; a loop wrapper's
-    artifact carries none. The artifact of the completion rejected before
-    this one, when there was one, follows the result as the item's previous
-    attempt: a hold carries the draft it displaced, else the record does.
-    """
+) -> str | None:
+    """Write an ordinary step artifact with its rules and previous rejected attempt."""
     if artifact is None:
-        return None, None
+        return None
     record = state.item_executions[state.cursor]
     held = record.held_completion
     previous = held.previous_artifact if held is not None else record.draft_artifact
@@ -182,11 +175,6 @@ def write_completion_artifacts(
                 plan_item.phase,
                 run_id=state.run_id,
                 step_ordinals=plan_item.step_ordinals,
-                loop_iterations=tuple(
-                    (loop_id, iteration)
-                    for loop_id, iteration in state.loop_iterations
-                    if loop_id in plan_item.ancestors
-                ),
             ),
             content,
         )
@@ -196,7 +184,4 @@ def write_completion_artifacts(
         artifact_reference = write(
             item, rendered(item) if item.phase == "step" else artifact
         )
-    wrapper_artifact_reference = None
-    if loop_entry is not None and loop_entry.artifact:
-        wrapper_artifact_reference = write(loop_entry, rendered(loop_entry))
-    return artifact_reference, wrapper_artifact_reference
+    return artifact_reference

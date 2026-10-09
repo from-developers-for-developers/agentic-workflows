@@ -48,7 +48,7 @@ HOOK_PHASES: tuple[HookPhase, ...] = (
 
 
 # ``action.type`` names that spell a core control rather than a registered action.
-CORE_ACTION_TYPES = frozenset({"loop", "workflow_transition", "child_workflow"})
+CORE_ACTION_TYPES = frozenset({"workflow_transition", "child_workflow"})
 # The agent action kinds ``kind`` chooses between.
 ACTION_KINDS: tuple[RequestedActionKind, ...] = ("skill", "slash_command", "prompt")
 # The prefixes of ``saves`` entries; the prefix is the kind and scope of the
@@ -135,12 +135,14 @@ def _parse_handler(
         raw_action = _mapping(mapping["action"], f"{path}.action")
         identifier = _nonempty_string(raw_action, "type", f"{path}.action")
         source = {key: value for key, value in raw_action.items() if key != "type"}
+        if identifier == "loop":
+            raise ConfigurationError(f"{path}.action.type: workflow loops were removed")
         if identifier in CORE_ACTION_TYPES:
             # Core controls are engine behaviour with their own keys, not
             # registry actions selected by type.
             raise ConfigurationError(
                 f"{path}.action.type {identifier!r} is a core control; use "
-                "`handoff_to`, `children`, or `loop` on the step instead"
+                "`handoff_to` or `children` on the step instead"
             )
         implementation = actions.get(identifier)
         payload = implementation.parse(source, name, description, f"{path}.action")

@@ -314,7 +314,7 @@ def workflow_shape(plan: WorkflowPlan) -> dict[str, Any]:
     """The plan's structure, without any text the project wrote.
 
     Each item is its name, step, phase, source, kind, owner and role, with
-    the handler it registered and its loop, items and children markers; the
+    the handler it registered and its items and children markers; the
     counts come first. Descriptions, prompts, rules, checks and artifacts
     stay out.
     """
@@ -343,7 +343,6 @@ def _item_shape(item: PlanItem) -> dict[str, Any]:
     }
     markers: dict[str, Any] = {
         "handler": item.registered_handler,
-        "loop": item.loop_id,
         "items": item.item_operation or (item.item_template or None),
         "children": item.child_operation or item.child_stage,
         "interactive": item.interactive or None,

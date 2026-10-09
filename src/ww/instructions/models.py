@@ -364,7 +364,7 @@ class FixRequired:
 class HandoffStep:
     """One item a worker performed in an assignment, as the handoff reports it.
 
-    ``outcome`` is ``completed``, ``loop break``, ``loop continue``,
+    ``outcome`` is ``completed``,
     ``held for verification``, ``failed``, or ``not completed``; ``checks``
     pairs each check of the last attempt with its status, ``checks_note``
     says which attempt that was when it is not the one that settled the
@@ -452,17 +452,7 @@ class Instruction:
     item_status: ItemStatus | None
     action_kind: PlanItemKind | None
     action_text: str | None
-    loop_break_prompt: str | None = None
-    loop_break_command: str | None = None
     # The break ends the per-child stages, skipping the remaining children.
-    breaks_children: bool = False
-    loop_continue_prompt: str | None = None
-    loop_continue_command: str | None = None
-    loop_iteration: int | None = None
-    max_rounds: int | None = None
-    loop_limit_reached: bool = False
-    # The enclosing loop of a body step, so the round can be described.
-    loop_name: str | None = None
     # The task requirements saved by ``init``, repeated to every worker.
     task_requirements: str | None = None
     # The full requirements are printed on the task's first work page; later
@@ -630,7 +620,6 @@ class Instruction:
     # Internal capability markers let presentation and service refresh paths
     # avoid rediscovering a saved plan or matching built-in action names.
     is_child_workflow_control: bool = False
-    is_loop_control: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -645,15 +634,6 @@ class Instruction:
             "item_status": self.item_status,
             "action_kind": self.action_kind,
             "action_text": self.action_text,
-            "loop_break_prompt": self.loop_break_prompt,
-            "loop_break_command": self.loop_break_command,
-            "breaks_children": self.breaks_children,
-            "loop_continue_prompt": self.loop_continue_prompt,
-            "loop_continue_command": self.loop_continue_command,
-            "loop_iteration": self.loop_iteration,
-            "max_rounds": self.max_rounds,
-            "loop_limit_reached": self.loop_limit_reached,
-            "loop_name": self.loop_name,
             "task_requirements": self.task_requirements,
             "requirements_in_full": self.requirements_in_full,
             "requirements_command": self.requirements_command,

@@ -39,7 +39,6 @@ from ww.execution_models import (
 from ww.instructions.text import action_text
 from ww.output import render_plan
 from ww.plan import (
-    LoopBoundary,
     WorkflowHandoff,
     compile_workflow_plan,
 )
@@ -260,7 +259,7 @@ def test_recovery_check_result_rejects_an_unknown_scope() -> None:
 
 @pytest.mark.parametrize(
     "factory, arguments",
-    [(WorkflowHandoff, ("",)), (LoopBoundary, ("review", "invalid", 2))],
+    [(WorkflowHandoff, ("",))],
 )
 def test_core_operations_reject_invalid_scheduling_data(factory, arguments) -> None:
     with pytest.raises(ValueError):

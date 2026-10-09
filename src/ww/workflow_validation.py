@@ -14,7 +14,6 @@ from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies
 from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.project_config import ProjectConfig
-from ww.validation import is_positive_int
 from ww.variables import CHILD_FIELD_PREFIX, CHILD_VALUE_NAMES
 from ww.workflow_config import (
     INIT_STEP_NAME,
@@ -156,7 +155,6 @@ def _validate_automatic_groups(
     def validate(handler: HandlerDefinition, stack: tuple[str, ...] = ()) -> None:
         if isinstance(handler, StepDefinition) and (
             handler.child_steps
-            or handler.loop_steps
             or handler.items
             or handler.children
             or handler.assessment_outcomes
@@ -202,7 +200,6 @@ def _validate_automatic_groups(
             )
         if isinstance(handler, StepDefinition) and (
             handler.child_steps
-            or handler.loop_steps
             or handler.items
             or handler.children
             or handler.assessment_outcomes
@@ -243,8 +240,6 @@ def _validate_steps(
     steps: tuple[StepDefinition, ...],
     *,
     top_level: bool = False,
-    inside_loop: bool = False,
-    inside_children: bool = False,
     enclosing: Mapping[str, StepDefinition] = MappingProxyType({}),
     finished_containers: tuple[StepDefinition, ...] = (),
 ) -> None:
@@ -254,14 +249,11 @@ def _validate_steps(
     earlier sibling first, then an earlier step of each enclosing level.  A
     container's own step is visible to its nested steps only when its work
     has finished before them (``finished_containers``): an assessment to its
-    outcomes and an item collection to its per-item stages, but never a
-    running loop.  Such a container supplies its own artifact; a group, or an
-    assessment named after its outcomes, supplies the latest artifact saved
-    inside it, so it needs a step inside that can save one.
+    outcomes and an item collection to its per-item stages, but never an
+    enclosing structural group. Such a container supplies its own artifact.
+    A group, or an assessment named after its outcomes, supplies the latest
+    artifact saved inside it, so it needs a step inside that can save one.
 
-    ``break`` ends the nearest enclosing loop, or the per-child stages of a
-    ``children`` step (``inside_children``): the remaining children are
-    skipped.  ``continue`` needs a loop.
     """
     _unique((step.name for step in steps), f"step in workflow {workflow_name!r}")
     prior: dict[str, StepDefinition] = (
@@ -277,41 +269,15 @@ def _validate_steps(
                 "the compact form"
             )
         _validate_execution_hints(step, f"step {step.name!r}")
-        if step.interactive and (step.child_steps or step.loop_steps):
+        if step.interactive and (step.child_steps):
             raise ConfigurationError(
                 f"step {step.name!r} in workflow {workflow_name!r} is a pure "
-                "structural step or loop container and cannot be interactive; "
+                "structural step and cannot be interactive; "
                 "make an executed child step interactive instead"
             )
         if step.name == INIT_STEP_NAME:
             raise ConfigurationError(
                 f"step name {INIT_STEP_NAME!r} is reserved and must not be declared"
-            )
-        if (step.loop_continue is not None and not inside_loop) or (
-            step.loop_break is not None and not (inside_loop or inside_children)
-        ):
-            control = "break" if step.loop_break is not None else "continue"
-            raise ConfigurationError(
-                f"step {step.name!r} in workflow {workflow_name!r} uses "
-                f"{control} outside a loop"
-            )
-        if step.max_rounds is not None and (not is_positive_int(step.max_rounds)):
-            raise ConfigurationError(
-                f"step {step.name!r} in workflow {workflow_name!r} has an invalid "
-                "max_rounds; expected a positive integer"
-            )
-        if step.max_rounds is not None and not step.loop_steps:
-            raise ConfigurationError(
-                f"step {step.name!r} in workflow {workflow_name!r} uses "
-                "max_rounds without a loop"
-            )
-        if (step.loop_break is not None or step.loop_continue is not None) and (
-            step.child_steps or step.loop_steps
-        ):
-            control = "break" if step.loop_break is not None else "continue"
-            raise ConfigurationError(
-                f"step {step.name!r} in workflow {workflow_name!r} uses "
-                f"{control} but does not directly execute worker work"
             )
         if step.artifact_dependency is not None:
             dependency = prior.get(step.artifact_dependency) or enclosing.get(
@@ -339,31 +305,18 @@ def _validate_steps(
         _validate_steps(
             workflow_name,
             step.child_steps,
-            inside_loop=inside_loop,
-            inside_children=inside_children,
-            enclosing=visible,
-            finished_containers=finished_containers,
-        )
-        _validate_steps(
-            workflow_name,
-            step.loop_steps,
-            inside_loop=True,
             enclosing=visible,
             finished_containers=finished_containers,
         )
         _validate_steps(
             workflow_name,
             _item_steps(step),
-            inside_loop=inside_loop,
             enclosing={**visible, step.name: step},
             finished_containers=finished,
         )
-        # A ``break`` in a per-child stage ends the children; a ``continue``
-        # needs a loop of its own inside the stage.
         _validate_steps(
             workflow_name,
             _child_stages(step),
-            inside_children=True,
             enclosing={**visible, step.name: step},
             finished_containers=finished,
         )
@@ -372,8 +325,6 @@ def _validate_steps(
             _validate_steps(
                 workflow_name,
                 (outcome,),
-                inside_loop=inside_loop,
-                inside_children=inside_children,
                 enclosing={**visible, step.name: step},
                 finished_containers=finished,
             )
@@ -480,7 +431,6 @@ def _can_save_artifact(step: StepDefinition) -> bool:
     return step.artifact or any(
         _can_save_artifact(nested)
         for nested in (
-            *step.loop_steps,
             *step.assessment_outcomes,
             *_template_steps(step),
         )
@@ -505,7 +455,7 @@ def _validate_item_flows(workflow_name: str, steps: tuple[StepDefinition, ...]) 
 
     A workflow has one item collection.  Each ``items`` step is a pass over
     it, expanded at its own position when its collection completes, so
-    several sequential passes (also inside loops) are unambiguous.  An
+    several sequential passes are unambiguous.  An
     ``items`` step inside another's per-item stages would collect a second,
     independent set per item, which ww does not support.
     """
@@ -533,7 +483,6 @@ def _walk_nested(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...
             _walk_nested(
                 (
                     *step.child_steps,
-                    *step.loop_steps,
                     *step.assessment_outcomes,
                     *_template_steps(step),
                 )
@@ -598,7 +547,6 @@ def _item_passes(
             _item_passes(
                 (
                     *step.child_steps,
-                    *step.loop_steps,
                     *step.assessment_outcomes,
                     *_template_steps(step),
                 ),
@@ -726,7 +674,6 @@ def _check_item_saves(
                     )
         for nested, nested_per_item in (
             (step.child_steps, per_item),
-            (step.loop_steps, per_item),
             (step.assessment_outcomes, per_item),
             (_item_steps(step), True),
             (_child_stages(step), per_item),
@@ -780,7 +727,6 @@ def _check_item_phases(
                 )
         for nested, nested_per_item in (
             (step.child_steps, per_item),
-            (step.loop_steps, per_item),
             (step.assessment_outcomes, per_item),
             (_item_steps(step), True),
             (_child_stages(step), per_item),
@@ -876,7 +822,7 @@ def _validate_hooks(
     for hook in hooks:
         _validate_execution_hints(hook.handler, hook.path or "hook")
         if isinstance(hook.handler, StepDefinition) and (
-            hook.handler.child_steps or hook.handler.loop_steps or hook.handler.items
+            hook.handler.child_steps or hook.handler.items
         ):
             raise ConfigurationError(
                 f"{hook.path or 'hook'} cannot use a container handler"
@@ -992,7 +938,7 @@ def _validate_rule_hints(hints: RuleHints, path: str) -> None:
 def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
     """Reject a hook naming a root handler that is a whole step tree.
 
-    A hook runs one action. A handler defining ``loop``, ``steps``,
+    A hook runs one action. A handler defining ``steps``,
     ``items``, or ``children`` is only usable as a workflow step; run as a
     hook it would lose its tree and become a prompt carrying nothing but its
     name.
@@ -1005,7 +951,7 @@ def _validate_hook_references(configuration: WorkflowConfiguration) -> None:
         if isinstance(registered, StepDefinition) and _is_container(registered):
             raise ConfigurationError(
                 f"{hook.path or 'hook'} runs handler {registered.name!r}, which "
-                "defines a loop, steps, items, or children; a hook runs a "
+                "defines steps, items, or children; a hook runs a "
                 f"single action, so use {registered.name!r} as a workflow "
                 "step instead"
             )
@@ -1059,7 +1005,7 @@ def _validate_recommendations(configuration: WorkflowConfiguration) -> None:
 
 
 def _is_container(step: StepDefinition) -> bool:
-    return bool(step.child_steps or step.loop_steps or step.items or step.children)
+    return bool(step.child_steps or step.items or step.children)
 
 
 def _every_hook(configuration: WorkflowConfiguration) -> Iterable[HookDefinition]:
@@ -1078,7 +1024,6 @@ def _step_hooks(steps: tuple[StepDefinition, ...]) -> Iterable[HookDefinition]:
         yield from _step_hooks(
             (
                 *step.child_steps,
-                *step.loop_steps,
                 *_template_steps(step),
                 *step.assessment_outcomes,
             )
@@ -1090,7 +1035,6 @@ def _walk_steps(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...]
     for step in steps:
         result.append(step)
         result.extend(_walk_steps(step.child_steps))
-        result.extend(_walk_steps(step.loop_steps))
         result.extend(_walk_steps(_template_steps(step)))
     return tuple(result)
 
@@ -1146,22 +1090,6 @@ def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:
             )
         flow = collectors[0].children
         assert flow is not None
-        # Per-child stages expand once, when collection completes; a loop's
-        # next round would replay the first child's stages and never reach
-        # the others.
-        looped = [
-            step
-            for loop_owner in _walk_steps(workflow.steps)
-            for step in _walk_steps(loop_owner.loop_steps)
-            if step.children is not None and step.children.steps
-        ]
-        if looped:
-            raise ConfigurationError(
-                f"workflow {workflow.name!r} runs children.steps of "
-                f"{looped[0].name!r} inside a loop; per-child stages cannot "
-                "repeat per loop round, so move the children step out of the "
-                "loop or name the child workflow with children.workflow"
-            )
         target = by_name.get(flow.workflow)
         if target is None:
             raise ConfigurationError(
@@ -1223,7 +1151,6 @@ def _validate_document_updates(configuration: WorkflowConfiguration) -> None:
             for hook in step.hooks:
                 check(hook.handler, f"{label} hook {hook.handler.name!r}")
             walk(step.child_steps, label)
-            walk(step.loop_steps, label)
             walk(step.assessment_outcomes, label)
             walk(_template_steps(step), label)
 
@@ -1231,7 +1158,6 @@ def _validate_document_updates(configuration: WorkflowConfiguration) -> None:
         check(handler, f"handler {handler.name!r}")
         if isinstance(handler, StepDefinition):
             walk(handler.child_steps, f"handler {handler.name!r}")
-            walk(handler.loop_steps, f"handler {handler.name!r}")
             walk(_template_steps(handler), f"handler {handler.name!r}")
     for hook in configuration.global_hooks:
         check(hook.handler, f"global hook {hook.handler.name!r}")

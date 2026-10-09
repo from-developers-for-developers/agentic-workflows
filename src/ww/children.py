@@ -96,11 +96,3 @@ class ChildTask:
             agent=data.get("agent"),
             fields=validate_item_fields(data.get("fields", {})),
         )
-
-
-def skip_pending(children: tuple[ChildTask, ...]) -> tuple[ChildTask, ...]:
-    """Mark every child that has not started as skipped, after a ``break``."""
-    return tuple(
-        replace(child, status="skipped") if child.status == "pending" else child
-        for child in children
-    )

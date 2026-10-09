@@ -163,7 +163,7 @@ class ArtifactAddress:
     """Where one logical artifact lives beneath its run.
 
     Rewriting the same address replaces the content and keeps the reference.
-    Loop iterations are part of the address so repeated loop-body executions
+    Declaration ordinals are part of the address so nested step executions
     do not overwrite earlier results.
     """
 
@@ -175,7 +175,6 @@ class ArtifactAddress:
     phase: str
     run_id: str | None = None
     step_ordinals: tuple[int, ...] = ()
-    loop_iterations: tuple[tuple[str, int], ...] = ()
 
     @property
     def run_namespace(self) -> str:
@@ -187,15 +186,9 @@ class ArtifactAddress:
         ordinals = self.step_ordinals or tuple(range(1, len(names) + 1))
         if len(ordinals) != len(names):
             raise StateError("step ordinals must match the step path")
-        iterations = dict(self.loop_iterations)
         parts: list[str] = []
-        for depth, (ordinal, segment) in enumerate(
-            zip(ordinals, names, strict=True), start=1
-        ):
+        for ordinal, segment in zip(ordinals, names, strict=True):
             parts.append(f"{ordinal:02d}-{segment}")
-            loop_path = "/".join(names[:depth])
-            if loop_path in iterations:
-                parts.append(f"iteration-{iterations[loop_path]:02d}")
         if self.phase == "step":
             return (*parts[:-1], f"{parts[-1]}.md")
         return (*parts, ".hooks", self.phase, f"{self.position:02d}-{self.name}.md")
@@ -205,7 +198,7 @@ class ArtifactAddress:
 class CommandOutputAddress:
     """Immutable evidence address for one command stream of one attempt.
 
-    Later loop iterations and retries never replace a stream returned for an
+    Later retries never replace a stream returned for an
     earlier operation attempt, so ``attempt`` is part of the address.
     """
 

@@ -510,7 +510,6 @@ def _resolve_explicit_steps(
                 step,
                 explicit=effective,
                 child_steps=_resolve_explicit_steps(step.child_steps, effective),
-                loop_steps=_resolve_explicit_steps(step.loop_steps, effective),
                 assessment_outcomes=_resolve_explicit_steps(
                     step.assessment_outcomes, effective
                 ),

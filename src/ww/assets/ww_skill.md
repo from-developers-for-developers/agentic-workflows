@@ -63,17 +63,14 @@ change, start from step 1 then.
    assignment, fix the cause and complete with an artifact; ww retries the
    command. In `auto`, the manager dispatches the repair with `next`. When
    ww reports `awaiting_operator` (a failed handler or work, an interrupted
-   command, a loop at its iteration limit, a changed workflow), stop and report the task, its
+   command, a changed workflow), stop and report the task, its
    `operator_reason` and the exact error to the user (unless they gave a
    standing authorization for routine repairs such as dependency installation,
    formatting or retries: apply it to a stop of that kind without asking again,
    and ask only for a material decision or an action outside it); when they
    decide, run the recovery command ww showed, `./ww next <task-id> --retry` to run the
-   handler again, `--force --reason` to skip it or leave the loop, or
-   `--replan` / `--keep-plan` for a changed workflow. `--force --reason` also
-   ends a loop that is still running, between its items, when the operator
-   decides to stop iterating; a worker's open item is reassigned or failed
-   first. A `pass_incomplete`
+   handler again, `--force --reason` to skip it, or `--replan` / `--keep-plan`
+   for a changed workflow. A `pass_incomplete`
    stop is cleared by recording what it names with `./ww update-item`, then
    `./ww next <task-id> --retry`; `--force` is refused there. A failed
    identity request (`REQUEST-…`) is only retried with `--retry` or dropped

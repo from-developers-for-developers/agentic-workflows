@@ -114,13 +114,13 @@ def test_last_children_step_leaves_the_workflow_summary_alone(tmp_path: Path) ->
             "      - split: Split it.\n        children:\n          workflow: child\n"
             "        steps:\n          - more: More.\n",
             CHILD,
-            "cannot combine steps, loop, items, and children",
+            "cannot combine steps, items, and children",
         ),
         (
             "      - split: Split it.\n        children:\n          workflow: child\n"
             "        items: ~\n",
             CHILD,
-            "cannot combine steps, loop, items, and children",
+            "cannot combine steps, items, and children",
         ),
         (
             "      - split: Split it.\n        children:\n          workflow: child\n"

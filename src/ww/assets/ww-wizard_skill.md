@@ -40,7 +40,7 @@ guessing.
 
 Ask for the trigger, the result wanted and where the operator wants to be
 involved. Choose the smallest structure that expresses it, adding items,
-loops, assessments, modes or reusable groups only for a concrete requirement
+assessments, modes or reusable groups only for a concrete requirement
 the features guide gives a reason for. Challenge anything the request does not
 need: name a simpler alternative and what it costs the operator, and let them
 decide; do not walk through every property. Then show concise YAML and a short

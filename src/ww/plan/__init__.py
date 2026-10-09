@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Public plan data and compilation API."""
 
-from ww.operations import ChildWorkflowRun, LoopBoundary, PlanOperation, WorkflowHandoff
+from ww.operations import ChildWorkflowRun, PlanOperation, WorkflowHandoff
 
 from .compiler import (
     ExecutionHints,
@@ -23,7 +23,6 @@ from .models import (
 __all__ = [
     "ExecutionHints",
     "ChildWorkflowRun",
-    "LoopBoundary",
     "PlanOperation",
     "PlanCompilationOptions",
     "PlanItem",

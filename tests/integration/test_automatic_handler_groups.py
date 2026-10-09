@@ -285,7 +285,7 @@ workflows:
     [
         "shell: 'true'",
         "steps: [{work: Manual work.}]",
-        "loop: [{work: Manual work.}]",
+        "steps: [{work: Manual work.}]",
         "variables: [message]",
     ],
 )
