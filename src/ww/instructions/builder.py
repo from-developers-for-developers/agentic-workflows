@@ -41,7 +41,6 @@ from ww.execution_models import (
 )
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
-from ww.item_collections import item_collection
 from ww.items import WorkItem
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
@@ -57,6 +56,7 @@ from ww.variables import (
 from ww.workflow_config import INIT_STEP_NAME, ProvidedVariable
 from ww.workspace import resolve_workspace
 
+from .collection import collection_guidance
 from .commands import (
     complete_command,
     instruction_command,
@@ -156,13 +156,11 @@ class InstructionBuilder:
         documents: DocumentStore,
         interactions: InteractionLog,
         child_values: StepValues = no_step_values,
-        item_values: StepValues = no_step_values,
         worker_requirements: Callable[[], str] = lambda: "full",
     ) -> None:
         self.tasks = tasks
         # ``pages.worker_requirements``, read per page so an edit applies at once.
         self.worker_requirements = worker_requirements
-        self.item_values = item_values
         self.child_values = child_values
         self.documents = documents
         self.interactions = interactions
@@ -218,8 +216,6 @@ class InstructionBuilder:
         )
         built = self._build(state, snapshot)
         if item is not None and item.item_context is not None:
-            from ww.instructions.collection import collection_guidance
-
             built = replace(
                 built,
                 action_text=(built.action_text or "")
@@ -232,7 +228,6 @@ class InstructionBuilder:
                         if items is not None
                         else self.tasks.read_items(state.task_id, state.run_id)
                     ),
-                    self.root,
                     caller_role,
                 ),
             )
@@ -648,8 +643,7 @@ class InstructionBuilder:
         return tuple(
             ConversationEntry(entry.at, entry.speaker, entry.text)
             for entry in self.interactions.entries(state.task_id)
-            if (entry.run_id, entry.step, entry.item_id)
-            == (state.run_id, item.name, None)
+            if (entry.run_id, entry.step) == (state.run_id, item.name)
         )
 
     def _current_child(self, state: ExecutionState, item: PlanItem) -> str:
@@ -988,12 +982,6 @@ class InstructionBuilder:
                 assignment=worker_token(state),
             )
 
-        # A collection step's identity and unique fields are the collection's.
-        collection = (
-            item_collection(plan, item.item_context)
-            if item.item_operation == "collect"
-            else None
-        )
         workspace, values = item_workspace_values(
             self.root,
             item.workdir,
@@ -1011,7 +999,6 @@ class InstructionBuilder:
                 item,
                 {
                     **values,
-                    **self.item_values(state, plan, item),
                     **self.child_values(state, plan, item),
                 },
                 state.task_id,
@@ -1059,16 +1046,6 @@ class InstructionBuilder:
             operator_paused=state.operator_paused,
             conversation=(self._conversation(state, item) if item.interactive else ()),
             ui=item.ui,
-            shared_items=item.shared_items,
-            stored_items=(
-                self.tasks.read_items(state.task_id, state.run_id)
-                if item.shared_items
-                else ()
-            ),
-            required_item_fields=item.update_item,
-            collects_items=item.item_operation == "collect",
-            item_identity=collection.item_identity if collection else None,
-            item_unique=collection.item_unique if collection else (),
             run_handovers=(
                 tuple(
                     StepHandover(

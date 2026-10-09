@@ -103,7 +103,7 @@ def test_a_child_added_during_child_one_runs_after_child_two(tmp_path: Path) -> 
 
     children = service.tasks.read_children(TASK, service.load(TASK)[0].run_id)
     assert [entry.id for entry in children] == ["A", "B", "C"]
-    page = service.status(TASK).action_text or ""
+    page = service.instruction(TASK).action_text or ""
     assert "`A` (pending), 1 of 3." in page
 
 

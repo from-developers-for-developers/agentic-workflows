@@ -87,7 +87,7 @@ def _worker(service: WorkflowService, artifact: str) -> Instruction:
 def _worker_pages(service: WorkflowService) -> tuple[Instruction, Instruction]:
     """A delegated worker's first page and the page of its step's hook."""
     service.next(TASK, caller_role="manager")
-    first = service.status(
+    first = service.instruction(
         TASK, caller_role="worker", assignment=assignment_token(service, TASK)
     )
     second = _worker(service, "reviewed")
@@ -118,7 +118,7 @@ def test_every_worker_assignment_starts_with_the_full_requirements(
     assert service.next(TASK, caller_role="manager").item_name == "fix"
     state, _ = service.load(TASK)
     # The review step's assignment is over; this one is a fresh session.
-    page = service.status(
+    page = service.instruction(
         TASK, caller_role="worker", assignment=assignment_token(service, TASK)
     )
     assert state.assignment_token is not None

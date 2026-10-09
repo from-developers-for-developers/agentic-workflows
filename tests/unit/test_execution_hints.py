@@ -289,7 +289,7 @@ workflows:
 
     service.next("TASK-1", selected_agent="codex", caller_role="manager")
     worker = md.render_instruction(
-        service.status(
+        service.instruction(
             "TASK-1",
             caller_role="worker",
             assignment=assignment_token(service, "TASK-1"),
@@ -305,7 +305,9 @@ workflows:
         assignment=assignment_token(service, "TASK-1"),
         summary_for_next="Done.",
     )
-    reviewing = md.render_instruction(service.status("TASK-1", caller_role="manager"))
+    reviewing = md.render_instruction(
+        service.instruction("TASK-1", caller_role="manager")
+    )
     assert "Requested reasoning: `high`" in reviewing
     assert "--reasoning high" in reviewing
     assert "Requested model" not in reviewing

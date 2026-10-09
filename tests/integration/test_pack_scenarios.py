@@ -243,7 +243,7 @@ def test_an_operator_stop_inside_an_items_context_stays_inspectable_and_retries(
     assert main(["--root", str(tmp_path), "status", TASK]) == 0
     assert main(["--root", str(tmp_path), "instruction", TASK]) == 1
     service = WorkflowService(Storage(tmp_path))
-    assert service.status(TASK, caller_role="manager").operator_reason == (
+    assert service.instruction(TASK, caller_role="manager").operator_reason == (
         "handler_failed"
     )
     assert all(item.resolved for item in _items(service).values())

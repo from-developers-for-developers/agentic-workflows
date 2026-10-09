@@ -11,7 +11,12 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.workflow_helpers import advance_init, configured_service, start_after_init
+from tests.workflow_helpers import (
+    advance_init,
+    configured_service,
+    run_state_path,
+    start_after_init,
+)
 from ww.cli import main
 from ww.errors import StateError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -84,7 +89,7 @@ def test_execution_snapshot_automatic_input_nested_state_and_artifacts(
     assert (task_path / "metadata.json").exists()
     assert not (task_path / "aggregate.json").exists()
     assert not (task_path / "runs/01-task/plan.json").exists()
-    assert (task_path / "runs/01-task/state.json").exists()
+    assert run_state_path(tmp_path, "TASK-1").exists()
     index = json.loads((task_path / "state.json").read_text(encoding="utf-8"))
     assert index["runs"] == [{"id": "01-task", "revision": index["revision"]}]
 
@@ -372,11 +377,11 @@ def test_task_can_keep_multiple_workflow_runs_and_summaries(tmp_path: Path) -> N
     assert not (tmp_path / ".ww/tasks/TASK-7/runs/01-implementation/plan.json").exists()
     assert not (tmp_path / ".ww/tasks/TASK-7/runs/02-code-review/plan.json").exists()
 
-    overview = service.status("TASK-7")
+    overview = service.instruction("TASK-7")
     assert overview.status == "task_summary"
     rendered = MarkdownOutputAdapter().render_instruction(overview)
     assert "./ww instruction TASK-7 --run <run-id>" in rendered
-    assert service.status("TASK-7", "01-implementation").status == "completed"
+    assert service.instruction("TASK-7", "01-implementation").status == "completed"
 
 
 def test_aggregate_reads_ignore_a_stale_ledger_projection(tmp_path: Path) -> None:
@@ -393,22 +398,6 @@ def test_aggregate_reads_ignore_a_stale_ledger_projection(tmp_path: Path) -> Non
     runs = service.tasks.execution_runs("TASK-aggregate")
     assert runs[0].workflow == "task"
     assert runs[0].status != "failed"
-
-
-def test_a_run_state_newer_than_the_index_is_an_interrupted_commit(
-    tmp_path: Path,
-) -> None:
-    _write_workflow(tmp_path)
-    service = WorkflowService(Storage(tmp_path))
-    start_after_init(service, "task", "TASK-authoritative", agent="codex")
-
-    state_path = tmp_path / ".ww/tasks/TASK-authoritative/runs/01-task/state.json"
-    document = json.loads(state_path.read_text(encoding="utf-8"))
-    document["revision"] += 1
-    state_path.write_text(json.dumps(document), encoding="utf-8")
-
-    with pytest.raises(StateError, match="a commit was interrupted"):
-        service.status("TASK-authoritative")
 
 
 def test_ordinary_transitions_preserve_the_logical_plan_and_digest(
@@ -623,7 +612,7 @@ workflows:
     assert command.stdout_ref is not None
     assert len(command.stdout) < 2_000
     assert len(service.tasks.read_command_output(command.stdout_ref)) == 20_000
-    run_state = (tmp_path / ".ww/tasks/TASK-OUTPUT/runs/01-task/state.json").read_text()
+    run_state = run_state_path(tmp_path, "TASK-OUTPUT").read_text()
     assert len(run_state) < 30_000
 
 
@@ -722,7 +711,7 @@ workflows:
         )
 
     resumed = WorkflowService(Storage(tmp_path))
-    visible = resumed.status("TASK-INTERRUPTED")
+    visible = resumed.instruction("TASK-INTERRUPTED")
     assert visible.status == "in_progress"
     assert visible.item_status == "in_progress"
     assert "may still be running" in (visible.error or "")

@@ -155,7 +155,7 @@ class CommandAction(AutomaticAction[Commands, Commands]):
             for name in dependencies(template)
             if name not in values
         }
-        context_error = item_context_error(missing, values)
+        context_error = item_context_error(missing)
         if context_error is not None:
             raise StateError(context_error)
         if missing:

@@ -260,7 +260,7 @@ def run_feature(project: Project) -> None:
     develop = service.next(task, caller_role="manager")
     assert develop.action_text == "Implement the greeting."
     assert "You are the worker for this assignment" in project.render(
-        service.status(
+        service.instruction(
             task, caller_role="worker", assignment=assignment_token(service, task)
         )
     )
@@ -308,7 +308,7 @@ def run_feature(project: Project) -> None:
         page = service.next(task, caller_role="manager")
         assert page.item_name == name
         token = assignment_token(service, task)
-        worker = service.status(task, caller_role="worker", assignment=token)
+        worker = service.instruction(task, caller_role="worker", assignment=token)
         assert "You are working within items context `review`" in (
             worker.action_text or ""
         )
@@ -406,7 +406,7 @@ def run_triage(project: Project) -> None:
         summary_for_next="Done.",
     )
 
-    runs = service.status(task).task_runs
+    runs = service.instruction(task).task_runs
     assert [(run.workflow, run.status, run.summary) for run in runs] == [
         ("triage", "completed", "handed off to docs"),
         ("docs", "completed", "Documented."),
@@ -454,7 +454,7 @@ def run_parent(project: Project) -> None:
         summary_for_next="Done.",
     )
 
-    finished = service.status(parent)
+    finished = service.instruction(parent)
     assert finished.status == "completed"
     children = service.tasks.read_children(parent, "01-parent")
     assert [(entry.id, entry.status, entry.summary) for entry in children] == [

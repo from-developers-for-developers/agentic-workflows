@@ -25,7 +25,6 @@ from ww.items import WorkItem
 from ww.plan import PlanItem, WorkflowPlan, compile_workflow_plan
 from ww.storage_adapters.task_document import (
     TASK_STATE_SCHEMA_VERSION,
-    RunRevisionMismatchError,
     check_active_run,
     decode_run_document,
     decode_task_index,
@@ -278,7 +277,7 @@ def test_state_without_omitted_required_fields_decodes() -> None:
     assert decoded[0][0].state.active_item_id is None
 
 
-@pytest.mark.parametrize("version", [0, 1, 2, 4, True, 3.0, "3", None])
+@pytest.mark.parametrize("version", [0, 2, 3, True, 1.0, "1", None])
 @pytest.mark.parametrize("document", ["index", "run"])
 def test_schema_version_must_be_the_current_strict_integer(
     version: object, document: str
@@ -291,15 +290,6 @@ def test_schema_version_must_be_the_current_strict_integer(
         _decode(index, documents)
 
 
-def test_the_previous_single_document_layout_is_rejected() -> None:
-    """Schema 2 kept every run inline; it is not read, not even partly."""
-    index, documents = _encode((_run(),))
-    legacy = {**index, "schema_version": 2, "runs": [documents["01-task"]["run"]]}
-
-    with pytest.raises(ValueError, match="unsupported task state schema"):
-        decode_task_index(legacy, "TASK-1")
-
-
 def test_a_run_written_at_another_revision_than_the_index_names_is_detected() -> None:
     first = _run("01-task", completed=True)
     second = _run("02-task")
@@ -308,11 +298,11 @@ def test_a_run_written_at_another_revision_than_the_index_names_is_detected() ->
     )
     documents = {
         "01-task": encode_run_document("TASK-1", first, 2),
-        # Written by a later commit whose index was never published.
+        # Carries a revision other than the one the index names.
         "02-task": encode_run_document("TASK-1", second, 4),
     }
 
-    with pytest.raises(RunRevisionMismatchError, match="written at revision 4"):
+    with pytest.raises(ValueError, match="written at revision 4"):
         _decode(index, documents)
 
     documents["02-task"] = encode_run_document("TASK-1", second, 3)

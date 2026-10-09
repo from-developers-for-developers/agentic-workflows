@@ -497,7 +497,7 @@ def test_registered_command_action_tracks_and_executes_commands(
         actions.unregister("test_command")
 
     reopened = WorkflowService(Storage(tmp_path, task_persistence=persistence))
-    assert reopened.status("TASK-1").task_id == "TASK-1"
+    assert reopened.instruction("TASK-1").task_id == "TASK-1"
 
 
 def test_checker_segment_attestation_resumes_a_generic_command_sequence(

@@ -155,35 +155,3 @@ def test_multiple_quotes_do_not_inflate_distinct_task_frequency(tmp_path: Path) 
     point = store.get(point["id"])
     assert point["occurrence_ratio"] == 1
     assert point["task_ratio"] == 0.5
-
-
-def test_old_transcript_store_retains_ids_and_derives_timestamp(tmp_path: Path) -> None:
-    store = FeedbackStore(Storage(tmp_path))
-    point = {key: value for key, value in _analysis()[0].items() if key != "evidence"}
-    point.update(
-        {
-            "last_seen": 1,
-            "events": [
-                {
-                    "task": "TASK-1",
-                    "entry": 2,
-                    "run_id": "01-task",
-                    "quote": "Use English names.",
-                    "at": "2026-10-03T12:00:00Z",
-                }
-            ],
-        }
-    )
-    store.path.parent.mkdir(parents=True)
-    store.path.write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "tasks": ["TASK-1"],
-                "completed": ["TASK-1"],
-                "points": {"old-id": point},
-            }
-        )
-    )
-    assert store.get("old-id")["occurrences"] == 1
-    assert store.get("old-id")["last_encountered_at"] == "2026-10-03T12:00:00Z"

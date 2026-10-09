@@ -700,13 +700,14 @@ Task state is committed through the storage adapter as one logical transition.
 The filesystem adapter atomically publishes the task state as one index plus
 one file per run. `.ww/tasks/<id>/state.json` is a slim index (format,
 schema version, task ID, aggregate revision, active run, run order with each
-run's revision, handoff and ledger). `.ww/tasks/<id>/runs/<run_id>/state.json`
+run's revision, handoff and ledger). `.ww/tasks/<id>/runs/<run_id>/state.<revision>.json`
 holds one encoded run (plan, execution state, items and children) with its own
-extension snapshots and the revision it was written at. A commit rewrites only
-runs whose encoding changed, then the index last; run files of dropped runs are
-removed afterwards. Readers check that each run file's revision equals the one
-the index names. A mismatch means a commit was interrupted; an unlocked reader
-retakes the task lock and re-reads, and a persistent mismatch is a state error.
+extension snapshots, in a file named for the revision it was written at. A
+commit writes the changed runs to new revision-named files, publishes the index
+last, then deletes every run file the index no longer names. A reader opens only
+the files the index it read names, so a crash before the index is published
+leaves the previous revision fully readable; the orphaned files are removed by
+the next commit. A missing or unreadable named file is a state error.
 The adapter validates the active-run pointer and holds a task lock across read,
 modification, and commit, using the index revision as the compare-and-swap
 guard. Stale writers are rejected without changing the authoritative record.
@@ -724,7 +725,7 @@ and command output next to the run's own state file.
 The task document has its own format discriminator and schema version; plan
 snapshots and execution states carry theirs. Readers reject unsupported
 versions rather than guessing. Task documents, plan snapshots and execution
-states use schema 1; the task index and run documents use schema 3. The separate CLI
+states and the task index and run documents use schema 1. The separate CLI
 audit log uses one invocation ID for each started/terminal pair, redacts
 user-supplied completion values and failure text from command lines, and
 rotates by size. Workflow recovery never depends on audit files.
@@ -1138,7 +1139,7 @@ handoffs remain deferred.
 A task is a durable container rather than a single workflow execution. Every
 sequential workflow run persists its plan snapshot, execution state, and ledger
 history in the task-root `state.json` index and the run's own
-`runs/<run_id>/state.json`. Numbered run directories also hold artifacts or
+`runs/<run_id>/state.<revision>.json`. Numbered run directories also hold artifacts or
 command output when those exist. Separate task-root metadata keeps
 the task identity and cross-run values independent from execution publication.
 This separates immutable run history from the task identity needed by future
@@ -1555,9 +1556,8 @@ prints `session_context` from `ww.hooks.notices`, and every other event
 answers nothing. The adapters in `ww.hooks.agents` only translate: each reads
 its agent's payload into one neutral record and renders ww's answer in the
 agent's reply shape. A new agent is one more adapter. The three events, the
-payload fields (including the ones nothing reads now) and the `agent_hooks`
-keys stay accepted, so a hooks file or `ww.json` written by an older ww keeps
-working; `stop` and `interrupt` calls from an older installation exit 0 with no
+payload fields (including the ones nothing reads now) stay accepted, so a
+hooks file written by an older ww keeps working; `stop` and `interrupt` calls from an older installation exit 0 with no
 output and write no state. ww keeps no hook record per task: `reset` only
 removes the `interrupted.json` and `stop-reminders.json` an older version
 may have left, so they cannot keep the task directory alive.

@@ -10,7 +10,6 @@ import pytest
 
 from ww.errors import ConfigurationError
 from ww.project_config import (
-    AgentHooks,
     Limits,
     ProjectConfig,
     ProjectDefinition,
@@ -32,7 +31,6 @@ def test_an_absent_file_yields_defaults(tmp_path: Path) -> None:
     assert config.extensions == {}
     assert config.settings_for("ww/git") == {}
     assert config.limits == Limits(fixes=3)
-    assert config.agent_hooks == AgentHooks(check_unfinished=True, recent_days=3)
     assert config.rule_check_guidance is None
 
 
@@ -50,16 +48,6 @@ def test_the_fix_limit_loads_from_project_config(tmp_path: Path) -> None:
     path = write(tmp_path, {"limits": {"fixes": 5}})
 
     assert load_project_config(path).limits == Limits(fixes=5)
-
-
-def test_the_agent_hooks_settings_are_accepted_for_compatibility(
-    tmp_path: Path,
-) -> None:
-    path = write(tmp_path, {"agent_hooks": {"check_unfinished": False}})
-    assert load_project_config(path).agent_hooks == AgentHooks(False, 3)
-
-    path = write(tmp_path, {"agent_hooks": {"recent_days": 14}})
-    assert load_project_config(path).agent_hooks == AgentHooks(True, 14)
 
 
 def test_extension_settings_load(tmp_path: Path) -> None:
@@ -153,23 +141,7 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
             {"limits": {"auto_retries": True}},
             "limits.auto_retries must be a non-negative integer",
         ),
-        ({"agent_hooks": []}, "ww.json.agent_hooks must be an object"),
-        (
-            {"agent_hooks": {"days": 3}},
-            "ww.json.agent_hooks has unknown key(s): days",
-        ),
-        (
-            {"agent_hooks": {"check_unfinished": "no"}},
-            "ww.json.agent_hooks.check_unfinished must be true or false",
-        ),
-        (
-            {"agent_hooks": {"recent_days": 0}},
-            "ww.json.agent_hooks.recent_days must be a positive integer",
-        ),
-        (
-            {"agent_hooks": {"recent_days": True}},
-            "ww.json.agent_hooks.recent_days must be a positive integer",
-        ),
+        ({"agent_hooks": {}}, "has unknown key(s): agent_hooks"),
         ({"rules": "auto"}, "rules must be an object"),
         ({"rules": {"approval": "auto"}}, "rules has unknown key(s): approval"),
         ({"rules": {"scripting": True}}, "rules has unknown key(s): scripting"),

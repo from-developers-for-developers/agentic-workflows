@@ -36,11 +36,6 @@ for the operator, unless a rule sets its own ``max_fixes``. ``auto_retries``
 recording each failure on the step, before the step's own failure handling (a
 repair assignment, or the operator) applies.
 
-``agent_hooks`` holds the keys ``check_unfinished`` (default ``true``) and
-``recent_days`` (default 3). Both are validated and accepted so existing files
-keep loading, and neither has any effect: ww no longer lists unfinished tasks
-or interruptions.
-
 ``pages`` tunes what pages print. ``worker_requirements`` is ``full`` (the
 default: the first page of every delegated worker assignment prints the task
 requirements in full) or ``pointer`` (it carries the pointer to ``ww
@@ -110,7 +105,6 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
 DEFAULT_FIXES = 3
-DEFAULT_RECENT_DAYS = 3
 # A ``task_format`` that forbids generated IDs: every task is started with an
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
@@ -250,21 +244,6 @@ class Limits:
         }
 
 
-@dataclass(frozen=True)
-class AgentHooks:
-    """The ``agent_hooks`` setting; accepted for compatibility and ignored."""
-
-    # Both keys are kept so older files load; nothing reads them.
-    check_unfinished: bool = True
-    recent_days: int = DEFAULT_RECENT_DAYS
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "check_unfinished": self.check_unfinished,
-            "recent_days": self.recent_days,
-        }
-
-
 WORKER_REQUIREMENTS = ("full", "pointer")
 
 
@@ -325,7 +304,6 @@ class ProjectConfig:
     extensions: dict[str, dict[str, Any]] = field(default_factory=dict)
     builtins: dict[str, dict[str, str]] = field(default_factory=dict)
     limits: Limits = Limits()
-    agent_hooks: AgentHooks = AgentHooks()
     pages: Pages = Pages()
     # ``false`` tells agents not to use ww in this project; ``start`` refuses.
     # ``"on_request"`` keeps ww available, but agents use it only when the
@@ -555,7 +533,6 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "extensions",
         "builtins",
         "limits",
-        "agent_hooks",
         "pages",
         "projects",
         "update_check",
@@ -616,7 +593,6 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         extensions=extensions,
         builtins=normalized,
         limits=_parse_limits(raw.get("limits"), path),
-        agent_hooks=_parse_agent_hooks(raw.get("agent_hooks"), path),
         pages=_parse_pages(raw.get("pages"), path),
         enabled=enabled,
         projects=_parse_projects(raw.get("projects"), path),
@@ -673,28 +649,6 @@ def _parse_pages(data: Any, path: str) -> Pages:
             + ", ".join(WORKER_REQUIREMENTS)
         )
     return Pages(**data)
-
-
-def _parse_agent_hooks(data: Any, path: str) -> AgentHooks:
-    """``agent_hooks``: an optional ``check_unfinished`` and ``recent_days``."""
-    if data is None:
-        return AgentHooks()
-    if not isinstance(data, dict):
-        raise ConfigurationError(f"{path}.agent_hooks must be an object")
-    unknown = set(data) - {"check_unfinished", "recent_days"}
-    if unknown:
-        raise ConfigurationError(
-            f"{path}.agent_hooks has unknown key(s): {', '.join(sorted(unknown))}"
-        )
-    if not isinstance(data.get("check_unfinished", True), bool):
-        raise ConfigurationError(
-            f"{path}.agent_hooks.check_unfinished must be true or false"
-        )
-    if not is_positive_int(data.get("recent_days", DEFAULT_RECENT_DAYS)):
-        raise ConfigurationError(
-            f"{path}.agent_hooks.recent_days must be a positive integer"
-        )
-    return AgentHooks(**data)
 
 
 def _parse_rules(data: Any, path: str) -> dict[str, Any]:

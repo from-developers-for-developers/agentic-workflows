@@ -238,7 +238,7 @@ class PlanItem:
     explicit: bool = False
     learnable: bool = False
     choices: tuple[ChoiceDefinition, ...] = ()
-    # A per-item stage the operator answers on the operator page.
+    # A step the operator answers on the operator page.
     ui: bool = False
     model: str | None = None
     reasoning: str | None = None

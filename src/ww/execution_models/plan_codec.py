@@ -36,6 +36,7 @@ from ww.validation import (
     expect_positive_int,
     expect_string,
     is_positive_int,
+    reject_unknown_keys,
     require_keys,
 )
 from ww.workflow_config import (
@@ -100,16 +101,85 @@ def _checked_item_contexts(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:
         if item.item_operation is not None and item.item_context is None:
             raise ValueError("item operation has no collection context")
         if item.child_template and item.child_stage is None:
-            raise ValueError(
-                "per-item plans are incompatible; use the previous ww build"
-            )
+            raise ValueError("child template item has no child stage")
     return items
+
+
+_PLAN_ITEM_KEYS = frozenset(
+    {
+        "ancestors",
+        "artifact",
+        "artifact_dependency",
+        "assessment_outcome",
+        "assessment_outcomes",
+        "assessment_parent",
+        "assessment_question",
+        "assessment_stops",
+        "checks",
+        "child_identity",
+        "child_number",
+        "child_operation",
+        "child_stage",
+        "child_template",
+        "choices",
+        "dependencies",
+        "description",
+        "execution",
+        "explicit",
+        "id",
+        "interactive",
+        "item_context",
+        "item_identity",
+        "item_operation",
+        "item_unique",
+        "learnable",
+        "max_handler_fixes",
+        "model",
+        "modes",
+        "name",
+        "on_failure",
+        "on_failure_instruction",
+        "operation",
+        "outputs",
+        "owner",
+        "parent",
+        "phase",
+        "position",
+        "profile",
+        "profile_instruction",
+        "profile_path",
+        "provide",
+        "reasoning",
+        "registered_handler",
+        "requested_agent",
+        "requested_model",
+        "requested_reasoning",
+        "requires_agent_input",
+        "role",
+        "rules",
+        "save_metadata",
+        "shared_items",
+        "source",
+        "split_instruction",
+        "step",
+        "step_ordinals",
+        "subagents",
+        "summary",
+        "ui",
+        "update_document",
+        "update_item",
+        "verifies",
+        "workdir",
+        "workflow",
+    }
+)
 
 
 def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanItem:
     if not isinstance(raw, dict):
         raise ValueError(f"plan.items[{item_index}] must be a mapping")
     item_path = f"plan.items[{item_index}]"
+    reject_unknown_keys(raw, _PLAN_ITEM_KEYS, item_path)
     provide = _provided_variables_from_list(raw.get("provide", []), item_path)
     save_metadata = _saved_metadata_from_list(raw.get("save_metadata", []), item_path)
     update_document = _document_updates_from_list(

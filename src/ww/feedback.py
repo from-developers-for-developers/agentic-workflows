@@ -281,9 +281,7 @@ class FeedbackStore:
 
 
 def _event_key(event: dict[str, Any]) -> tuple[object, ...]:
-    # Legacy transcript points remain readable without losing IDs or counts.
-    source = event.get("source", f"interaction:{event.get('entry')}")
-    return event["task"], event.get("run_id"), source, event["quote"]
+    return event["task"], event.get("run_id"), event["source"], event["quote"]
 
 
 def _timestamp(value: object) -> datetime:

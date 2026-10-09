@@ -51,7 +51,7 @@ def test_a_completed_run_offers_its_recommendation(tmp_path: Path) -> None:
         '--requirements "<the request, normalized>" --role manager'
     ) in page
     # Showing the finished run again offers the same choice.
-    again = service.status("TASK-1", caller_role="manager")
+    again = service.instruction("TASK-1", caller_role="manager")
     assert again.recommended_workflow == "merge-to-dev"
 
     # The operator accepted: the next workflow starts on the same task.

@@ -196,36 +196,6 @@ def update_child_command(task_id: str, child_id: str) -> str:
     )
 
 
-def add_item_command(
-    task_id: str = TASK_PLACEHOLDER, identity: str | None = None
-) -> str:
-    parts = ["add-item", _arg(task_id), "--id", "<id>", "--text", "<text>"]
-    if identity:
-        parts.extend(("--field", f"{identity}=<value>"))
-    return _command(*parts)
-
-
-def set_item_fields_command(task_id: str, item_id: str | None = None) -> str:
-    """Set custom fields on an item; several in one call."""
-    return _command(
-        "update-item",
-        _arg(task_id),
-        "--id",
-        _arg(item_id) if item_id else "<id>",
-        "--field",
-        "<name>=<value>",
-        "[--field <name>=<value> ...]",
-    )
-
-
-def remove_item_command(task_id: str = TASK_PLACEHOLDER) -> str:
-    return _command("remove-item", _arg(task_id), "--id", "<id>")
-
-
-def reword_item_command(task_id: str = TASK_PLACEHOLDER) -> str:
-    return _command("update-item", _arg(task_id), "--id", "<id>", "--text", "<text>")
-
-
 def add_child_command(
     task_id: str = TASK_PLACEHOLDER, *, project: bool = False, identity: bool = False
 ) -> str:
@@ -237,14 +207,6 @@ def add_child_command(
         '--text="<child task text>"',
         *(("--project", "<project>") if project else ()),
     )
-
-
-def items_command(task_id: str = TASK_PLACEHOLDER) -> str:
-    return _command("items", _arg(task_id))
-
-
-def item_command(task_id: str, item_id: str) -> str:
-    return _command("item", _arg(task_id), "--id", _arg(item_id))
 
 
 def complete_command(

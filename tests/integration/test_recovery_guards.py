@@ -125,7 +125,7 @@ def test_command_attestation_needs_output_and_nothing_else(
 
     with pytest.raises(StateError, match=message):
         service.recover(TASK, **options)  # type: ignore[arg-type]
-    assert service.status(TASK).status == "interrupted"
+    assert service.instruction(TASK).status == "interrupted"
 
 
 def test_attested_output_settles_the_command_without_running_it(

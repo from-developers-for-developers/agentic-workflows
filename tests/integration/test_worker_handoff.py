@@ -121,7 +121,7 @@ def test_worker_completes_full_assignment_then_hands_back(
         assert "act as the manager and do the work yourself" in rendered_handoff
 
     reloaded = WorkflowService(Storage(tmp_path))
-    status = reloaded.status(
+    status = reloaded.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(reloaded, "TASK-1")
     )
     assert status.control == "handoff_manager"
@@ -201,7 +201,7 @@ def test_protocol_renderers_and_role_rejection_are_consistent(tmp_path: Path) ->
     service.start("task", "TASK-1", agent="codex", caller_role="manager")
     with pytest.raises(StateError, match="manager-role command"):
         service.next("TASK-1", caller_role="worker")
-    pending = service.status(
+    pending = service.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
     )
     data = pending.to_dict()
@@ -252,7 +252,7 @@ workflows:
     assert failed.continuation_command is None
 
     reloaded = WorkflowService(Storage(tmp_path))
-    visible = reloaded.status(
+    visible = reloaded.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(reloaded, "TASK-1")
     )
     assert visible.result_saved is True
@@ -363,7 +363,7 @@ workflows:
         )
 
     resumed = WorkflowService(Storage(tmp_path))
-    uncertain = resumed.status(
+    uncertain = resumed.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(resumed, "TASK-1")
     )
     assert uncertain.control == "blocked"
@@ -496,7 +496,7 @@ workflows:
     service.next("TASK-1", caller_role="manager")
 
     # Every worker reads the saved requirements and the artifact contract.
-    review = service.status(
+    review = service.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
     )
     assert review.task_requirements == (
@@ -732,7 +732,7 @@ workflows:
         "This assignment covers, in order: `jira-in-progress`, `develop`." in rendered
     )
 
-    worker = service.status(
+    worker = service.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
     )
     rendered = md.render_instruction(worker)
@@ -824,7 +824,7 @@ workflows:
         "`update-workflow-summary`." in rendered
     )
 
-    worker = service.status(
+    worker = service.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
     )
     rendered = md.render_instruction(worker)
@@ -912,7 +912,7 @@ def test_coverage_line_splits_completed_from_remaining_items(tmp_path: Path) -> 
     assert (continued.item_name, continued.item_status) == ("notify", "in_progress")
     assert continued.completed_assignment_items == ("develop", "commit", "git-push")
     rendered = md.render_instruction(
-        service.status("TASK-1", caller_role="worker", assignment=token)
+        service.instruction("TASK-1", caller_role="worker", assignment=token)
     )
     assert (
         "Already completed in this assignment: `develop`, `commit`, `git-push` (run "
@@ -941,7 +941,7 @@ def test_coverage_line_splits_completed_from_remaining_items(tmp_path: Path) -> 
         "notify",
     )
     rendered = md.render_instruction(
-        service.status("TASK-1", caller_role="worker", assignment=token)
+        service.instruction("TASK-1", caller_role="worker", assignment=token)
     )
     assert "Already completed" not in rendered
     assert "Remaining, in order" not in rendered
@@ -981,7 +981,7 @@ def test_page_names_the_automatic_item_ww_runs_now(
         )
 
     resumed = WorkflowService(Storage(tmp_path))
-    page = resumed.status("TASK-1", caller_role="worker", assignment=token)
+    page = resumed.instruction("TASK-1", caller_role="worker", assignment=token)
     assert (page.item_name, page.item_status) == ("git-push", "in_progress")
     assert page.completed_assignment_items == ("develop", "commit")
     assert page.running_assignment_item == "git-push"
@@ -1029,7 +1029,7 @@ def test_one_agent_item_with_an_automatic_hook_is_still_enumerated(
         "the previous completion." in rendered
     )
     token = assignment_token(service, "TASK-1")
-    worker = service.status("TASK-1", caller_role="worker", assignment=token)
+    worker = service.instruction("TASK-1", caller_role="worker", assignment=token)
     assert "covers, in order: `develop`, `git-push` (run by `ww`)." in (
         md.render_instruction(worker)
     )

@@ -74,7 +74,7 @@ def _outputs(service: WorkflowService, task_id: str) -> list[str]:
 
 
 def _finish(service: WorkflowService, task_id: str) -> None:
-    instruction = service.status(task_id)
+    instruction = service.instruction(task_id)
     while instruction.status not in {"completed", "failed"}:
         assert instruction.error is None, instruction.error
         if instruction.item_status == "pending":

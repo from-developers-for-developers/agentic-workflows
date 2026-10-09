@@ -176,7 +176,7 @@ def test_the_compact_form_gets_the_same_pages(tmp_path: Path) -> None:
     shown = service.next("TASK-1", caller_role="manager")
     assert shown.choosing_outcome_of == "assess"
     assert "--outcome negative" in md.render_instruction(shown)
-    assert service.status("TASK-1").choosing_outcome_of == "assess"
+    assert service.instruction("TASK-1").choosing_outcome_of == "assess"
 
 
 def test_direct_standard_branches_use_the_existing_outcome_transitions(
@@ -190,7 +190,7 @@ def test_direct_standard_branches_use_the_existing_outcome_transitions(
         "mixed",
     ]
     assert "continues with `review-conflicts`" in md.render_instruction(page)
-    assert service.status("TASK-1").choosing_outcome_of == "assess"
+    assert service.instruction("TASK-1").choosing_outcome_of == "assess"
     assert service.resume(*service.load("TASK-1")).choosing_outcome_of == "assess"
     chosen = service.next("TASK-1", outcome="positive", caller_role="manager")
     assert chosen.item_name == "review-conflicts"
@@ -280,7 +280,7 @@ def test_a_delegating_manager_chooses_without_a_worker_preview(
     assert "## Worker: return control to the manager" in returned
     assert "choose the outcome" not in returned.split("\n### ")[0]
 
-    shown = service.status("TASK-1", caller_role="manager")
+    shown = service.instruction("TASK-1", caller_role="manager")
 
     assert shown.choosing_outcome_of == "assess"
     assert shown.assignment_preview is None
@@ -422,13 +422,13 @@ def test_an_assessment_inside_an_items_context_runs_once_for_the_collection(
         "TASK-1", artifact="Assessed.", summary_for_next="Choose."
     )
     assert choice.choosing_outcome_of == "assess"
-    assert service.status("TASK-1").choosing_outcome_of == "assess"
+    assert service.instruction("TASK-1").choosing_outcome_of == "assess"
     selected = service.next("TASK-1", outcome=first_outcome)
     if first_outcome == "positive":
         assert selected.item_name == "discuss"
         service.complete("TASK-1", artifact="Discussed.", summary_for_next="Resolve.")
         service.next("TASK-1")
-    assert service.status("TASK-1").item_name == "resolve"
+    assert service.instruction("TASK-1").item_name == "resolve"
     for item_id in ("one", "two"):
         service.resolve_item("TASK-1", item_id)
         service.report_item("TASK-1", item_id)
@@ -481,7 +481,7 @@ workflows:
     service.complete(
         "TASK-DIRECT-ITEM", artifact="Positive.", summary_for_next="Choose."
     )
-    waiting = service.status("TASK-DIRECT-ITEM")
+    waiting = service.instruction("TASK-DIRECT-ITEM")
     assert waiting.choosing_outcome_of == "assess"
     assert service.resume(*service.load("TASK-DIRECT-ITEM")).choosing_outcome_of == (
         "assess"
@@ -528,7 +528,7 @@ workflows:
     service.complete(
         "TASK-DIRECT-GROUP", artifact="Positive.", summary_for_next="Choose."
     )
-    waiting = service.status("TASK-DIRECT-GROUP")
+    waiting = service.instruction("TASK-DIRECT-GROUP")
     assert waiting.choosing_outcome_of == "assess"
     assert service.resume(*service.load("TASK-DIRECT-GROUP")).choosing_outcome_of == (
         "assess"
@@ -580,7 +580,7 @@ def test_a_manager_choosing_an_automatic_outcome_skips_the_other_branch(
 
     assert (tmp_path / "ran").exists()
     assert page.item_name == "tests"
-    assert service.status("TASK-1").item_name == "tests"
+    assert service.instruction("TASK-1").item_name == "tests"
     assert service.instruction("TASK-1").item_name == "tests"
     skipped = [
         record.status
@@ -599,7 +599,7 @@ def test_a_manager_choosing_the_agent_outcome_does_not_run_the_automatic_one(
 
     assert page.item_name == "resolve"
     assert not (tmp_path / "ran").exists()
-    assert service.status("TASK-1").item_name == "resolve"
+    assert service.instruction("TASK-1").item_name == "resolve"
 
 
 def _plan_and_records(service: WorkflowService):  # noqa: ANN202

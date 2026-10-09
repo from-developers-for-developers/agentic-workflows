@@ -265,7 +265,7 @@ class _ExtensionService:
                 if name not in values
             }
         )
-        context_error = item_context_error(missing, values)
+        context_error = item_context_error(missing)
         if context_error is not None:
             raise StateError(context_error)
         if missing:
@@ -488,14 +488,12 @@ class ActionExecutor:
         task_values: TaskValues,
         metadata_publisher: MetadataPublisher,
         child_values: StepValues = no_step_values,
-        item_values: StepValues = no_step_values,
         read_items: ReadItems = lambda state: (),
         commit_items: CommitItems | None = None,
     ) -> None:
         self.root = root
         self.read_items = read_items
         self.commit_items = commit_items
-        self.item_values = item_values
         self.extensions = extensions
         self.commit = commit
         self.project_state = project_state
@@ -537,7 +535,6 @@ class ActionExecutor:
                 **dict(state.workflow_values),
                 **self.task_values(state, plan),
                 **self.child_values(state, plan, item),
-                **self.item_values(state, plan, item),
             },
         )
 

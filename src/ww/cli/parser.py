@@ -94,12 +94,6 @@ def _positive(value: str) -> int:
     return int(value)
 
 
-def _true_false(value: str) -> bool:
-    if value not in {"true", "false"}:
-        raise argparse.ArgumentTypeError("choose 'true' or 'false'")
-    return value == "true"
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="ww-agentic-workflows", description="Resumable agentic workflows."
@@ -758,7 +752,7 @@ def build_parser() -> argparse.ArgumentParser:
     update_item = subparsers.add_parser(
         "update-item",
         parents=[json_and_role],
-        help="Update an active workflow item and show its completion command.",
+        help="Update an item of an items context.",
     )
     update_item.add_argument("task_id")
     update_item.add_argument("--context")
@@ -766,13 +760,11 @@ def build_parser() -> argparse.ArgumentParser:
     update_item.add_argument("--id", dest="item_id", required=True)
     update_item.add_argument(
         "--text",
-        help="New item text; allowed only while the collection step is in progress.",
+        help="New item text; it reopens the item (not resolved, not reported).",
     )
     update_item.add_argument("--notes")
     update_item.add_argument("--refers-to", dest="reference_to_id")
     update_item.add_argument("--actual-solution")
-    update_item.add_argument("--resolved", type=_true_false, metavar="{true,false}")
-    update_item.add_argument("--reported", type=_true_false, metavar="{true,false}")
     update_item.add_argument(
         "--field",
         action="append",
@@ -783,7 +775,7 @@ def build_parser() -> argparse.ArgumentParser:
     remove_item = subparsers.add_parser(
         "remove-item",
         parents=[json_and_role],
-        help="Remove an item while the collection step is in progress.",
+        help="Remove an item that no other item refers to.",
     )
     remove_item.add_argument("task_id")
     remove_item.add_argument("--context")

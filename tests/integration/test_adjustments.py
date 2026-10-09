@@ -44,7 +44,7 @@ def _develop(root: Path, workflow: str = WORKFLOW) -> WorkflowService:
 def test_every_agent_step_page_asks_for_the_adjustments(tmp_path: Path) -> None:
     service = _develop(tmp_path)
 
-    rendered = MarkdownOutputAdapter().render_instruction(service.status("TASK-1"))
+    rendered = MarkdownOutputAdapter().render_instruction(service.instruction("TASK-1"))
 
     assert (
         "Any explicit change the operator asked for in this session for this "
@@ -72,7 +72,7 @@ def test_adjustments_are_stored_and_shown_to_the_next_step_and_in_status(
     )
     assert develop.adjustments == ASKED
     assert review.previous_step_adjustments == ASKED
-    rendered = MarkdownOutputAdapter().render_instruction(service.status("TASK-1"))
+    rendered = MarkdownOutputAdapter().render_instruction(service.instruction("TASK-1"))
     assert "The operator asked for these changes during `develop`:" in rendered
     assert f"> {ASKED}" in rendered
     status = service.task_status("TASK-1").to_dict()
@@ -87,7 +87,7 @@ def test_a_step_without_adjustments_shows_none(tmp_path: Path) -> None:
 
     assert review.previous_step_adjustments is None
     assert "adjustments" not in service.task_status("TASK-1").to_dict()
-    rendered = MarkdownOutputAdapter().render_instruction(service.status("TASK-1"))
+    rendered = MarkdownOutputAdapter().render_instruction(service.instruction("TASK-1"))
     assert "The operator asked for these changes" not in rendered
 
 

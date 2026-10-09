@@ -54,7 +54,7 @@ workflows:
     assert state.assignment_model == "worker-model"
 
     reloaded = WorkflowService(Storage(tmp_path), persistence)
-    visible = reloaded.status(
+    visible = reloaded.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(reloaded, "TASK-1")
     )
     assert visible.item_name == "document"

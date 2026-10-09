@@ -1552,8 +1552,6 @@ def _update_item(context: _Context) -> _Outcome:
             ("notes", args.notes),
             ("reference_to_id", args.reference_to_id),
             ("actual_solution", args.actual_solution),
-            ("resolved", args.resolved),
-            ("reported", args.reported),
         )
         if value is not None
     }
@@ -1921,7 +1919,6 @@ def _answer_hook(arguments: list[str]) -> int:
                 args.hook_action,
                 payload,
                 on_request=config.on_request,
-                settings=config.agent_hooks,
             )
     except BaseException as error:  # noqa: BLE001 - a hook must never break the agent
         if isinstance(error, KeyboardInterrupt):

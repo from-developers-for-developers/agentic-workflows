@@ -27,7 +27,6 @@ from ww.storage_adapters.base import (
     flatten_metadata,
 )
 from ww.storage_adapters.task_document import (
-    RunRevisionMismatchError,
     check_active_run,
     decode_run_document,
     decode_task_index,
@@ -52,6 +51,10 @@ def _same_run(stored: dict[str, object], encoded: dict[str, object]) -> bool:
     return _canonical({**stored, "revision": None}) == _canonical(
         {**encoded, "revision": None}
     )
+
+
+def _revision_number(text: str) -> int | None:
+    return int(text) if text.isdecimal() else None
 
 
 def _canonical(document: dict[str, object]) -> str:
@@ -102,32 +105,14 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             return None
         return datetime.fromtimestamp(modified, timezone.utc)
 
-    def _read_task_document(
-        self, task_id: str, *, locked: bool = False
-    ) -> _StoredTask:
-        """Read the index and every run document it names.
+    def _read_task_document(self, task_id: str) -> _StoredTask:
+        """Read the index and the run documents it names.
 
-        Reads are unlocked, so a reader can meet run documents a writer
-        published after the index it read.  It then waits for the commit lock
-        and reads again; a mismatch that survives that is an interrupted
-        commit.  ``locked`` callers already hold the lock.
+        A commit publishes run documents under revision-named files and then
+        the index, so the index only ever names files that are complete.
         """
         if not self._state_path(task_id).exists():
             return _StoredTask((), None, 0, {}, {})
-        try:
-            return self._decode_task_files(task_id)
-        except RunRevisionMismatchError as error:
-            if locked:
-                raise StateError(str(error)) from error
-        with self.locks.lock(
-            self._state_path(task_id), purpose=f"task state {task_id!r}"
-        ):
-            try:
-                return self._decode_task_files(task_id)
-            except RunRevisionMismatchError as error:
-                raise StateError(str(error)) from error
-
-    def _decode_task_files(self, task_id: str) -> _StoredTask:
         path = self._state_path(task_id)
         try:
             index = decode_task_index(self._load_json(path), task_id)
@@ -136,22 +121,14 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
         runs: list[TaskRunAggregate] = []
         documents: dict[str, dict[str, object]] = {}
         for run_id, revision in index.run_revisions:
-            run_path = self._run_state_path(task_id, run_id)
+            run_path = self._run_state_path(task_id, run_id, revision)
             try:
                 document = self._load_json(run_path)
                 if not isinstance(document, dict):
                     raise ValueError("run state must be a mapping")
-                runs.append(
-                    decode_run_document(document, task_id, run_id, revision)
-                )
-            except RunRevisionMismatchError as error:
-                raise RunRevisionMismatchError(
-                    f"invalid task state {run_path}: {error}"
-                ) from error
+                runs.append(decode_run_document(document, task_id, run_id, revision))
             except (OSError, json.JSONDecodeError, StateError, ValueError) as error:
-                raise StateError(
-                    f"invalid task state {run_path}: {error}"
-                ) from error
+                raise StateError(f"invalid task state {run_path}: {error}") from error
             documents[run_id] = document
         try:
             check_active_run(index, tuple(runs))
@@ -192,7 +169,7 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
         handoff: str | None = None,
         expected_revision: int | None = None,
     ) -> int:
-        stored = self._read_task_document(task_id, locked=True)
+        stored = self._read_task_document(task_id)
         previous, revision, ledger = stored.runs, stored.revision, stored.ledger
         if revision and expected_revision is None:
             raise StateError("existing task aggregate requires expected_revision")
@@ -260,19 +237,30 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
         validate_task_runs(task_id, decoded)
         if not self._metadata_path(task_id).exists():
             self._write_task_metadata_payload(TaskMetadata(task_id))
-        # Run documents first and the index last: a reader trusts only runs
-        # at the revisions the published index names.
+        # Run documents go to revision-named files and the index last, so a
+        # crash before the index leaves the previous revision fully readable.
         for run_id, document in changed_documents.items():
             self.locks.atomic_write(
-                self._run_state_path(task_id, run_id),
+                self._run_state_path(task_id, run_id, new_revision),
                 json.dumps(document, indent=2) + "\n",
             )
         self.locks.atomic_write(
             self._state_path(task_id), json.dumps(index, indent=2) + "\n"
         )
-        for run_id in set(stored.documents) - set(run_revisions):
-            self._run_state_path(task_id, run_id).unlink(missing_ok=True)
+        self._remove_unnamed_run_documents(task_id, run_revisions)
         return new_revision
+
+    def _remove_unnamed_run_documents(
+        self, task_id: str, named: dict[str, int]
+    ) -> None:
+        """Delete run documents the published index no longer names."""
+        runs_path = self.tasks_path / task_id / "runs"
+        if not runs_path.is_dir():
+            return
+        for path in runs_path.glob("*/state.*.json"):
+            revision = path.name.removeprefix("state.").removesuffix(".json")
+            if named.get(path.parent.name) != _revision_number(revision):
+                path.unlink(missing_ok=True)
 
     def write_command_output(self, address: CommandOutputAddress, content: str) -> str:
         path = self._run_path(address.task_id, address.run_id).joinpath(
@@ -473,8 +461,8 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
     def _state_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "state.json"
 
-    def _run_state_path(self, task_id: str, run_id: str) -> Path:
-        return self._run_path(task_id, run_id) / "state.json"
+    def _run_state_path(self, task_id: str, run_id: str, revision: int) -> Path:
+        return self._run_path(task_id, run_id) / f"state.{revision}.json"
 
     def _metadata_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "metadata.json"

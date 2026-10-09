@@ -91,7 +91,7 @@ def test_an_append_key_grows_across_completions_and_reads_as_a_list(
     service.complete("TASK-1", artifact="collected", summary_for_next="One.")
     assert collect.item_name == "process"
     assert service.next("TASK-1").item_name == "resolve"
-    handle = service.status("TASK-1")
+    handle = service.instruction("TASK-1")
     rendered = MarkdownOutputAdapter().render_instruction(handle)
     assert (
         "(a list: repeat `--metadata pull_request.handled=<value>` once per value"

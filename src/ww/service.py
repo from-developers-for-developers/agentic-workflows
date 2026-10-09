@@ -329,7 +329,6 @@ class WorkflowService:
             self.tasks,
             self._runtime_values,
             child_values=self._child_values,
-            item_values=self._item_values,
             worker_requirements=lambda: (
                 load_project_config(
                     self.storage.project_config_path
@@ -363,7 +362,6 @@ class WorkflowService:
             task_values=self._runtime_values,
             metadata_publisher=self.metadata_publisher,
             child_values=self._child_values,
-            item_values=self._item_values,
             read_items=lambda state: self.tasks.read_items(state.task_id, state.run_id),
             commit_items=self._commit_items,
         )
@@ -673,23 +671,29 @@ class WorkflowService:
         state, snapshot = self._complete_initialization(state, snapshot)
         return self.render(state, snapshot)
 
-    def _require_item_fields(
-        self, task_id: str, state: ExecutionState, item: PlanItem
-    ) -> None:
-        """A step's declared item fields must be set before it completes."""
+    def _item_field_failures(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> tuple[str, ...]:
+        """What keeps a step's declared item fields from being complete."""
         entries = tuple(
             entry
-            for entry in self.tasks.read_items(task_id, state.run_id)
+            for entry in self.tasks.read_items(state.task_id, state.run_id)
             if entry.context == item.item_context
         )
         failures = missing_fields(
             entries, tuple(field.name for field in item.update_item)
         )
         if item.item_operation == "complete_collection":
-            _, snapshot = self.load(task_id, state.run_id)
             failures += collection_failures(
-                snapshot.plan, state, str(item.item_context), entries
+                plan, state, str(item.item_context), entries
             )
+        return tuple(failures)
+
+    def _require_item_fields(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> None:
+        """A step's declared item fields must be set before it completes."""
+        failures = self._item_field_failures(state, plan, item)
         if failures:
             raise StateError(
                 f"items context {item.item_context!r} is incomplete: "
@@ -1249,7 +1253,7 @@ class WorkflowService:
         if force and state.cursor < len(snapshot.plan.items):
             current = snapshot.plan.items[state.cursor]
             if current.item_operation in {"complete_collection", "save_fields"}:
-                self._require_item_fields(task_id, state, current)
+                self._require_item_fields(state, snapshot.plan, current)
         if (
             outcome is None
             and not force
@@ -1625,7 +1629,6 @@ class WorkflowService:
             spoken,
             run_id=state.run_id,
             step=item.name,
-            item_id=None,
             at=_now(),
         )
         records = list(state.item_executions)
@@ -1882,7 +1885,7 @@ class WorkflowService:
                 "pass a non-empty --artifact or configure artifact: false"
             )
         if item.update_item or item.item_operation == "complete_collection":
-            self._require_item_fields(task_id, state, item)
+            self._require_item_fields(state, snapshot.plan, item)
         active_record = state.item_executions[state.cursor]
         if item.interactive and not active_record.interaction_ended:
             raise StateError(
@@ -2030,6 +2033,7 @@ class WorkflowService:
             pending_task_metadata=(updated_metadata.values if updated_metadata else ()),
             pending_project_metadata=project_publication,
         )
+        items: tuple[WorkItem, ...] | None = None
         if item.child_operation == "collect":
             state, snapshot = materialize_child_plan(
                 state, snapshot, self.tasks.read_children(task_id, state.run_id), _now
@@ -2042,8 +2046,8 @@ class WorkflowService:
                 if entry.context not in present_contexts
             )
             if seeded:
-                self.commit(state, snapshot, items=(*current_items, *seeded))
-        self.commit(state, snapshot)
+                items = (*current_items, *seeded)
+        self.commit(state, snapshot, items=items)
         for document in promised_documents:
             self.documents.record_update(
                 document,
@@ -2408,19 +2412,6 @@ class WorkflowService:
             direct_work=direct_work,
         )
 
-    def status(
-        self,
-        task_id: str,
-        run_id: str | None = None,
-        *,
-        caller_role: CallerRole | None = None,
-        assignment: str | None = None,
-    ) -> Instruction:
-        """Backward-compatible service alias for :meth:`instruction`."""
-        return self.instruction(
-            task_id, run_id, caller_role=caller_role, assignment=assignment
-        )
-
     def instruction_status(self, task_id: str, run_id: str | None) -> Instruction:
         """Render a task from one record read, so it reflects one revision."""
         return self._status_from_one_read(task_id, run_id)[0]
@@ -2729,15 +2720,6 @@ class WorkflowService:
             },
         )
 
-    def _item_values(
-        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
-    ) -> dict[str, str]:
-        return {
-            name: "{{" + name + "}}"
-            for name in item.dependencies
-            if name.startswith("ww.item.") and item.item_context is not None
-        }
-
     def _child_values(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> dict[str, str]:
@@ -2849,12 +2831,6 @@ class WorkflowService:
             # Side records go first, so the task directory is empty for the
             # storage adapter to remove.
             self.interactions.remove(task_id)
-            # Older ww versions kept hook records here; nothing writes them
-            # now, but one left behind would keep the task directory alive.
-            for legacy in ("interrupted.json", "stop-reminders.json"):
-                (self.storage.runtime_path / "tasks" / task_id / legacy).unlink(
-                    missing_ok=True
-                )
             self.documents.remove_task(task_id)
             # Extension records outlive task state otherwise, and a later
             # task under the same ID would inherit them.
@@ -3403,7 +3379,7 @@ class WorkflowService:
             )
             items[index] = updated
             self._commit_items(state, snapshot, tuple(items))
-            return ItemUpdateResult(updated, "")
+            return ItemUpdateResult(updated)
 
     def resolve_item(
         self,
@@ -3562,23 +3538,21 @@ class WorkflowService:
                 state = skip_idle_verification(state, _now)
                 self.commit(state, snapshot)
                 continue
-            if item.item_operation in {"complete_collection", "save_fields"}:
-                try:
-                    self._require_item_fields(state.task_id, state, item)
-                except StateError:
-                    pass
-                else:
-                    state = begin_agent_item(
-                        state,
-                        plan,
-                        item,
-                        model=state.model,
-                        reasoning=state.reasoning,
-                        now=_now,
-                    )
-                    state = complete_agent_item(state, plan, {}, None, _now)
-                    self.commit(state, snapshot)
-                    continue
+            if item.item_operation in {
+                "complete_collection",
+                "save_fields",
+            } and not self._item_field_failures(state, plan, item):
+                state = begin_agent_item(
+                    state,
+                    plan,
+                    item,
+                    model=state.model,
+                    reasoning=state.reasoning,
+                    now=_now,
+                )
+                state = complete_agent_item(state, plan, {}, None, _now)
+                self.commit(state, snapshot)
+                continue
             if item.owner == "agent" and record.held_completion is not None:
                 # Its verification finished, but ww stopped before recording
                 # the completion: record it now.
@@ -4860,14 +4834,6 @@ def _manager_performs(instruction: Instruction) -> bool:
         and instruction.status == "in_progress"
         and instruction.role == "manager"
     )
-
-
-def _collecting(state: ExecutionState, snapshot: PlanSnapshot) -> bool:
-    """Whether the run's collection step is the item in progress."""
-    if not state.active_item_id or state.cursor >= len(snapshot.plan.items):
-        return False
-    item = snapshot.plan.items[state.cursor]
-    return item.id == state.active_item_id and item.item_operation == "collect"
 
 
 def _interactive_item(

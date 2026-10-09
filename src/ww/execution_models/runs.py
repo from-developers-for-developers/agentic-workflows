@@ -26,9 +26,9 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 3
+PLAN_SCHEMA_VERSION = 1
 # Recorded on every snapshot; informational until a reader needs to branch on it.
-PLAN_COMPILER_VERSION = "plan-v11"
+PLAN_COMPILER_VERSION = "plan-v1"
 
 
 @dataclass(frozen=True)
@@ -170,11 +170,7 @@ class PlanSnapshot:
         require_keys(data, required, "plan snapshot")
         schema_version = data["schema_version"]
         if not is_strict_int(schema_version) or schema_version != PLAN_SCHEMA_VERSION:
-            raise ValueError(
-                f"unsupported plan snapshot schema: {schema_version!r}; "
-                "inspect or finish this run with the previous ww build. "
-                "State was left untouched."
-            )
+            raise ValueError(f"unsupported plan snapshot schema: {schema_version!r}")
         template = (
             _plan_from_dict(data["template_plan"]) if "template_plan" in data else None
         )

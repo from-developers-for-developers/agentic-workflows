@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_helpers import assignment_token
+from tests.workflow_helpers import assignment_token, run_state_path
 from ww.cli import main
 from ww.config.rules import rule_text_hash
 from ww.errors import StateError
@@ -627,7 +627,7 @@ def test_a_state_the_previous_build_wrote_loads_as_judged(
     # unresolved or wait on the operator, and records kept the proposals.
     root = _project(tmp_path)
     _developed(root)
-    path = root / ".ww/tasks/TASK-1/runs/01-task/state.json"
+    path = run_state_path(root, "TASK-1")
     document = json.loads(path.read_text(encoding="utf-8"))
     for item in document["run"]["state"]["item_executions"]:
         for entry in item.get("rule_resolutions", []):

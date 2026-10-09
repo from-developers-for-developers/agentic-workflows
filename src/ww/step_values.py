@@ -9,8 +9,8 @@ from ww.execution_models import ExecutionState
 from ww.plan import PlanItem, WorkflowPlan
 
 # Template values one step reads about what it works on, such as
-# ``{{ww.child.*}}`` for a per-child stage or ``{{ww.item.*}}`` for a per-item
-# stage; empty for a step that works on neither.
+# ``{{ww.child.*}}`` for a per-child stage; empty for a step that works on no
+# child.  ``{{ww.item.*}}`` is never substituted: the agent resolves it per item.
 StepValues = Callable[[ExecutionState, WorkflowPlan, PlanItem], dict[str, str]]
 
 

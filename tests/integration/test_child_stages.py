@@ -171,7 +171,7 @@ def test_a_failed_child_stops_the_parent(tmp_path: Path) -> None:
 
     service.fail(f"{TASK}/A", "deliberately stopped")
 
-    parent = service.status(TASK)
+    parent = service.instruction(TASK)
     assert parent.status == "failed"
     assert parent.item_name == "implement"
     assert [child.status for child in parent.child_tasks] == ["failed", "pending"]

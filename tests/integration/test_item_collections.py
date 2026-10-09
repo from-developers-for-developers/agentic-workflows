@@ -336,7 +336,25 @@ def test_incompatible_snapshot_is_not_rewritten(tmp_path: Path) -> None:
     svc = service(tmp_path)
     _, snapshot = svc.load(TASK)
     before = snapshot.to_dict()
-    old = replace(snapshot, schema_version=1).to_dict()
-    with pytest.raises(ValueError, match="previous ww build"):
+    old = replace(snapshot, schema_version=2).to_dict()
+    with pytest.raises(ValueError, match="unsupported plan snapshot schema"):
         PlanSnapshot.from_dict(old)
     assert snapshot.to_dict() == before
+
+
+def test_item_field_failures_are_returned_not_raised(tmp_path: Path) -> None:
+    svc = service(tmp_path, "            - develop: Fix it.\n")
+    svc.add_item(TASK, WorkItem("a", "Obligation"))
+    complete(svc)
+    svc.next(TASK)
+    complete(svc)
+    svc.next(TASK)
+    state, snapshot = svc.load(TASK)
+    boundary = snapshot.plan.items[state.cursor]
+
+    assert svc._item_field_failures(state, snapshot.plan, boundary) == (
+        "a: unresolved",
+        "a: unreported",
+    )
+    mark(svc, "a")
+    assert svc._item_field_failures(state, snapshot.plan, boundary) == ()

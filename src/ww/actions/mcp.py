@@ -68,7 +68,6 @@ class McpAction(Action[Mcp, Mcp]):
                 prompt,
                 "",
             ),
-            include_item_context=True,
         )
 
     def encode(self, planned: Mcp) -> dict[str, object]:

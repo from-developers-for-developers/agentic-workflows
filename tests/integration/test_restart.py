@@ -58,7 +58,7 @@ def test_a_new_start_abandons_the_unfinished_run_and_keeps_its_history(
     assert service.next("TASK-1").run_id == "02-manual"
     assert service.instruction("TASK-1").status == "task_summary"
     assert service.instruction("TASK-1", "02-manual").run_id == "02-manual"
-    assert service.status("TASK-1", "02-manual").run_id == "02-manual"
+    assert service.instruction("TASK-1", "02-manual").run_id == "02-manual"
 
 
 def test_other_unfinished_runs_still_refuse_a_start(tmp_path: Path) -> None:

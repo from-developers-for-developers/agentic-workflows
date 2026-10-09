@@ -269,7 +269,6 @@ class InstructionContent:
     markdown: tuple[str, ...]
     show_context: bool = True
     after_shared: tuple[str, ...] = ()
-    include_item_context: bool = False
 
 
 @dataclass(frozen=True)

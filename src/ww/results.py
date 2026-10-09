@@ -55,7 +55,6 @@ class CleanupResult:
 @dataclass(frozen=True)
 class ItemUpdateResult:
     item: WorkItem
-    continuation_command: str | None
 
 
 @dataclass(frozen=True)

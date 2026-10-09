@@ -290,8 +290,7 @@ Project behavior lives in `ww.json`, separately from workflow syntax.
 `start` refuse, while `"on_request"` leaves ww available only when the user
 asks for it. `limits.fixes` defaults to 3 and bounds failed checks and automatic handler
 repair; `limits.auto_retries` defaults to 0 and bounds automatic retries.
-`agent_hooks.check_unfinished` and `agent_hooks.recent_days` are accepted for
-older installations but ignored. `pages.worker_requirements` is `full` by
+`pages.worker_requirements` is `full` by
 default or `pointer` to replace the first delegated worker page's full
 requirements with a link to `ww requirements`.
 
@@ -895,11 +894,9 @@ all contexts they exit. Force does not waive the collection invariant.
 run of the same collection, with fresh resolution/reporting outcomes. Resume and
 retry preserve the current run's outcomes. Earlier run evidence remains readable.
 
-This is a breaking format and behavior change (task-state schema 2, plan schema
-3, compiler `plan-v11`). Removed syntax includes `items.assignment`, item-only
-worker settings, phase properties `analyze`/`resolve`/`report`, and `item_phase`.
-Old per-item plans are rejected without rewriting their state. Inspect or finish
-those tasks with the previous build; there is no legacy execution engine.
+Item phases, `items.assignment`, item-only worker settings and the phase
+properties `analyze`/`resolve`/`report` do not exist; a plan item with a key ww
+does not know is rejected when its state is read.
 
 ## Handlers
 

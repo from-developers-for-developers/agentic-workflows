@@ -4,15 +4,13 @@
 from __future__ import annotations
 
 import shlex
-from pathlib import Path
 
 from ww.contracts import CallerRole
 from ww.executable import ww_command
 from ww.execution_models import ExecutionState
-from ww.item_collections import collection_failures, missing_fields
+from ww.item_collections import collection_failures, missing_fields, promised_fields
 from ww.items import WorkItem
 from ww.plan import PlanItem, WorkflowPlan
-from ww.variables import validate_item_references
 
 
 def collection_guidance(
@@ -20,7 +18,6 @@ def collection_guidance(
     plan: WorkflowPlan,
     step: PlanItem,
     items: tuple[WorkItem, ...],
-    root: Path,
     caller_role: CallerRole | None,
 ) -> str:
     context = str(step.item_context)
@@ -79,19 +76,7 @@ def collection_guidance(
         lines.append(
             "Verification is read-only. Do not change the collection's records."
         )
-    required = tuple(
-        dict.fromkeys(
-            field.name
-            for item, record in zip(plan.items, state.item_executions, strict=True)
-            if item.item_context == context
-            and (
-                item.id == step.id
-                or record.status == "completed"
-                and record.started_at is not None
-            )
-            for field in item.update_item
-        )
-    )
+    required = promised_fields(plan, state, context, step)
     missing = missing_fields(owned, required)
     if step.item_operation == "complete_collection":
         missing = collection_failures(plan, state, context, items)
@@ -103,32 +88,14 @@ def collection_guidance(
                 f"For every item, save `{field}` with `{command} update-item "
                 f"{mutation} --id <item-id> --field {field}=<value>`."
             )
-    texts = [
-        step.description,
-        step.profile_instruction or "",
-        step.on_failure_instruction or "",
-    ]
-    if step.profile_path:
-        texts.append((root / step.profile_path).read_text())
-    texts.extend(text for mode in step.modes for text in mode.description)
     references = tuple(
-        dict.fromkeys(
-            (
-                *step.dependencies,
-                *(
-                    name
-                    for text in texts
-                    for name in validate_item_references(text, context)
-                ),
-            )
-        )
+        dict.fromkeys(name for name in step.dependencies if name.startswith("ww.item."))
     )
     for name in references:
-        if name.startswith("ww.item."):
-            field = name.removeprefix("ww.item.")
-            lines.append(
-                f"`{{{{{name}}}}}` is a field reference, not a scalar substitution. "
-                f"Choose an ID and look it up with `{command} item {scope} "
-                f"--id <item-id> --get {field}`."
-            )
+        field = name.removeprefix("ww.item.")
+        lines.append(
+            f"`{{{{{name}}}}}` is a field reference, not a scalar substitution. "
+            f"Choose an ID and look it up with `{command} item {scope} "
+            f"--id <item-id> --get {field}`."
+        )
     return "\n".join(lines)

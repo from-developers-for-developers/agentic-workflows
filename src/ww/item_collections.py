@@ -55,22 +55,38 @@ def missing_fields(
     )
 
 
-def collection_failures(
-    plan: WorkflowPlan, state: ExecutionState, context: str, items: tuple[WorkItem, ...]
+def promised_fields(
+    plan: WorkflowPlan,
+    state: ExecutionState,
+    context: str,
+    current: PlanItem | None = None,
 ) -> tuple[str, ...]:
-    owned = tuple(item for item in items if item.context == context)
-    fields = tuple(
+    """The item fields the context's started, completed steps promised.
+
+    ``current`` adds the fields of a step still in progress.
+    """
+    return tuple(
         dict.fromkeys(
             field.name
             for step, record in zip(plan.items, state.item_executions, strict=True)
             if step.item_context == context
-            and record.status == "completed"
-            and record.started_at is not None
+            and (
+                current is not None
+                and step.id == current.id
+                or record.status == "completed"
+                and record.started_at is not None
+            )
             for field in step.update_item
         )
     )
+
+
+def collection_failures(
+    plan: WorkflowPlan, state: ExecutionState, context: str, items: tuple[WorkItem, ...]
+) -> tuple[str, ...]:
+    owned = tuple(item for item in items if item.context == context)
     return (
         *tuple(f"{item.id}: unresolved" for item in owned if not item.resolved),
         *tuple(f"{item.id}: unreported" for item in owned if not item.reported),
-        *missing_fields(owned, fields),
+        *missing_fields(owned, promised_fields(plan, state, context)),
     )

@@ -11,6 +11,8 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-09
 
+- Fixed: a crash during a commit can no longer wedge a task; run state is written to revision-named files (`runs/<run_id>/state.<revision>.json`), the index is published last and unnamed files are removed afterwards, so a reader always sees one consistent revision. `{{ ww.item.id }}` with spaces is accepted again; completing a children step commits once; boundary auto-completion no longer swallows unrelated state errors.
+- Breaking: schema versions are reset to 1 (task state, plan snapshots, compiler `plan-v1`); a plan item with an unknown key is rejected. The `agent_hooks` project setting, `update-item --resolved/--reported`, and the unused `Instruction` item fields are removed.
 - Breaking: task state is stored as a slim index plus one state file per run (schema 3); older single-file task state is refused without migration. `b040625`
 - Breaking: `items` steps run their `items.steps` once over the collection, with explicit `resolve-item`/`report-item`, all-item field saves and a completion gate; item phases and per-item assignments are gone, and older task state is refused. `be68e83`
 - Remove workflow loops and their command/settings; old run schemas are refused without migration. `c0cddf9`

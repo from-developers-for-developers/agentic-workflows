@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -371,9 +369,7 @@ def test_aggregate_reset_removes_all_run_scoped_records(
 def _second_run(first: TaskRunAggregate) -> tuple[TaskRunAggregate, TaskRunAggregate]:
     """``first`` completed, followed by an open second run of the same plan."""
     completed = replace(first, state=replace(first.state, status="completed", cursor=1))
-    state = initial_state(
-        first.snapshot, (), "2026-01-02T00:00:00Z", run_id="02-task"
-    )
+    state = initial_state(first.snapshot, (), "2026-01-02T00:00:00Z", run_id="02-task")
     return completed, TaskRunAggregate("02-task", "task", first.snapshot, state)
 
 
@@ -381,9 +377,7 @@ def _commit(
     adapter: TaskStorageAdapter, runs: tuple[TaskRunAggregate, ...], revision: int
 ) -> int:
     with adapter.lock_task("PROJ-1"):
-        return adapter.commit_task_aggregate(
-            "PROJ-1", runs, expected_revision=revision
-        )
+        return adapter.commit_task_aggregate("PROJ-1", runs, expected_revision=revision)
 
 
 def test_the_filesystem_keeps_one_state_file_per_run(tmp_path: Path) -> None:
@@ -391,7 +385,7 @@ def test_the_filesystem_keeps_one_state_file_per_run(tmp_path: Path) -> None:
     task = tmp_path / ".ww/tasks/PROJ-1"
     first, second = _second_run(_aggregate())
     _commit(adapter, (first, second), 0)
-    first_file = task / "runs/01-task/state.json"
+    first_file = task / "runs/01-task/state.1.json"
     written = first_file.read_text(encoding="utf-8")
 
     opened = replace(second, state=replace(second.state, status="in_progress"))
@@ -407,7 +401,7 @@ def test_the_filesystem_keeps_one_state_file_per_run(tmp_path: Path) -> None:
     assert "run" not in index
     # The unchanged run is not rewritten.
     assert first_file.read_text(encoding="utf-8") == written
-    run = json.loads((task / "runs/02-task/state.json").read_text(encoding="utf-8"))
+    run = json.loads((task / "runs/02-task/state.2.json").read_text(encoding="utf-8"))
     assert run["format"] == "ww.run-state"
     assert run["revision"] == 2
     assert run["run"]["run_id"] == "02-task"
@@ -425,66 +419,56 @@ def test_a_run_dropped_from_the_aggregate_loses_its_state_file(
 
     _commit(adapter, (first,), 1)
 
-    assert not (tmp_path / ".ww/tasks/PROJ-1/runs/02-task/state.json").exists()
+    assert not (tmp_path / ".ww/tasks/PROJ-1/runs/02-task/state.1.json").exists()
     assert adapter.read_task_record("PROJ-1")[0] == (first,)
 
 
-def test_an_interrupted_commit_is_detected_not_mixed(tmp_path: Path) -> None:
+def test_a_crash_before_the_index_leaves_the_previous_revision_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     adapter = FileTaskStorageAdapter(tmp_path)
-    _commit(adapter, (_aggregate(),), 0)
-    path = tmp_path / ".ww/tasks/PROJ-1/runs/01-task/state.json"
-    document = json.loads(path.read_text(encoding="utf-8"))
-    # The run was written by commit 2, whose index was never published.
-    document["revision"] = 2
-    path.write_text(json.dumps(document), encoding="utf-8")
+    aggregate = _aggregate()
+    _commit(adapter, (aggregate,), 0)
+    changed = replace(aggregate, state=replace(aggregate.state, status="in_progress"))
+    write = adapter.locks.atomic_write
 
-    with pytest.raises(StateError, match="a commit was interrupted"):
-        adapter.read_task_record("PROJ-1")
-    with pytest.raises(StateError, match="a commit was interrupted"):
-        _commit(adapter, (_aggregate(),), 1)
+    def crash_on_index(path: Path, content: str) -> None:
+        if path.name == "state.json":
+            raise KeyboardInterrupt
+        write(path, content)
+
+    monkeypatch.setattr(adapter.locks, "atomic_write", crash_on_index)
+    with pytest.raises(KeyboardInterrupt):
+        _commit(adapter, (changed,), 1)
+    monkeypatch.undo()
+
+    task = tmp_path / ".ww/tasks/PROJ-1"
+    assert (task / "runs/01-task/state.2.json").exists()
+    assert adapter.read_task_record("PROJ-1") == ((aggregate,), None, 1)
+    # The next commit succeeds and removes the orphaned file's name clash.
+    assert _commit(adapter, (changed,), 1) == 2
+    assert adapter.read_task_record("PROJ-1") == ((changed,), None, 2)
+
+
+def test_run_files_the_index_no_longer_names_are_removed(tmp_path: Path) -> None:
+    adapter = FileTaskStorageAdapter(tmp_path)
+    aggregate = _aggregate()
+    task = tmp_path / ".ww/tasks/PROJ-1/runs/01-task"
+    _commit(adapter, (aggregate,), 0)
+    changed = replace(aggregate, state=replace(aggregate.state, status="in_progress"))
+    _commit(adapter, (changed,), 1)
+
+    assert sorted(path.name for path in task.glob("state.*.json")) == ["state.2.json"]
 
 
 def test_a_missing_run_state_file_is_invalid_state(tmp_path: Path) -> None:
     adapter = FileTaskStorageAdapter(tmp_path)
     _commit(adapter, (_aggregate(),), 0)
-    path = tmp_path / ".ww/tasks/PROJ-1/runs/01-task/state.json"
+    path = tmp_path / ".ww/tasks/PROJ-1/runs/01-task/state.1.json"
     path.unlink()
 
     with pytest.raises(StateError, match=f"invalid task state {path}"):
         adapter.read_task_record("PROJ-1")
-
-
-def test_an_unlocked_reader_waits_out_a_writer_between_run_and_index(
-    tmp_path: Path,
-) -> None:
-    adapter = FileTaskStorageAdapter(tmp_path)
-    aggregate = _aggregate()
-    _commit(adapter, (aggregate,), 0)
-    task = tmp_path / ".ww/tasks/PROJ-1"
-    run_path = task / "runs/01-task/state.json"
-    index_path = task / "state.json"
-    locked = threading.Event()
-
-    def writer() -> None:
-        # Holds the commit lock with the run written and the index not yet.
-        with adapter.locks.lock(index_path):
-            document = json.loads(run_path.read_text(encoding="utf-8"))
-            document["revision"] = 2
-            run_path.write_text(json.dumps(document), encoding="utf-8")
-            locked.set()
-            time.sleep(0.2)
-            index = json.loads(index_path.read_text(encoding="utf-8"))
-            index["revision"] = 2
-            index["runs"] = [{"id": "01-task", "revision": 2}]
-            index_path.write_text(json.dumps(index), encoding="utf-8")
-
-    thread = threading.Thread(target=writer)
-    thread.start()
-    locked.wait()
-    try:
-        assert adapter.read_task_record("PROJ-1") == ((aggregate,), None, 2)
-    finally:
-        thread.join()
 
 
 def test_corrupt_task_metadata_raises_state_error(tmp_path: Path) -> None:

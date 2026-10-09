@@ -134,28 +134,6 @@ def test_session_start_after_compaction_says_state_is_authoritative(
     assert len(context.splitlines()) == 2
 
 
-@pytest.mark.parametrize(
-    "settings",
-    [
-        {"agent_hooks": {"check_unfinished": False}},
-        {"agent_hooks": {"recent_days": 30}},
-    ],
-)
-def test_the_agent_hooks_keys_are_accepted_and_change_nothing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    settings: dict,
-) -> None:
-    root = _root(tmp_path, settings)
-    _in_progress(root)
-
-    context = _context(_hook(root, monkeypatch, capsys, "session-start"))
-
-    assert context.startswith("This project coordinates work through ww")
-    assert len(context.splitlines()) == 1
-
-
 def test_antigravity_gets_context_on_the_first_invocation_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -227,8 +205,6 @@ def test_the_interrupted_command_is_gone(
 def test_reset_still_removes_the_task(tmp_path: Path) -> None:
     root = _root(tmp_path)
     service = _in_progress(root)
-    legacy = root / ".ww/tasks/T1/interrupted.json"
-    legacy.write_text("{}", encoding="utf-8")
 
     service.reset("T1")
 

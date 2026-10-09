@@ -21,14 +21,12 @@ from ww.contracts import (
     StepRole,
 )
 from ww.execution_models import WorkflowRunSummary
-from ww.items import WorkItem
 from ww.plan import PlannedMode
 
 if TYPE_CHECKING:
     from ww.replanning import PlanChange
 from ww.workflow_config import (
     ChoiceDefinition,
-    ItemFieldUpdate,
     ProvidedVariable,
     SavedMetadata,
 )
@@ -497,18 +495,9 @@ class Instruction:
     operator_paused: bool = False
     # The conversation of this step so far, as recorded.
     conversation: tuple[ConversationEntry, ...] = ()
-    # A per-item stage answered on the operator page rather than in a
-    # conversation; the page is an extra the core knows only by this flag.
+    # A step answered on the operator page rather than in a conversation; the
+    # page is an extra the core knows only by this flag.
     ui: bool = False
-    # A collection step of a shared item flow: the items it reconciles.
-    shared_items: bool = False
-    stored_items: tuple[WorkItem, ...] = ()
-    # Custom item fields this step must set, and the flow's identity and
-    # unique fields when this step is the collection.
-    required_item_fields: tuple[ItemFieldUpdate, ...] = ()
-    collects_items: bool = False
-    item_identity: str | None = None
-    item_unique: tuple[str, ...] = ()
     # Pending input on an input-only assignment: the manager supplies it.
     manager_input: bool = False
     required_values: tuple[ProvidedVariable, ...] = ()
@@ -656,14 +645,6 @@ class Instruction:
             "operator_paused": self.operator_paused,
             "conversation": [entry.to_dict() for entry in self.conversation],
             "ui": self.ui,
-            "shared_items": self.shared_items,
-            "stored_items": [item.to_dict() for item in self.stored_items],
-            "required_item_fields": [
-                field.to_dict() for field in self.required_item_fields
-            ],
-            "collects_items": self.collects_items,
-            "item_identity": self.item_identity,
-            "item_unique": list(self.item_unique),
             "manager_input": self.manager_input,
             "required_values": [value.to_dict() for value in self.required_values],
             "previous_values": dict(self.previous_values),

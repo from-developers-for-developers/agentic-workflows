@@ -1044,7 +1044,7 @@ workflows:
     # inside a container, prints the worktree for that filesystem.
     moved = tmp_path.parent / f"{tmp_path.name}-moved"
     shutil.copytree(tmp_path, moved, symlinks=True)
-    elsewhere = WorkflowService(Storage(moved)).status("TASK-WORKTREE")
+    elsewhere = WorkflowService(Storage(moved)).instruction("TASK-WORKTREE")
     assert elsewhere.working_directory == str(moved / "trees/TASK-WORKTREE")
     ready = service.complete(
         "TASK-WORKTREE",

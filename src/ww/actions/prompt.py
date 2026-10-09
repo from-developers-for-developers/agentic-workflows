@@ -63,7 +63,6 @@ class PromptAction(Action[Prompt, Prompt]):
             text or context.description or context.name,
             ("**Prompt**", "", text, ""),
             show_context=text != context.description,
-            include_item_context=True,
         )
 
     def encode(self, planned: Prompt) -> dict[str, object]:

@@ -277,8 +277,8 @@ class ProfileDefinition:
 class ItemFieldUpdate:
     """A promise to set a custom field on an item, by an agent or a command.
 
-    On a per-item stage the stage's item must carry the field when the stage
-    completes; on the collection step every collected item must.
+    When the step that promises it completes, every item of its items context
+    must carry the field.
     """
 
     name: str
@@ -589,7 +589,7 @@ class StepDefinition(HandlerDefinition):
     learnable: bool = False
     # The options the operator chooses from during an interactive step.
     choices: tuple[ChoiceDefinition, ...] = ()
-    # The operator answers this per-item stage on the operator page.
+    # The operator answers this step on the operator page.
     ui: bool = False
     profile: str | None = None
     profile_description: str | None = None
@@ -791,7 +791,7 @@ def step_paths(
 ) -> Iterator[tuple[StepDefinition, str]]:
     """Every step of a tree with its logical path, as the plan compiler names it.
 
-    Nested steps, per-item and per-child stages take their
+    Nested steps and per-child stages take their
     parent's path as a prefix; a step filter that names such a path matches
     exactly that step.
     """

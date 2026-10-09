@@ -408,7 +408,7 @@ def test_status_uses_one_aggregate_revision(tmp_path: Path) -> None:
         return record
 
     with patch.object(reader.tasks, "read_task_record", read_then_publish):
-        instruction = reader.status("T")
+        instruction = reader.instruction("T")
 
     assert instruction.item_name == "collect"
-    assert reader.status("T").item_name == "process"
+    assert reader.instruction("T").item_name == "process"

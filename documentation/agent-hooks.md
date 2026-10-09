@@ -42,9 +42,7 @@ confused another, and nothing in them was needed to continue a task.
 
 The events stay accepted so a hooks file written by an older ww keeps
 working. `ww hook stop` and `ww hook interrupt` exit 0 with no output and
-record nothing; the audit log notes the call. The `agent_hooks` keys
-`check_unfinished` and `recent_days` in `ww.json` are still validated and
-still accepted, and have no effect. Running `hook install` again replaces an
+record nothing; the audit log notes the call. Running `hook install` again replaces an
 older registration with the one `session-start` entry, and `hook uninstall`
 removes every ww entry, whichever events it registered.
 

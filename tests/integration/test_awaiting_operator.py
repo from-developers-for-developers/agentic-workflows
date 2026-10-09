@@ -58,7 +58,7 @@ def test_a_failed_handler_awaits_the_operator(tmp_path: Path) -> None:
         summary_for_next="Done.",
     )
 
-    status = service.status("TASK-1", caller_role="manager")
+    status = service.instruction("TASK-1", caller_role="manager")
     data = json.loads(JsonOutputAdapter().render_instruction(status))
     rendered = MarkdownOutputAdapter().render_instruction(status)
 
@@ -92,7 +92,7 @@ def test_failed_agent_work_awaits_the_operator(tmp_path: Path) -> None:
         "work_failed",
     )
     rendered = MarkdownOutputAdapter().render_instruction(
-        service.status("TASK-1", caller_role="manager")
+        service.instruction("TASK-1", caller_role="manager")
     )
     assert "## Operator decision: the step's work failed" in rendered
 
@@ -119,7 +119,7 @@ def test_a_delegated_worker_returns_the_operator_wait_to_its_manager(
 def test_work_in_progress_has_no_operator_reason(tmp_path: Path) -> None:
     service = _service(tmp_path, PLAIN)
 
-    active = service.status(
+    active = service.instruction(
         "TASK-1", caller_role="worker", assignment=assignment_token(service, "TASK-1")
     )
 

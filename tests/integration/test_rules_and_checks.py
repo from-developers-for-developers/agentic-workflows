@@ -129,7 +129,7 @@ def test_the_step_page_lists_judged_rules_and_names_the_checked_ones(
 ) -> None:
     service = _develop(_project(tmp_path))
 
-    page = service.status("TASK-1")
+    page = service.instruction("TASK-1")
     rendered = MarkdownOutputAdapter().render_instruction(page)
 
     assert [(rule.id, rule.has_command) for rule in page.rules] == [
@@ -204,7 +204,7 @@ def test_a_violation_rejects_the_completion_and_keeps_the_step(
     assert "### Draft artifact\n\n```markdown\nFirst try.\n```" in rendered
     assert "./ww complete TASK-1" in rendered
     assert "Completion recorded successfully" not in rendered
-    assert service.status("TASK-1").fix_required is not None
+    assert service.instruction("TASK-1").fix_required is not None
 
 
 def test_fixing_the_causes_completes_the_step_with_a_rules_section(
@@ -412,7 +412,7 @@ def test_the_step_page_prints_the_strings_next_to_the_globs(tmp_path: Path) -> N
     )
     service = _develop(root)
 
-    page = service.status("TASK-1")
+    page = service.instruction("TASK-1")
 
     rendered = MarkdownOutputAdapter().render_instruction(page)
     assert (

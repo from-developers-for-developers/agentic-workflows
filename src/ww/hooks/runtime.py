@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ww.config_files import WORKFLOWS_FILE
-from ww.project_config import AgentHooks
 from ww.storage import Storage
 
 from .agents import HookAgent, HookEvent
@@ -44,14 +43,12 @@ def answer_hook(
     event: HookEvent,
     raw_payload: str,
     *,
-    settings: AgentHooks,
     on_request: bool = False,
 ) -> HookAnswer:
     """ww's answer to one hook call; the caller contains every error.
 
     ``on_request`` is the project's ``"enabled": "on_request"``: the session
-    is told that ww is used only when the user asks for it. ``settings`` is
-    the project's ``agent_hooks``, accepted for compatibility and ignored.
+    is told that ww is used only when the user asks for it.
     """
     payload = agent.parse(event, _payload(raw_payload))
     if event != "session-start":

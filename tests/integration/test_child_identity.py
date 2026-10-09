@@ -61,14 +61,14 @@ def test_collection_step_explains_that_children_bind_their_own_ids(
     service = _service(tmp_path)
     _split(service)
 
-    text = service.status("EPIC-1").action_text or ""
+    text = service.instruction("EPIC-1").action_text or ""
 
     assert './ww add-child EPIC-1 --text="<child task text>"' in text
     assert "--id <child-id>" not in text
     assert "Do not pass `--id`" in text
     plain = _service(tmp_path / "other")
     _split(plain, "plain-parent")
-    assert "--id <child-id>" in (plain.status("EPIC-1").action_text or "")
+    assert "--id <child-id>" in (plain.instruction("EPIC-1").action_text or "")
 
 
 def test_a_child_added_without_an_id_is_named_by_its_request(tmp_path: Path) -> None:
@@ -105,7 +105,7 @@ def test_the_child_binds_its_id_and_the_parent_record_is_renamed(
         "create-story",
     )
     assert request.status == "pending"
-    parent_text = service.status("EPIC-1").action_text or ""
+    parent_text = service.instruction("EPIC-1").action_text or ""
     assert f"Child `{child.id}` is obtaining its task ID." in parent_text
     assert f"./ww instruction {child.id} --role manager" in parent_text
     active = service.next(child.id)
@@ -156,7 +156,7 @@ def test_the_child_binds_its_id_and_the_parent_record_is_renamed(
         variables=(("summary", "Story done"),),
         summary_for_next="Done.",
     )
-    finished = service.status("EPIC-1")
+    finished = service.instruction("EPIC-1")
     assert finished.status == "completed"
     assert [(c.id, c.status, c.summary) for c in finished.child_tasks or ()] in (
         [],
@@ -190,7 +190,7 @@ def test_a_bound_id_must_be_a_free_single_segment(tmp_path: Path) -> None:
             variables=(("task_id", "PROJ-1"),),
             summary_for_next="Done.",
         )
-    assert service.status(first.id).item_status == "in_progress"
+    assert service.instruction(first.id).item_status == "in_progress"
 
 
 def test_the_identity_flow_works_through_the_cli(
@@ -294,7 +294,7 @@ def test_a_failed_request_offers_retry_and_reset_but_never_force(
     assert "--force" not in page
     # Without a decision the failed page is shown again, under either name.
     assert service.next(request_id).status == "failed"
-    assert service.status(f"EPIC-1/{request_id}").status == "failed"
+    assert service.instruction(f"EPIC-1/{request_id}").status == "failed"
     assert service.task_status(f"EPIC-1/{request_id}").step_state == "failed"
     with pytest.raises(StateError, match="cannot be skipped"):
         service.next(request_id, force=True, force_reason="skip it")

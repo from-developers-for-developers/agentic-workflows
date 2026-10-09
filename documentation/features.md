@@ -429,7 +429,7 @@ repair, reset, or delete its directory is the operator's decision.
 ```markdown
 ## Unreadable tasks
 
-- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 3
+- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 2
 
 Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
 ```
@@ -3178,11 +3178,9 @@ all contexts they exit. Force does not waive the collection invariant.
 run of the same collection, with fresh resolution/reporting outcomes. Resume and
 retry preserve the current run's outcomes. Earlier run evidence remains readable.
 
-This is a breaking format and behavior change (task-state schema 2, plan schema
-3, compiler `plan-v11`). Removed syntax includes `items.assignment`, item-only
-worker settings, phase properties `analyze`/`resolve`/`report`, and `item_phase`.
-Old per-item plans are rejected without rewriting their state. Inspect or finish
-those tasks with the previous build; there is no legacy execution engine.
+Item phases, `items.assignment`, item-only worker settings and the phase
+properties `analyze`/`resolve`/`report` do not exist; a plan item with a key ww
+does not know is rejected when its state is read.
 
 ## Ordinary work and recovery
 
@@ -4051,10 +4049,9 @@ notice to stderr if the wait lasts longer than a moment.
 
 Reads are not locked. `instruction` and compact `status` answer immediately even while another process is
 mid-command, and writes are atomic, so it never sees a partial file. Task state is one slim index
-(`.ww/tasks/<id>/state.json`) plus one file per run (`.ww/tasks/<id>/runs/<run_id>/state.json`); a commit
-rewrites only changed runs and the index last. If a reader catches a commit between those writes, it waits for
-the lock and re-reads; a mismatch that persists reports that a commit was interrupted. State schema 3 has no
-migration, so earlier single-file state is rejected.
+(`.ww/tasks/<id>/state.json`) plus one file per run (`.ww/tasks/<id>/runs/<run_id>/state.<revision>.json`); a commit
+writes changed runs to new revision-named files, then the index, then deletes run files the index no longer
+names. A reader opens only the files its index names, so a crash mid-commit leaves the previous revision readable.
 
 The order in which waiting processes are served is **not** guaranteed — the
 operating system may grant the lock to any waiter. Waiting is bounded by
@@ -4219,8 +4216,7 @@ Agent hooks are the agent's own hooks, installed with `ww hook` and separate
 from the workflow hooks above. ww registers one, `session-start`, which adds a
 line of context saying that ww coordinates work here and how to list its
 workflows; it lists no task and blocks nothing. The `stop` and `interrupt`
-events, and the `agent_hooks` keys `check_unfinished` and `recent_days` in
-`ww.json`, are still accepted for older installations and have no effect. See
+events are still accepted for older installations and have no effect. See
 [documentation/agent-hooks.md](agent-hooks.md) for the per-agent table,
 install/uninstall/show, and failure behaviour.
 

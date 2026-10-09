@@ -5,10 +5,9 @@ An interactive step is a conversation the agent holds with the operator in
 its own session; ww cannot hear it.  When the conversation ends, the agent
 records both sides at once with ``interact --transcript``, and ww appends
 each entry to one file per task, ``interactions.md``, never rewriting it.
-Every entry names the run and step it belongs to, and the work item when the
-step is a per-item stage, so the file reads as the task's whole history of
-operator involvement and the conversation of one stage can be read back out of
-it.
+Every entry names the run and step it belongs to, so the file reads as the
+task's whole history of operator involvement and the conversation of one step
+can be read back out of it.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from ww.storage import Storage
 
 INTERACTIONS_FILE = "interactions.md"
 _SEPARATOR = " · "
-# A heading has time, run, step, and speaker; a per-item stage adds its item.
+# A heading has time, run, step, and speaker.
 _FIELDS = 4
 # A transcript line that starts an entry: a speaker marker in any case, plain
 # or bold with the colon inside or outside the bold, then the entry's first
@@ -40,12 +39,11 @@ _TRANSCRIPT_FORMAT = (
 
 @dataclass(frozen=True)
 class InteractionEntry:
-    """One recorded entry: who said what, in which run, step, and item."""
+    """One recorded entry: who said what, in which run and step."""
 
     at: str
     run_id: str | None
     step: str
-    item_id: str | None
     speaker: str
     text: str
 
@@ -54,7 +52,6 @@ class InteractionEntry:
             "at": self.at,
             "run_id": self.run_id,
             "step": self.step,
-            "item_id": self.item_id,
             "speaker": self.speaker,
             "text": self.text,
         }
@@ -76,7 +73,6 @@ class InteractionLog:
         speaker: str,
         text: str,
         at: str,
-        item_id: str | None = None,
     ) -> None:
         """Append one entry; the file is created with a title on first use."""
         self.append_entries(
@@ -85,7 +81,6 @@ class InteractionLog:
             run_id=run_id,
             step=step,
             at=at,
-            item_id=item_id,
         )
 
     def append_entries(
@@ -96,7 +91,6 @@ class InteractionLog:
         run_id: str | None,
         step: str,
         at: str,
-        item_id: str | None = None,
     ) -> None:
         """Append ``(speaker, text)`` entries in order, in one write."""
         if not spoken:
@@ -104,8 +98,6 @@ class InteractionLog:
         path = self.path(task_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         fields = [at, run_id or "-", step]
-        if item_id is not None:
-            fields.append(item_id)
         chunks = []
         for speaker, text in spoken:
             chunks.append(f"## {_SEPARATOR.join([*fields, speaker])}\n\n")
@@ -171,14 +163,11 @@ def parse_transcript(text: str) -> tuple[tuple[str, str], ...]:
 
 
 def _parse_heading(line: str) -> InteractionEntry | None:
-    """An entry heading: time, run, step, an optional item, and the speaker."""
+    """An entry heading: time, run, step, and the speaker."""
     if not line.startswith("## "):
         return None
     fields = line[3:].split(_SEPARATOR)
-    if len(fields) not in (_FIELDS, _FIELDS + 1):
+    if len(fields) != _FIELDS:
         return None
     at, run_id, step = fields[:3]
-    item_id = fields[3] if len(fields) > _FIELDS else None
-    return InteractionEntry(
-        at, None if run_id == "-" else run_id, step, item_id, fields[-1], ""
-    )
+    return InteractionEntry(at, None if run_id == "-" else run_id, step, fields[-1], "")

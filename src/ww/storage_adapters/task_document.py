@@ -30,7 +30,7 @@ from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
 RUN_STATE_FORMAT = "ww.run-state"
-TASK_STATE_SCHEMA_VERSION = 3
+TASK_STATE_SCHEMA_VERSION = 1
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -97,14 +97,6 @@ class TaskIndex:
     active_run: str | None
     handoff: str | None
     ledger: dict[str, list[dict[str, object]]]
-
-
-class RunRevisionMismatchError(ValueError):
-    """A run document disagrees with the revision the task index expects.
-
-    Either a writer is between its run writes and the index, or a commit was
-    interrupted there.
-    """
 
 
 def encode_task_index(
@@ -206,9 +198,9 @@ def decode_run_document(
     if not is_strict_int(written) or written < 1:
         raise ValueError("run state revision must be positive")
     if written != revision:
-        raise RunRevisionMismatchError(
+        raise ValueError(
             f"run {run_id!r} was written at revision {written}, but the task "
-            f"index names revision {revision}; a commit was interrupted"
+            f"index names revision {revision}"
         )
     snapshots = _validate_extension_snapshots(data.get("extension_snapshots", {}))
     run = TaskRunAggregate.from_dict(
@@ -234,10 +226,7 @@ def _check_header(data: dict[str, Any], format_name: str, task_id: str) -> None:
         raise ValueError(f"unsupported task state format: {data.get('format')!r}")
     version = data.get("schema_version")
     if not is_strict_int(version) or version != TASK_STATE_SCHEMA_VERSION:
-        raise ValueError(
-            "unsupported task state schema; inspect or finish with the previous "
-            "ww build. State was left untouched."
-        )
+        raise ValueError(f"unsupported task state schema: {version!r}")
     if data.get("task_id") != task_id:
         raise ValueError("task state task ID does not match its path")
 

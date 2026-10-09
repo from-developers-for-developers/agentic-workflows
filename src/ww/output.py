@@ -117,30 +117,10 @@ _WORDMARK = (
 
 
 def render_item_update(result: ItemUpdateResult, json_output: bool) -> str:
-    """Render an item update acknowledgement and its immediate next action."""
+    """Render an item update acknowledgement."""
     if json_output:
-        return json.dumps(
-            {
-                "item": result.item.to_dict(),
-                "continuation_command": result.continuation_command,
-            },
-            indent=2,
-        )
-    lines = [f"> Item `{result.item.id}` updated successfully."]
-    if result.continuation_command:
-        lines.extend(
-            [
-                "",
-                "### Continue with completion",
-                "",
-                "Run:",
-                "",
-                "```console",
-                result.continuation_command,
-                "```",
-            ]
-        )
-    return "\n".join(lines) + "\n"
+        return json.dumps({"item": result.item.to_dict()}, indent=2)
+    return f"> Item `{result.item.id}` updated successfully.\n"
 
 
 def render_plan(plan: WorkflowPlan, json_output: bool) -> str:

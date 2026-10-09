@@ -6,9 +6,22 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, fields, replace
 
+from ww.errors import StateError
+
 # An item field name, e.g. "acceptance_criteria" or "due-date"; "2nd" does not
 # match.
 FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+# The built-in item values a template or `WorkItem.get` can read besides
+# ``field.<name>``.
+ITEM_VALUE_NAMES = (
+    "id",
+    "text",
+    "resolved",
+    "reported",
+    "actual_solution",
+    "reference_to_id",
+    "notes",
+)
 
 
 @dataclass(frozen=True)
@@ -29,8 +42,6 @@ class WorkItem:
 
     def get(self, path: str) -> object:
         """Read one explicit field; absent and false/empty are distinct."""
-        from ww.errors import StateError
-
         if path.startswith("field."):
             name = path.removeprefix("field.")
             if name not in dict(self.fields):
@@ -38,14 +49,7 @@ class WorkItem:
             return self.field(name)
         if path == "text":
             return self.item
-        if path in {
-            "id",
-            "resolved",
-            "reported",
-            "actual_solution",
-            "reference_to_id",
-            "notes",
-        }:
+        if path in ITEM_VALUE_NAMES:
             return self.to_dict()[path]
         raise StateError(f"unknown item field {path!r}")
 

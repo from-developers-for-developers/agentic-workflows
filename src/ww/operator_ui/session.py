@@ -2,10 +2,10 @@
 """One ``interact --await``: apply what is pending, serve, wait, apply again.
 
 The session drives the task only through the public service API an agent
-uses.  Recording an answer on its stage is ``interact`` with the pick, the
-comment, and the end; the built-in stage's item is marked with
-``update_item``; the stage is finished with ``complete``; the next stage is
-opened with ``next``.  Nothing here writes task state directly.
+uses.  Recording an answer on its step is ``interact`` with the pick, the
+comment, and the end; the answered item is marked with ``update_item``; the
+step is finished with ``complete``; the next step is opened with ``next``.
+Nothing here writes task state directly.
 """
 
 from __future__ import annotations

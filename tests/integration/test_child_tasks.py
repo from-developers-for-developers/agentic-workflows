@@ -71,7 +71,7 @@ def test_last_child_completion_drains_the_parent_hooks(tmp_path: Path) -> None:
         summary_for_next="Done.",
     )
 
-    parent = service.status("TASK1")
+    parent = service.instruction("TASK1")
     state = service.tasks.read_execution_state("TASK1", "01-parent")
     snapshot = service.tasks.read_plan_snapshot("TASK1", "01-parent")
     assert parent.status == "completed", snapshot.plan.items[state.cursor].kind
@@ -104,7 +104,7 @@ def test_child_failure_marks_the_parent_coordinator_failed(tmp_path: Path) -> No
     service.next("TASK1/TASK1.1")
     service.fail("TASK1/TASK1.1", "deliberately stopped")
 
-    parent = service.status("TASK1")
+    parent = service.instruction("TASK1")
     assert parent.status == "failed"
     assert parent.child_tasks[0].status == "failed"
 
@@ -148,7 +148,7 @@ def test_resumed_child_completion_recovers_its_failed_parent(tmp_path: Path) -> 
         summary_for_next="Done.",
     )
 
-    assert service.status("TASK1").status == "completed"
+    assert service.instruction("TASK1").status == "completed"
 
 
 def test_recovered_child_leaves_parent_waiting_for_other_children(
@@ -192,7 +192,7 @@ def test_recovered_child_leaves_parent_waiting_for_other_children(
         summary_for_next="Done.",
     )
 
-    parent = service.status("TASK1")
+    parent = service.instruction("TASK1")
     assert parent.status == "in_progress"
     assert parent.error is None
     assert parent.action_text is not None
@@ -232,12 +232,12 @@ def test_child_start_retries_after_parent_binding_was_persisted(
     monkeypatch.setattr(service.children, "start_run", fail_child_start)
     with pytest.raises(OSError, match="injected child start failure"):
         service.start_child("TASK1", "TASK1.1")
-    assert service.status("TASK1").child_tasks[0].status == "starting"
+    assert service.instruction("TASK1").child_tasks[0].status == "starting"
 
     monkeypatch.setattr(service.children, "start_run", original)
     started = service.start_child("TASK1", "TASK1.1")
     assert started.task_id == "TASK1/TASK1.1"
-    assert service.status("TASK1").child_tasks[0].status == "in_progress"
+    assert service.instruction("TASK1").child_tasks[0].status == "in_progress"
 
 
 def test_child_start_does_not_overwrite_terminal_child_binding(
@@ -288,7 +288,7 @@ def test_child_start_does_not_overwrite_terminal_child_binding(
     monkeypatch.setattr(service.children, "start_run", start_and_finish_child)
     service.start_child("TASK1", "TASK1.1")
 
-    parent = service.status("TASK1")
+    parent = service.instruction("TASK1")
     assert parent.status == "completed"
     children = service.tasks.read_children("TASK1", "01-parent")
     assert children[0].status == "completed"
@@ -559,7 +559,7 @@ def test_parent_follows_child_handoff_until_successor_finishes(
         service.next("P")
         assert service.recover("P/C").status == "completed"
 
-    assert service.status("P").status == outcome
+    assert service.instruction("P").status == outcome
     recorded = service.tasks.read_children("P", "01-parent")[0]
     assert recorded.run_id == "02-work"
     assert recorded.status == outcome
@@ -604,10 +604,10 @@ def test_parent_status_repairs_a_missed_terminal_child_notification(
     ):
         service.complete("P/C", (("summary", "done"),), summary_for_next="Done.")
 
-    assert service.status("P/C").status == "completed"
+    assert service.instruction("P/C").status == "completed"
     assert service.tasks.read_children("P", "01-parent")[0].status == "in_progress"
 
-    resumed = service.status("P")
+    resumed = service.instruction("P")
 
     assert resumed.status == "completed"
     assert service.tasks.read_children("P", "01-parent")[0].status == "completed"
@@ -645,7 +645,7 @@ def test_child_recover_repeats_a_missed_terminal_parent_notification(
         service.complete("P/C", (("summary", "done"),), summary_for_next="Done.")
 
     assert service.recover("P/C").status == "completed"
-    assert service.status("P").status == "completed"
+    assert service.instruction("P").status == "completed"
     assert service.recover("P/C").status == "completed"
 
 

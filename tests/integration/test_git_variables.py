@@ -113,7 +113,7 @@ def test_a_branch_not_recorded_yet_stops_for_the_operator(tmp_path: Path) -> Non
     assert "a value the step reads is not available yet" in rendered
     assert "The step has not started" in rendered
     # Every page of the task still builds: nothing is bricked.
-    assert service.status("T1").operator_reason == "value_unavailable"
+    assert service.instruction("T1").operator_reason == "value_unavailable"
     assert service.instruction_status("T1", None).operator_reason == "value_unavailable"
 
 

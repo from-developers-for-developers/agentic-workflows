@@ -203,7 +203,7 @@ def test_bootstrap_binding_resumes_after_final_marker_failure(
     assert resumed.task_id == "PROJ-456"
     request = service.storage.read_bootstrap(pending.task_id)
     assert request is not None and request["status"] == "completed"
-    assert service.status("PROJ-456").task_id == "PROJ-456"
+    assert service.instruction("PROJ-456").task_id == "PROJ-456"
 
 
 def test_bootstrap_binding_retries_when_start_dies_before_aggregate(

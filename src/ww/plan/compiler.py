@@ -1014,6 +1014,21 @@ class WorkflowPlanCompiler:
             )
             modes = self._step_modes(workflow, step, step_path)
             self._checked_steps.add((workflow.name, step_path))
+            # A mode's text is part of the step's prompt, so what it reads is
+            # one of the step's dependencies.
+            dependency_names = tuple(
+                dict.fromkeys(
+                    (
+                        *dependency_names,
+                        *(
+                            name
+                            for mode in modes
+                            for text in mode.description
+                            for name in dependencies(text)
+                        ),
+                    )
+                )
+            )
         for check in checks:
             for text in actions.get("cli").templates(check.command):
                 validate_item_references(text, annotations.item_context, machine=True)

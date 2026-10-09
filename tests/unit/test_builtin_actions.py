@@ -90,7 +90,6 @@ def test_prompt_instruction_interpolates_task_values_and_shows_item_context() ->
     assert content.text == "Review main."
     assert content.markdown == ("**Prompt**", "", "Review main.", "")
     assert content.show_context
-    assert content.include_item_context
     same = action.instruction(Prompt("Review"), _context("Review"))
     assert not same.show_context
 
@@ -181,7 +180,6 @@ def test_mcp_plans_both_fields_and_renders_failure_guidance() -> None:
         "For the following work use `jira` mcp connection:\nOpen P-1."
     )
     assert "Use the `fail` command to register that" in content.text
-    assert content.include_item_context
 
 
 # --- round trips and strict decoding ---------------------------------------------

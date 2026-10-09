@@ -16,12 +16,13 @@ direct storage-adapter callers. Everything else writes inside one of those scope
 locks; maintenance takes it exclusively before pruning sidecars.
 
 Reads are deliberately unlocked. Replacement is atomic, so a reader always sees
-complete files. A task is a task index plus one document per run, and the index
-names the revision each run document must carry; a reader that meets run
-documents newer than the index it read waits for the aggregate lock and reads
-again. ``RunCoordinator.load`` selects the requested run, execution state, and
-plan snapshot from one decoded revision. Read-only commands therefore wait only
-in the rare moment a writer is between its run documents and its index.
+complete files. A task is a task index plus one document per run; each run
+document lives in a revision-named file and the index names the revision of
+every run. A commit writes the new run files first and the index last, then
+deletes run files the index no longer names, so a reader opens only files the
+index it read names and a crash mid-commit leaves the previous revision
+intact. ``RunCoordinator.load`` selects the requested run, execution state, and
+plan snapshot from one decoded revision.
 
 Locks are advisory POSIX locks on sidecar files under ``.ww/locks/``. The
 kernel releases them when a process exits, so a killed run leaves nothing

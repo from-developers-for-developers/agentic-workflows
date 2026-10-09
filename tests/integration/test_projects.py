@@ -350,7 +350,7 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
     service = WorkflowService(Storage(root))
 
     def finish(task: str, message: str) -> None:
-        instruction = service.status(task)
+        instruction = service.instruction(task)
         while instruction.status not in {"completed", "failed"}:
             assert instruction.error is None, instruction.error
             if instruction.item_status == "pending":
@@ -401,7 +401,7 @@ def test_git_handlers_act_on_each_projects_repository(tmp_path: Path) -> None:
         == "P/api: Backend part"
     )
     assert _git(root / "backend", "rev-parse", "--abbrev-ref", "HEAD") == "main"
-    assert service.status("P").status == "completed"
+    assert service.instruction("P").status == "completed"
     assert not (root / ".git").exists()
 
 
