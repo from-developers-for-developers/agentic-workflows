@@ -45,7 +45,7 @@ from ww.plan import (
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.storage_adapters.memory import MemoryTaskStorageAdapter
-from ww.storage_adapters.task_document import decode_task_document, encode_task_document
+from ww.storage_adapters.task_document import decode_run_document, encode_run_document
 
 
 @dataclass(frozen=True)
@@ -401,17 +401,13 @@ def test_registered_action_round_trips_without_consumer_changes(tmp_path: Path) 
         )
 
         state = initial_state(snapshot, (), "2026-09-21T00:00:00Z", "01-task")
-        document = encode_task_document(
-            "TASK-1",
-            (TaskRunAggregate("01-task", "task", snapshot, state),),
-            None,
-            0,
-            {},
+        document = encode_run_document(
+            "TASK-1", TaskRunAggregate("01-task", "task", snapshot, state), 1
         )
-        raw_item = document["runs"][0]["snapshot"]["plan"]["items"][1]
+        raw_item = document["run"]["snapshot"]["plan"]["items"][1]
         assert raw_item["operation"]["payload"]["snapshot"] == "custom-data"
-        decoded_runs, _, _, _ = decode_task_document(document, "TASK-1")
-        decoded_item = decoded_runs[0].snapshot.plan.items[1]
+        decoded_run = decode_run_document(document, "TASK-1", "01-task", 1)
+        decoded_item = decoded_run.snapshot.plan.items[1]
         assert decoded_item.payload_as(ProbePayload).snapshot == "custom-data"
     finally:
         actions.unregister("test_probe")

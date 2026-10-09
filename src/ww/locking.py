@@ -3,7 +3,7 @@
 
 Two ww invocations in one project are unrelated processes competing for the
 same task files. Atomic replacement alone is not enough: it stops a reader
-seeing half a write, but not two processes reading one ``state.json``, each
+seeing half a write, but not two processes reading one task's state, each
 deciding the next item, and one overwriting the other. The fix is a single
 exclusive lock per task, held by ``WorkflowService`` for the whole of ``start``,
 ``next``, ``complete`` or ``reset`` — the span, not the individual write.
@@ -16,10 +16,12 @@ direct storage-adapter callers. Everything else writes inside one of those scope
 locks; maintenance takes it exclusively before pruning sidecars.
 
 Reads are deliberately unlocked. Replacement is atomic, so a reader always sees
-a complete aggregate document. ``RunCoordinator.load`` selects the requested
-run, execution state, and plan snapshot from one decoded revision rather than
-combining independently read files. Read-only commands therefore do not wait
-behind a mid-flight writer.
+complete files. A task is a task index plus one document per run, and the index
+names the revision each run document must carry; a reader that meets run
+documents newer than the index it read waits for the aggregate lock and reads
+again. ``RunCoordinator.load`` selects the requested run, execution state, and
+plan snapshot from one decoded revision. Read-only commands therefore wait only
+in the rare moment a writer is between its run documents and its index.
 
 Locks are advisory POSIX locks on sidecar files under ``.ww/locks/``. The
 kernel releases them when a process exits, so a killed run leaves nothing

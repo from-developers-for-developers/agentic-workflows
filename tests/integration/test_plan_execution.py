@@ -84,7 +84,9 @@ def test_execution_snapshot_automatic_input_nested_state_and_artifacts(
     assert (task_path / "metadata.json").exists()
     assert not (task_path / "aggregate.json").exists()
     assert not (task_path / "runs/01-task/plan.json").exists()
-    assert not (task_path / "runs/01-task/state.json").exists()
+    assert (task_path / "runs/01-task/state.json").exists()
+    index = json.loads((task_path / "state.json").read_text(encoding="utf-8"))
+    assert index["runs"] == [{"id": "01-task", "revision": index["revision"]}]
 
     active = service.next("TASK-1")
     assert active.item_status == "in_progress"
@@ -393,18 +395,20 @@ def test_aggregate_reads_ignore_a_stale_ledger_projection(tmp_path: Path) -> Non
     assert runs[0].status != "failed"
 
 
-def test_new_state_reads_ignore_stale_run_projections(tmp_path: Path) -> None:
+def test_a_run_state_newer_than_the_index_is_an_interrupted_commit(
+    tmp_path: Path,
+) -> None:
     _write_workflow(tmp_path)
     service = WorkflowService(Storage(tmp_path))
     start_after_init(service, "task", "TASK-authoritative", agent="codex")
 
     state_path = tmp_path / ".ww/tasks/TASK-authoritative/runs/01-task/state.json"
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(
-        json.dumps({"schema_version": 2, "status": "failed"}), encoding="utf-8"
-    )
+    document = json.loads(state_path.read_text(encoding="utf-8"))
+    document["revision"] += 1
+    state_path.write_text(json.dumps(document), encoding="utf-8")
 
-    assert service.status("TASK-authoritative").status == "pending"
+    with pytest.raises(StateError, match="a commit was interrupted"):
+        service.status("TASK-authoritative")
 
 
 def test_ordinary_transitions_preserve_the_logical_plan_and_digest(
@@ -619,8 +623,8 @@ workflows:
     assert command.stdout_ref is not None
     assert len(command.stdout) < 2_000
     assert len(service.tasks.read_command_output(command.stdout_ref)) == 20_000
-    task_state = (tmp_path / ".ww/tasks/TASK-OUTPUT/state.json").read_text()
-    assert len(task_state) < 30_000
+    run_state = (tmp_path / ".ww/tasks/TASK-OUTPUT/runs/01-task/state.json").read_text()
+    assert len(run_state) < 30_000
 
 
 def test_automatic_command_failure_retries_only_the_failed_handler(

@@ -627,9 +627,9 @@ def test_a_state_the_previous_build_wrote_loads_as_judged(
     # unresolved or wait on the operator, and records kept the proposals.
     root = _project(tmp_path)
     _developed(root)
-    path = root / ".ww/tasks/TASK-1/state.json"
+    path = root / ".ww/tasks/TASK-1/runs/01-task/state.json"
     document = json.loads(path.read_text(encoding="utf-8"))
-    for item in document["runs"][0]["state"]["item_executions"]:
+    for item in document["run"]["state"]["item_executions"]:
         for entry in item.get("rule_resolutions", []):
             entry["status"] = resolution
             item["open_proposals"] = [rule_text_hash(CLI)]

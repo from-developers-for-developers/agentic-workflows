@@ -44,6 +44,12 @@ def test_invalid_task_ids(task_id: str) -> None:
         validate_task_id(task_id)
 
 
+def test_a_child_task_cannot_take_the_runs_directory() -> None:
+    validate_task_id("runs")
+    with pytest.raises(StateError, match="cannot be named 'runs'"):
+        validate_task_id("P/runs")
+
+
 def test_child_ids_are_single_segments() -> None:
     validate_child_id("c1")
     with pytest.raises(StateError, match="child ID must be a single normalized name"):

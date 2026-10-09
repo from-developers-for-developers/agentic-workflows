@@ -37,6 +37,9 @@ def validate_task_id(task_id: str) -> None:
         raise StateError(
             "invalid task ID; use one or two slash-separated normalized names"
         )
+    if segments[1:] == ["runs"]:
+        # A task directory keeps its run documents and artifacts in ``runs``.
+        raise StateError("invalid task ID; a child task cannot be named 'runs'")
 
 
 def validate_child_id(child_id: str) -> None:

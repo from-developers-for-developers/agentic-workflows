@@ -42,7 +42,9 @@ def test_a_plan_with_a_field_ww_does_not_know_loads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = _started_by_an_other_version(tmp_path, monkeypatch)
-    stored = (tmp_path / ".ww/tasks/TASK-1/state.json").read_text(encoding="utf-8")
+    stored = (tmp_path / ".ww/tasks/TASK-1/runs/01-task/state.json").read_text(
+        encoding="utf-8"
+    )
     assert '"extra_field"' in stored
 
     assert service.status("TASK-1").workflow == "task"
@@ -57,10 +59,13 @@ def test_unknown_fields_elsewhere_in_the_state_are_left_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _started_by_an_other_version(tmp_path, monkeypatch)
-    path = tmp_path / ".ww/tasks/TASK-1/state.json"
-    document = json.loads(path.read_text(encoding="utf-8"))
-    document["written_by"] = "a future ww"
-    path.write_text(json.dumps(document), encoding="utf-8")
+    for path in (
+        tmp_path / ".ww/tasks/TASK-1/state.json",
+        tmp_path / ".ww/tasks/TASK-1/runs/01-task/state.json",
+    ):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["written_by"] = "a future ww"
+        path.write_text(json.dumps(document), encoding="utf-8")
     metadata = tmp_path / ".ww/tasks/TASK-1/metadata.json"
     values = json.loads(metadata.read_text(encoding="utf-8"))
     values["note"] = "unknown"
@@ -75,9 +80,9 @@ def test_a_digest_another_version_computed_is_re_derived(
     # A default only the other version filled in changes the digest without
     # leaving anything in the stored, compacted plan.
     _started_by_an_other_version(tmp_path, monkeypatch)
-    path = tmp_path / ".ww/tasks/TASK-1/state.json"
+    path = tmp_path / ".ww/tasks/TASK-1/runs/01-task/state.json"
     document = json.loads(path.read_text(encoding="utf-8"))
-    document["runs"][0]["state"]["plan_digest"] = "0" * 64
+    document["run"]["state"]["plan_digest"] = "0" * 64
     path.write_text(json.dumps(document), encoding="utf-8")
 
     service = WorkflowService(Storage(tmp_path))

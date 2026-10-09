@@ -697,25 +697,34 @@ operator-confirmed counterpart: it is frozen in the completed plan and starts
 only after the operator chooses it.
 
 Task state is committed through the storage adapter as one logical transition.
-The filesystem adapter atomically publishes `.ww/tasks/<id>/state.json`, which
-contains every run, plan, execution state, item and child record, handoff, and
-ordered ledger event. It validates the active-run pointer and holds a task
-lock across read, modification, and commit, using the aggregate revision as a
-compare-and-swap guard. Stale writers are rejected without changing the
-authoritative record.
+The filesystem adapter atomically publishes the task state as one index plus
+one file per run. `.ww/tasks/<id>/state.json` is a slim index (format,
+schema version, task ID, aggregate revision, active run, run order with each
+run's revision, handoff and ledger). `.ww/tasks/<id>/runs/<run_id>/state.json`
+holds one encoded run (plan, execution state, items and children) with its own
+extension snapshots and the revision it was written at. A commit rewrites only
+runs whose encoding changed, then the index last; run files of dropped runs are
+removed afterwards. Readers check that each run file's revision equals the one
+the index names. A mismatch means a commit was interrupted; an unlocked reader
+retakes the task lock and re-reads, and a persistent mismatch is a state error.
+The adapter validates the active-run pointer and holds a task lock across read,
+modification, and commit, using the index revision as the compare-and-swap
+guard. Stale writers are rejected without changing the authoritative record.
+There is no migration or fallback read of the earlier single-file layout; a
+child task cannot be named `runs`.
 
 The disk codec is separate from expanded domain serializers and public output.
 It omits only versioned record defaults, deduplicates immutable extension
 settings in a content-addressed table, and stores expanded items as changes
 from the template plan. Decoding restores dense records before model and plan
 digest validation. The stored plan digest is re-derived on load because plan
-serialization and defaults vary by ww version. Run directories contain only
-artifacts and command output; they are not an execution index.
+serialization and defaults vary by ww version. Run directories hold artifacts
+and command output next to the run's own state file.
 
 The task document has its own format discriminator and schema version; plan
 snapshots and execution states carry theirs. Readers reject unsupported
 versions rather than guessing. Task documents, plan snapshots and execution
-states use schema 1. The separate CLI
+states use schema 1; the task index and run documents use schema 3. The separate CLI
 audit log uses one invocation ID for each started/terminal pair, redacts
 user-supplied completion values and failure text from command lines, and
 rotates by size. Workflow recovery never depends on audit files.
@@ -1128,8 +1137,9 @@ handoffs remain deferred.
 
 A task is a durable container rather than a single workflow execution. Every
 sequential workflow run persists its plan snapshot, execution state, and ledger
-history in the task-root `state.json`. Numbered run directories contain only
-artifacts or command output when those exist. Separate task-root metadata keeps
+history in the task-root `state.json` index and the run's own
+`runs/<run_id>/state.json`. Numbered run directories also hold artifacts or
+command output when those exist. Separate task-root metadata keeps
 the task identity and cross-run values independent from execution publication.
 This separates immutable run history from the task identity needed by future
 external trackers such as Jira.

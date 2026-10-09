@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compact on-disk codec for the authoritative task state document."""
+"""Compact on-disk codec for the authoritative task state documents.
+
+A task is stored as one index document and one document per run, so a commit
+rewrites only the runs it changed.
+"""
 
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
-from dataclasses import MISSING, fields
+from dataclasses import MISSING, dataclass, fields
 from typing import Any
 
 from ww.children import ChildTask
@@ -25,7 +29,8 @@ from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
-TASK_STATE_SCHEMA_VERSION = 2
+RUN_STATE_FORMAT = "ww.run-state"
+TASK_STATE_SCHEMA_VERSION = 3
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -78,18 +83,39 @@ _EXTENSION_SNAPSHOT_FIELDS = (
 )
 
 
-def encode_task_document(
+@dataclass(frozen=True)
+class TaskIndex:
+    """The task-level state document: run order and cross-run control state.
+
+    ``run_revisions`` names each run in order with the aggregate revision its
+    run document was last written at, so a reader can tell a complete commit
+    from one that wrote some run documents but never published the index.
+    """
+
+    revision: int
+    run_revisions: tuple[tuple[str, int], ...]
+    active_run: str | None
+    handoff: str | None
+    ledger: dict[str, list[dict[str, object]]]
+
+
+class RunRevisionMismatchError(ValueError):
+    """A run document disagrees with the revision the task index expects.
+
+    Either a writer is between its run writes and the index, or a commit was
+    interrupted there.
+    """
+
+
+def encode_task_index(
     task_id: str,
     runs: tuple[TaskRunAggregate, ...],
+    run_revisions: dict[str, int],
     handoff: str | None,
     revision: int,
     ledger: dict[str, list[dict[str, object]]],
 ) -> dict[str, object]:
-    """Encode expanded domain records without mutating them."""
-    snapshots: dict[str, dict[str, object]] = {}
-    encoded_runs = [
-        _compact_run(copy.deepcopy(run.to_dict()), snapshots) for run in runs
-    ]
+    """Encode the task index naming ``runs`` at their ``run_revisions``."""
     active = [run.run_id for run in runs if run_is_open(run.state.status)]
     if len(active) > 1:
         raise ValueError("task state has multiple active runs")
@@ -99,10 +125,10 @@ def encode_task_document(
         "task_id": task_id,
         "revision": revision,
         "active_run": active[0] if active else None,
-        "runs": encoded_runs,
+        "runs": [
+            {"id": run.run_id, "revision": run_revisions[run.run_id]} for run in runs
+        ],
     }
-    if snapshots:
-        result["extension_snapshots"] = snapshots
     if handoff is not None:
         result["handoff"] = handoff
     if ledger:
@@ -110,18 +136,101 @@ def encode_task_document(
     return result
 
 
-def decode_task_document(
-    data: object, task_id: str
-) -> tuple[
-    tuple[TaskRunAggregate, ...],
-    str | None,
-    int,
-    dict[str, list[dict[str, object]]],
-]:
-    """Expand a compact task document and invoke the strict domain decoders."""
+def encode_run_document(
+    task_id: str, run: TaskRunAggregate, revision: int
+) -> dict[str, object]:
+    """Encode one run, written at aggregate ``revision``, without mutating it."""
+    snapshots: dict[str, dict[str, object]] = {}
+    encoded = _compact_run(copy.deepcopy(run.to_dict()), snapshots)
+    result: dict[str, object] = {
+        "format": RUN_STATE_FORMAT,
+        "schema_version": TASK_STATE_SCHEMA_VERSION,
+        "task_id": task_id,
+        "revision": revision,
+        "run": encoded,
+    }
+    if snapshots:
+        result["extension_snapshots"] = snapshots
+    return result
+
+
+def decode_task_index(data: object, task_id: str) -> TaskIndex:
+    """Validate a task index document."""
     if not isinstance(data, dict):
         raise ValueError("task state must be a mapping")
-    if data.get("format") != TASK_STATE_FORMAT:
+    _check_header(data, TASK_STATE_FORMAT, task_id)
+    revision = data.get("revision")
+    if not is_strict_int(revision) or revision < 0:
+        raise ValueError("task state revision must be non-negative")
+    if "active_run" not in data:
+        raise ValueError("task state missing field: active_run")
+    active_run = data["active_run"]
+    if active_run is not None and not isinstance(active_run, str):
+        raise ValueError("task state active_run must be a string or null")
+    run_revisions: list[tuple[str, int]] = []
+    for entry in _list(data.get("runs"), "task state runs"):
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"id", "revision"}
+            or not isinstance(entry["id"], str)
+            or not is_strict_int(entry["revision"])
+            or not 0 < entry["revision"] <= revision
+        ):
+            raise ValueError("task state runs entries are invalid")
+        run_revisions.append((entry["id"], entry["revision"]))
+    if len({run_id for run_id, _ in run_revisions}) != len(run_revisions):
+        raise ValueError("task state runs name a run twice")
+    handoff = data.get("handoff")
+    if handoff is not None and not isinstance(handoff, str):
+        raise ValueError("task state handoff must be a string or null")
+    ledger = data.get("ledger", {})
+    if not isinstance(ledger, dict):
+        raise ValueError("task state ledger must be a mapping")
+    return TaskIndex(
+        revision,
+        tuple(run_revisions),
+        active_run,
+        handoff,
+        _expand_ledger(copy.deepcopy(ledger)),
+    )
+
+
+def decode_run_document(
+    data: object, task_id: str, run_id: str, revision: int
+) -> TaskRunAggregate:
+    """Expand one run document the index names at ``revision``."""
+    if not isinstance(data, dict):
+        raise ValueError("run state must be a mapping")
+    _check_header(data, RUN_STATE_FORMAT, task_id)
+    written = data.get("revision")
+    if not is_strict_int(written) or written < 1:
+        raise ValueError("run state revision must be positive")
+    if written != revision:
+        raise RunRevisionMismatchError(
+            f"run {run_id!r} was written at revision {written}, but the task "
+            f"index names revision {revision}; a commit was interrupted"
+        )
+    snapshots = _validate_extension_snapshots(data.get("extension_snapshots", {}))
+    run = TaskRunAggregate.from_dict(
+        _expand_run(copy.deepcopy(data.get("run")), snapshots)
+    )
+    if run.run_id != run_id:
+        raise ValueError("run state run ID does not match its path")
+    return run
+
+
+def check_active_run(index: TaskIndex, runs: tuple[TaskRunAggregate, ...]) -> None:
+    """Reject an index whose active run is not the one non-completed run."""
+    actual_active = [run.run_id for run in runs if run_is_open(run.state.status)]
+    if len(actual_active) > 1:
+        raise ValueError("task state has multiple active runs")
+    expected_active = actual_active[0] if actual_active else None
+    if index.active_run != expected_active:
+        raise ValueError("task state active_run does not match the non-completed run")
+
+
+def _check_header(data: dict[str, Any], format_name: str, task_id: str) -> None:
+    if data.get("format") != format_name:
         raise ValueError(f"unsupported task state format: {data.get('format')!r}")
     version = data.get("schema_version")
     if not is_strict_int(version) or version != TASK_STATE_SCHEMA_VERSION:
@@ -131,36 +240,6 @@ def decode_task_document(
         )
     if data.get("task_id") != task_id:
         raise ValueError("task state task ID does not match its path")
-    revision = data.get("revision")
-    if not is_strict_int(revision) or revision < 0:
-        raise ValueError("task state revision must be non-negative")
-    if "active_run" not in data:
-        raise ValueError("task state missing field: active_run")
-    active_run = data["active_run"]
-    if active_run is not None and not isinstance(active_run, str):
-        raise ValueError("task state active_run must be a string or null")
-    raw_runs = data.get("runs")
-    if not isinstance(raw_runs, list):
-        raise ValueError("task state runs must be a list")
-    raw_snapshots = data.get("extension_snapshots", {})
-    snapshots = _validate_extension_snapshots(raw_snapshots)
-    runs = tuple(
-        TaskRunAggregate.from_dict(_expand_run(copy.deepcopy(run), snapshots))
-        for run in raw_runs
-    )
-    actual_active = [run.run_id for run in runs if run_is_open(run.state.status)]
-    if len(actual_active) > 1:
-        raise ValueError("task state has multiple active runs")
-    expected_active = actual_active[0] if actual_active else None
-    if active_run != expected_active:
-        raise ValueError("task state active_run does not match the non-completed run")
-    handoff = data.get("handoff")
-    if handoff is not None and not isinstance(handoff, str):
-        raise ValueError("task state handoff must be a string or null")
-    ledger = data.get("ledger", {})
-    if not isinstance(ledger, dict):
-        raise ValueError("task state ledger must be a mapping")
-    return runs, handoff, revision, _expand_ledger(copy.deepcopy(ledger))
 
 
 def _compact_run(

@@ -4050,14 +4050,18 @@ is automatic: the blocked process parks until the holder releases, printing one
 notice to stderr if the wait lasts longer than a moment.
 
 Reads are not locked. `instruction` and compact `status` answer immediately even while another process is
-mid-command, and writes are atomic, so it never sees a partial file.
+mid-command, and writes are atomic, so it never sees a partial file. Task state is one slim index
+(`.ww/tasks/<id>/state.json`) plus one file per run (`.ww/tasks/<id>/runs/<run_id>/state.json`); a commit
+rewrites only changed runs and the index last. If a reader catches a commit between those writes, it waits for
+the lock and re-reads; a mismatch that persists reports that a commit was interrupted. State schema 3 has no
+migration, so earlier single-file state is rejected.
 
 The order in which waiting processes are served is **not** guaranteed — the
 operating system may grant the lock to any waiter. Waiting is bounded by
 `WW_LOCK_TIMEOUT` (seconds, default `30`); set it to `0` to wait indefinitely.
 Lock files live in `.ww/locks` and the kernel releases them when a process
 exits, so a killed run never leaves one behind. Locks are advisory between `ww`
-processes; editing `.ww/tasks/<id>/state.json` by hand is still unsupported.
+processes; editing the task state files under `.ww/tasks/<id>/` by hand is still unsupported.
 
 For a real side-effect smoke test with placeholder agent output, use:
 
