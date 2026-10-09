@@ -30,8 +30,9 @@ GATE_TESTS = (
     # A command that cannot launch is retryable; one that launched stays unknown.
     "tests/integration/test_plan_execution.py::test_process_creation_failure_is_a_retryable_cli_error",
     "tests/integration/test_plan_execution.py::test_error_after_process_creation_keeps_the_outcome_unknown",
-    # Dynamic expansion must publish a complete executable plan revision.
-    "tests/integration/test_items.py::test_item_materialization_is_a_complete_executable_plan_revision",
+    # Child-stage expansion must publish a complete, executable plan revision.
+    "tests/integration/test_children_added_mid_run.py::test_the_added_child_runs_through_its_stages",
+    "tests/integration/test_children_added_mid_run.py::test_a_snapshot_with_the_added_child_round_trips",
     # Extension state and lock cleanup retain their interleaving guarantees.
     "tests/unit/test_extensions.py::test_a_store_update_locks_the_complete_read_modify_write",
     "tests/unit/test_locking.py::test_lock_opens_sidecar_only_after_activity_gate",
