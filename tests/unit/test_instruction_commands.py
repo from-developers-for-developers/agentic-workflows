@@ -8,7 +8,6 @@ from ww.instructions.commands import (
     instruction_command,
     item_command,
     recovery_commands,
-    update_item_command,
 )
 
 
@@ -23,11 +22,4 @@ def test_placeholders_stay_bare_while_real_values_are_quoted() -> None:
     assert (
         recovery_commands("TASK-1")[1].command
         == './ww next TASK-1 --force --reason "<reason>" --yes --role manager'
-    )
-
-
-def test_item_update_keeps_its_literal_flag_placeholders() -> None:
-    assert update_item_command("TASK-1", "<odd id>", "process_item") == (
-        "./ww update-item TASK-1 --id '<odd id>' "
-        '--processed-item="<agent-friendly analysis>"'
     )

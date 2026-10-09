@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TypeVar, get_args
+from typing import TypeVar
 
 from ww.actions import Commands, PlannedAction, actions
 from ww.contracts import (
     CheckSource,
     ChildOperation,
     ExecutionKind,
-    ItemAssignment,
     ItemOperation,
     PlanItemKind,
     PlanItemOwner,
@@ -253,19 +252,9 @@ class PlanItem:
     workdir: Workdir = "task"
     summary: bool = False
     item_operation: ItemOperation | None = None
-    item_template: bool = False
-    item_id: str | None = None
-    # The stable identity of the ``items`` declaration this item belongs to: its
-    # logical step path.  Carried by the collection item and by every per-item
-    # stage and hook (templates and their concrete copies), and by nothing
-    # else.  It is plan data, independent of display names and work-item IDs,
-    # so a later pass can expand exactly its own templates.  Not
-    # ``child_stage``, which belongs to ``children``.
-    item_pass: str | None = None
-    # On a collection item: this pass only collects or reconciles items and
-    # has no per-item stages (explicit ``items: {steps: []}``).
-    item_collect_only: bool = False
-    item_assignment: ItemAssignment = "per_step"
+    child_template: bool = False
+    # Nearest concrete collection path; independent of work-item and plan IDs.
+    item_context: str | None = None
     split_instruction: str | None = None
     # On a collection item: the items outlive the run and are reconciled.
     shared_items: bool = False
@@ -279,7 +268,7 @@ class PlanItem:
     # the first step of the child workflow, so ``add-child`` takes no ``--id``.
     child_identity: bool = False
     # On every per-child stage (``children.steps``) and its hooks: the path
-    # of the ``children`` step. Its templates carry ``item_template`` until
+    # of the ``children`` step. Its templates carry ``child_template`` until
     # the children are collected.
     child_stage: str | None = None
     # On a concrete per-child stage: the one-based position of its child in
@@ -364,14 +353,10 @@ class PlanItem:
         if self.item_operation not in {
             None,
             "collect",
-            "process_item",
-            "resolve_item",
-            "report_item",
-            "handle_item",
+            "complete_collection",
+            "save_fields",
         }:
             raise ValueError(f"invalid item operation: {self.item_operation!r}")
-        if self.item_assignment not in get_args(ItemAssignment):
-            raise ValueError(f"invalid item assignment: {self.item_assignment!r}")
         if self.workdir not in WORKDIRS:
             raise ValueError(f"invalid workdir: {self.workdir!r}")
         if self.child_operation not in {None, "collect"}:
@@ -451,10 +436,8 @@ class PlanItem:
         """The persisted form."""
         data = self._to_dict()
         # Pass identity is written only where it applies.
-        if self.item_pass is not None:
-            data["item_pass"] = self.item_pass
-        if self.item_collect_only:
-            data["item_collect_only"] = True
+        if self.item_context is not None:
+            data["item_context"] = self.item_context
         if self.on_failure != "operator":
             data["on_failure"] = self.on_failure
             data["max_handler_fixes"] = self.max_handler_fixes
@@ -535,9 +518,7 @@ class PlanItem:
             "workdir": self.workdir,
             "summary": self.summary,
             "item_operation": self.item_operation,
-            "item_template": self.item_template,
-            "item_id": self.item_id,
-            "item_assignment": self.item_assignment,
+            "child_template": self.child_template,
             "split_instruction": self.split_instruction,
             "shared_items": self.shared_items,
             "update_item": [item.to_dict() for item in self.update_item],

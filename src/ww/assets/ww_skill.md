@@ -70,9 +70,9 @@ change, start from step 1 then.
    and ask only for a material decision or an action outside it); when they
    decide, run the recovery command ww showed, `./ww next <task-id> --retry` to run the
    handler again, `--force --reason` to skip it, or `--replan` / `--keep-plan`
-   for a changed workflow. A `pass_incomplete`
-   stop is cleared by recording what it names with `./ww update-item`, then
-   `./ww next <task-id> --retry`; `--force` is refused there. A failed
-   identity request (`REQUEST-…`) is only retried with `--retry` or dropped
+   for a changed workflow. Missing item bookkeeping is not such a stop: an
+   items step's page lists the unresolved, unreported, or missing-field items
+   with their commands; record them and run its completion command again. A
+   failed identity request (`REQUEST-…`) is only retried with `--retry` or dropped
    with `./ww reset <request-id> --yes`, both shown on its page; `--force`
    is refused there too.

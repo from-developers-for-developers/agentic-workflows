@@ -29,7 +29,6 @@ from ww.execution_models import (
     operation_scope_for,
 )
 from ww.execution_models.records import RuleResolution
-from ww.items import WorkItem
 from ww.plan import (
     PlanItem,
     PlannedCheck,
@@ -842,21 +841,6 @@ def await_item_input(
     )
 
 
-def block_item_phase(state: ExecutionState, message: str, now: Clock) -> ExecutionState:
-    """Stop before leaving an items pass whose items lack what it declares.
-
-    Nothing failed and the next step has not started: ``next --retry``
-    checks the items again once the operator recorded what they lack.
-    """
-    return replace(
-        state,
-        status="failed",
-        last_error=message,
-        failure_kind="pass_incomplete",
-        updated_at=now(),
-    )
-
-
 def advance_completed_item(state: ExecutionState, now: Clock) -> ExecutionState:
     """Move the cursor past an item already recorded as completed."""
     return replace(state, cursor=state.cursor + 1, updated_at=now())
@@ -878,82 +862,6 @@ def complete_run(
     )
 
 
-def materialize_item_plan(
-    state: ExecutionState,
-    snapshot: PlanSnapshot,
-    collector: PlanItem,
-    items: tuple[WorkItem, ...],
-    now: Clock,
-) -> tuple[ExecutionState, PlanSnapshot]:
-    """Expand one ``items`` pass for the items collected when it completes.
-
-    Only the pass ``collector`` declares is expanded, right after it, from
-    its own templates in the template plan; every other pass keeps its
-    templates (or its concrete stages) untouched.  The pass's earlier
-    templates are replaced with stages for the items collected now.
-    Membership of a running pass never changes.  A pass without stages
-    (``items: {steps: []}``), or one that collected no items, expands to
-    nothing.  The snapshot is written in the current schema, whose pass
-    identity the expanded plan relies on.
-    """
-    pass_id = collector.item_pass
-    if pass_id is None:
-        raise StateError(f"items step {collector.name!r} has no item pass")
-    template = snapshot.template_plan or snapshot.plan
-    templates = tuple(
-        entry
-        for entry in template.items
-        if entry.item_template
-        and entry.child_stage is None
-        and entry.item_pass == pass_id
-    )
-    if not templates:
-        return state, snapshot
-    members = frozenset(
-        entry.id
-        for entry in snapshot.plan.items
-        if entry.item_pass == pass_id
-        and entry.child_stage is None
-        and (entry.item_template or entry.item_id is not None)
-    )
-    anchor = next(
-        (
-            index
-            for index, entry in enumerate(snapshot.plan.items)
-            if entry.id == collector.id
-        ),
-        None,
-    )
-    if anchor is None:
-        raise StateError(f"items step {collector.name!r} is not in the plan")
-    return _expand_templates(
-        state,
-        snapshot,
-        templates,
-        "{item}",
-        tuple(
-            (f"item-{number}", f"item:{work_item.id}", {"item_id": work_item.id})
-            for number, work_item in enumerate(items, 1)
-        ),
-        now,
-        replaced=members,
-        after=collector.id,
-        scope=_record_scope(state, anchor),
-    )
-
-
-def _record_scope(state: ExecutionState, index: int) -> str:
-    """The operation namespace the collection record was created in."""
-    record = state.item_executions[index]
-    prefix, suffix = f"{state.task_id}:", f":{record.plan_item_id}"
-    operation = record.operation_id
-    if operation is None or not (
-        operation.startswith(prefix) and operation.endswith(suffix)
-    ):
-        return operation_scope_for(state)
-    return operation[len(prefix) : -len(suffix)]
-
-
 def materialize_child_plan(
     state: ExecutionState,
     snapshot: PlanSnapshot,
@@ -969,7 +877,7 @@ def materialize_child_plan(
     templates = tuple(
         entry
         for entry in snapshot.plan.items
-        if entry.item_template and entry.child_stage is not None
+        if entry.child_template and entry.child_stage is not None
     )
     if not templates:
         return state, snapshot
@@ -1007,7 +915,7 @@ def append_child_lifecycle(
     templates = tuple(
         entry
         for entry in (template.items if template is not None else ())
-        if entry.item_template and entry.child_stage is not None
+        if entry.child_template and entry.child_stage is not None
     )
     if not templates:
         raise StateError(
@@ -1018,7 +926,7 @@ def append_child_lifecycle(
             entry
             for entry in reversed(snapshot.plan.items)
             if entry.child_stage is not None
-            and not entry.item_template
+            and not entry.child_template
             and entry.child_number is not None
         ),
         None,
@@ -1094,8 +1002,12 @@ def _expand_templates(
                 if template.assessment_parent is not None
                 else None
             ),
-            item_template=False,
-            item_id=str(bind["item_id"]) if "item_id" in bind else template.item_id,
+            child_template=False,
+            item_context=(
+                concrete_path(template.item_context, segment)
+                if template.item_context is not None
+                else None
+            ),
             child_number=(
                 int(bind["child_number"])
                 if "child_number" in bind

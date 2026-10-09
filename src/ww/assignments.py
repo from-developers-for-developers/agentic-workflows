@@ -50,7 +50,6 @@ def assignment_at(
         return None
     if first.verifies is not None:
         return Assignment(first.id, cursor, cursor + 1)
-    spans_steps = runtime != "single"
     lineage = {first.step, *first.ancestors}
     worker = first if first.owner == "agent" else None
     stop = cursor + 1
@@ -63,11 +62,7 @@ def assignment_at(
             continue
         if item.phase in {"before_start_workflow", "before_start", "step"}:
             if item.step != first.step:
-                if not spans_steps or not (
-                    shares_item_span(first, item, worker=worker)
-                ):
-                    break
-                lineage.update((item.step, *item.ancestors))
+                break
             if worker is None and item.owner == "agent":
                 worker = item
             stop += 1
@@ -80,87 +75,6 @@ def assignment_at(
             break
         stop += 1
     return Assignment(first.id, cursor, stop)
-
-
-def shares_item_span(
-    first: PlanItem, item: PlanItem, *, worker: PlanItem | None
-) -> bool:
-    """Whether ``item`` continues the per-item assignment begun at ``first``."""
-    if first.item_id is None or item.item_id is None:
-        return False
-    if first.item_pass != item.item_pass:
-        return False
-    if first.item_assignment != item.item_assignment:
-        return False
-    if item.item_assignment == "per_item" and first.item_id != item.item_id:
-        return False
-    if item.item_assignment == "per_step":
-        return False
-    return _same_worker(item, worker)
-
-
-def _same_worker(item: PlanItem, worker: PlanItem | None) -> bool:
-    """Whether ``item`` can be performed by the assignment's current worker.
-
-    ``worker`` is the first agent-owned item of the assignment so far. A step
-    that needs a different agent, model, reasoning, or profile, or that is
-    reserved for the manager with ``role: manager``, starts a new
-    assignment, because one running worker cannot change any of them.
-    """
-    if item.owner != "agent":
-        # Automatic work inside the span drains within the assignment.
-        return True
-    if item.role == "manager" or (worker is not None and worker.role == "manager"):
-        return False
-    return worker is None or _worker_settings(worker) == _worker_settings(item)
-
-
-def _worker_settings(item: PlanItem) -> tuple[str | None, ...]:
-    return (
-        item.requested_agent,
-        item.requested_model,
-        item.requested_reasoning,
-        item.profile,
-    )
-
-
-@dataclass(frozen=True)
-class ItemSpan:
-    """Several per-item stages that one worker performs in one assignment."""
-
-    item_assignment: str
-    stages: tuple[PlanItem, ...]
-
-    @property
-    def item_ids(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(str(stage.item_id) for stage in self.stages))
-
-    @property
-    def stage_names(self) -> tuple[str, ...]:
-        """The stage names of one item, in order."""
-        first = self.stages[0].item_id
-        return tuple(
-            dict.fromkeys(stage.name for stage in self.stages if stage.item_id == first)
-        )
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "item_assignment": self.item_assignment,
-            "item_ids": list(self.item_ids),
-            "stages": list(self.stage_names),
-        }
-
-
-def item_span(plan: WorkflowPlan, assignment: Assignment) -> ItemSpan | None:
-    """Return the per-item stages an assignment spans, when it spans several."""
-    stages = tuple(
-        item
-        for item in plan.items[assignment.start : assignment.stop]
-        if item.phase == "step" and item.owner == "agent" and item.item_id is not None
-    )
-    if len(stages) <= 1:
-        return None
-    return ItemSpan(stages[0].item_assignment, stages)
 
 
 def input_only(plan: WorkflowPlan, assignment: Assignment) -> bool:

@@ -20,7 +20,6 @@ from ww.contracts import (
     HookFailure,
     HookPhase,
     HookScope,
-    ItemAssignment,
     ItemOperation,
     StepRole,
 )
@@ -639,26 +638,11 @@ class ChildFlow:
 
 @dataclass(frozen=True)
 class ItemFlow:
-    """The collection and per-item lifecycle owned by one ``items`` step.
-
-    ``steps`` are the resolved per-item stages: the configured ones, or the
-    single built-in stage of a bare ``items: ~``.  Empty ``steps`` collect
-    items without processing them.  Item-flow worker settings are already
-    folded into each stage while parsing.
-    """
+    """A bounded collection with ordinary, once-per-container descendants."""
 
     steps: tuple[StepDefinition, ...] = ()
     description: str | None = None
-    assignment: ItemAssignment = "together"
-    # Collection-wide settings, exactly as this declaration wrote them.
-    # ``None`` means it did not set one: the first declaration of a workflow
-    # establishes them, so a later declaration that omits one must not be
-    # read as choosing the default.  ``identity`` is folded into the unique
-    # pool only by ``effective_unique``, so an explicit ``unique`` stays
-    # distinguishable from an omitted one.
-    #
-    # ``persistent``: the items outlive the run: every run of the task reuses
-    # them, and the collection stage reconciles them instead of splitting anew.
+    # Preserve source data by context between runs, clearing outcomes.
     persistent: bool | None = None
     # The custom field a new item must carry, and the fields whose values
     # form one pool in which each value may appear once across all items.
@@ -673,15 +657,6 @@ class ItemFlow:
                 (*((self.identity,) if self.identity else ()), *(self.unique or ()))
             )
         )
-
-    @property
-    def collect_only(self) -> bool:
-        """Whether this pass only collects or reconciles items.
-
-        Explicit ``steps: []`` (or ``steps: ~``) is the one way to be true; the
-        bare ``items: ~`` shorthand resolves to the built-in handle-item stage.
-        """
-        return not self.steps
 
 
 @dataclass(frozen=True)

@@ -893,7 +893,6 @@ workflows:
         items:
           steps:
             - analyze: Analyze.
-              item_phase: analyze
       - name: build
         argv: [make]
 """

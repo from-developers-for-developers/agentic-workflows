@@ -35,9 +35,7 @@ CheckStatus = Literal["passed", "failed", "not_applicable", "unavailable"]
 # verdict on a rule without a command.
 CheckSource = Literal["rule", "hook", "derived", "judged"]
 # Why a failed run failed, when the reason is not the item's own error.
-FailureKind = Literal[
-    "fix_limit", "check_disputed", "value_unavailable", "work_failed", "pass_incomplete"
-]
+FailureKind = Literal["fix_limit", "check_disputed", "value_unavailable", "work_failed"]
 # A rule's standing in the rule-automation store, keyed by its text hash.
 RuleAutomationStatus = Literal[
     "approach_proposed",
@@ -55,14 +53,7 @@ CheckAutomationStatus = Literal["proposed", "converted", "rejected"]
 # the step begins: by a converted derived check, or by a verifier's verdict.
 RuleResolutionStatus = Literal["converted", "judged"]
 Verdict = Literal["pass", "fail"]
-ItemOperation = Literal[
-    "collect", "process_item", "resolve_item", "report_item", "handle_item"
-]
-# ``handle_item`` is the built-in stage of a bare ``items`` step; it cannot be
-# declared on a configured step.
-# How the per-item stages of an ``items`` step are split into worker
-# assignments in the ``auto`` runtime.
-ItemAssignment = Literal["together", "per_item", "per_step"]
+ItemOperation = Literal["collect", "complete_collection", "save_fields"]
 ChildOperation = Literal["collect"]
 
 # Action identifiers are registry keys; third-party internal registrations may
@@ -131,7 +122,6 @@ OperatorReason = Literal[
     "fix_limit",
     "check_disputed",
     "value_unavailable",
-    "pass_incomplete",
     "plan_changed",
 ]
 CALLER_ROLES: tuple[CallerRole, ...] = ("manager", "worker")

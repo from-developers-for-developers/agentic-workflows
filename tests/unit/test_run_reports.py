@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from ww.errors import StateError
+from ww.execution_models.runs import PLAN_SCHEMA_VERSION
 from ww.project_config import ProjectConfig, load_project_config
 from ww.run_reports import (
     DEBUG,
@@ -32,6 +33,7 @@ from ww.run_reports import (
     validate_report_values,
 )
 from ww.storage import Storage
+from ww.storage_adapters.task_document import TASK_STATE_SCHEMA_VERSION
 
 ERRORS = json.dumps(
     [
@@ -209,8 +211,8 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
     assert record["workflow"] == "task"
     assert record["recorded_at"] == "2026-10-06T07:45:13Z"
     assert record["modes"] == ["economy"]
-    assert record["plan_schema_version"] == 1
-    assert record["task_state_schema_version"] == 1
+    assert record["plan_schema_version"] == PLAN_SCHEMA_VERSION
+    assert record["task_state_schema_version"] == TASK_STATE_SCHEMA_VERSION
     assert record["workflow_shape"] == SHAPE
     assert record["errors"][0]["step"] == "work"
     assert record["inconveniences"] == [

@@ -76,7 +76,7 @@ def test_per_child_stages_compile_as_templates_after_the_collection(
         "slices/{child}/review",
         "slices/{child}/land",
     ]
-    assert all(item.item_template and item.child_number is None for item in stages)
+    assert all(item.child_template and item.child_number is None for item in stages)
     assert {item.child_stage for item in stages} == {"slices"}
     run = stages[1]
     assert isinstance(run.operation, ChildWorkflowRun)
@@ -200,14 +200,21 @@ def test_invalid_per_child_stages_are_rejected(
         compile_workflow_plan(_load(tmp_path, steps), tmp_path, "parent", "codex")
 
 
-def test_a_children_step_cannot_repeat_per_item(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="cannot repeat per item"):
+def test_a_children_step_runs_once_inside_an_items_context(tmp_path: Path) -> None:
+    plan = compile_workflow_plan(
         _load(
             tmp_path,
             "      - collect: Collect.\n        items:\n          steps:\n"
             "            - split: Split.\n              children:\n"
             "                workflow: child\n",
-        )
+        ),
+        tmp_path,
+        "parent",
+        "codex",
+    )
+    split = [item for item in plan.items if item.step.startswith("collect/split")]
+    assert split and all(item.item_context == "collect" for item in split)
+    assert not any(item.child_template for item in split)
 
 
 def test_a_stage_before_the_run_cannot_read_child_extension_values(

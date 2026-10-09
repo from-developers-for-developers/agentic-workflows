@@ -25,7 +25,7 @@ from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
-TASK_STATE_SCHEMA_VERSION = 1
+TASK_STATE_SCHEMA_VERSION = 2
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -125,7 +125,10 @@ def decode_task_document(
         raise ValueError(f"unsupported task state format: {data.get('format')!r}")
     version = data.get("schema_version")
     if not is_strict_int(version) or version != TASK_STATE_SCHEMA_VERSION:
-        raise ValueError("unsupported task state schema")
+        raise ValueError(
+            "unsupported task state schema; inspect or finish with the previous "
+            "ww build. State was left untouched."
+        )
     if data.get("task_id") != task_id:
         raise ValueError("task state task ID does not match its path")
     revision = data.get("revision")

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — bounded item collections
+
+- Breaking: items own independent, nestable contexts; ordinary substeps run once per collection.
+- Add context-qualified resolve/report/reopen operations and field selectors.
+- Enforce all-item saves and durable final gates without replaying successful commands.
+- Remove item phases, analysis fields, per-item assignment policies and materialization.
+- Operator answers remain evidence until the agent records explicit outcomes.
+- Task-state schema 2 and plan schema 3 reject incompatible saved work without modifying it; use its previous build to inspect or finish it.
+
 `main` is the branch users run, so everything recorded here is live the moment
 it lands — there is no staging period and nothing is waiting to ship. Sections
 are dated by the day `main` changed, newest first, because there are no version

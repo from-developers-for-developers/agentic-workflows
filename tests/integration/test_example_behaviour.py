@@ -24,6 +24,7 @@ from tests.example_documents import (
 )
 from tests.workflow_helpers import start_after_init
 from ww.cli import main
+from ww.errors import StateError
 from ww.instructions import Instruction
 from ww.items import WorkItem
 from ww.service import WorkflowService
@@ -99,45 +100,35 @@ def test_example_2_names_the_choices_in_the_instruction(tmp_path: Path) -> None:
     )
 
 
-def test_example_3_gives_every_item_one_lifecycle_stage(tmp_path: Path) -> None:
+def test_example_3_runs_each_substep_once_over_the_checkpoints(
+    tmp_path: Path,
+) -> None:
     service = _service(tmp_path, example_yaml(3))
     _start(service, "migrate-calls")
     service.next(TASK)
-    for path in ("src/a.py", "src/b.py"):
+    _, before = service.load(TASK)
+    paths = ("src/a.py", "src/b.py")
+    for path in paths:
         service.add_item(TASK, WorkItem(path, f"Migrate {path}."))
     _complete(service, "Collected.")
 
-    for path in ("src/a.py", "src/b.py"):
-        page = service.next(TASK)
-        assert page.item_name == "handle-item"
-        service.update_item(
-            TASK, path, actual_solution="Migrated.", resolved=True, reported=True
-        )
-        _complete(service, "Migrated.")
+    assert service.next(TASK).item_name == "develop"
+    for path in paths:
+        service.resolve_item(TASK, path, actual_solution="Migrated.")
+    _complete(service, "Migrated both files together.")
+    assert service.next(TASK).item_name == "report"
+    for path in paths:
+        service.report_item(TASK, path)
+    _complete(service, "Reported.")
 
     assert service.next(TASK).item_name == "summarize"
+    assert service.load(TASK)[1].plan == before.plan
 
 
-# A project-owned fake of the reply script example 4 names: a ledger of replies.
-# Given a saved reply ID it updates that reply instead of creating another.
-REPLY_SCRIPT = """import json, os, sys
-comment, text, reply_id = sys.argv[1:4]
-if os.path.exists("remote-down"):
-    sys.exit(7)
-ledger = json.load(open("ledger.json")) if os.path.exists("ledger.json") else {}
-if not reply_id:
-    reply_id = "r%d" % (len(ledger) + 1)
-ledger[reply_id] = {"comment": comment, "text": text}
-json.dump(ledger, open("ledger.json", "w"))
-print(reply_id)
-"""
-
-
-def _example_4(root: Path) -> WorkflowService:
-    """Run example 4 up to the report pass's collection step."""
-    (root / "scripts").mkdir()
-    (root / "scripts/reply-to-comment.py").write_text(REPLY_SCRIPT, encoding="utf-8")
-    service = _service(root, example_yaml(4))
+def test_example_4_saves_reply_ids_on_every_comment_before_the_reply_completes(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path, example_yaml(4))
     _start(service, "review-comments")
     service.next(TASK)
     for number in (1, 2):
@@ -150,63 +141,31 @@ def _example_4(root: Path) -> WorkflowService:
             ),
         )
     _complete(service, "Collected.")
-    # One batch analysis, then a quick checkpoint per item.
-    service.next(TASK)
+    assert service.next(TASK).item_name == "bootstrap"
+    _complete(service, "Source IDs verified.")
+    assert service.next(TASK).item_name == "develop"
     for number in (1, 2):
-        service.update_item(TASK, f"c{number}", processed_item="Shared cause.")
-    _complete(service, "Analyzed together.")
-    service.next(TASK)
-    _complete(service, "Reused the items.")
-    for _ in (1, 2):
-        assert service.next(TASK).item_name == "analyze"
-        _complete(service, "Confirmed.")
-    # One batch fix, resolution recorded per item.
-    assert service.next(TASK).item_name == "fix-together"
-    for number in (1, 2):
-        service.update_item(
-            TASK, f"c{number}", actual_solution=f"fix {number}", resolved=True
-        )
+        service.resolve_item(TASK, f"c{number}", actual_solution="One shared fix.")
     _complete(service, "Fixed together.")
-    service.next(TASK)
-    return service
 
+    reply = service.next(TASK)
+    assert reply.item_name == "reply"
+    assert "--get field.comment_id" in (reply.action_text or "")
+    service.update_item(TASK, "c1", fields={"reply_id": "r1"})
+    with pytest.raises(StateError, match="c2: field.reply_id"):
+        _complete(service, "Replied.")
+    service.update_item(TASK, "c2", fields={"reply_id": "r2"})
+    for number in (1, 2):
+        service.report_item(TASK, f"c{number}")
+    _complete(service, "Replied.")
 
-def _items(service: WorkflowService) -> dict[str, WorkItem]:
-    run = service.load(TASK)[0].run_id
-    return {item.id: item for item in service.tasks.read_items(TASK, run)}
-
-
-def test_example_4_reports_every_comment_with_its_own_automatic_reply(
-    tmp_path: Path,
-) -> None:
-    service = _example_4(tmp_path)
-
-    _complete(service, "Reused the items.")
-
-    items = _items(service)
-    assert [items[i].field("reply_id") for i in ("c1", "c2")] == ["r1", "r2"]
-    assert all(item.reported for item in items.values())
-    ledger = json.loads((tmp_path / "ledger.json").read_text())
-    assert ledger == {
-        "r1": {"comment": "101", "text": "fix 1"},
-        "r2": {"comment": "102", "text": "fix 2"},
+    assert service.next(TASK).item_name == "update-workflow-summary"
+    items = {
+        item.id: item
+        for item in service.tasks.read_items(TASK, service.load(TASK)[0].run_id)
     }
-
-
-def test_example_4_reports_nothing_when_the_script_fails_and_retries_cleanly(
-    tmp_path: Path,
-) -> None:
-    service = _example_4(tmp_path)
-    (tmp_path / "remote-down").touch()
-
-    _complete(service, "Reused the items.")
-
-    assert service.load(TASK)[0].status == "failed"
-    assert not any(item.reported for item in _items(service).values())
-    (tmp_path / "remote-down").unlink()
-    service.next(TASK, retry=True)
-    assert all(item.reported for item in _items(service).values())
-    assert len(json.loads((tmp_path / "ledger.json").read_text())) == 2
+    assert [items[i].field("reply_id") for i in ("c1", "c2")] == ["r1", "r2"]
+    assert all(item.resolved and item.reported for item in items.values())
 
 
 def _assessed(root: Path, workflow: str) -> WorkflowService:

@@ -28,8 +28,8 @@ def test_work_item_round_trips_with_every_field() -> None:
     item = WorkItem(
         "c1",
         "The error path is untested.",
-        processed_item="missing coverage",
-        proposed_solution="add a test",
+        context="feedback",
+        notes="handled together with c0",
         actual_solution="added a test",
         resolved=True,
         reported=True,
@@ -43,8 +43,7 @@ def test_work_item_round_trips_with_every_field() -> None:
 def test_only_progress_fields_are_editable() -> None:
     assert {
         "fields",
-        "processed_item",
-        "proposed_solution",
+        "notes",
         "actual_solution",
         "resolved",
         "reported",
@@ -316,7 +315,7 @@ def test_current_plan_schema_rejects_bare_shell_command() -> None:
 
 
 @pytest.mark.parametrize(
-    "field", ["requires_agent_input", "summary", "item_template", "artifact"]
+    "field", ["requires_agent_input", "summary", "child_template", "artifact"]
 )
 def test_persisted_plan_rejects_coerced_boolean_fields(field: str) -> None:
     snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)

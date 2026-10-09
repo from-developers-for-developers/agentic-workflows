@@ -78,11 +78,13 @@ ITEMS = """workflows:
         items:
           steps:
             - name: process
-              description: Process it.
-              item_phase: analyze
+              description: >-
+                Process the comments; reply in the thread of
+                {{ww.item.field.thread}}.
+              saves:
+                - item.field.thread: The source thread of each comment.
             - name: resolve
-              description: Resolve it.
-              item_phase: resolve
+              description: Resolve the comments.
 """
 
 FAILING = """handlers:
@@ -173,8 +175,8 @@ def worker_handoff(root: Path) -> Instruction:
     )
 
 
-def item_stage(root: Path) -> Instruction:
-    """A per-item stage after the items were collected."""
+def items_substep(root: Path) -> Instruction:
+    """An ordinary substep inside an items context after collection."""
     service, _ = _start(root, ITEMS)
     service.next(TASK)
     service.add_item(TASK, WorkItem("comment-1", "Rename the flag."))
@@ -268,7 +270,7 @@ SCENARIOS: dict[str, Callable[[Path], Instruction]] = {
     "worker-bootstrap": worker_bootstrap,
     "step-auto-worker": step_auto_worker,
     "worker-handoff": worker_handoff,
-    "item-stage": item_stage,
+    "items-substep": items_substep,
     "values-and-metadata": values_and_metadata,
     "interactive": interactive,
     "step-rules": step_rules,

@@ -129,12 +129,11 @@ def test_item_values_use_stable_string_representations() -> None:
     assert values == {
         "ww.item.id": "c1",
         "ww.item.text": "Text",
-        "ww.item.processed_item": "",
-        "ww.item.proposed_solution": "",
         "ww.item.actual_solution": "",
         "ww.item.resolved": "true",
         "ww.item.reported": "false",
         "ww.item.reference_to_id": "",
+        "ww.item.notes": "",
         "ww.item.field.reply_id": "r1",
         "ww.item.field.unset": "",
     }

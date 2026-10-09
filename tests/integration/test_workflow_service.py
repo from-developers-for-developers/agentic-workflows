@@ -394,7 +394,6 @@ def test_status_uses_one_aggregate_revision(tmp_path: Path) -> None:
         items:
           steps:
             - name: process
-              item_phase: analyze
 """,
     )
     _start_after_init(writer, "task", "T", agent="codex")

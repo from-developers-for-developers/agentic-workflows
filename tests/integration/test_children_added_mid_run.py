@@ -138,7 +138,7 @@ def test_a_snapshot_with_the_added_child_round_trips(tmp_path: Path) -> None:
     assert second[1].plan == first[1].plan
     assert second[1].template_plan == first[1].template_plan
     assert any(
-        item.item_template and item.child_stage is not None
+        item.child_template and item.child_stage is not None
         for item in (second[1].template_plan or second[1].plan).items
     )
 
@@ -165,7 +165,7 @@ def test_adding_while_collecting_behaves_as_before(tmp_path: Path) -> None:
     service.add_child(TASK, "B", "Slice B")
     _, snapshot = service.load(TASK)
     assert not any(
-        item.child_stage is not None and not item.item_template
+        item.child_stage is not None and not item.child_template
         for item in snapshot.plan.items
     )
     service.complete(TASK, artifact="Collected.", summary_for_next="Done.")

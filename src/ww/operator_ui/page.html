@@ -173,7 +173,7 @@
     const unsent = queued(item.id);
     const badge = unsent ? `<span class="badge unsent">not sent</span>`
       : `<span class="badge">${{ open: "open", answered: "answered", processed: "applied" }[item.status]}</span>`;
-    const fields = [["Analysis", item.processed_item], ["Proposed solution", item.proposed_solution],
+    const fields = [["Notes", item.notes],
                     ["Actual solution", item.actual_solution]].filter(([, v]) => v);
     const custom = Object.entries(item.fields || {});
     let body = `<h2><span class="id">${esc(item.id)}</span>${badge}</h2>` +

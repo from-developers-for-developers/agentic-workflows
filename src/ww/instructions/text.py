@@ -12,10 +12,6 @@ from ww.variables import PROJECTS
 from .commands import (
     TASK_PLACEHOLDER,
     add_child_command,
-    add_item_command,
-    item_command,
-    items_command,
-    update_item_command,
 )
 
 NO_SUBAGENTS = (
@@ -55,12 +51,8 @@ def action_text(
     task_values: dict[str, str] | None = None,
     task_id: str | None = None,
     container_artifact: ContainerArtifact | None = None,
-    later_pass: bool = False,
 ) -> str:
     """Render the work text for an ordinary action, plus item or child guidance.
-
-    ``later_pass``: the step collects for an ``items`` pass after the
-    workflow's first, which reuses the items already collected.
 
     ``container_artifact`` is what the step's ``artifact_from`` resolved to
     when it names a group or an assessment; ``None`` for a single step.
@@ -72,29 +64,12 @@ def action_text(
         InstructionContext(item.description, item.name, task_values or {}),
     )
     task_reference = task_id or TASK_PLACEHOLDER
-    if item.item_operation == "collect" and later_pass:
-        result = (
-            content.text
-            + "\n\nThis step starts a later pass over the items this run already "
-            "collected: do not split the source again or recreate items, and keep "
-            "what is recorded on them. Inspect them with "
-            f"`{items_command(task_reference)}`. Add an item with "
-            f"`{add_item_command(task_reference)}` only when this step asks you "
-            "to reconcile the items with their source. When this step completes, "
-            "the pass runs for the items recorded by then; an item added later "
-            "joins the next pass."
-        )
-        return _with_artifact_dependency(result, item, container_artifact)
     if item.item_operation == "collect":
         result = (
             content.text
-            + "\n\nSplit the source into complete, reportable items. Preserve every "
-            "source comment; use a stable source ID when one exists, otherwise choose "
-            f"a unique ID. Use `{add_item_command()}` for "
-            "each item. Combine related work under one canonical item only when that "
-            "avoids duplicate analysis or fixes; retain each related source item and "
-            "link it with `--refers-to <canonical-id>` so it can still be "
-            "reported."
+            + "\n\nFollow the splitting prompt and register each source obligation. "
+            "Related fixes may be shared, but each source item keeps its own "
+            "resolution and report."
         )
         if item.split_instruction:
             result += f"\n\nHow to split: {item.split_instruction}"
@@ -127,15 +102,6 @@ def action_text(
             )
         return _with_artifact_dependency(result, item, container_artifact)
     text = content.text
-    if content.include_item_context and item.item_id:
-        text += (
-            f"\n\nActive item: `{item.item_id}`. Inspect it with "
-            f"`{item_command(task_reference, item.item_id)}`."
-            " Save progress with:\n\n```console\n"
-            + update_item_command(task_reference, item.item_id, item.item_operation)
-            + "\n```\n\nThis command confirms the update and returns the worker "
-            "completion command."
-        )
     return _with_artifact_dependency(text, item, container_artifact)
 
 

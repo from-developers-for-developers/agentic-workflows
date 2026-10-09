@@ -16,7 +16,7 @@ the cursor moves back to it and the finished items from there on run again;
 their earlier records move to the run's execution history, so artifacts and
 streams stay readable. What the plan expanded at runtime is respected: a
 verification item belongs to the step it verifies, and a change that reaches
-per-item or per-child stages already expanded, or rewinds past a children
+per-child stages already expanded, or rewinds past a children
 step whose child tasks exist, is refused with the reason.
 """
 
@@ -321,12 +321,12 @@ def _splice(
     expanded = [
         item
         for item in template.items[first:]
-        if item.id not in present and item.item_template
+        if item.id not in present and item.child_template
     ]
     if expanded:
         return len(concrete), (
             f"the change reaches the stages of {_label(expanded[0])}, which "
-            "this run has already expanded for its items or children; finish "
+            "this run has already expanded for its children; finish "
             "the run with `--keep-plan`, or reset the task and start it again"
         )
     splice = len(concrete)

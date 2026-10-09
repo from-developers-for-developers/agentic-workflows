@@ -1636,7 +1636,9 @@ def test_invalid_document_paths_are_rejected(
         )
 
 
-def test_interactive_is_parsed_inherited_and_folded_into_items(tmp_path: Path) -> None:
+def test_interactive_is_parsed_inherited_and_kept_on_items_substeps(
+    tmp_path: Path,
+) -> None:
     configuration = load_configuration(
         _write(
             tmp_path / "ww.yaml",
@@ -1650,7 +1652,9 @@ workflows:
       - build: Build it.
       - manual_tests: Split the test cases into items.
         items:
-          interactive: true
+          steps:
+            - verify: Verify the cases with the operator.
+              interactive: true
         """,
         )
     )
@@ -1783,17 +1787,14 @@ def test_choices_are_labels_with_descriptions_and_need_an_interactive_step(
         )
 
 
-def test_interactive_page_is_declared_on_per_item_stages_only(tmp_path: Path) -> None:
-    configuration = load_configuration(
-        _write(
-            tmp_path / "ww.yaml",
-            """workflows:
-  - name: manual
-    steps:
-      - name: collect
-        description: Collect the cases.
-        items:
-          interactive: page
+def test_interactive_page_is_declared_inside_an_items_context_only(
+    tmp_path: Path,
+) -> None:
+    from ww.plan import compile_workflow_plan
+
+    path = _write(
+        tmp_path / "ww.yaml",
+        """workflows:
   - name: review
     steps:
       - name: review
@@ -1805,21 +1806,29 @@ def test_interactive_page_is_declared_on_per_item_stages_only(tmp_path: Path) ->
               interactive: page
             - name: report
               description: Report it.
+              interactive: page
 """,
-        )
     )
-    (collect,), (review,) = (flow.steps for flow in configuration.workflows[:2])
-    assert collect.items is not None and collect.items.steps[0].ui is True
+    configuration = load_configuration(path)
+    (review,) = configuration.workflows[0].steps
     assert review.items is not None
-    assert [stage.ui for stage in review.items.steps] == [True, False]
-    with pytest.raises(ConfigurationError, match="per-item stages only"):
-        load_configuration(
-            _write(
-                tmp_path / "ww.yaml",
-                "workflows:\n  - task: ~\n    steps:\n      - discuss: Talk.\n"
-                "        interactive: page\n",
-            )
-        )
+    assert [stage.ui for stage in review.items.steps] == [True, True]
+    plan = compile_workflow_plan(configuration, tmp_path, "review", "codex")
+    assert [item.name for item in plan.items if item.ui] == ["verify", "report"]
+    outside = _write(
+        tmp_path / "ww.yaml",
+        "workflows:\n  - task: ~\n    steps:\n      - discuss: Talk.\n"
+        "        interactive: page\n",
+    )
+    with pytest.raises(ConfigurationError, match="inside items.steps"):
+        compile_workflow_plan(load_configuration(outside), tmp_path, "task", "codex")
+    container = _write(
+        tmp_path / "ww.yaml",
+        "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
+        "        interactive: page\n        items: ~\n",
+    )
+    with pytest.raises(ConfigurationError, match="inside items.steps"):
+        compile_workflow_plan(load_configuration(container), tmp_path, "task", "codex")
     with pytest.raises(
         ConfigurationError, match="interactive must be true, false, or page"
     ):
@@ -1827,32 +1836,8 @@ def test_interactive_page_is_declared_on_per_item_stages_only(tmp_path: Path) ->
             _write(
                 tmp_path / "ww.yaml",
                 "workflows:\n  - task: ~\n    steps:\n      - collect: Collect.\n"
-                "        items:\n          interactive: yes please\n",
-            )
-        )
-
-
-def test_one_stage_per_item_flow_is_answered_on_the_page(tmp_path: Path) -> None:
-    with pytest.raises(
-        ConfigurationError, match="found interactive: page on verify, report"
-    ):
-        load_configuration(
-            _write(
-                tmp_path / "ww.yaml",
-                """workflows:
-  - name: review
-    steps:
-      - name: review
-        description: Review.
-        items:
-          steps:
-            - name: verify
-              description: Verify it.
-              interactive: page
-            - name: report
-              description: Report it.
-              interactive: page
-""",
+                "        items:\n          steps:\n            - verify: Verify.\n"
+                "              interactive: yes please\n",
             )
         )
 

@@ -104,12 +104,11 @@ always uses the filesystem one.
 
 ## Workflow modelling
 
-- A workflow has one item collection. Several `items` steps are sequential
-  passes over it; an `items` step inside another's per-item stages is rejected.
-  An `items` step cannot also declare `steps`, `item_phase`, or child tasks.
+- Each `items` container owns its own collection; nested collections are independent.
+  An outer step chooses one container kind: `steps`, `items`, or `children`.
 - Each started run executes from its saved plan snapshot. An edit to `ww.yaml`
   reaches a running task only when the operator takes it at the `plan_changed`
-  stop (`next --replan`); it cannot reach per-item or per-child stages the run
+  stop (`next --replan`); it cannot reach per-child stages the run
   already expanded, or rewind past a children step whose child tasks exist.
   For those, reset the task and start it again.
 - The operator page is a local page served only for as long as a wait is in

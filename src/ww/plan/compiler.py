@@ -42,6 +42,7 @@ from ww.variables import (
     DOCUMENTS_PREFIX,
     child_value_name,
     compile_variable_values,
+    validate_item_references,
 )
 from ww.workflow_config import (
     INIT_STEP_NAME,
@@ -181,14 +182,14 @@ class _CompilerPlanningContext(PlanningContext):
         *,
         parent: str,
         parent_ancestors: tuple[str, ...],
-        item_template: bool | None = None,
+        child_template: bool | None = None,
     ) -> PlanningScope:
         return replace(
             self.scope,
             parent=parent,
             ancestors=parent_ancestors,
-            item_template=(
-                self.scope.item_template if item_template is None else item_template
+            child_template=(
+                self.scope.child_template if child_template is None else child_template
             ),
         )
 
@@ -519,7 +520,7 @@ class WorkflowPlanCompiler:
         steps: tuple[StepDefinition, ...],
         parent: str | None,
         available_values: tuple[str, ...],
-        item_template: bool = False,
+        child_template: bool = False,
         parent_ancestors: tuple[str, ...] = (),
         parent_hints: ExecutionHints | None = None,
         annotations: ItemAnnotations = EMPTY_ITEM_ANNOTATIONS,
@@ -537,6 +538,9 @@ class WorkflowPlanCompiler:
                 action_hints = ExecutionHints.builtin(self.agent, settings)
             path = f"{parent}/{step.name}" if parent else step.name
             ancestors = (*parent_ancestors, parent) if parent else ()
+            step_annotations = annotations
+            if step.items is not None:
+                step_annotations = replace(annotations, item_context=path)
             scope = PlanningScope(
                 workflow,
                 step,
@@ -544,8 +548,8 @@ class WorkflowPlanCompiler:
                 parent,
                 ancestors,
                 values,
-                item_template,
-                annotations,
+                child_template,
+                step_annotations,
             )
             values = (
                 *values,
@@ -557,10 +561,10 @@ class WorkflowPlanCompiler:
                     parent,
                     "before_start",
                     values,
-                    item_template=item_template,
+                    child_template=child_template,
                     ancestors=ancestors,
                     boundary_hints=step_hints,
-                    annotations=annotations,
+                    annotations=step_annotations,
                 ),
             )
             scope = replace(scope, available_values=values)
@@ -576,7 +580,7 @@ class WorkflowPlanCompiler:
                     nested_steps,
                     nested_scope.parent,
                     nested_scope.available_values,
-                    nested_scope.item_template,
+                    nested_scope.child_template,
                     parent_ancestors=nested_scope.ancestors,
                     parent_hints=current_hints,
                     annotations=nested_scope.annotations,
@@ -596,7 +600,7 @@ class WorkflowPlanCompiler:
                         nested_scope,
                         annotations=replace(
                             region_annotations,
-                            item_pass=nested_scope.annotations.item_pass,
+                            item_context=nested_scope.annotations.item_context,
                         ),
                     ),
                 )
@@ -611,8 +615,8 @@ class WorkflowPlanCompiler:
                 current_scope: PlanningScope = scope,
                 current_ancestors: tuple[str, ...] = ancestors,
                 current_action_hints: ExecutionHints = action_hints,
-                current_item_template: bool = item_template,
-                current_annotations: ItemAnnotations = annotations,
+                current_child_template: bool = child_template,
+                current_annotations: ItemAnnotations = step_annotations,
             ) -> tuple[str, ...]:
                 return self._append_handler(
                     items,
@@ -624,7 +628,7 @@ class WorkflowPlanCompiler:
                     "step",
                     request.reference,
                     current_scope.available_values,
-                    item_template=current_item_template,
+                    child_template=current_child_template,
                     ancestors=current_ancestors,
                     boundary_hints=current_action_hints,
                     action_override=request.action,
@@ -662,10 +666,10 @@ class WorkflowPlanCompiler:
                     "before_complete",
                     (),
                     available_after,
-                    item_template=item_template,
+                    child_template=child_template,
                     ancestors=ancestors,
                     boundary_hints=step_hints,
-                    annotations=annotations,
+                    annotations=step_annotations,
                 ),
             )
             available_after = (
@@ -679,12 +683,41 @@ class WorkflowPlanCompiler:
                     "after_complete",
                     (),
                     available_after,
-                    item_template=item_template,
+                    child_template=child_template,
                     ancestors=ancestors,
                     boundary_hints=step_hints,
-                    annotations=annotations,
+                    annotations=step_annotations,
                 ),
             )
+            if step.items is not None or (step.child_steps and step.update_item):
+                boundary = StepDefinition(
+                    name=step.name,
+                    description="Complete the collection bookkeeping.",
+                    artifact=False,
+                    update_item=step.update_item if step.child_steps else (),
+                )
+                self._append_handler(
+                    items,
+                    workflow,
+                    boundary,
+                    path,
+                    parent,
+                    "after_complete",
+                    "items-boundary",
+                    boundary,
+                    available_after,
+                    child_template=child_template,
+                    ancestors=ancestors,
+                    boundary_hints=step_hints,
+                    annotations=replace(
+                        step_annotations,
+                        item_operation=(
+                            "complete_collection"
+                            if step.items is not None
+                            else "save_fields"
+                        ),
+                    ),
+                )
             if step.rules and (workflow.name, path) not in self._checked_steps:
                 raise ConfigurationError(
                     f"step {step.name!r} in workflow {workflow.name!r} declares "
@@ -703,7 +736,7 @@ class WorkflowPlanCompiler:
         phase: HookPhase,
         before_variables: tuple[str, ...],
         after_variables: tuple[str, ...] = (),
-        item_template: bool = False,
+        child_template: bool = False,
         ancestors: tuple[str, ...] = (),
         boundary_hints: ExecutionHints | None = None,
         annotations: ItemAnnotations = EMPTY_ITEM_ANNOTATIONS,
@@ -745,7 +778,7 @@ class WorkflowPlanCompiler:
                     hook.scope,
                     replace(hook.handler, on_failure=hook.on_failure),
                     (*available, *produced),
-                    item_template=item_template,
+                    child_template=child_template,
                     ancestors=ancestors,
                     boundary_hints=boundary_hints,
                     annotations=hook_annotations,
@@ -765,7 +798,7 @@ class WorkflowPlanCompiler:
         reference: HandlerDefinition,
         available_variables: tuple[str, ...],
         summary: bool = False,
-        item_template: bool = False,
+        child_template: bool = False,
         ancestors: tuple[str, ...] = (),
         boundary_hints: ExecutionHints | None = None,
         action_override: DefinedAction | None = None,
@@ -796,7 +829,7 @@ class WorkflowPlanCompiler:
                         member,
                         (*available_variables, *produced),
                         summary=summary,
-                        item_template=item_template,
+                        child_template=child_template,
                         ancestors=ancestors,
                         boundary_hints=member_hints,
                         annotations=annotations,
@@ -902,6 +935,24 @@ class WorkflowPlanCompiler:
             operation = WorkflowHandoff(
                 self.actions._interpolate(operation.target, allowed)
             )
+        prompt_texts: tuple[str, ...] = (
+            handler.description,
+            handler.on_failure_instruction or "",
+            profile_instruction or "",
+        )
+        if profile_path is not None:
+            prompt_texts += ((self.root / profile_path).read_text(),)
+        for text in prompt_texts:
+            validate_item_references(text, annotations.item_context)
+        if action is not None:
+            for text in actions.get(action.identifier).templates(action.payload):
+                validate_item_references(
+                    text, annotations.item_context, machine=owner == "ww"
+                )
+        if operation is not None and isinstance(operation, WorkflowHandoff):
+            validate_item_references(
+                operation.target, annotations.item_context, machine=True
+            )
         compiled_operation: PlanOperation
         if operation is not None:
             compiled_operation = operation
@@ -942,6 +993,7 @@ class WorkflowPlanCompiler:
                     ),
                     handler.description,
                     handler.on_failure_instruction,
+                    *prompt_texts,
                 )
                 if value is not None
                 for name in dependencies(value)
@@ -962,6 +1014,12 @@ class WorkflowPlanCompiler:
             )
             modes = self._step_modes(workflow, step, step_path)
             self._checked_steps.add((workflow.name, step_path))
+        for check in checks:
+            for text in actions.get("cli").templates(check.command):
+                validate_item_references(text, annotations.item_context, machine=True)
+        for mode in modes:
+            for text in mode.description:
+                validate_item_references(text, annotations.item_context)
         ordinal = (
             sum(
                 1
@@ -973,6 +1031,18 @@ class WorkflowPlanCompiler:
             )
             + 1
         )
+        if (
+            step.ui
+            and phase == "step"
+            and (
+                annotations.item_context is None
+                or annotations.item_operation == "collect"
+            )
+        ):
+            raise ConfigurationError(
+                f"{workflow.name}/{step_path}: interactive: page answers the "
+                "records of an items context; declare it inside items.steps"
+            )
         item_id = f"{workflow.name}:{step_path}:{phase}:{source}:{ordinal}"
         items.append(
             PlanItem(
@@ -1018,10 +1088,8 @@ class WorkflowPlanCompiler:
                 workdir=workdir,
                 summary=summary,
                 item_operation=annotations.item_operation,
-                item_template=item_template,
-                item_pass=annotations.item_pass,
-                item_collect_only=annotations.item_collect_only,
-                item_assignment=annotations.item_assignment or "per_step",
+                child_template=child_template,
+                item_context=annotations.item_context,
                 split_instruction=annotations.split_instruction,
                 shared_items=annotations.shared_items,
                 item_identity=annotations.item_identity,
@@ -1047,6 +1115,33 @@ class WorkflowPlanCompiler:
                 modes=modes,
             )
         )
+        if handler.update_item and owner == "ww":
+            automatic = items[-1]
+            items.append(
+                replace(
+                    automatic,
+                    id=automatic.id + ":item-fields",
+                    position=len(items) + 1,
+                    name=automatic.name + "-item-fields",
+                    description="Record required item fields.",
+                    operation=PlannedAction(
+                        "prompt", Prompt("Record required item fields.")
+                    ),
+                    owner="agent",
+                    execution="agent_instruction",
+                    item_operation="save_fields",
+                    source="items-input",
+                    provide=(),
+                    save_metadata=(),
+                    outputs=(),
+                    dependencies=(),
+                    requires_agent_input=False,
+                    artifact=False,
+                    checks=(),
+                    rules=(),
+                    interactive=False,
+                )
+            )
         return (
             *(item.name for item in handler.provide),
             *handler.outputs,
@@ -1328,15 +1423,11 @@ def _merge_annotations(
             if emitted.assessment_outcome is not None
             else inherited.assessment_outcome
         ),
-        item_assignment=(
-            emitted.item_assignment
-            if emitted.item_assignment is not None
-            else inherited.item_assignment
+        item_context=(
+            emitted.item_context
+            if emitted.item_context is not None
+            else inherited.item_context
         ),
-        item_pass=(
-            emitted.item_pass if emitted.item_pass is not None else inherited.item_pass
-        ),
-        item_collect_only=emitted.item_collect_only,
         child_stage=(
             emitted.child_stage
             if emitted.child_stage is not None

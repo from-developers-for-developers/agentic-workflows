@@ -115,8 +115,7 @@ def item_variable_values(
     values = {
         ITEM_ID: work.id,
         ITEM_TEXT: work.item,
-        "ww.item.processed_item": work.processed_item,
-        "ww.item.proposed_solution": work.proposed_solution,
+        "ww.item.notes": work.notes,
         "ww.item.actual_solution": work.actual_solution,
         "ww.item.resolved": "true" if work.resolved else "false",
         "ww.item.reported": "true" if work.reported else "false",
@@ -284,3 +283,47 @@ def item_workspace_values(
         root, workdir, working_directory, values.get(PROJECT_DIR) or None
     )
     return directory, {**values, TASK_WORKSPACE_DIR: str(directory)}
+
+
+def validate_item_references(
+    text: str, context: str | None, *, machine: bool = False
+) -> tuple[str, ...]:
+    """Validate collection field references without choosing a work item."""
+    import re
+
+    from ww.errors import ConfigurationError
+    from ww.interpolation import dependencies
+    from ww.items import FIELD_NAME
+
+    names = tuple(
+        dict.fromkeys(
+            name for name in dependencies(text) if name.startswith(ITEM_PREFIX)
+        )
+    )
+    tokens = re.findall(r"\{\{\s*ww\.item[^}]*\}\}", text)
+    if tokens and len(tokens) > sum(text.count("{{" + name + "}}") for name in names):
+        raise ConfigurationError("malformed item reference; use {{ww.item.<field>}}")
+    for name in names:
+        field = name.removeprefix(ITEM_PREFIX)
+        if field.startswith("field."):
+            valid = FIELD_NAME.fullmatch(field.removeprefix("field.")) is not None
+        else:
+            valid = field in {
+                "id",
+                "text",
+                "resolved",
+                "reported",
+                "actual_solution",
+                "reference_to_id",
+                "notes",
+            }
+        if not valid:
+            raise ConfigurationError(f"unknown item field reference: {name}")
+    if names and context is None:
+        raise ConfigurationError("item reference requires an enclosing items context")
+    if names and machine:
+        raise ConfigurationError(
+            "machine inputs cannot use collection item references; read explicit "
+            "IDs and process the collection"
+        )
+    return names

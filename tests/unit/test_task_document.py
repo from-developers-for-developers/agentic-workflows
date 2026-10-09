@@ -23,8 +23,12 @@ from ww.execution_models import (
 from ww.extensions import ExtensionRegistry
 from ww.items import WorkItem
 from ww.plan import PlanItem, WorkflowPlan, compile_workflow_plan
-from ww.storage_adapters.task_document import decode_task_document, encode_task_document
-from ww.transitions import materialize_child_plan, materialize_item_plan
+from ww.storage_adapters.task_document import (
+    TASK_STATE_SCHEMA_VERSION,
+    decode_task_document,
+    encode_task_document,
+)
+from ww.transitions import materialize_child_plan
 
 
 def _run(
@@ -231,7 +235,7 @@ def test_state_without_omitted_required_fields_decodes() -> None:
     assert decoded[0][0].state.active_item_id is None
 
 
-@pytest.mark.parametrize("version", [0, 2, True, 1.0, "1", None])
+@pytest.mark.parametrize("version", [0, 1, 3, True, 2.0, "2", None])
 def test_schema_version_must_be_the_current_strict_integer(version: object) -> None:
     encoded = encode_task_document("TASK-1", (_run(),), None, 1, {})
     encoded["schema_version"] = version
@@ -250,7 +254,7 @@ def test_children_round_trip_with_fields_and_failed_status() -> None:
     encoded = encode_task_document("TASK-1", (run,), None, 1, {})
     decoded, _, _, _ = decode_task_document(encoded, "TASK-1")
 
-    assert encoded["schema_version"] == 1
+    assert encoded["schema_version"] == TASK_STATE_SCHEMA_VERSION
     assert "fields" not in encoded["runs"][0]["children"][1]
     assert decoded[0].children == children
 
@@ -261,8 +265,7 @@ _EXPANDED_WORKFLOW = """workflows:
       - collect: Split the requirements into stories.
         items:
           steps:
-            - resolve: Resolve {{ww.item.id}} with tests and a minimal change.
-              item_phase: resolve
+            - resolve: Resolve the stories with tests and a minimal change.
             - review: Review the change.
 
               steps:
@@ -286,7 +289,7 @@ def _clock() -> str:
 
 
 def _expanded_run(tmp_path: Path) -> TaskRunAggregate:
-    """A run whose per-item and per-child stages are expanded."""
+    """A run whose per-child stages are expanded; items never expand."""
     (tmp_path / "ww.json").write_text(
         '{"extensions": {"ww/git": {}}}', encoding="utf-8"
     )
@@ -311,10 +314,6 @@ def _expanded_run(tmp_path: Path) -> TaskRunAggregate:
         ChildTask("A", "Slice A", "child", "TASK-1/A"),
         ChildTask("B", "Slice B", "child", "TASK-1/B"),
     )
-    collector = next(
-        item for item in snapshot.plan.items if item.item_operation == "collect"
-    )
-    state, snapshot = materialize_item_plan(state, snapshot, collector, items, _clock)
     state, snapshot = materialize_child_plan(state, snapshot, children, _clock)
     return TaskRunAggregate(
         "01-parent", "parent", snapshot, state, items=items, children=children
@@ -326,10 +325,9 @@ def test_expanded_plan_items_are_stored_as_a_diff_against_their_template(
 ) -> None:
     run = _expanded_run(tmp_path)
     plan_items = run.snapshot.plan.items
-    assert any(item.item_id == "story-3" for item in plan_items)
     assert any(item.child_number == 2 for item in plan_items)
-    assert any(item.kind == "prompt" and item.item_id for item in plan_items)
-    assert sum(item.kind == "extension" for item in plan_items) == 3
+    assert sum(item.kind == "extension" for item in plan_items) == 1
+    assert sum(item.item_context == "collect" for item in plan_items) == 5
 
     encoded = encode_task_document("TASK-1", (run,), None, 1, {})
     decoded, _, _, _ = decode_task_document(encoded, "TASK-1")
@@ -344,11 +342,10 @@ def test_expanded_plan_items_are_stored_as_a_diff_against_their_template(
         assert item["template"] in template_ids
         assert "description" not in item
         assert "operation" not in item or item["operation"]["type"] != "action"
-    resolve = next(
-        item for item in raw["plan"]["items"] if item["id"].endswith(":item:story-2")
+    land = next(
+        item for item in raw["plan"]["items"] if item["id"].endswith(":child:2")
     )
-    assert resolve["item_template"] is False
-    assert resolve["item_id"] == "story-2"
+    assert land["child_template"] is False
 
 
 def test_a_plan_without_a_template_plan_is_stored_in_full() -> None:

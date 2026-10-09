@@ -12,12 +12,10 @@ from ww.amendments import Amendment
 from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
-    ItemSpan,
     active_assignment,
     assignment_at,
     completion_window,
     input_only,
-    item_span,
     selection_item,
 )
 from ww.config_files import WORKFLOWS_FILE
@@ -43,7 +41,8 @@ from ww.execution_models import (
 )
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
-from ww.item_passes import item_collection
+from ww.item_collections import item_collection
+from ww.items import WorkItem
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.project_config import load_project_config
 from ww.runtimes import requested_setting, runtime_instruction
@@ -177,7 +176,10 @@ class InstructionBuilder:
         state: ExecutionState,
         snapshot: PlanSnapshot,
         caller_role: CallerRole | None = None,
+        *,
+        items: tuple[WorkItem, ...] | None = None,
     ) -> Instruction:
+        """The page for ``state``; ``items`` come from the caller's read when given."""
         plan = snapshot.plan
         item = plan.items[state.cursor] if state.cursor < len(plan.items) else None
         record = (
@@ -215,6 +217,25 @@ class InstructionBuilder:
             or needs_repair(state)
         )
         built = self._build(state, snapshot)
+        if item is not None and item.item_context is not None:
+            from ww.instructions.collection import collection_guidance
+
+            built = replace(
+                built,
+                action_text=(built.action_text or "")
+                + collection_guidance(
+                    state,
+                    plan,
+                    item,
+                    (
+                        items
+                        if items is not None
+                        else self.tasks.read_items(state.task_id, state.run_id)
+                    ),
+                    self.root,
+                    caller_role,
+                ),
+            )
         choosing = pending_assessment(state, plan)
         return replace(
             built,
@@ -305,11 +326,8 @@ class InstructionBuilder:
             control=control,
             operator_reason=operator_reason(state, plan),
             result_saved=(
-                # A pass gate stops before the next step: there is no result.
-                None
-                if state.failure_kind == "pass_incomplete"
-                # A rejected or held completion keeps only a draft of the result.
-                else False
+                # A rejected or held completion keeps only a draft result.
+                False
                 if state.failure_kind is not None
                 else _result_saved(state, plan)
                 if state.status in {"failed", "interrupted"} or automatic_running
@@ -631,7 +649,7 @@ class InstructionBuilder:
             ConversationEntry(entry.at, entry.speaker, entry.text)
             for entry in self.interactions.entries(state.task_id)
             if (entry.run_id, entry.step, entry.item_id)
-            == (state.run_id, item.name, item.item_id)
+            == (state.run_id, item.name, None)
         )
 
     def _current_child(self, state: ExecutionState, item: PlanItem) -> str:
@@ -698,8 +716,6 @@ class InstructionBuilder:
         state: ExecutionState,
         plan: WorkflowPlan,
         item: PlanItem,
-        *,
-        continues_assignment: bool = False,
     ) -> _RequirementsPage:
         """The requirements and amendments an item's page carries.
 
@@ -709,13 +725,17 @@ class InstructionBuilder:
         Under ``auto`` the manager is one session, so the same rule holds for
         its own pages, and every delegated worker assignment is a fresh one:
         its first page prints them (unless ``pages.worker_requirements`` is
-        ``pointer``) and the later stages of that assignment point.
+        ``pointer``) and the later steps of that assignment point.
         The amendments are short and print on every page.
         """
         if state.workflow_runtime == "auto" and item.role == "worker":
+            assignment = _current_assignment(state, plan, item)
+            span = plan.items[assignment.start : assignment.stop] if assignment else ()
+            opening = next((entry for entry in span if entry.owner == "agent"), None)
             return _RequirementsPage(
                 self.requirements(state, plan),
-                not continues_assignment and self.worker_requirements() == "full",
+                (opening is None or item.id == opening.id)
+                and self.worker_requirements() == "full",
                 requirements_command(state.task_id),
                 self.tasks.read_amendments(state.task_id),
             )
@@ -787,14 +807,7 @@ class InstructionBuilder:
             ),
             operation_id=record.operation_id if record else None,
             recovery_commands=(
-                ()
-                if current is None
-                # A pass gate is passed by recording the items, never skipped.
-                else (
-                    RecoveryCommand("retry", next_command(state.task_id, retry=True)),
-                )
-                if state.failure_kind == "pass_incomplete"
-                else recovery_commands(state.task_id)
+                () if current is None else recovery_commands(state.task_id)
             ),
             # At the fix limit the operator decides on what the checks said.
             fix_required=(
@@ -940,8 +953,6 @@ class InstructionBuilder:
             plan, state.cursor, assignment.stop if assignment else None
         )
         selection = _Selection.effective(record, state)
-        span = _span(plan, assignment)
-        span_ids = tuple(stage.id for stage in span.stages) if span else ()
         role: CallerRole = "manager" if state.workflow_runtime == "auto" else "worker"
         # Under ``auto`` the manager performs its own step and completes it
         # as the manager; a worker's completion of it is refused.
@@ -977,9 +988,12 @@ class InstructionBuilder:
                 assignment=worker_token(state),
             )
 
-        later_pass = _later_item_pass(plan, item)
         # A collection step's identity and unique fields are the collection's.
-        collection = item_collection(plan) if item.item_operation == "collect" else None
+        collection = (
+            item_collection(plan, item.item_context)
+            if item.item_operation == "collect"
+            else None
+        )
         workspace, values = item_workspace_values(
             self.root,
             item.workdir,
@@ -987,12 +1001,7 @@ class InstructionBuilder:
             {**dict(state.workflow_values), **self.task_values(state, plan)},
         )
         requirements = (
-            self._requirements_page(
-                state,
-                plan,
-                item,
-                continues_assignment=item.id in span_ids[1:],
-            )
+            self._requirements_page(state, plan, item)
             if item.step != INIT_STEP_NAME
             else _RequirementsPage()
         )
@@ -1007,7 +1016,6 @@ class InstructionBuilder:
                 },
                 state.task_id,
                 self._container_artifact(state, plan, item),
-                later_pass=later_pass,
             )
             + self._current_child(state, item),
             required_values=required,
@@ -1051,10 +1059,10 @@ class InstructionBuilder:
             operator_paused=state.operator_paused,
             conversation=(self._conversation(state, item) if item.interactive else ()),
             ui=item.ui,
-            shared_items=item.shared_items and not later_pass,
+            shared_items=item.shared_items,
             stored_items=(
                 self.tasks.read_items(state.task_id, state.run_id)
-                if item.shared_items and not later_pass
+                if item.shared_items
                 else ()
             ),
             required_item_fields=item.update_item,
@@ -1078,10 +1086,6 @@ class InstructionBuilder:
             # A task still in the root needs no ``cd``; an item that chose
             # its own directory always names it.
             working_directory=str(workspace) if workspace is not None else None,
-            assignment_scope=(
-                span.to_dict() if span and item.id == span_ids[0] else None
-            ),
-            continues_assignment=item.id in span_ids[1:],
             rules=rule_lines(item, record),
             modes=item.modes,
             fix_required=fix_required(item, record),
@@ -1356,13 +1360,6 @@ def _completed_items(
     return tuple(entry for entry in covered if entry.id in done)
 
 
-def _span(plan: WorkflowPlan, assignment: Assignment | None) -> ItemSpan | None:
-    """The several item stages one worker performs in this assignment."""
-    if assignment is None:
-        return None
-    return item_span(plan, assignment)
-
-
 def _same_handler(found: PlanItem, item: PlanItem) -> bool:
     """Whether two plan items run the same handler, placed anywhere."""
     if item.registered_handler is not None:
@@ -1440,7 +1437,6 @@ def _assignment_preview(
                     "in this session."
                 ),
             }
-        span = _span(plan, assignment)
         items = plan.items[assignment.start : assignment.stop]
         return {
             "first_item_id": assignment.first_item_id,
@@ -1464,7 +1460,6 @@ def _assignment_preview(
                 for entry in items
                 if entry.owner == "ww" and not entry.requires_agent_input
             ],
-            **({"item_scope": span.to_dict()} if isinstance(span, ItemSpan) else {}),
         }
     if item is not None and is_coordinator(item):
         return {
@@ -1649,11 +1644,3 @@ def _bootstrap_modes(request: dict[str, object]) -> tuple[PlannedMode, ...]:
         PlannedMode.from_dict(entry, f"bootstrap request step_modes[{index}]")
         for index, entry in enumerate(entries)
     )
-
-
-def _later_item_pass(plan: WorkflowPlan, item: PlanItem) -> bool:
-    """Whether ``item`` collects for an ``items`` pass after the workflow's first."""
-    if item.item_operation != "collect" or item.child_operation is not None:
-        return False
-    first = item_collection(plan)
-    return first is not None and item.item_pass != first.item_pass

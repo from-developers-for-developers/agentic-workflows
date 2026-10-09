@@ -1496,7 +1496,9 @@ def _documents(context: _Context) -> _Outcome:
 
 
 def _items(context: _Context) -> _Outcome:
-    items = context.service.items(context.task_id, context.args.run_id)
+    items = context.service.items(
+        context.task_id, context.args.run_id, context.args.context
+    )
     return _Outcome(_json([item.to_dict() for item in items]))
 
 
@@ -1506,9 +1508,15 @@ def _item(context: _Context) -> _Outcome:
         raise StateError("item takes --id or --by NAME=VALUE")
     if args.by is not None:
         ((name, value),) = _named_values([args.by], "--by")
-        item = context.service.find_item(context.task_id, name, value, args.run_id)
+        item = context.service.find_item(
+            context.task_id, name, value, args.run_id, args.context
+        )
     else:
-        item = context.service.item(context.task_id, args.item_id, args.run_id)
+        item = context.service.item(
+            context.task_id, args.item_id, args.run_id, args.context
+        )
+    if args.get_field is not None:
+        return _Outcome(_json(item.get(args.get_field)))
     return _Outcome(_json(item.to_dict()))
 
 
@@ -1527,6 +1535,10 @@ def _add_item(context: _Context) -> _Outcome:
             reference_to_id=args.refers_to,
             fields=_named_values(args.field, "--field"),
         ),
+        context=args.context,
+        run_id=args.run_id,
+        caller_role=args.role,
+        assignment=args.assignment,
     )
     return _Outcome(_json(item.to_dict()))
 
@@ -1537,8 +1549,8 @@ def _update_item(context: _Context) -> _Outcome:
         name: value
         for name, value in (
             ("item", args.text),
-            ("processed_item", args.processed_item),
-            ("proposed_solution", args.proposed_solution),
+            ("notes", args.notes),
+            ("reference_to_id", args.reference_to_id),
             ("actual_solution", args.actual_solution),
             ("resolved", args.resolved),
             ("reported", args.reported),
@@ -1548,16 +1560,58 @@ def _update_item(context: _Context) -> _Outcome:
     if args.field:
         changes["fields"] = dict(_named_values(args.field, "--field"))
     result = context.service.update_item(
-        context.task_id, args.item_id, caller_role=args.role, **changes
+        context.task_id,
+        args.item_id,
+        caller_role=args.role,
+        context=args.context,
+        run_id=args.run_id,
+        assignment=args.assignment,
+        **changes,
     )
     return _Outcome(
         render_item_update(result, args.json_output) + "\n", None, context.task_id
     )
 
 
+def _resolve_item(context: _Context) -> _Outcome:
+    args = context.args
+    result = context.service.resolve_item(
+        context.task_id,
+        args.item_id,
+        context=args.context,
+        run_id=args.run_id,
+        caller_role=args.role,
+        assignment=args.assignment,
+        reopen=args.reopen,
+        actual_solution=args.actual_solution,
+    )
+    return _Outcome(_json(result.item.to_dict()))
+
+
+def _report_item(context: _Context) -> _Outcome:
+    args = context.args
+    result = context.service.report_item(
+        context.task_id,
+        args.item_id,
+        context=args.context,
+        run_id=args.run_id,
+        caller_role=args.role,
+        assignment=args.assignment,
+        reopen=args.reopen,
+    )
+    return _Outcome(_json(result.item.to_dict()))
+
+
 def _remove_item(context: _Context) -> _Outcome:
     args = context.args
-    item = context.service.remove_item(context.task_id, args.item_id)
+    item = context.service.remove_item(
+        context.task_id,
+        args.item_id,
+        context=args.context,
+        run_id=args.run_id,
+        caller_role=args.role,
+        assignment=args.assignment,
+    )
     return _Outcome(_json(item.to_dict()), None, context.task_id)
 
 
@@ -1703,6 +1757,8 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "artifacts": _artifacts,
     "add-item": _add_item,
     "update-item": _update_item,
+    "resolve-item": _resolve_item,
+    "report-item": _report_item,
     "remove-item": _remove_item,
     "add-child": _add_child,
     "update-child": _update_child,

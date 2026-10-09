@@ -20,21 +20,24 @@ Its full result, when you need more: `<root>/.ww/tasks/TASK-1/runs/01-task/steps
 
 ### Work instruction
 
-Process it.
+Process the comments; reply in the thread of {{ww.item.field.thread}}.
 
-Active item: `comment-1`. Inspect it with `./ww item TASK-1 --id comment-1`. Save progress with:
-
-```console
-./ww update-item TASK-1 --id comment-1 --processed-item="<agent-friendly analysis>"
-```
-
-This command confirms the update and returns the worker completion command.
+You are working within items context `collect` (1 item).
+Choose how to group and perform the work.
+List: `./ww items TASK-1 --context collect --run 01-task`.
+Inspect: `./ww item TASK-1 --context collect --run 01-task --id <item-id>`.
+Resolve: `./ww resolve-item TASK-1 --context collect --run 01-task --role worker --id <item-id>`.
+After reporting succeeds: `./ww report-item TASK-1 --context collect --run 01-task --role worker --id <item-id>`.
+Every item must be resolved and reported before this context completes. These commands only record transitions; they do not fix or send anything.
+Pending bookkeeping: comment-1: field.thread.
+For every item, save `thread` with `./ww update-item TASK-1 --context collect --run 01-task --role worker --id <item-id> --field thread=<value>`.
+`{{ww.item.field.thread}}` is a field reference, not a scalar substitution. Choose an ID and look it up with `./ww item TASK-1 --context collect --run 01-task --id <item-id> --get field.thread`.
 
 ### Next steps
 
 Leave to them the work they cover:
 
-- collect/item-1/resolve
+- collect/resolve
 
 ### Previous artifacts
 

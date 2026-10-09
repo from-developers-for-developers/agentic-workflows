@@ -103,3 +103,8 @@ branch.
    configuration another way.
 4. Run `./ww lint`, tell the operator which files changed, and that shared
    ones are left uncommitted for them to review and commit.
+
+For items, place normal work in `items.steps`; it runs once over the collection.
+Use item-field saves for every record and explicit resolve/report transitions.
+Do not author item phases or assignment policies. Bare items have an empty body
+and still require all obligations completed at their container boundary.

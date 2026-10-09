@@ -555,12 +555,8 @@ class Instruction:
     selected_model: str | None = None
     selected_reasoning: str | None = None
     assignment_preview: dict[str, object] | None = None
-    # The first stage of a multi-stage item assignment describes its scope;
-    # later stages of the same assignment are rendered compactly.
-    assignment_scope: dict[str, object] | None = None
     # Agent-owned explicit steps covered by this worker assignment.
     assignment_explicit_steps: tuple[str, ...] = ()
-    continues_assignment: bool = False
     # The assignment the current item belongs to, in the ``auto`` runtime: the
     # step that drives worker selection, every item it covers in plan order,
     # and whether the current item is a later one the worker already holds.
@@ -712,8 +708,6 @@ class Instruction:
             "selected_model": self.selected_model,
             "selected_reasoning": self.selected_reasoning,
             "assignment_preview": self.assignment_preview,
-            "assignment_scope": self.assignment_scope,
-            "continues_assignment": self.continues_assignment,
             "assignment_step": self.assignment_step,
             "assignment_items": list(self.assignment_items),
             "assignment_automatic_items": list(self.assignment_automatic_items),

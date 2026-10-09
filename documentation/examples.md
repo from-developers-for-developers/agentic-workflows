@@ -60,74 +60,55 @@ workflows:
           - rework: More changes are needed; the operator says which.
 ```
 
-## 3. One item per piece with `items: ~`
+## 3. Implementation checkpoints in an items context
 
-`items: ~` is the whole item lifecycle in one line: the step's own work is to
-split the task into items with `add-item`, and every item then gets one stage
-that analyzes, resolves and reports it. A string instead of `~` gives the
-splitting guidance. Use it when each piece is independent and one pass over
-it is enough.
+Register one checkpoint per obligation; implement related changes together. Even
+an empty collection runs every authored substep.
 
 ```yaml
 workflows:
   - name: migrate-calls
     steps:
-      - collect: Find every file that still calls `old_api`.
-        items: One item per file, with the file path as its ID.
+      - collect: Find every file that still calls `old_api`; register one checkpoint per file.
+        items:
+          description: Preserve each file as an accountable checkpoint.
+          steps:
+            - develop: Migrate the calls and verify the changes; resolve every checkpoint.
+            - report: Summarize each result and mark each checkpoint reported.
       - summarize: Summarize what changed.
 ```
 
-## 4. One analysis, one fix, one report per comment
+## 4. Related PR comments handled together
 
-Review comments often share causes, so they are analyzed and fixed together
-once, while every comment is still checked and answered on its own. The
-workflow has one item collection and several passes over it; the ordinary
-steps between the passes run once. The last pass reports each comment with the
-project's own script (not part of ww; `scripts/reply-to-comment.py` posts or
-updates one reply and prints the reply ID). ww passes values to it as
-arguments, saves the printed ID into the item, and marks the item reported
-once the command succeeds. `identity` and `unique` make the comment ID the
-item's identity, so no comment becomes two items.
+Each source comment keeps its own ID and outcome, even when one shared fix
+addresses several. The reply step uses item lookup references to locate the
+original thread. Report only after confirming the reply succeeded; after an
+interruption inspect the remote thread before retrying.
 
 ```yaml
 workflows:
   - name: review-comments
     steps:
-      - collect: Record one item per review comment, using its source ID.
+      - collect: Register one item per original comment.
         items:
           identity: comment_id
           unique: [comment_id, reply_id]
-          steps: []
-      - analyze-together: >-
-          Analyze all collected comments together and record each analysis
-          with `update-item`.
-      - confirm-analysis: Reuse the collected items.
-        items:
           steps:
-            - analyze: Check the shared analysis for this comment; fill gaps.
-              item_phase: analyze
-      - fix-together: >-
-          Implement and verify the fixes for all analyzed comments. Record the
-          result of each with `update-item --actual-solution ... --resolved=true`.
-      - report: Reuse the collected items.
-        items:
-          steps:
-            - reply: ~
-              item_phase: report
-              argv:
-                - python3
-                - scripts/reply-to-comment.py
-                - "{{ww.item.field.comment_id}}"
-                - "{{ww.item.actual_solution}}"
-                - "{{ww.item.field.reply_id}}"
+            - bootstrap: Verify source IDs.
               saves:
-                - item.field.reply_id: The reply ID the script printed.
+                - item.field.comment_id: Original source ID for each item.
+            - develop: Implement shared fixes and resolve each original comment independently.
+            - reply: >-
+                Look up {{ww.item.field.comment_id}} and report the outcome
+                in that thread. Mark reported only after the reply succeeds.
+              saves:
+                - item.field.reply_id: Confirmed reply ID for each item.
 ```
 
-Re-running the script with a saved `reply_id` must update that reply instead
-of creating another: if ww stops after the remote call but before it saves the
-result, the next attempt runs the command again, and the script owns that
-idempotency.
+Manual test cases use the same structure: register the cases, gather outcomes in
+an ordinary interactive substep, then record each disposition and report it.
+A resolved test case may have failed; acceptance checks decide whether the
+workflow's requested outcome was achieved.
 
 ## 5. Assessments
 

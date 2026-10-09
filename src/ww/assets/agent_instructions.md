@@ -43,6 +43,7 @@ To continue a task, run `./ww instruction <task-id> --role manager` (a resuming 
   recovery option; never reset unasked. A standing
   operator authorization for routine repairs (dependency installation, formatting, retries) covers
   such stops; ask only for a material decision.
+- In an items context, resolve and report each item explicitly; report only after its outcome was sent.
 - Relay feedback-deduction suggestions after completion; rule approval and pruning are separate follow-ups.
 - When a start page says ww collects debug or feedback info, tell the operator once, then never
   mention it again; never offer to send it.

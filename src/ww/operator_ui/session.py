@@ -26,7 +26,7 @@ from .server import (
     serve_operator_page,
 )
 from .sheet import Answer, AnswerSheet
-from .view import SheetRow, sheet_rows, ui_stage
+from .view import SheetRow, sheet_rows
 
 
 @dataclass(frozen=True)
@@ -38,8 +38,8 @@ class OperatorPageResult:
     answered: int
     total: int
     paused: bool
-    # Documents the applied stages promised to update: ww completed those
-    # stages, so recording the answers in the documents is the agent's to do.
+    # Documents the answered step promises to update: ww cannot write them, so
+    # recording the answers in the documents is the agent's to do.
     documents: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
@@ -62,9 +62,9 @@ class OperatorPageResult:
             None: "Nothing was waited for.",
         }[self.outcome]
         applied = (
-            "Applied the answers of " + ", ".join(self.applied) + ": each stage "
-            "is completed, its item resolved with the answer as the actual "
-            "solution, and its artifact written."
+            "Recorded the answers of " + ", ".join(self.applied) + " as input. "
+            "The agent must apply fields and explicit resolution/reporting "
+            "transitions, then complete the step."
             if self.applied
             else "Nothing was applied."
         )
@@ -88,7 +88,7 @@ class OperatorPageResult:
             lines.extend(
                 [
                     "",
-                    "The applied stages promised to update these documents, and "
+                    "The step promises to update these documents, and "
                     "ww cannot write them: record the operator's answers for "
                     + ", ".join(self.applied)
                     + " in them now, before anything else.",
@@ -108,7 +108,7 @@ class _Session:
         self.caller_role = caller_role
         state, _snapshot = service.load(task_id)
         self.sheet = AnswerSheet(service.storage, task_id, state.created_at)
-        # The documents the applied stages promised to update, in order.
+        # The documents the answered step promises to update, in order.
         self.documents: dict[str, None] = {}
 
     # -- reading ---------------------------------------------------------
@@ -123,9 +123,14 @@ class _Session:
             snapshot.plan,
             state,
             self.service.tasks.read_items(self.task_id, state.run_id),
-            self.sheet.read(state.run_id),
+            self.sheet.read(self._sheet_scope(state, snapshot)),
             self.service.interactions.entries(self.task_id),
         )
+
+    @staticmethod
+    def _sheet_scope(state: ExecutionState, snapshot: PlanSnapshot) -> str:
+        current = snapshot.plan.items[state.cursor]
+        return f"{state.run_id}:{current.id}"
 
     def current_ui_stage(
         self, state: ExecutionState, snapshot: PlanSnapshot
@@ -139,7 +144,7 @@ class _Session:
         if item.id != state.active_item_id or not item.ui:
             raise StateError(
                 f"{item.name!r} is not answered on the operator page; the page "
-                "serves per-item stages declared with interactive: page"
+                "serves items substeps declared with interactive: page"
             )
         if record.interaction_ended:
             raise StateError(
@@ -152,13 +157,14 @@ class _Session:
         plan = snapshot.plan
         current = plan.items[state.cursor] if state.cursor < len(plan.items) else None
         rows = self.rows(state, snapshot)
-        stage = ui_stage(plan)
+        stage = current if current and current.ui else None
         return {
             "task_id": self.task_id,
             "workflow": state.workflow,
             "run_id": state.run_id,
             "stage": stage.name if stage else None,
-            "current_item_id": current.item_id if current and current.ui else None,
+            "current_item_id": None,
+            "context": current.item_context if current else None,
             "paused": state.operator_paused,
             "choices": [choice.to_dict() for choice in stage.choices] if stage else [],
             "items": [row.to_dict() for row in rows],
@@ -217,7 +223,11 @@ class _Session:
                 raise StateError("write a comment")
             else:
                 choice = None
-            self.sheet.record(state.run_id, item_id, Answer(choice, comment, _now()))
+            self.sheet.record(
+                self._sheet_scope(state, snapshot),
+                item_id,
+                Answer(choice, comment, _now()),
+            )
             complete = all(
                 row.processed or row.pending or row.work.id == item_id for row in rows
             )
@@ -235,87 +245,29 @@ class _Session:
     # -- applying ----------------------------------------------------------
 
     def apply_pending(self) -> tuple[str, ...]:
-        """Apply the sheet in plan order through the public service calls.
-
-        Stops at the first ``ui`` stage whose item has no answer, at anything
-        that is not a ``ui`` stage, and wherever ww needs the agent.
-        """
-        applied: list[str] = []
-        while True:
-            state, snapshot = self.load()
-            plan = snapshot.plan
-            if state.status not in ("pending", "in_progress") or state.cursor >= len(
-                plan.items
-            ):
-                break
-            item = plan.items[state.cursor]
-            record = state.item_executions[state.cursor]
-            if not item.ui or item.item_id is None:
-                break
-            if record.status == "pending" and state.active_item_id is None:
-                # ``next`` is the manager's command in every runtime; the
-                # session acts for whoever holds the stage.
-                self.service.next(
-                    self.task_id,
-                    caller_role="manager" if self.caller_role else None,
-                )
-                continue
-            if record.status != "in_progress" or item.id != state.active_item_id:
-                break
-            self._drop_stale(state, snapshot)
-            pending = self.sheet.read(state.run_id).get(item.item_id)
-            if pending is None:
-                break
-            self._apply(state, item, pending)
-            applied.append(item.item_id)
-        return tuple(applied)
-
-    def _drop_stale(self, state: ExecutionState, snapshot: PlanSnapshot) -> None:
-        """Forget answers whose stage a cut wait had already completed."""
-        for row in self.rows(state, snapshot):
-            if row.processed and row.pending is not None:
-                self.sheet.remove(state.run_id, row.work.id)
-
-    def _apply(self, state: ExecutionState, stage: PlanItem, answer: Answer) -> None:
-        item_id = str(stage.item_id)
+        """Record the completed answer sheet as input; the agent owns outcomes."""
+        state, snapshot = self.load()
+        if state.cursor >= len(snapshot.plan.items):
+            return ()
+        current = snapshot.plan.items[state.cursor]
+        record = state.item_executions[state.cursor]
+        if not current.ui or record.interaction_ended:
+            return ()
+        rows = self.rows(state, snapshot)
+        if not rows or not all(row.pending is not None for row in rows):
+            return ()
         page = self.service.instruction(self.task_id, caller_role=self.caller_role)
         for document in page.documents:
             self.documents[document.path] = None
+        text = "Operator answers (evidence only):\n" + "\n".join(
+            f"{row.work.id}: {_outcome_text(row.pending)}"
+            for row in rows
+            if row.pending is not None
+        )
         self.service.interact(
-            self.task_id,
-            choice=answer.choice,
-            operator=answer.comment or None,
-            end=True,
-            caller_role=self.caller_role,
+            self.task_id, operator=text, end=True, caller_role=self.caller_role
         )
-        outcome = _outcome_text(answer)
-        marks: dict[str, object] = {}
-        if stage.item_operation in ("handle_item", "resolve_item"):
-            marks.update(actual_solution=outcome, resolved=True)
-        if stage.item_operation in ("handle_item", "report_item"):
-            marks["reported"] = True
-        if marks:
-            self.service.update_item(
-                self.task_id, item_id, caller_role=self.caller_role, **marks
-            )
-        work = self.service.item(self.task_id, item_id, state.run_id)
-        given = f"`{answer.choice}`" if answer.choice else "a comment"
-        lines = [f"# {stage.name}: {item_id}", "", work.item, ""]
-        lines.append(f"Operator's answer: {given}")
-        if answer.comment:
-            lines.extend(["", *(f"> {line}" for line in answer.comment.splitlines())])
-        self.service.complete(
-            self.task_id,
-            artifact="\n".join(lines) + "\n",
-            summary_for_next=(
-                f"The operator answered {given} for {item_id}"
-                + (" with a comment." if answer.comment else ".")
-            ),
-            caller_role=self.caller_role,
-        )
-        # The stage is committed; only now does the answer leave the sheet, so
-        # a cut here leaves a stale entry that the next apply drops.
-        self.sheet.remove(state.run_id, item_id)
+        return tuple(row.work.id for row in rows)
 
     def record_pause(self) -> None:
         """The operator said they are done for now, on the stage now open."""
@@ -361,7 +313,7 @@ def run_operator_page(
         session.current_ui_stage(state, snapshot)
     except StateError:
         if applied:
-            # Applying moved the task past its ``ui`` stages; nothing to wait for.
+            # The answers ended the step's interaction; nothing to wait for.
             return session.result(None, applied)
         raise
     outcome = serve_operator_page(
@@ -378,7 +330,7 @@ def run_operator_page(
 
 
 def _outcome_text(answer: Answer) -> str:
-    """The operator's answer as an item's actual solution."""
+    """The operator's answer as recorded evidence for one item."""
     if answer.choice and answer.comment:
         return f"{answer.choice}: {answer.comment}"
     return answer.choice or answer.comment

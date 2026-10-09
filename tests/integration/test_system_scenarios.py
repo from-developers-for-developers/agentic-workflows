@@ -62,14 +62,10 @@ workflows:
       - review: Review the greeting.
         items:
           description: One item per review finding.
-          assignment: per_item
           steps:
-            - analyze: Analyze this finding.
-              item_phase: analyze
-            - fix: Fix this finding.
-              item_phase: resolve
-            - reply: Report the outcome.
-              item_phase: report
+            - analyze: Analyze the findings.
+            - fix: Fix the findings; resolve each one.
+            - reply: Report each outcome; mark each one reported.
       - polish:
 
         steps:
@@ -300,44 +296,29 @@ def run_feature(project: Project) -> None:
         assignment=assignment_token(service, task),
         summary_for_next="Done.",
     )
-    assert boundary.assignment_preview is not None
-    assert boundary.assignment_preview["item_scope"] == {
-        "item_assignment": "per_item",
-        "item_ids": ["f1"],
-        "stages": ["analyze", "fix", "reply"],
-    }
+    assert boundary.next_role == "manager"
 
-    # per_item: one worker performs all three stages of each item.
-    for item_id in ("f1", "f2"):
-        analyze = service.next(task, caller_role="manager")
-        assert analyze.item_name == "analyze"
-        assert analyze.assignment_scope is not None
-        assert f"--id {item_id}" in (analyze.action_text or "")
-        service.update_item(task, item_id, processed_item="clear")
-        fix = service.complete(
-            task,
-            artifact="Analyzed.",
-            caller_role="worker",
-            assignment=assignment_token(service, task),
-            summary_for_next="Done.",
+    # Each authored substep runs once over the collection, as its own
+    # assignment; the worker records the transitions under its assignment.
+    for name, mark in (
+        ("analyze", None),
+        ("fix", service.resolve_item),
+        ("reply", service.report_item),
+    ):
+        page = service.next(task, caller_role="manager")
+        assert page.item_name == name
+        token = assignment_token(service, task)
+        worker = service.status(task, caller_role="worker", assignment=token)
+        assert "You are working within items context `review`" in (
+            worker.action_text or ""
         )
-        assert (fix.item_name, fix.continues_assignment) == ("fix", True)
-        assert "## Worker: next stage, `fix`" in project.render(fix)
-        service.update_item(task, item_id, actual_solution="done", resolved=True)
-        reply = service.complete(
-            task,
-            artifact="Fixed.",
-            caller_role="worker",
-            assignment=assignment_token(service, task),
-            summary_for_next="Done.",
-        )
-        assert (reply.item_name, reply.continues_assignment) == ("reply", True)
-        service.update_item(task, item_id, reported=True)
+        for item_id in ("f1", "f2") if mark is not None else ():
+            mark(task, item_id, caller_role="worker", assignment=token)
         after = service.complete(
             task,
-            artifact="Reported.",
+            artifact=f"{name} done.",
             caller_role="worker",
-            assignment=assignment_token(service, task),
+            assignment=token,
             summary_for_next="Done.",
         )
         assert after.next_role == "manager"

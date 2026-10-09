@@ -26,9 +26,9 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 3
 # Recorded on every snapshot; informational until a reader needs to branch on it.
-PLAN_COMPILER_VERSION = "plan-v10"
+PLAN_COMPILER_VERSION = "plan-v11"
 
 
 @dataclass(frozen=True)
@@ -170,7 +170,11 @@ class PlanSnapshot:
         require_keys(data, required, "plan snapshot")
         schema_version = data["schema_version"]
         if not is_strict_int(schema_version) or schema_version != PLAN_SCHEMA_VERSION:
-            raise ValueError(f"unsupported plan snapshot schema: {schema_version!r}")
+            raise ValueError(
+                f"unsupported plan snapshot schema: {schema_version!r}; "
+                "inspect or finish this run with the previous ww build. "
+                "State was left untouched."
+            )
         template = (
             _plan_from_dict(data["template_plan"]) if "template_plan" in data else None
         )
@@ -234,6 +238,14 @@ def _validate_run(task_id: str, run: TaskRunAggregate) -> None:
         raise StateError(f"task {task_id!r} aggregate has mismatched plan/state")
     if not 0 <= state.cursor <= len(plan.items):
         raise StateError(f"task {task_id!r} aggregate has invalid cursor")
+    identities = [(item.context, item.id) for item in run.items]
+    if len(identities) != len(set(identities)):
+        raise StateError(f"task {task_id!r} has duplicate item identities in a context")
+    contexts = {
+        item.item_context for item in plan.items if item.item_operation == "collect"
+    }
+    if any(item.context not in contexts for item in run.items):
+        raise StateError(f"task {task_id!r} has an item outside its declared contexts")
     item_ids = [item.id for item in plan.items]
     if len(item_ids) != len(set(item_ids)) or any(
         item.position != position for position, item in enumerate(plan.items, 1)

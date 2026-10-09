@@ -15,7 +15,6 @@ from typing import Protocol, TypeVar, runtime_checkable
 from ww.actions import DefinedAction
 from ww.contracts import (
     ChildOperation,
-    ItemAssignment,
     ItemOperation,
 )
 from ww.errors import ConfigurationError
@@ -40,13 +39,8 @@ class ItemAnnotations:
     assessment_stops: tuple[str, ...] = ()
     assessment_parent: str | None = None
     assessment_outcome: str | None = None
-    # Carried by every per-item stage and hook of an ``items`` step.
-    item_assignment: ItemAssignment | None = None
-    # Carried by the collection item and every per-item stage and hook: the
-    # stable identity (logical step path) of their ``items`` declaration.
-    item_pass: str | None = None
-    # Carried only by the collection item of an explicit ``steps: []`` pass.
-    item_collect_only: bool = False
+    # Nearest items container, inherited by all ordinary descendants and hooks.
+    item_context: str | None = None
     # Carried by every per-child stage and hook: the ``children`` step path.
     child_stage: str | None = None
     # Carried with ``child_stage``: the per-child stages that run before the
@@ -72,7 +66,7 @@ class PlanningScope:
     parent: str | None
     ancestors: tuple[str, ...]
     available_values: tuple[str, ...]
-    item_template: bool
+    child_template: bool
     annotations: ItemAnnotations = EMPTY_ITEM_ANNOTATIONS
 
 
@@ -106,7 +100,7 @@ class PlanningContext(Protocol):
         *,
         parent: str,
         parent_ancestors: tuple[str, ...],
-        item_template: bool | None = None,
+        child_template: bool | None = None,
     ) -> PlanningScope: ...
 
     def compile_steps(
@@ -257,11 +251,7 @@ class AssessmentPlanner(ConstructPlanner[AssessmentDefinition]):
 
 
 class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
-    """Collect items with the step's own action, then template each stage.
-
-    The templates are replaced by one concrete lifecycle per collected item
-    when collection completes.
-    """
+    """Register obligations, then run the ordinary descendant tree once."""
 
     def expand(
         self, definition: ItemFlowDefinition, context: PlanningContext
@@ -272,8 +262,7 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
                 definition.step,
                 annotations=ItemAnnotations(
                     item_operation="collect",
-                    item_pass=context.scope.path,
-                    item_collect_only=flow.collect_only,
+                    item_context=context.scope.path,
                     split_instruction=flow.description,
                     shared_items=bool(flow.persistent),
                     item_identity=flow.identity,
@@ -281,22 +270,19 @@ class ItemFlowPlanner(ConstructPlanner[ItemFlowDefinition]):
                 ),
             )
         )
-        if flow.steps:
-            scope = context.derive_scope(
-                parent=f"{context.scope.path}/{{item}}",
-                parent_ancestors=(*context.scope.ancestors, context.scope.path),
-                item_template=True,
-            )
-            scope = replace(
-                scope,
-                annotations=replace(
-                    scope.annotations,
-                    item_assignment=flow.assignment,
-                    item_pass=context.scope.path,
-                ),
-            )
-            context.compile_steps(flow.steps, scope)
-        return ExpansionResult(outputs=outputs)
+        scope = context.derive_scope(
+            parent=context.scope.path,
+            parent_ancestors=context.scope.ancestors,
+        )
+        scope = replace(
+            scope,
+            annotations=replace(
+                scope.annotations,
+                item_context=context.scope.path,
+            ),
+        )
+        values = context.compile_steps(flow.steps, scope)
+        return ExpansionResult(outputs=(*outputs, *values))
 
 
 class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
@@ -305,7 +291,7 @@ class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
     The run is a ww-owned leaf nested under the collecting step, so one step
     owns the whole child lifecycle; the step's completion hooks follow it.
     With ``children.steps`` the parent's stages are templated per child,
-    exactly as per-item stages are, and replaced by one concrete lifecycle
+    and replaced by one concrete lifecycle
     per collected child when collection completes; the stage that runs the
     child is then a ``ChildWorkflowRun`` of that one child.
     """
@@ -326,7 +312,7 @@ class ChildFlowPlanner(ConstructPlanner[ChildFlowDefinition]):
             scope = context.derive_scope(
                 parent=f"{context.scope.path}/{{child}}",
                 parent_ancestors=(*context.scope.ancestors, context.scope.path),
-                item_template=True,
+                child_template=True,
             )
             run_index = next(
                 index

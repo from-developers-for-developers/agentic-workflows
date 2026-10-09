@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, cast, get_args
+from typing import Any
 
 from ww.actions import (
     DefinedAction,
@@ -12,7 +12,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
-from ww.contracts import ItemAssignment, ItemOperation, StepRole
+from ww.contracts import StepRole
 from ww.errors import ConfigurationError
 from ww.items import FIELD_NAME
 from ww.operations import (
@@ -47,7 +47,6 @@ from .values import (
     _named_entry,
     _nonempty_string,
     _only,
-    _optional_agent,
     _optional_string,
     _profile,
     _role,
@@ -66,7 +65,6 @@ STEP_ONLY_KEYS: set[str] = {
     "choices",
     "profile",
     "items",
-    "item_phase",
     "start_child",
     "artifact_from",
     "artifact",
@@ -81,44 +79,7 @@ STEP_ONLY_KEYS: set[str] = {
 }
 
 CHILD_FLOW_KEYS = {"description", "workflow", "steps", "assignment"}
-ITEM_FLOW_KEYS = {
-    "assignment",
-    "description",
-    "steps",
-    "persistent",
-    "analyze",
-    "resolve",
-    "report",
-    "variables",
-    "saves",
-    "interactive",
-    "choices",
-    "identity",
-    "unique",
-    "agent",
-    "model",
-    "reasoning",
-    "profile",
-    "role",
-    "subagents",
-}
-_ITEM_FLOW_SETTINGS = ("agent", "model", "reasoning", "profile", "role", "subagents")
-BUILTIN_ITEM_STEP_NAME = "handle-item"
-BUILTIN_ITEM_STEP_PROMPT = (
-    "Handle this item end to end: analyze it, resolve it, and report the outcome."
-)
-# Under ``items``, guidance for one phase of the built-in stage.
-_ITEM_PHASE_GUIDANCE = (
-    ("analyze", "When analyzing it"),
-    ("resolve", "When resolving it"),
-    ("report", "When reporting the outcome"),
-)
-# ``item_phase`` on a per-item stage, and the item operation it marks.
-ITEM_PHASES: dict[str, ItemOperation] = {
-    "analyze": "process_item",
-    "resolve": "resolve_item",
-    "report": "report_item",
-}
+ITEM_FLOW_KEYS = {"description", "steps", "persistent", "identity", "unique"}
 # ``interactive`` takes true (a conversation) or ``page`` (the operator page).
 INTERACTIVE_PAGE = "page"
 CHILD_ASSIGNMENTS = ("per_step",)
@@ -197,7 +158,6 @@ _STEP_CONTENT_KEYS = frozenset(
         "positive",
         "negative",
         "mixed",
-        "item_phase",
         "start_child",
         "rules",
     }
@@ -256,7 +216,6 @@ def _parse_step(
     children = _parse_nested_steps(mapping, "steps", path, handlers_by_name)
     if "steps" not in mapping and referenced is not None:
         children = referenced.child_steps
-    item_operation = _parse_item_phase(mapping, path)
     child_launch = _parse_child_launch(mapping, path)
     child_flow = _parse_child_flow(mapping, path, handlers_by_name, referenced)
     if "children" in mapping and base.operation is not None:
@@ -300,10 +259,6 @@ def _parse_step(
         )
     if containers > 1:
         raise ConfigurationError(f"{path} cannot combine steps, items, and children")
-    if items is not None and item_operation is not None:
-        raise ConfigurationError(f"{path} cannot combine items with item_phase")
-    if item_operation is None and referenced is not None:
-        item_operation = referenced.item_operation
     return StepDefinition(
         name=base.name,
         description=base.description,
@@ -335,7 +290,6 @@ def _parse_step(
         rules=rules,
         child_steps=children,
         items=items,
-        item_operation=item_operation,
         child_launch=child_launch,
         artifact=artifact,
         children=child_flow,
@@ -474,18 +428,6 @@ def _resolve_handler(
     return base, referenced if isinstance(referenced, StepDefinition) else None
 
 
-def _parse_item_phase(mapping: dict[str, Any], path: str) -> ItemOperation | None:
-    """Parse ``item_phase`` into the item operation it marks."""
-    if "item_phase" not in mapping:
-        return None
-    phase = mapping["item_phase"]
-    if not isinstance(phase, str) or phase not in ITEM_PHASES:
-        raise ConfigurationError(
-            f"{path}.item_phase must be one of: " + ", ".join(ITEM_PHASES)
-        )
-    return ITEM_PHASES[phase]
-
-
 def _parse_child_launch(mapping: dict[str, Any], path: str) -> ChildLaunch | None:
     """Parse ``start_child``: the launch settings ww starts the child with.
 
@@ -586,11 +528,6 @@ def _parse_interactive(
         raise ConfigurationError(
             f"{path}.choices are offered to the operator, so they require "
             "interactive: true"
-        )
-    if ui and not item_stage:
-        raise ConfigurationError(
-            f"{path}.interactive: page is offered on per-item stages only; "
-            "declare it under items"
         )
     return interactive, ui, choices
 
@@ -802,164 +739,20 @@ def _parse_items(
     ):
         raise ConfigurationError(f"{items_path}.unique must be a list of field names")
     unique = tuple(dict.fromkeys(unique_raw)) if "unique" in value else None
-    assignment = cast(
-        ItemAssignment,
-        _assignment(
-            value.get("assignment", "together"),
-            f"{items_path}.assignment",
-            get_args(ItemAssignment),
-        ),
+    steps = _parse_nested_steps(
+        value,
+        "steps",
+        items_path,
+        handlers_by_name,
+        item_stage=True,
     )
-    phase_keys = [key for key, _ in _ITEM_PHASE_GUIDANCE]
-    guidance = [
-        (label, _nonempty_string(value, key, items_path))
-        for key, label in _ITEM_PHASE_GUIDANCE
-        if key in value
-    ]
-    if guidance and "steps" in value:
-        raise ConfigurationError(
-            f"{items_path} phase guidance ("
-            + ", ".join(key for key in phase_keys if key in value)
-            + ") describes the built-in handle-item stage; describe configured "
-            "steps directly"
-        )
-    folded = [
-        key for key in ("variables", "saves", "interactive", "choices") if key in value
-    ]
-    if folded and "steps" in value:
-        raise ConfigurationError(
-            f"{items_path}.{folded[0]} belongs to the built-in handle-item stage; "
-            f"declare {folded[0]} on configured steps directly"
-        )
-    collect_only = "steps" in value and value["steps"] in ([], None)
-    if collect_only:
-        configured = [
-            key for key in ("assignment", *_ITEM_FLOW_SETTINGS) if key in value
-        ]
-        if configured:
-            raise ConfigurationError(
-                f"{items_path} collects without per-item steps, so "
-                + ", ".join(configured)
-                + " has no effect"
-            )
-        return ItemFlow((), description, assignment, persistent, identity, unique)
-    defaults = _item_flow_defaults(value, path, step_profile, step_role, step_subagents)
-    if "steps" in value:
-        steps = _parse_nested_steps(
-            value,
-            "steps",
-            items_path,
-            handlers_by_name,
-            require_nonempty=True,
-            item_stage=True,
-        )
-        entries = value["steps"]
-    else:
-        builtin = {
-            "name": BUILTIN_ITEM_STEP_NAME,
-            "description": "\n\n".join(
-                (
-                    BUILTIN_ITEM_STEP_PROMPT,
-                    *(f"{label}: {text}" for label, text in guidance),
-                )
-            ),
-            **{key: value[key] for key in folded},
-        }
-        steps = (
-            replace(
-                _parse_step(
-                    builtin,
-                    f"{items_path}.steps[0]",
-                    handlers_by_name,
-                    item_stage=True,
-                ),
-                item_operation="handle_item",
-            ),
-        )
-        entries = [builtin]
-    pages = [step.name for step in steps if step.ui]
-    if len(pages) > 1:
-        raise ConfigurationError(
-            f"{items_path} may answer one stage on the operator page; found "
-            "interactive: page on " + ", ".join(pages)
-        )
     return ItemFlow(
-        tuple(
-            _with_item_flow_defaults(step, _declared_keys(entry), defaults)
-            for step, entry in zip(steps, entries, strict=True)
-        ),
-        description,
-        assignment,
-        persistent,
-        identity,
-        unique,
+        steps=steps,
+        description=description,
+        persistent=persistent,
+        identity=identity,
+        unique=unique,
     )
-
-
-def _item_flow_defaults(
-    items_mapping: dict[str, Any],
-    path: str,
-    step_profile: dict[str, str | None],
-    step_role: StepRole | None,
-    step_subagents: bool | None,
-) -> dict[str, Any]:
-    """Worker settings every per-item stage inherits unless it sets its own.
-
-    ``items`` settings win; profile and role otherwise come from the
-    ``items`` step itself.  Agent, model, and reasoning already cascade from
-    that step through the compiler's execution hints.
-    """
-    items_path = f"{path}.items"
-    role = _role(items_mapping, items_path)
-    subagents = _subagents(items_mapping, items_path)
-    return {
-        "agent": _optional_agent(items_mapping, "agent", items_path),
-        "model": _optional_string(items_mapping, "model", items_path),
-        "reasoning": _optional_string(items_mapping, "reasoning", items_path),
-        **(
-            _profile(items_mapping, items_path)
-            if "profile" in items_mapping
-            else step_profile
-        ),
-        "role": step_role if role is None else role,
-        "subagents": step_subagents if subagents is None else subagents,
-    }
-
-
-def _with_item_flow_defaults(
-    step: StepDefinition, declared: set[str], defaults: dict[str, Any]
-) -> StepDefinition:
-    """Apply item-flow settings a stage neither declares nor copies from a handler."""
-    changes: dict[str, Any] = {}
-    for key in ("agent", "model", "reasoning"):
-        if key not in declared and getattr(step, key) is None and defaults[key]:
-            changes[key] = defaults[key]
-    if (
-        "profile" not in declared
-        and step.profile is None
-        and step.profile_description is None
-    ):
-        changes["profile"] = defaults["profile"]
-        changes["profile_description"] = defaults["profile_description"]
-    if "role" not in declared and step.role is None and defaults["role"]:
-        changes["role"] = defaults["role"]
-    if (
-        "subagents" not in declared
-        and step.subagents is None
-        and defaults["subagents"] is not None
-    ):
-        changes["subagents"] = defaults["subagents"]
-    return replace(step, **changes) if changes else step
-
-
-def _declared_keys(entry: Any) -> set[str]:
-    """Return the keys a raw step entry sets, after shorthand expansion."""
-    if not isinstance(entry, dict):
-        return set()
-    value = entry.get("assess")
-    if isinstance(value, dict):
-        return set(value) | (set(entry) - {"assess"})
-    return set(entry)
 
 
 def _parse_assessment_outcomes(

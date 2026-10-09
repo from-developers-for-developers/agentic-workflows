@@ -29,7 +29,7 @@ produce those definitions directly through the same loader contract. Shared
 cross-definition rules live in `../src/ww/workflow_validation.py`, so notation
 parsers do not acquire different workflow semantics. `workflow_config.step_paths`
 is the one walk of a step tree with its logical paths (nested steps,
-per-item and per-child stages under their parent's path); the
+collection and per-child stages under their parent's path); the
 validator, the plan compiler, rule placement and the `rules` listing's
 `targets` all use it, so a step filter is checked, applied and listed against
 the same set of names. Validation is also where
@@ -262,23 +262,24 @@ without copying their descriptions into the current prompt. Deriving this list
 from the persisted plan keeps the guidance deterministic across status and
 resume operations.
 
-Per-item sections are the one deliberately deferred part of compilation. Their
-compiled templates remain immutable in the snapshot. Once collection finishes,
-ww publishes a new, numbered plan revision that contains one concrete lifecycle
-for each collected item while retaining the original template plan for audit and
-recovery. Initial and materialized items use the same execution-record factory,
-so automatic command ledgers cannot disappear during expansion. Plan items also
-carry their ordered ancestor paths explicitly; materialization substitutes the
-item path throughout that relationship and rebuilds the recursive step
-projection. The executor therefore never has to infer hierarchy from display
-paths.
+Per-child stages are the one deliberately deferred part of compilation. Their
+compiled templates remain immutable in the snapshot. Once child collection
+finishes, ww publishes a new, numbered plan revision that contains one concrete
+lifecycle for each collected child while retaining the original template plan
+for audit and recovery. Initial and materialized items use the same
+execution-record factory, so automatic command ledgers cannot disappear during
+expansion. Plan items also carry their ordered ancestor paths explicitly;
+materialization substitutes the child path throughout that relationship and
+rebuilds the recursive step projection. The executor therefore never has to
+infer hierarchy from display paths. Work items never expand the plan: an items
+container's substeps are compiled once (see [Workflow items](#workflow-items)).
 
 `artifact_from` is an artifact-reference hint, not a scheduler. Validation
 resolves it to the nearest earlier artifact-producing step: an earlier sibling
 first, then an earlier step at each enclosing level. An assessment and an item
-collection are visible to their nested outcome or per-item steps after their
+collection are visible to their nested outcome or items substeps after their
 own work completes; a group has no artifact of its own. The compiler records
-the resolved plan path, and item materialization substitutes its concrete item
+the resolved plan path, and child materialization substitutes its concrete child
 path. The instruction builder names the dependency as `ww artifacts` lists it.
 For a group or an assessment outside its chosen outcome, it selects the latest
 completed artifact beneath that path in the current run. An assessment with no
@@ -436,7 +437,7 @@ siblings. The registry is internal, not a YAML plugin surface.
 
 The `explicit` visibility setting is resolved while configuration is
 normalized: workflow inheritance runs first, then each structural group,
-item stage, and child stage inherits its nearest setting while preserving
+items substep, and child stage inherits its nearest setting while preserving
 an explicit `false`. The compiler stores the effective value on each plan
 item; current-schema snapshots decode an omitted optional field as `false`.
 Instruction pages render operation and per-file diff guidance from that saved value, while
@@ -581,15 +582,15 @@ plan keeps reloads and dynamic materialization deterministic without fragile
 cursor ranges. Parent preparation hooks are separate assignments, while
 trailing parent completion hooks follow the last descendant. Dynamic items,
 child coordination, workflow transitions, and successor execution instances
-remain manager boundaries. Item-stage assignment settings can extend an
-assignment across all items, one item, or one stage according to the selected
-policy. A stage with different agent, model, reasoning, profile, or manager
-role starts a new assignment. In `single`, each step retains its own bound.
-Each stage still has its own plan item and execution record; the instruction
-builder marks the first stage of a span with its scope and later stages as
-continuations. It also lists assignment items, automatic items, completed
-items, and the currently running automatic item so a re-read page reflects
-live progress.
+remain manager boundaries. An assignment covers one step and the hooks that
+belong to it; items substeps follow the same rule, so the number of collected
+items never changes assignment topology, and there are no item-only assignment
+policies. A step reserved for the manager starts its own assignment. Each
+covered item still has its own plan item and execution record. The instruction
+builder prints the task requirements in full only on the assignment's first
+agent page, pointing at `ww requirements` on its later ones, and lists
+assignment items, automatic items, completed items, and the currently running
+automatic item so a re-read page reflects live progress.
 
 The same module collects the inputs of a completion window. Matching variable
 requests share one value across its automatic handlers, so overlapping project
@@ -648,7 +649,7 @@ Each compiled plan item carries the one-based declaration ordinal for every
 level of its step hierarchy. Persisting this ordinal path keeps artifact names
 ordered among siblings without asking storage adapters to reconstruct workflow
 structure from a slash-separated name. The compiler assigns the values before
-bootstrap filtering, and per-item expansion recalculates them when runtime
+bootstrap filtering, and per-child expansion recalculates them when runtime
 siblings are materialized, so artifact references remain stable representations
 of the effective workflow hierarchy. Hook artifact filenames remain keyed by
 their flat plan position because multiple hooks can share one step boundary.
@@ -799,7 +800,7 @@ Git tag or GitHub release is created for a development snapshot. See
 The guarantees for the current local execution model are:
 
 - A run executes from its persisted plan snapshot. That snapshot is immutable
-  within a revision; per-item materialization publishes a new numbered revision
+  within a revision; per-child materialization publishes a new numbered revision
   and matching execution ledger as one aggregate transition.
 - Plan/state identity includes task, workflow, agent, configuration and
   plan digests, plan revision, ordered item IDs and positions, cursor bounds,
@@ -1117,8 +1118,8 @@ Hook filters share that hierarchy. Bare names retain a convenient broad match,
 but an exact logical path takes precedence when a wrapper and nested leaf share
 a name. This lets completion hooks target the wrapper boundary without firing
 inside its child sequence. Slash-separated logical paths select one nested
-branch precisely. Logical paths exclude the runtime item identifier inserted for per-item
-stages, keeping hook configuration stable across dynamically collected items.
+branch precisely. Items substeps are compiled once under their plain logical
+path, so hook configuration does not depend on the collected items.
 
 General workflows nested inside workflows, returning workflow calls, and chained
 handoffs remain deferred.
@@ -1173,9 +1174,9 @@ change point on are appended with fresh records under a `replan-<revision>`
 operation scope, the displaced records move to `execution_history`, and the
 plan revision is bumped. When the change point is at or before the cursor,
 the cursor moves to it and whatever stopped the run there (a failure, an
-input request, an open assignment) is cleared. Expanded per-item or per-child
+input request, an open assignment) is cleared. Expanded per-child
 stages, recognised
-as template items (`item_template`) missing from the concrete plan, and a
+as template items (`child_template`) missing from the concrete plan, and a
 started children step in the rerun range refuse the replan. `keep_plan`
 adopts the new digest without touching the plan, which is also how a change
 that leaves the run's template as it is gets taken silently.
@@ -1295,7 +1296,7 @@ With `children.steps`, the parent owns stages for its children. The parser turns
 the stage carrying `workflow:` into a `ChildWorkflowRun` stage: inside
 `children`, `workflow:` runs a child and never performs a workflow handoff.
 `ChildFlowPlanner` compiles the stages as templates under `<step>/{child}` with
-the `child_stage` marker, using the same template machinery as per-item stages.
+the `child_stage` marker and the `child_template` flag.
 When collection completes, `materialize_child_plan` in
 `../src/ww/transitions.py` expands the templates once for each collected child,
 binding each copy by `child_number`, the child's position in the append-only
@@ -1476,68 +1477,32 @@ begun binding refuses reset and names the task to reset instead.
 
 ## Workflow items
 
-Some work is only enumerable after an agent has inspected an external source,
-such as the comments on a pull request. Items are therefore durable, run-local
-records rather than configuration-time values. A workflow has one item
-collection and may hold several sequential `items` passes over it. Each `items`
-declaration is a pass with a stable identity (its step path): its own action is
-the collection step (the first pass records the items; later passes reuse them),
-annotated `collect` and carrying any splitting guidance, and its completion
-expands only that pass's saved per-item templates into concrete plan items, for
-the items recorded by then. Membership is frozen for each pass, so an item
-added meanwhile joins the next pass. Each pass expands once when its collection
-step completes. A bare `items` step compiles one built-in
-`handle-item` template with the combined `handle_item` operation. This
-preserves the executor's ordinary retry, artifact, and status rules while making
-each item's progress independently visible.
+Collections are task/run data owned by concrete items containers. The compiler
+propagates `item_context` through structural ancestry and compiles normal
+substeps once. Child stages alone retain `child_template` expansion; their
+concrete paths also make nested collection identities concrete. No item record
+becomes a plan node, and item counts cannot change assignment topology.
 
-Item-flow worker settings are folded into each configured stage while parsing,
-so the compiler sees ordinary steps; where stages still differ, the assignment
-bound splits at run time rather than the compiler rejecting the flow. Only the
-collection item carries `collect`: the `items`
-step's hooks wrap the entire flow, and a completion hook tagged `collect` would
-re-trigger expansion after the last item. A pass's templates expand at its own
-collection step rather than at the first template position, and an `items` step
-nested in another's per-item stages is rejected.
+`item_collections.py` owns context selection and collection predicates. Work-item
+records carry a context distinct from their ID and the executable plan's IDs.
+Service mutation commands validate run, role, assignment, active context and
+record constraints under the task lock. Verification owns no mutation authority.
+Persistent reuse is scoped by context and clears outcomes for new executions,
+while run aggregates retain previous evidence.
 
-Per-item templates are full steps, not merely work handlers. Their applicable
-global, workflow, and step hooks are compiled into the template segment and
-expanded beside its main action for each item. That keeps lifecycle guarantees
-identical whether work is known when the workflow starts or discovered later.
-Completing the collector ends its assignment before the first concrete item;
-the manager dispatches each materialized lifecycle independently.
+Internal completion boundaries keep pending bookkeeping durable without treating
+it as a failed handler. Field requirements are evaluated at their normal boundary
+and accrued from executed/completed plan records for final validation. Successful
+commands are recorded before their field-input continuations, so resuming a
+boundary cannot repeat a side effect. Terminal exits check the contexts they
+leave before publishing success.
 
-Each record retains both the source text and its analysis, proposed and actual
-solution, resolution/reporting flags, and an optional canonical-item reference.
-Related source comments can share work without disappearing from reporting.
-The item commands are the only mutation boundary, which keeps external agents
-from editing task files directly. Leaving a pass requires only what its
-stages declare: an `analyze` stage needs `processed_item`, a `resolve` stage
-`actual_solution` and `resolved`, a `report` stage `reported`, so an analysis
-pass can lead into one batch fix. An unmet pass stops with `pass_incomplete`;
-the missing values are recorded with `update-item` and `next --retry` checks
-again. Per-item stages read the item's current record through `ww.item.*`
-values, and an automatic shell or argv stage can save its whole stdout into an
-item field (`saves: item.field.<name>`), after which a `report` stage marks only
-that item reported in the same commit as the save; the project's handler owns
-the idempotency of any remote effect.
-
-A flow declared `persistent` adds one task-level store beside the per-run copies,
-through the storage adapter like metadata. The run's copy stays the working
-set and the source of every expansion; the store is written from it after
-each item command, so it holds the latest outcome of every item, and a new
-run is seeded from it at start with outcomes cleared. Reconciling lives in
-the collection step's page and two collection-time commands rather than in
-the engine: the compiler marks the collection item, the seeding happens at
-run start, and nothing about expansion or per-item execution changes.
-
-Custom fields keep the item a closed record: a string mapping on the work
-item, declared per step as `item.field.<name>` entries of `saves` and gated
-at completion exactly as saved metadata is, so a step cannot finish having promised a field it
-did not set. `identity` and `unique` are flow-level rules the compiler
-carries on the collection item and the item commands enforce, against the
-run's items and the shared store, because a duplicate an agent could add by
-reasoning wrong must be a refusal, not an instruction.
+Instruction composition preserves item references and emits deduplicated lookup
+and mutation templates. Executable bindings reject these collection references;
+there is no implicit current work item. A `status` page takes the collection's
+records from the same aggregate read as its state, so its guidance never mixes
+two revisions. The task-state and plan schema boundaries
+reject old execution plans before any mutation, with previous-build guidance.
 
 ## Interactive steps and the operator page
 
@@ -1555,32 +1520,15 @@ A session that ends mid-conversation loses what was not yet recorded; ww does
 not recover it from the agent's transcript, and the next session asks the
 operator where they were.
 
-The operator page is an extra on top of that, not part of it. The core knows
-it by one flag, `interactive: page` on a per-item stage (`ui` on the
-model and plan item), which the step's page turns into
-one command; the `operator_ui` package owns the rest and drives the task only
-through the public service calls an agent uses: `interact` to record the pick
-and the comment and end the stage, `update-item` to mark the built-in stage's
-item, `complete`, and `next`. Nothing in it writes task state, and the
-engine, the records, the work items, and the instruction builder know nothing
-about answers or pages.
-
-An answer is operator input the engine has not acted on, so it stays out of
-the task's state: it is one atomic replacement of the package's own sheet
-file under the task lock, before the browser is acknowledged, so a lost wait
-loses nothing and the state changes only through the engine's own commands.
-The sheet carries the task's creation time and discards itself for a task
-that was reset. The page is served by `interact --await`, a command the
-agent runs and blocks on, for exactly as long as it waits; there is no
-daemon and no state in the server. When the wait ends, the package consumes
-the sheet in plan order, and a stage is committed before its answer leaves
-the sheet, so a cut wait leaves a stale entry that the next wait drops. The
-pairing of an answer with the stage it completes is unambiguous because an
-item flow may declare one `interactive: page` stage. The port is derived from the task ID
-so an open tab survives between waits, and the wait is bounded so an agent's
-shell timeout never kills it mid-way. A pause is kept on the execution
-state, not on a stage, because it outlives the stage that was current when
-the operator left, and only the operator's own words lift it.
+The operator page is an extra on top of ordinary interactive steps. The
+compiler accepts `interactive: page` only on a step inside `items.steps`. The
+page presents the nearest collection and stores answers keyed by run and
+concrete step; with `choices`, each item carries its own choice, so ending the
+interaction needs no step-level `--choice`. The
+answer sheet is input evidence, separate from the collection's outcomes. A
+completed sheet records an interaction; the agent applies fields and explicit
+transitions and completes the ordinary step. This avoids conflating an operator's
+answer with successful resolution, external reporting, or acceptance checks.
 
 ## Agent hooks
 

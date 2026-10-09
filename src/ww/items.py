@@ -17,8 +17,8 @@ class WorkItem:
 
     id: str
     item: str
-    processed_item: str = ""
-    proposed_solution: str = ""
+    context: str = ""
+    notes: str = ""
     actual_solution: str = ""
     resolved: bool = False
     reported: bool = False
@@ -26,6 +26,28 @@ class WorkItem:
     # Custom fields a workflow declares for its items, such as the ID of the
     # source comment or of the reply posted for it; string values only.
     fields: tuple[tuple[str, str], ...] = ()
+
+    def get(self, path: str) -> object:
+        """Read one explicit field; absent and false/empty are distinct."""
+        from ww.errors import StateError
+
+        if path.startswith("field."):
+            name = path.removeprefix("field.")
+            if name not in dict(self.fields):
+                raise StateError(f"item {self.id!r} has no field {name!r}")
+            return self.field(name)
+        if path == "text":
+            return self.item
+        if path in {
+            "id",
+            "resolved",
+            "reported",
+            "actual_solution",
+            "reference_to_id",
+            "notes",
+        }:
+            return self.to_dict()[path]
+        raise StateError(f"unknown item field {path!r}")
 
     def field(self, name: str) -> str | None:
         return dict(self.fields).get(name)
@@ -38,8 +60,8 @@ class WorkItem:
         return {
             "id": self.id,
             "item": self.item,
-            "processed_item": self.processed_item,
-            "proposed_solution": self.proposed_solution,
+            "context": self.context,
+            "notes": self.notes,
             "actual_solution": self.actual_solution,
             "resolved": self.resolved,
             "reported": self.reported,
@@ -56,23 +78,25 @@ class WorkItem:
             raise ValueError("item ID must be a non-empty string")
         if not isinstance(data.get("item"), str) or not data["item"].strip():
             raise ValueError("item text must be a non-empty string")
-        processed = data.get("processed_item", "")
-        proposed = data.get("proposed_solution", "")
+        context = data.get("context", "")
+        notes = data.get("notes", "")
         actual = data.get("actual_solution", "")
-        if not all(isinstance(value, str) for value in (processed, proposed, actual)):
+        if not all(isinstance(value, str) for value in (context, notes, actual)):
             raise ValueError("item text fields must be strings")
         resolved = data.get("resolved", False)
         reported = data.get("reported", False)
         if not isinstance(resolved, bool) or not isinstance(reported, bool):
             raise ValueError("item resolved and reported fields must be booleans")
+        if reported and not resolved:
+            raise ValueError("reporting requires resolution first")
         reference = data.get("reference_to_id")
         if reference is not None and (not isinstance(reference, str) or not reference):
             raise ValueError("item reference_to_id must be a non-empty string or null")
         return cls(
             id=data["id"],
             item=data["item"],
-            processed_item=processed,
-            proposed_solution=proposed,
+            context=context,
+            notes=notes,
             actual_solution=actual,
             resolved=resolved,
             reported=reported,
@@ -95,5 +119,7 @@ def validate_item_fields(data: object) -> tuple[tuple[str, str], ...]:
 
 # Fields an agent may update after collection; identity and the item text are fixed.
 EDITABLE_WORK_ITEM_FIELDS = frozenset(
-    field.name for field in fields(WorkItem) if field.name not in {"id", "item"}
+    field.name
+    for field in fields(WorkItem)
+    if field.name not in {"id", "item", "context"}
 )

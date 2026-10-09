@@ -20,7 +20,6 @@ from ww.workflow_config import (
     INIT_STEP_PROMPT,
     HandlerDefinition,
     HookDefinition,
-    ItemFlow,
     NameFilter,
     RuleHints,
     StepDefinition,
@@ -109,8 +108,6 @@ def validate_configuration(
                 + ", ".join(sorted(unknown_modes))
             )
         _validate_steps(workflow.name, workflow.steps, top_level=True)
-        _validate_item_flows(workflow.name, workflow.steps)
-        _validate_collection_settings(workflow.name, workflow.steps)
         _validate_transitions(workflow, normalized.global_hooks)
         _validate_hooks(
             workflow.hooks,
@@ -142,7 +139,6 @@ def validate_configuration(
     _validate_hooks_from(normalized)
     _validate_child_tasks(normalized.workflows)
     _validate_item_saves(normalized)
-    _validate_item_phases(normalized)
     _validate_child_launches(normalized)
     return normalized
 
@@ -450,30 +446,6 @@ def _template_steps(step: StepDefinition) -> tuple[StepDefinition, ...]:
     return (*_item_steps(step), *_child_stages(step))
 
 
-def _validate_item_flows(workflow_name: str, steps: tuple[StepDefinition, ...]) -> None:
-    """Allow sequential ``items`` passes; reject one nested in another's stages.
-
-    A workflow has one item collection.  Each ``items`` step is a pass over
-    it, expanded at its own position when its collection completes, so
-    several sequential passes are unambiguous.  An
-    ``items`` step inside another's per-item stages would collect a second,
-    independent set per item, which ww does not support.
-    """
-    for step in _walk_nested(steps):
-        nested = [
-            inner.name
-            for inner in _walk_nested(_item_steps(step))
-            if inner.items is not None
-        ]
-        if nested:
-            raise ConfigurationError(
-                f"workflow {workflow_name!r}: items step {nested[0]!r} is nested "
-                f"inside the per-item steps of items step {step.name!r}; a "
-                "workflow has one item collection, so declare later items "
-                "passes as sequential steps instead of inside another pass"
-            )
-
-
 def _walk_nested(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...]:
     """Every step in ``steps`` and below, including assessment outcomes."""
     result: list[StepDefinition] = []
@@ -491,122 +463,11 @@ def _walk_nested(steps: tuple[StepDefinition, ...]) -> tuple[StepDefinition, ...
     return tuple(result)
 
 
-_COLLECTION_SETTINGS = ("persistent", "identity", "unique")
-
-
-def _validate_collection_settings(
-    workflow_name: str, steps: tuple[StepDefinition, ...]
-) -> None:
-    """Reject a later ``items`` pass that contradicts the collection's settings.
-
-    The first ``items`` declaration of a workflow, in plan order, establishes
-    ``persistent``, ``identity``, and ``unique`` for its one collection, with
-    the defaults for what it omits.  A later pass may omit them or repeat the
-    collection's values; a value it sets differently would be ignored at
-    runtime, so it is an error.  ``unique`` already holds ``identity``, and
-    its order does not matter.
-    """
-    passes = _item_passes(steps)
-    if not passes:
-        return
-    first_path, first = passes[0]
-    assert first.items is not None
-    for path, step in passes[1:]:
-        assert step.items is not None
-        for setting in _COLLECTION_SETTINGS:
-            declared = _declared_setting(step.items, setting, first.items.identity)
-            established = _effective_setting(first.items, setting)
-            if declared is None or declared == established:
-                continue
-            raise ConfigurationError(
-                f"workflow {workflow_name!r} step {path!r} sets items.{setting} "
-                f"to {_setting_text(declared)}, but the collection's first items "
-                f"step {first_path!r} "
-                + (
-                    "leaves it unset"
-                    if getattr(first.items, setting) is None
-                    and established in (False, None, frozenset())
-                    else f"sets it to {_setting_text(established)}"
-                )
-                + f"; a workflow has one item collection whose {setting} the "
-                "first items step decides, so set it there and omit it, or "
-                "repeat the same value, on later passes"
-            )
-
-
-def _item_passes(
-    steps: tuple[StepDefinition, ...], parent: str | None = None
-) -> tuple[tuple[str, StepDefinition], ...]:
-    """Every ``items`` step in plan order, with its logical step path."""
-    result: list[tuple[str, StepDefinition]] = []
-    for step in steps:
-        path = f"{parent}/{step.name}" if parent else step.name
-        if step.items is not None:
-            result.append((path, step))
-        result.extend(
-            _item_passes(
-                (
-                    *step.child_steps,
-                    *step.assessment_outcomes,
-                    *_template_steps(step),
-                ),
-                path,
-            )
-        )
-    return tuple(result)
-
-
-def _declared_setting(
-    flow: ItemFlow, setting: str, identity: str | None
-) -> bool | str | frozenset[str] | None:
-    """One collection setting as a declaration wrote it, ``None`` if omitted.
-
-    A declared ``unique`` is compared with the collection's ``identity``
-    (``identity``) folded in, as the run applies it.
-    """
-    if setting == "persistent":
-        return flow.persistent
-    if setting == "identity":
-        return flow.identity
-    if flow.unique is None:
-        return None
-    return frozenset(flow.effective_unique) | ({identity} if identity else set())
-
-
-def _effective_setting(
-    flow: ItemFlow, setting: str
-) -> bool | str | frozenset[str] | None:
-    """One collection setting as the run applies it, defaults included."""
-    if setting == "persistent":
-        return bool(flow.persistent)
-    if setting == "identity":
-        return flow.identity
-    return frozenset(flow.effective_unique)
-
-
-def _setting_text(value: bool | str | frozenset[str] | None) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, frozenset):
-        return "[" + ", ".join(sorted(value)) + "]"
-    return repr(value)
-
-
 _BOUNDARY_PHASES = frozenset({"before_start_workflow", "before_complete_workflow"})
 
 
 def _validate_item_saves(configuration: WorkflowConfiguration) -> None:
-    """Allow ``saves: item.field.*`` only where an item is meaningful.
-
-    Item field saves apply to the items an ``items`` step collects, when that
-    step declares them itself, or to the current item of a per-item stage,
-    including a hook or handler group run for that stage.  Anywhere else,
-    such as an ordinary batch step between passes, there is no item for the
-    save to bind to; such a step updates records with the item commands
-    instead.  Reusable handlers are checked where they are used, after the
-    frontend copied them into steps and through hook references here, never
-    as unused catalog definitions.
-    """
+    """Bind every item-field save to the nearest enclosing collection."""
     catalog = configuration.handlers_by_name
     for workflow in configuration.workflows:
         for hook in (*configuration.global_hooks, *workflow.hooks):
@@ -626,7 +487,7 @@ def _validate_item_saves(configuration: WorkflowConfiguration) -> None:
             workflow,
             workflow.steps,
             None,
-            per_item=False,
+            in_context=False,
             precise=frozenset(_logical_step_paths(workflow.steps)),
         )
 
@@ -637,26 +498,17 @@ def _check_item_saves(
     steps: tuple[StepDefinition, ...],
     parent: str | None,
     *,
-    per_item: bool,
+    in_context: bool,
     precise: frozenset[str],
 ) -> None:
     catalog = configuration.handlers_by_name
     for step in steps:
         path = f"{parent}/{step.name}" if parent else step.name
         where = f"workflow {workflow.name!r} step {path!r}"
-        if not per_item:
+        if not in_context and step.items is None:
             fields = _item_saves(step, catalog)
             if fields and step.items is None:
                 raise ConfigurationError(f"{where} {_unbound_item_saves(fields)}")
-            if fields and step.action is not None:
-                raise ConfigurationError(
-                    f"{where} saves "
-                    + ", ".join(f"item.field.{name}" for name in fields)
-                    + " from an automatic command on a collection step: one "
-                    "output cannot be distributed among several items; save "
-                    "item fields from a per-item stage, or have the agent "
-                    "record collection fields with update-item"
-                )
             for hook in (
                 *configuration.global_hooks,
                 *workflow.hooks,
@@ -672,66 +524,20 @@ def _check_item_saves(
                         f"{where} {hook.phase} hook {hook.handler.name!r} "
                         + _unbound_item_saves(fields)
                     )
-        for nested, nested_per_item in (
-            (step.child_steps, per_item),
-            (step.assessment_outcomes, per_item),
+        for nested, nested_in_context in (
+            (step.child_steps, in_context),
+            (step.assessment_outcomes, in_context),
             (_item_steps(step), True),
-            (_child_stages(step), per_item),
+            (_child_stages(step), in_context),
         ):
             _check_item_saves(
                 configuration,
                 workflow,
                 nested,
                 path,
-                per_item=nested_per_item,
+                in_context=nested_in_context,
                 precise=precise,
             )
-
-
-def _validate_item_phases(configuration: WorkflowConfiguration) -> None:
-    """Allow ``item_phase`` only on an acting step of a per-item stage.
-
-    The phase becomes the step's item operation, which the pass gate and the
-    automatic reporting read from concrete per-item plan items.  On an
-    assessment the operation is never compiled, and outside a per-item stage
-    there is no item to mark, so either placement would silently do nothing.
-    Reusable handlers are checked where a step uses them, never as unused
-    catalog definitions.
-    """
-    for workflow in configuration.workflows:
-        _check_item_phases(workflow, workflow.steps, None, per_item=False)
-
-
-def _check_item_phases(
-    workflow: WorkflowDefinition,
-    steps: tuple[StepDefinition, ...],
-    parent: str | None,
-    *,
-    per_item: bool,
-) -> None:
-    for step in steps:
-        path = f"{parent}/{step.name}" if parent else step.name
-        if step.item_operation is not None and step.items is None:
-            where = f"workflow {workflow.name!r} step {path!r}"
-            if step.assessment_question is not None:
-                raise ConfigurationError(
-                    f"{where} sets item_phase on an assessment, which has no "
-                    "effect: an assessment compiles no item operation. Put "
-                    "item_phase on the outcome steps that do the work"
-                )
-            if not per_item:
-                raise ConfigurationError(
-                    f"{where} sets item_phase outside any per-item stage, "
-                    "where it has no effect: item_phase marks a stage under "
-                    "an items step, so move the step into items.steps"
-                )
-        for nested, nested_per_item in (
-            (step.child_steps, per_item),
-            (step.assessment_outcomes, per_item),
-            (_item_steps(step), True),
-            (_child_stages(step), per_item),
-        ):
-            _check_item_phases(workflow, nested, path, per_item=nested_per_item)
 
 
 def _validate_child_launches(configuration: WorkflowConfiguration) -> None:
@@ -805,10 +611,8 @@ def _unbound_item_saves(fields: tuple[str, ...]) -> str:
     return (
         "saves "
         + ", ".join(f"item.field.{name}" for name in fields)
-        + " outside any item: an item field save belongs on an items step, "
-        "for the items it collects, or on a step, hook, or handler that runs "
-        "in a per-item stage; a step between passes updates items with "
-        "update-item instead"
+        + " outside an items context: declare the save on a container or its "
+        "descendants"
     )
 
 
@@ -1077,17 +881,6 @@ def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:
             )
         if not collectors:
             continue
-        per_item = [
-            step
-            for flow_step in _walk_steps(workflow.steps)
-            for step in _walk_steps(_item_steps(flow_step))
-            if step.children is not None
-        ]
-        if per_item:
-            raise ConfigurationError(
-                f"workflow {workflow.name!r} collects children in the per-item "
-                f"stage {per_item[0].name!r}; a children step cannot repeat per item"
-            )
         flow = collectors[0].children
         assert flow is not None
         target = by_name.get(flow.workflow)

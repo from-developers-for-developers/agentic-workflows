@@ -41,7 +41,22 @@ ITEMS = """workflows:
     steps:
       - review: Review.
         items:
-          analyze: {guidance}
+          steps:
+            - analyze: {guidance}
+"""
+
+CHILDREN = """workflows:
+  - name: task
+    steps:
+      - slices: Split.
+        children:
+          steps:
+            - implement:
+                workflow: child
+            - land: GUIDANCE {{ww.child.id}}.
+  - name: child
+    steps:
+      - work: Work.
 """
 
 
@@ -232,11 +247,29 @@ def test_replan_takes_no_other_decision(tmp_path: Path) -> None:
         service.next("TASK-1", caller_role="manager", replan=True, retry=True)
 
 
-def test_a_change_to_expanded_item_stages_is_refused(tmp_path: Path) -> None:
+def test_a_change_to_an_items_substep_is_replanned_like_any_step(
+    tmp_path: Path,
+) -> None:
     service = _started(tmp_path, ITEMS.format(guidance="Look closely."))
     service.add_item("TASK-1", WorkItem(id="a", item="Fix a."))
     _complete(service)
     service = _write(tmp_path, ITEMS.format(guidance="Look harder."))
+
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    assert stop.plan_change.refusal is None
+    page = service.next("TASK-1", caller_role="manager", replan=True)
+    assert page.item_name == "analyze"
+    assert "Look harder." in (page.action_text or "")
+    assert service.item("TASK-1", "a").item == "Fix a."
+
+
+def test_a_change_to_expanded_child_stages_is_refused(tmp_path: Path) -> None:
+    service = _started(tmp_path, CHILDREN.replace("GUIDANCE", "Land"))
+    service.add_child("TASK-1", "A", "Slice A")
+    _complete(service)
+    service = _write(tmp_path, CHILDREN.replace("GUIDANCE", "Merge"))
 
     stop = service.next("TASK-1", caller_role="manager")
 

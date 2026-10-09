@@ -58,11 +58,6 @@ class SheetRow:
         }
 
 
-def ui_stage(plan: WorkflowPlan) -> PlanItem | None:
-    """The stage whose choices the sheet offers: any ``ui`` stage of the plan."""
-    return next((entry for entry in plan.items if entry.ui), None)
-
-
 def sheet_rows(
     plan: WorkflowPlan,
     state: ExecutionState,
@@ -70,40 +65,12 @@ def sheet_rows(
     answers: Mapping[str, Answer],
     entries: tuple[InteractionEntry, ...],
 ) -> tuple[SheetRow, ...]:
-    records = {
-        record.plan_item_id: record
-        for record in (*state.execution_history, *state.item_executions)
-    }
-    stages = {
-        entry.item_id: entry for entry in plan.items if entry.ui and entry.item_id
-    }
-    rows = []
-    for work in items:
-        stage = stages.get(work.id)
-        record = records.get(stage.id) if stage else None
-        applied = (
-            _applied(stage, record, state.run_id, entries)
-            if stage and record and record.status == "completed"
-            else None
-        )
-        rows.append(SheetRow(work, stage, record, answers.get(work.id), applied))
-    return tuple(rows)
-
-
-def _applied(
-    stage: PlanItem,
-    record: PlanItemExecution,
-    run_id: str | None,
-    entries: tuple[InteractionEntry, ...],
-) -> Answer:
-    """What the engine recorded for a completed stage, read back as an answer."""
-    own = [
-        entry
-        for entry in entries
-        if (entry.run_id, entry.step, entry.item_id, entry.speaker)
-        == (run_id, stage.name, stage.item_id, "operator")
-        and not entry.text.startswith("Choice: ")
-    ]
-    comment = own[-1].text if own else ""
-    at = own[-1].at if own else (record.completed_at or "")
-    return Answer(record.chosen, comment, at)
+    stage = plan.items[state.cursor] if state.cursor < len(plan.items) else None
+    if stage is None or not stage.ui:
+        return ()
+    record = state.item_executions[state.cursor]
+    return tuple(
+        SheetRow(work, stage, record, answers.get(work.id), None)
+        for work in items
+        if work.context == stage.item_context
+    )

@@ -203,19 +203,22 @@ def test_a_managers_step_keeps_its_subagents_rule(tmp_path: Path) -> None:
     assert not items["review"].subagents
 
 
-def test_items_subagents_reaches_the_stages(tmp_path: Path) -> None:
+def test_a_containers_subagents_reaches_its_items_substeps(tmp_path: Path) -> None:
     items = _items(
         tmp_path,
         """workflows:
   - name: task
     steps:
-      - triage: Triage.
+      - name: triage
+        subagents: false
         items:
-          subagents: false
           steps:
             - analyze: Analyze.
+            - report: Report.
+              subagents: true
 """,
     )
 
-    assert items["triage"].subagents
+    assert not items["triage"].subagents
     assert not items["analyze"].subagents
+    assert items["report"].subagents

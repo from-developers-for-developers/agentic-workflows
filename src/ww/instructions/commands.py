@@ -247,30 +247,6 @@ def item_command(task_id: str, item_id: str) -> str:
     return _command("item", _arg(task_id), "--id", _arg(item_id))
 
 
-_ITEM_UPDATE_FLAGS = {
-    "process_item": ('--processed-item="<agent-friendly analysis>"',),
-    "resolve_item": ('--actual-solution="<actual solution>"', "--resolved=true"),
-    "report_item": ("--reported=true",),
-    "handle_item": (
-        '--processed-item="<agent-friendly analysis>"',
-        '--actual-solution="<actual solution>"',
-        "--resolved=true",
-        "--reported=true",
-    ),
-}
-
-
-def update_item_command(task_id: str, item_id: str, operation: str | None) -> str:
-    """The update that saves progress for one item operation."""
-    return _command(
-        "update-item",
-        _arg(task_id),
-        "--id",
-        _arg(item_id),
-        *_ITEM_UPDATE_FLAGS.get(operation or "", ()),
-    )
-
-
 def complete_command(
     task_id: str,
     values: tuple[ProvidedVariable, ...],

@@ -343,7 +343,7 @@ def _item_shape(item: PlanItem) -> dict[str, Any]:
     }
     markers: dict[str, Any] = {
         "handler": item.registered_handler,
-        "items": item.item_operation or (item.item_template or None),
+        "items": item.item_operation,
         "children": item.child_operation or item.child_stage,
         "interactive": item.interactive or None,
         "rules": len(item.rules) or None,

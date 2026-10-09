@@ -259,7 +259,7 @@ workflows:
     assert visible.control == "awaiting_operator"
 
 
-def test_materialized_item_and_successor_run_are_manager_boundaries(
+def test_an_items_substep_and_successor_run_are_manager_boundaries(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "ww.yaml").write_text(
@@ -270,10 +270,9 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
         items:
           steps:
             - name: process
-              item_phase: analyze
               hooks:
                 before_start:
-                  - argv: [touch, materialized-preparation.txt]
+                  - argv: [touch, substep-preparation.txt]
   - name: choose
     steps:
       - name: select
@@ -302,9 +301,9 @@ def test_materialized_item_and_successor_run_are_manager_boundaries(
     )
     assert boundary.control == "handoff_manager"
     assert boundary.item_name == "inline-argv"
-    assert not (tmp_path / "materialized-preparation.txt").exists()
+    assert not (tmp_path / "substep-preparation.txt").exists()
     process = service.next("TASK-I", caller_role="manager")
-    assert (tmp_path / "materialized-preparation.txt").exists()
+    assert (tmp_path / "substep-preparation.txt").exists()
     assert process.item_name == "process"
 
     service.start("choose", "TASK-H", agent="codex", caller_role="manager")

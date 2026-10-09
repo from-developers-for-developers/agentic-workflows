@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-from copy import deepcopy
 from pathlib import Path
 
 import pytest
-import yaml
 
 from tests.workflow_helpers import start_after_init
 from ww.cli import main
+from ww.errors import StateError
 from ww.instructions import Instruction
 from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
@@ -58,62 +57,37 @@ REVIEW = """workflows:
             argv: [python3, fetch.py]
             saves:
               - metadata.review.input: The fetched payload.
-          - collect: Record one item per comment, using its source comment ID.
+          - feedback: Record one item per comment, using its source comment ID.
             items:
               identity: comment_id
               unique: [comment_id, reply_id]
-              steps: []
-          - analyze-together: Analyze all collected comments together.
-          - confirm-analysis: Reuse the collected items.
-            items:
               steps:
-                - analyze: Check the shared analysis for this comment.
-                  item_phase: analyze
-          - fix-together: Implement the fixes for every analyzed comment.
-          - resolve-each: Reuse the collected items.
-            items:
-              steps:
-                - verify-resolution: Record this comment's own resolution.
-                  item_phase: resolve
-          - answer: Reuse the collected items.
-            items:
-              steps:
-                - assess:
-                    question: Does this comment get a reply?
-                    outcomes:
-                      positive:
-                        steps:
-                          - reply: ~
-                            item_phase: report
-                            on_failure: POLICY
-                            argv:
-                              - python3
-                              - reply.py
-                              - "{{ww.item.field.comment_id}}"
-                              - "{{ww.item.actual_solution}}"
-                              - "{{ww.item.field.reply_id}}"
-                            saves:
-                              - item.field.reply_id: The reply ID the script printed.
+                - develop: Fix related comments together; resolve each one.
+                - lint: ~
+                  argv: [python3, lint.py]
+                  on_failure: POLICY
+                - send-replies: >-
+                    Reply in the thread of {{ww.item.field.comment_id}} for
+                    every comment; mark each reported after its reply succeeds.
+                  saves:
+                    - item.field.reply_id: The reply ID the remote returned.
           - decide: Summarize the review outcome.
 
 """
 
+LINT_SCRIPT = """import os, sys
+open("lint.log", "a").write("lint\\n")
+if os.path.exists("lint-broken"):
+    print("lint failed")
+    sys.exit(3)
+"""
+
 
 def _project(root: Path, policy: str = "fix") -> WorkflowService:
-    configuration = yaml.safe_load(REVIEW.replace("POLICY", policy))
-    # Two explicitly authored item passes: arrivals during the first pass are
-    # handled by the later pass, with no automatic repetition.
-    first_pass = deepcopy(configuration["workflows"][0]["steps"][0])
-    _, *body = first_pass.items()
-    followup = {
-        "follow-up": "Check for comments added during the first pass.",
-        **dict(body),
-    }
-    configuration["workflows"][0]["steps"].append(followup)
-    serialized = yaml.safe_dump(configuration, sort_keys=False)
-    (root / "ww.yaml").write_text(serialized, encoding="utf-8")
+    (root / "ww.yaml").write_text(REVIEW.replace("POLICY", policy), encoding="utf-8")
     (root / "fetch.py").write_text(FETCH_SCRIPT, encoding="utf-8")
     (root / "reply.py").write_text(REPLY_SCRIPT, encoding="utf-8")
+    (root / "lint.py").write_text(LINT_SCRIPT, encoding="utf-8")
     service = WorkflowService(Storage(root))
     start_after_init(service, "review", TASK, agent="codex", workflow_runtime="single")
     return service
@@ -125,12 +99,6 @@ def _resumed(root: Path) -> WorkflowService:
     assert main(["--root", str(root), "status", TASK]) in (0, 1)
     assert main(["--root", str(root), "instruction", TASK]) in (0, 1)
     return service
-
-
-def _step(service: WorkflowService, artifact: str = "Done.") -> str | None:
-    name = service.next(TASK).item_name
-    service.complete(TASK, artifact=artifact, summary_for_next="Done.")
-    return name
 
 
 def _items(service: WorkflowService) -> dict[str, WorkItem]:
@@ -154,62 +122,61 @@ def _ledger(root: Path) -> dict[str, dict[str, str]]:
     return json.loads((root / "ledger.json").read_text(encoding="utf-8"))
 
 
-def _through_resolution(service: WorkflowService, root: Path) -> list[str]:
-    """Round one up to the answer pass; the names of the steps the agent saw."""
-    seen = [str(service.next(TASK).item_name)]
+def _reply(service: WorkflowService, root: Path, item_id: str) -> bool:
+    """What the agent does per thread: post, then record the ID and the report."""
+    item = service.item(TASK, item_id)
+    posted = subprocess.run(
+        [
+            "python3",
+            "reply.py",
+            str(item.field("comment_id")),
+            item.actual_solution,
+            item.field("reply_id") or "",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if posted.returncode != 0:
+        return False
+    service.update_item(TASK, item_id, fields={"reply_id": posted.stdout.strip()})
+    service.report_item(TASK, item_id)
+    return True
+
+
+def _through_development(service: WorkflowService, root: Path) -> Instruction:
+    """Fetch, register three comments, fix them together, and pass the lint."""
+    assert service.next(TASK).item_name == "feedback"
     assert (root / "fetch.log").read_text() == "fetch\n"  # ww ran the fetch
     service.add_item(TASK, _comment("c1", "Null check missing", "101"))
     service.add_item(TASK, _comment("c2", "Same null bug", "102", reference_to_id="c1"))
     service.add_item(TASK, _comment("c3", "Typo in the name", "103"))
     service.complete(TASK, artifact="Collected.", summary_for_next="Done.")
-    seen.append(str(service.next(TASK).item_name))
-    # One batch analysis finds the related pair; c2 points at c1.
-    shared = "Both comments are the same missing null check in parse()."
-    service.update_item(TASK, "c1", processed_item=shared, proposed_solution="Guard")
-    service.update_item(TASK, "c2", processed_item=shared, proposed_solution="Guard")
-    service.update_item(TASK, "c3", processed_item="Typo.", proposed_solution="Rename")
-    before = _items(service)
-    service.complete(TASK, artifact="Analyzed.", summary_for_next="Done.")
-    seen += [str(_step(service)) for _ in range(4)]  # confirm-analysis + 3 checkpoints
-    assert _items(service) == before  # the checkpoints investigated nothing again
-    seen.append(str(_step(service, "One guard fixes both.")))  # the batch fix
-    seen.append(str(_step(service)))  # the resolve pass's collection step
-    for item_id in ("c1", "c2", "c3"):
-        seen.append(str(service.next(TASK).item_name))
-        service.update_item(
-            TASK, item_id, actual_solution=f"Resolved {item_id}.", resolved=True
-        )
-        service.complete(TASK, artifact="Verified.", summary_for_next="Done.")
-    return seen
+    assert service.next(TASK).item_name == "develop"
+    # One guard fixes c1 and c2; each comment still records its own outcome.
+    for item_id, outcome in (
+        ("c1", "Guarded parse()."),
+        ("c2", "Handled together with c1."),
+        ("c3", "Renamed."),
+    ):
+        service.resolve_item(TASK, item_id, actual_solution=outcome)
+    return service.complete(
+        TASK, artifact="One guard fixes both.", summary_for_next="Done."
+    )
 
 
-def _answer_item(service: WorkflowService, outcome: str = "positive") -> Instruction:
-    """Complete the item's assessment and choose its outcome."""
-    assert service.next(TASK).item_name == "assess"
-    service.complete(TASK, artifact="Answer it.", summary_for_next="Done.")
-    return service.next(TASK, outcome=outcome)
-
-
-def test_a_review_runs_from_fetch_to_replies_with_a_repair_a_resume_and_a_new_comment(
+def test_a_review_runs_from_fetch_to_replies_with_a_resume_and_a_new_comment(
     tmp_path: Path,
 ) -> None:
     service = _project(tmp_path)
+    _through_development(service, tmp_path)
+    _, snapshot = service.load(TASK)
+    steps = [item.name for item in snapshot.plan.items]
 
-    seen = _through_resolution(service, tmp_path)
-
-    assert seen == [
-        "collect",
-        "analyze-together",
-        "confirm-analysis",
-        "analyze",
-        "analyze",
-        "analyze",
-        "fix-together",
-        "resolve-each",
-        "verify-resolution",
-        "verify-resolution",
-        "verify-resolution",
-    ]
+    replies = service.next(TASK)
+    assert replies.item_name == "send-replies"
+    assert _lines(tmp_path / "lint.log") == ["lint"]  # ww ran the lint once
+    assert "--get field.comment_id" in (replies.action_text or "")
     # The fetch recorded its input as task metadata; the agent never ran it.
     metadata = json.loads(
         (tmp_path / ".ww/tasks" / TASK / "metadata.json").read_text(encoding="utf-8")
@@ -219,115 +186,59 @@ def test_a_review_runs_from_fetch_to_replies_with_a_repair_a_resume_and_a_new_co
         "102",
         "103",
     ]
-    # Each comment keeps its own stable ID and its own resolution.
-    assert {i.id: i.actual_solution for i in service.items(TASK)} == {
-        "c1": "Resolved c1.",
-        "c2": "Resolved c2.",
-        "c3": "Resolved c3.",
-    }
 
-    assert service.next(TASK).item_name == "answer"
-    service.complete(TASK, artifact="Reused.", summary_for_next="Done.")
-    # c1 is answered; the remote then refuses c2.
+    # c1 is answered; the remote then refuses c2, which stays unreported.
+    assert _reply(service, tmp_path, "c1")
     (tmp_path / "down").write_text("102")
-    _answer_item(service)
-    first = _items(service)["c1"]
-    assert (first.reported, first.field("reply_id")) == (True, "r1")
-    refused = _answer_item(service)
-    assert refused.handler_repair is not None
-    assert refused.item_name == "reply"
-
-    # The session is interrupted; a new process sees the failure and a repair.
-    service = _resumed(tmp_path)
-    repair = service.instruction(TASK, caller_role="manager")
-    assert repair.handler_repair is not None
-    assert "remote refused comment 102" in (repair.action_text or "")
-    assert _items(service)["c1"].field("reply_id") == "r1"
+    assert not _reply(service, tmp_path, "c2")
     assert not _items(service)["c2"].reported
 
-    # A comment that arrives now joins the next round, not this frozen pass.
-    service.add_item(TASK, _comment("c4", "Missing test", "104"))
-    _, snapshot = service.load(TASK)
-    assert not [i for i in snapshot.plan.items if i.item_id == "c4" and i.item_pass]
+    # The session is interrupted; a new process sees the same step and records.
+    service = _resumed(tmp_path)
+    assert service.instruction(TASK).item_name == "send-replies"
+    assert _items(service)["c1"].field("reply_id") == "r1"
+    with pytest.raises(StateError, match="c2: field.reply_id"):
+        service.complete(TASK, artifact="Replied.", summary_for_next="Done.")
 
+    # A comment that arrives now joins the same collection and its gate.
+    service.add_item(TASK, _comment("c4", "Missing test", "104"))
+    service.resolve_item(TASK, "c4", actual_solution="Added a test.")
     (tmp_path / "down").unlink()
-    service.complete(
-        TASK,
-        artifact="The remote accepts the reply again.",
-        caller_role="worker",
-        assignment=repair.assignment_token,
-    )
-    _answer_item(service)
+    for item_id in ("c2", "c3", "c4"):
+        assert _reply(service, tmp_path, item_id)
+    service.complete(TASK, artifact="Replied.", summary_for_next="Done.")
+
     assert _ledger(tmp_path) == {
-        "r1": {"comment": "101", "text": "Resolved c1."},
-        "r2": {"comment": "102", "text": "Resolved c2."},
-        "r3": {"comment": "103", "text": "Resolved c3."},
+        "r1": {"comment": "101", "text": "Guarded parse()."},
+        "r2": {"comment": "102", "text": "Handled together with c1."},
+        "r3": {"comment": "103", "text": "Renamed."},
+        "r4": {"comment": "104", "text": "Added a test."},
     }
     # The committed reply for 101 was never sent again; only 102 was retried.
-    assert _lines(tmp_path / "calls.log") == ["101", "102", "102", "103"]
-    assert _step_name(service) == "decide"
-    service.complete(TASK, artifact="c4 arrived.", summary_for_next="Done.")
-
-    # Round two: c4 is analyzed and fixed like the rest and gets its own reply,
-    # while the committed replies of c1 to c3 are kept and not sent again.
-    assert _step_name(service) == "collect"
-    assert (tmp_path / "fetch.log").read_text() == "fetch\nfetch\n"
-    service.complete(TASK, artifact="Nothing new.", summary_for_next="Done.")
-    assert _step_name(service) == "analyze-together"
-    service.update_item(
-        TASK, "c4", processed_item="Needs a test.", proposed_solution="T"
-    )
-    service.complete(TASK, artifact="Analyzed.", summary_for_next="Done.")
-    assert [_step(service) for _ in range(5)] == ["confirm-analysis"] + ["analyze"] * 4
-    assert _step(service) == "fix-together"
-    assert _step(service) == "resolve-each"
-    for item_id in ("c1", "c2", "c3", "c4"):
-        assert service.next(TASK).item_name == "verify-resolution"
-        if item_id == "c4":
-            service.update_item(TASK, item_id, actual_solution="Added.", resolved=True)
-        service.complete(TASK, artifact="Verified.", summary_for_next="Done.")
-    assert _step(service) == "answer"
-    for _ in range(3):
-        _answer_item(service, "negative")  # already answered in round one
-    _answer_item(service)
-
-    items = _items(service)
-    assert [items[i].field("reply_id") for i in ("c1", "c2", "c3", "c4")] == [
-        "r1",
-        "r2",
-        "r3",
-        "r4",
-    ]
-    assert all(item.reported for item in items.values())
     assert _lines(tmp_path / "calls.log") == ["101", "102", "102", "103", "104"]
-    assert set(_ledger(tmp_path)) == {"r1", "r2", "r3", "r4"}
-    assert _step_name(service) == "decide"
-    service.complete(TASK, artifact="No new comments.", summary_for_next="Done.")
+    assert all(item.reported for item in _items(service).values())
+    # Four comments did not add a step: the plan is the one compiled at start.
+    assert [item.name for item in service.load(TASK)[1].plan.items] == steps
+    assert service.next(TASK).item_name == "decide"
+    service.complete(TASK, artifact="Reviewed.", summary_for_next="Done.")
     assert service.next(TASK).item_name == "update-workflow-summary"
     service.complete(TASK, (("summary", "Reviewed."),))
     assert service.load(TASK)[0].status == "completed"
 
 
-def _step_name(service: WorkflowService) -> str | None:
-    return service.next(TASK).item_name
-
-
-def test_an_operator_stop_inside_an_item_stage_stays_inspectable_and_retries(
+def test_an_operator_stop_inside_an_items_context_stays_inspectable_and_retries(
     tmp_path: Path,
 ) -> None:
     service = _project(tmp_path, "operator")
-    _through_resolution(service, tmp_path)
-    assert service.next(TASK).item_name == "answer"
-    service.complete(TASK, artifact="Reused.", summary_for_next="Done.")
-    _answer_item(service)
-    (tmp_path / "down").write_text("102")
+    (tmp_path / "lint-broken").touch()
 
-    stopped = _answer_item(service)
+    stopped = _through_development(service, tmp_path)
+    assert _lines(tmp_path / "lint.log") == ["lint"]
 
     assert stopped.control == "awaiting_operator"
     assert stopped.operator_reason == "handler_failed"
     assert stopped.handler_repair is None
-    assert "remote refused comment 102" in (stopped.error or "")
+    assert "lint failed" in (stopped.error or "")
     # Both views keep rendering for a new process; the stop exits nonzero.
     assert main(["--root", str(tmp_path), "status", TASK]) == 0
     assert main(["--root", str(tmp_path), "instruction", TASK]) == 1
@@ -335,15 +246,13 @@ def test_an_operator_stop_inside_an_item_stage_stays_inspectable_and_retries(
     assert service.status(TASK, caller_role="manager").operator_reason == (
         "handler_failed"
     )
-    assert _items(service)["c1"].field("reply_id") == "r1"
+    assert all(item.resolved for item in _items(service).values())
 
-    (tmp_path / "down").unlink()
-    service.next(TASK, retry=True, caller_role="manager")  # the operator's pick
-    assert _items(service)["c2"].field("reply_id") == "r2"
-    assert _lines(tmp_path / "calls.log") == ["101", "102", "102"]
-    _answer_item(service)
-    assert set(_ledger(tmp_path)) == {"r1", "r2", "r3"}
-    assert _step_name(service) == "decide"
+    (tmp_path / "lint-broken").unlink()
+    page = service.next(TASK, retry=True, caller_role="manager")  # the operator's pick
+    assert _lines(tmp_path / "lint.log") == ["lint", "lint"]
+    assert page.item_name == "send-replies"
+    assert all(item.resolved for item in _items(service).values())
 
 
 WORKTREE_WORKFLOW = """hooks:

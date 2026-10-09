@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -382,10 +381,9 @@ def test_invalid_stops_are_rejected(
         load_configuration(path)
 
 
-@pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.parametrize("first_outcome", ["positive", "negative"])
-def test_per_item_assessments_keep_outcomes_in_their_own_item(
-    tmp_path: Path, legacy: bool, first_outcome: str
+def test_an_assessment_inside_an_items_context_runs_once_for_the_collection(
+    tmp_path: Path, first_outcome: str
 ) -> None:
     (tmp_path / "ww.yaml").write_text("""workflows:
   - task: ~
@@ -394,15 +392,15 @@ def test_per_item_assessments_keep_outcomes_in_their_own_item(
         items:
           steps:
             - assess:
-                question: Does this comment need operator input?
+                question: Do any comments need operator input?
                 outcomes:
                   positive:
                     steps:
-                      - discuss: Discuss the question.
+                      - discuss: Discuss the questions.
                   mixed:
                     steps:
-                      - clarify: Clarify the question.
-            - resolve: Resolve the comment.
+                      - clarify: Clarify the questions.
+            - resolve: Resolve the comments.
 """)
     service = WorkflowService(Storage(tmp_path))
     service.start("task", "TASK-1", agent="codex", init_artifact="Review.")
@@ -410,30 +408,16 @@ def test_per_item_assessments_keep_outcomes_in_their_own_item(
     for item_id in ("one", "two"):
         service.add_item("TASK-1", WorkItem(item_id, "Comment."))
     service.complete("TASK-1", artifact="Collected.", summary_for_next="Assess.")
-    state, snapshot = service.load("TASK-1")
-    for item in snapshot.plan.items:
-        if item.assessment_parent is not None:
-            assert "{item}" not in item.assessment_parent
-    if legacy:
-        plan = replace(
-            snapshot.plan,
-            items=tuple(
-                replace(
-                    item,
-                    assessment_parent=(
-                        item.assessment_parent.replace("/item-1/", "/{item}/").replace(
-                            "/item-2/", "/{item}/"
-                        )
-                        if item.assessment_parent is not None
-                        else None
-                    ),
-                )
-                for item in snapshot.plan.items
-            ),
-        )
-        snapshot = replace(snapshot, plan=plan)
-        service.commit(replace(state, plan_digest=snapshot.plan_digest), snapshot)
-    assert service.next("TASK-1").item_name == "assess"
+    _, snapshot = service.load("TASK-1")
+    assert [item.name for item in snapshot.plan.items].count("assess") == 1
+    assert all(
+        item.item_context == "collect"
+        for item in snapshot.plan.items
+        if item.step.startswith("collect/")
+    )
+    page = service.next("TASK-1")
+    assert page.item_name == "assess"
+    assert "items context `collect`" in (page.action_text or "")
     choice = service.complete(
         "TASK-1", artifact="Assessed.", summary_for_next="Choose."
     )
@@ -445,27 +429,28 @@ def test_per_item_assessments_keep_outcomes_in_their_own_item(
         service.complete("TASK-1", artifact="Discussed.", summary_for_next="Resolve.")
         service.next("TASK-1")
     assert service.status("TASK-1").item_name == "resolve"
-    service.complete("TASK-1", artifact="Resolved.", summary_for_next="Next comment.")
-    assert service.next("TASK-1").item_name == "assess"
-    service.complete("TASK-1", artifact="Uncertain.", summary_for_next="Clarify.")
-    assert service.next("TASK-1", outcome="mixed").item_name == "clarify"
+    for item_id in ("one", "two"):
+        service.resolve_item("TASK-1", item_id)
+        service.report_item("TASK-1", item_id)
+    service.complete("TASK-1", artifact="Resolved.", summary_for_next="Summarize.")
     state, snapshot = service.load("TASK-1")
-    active = snapshot.plan.items[state.cursor]
-    assert active.item_id == "two"
     skipped = [
-        item.item_id
+        item.name
         for item, record in zip(snapshot.plan.items, state.item_executions, strict=True)
-        if record.result == "skipped: assessment selected negative"
+        if record.result and record.result.startswith("skipped: assessment selected")
     ]
-    assert skipped == (["one", "one"] if first_outcome == "negative" else [])
+    assert skipped == (
+        ["clarify"] if first_outcome == "positive" else ["discuss", "clarify"]
+    )
+    assert service.next("TASK-1").item_name == "update-workflow-summary"
 
 
-def test_direct_assessment_branches_resume_inside_item_stages(
+def test_direct_assessment_branches_resume_inside_an_items_context(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "ww.yaml").write_text(
         """handlers:
-  - discuss: Discuss this item.
+  - discuss: Discuss the items.
 workflows:
   - task: ~
     steps:
@@ -479,7 +464,7 @@ workflows:
                 mixed:
                   handlers:
                     - argv: [printf, recorded]
-            - resolve: Resolve the item.
+            - resolve: Resolve the items.
 """,
         encoding="utf-8",
     )
@@ -509,14 +494,10 @@ workflows:
         "TASK-DIRECT-ITEM", artifact="Discussed.", summary_for_next="Resolve."
     )
     assert service.next("TASK-DIRECT-ITEM").item_name == "resolve"
-    service.complete(
-        "TASK-DIRECT-ITEM", artifact="Resolved.", summary_for_next="Next item."
-    )
-
-    assert service.next("TASK-DIRECT-ITEM").item_name == "assess"
-    service.complete("TASK-DIRECT-ITEM", artifact="Mixed.", summary_for_next="Choose.")
-    assert service.status("TASK-DIRECT-ITEM").choosing_outcome_of == "assess"
-    assert service.next("TASK-DIRECT-ITEM", outcome="mixed").item_name == "resolve"
+    service.complete("TASK-DIRECT-ITEM", artifact="Resolved.", summary_for_next="Gate.")
+    gate = service.next("TASK-DIRECT-ITEM")
+    assert gate.item_name == "collect"
+    assert "one: unresolved" in (gate.action_text or "")
 
 
 def test_direct_assessment_branches_resume_inside_a_group(tmp_path: Path) -> None:

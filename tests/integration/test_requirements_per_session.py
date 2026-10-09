@@ -11,7 +11,6 @@ import pytest
 from tests.workflow_helpers import assignment_token
 from ww.errors import ConfigurationError
 from ww.instructions import Instruction
-from ww.items import WorkItem
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.project_config import load_project_config
 from ww.service import WorkflowService
@@ -24,14 +23,11 @@ WORKERS = """workflows:
   - name: review
     steps:
       - review: Review the pull request.
-        items:
-          description: Split based on the review comments.
-          assignment: per_item
-          steps:
-            - analyze: Analyze this comment.
-              item_phase: analyze
-            - fix: Fix this comment.
-              item_phase: resolve
+        hooks:
+          after_complete:
+            - name: notes
+              description: Write the review notes.
+      - fix: Fix the findings.
 """
 
 MANAGER = """workflows:
@@ -78,35 +74,25 @@ def _in_full(page: Instruction) -> bool:
     return page.requirements_in_full
 
 
-def _collect(service: WorkflowService) -> None:
-    service.next(TASK, caller_role="manager")
-    service.add_item(TASK, WorkItem("c1", "First comment"))
-    service.complete(
+def _worker(service: WorkflowService, artifact: str) -> Instruction:
+    return service.complete(
         TASK,
-        artifact="collected",
+        artifact=artifact,
         caller_role="worker",
         assignment=assignment_token(service, TASK),
         summary_for_next="Done.",
     )
-    service.next(TASK, caller_role="manager")
 
 
 def _worker_pages(service: WorkflowService) -> tuple[Instruction, Instruction]:
-    """A delegated worker's first page and the page of its second stage."""
-    _collect(service)
+    """A delegated worker's first page and the page of its step's hook."""
+    service.next(TASK, caller_role="manager")
     first = service.status(
         TASK, caller_role="worker", assignment=assignment_token(service, TASK)
     )
-    service.update_item(TASK, "c1", processed_item="analysis")
-    second = service.complete(
-        TASK,
-        artifact="analyzed",
-        caller_role="worker",
-        assignment=assignment_token(service, TASK),
-        summary_for_next="Done.",
-    )
-    assert first.item_name == "analyze" and second.item_name == "fix"
-    assert second.continues_assignment
+    second = _worker(service, "reviewed")
+    assert first.item_name == "review" and second.item_name == "notes"
+    assert second.item_status == "in_progress"
     return first, second
 
 
@@ -127,9 +113,11 @@ def test_every_worker_assignment_starts_with_the_full_requirements(
     tmp_path: Path,
 ) -> None:
     service = _service(tmp_path, WORKERS)
-    _collect(service)
+    _worker_pages(service)
+    _worker(service, "noted")
+    assert service.next(TASK, caller_role="manager").item_name == "fix"
     state, _ = service.load(TASK)
-    # The collecting step's assignment is over; this one is a fresh session.
+    # The review step's assignment is over; this one is a fresh session.
     page = service.status(
         TASK, caller_role="worker", assignment=assignment_token(service, TASK)
     )

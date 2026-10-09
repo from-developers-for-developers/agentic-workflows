@@ -716,10 +716,13 @@ def build_parser() -> argparse.ArgumentParser:
         "items", parents=[run_only], help="List the latest workflow run's items."
     )
     items.add_argument("task_id")
+    items.add_argument("--context")
     item = subparsers.add_parser(
         "item", parents=[run_only], help="Show one workflow item as JSON."
     )
     item.add_argument("task_id")
+    item.add_argument("--context")
+    item.add_argument("--get", dest="get_field")
     item.add_argument("--id", dest="item_id")
     item.add_argument(
         "--by",
@@ -733,9 +736,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     artifacts.add_argument("task_id")
     add_item = subparsers.add_parser(
-        "add-item", help="Add an item to the active workflow run."
+        "add-item",
+        parents=[json_and_role],
+        help="Register an obligation in the active context.",
     )
     add_item.add_argument("task_id")
+    add_item.add_argument("--context")
+    add_item.add_argument("--run", dest="run_id")
     add_item.add_argument("--id", required=True)
     add_item.add_argument("--text", required=True, help="The item's wording.")
     add_item.add_argument(
@@ -754,13 +761,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Update an active workflow item and show its completion command.",
     )
     update_item.add_argument("task_id")
+    update_item.add_argument("--context")
+    update_item.add_argument("--run", dest="run_id")
     update_item.add_argument("--id", dest="item_id", required=True)
     update_item.add_argument(
         "--text",
         help="New item text; allowed only while the collection step is in progress.",
     )
-    update_item.add_argument("--processed-item")
-    update_item.add_argument("--proposed-solution")
+    update_item.add_argument("--notes")
+    update_item.add_argument("--refers-to", dest="reference_to_id")
     update_item.add_argument("--actual-solution")
     update_item.add_argument("--resolved", type=_true_false, metavar="{true,false}")
     update_item.add_argument("--reported", type=_true_false, metavar="{true,false}")
@@ -777,7 +786,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Remove an item while the collection step is in progress.",
     )
     remove_item.add_argument("task_id")
+    remove_item.add_argument("--context")
+    remove_item.add_argument("--run", dest="run_id")
     remove_item.add_argument("--id", dest="item_id", required=True)
+    for command in ("resolve-item", "report-item"):
+        transition = subparsers.add_parser(
+            command, parents=[json_and_role], help="Record an explicit item transition."
+        )
+        transition.add_argument("task_id")
+        transition.add_argument("--id", dest="item_id", required=True)
+        transition.add_argument("--context")
+        transition.add_argument("--run", dest="run_id")
+        transition.add_argument("--reopen", action="store_true")
+        if command == "resolve-item":
+            transition.add_argument("--actual-solution")
     add_child = subparsers.add_parser("add-child", help="Add a child task.")
     add_child.add_argument("task_id")
     add_child.add_argument(

@@ -86,11 +86,11 @@ from ww.instructions.models import CheckPreview, HandoffBlock
 from ww.instructions.policy import operator_reason
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
-from ww.item_passes import (
+from ww.item_collections import (
+    collection_failures,
     item_collection,
-    leaving_pass,
-    pass_gate_failures,
-    reports_item_on_completion,
+    missing_fields,
+    select_context,
 )
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
@@ -170,7 +170,6 @@ from ww.transitions import (
     await_item_input,
     begin_agent_item,
     begin_child_workflow,
-    block_item_phase,
     complete_agent_item,
     complete_run,
     dispute_checks,
@@ -179,7 +178,6 @@ from ww.transitions import (
     finish_selection,
     fix_limits,
     materialize_child_plan,
-    materialize_item_plan,
     pause_for_agent,
     project_steps,
     reject_completion,
@@ -202,7 +200,6 @@ from ww.variables import (
     PROJECT_METADATA_PREFIX,
     child_value_name,
     child_values,
-    item_binding_values,
     runtime_variable_values,
     unavailable_ww_values,
 )
@@ -298,10 +295,6 @@ class OpenAssignment:
 
 FORCE_NOT_APPLICABLE = "cannot force a task that is not failed or interrupted"
 # Forcing would skip the step after the pass, not the pass's missing records.
-FORCE_PAST_PASS_GATE = (
-    "an items pass gate cannot be forced: record what each item lacks with "
-    "update-item, then run next --retry"
-)
 
 
 class WorkflowService:
@@ -684,20 +677,24 @@ class WorkflowService:
         self, task_id: str, state: ExecutionState, item: PlanItem
     ) -> None:
         """A step's declared item fields must be set before it completes."""
-        items = self.tasks.read_items(task_id, state.run_id)
-        if item.item_id is not None:
-            items = tuple(entry for entry in items if entry.id == item.item_id)
-        missing = [
-            f"{field.name} on {entry.id}"
-            for entry in items
-            for field in item.update_item
-            if not entry.field(field.name)
-        ]
-        if missing:
+        entries = tuple(
+            entry
+            for entry in self.tasks.read_items(task_id, state.run_id)
+            if entry.context == item.item_context
+        )
+        failures = missing_fields(
+            entries, tuple(field.name for field in item.update_item)
+        )
+        if item.item_operation == "complete_collection":
+            _, snapshot = self.load(task_id, state.run_id)
+            failures += collection_failures(
+                snapshot.plan, state, str(item.item_context), entries
+            )
+        if failures:
             raise StateError(
-                f"{item.name!r} sets item fields that are still empty: "
-                + ", ".join(missing)
-                + "; set them with update-item --field NAME=VALUE, then complete"
+                f"items context {item.item_context!r} is incomplete: "
+                + "; ".join(failures)
+                + "; update its records, then retry this completion"
             )
 
     def _abandon_for_restart(self, task_id: str, workflow: WorkflowDefinition) -> None:
@@ -739,26 +736,34 @@ class WorkflowService:
         Identity, text, and references carry over; the outcome fields start
         clear, because every run is a new round over the same items.
         """
-        collection = item_collection(plan)
-        if collection is None or not collection.shared_items:
-            return None
+        contexts = {
+            item.item_context
+            for item in plan.items
+            if item.item_operation == "collect" and item.shared_items
+        }
         return tuple(
-            WorkItem(
-                item.id,
-                item.item,
-                reference_to_id=item.reference_to_id,
-                fields=item.fields,
-            )
+            replace(item, resolved=False, reported=False, actual_solution="")
             for item in self.tasks.read_shared_items(task_id)
+            if item.context in contexts
         )
 
     def _share_items(
         self, task_id: str, plan: WorkflowPlan, items: tuple[WorkItem, ...]
     ) -> None:
-        """Refresh the task's shared items from the run's copy, when shared."""
-        collection = item_collection(plan)
-        if collection is not None and collection.shared_items:
-            self.tasks.write_shared_items(task_id, items)
+        contexts = {
+            item.item_context
+            for item in plan.items
+            if item.item_operation == "collect" and item.shared_items
+        }
+        if contexts:
+            previous = self.tasks.read_shared_items(task_id)
+            self.tasks.write_shared_items(
+                task_id,
+                (
+                    *(item for item in previous if item.context not in contexts),
+                    *(item for item in items if item.context in contexts),
+                ),
+            )
 
     def commit(
         self,
@@ -910,21 +915,6 @@ class WorkflowService:
                 )
             except (OSError, StateError):
                 continue
-
-    def _reported_items(
-        self, task_id: str, state: ExecutionState, item: PlanItem, reports: bool
-    ) -> tuple[WorkItem, ...] | None:
-        """The items with ``item``'s own item marked reported, if it reports.
-
-        The mark is committed with the completion that finishes the report
-        stage, so an item is never reported before that completion is durable.
-        """
-        if not reports or item.item_id is None:
-            return None
-        return tuple(
-            replace(entry, reported=True) if entry.id == item.item_id else entry
-            for entry in self.tasks.read_items(task_id, state.run_id)
-        )
 
     def _commit_items(
         self,
@@ -1256,6 +1246,10 @@ class WorkflowService:
         caller_role: CallerRole | None = None,
     ) -> Instruction:
         state, snapshot = self.load(task_id)
+        if force and state.cursor < len(snapshot.plan.items):
+            current = snapshot.plan.items[state.cursor]
+            if current.item_operation in {"complete_collection", "save_fields"}:
+                self._require_item_fields(task_id, state, current)
         if (
             outcome is None
             and not force
@@ -1264,6 +1258,13 @@ class WorkflowService:
             # Nothing runs until an outcome is chosen; the page names one
             # command per outcome, so a plain `next` shows it again.
             return self.render(state, snapshot)
+        pending = pending_assessment(state, snapshot.plan)
+        if pending is not None and outcome is not None:
+            chosen = pending.outcome(outcome)
+            if chosen is not None and chosen.stops:
+                self._require_context_exits(
+                    state, snapshot.plan, snapshot.plan.items[pending.index]
+                )
         state = select_assessment_outcome(state, snapshot.plan, outcome, _now)
         if outcome is not None:
             self.commit(state, snapshot)
@@ -1294,8 +1295,6 @@ class WorkflowService:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
         if state.status == "failed":
-            if force and state.failure_kind == "pass_incomplete":
-                raise StateError(FORCE_PAST_PASS_GATE)
             if (
                 force
                 and state.failure_kind in {"fix_limit", "check_disputed"}
@@ -1446,8 +1445,6 @@ class WorkflowService:
                 f"without {'them' if len(disputed) > 1 else 'that check'}, and "
                 "the artifact records the waiver"
             )
-        if state.status == "failed" and state.failure_kind == "pass_incomplete":
-            raise StateError(FORCE_PAST_PASS_GATE)
         if state.status in {"failed", "interrupted"}:
             if state.cursor >= len(items):
                 raise StateError(
@@ -1614,7 +1611,8 @@ class WorkflowService:
                     "nothing was recorded; record the operator's words before "
                     "ending the interaction"
                 )
-            if item.choices and chosen is None:
+            # On the operator page each item carries its own choice.
+            if item.choices and not item.ui and chosen is None:
                 raise StateError(
                     f"{item.name!r} offers choices; record the operator's pick "
                     "with --choice before ending the interaction"
@@ -1627,7 +1625,7 @@ class WorkflowService:
             spoken,
             run_id=state.run_id,
             step=item.name,
-            item_id=item.item_id,
+            item_id=None,
             at=_now(),
         )
         records = list(state.item_executions)
@@ -1883,7 +1881,7 @@ class WorkflowService:
                 f"artifact is required to complete {item.name!r}; "
                 "pass a non-empty --artifact or configure artifact: false"
             )
-        if item.update_item:
+        if item.update_item or item.item_operation == "complete_collection":
             self._require_item_fields(task_id, state, item)
         active_record = state.item_executions[state.cursor]
         if item.interactive and not active_record.interaction_ended:
@@ -2010,12 +2008,6 @@ class WorkflowService:
             state.item_executions[state.cursor].selected_agent,
             state.item_executions[state.cursor].selected_model,
         )
-        reported_items = self._reported_items(
-            task_id,
-            state,
-            item,
-            reports_item_on_completion(snapshot.plan, state.cursor),
-        )
         state = complete_agent_item(
             state,
             snapshot.plan,
@@ -2038,22 +2030,20 @@ class WorkflowService:
             pending_task_metadata=(updated_metadata.values if updated_metadata else ()),
             pending_project_metadata=project_publication,
         )
-        if item.item_operation == "collect":
-            state, snapshot = materialize_item_plan(
-                state,
-                snapshot,
-                item,
-                self.tasks.read_items(task_id, state.run_id),
-                _now,
-            )
-        elif item.child_operation == "collect":
+        if item.child_operation == "collect":
             state, snapshot = materialize_child_plan(
                 state, snapshot, self.tasks.read_children(task_id, state.run_id), _now
             )
-        if reported_items is None:
-            self.commit(state, snapshot)
-        else:
-            self._commit_items(state, snapshot, reported_items)
+            current_items = self.tasks.read_items(task_id, state.run_id)
+            present_contexts = {entry.context for entry in current_items}
+            seeded = tuple(
+                entry
+                for entry in self._seed_shared_items(task_id, snapshot.plan) or ()
+                if entry.context not in present_contexts
+            )
+            if seeded:
+                self.commit(state, snapshot, items=(*current_items, *seeded))
+        self.commit(state, snapshot)
         for document in promised_documents:
             self.documents.record_update(
                 document,
@@ -2462,7 +2452,9 @@ class WorkflowService:
             )
             return summary, None
         state, snapshot = self.runs.resolve(task_id, runs, run_id)
-        return self.render(state, snapshot), (state, snapshot)
+        aggregate = self.runs.select_run(runs, run_id)
+        items = aggregate.items if aggregate is not None else None
+        return self.render(state, snapshot, items), (state, snapshot)
 
     def requirements(self, task_id: str, run_id: str | None = None) -> TaskRequirements:
         """The requirements ``init`` recorded, with their amendments, read only.
@@ -2740,24 +2732,11 @@ class WorkflowService:
     def _item_values(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> dict[str, str]:
-        """``{{ww.item.*}}`` for a per-item stage: its item as stored right now.
-
-        Read from the run's items on every call, so a value changed in an
-        earlier pass or by ``update-item`` after a gate stop is what renders;
-        nothing is frozen into the plan.  A step with no bound item, or whose
-        item is gone, has none: reading one is a context error.
-        """
-        if item.item_id is None:
-            return {}
-        work = next(
-            (
-                entry
-                for entry in self.tasks.read_items(state.task_id, state.run_id)
-                if entry.id == item.item_id
-            ),
-            None,
-        )
-        return item_binding_values(item.item_id, work, item.dependencies)
+        return {
+            name: "{{" + name + "}}"
+            for name in item.dependencies
+            if name.startswith("ww.item.") and item.item_context is not None
+        }
 
     def _child_values(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
@@ -2906,31 +2885,74 @@ class WorkflowService:
         """Prune obsolete lock sidecars outside any task-specific state."""
         return CleanupResult(self.storage.cleanup_locks())
 
-    def items(self, task_id: str, run_id: str | None = None) -> tuple[WorkItem, ...]:
+    def items(
+        self, task_id: str, run_id: str | None = None, context: str | None = None
+    ) -> tuple[WorkItem, ...]:
         validate_task_id(task_id)
-        runs, _handoff, _revision = self.tasks.read_task_record(task_id)
-        selected = self.runs.select_run(runs, run_id)
-        if selected is None:
-            if run_id is not None:
-                return ()
-            raise StateError(f"task {task_id!r} has not been started; use start")
-        return selected.items
+        runs, _, _ = self.tasks.read_task_record(task_id)
+        run = self.runs.select_run(runs, run_id)
+        if run is None:
+            raise StateError(f"task {task_id!r} has no matching workflow run")
+        selected = select_context(run.snapshot.plan, run.state, context)
+        return tuple(item for item in run.items if item.context == selected)
 
-    def item(self, task_id: str, item_id: str, run_id: str | None = None) -> WorkItem:
-        """Return one work item from one workflow run."""
-        for item in self.items(task_id, run_id):
+    def item(
+        self,
+        task_id: str,
+        item_id: str,
+        run_id: str | None = None,
+        context: str | None = None,
+    ) -> WorkItem:
+        for item in self.items(task_id, run_id, context):
             if item.id == item_id:
                 return item
         raise StateError(f"item {item_id!r} was not found")
 
     def find_item(
-        self, task_id: str, name: str, value: str, run_id: str | None = None
+        self,
+        task_id: str,
+        name: str,
+        value: str,
+        run_id: str | None = None,
+        context: str | None = None,
     ) -> WorkItem:
-        """Return the work item whose custom field ``name`` holds ``value``."""
-        for item in self.items(task_id, run_id):
+        for item in self.items(task_id, run_id, context):
             if item.field(name) == value:
                 return item
         raise StateError(f"no item has {name} = {value!r}")
+
+    def _mutation_context(
+        self,
+        task_id: str,
+        context: str | None,
+        run_id: str | None,
+        caller_role: CallerRole | None,
+        assignment: str | None,
+    ) -> tuple[ExecutionState, PlanSnapshot, str]:
+        self._validate_caller_role(caller_role)
+        self._authorize_worker(task_id, caller_role, assignment)
+        state, snapshot = self.load(task_id)
+        if run_id is not None and state.run_id != run_id:
+            raise StateError("stale item mutation: the workflow run changed")
+        if not run_is_open(state.status) or state.cursor >= len(snapshot.plan.items):
+            raise StateError("items context is no longer active")
+        pending = pending_assessment(state, snapshot.plan)
+        current = snapshot.plan.items[
+            pending.index if pending is not None else state.cursor
+        ]
+        if context is None:
+            context = current.item_context
+        selected = select_context(snapshot.plan, state, context)
+        if selected != current.item_context:
+            raise StateError(
+                f"items context {selected!r} is not the active nearest context"
+            )
+        if current.verifies is not None:
+            raise StateError(
+                "verification is read-only; item mutation is not permitted"
+            )
+        self._check_performer(task_id, caller_role)
+        return state, snapshot, selected
 
     def _check_item_fields(
         self,
@@ -2947,7 +2969,7 @@ class WorkflowService:
         a value may appear once over all items of the run and, when the
         flow is shared, of the task's store.
         """
-        collect = item_collection(plan)
+        collect = item_collection(plan, item.context)
         if collect is None:
             return
         if adding and collect.item_identity and not item.field(collect.item_identity):
@@ -2957,12 +2979,16 @@ class WorkflowService:
             )
         if not collect.item_unique:
             return
-        others = [entry for entry in items if entry.id != item.id]
+        others = [
+            entry
+            for entry in items
+            if entry.context == item.context and entry.id != item.id
+        ]
         if collect.shared_items:
             others += [
                 entry
                 for entry in self.tasks.read_shared_items(task_id)
-                if entry.id != item.id
+                if entry.context == item.context and entry.id != item.id
             ]
         taken = {
             entry.field(name): (entry.id, name)
@@ -3061,25 +3087,36 @@ class WorkflowService:
                         )
         return tuple(artifacts)
 
-    def add_item(self, task_id: str, item: WorkItem) -> WorkItem:
+    def add_item(
+        self,
+        task_id: str,
+        item: WorkItem,
+        *,
+        context: str | None = None,
+        run_id: str | None = None,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+    ) -> WorkItem:
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
-            run_id = self.tasks.active_execution_run(task_id)
-            if run_id is None:
-                raise StateError(f"task {task_id!r} has no active workflow run")
-            state, snapshot = self.load(task_id, run_id)
-            items = self.tasks.read_items(task_id, run_id)
-            if any(existing.id == item.id for existing in items):
-                raise StateError(f"item {item.id!r} already exists")
+            state, snapshot, selected = self._mutation_context(
+                task_id, context, run_id, caller_role, assignment
+            )
+            item = replace(item, context=selected)
+            if item.resolved or item.reported:
+                raise StateError("new items must be unresolved and unreported")
+            items = self.tasks.read_items(task_id, state.run_id)
+            owned = tuple(entry for entry in items if entry.context == selected)
+            if any(entry.id == item.id for entry in owned):
+                raise StateError(f"item {item.id!r} already exists in {selected!r}")
             if item.reference_to_id and not any(
-                existing.id == item.reference_to_id for existing in items
+                entry.id == item.reference_to_id for entry in owned
             ):
                 raise StateError(
                     f"item reference {item.reference_to_id!r} does not exist"
                 )
-            self._check_item_fields(task_id, snapshot.plan, items, item, adding=True)
-            self.commit(state, snapshot, items=(*items, item))
-            self._share_items(task_id, snapshot.plan, (*items, item))
+            self._check_item_fields(task_id, snapshot.plan, owned, item, adding=True)
+            self._commit_items(state, snapshot, (*items, item))
             return item
 
     def _project_names(self) -> tuple[str, ...]:
@@ -3106,7 +3143,7 @@ class WorkflowService:
                 and snapshot.plan.items[state.cursor].child_operation == "collect"
             )
             expanded = any(
-                entry.child_stage is not None and not entry.item_template
+                entry.child_stage is not None and not entry.child_template
                 for entry in snapshot.plan.items
             )
             if not collecting:
@@ -3312,74 +3349,142 @@ class WorkflowService:
         task_id: str,
         item_id: str,
         *,
+        context: str | None = None,
+        run_id: str | None = None,
         caller_role: CallerRole | None = None,
+        assignment: str | None = None,
         **changes: object,
     ) -> ItemUpdateResult:
         validate_task_id(task_id)
-        self._validate_caller_role(caller_role)
         unexpected = set(changes) - EDITABLE_WORK_ITEM_FIELDS - {"item"}
         if unexpected:
             raise StateError("unknown item field(s): " + ", ".join(sorted(unexpected)))
         custom = changes.pop("fields", None)
-        if custom is not None and not isinstance(custom, dict):
-            raise StateError("item fields must be a mapping")
         with self.tasks.lock_task(task_id):
-            run_id = self.tasks.active_execution_run(task_id)
-            if run_id is None:
-                raise StateError(f"task {task_id!r} has no active workflow run")
-            state, snapshot = self.load(task_id, run_id)
-            if "item" in changes and not _collecting(state, snapshot):
-                raise StateError(
-                    "an item's text can change only while the collection step is "
-                    "in progress"
-                )
-            items = list(self.tasks.read_items(task_id, run_id))
+            state, snapshot, selected = self._mutation_context(
+                task_id, context, run_id, caller_role, assignment
+            )
+            items = list(self.tasks.read_items(task_id, state.run_id))
             index = next(
-                (i for i, item in enumerate(items) if item.id == item_id), None
+                (
+                    i
+                    for i, entry in enumerate(items)
+                    if entry.context == selected and entry.id == item_id
+                ),
+                None,
             )
             if index is None:
                 raise StateError(f"item {item_id!r} was not found")
+            previous = items[index]
+            if "item" in changes and changes["item"] != previous.item:
+                changes.update(resolved=False, reported=False)
+            if changes.get("resolved") is False:
+                changes["reported"] = False
             try:
-                updated = WorkItem.from_dict({**items[index].to_dict(), **changes})
+                updated = WorkItem.from_dict({**previous.to_dict(), **changes})
                 if custom is not None:
                     updated = updated.with_fields(dict(validate_item_fields(custom)))
             except ValueError as error:
                 raise StateError(str(error)) from error
-            if custom is not None:
-                self._check_item_fields(
-                    task_id, snapshot.plan, tuple(items), updated, adding=False
-                )
+            owned = tuple(entry for entry in items if entry.context == selected)
+            if updated.reference_to_id is not None:
+                by_id = {entry.id: entry for entry in owned}
+                seen = {updated.id}
+                reference: str | None = updated.reference_to_id
+                while reference is not None:
+                    if reference in seen or reference not in by_id:
+                        raise StateError(
+                            "item reference must exist in the context and be acyclic"
+                        )
+                    seen.add(reference)
+                    reference = by_id[reference].reference_to_id
+            self._check_item_fields(
+                task_id, snapshot.plan, owned, updated, adding=False
+            )
             items[index] = updated
-            self.commit(state, snapshot, items=tuple(items))
-            self._share_items(task_id, snapshot.plan, tuple(items))
-            instruction = self._tag_caller(self.render(state, snapshot), caller_role)
-            return ItemUpdateResult(updated, instruction.continuation_command)
+            self._commit_items(state, snapshot, tuple(items))
+            return ItemUpdateResult(updated, "")
 
-    def remove_item(self, task_id: str, item_id: str) -> WorkItem:
-        """Drop an item while the collection step is in progress."""
+    def resolve_item(
+        self,
+        task_id: str,
+        item_id: str,
+        *,
+        context: str | None = None,
+        run_id: str | None = None,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+        actual_solution: str | None = None,
+        reopen: bool = False,
+    ) -> ItemUpdateResult:
+        changes: dict[str, object] = {"resolved": not reopen}
+        if actual_solution is not None:
+            changes["actual_solution"] = actual_solution
+        return self.update_item(
+            task_id,
+            item_id,
+            context=context,
+            run_id=run_id,
+            caller_role=caller_role,
+            assignment=assignment,
+            **changes,
+        )
+
+    def report_item(
+        self,
+        task_id: str,
+        item_id: str,
+        *,
+        context: str | None = None,
+        run_id: str | None = None,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+        reopen: bool = False,
+    ) -> ItemUpdateResult:
+        return self.update_item(
+            task_id,
+            item_id,
+            context=context,
+            run_id=run_id,
+            caller_role=caller_role,
+            assignment=assignment,
+            reported=not reopen,
+        )
+
+    def remove_item(
+        self,
+        task_id: str,
+        item_id: str,
+        *,
+        context: str | None = None,
+        run_id: str | None = None,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+    ) -> WorkItem:
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
-            run_id = self.tasks.active_execution_run(task_id)
-            if run_id is None:
-                raise StateError(f"task {task_id!r} has no active workflow run")
-            state, snapshot = self.load(task_id, run_id)
-            if not _collecting(state, snapshot):
-                raise StateError(
-                    "an item can be removed only while the collection step is in "
-                    "progress"
-                )
-            items = self.tasks.read_items(task_id, run_id)
-            removed = next((item for item in items if item.id == item_id), None)
+            state, snapshot, selected = self._mutation_context(
+                task_id, context, run_id, caller_role, assignment
+            )
+            items = self.tasks.read_items(task_id, state.run_id)
+            removed = next(
+                (
+                    item
+                    for item in items
+                    if item.context == selected and item.id == item_id
+                ),
+                None,
+            )
             if removed is None:
                 raise StateError(f"item {item_id!r} was not found")
-            referrers = [item.id for item in items if item.reference_to_id == item_id]
-            if referrers:
-                raise StateError(
-                    f"item {item_id!r} is referenced by " + ", ".join(referrers)
-                )
-            kept = tuple(item for item in items if item.id != item_id)
-            self.commit(state, snapshot, items=kept)
-            self._share_items(task_id, snapshot.plan, kept)
+            if any(
+                item.reference_to_id == item_id and item.context == selected
+                for item in items
+            ):
+                raise StateError(f"item {item_id!r} is still referenced")
+            self._commit_items(
+                state, snapshot, tuple(item for item in items if item != removed)
+            )
             return removed
 
     def initialize(
@@ -3426,10 +3531,6 @@ class WorkflowService:
                 state = begin_child_workflow(state, item, _now)
                 self.commit(state, snapshot)
                 return state, snapshot
-            blocked = self._block_unfinished_pass(state, plan)
-            if blocked is not None:
-                self.commit(blocked, snapshot)
-                return blocked, snapshot
             record = state.item_executions[state.cursor]
             if needs_repair(state):
                 return state, snapshot
@@ -3461,6 +3562,23 @@ class WorkflowService:
                 state = skip_idle_verification(state, _now)
                 self.commit(state, snapshot)
                 continue
+            if item.item_operation in {"complete_collection", "save_fields"}:
+                try:
+                    self._require_item_fields(state.task_id, state, item)
+                except StateError:
+                    pass
+                else:
+                    state = begin_agent_item(
+                        state,
+                        plan,
+                        item,
+                        model=state.model,
+                        reasoning=state.reasoning,
+                        now=_now,
+                    )
+                    state = complete_agent_item(state, plan, {}, None, _now)
+                    self.commit(state, snapshot)
+                    continue
             if item.owner == "agent" and record.held_completion is not None:
                 # Its verification finished, but ww stopped before recording
                 # the completion: record it now.
@@ -3514,46 +3632,32 @@ class WorkflowService:
         self.commit(state, snapshot)
         return state, snapshot
 
-    def _block_unfinished_pass(
-        self, state: ExecutionState, plan: WorkflowPlan
-    ) -> ExecutionState | None:
-        """Stop before leaving an items pass whose declared phases are unmet.
-
-        Checked once the pass's last stage is done and before the next item
-        starts; only what the pass's stages declared, and actually ran, is
-        required (see ``ww.item_passes``).  When that last stage is an
-        assessment, the pass ends only once its outcome is chosen: an outcome
-        whose work belongs to the pass runs first, and one that stops the
-        workflow ends the run without a gate.
-        """
-        pass_id = leaving_pass(plan, state.cursor)
-        following = state.item_executions[state.cursor]
-        if (
-            pass_id is None
-            or following.status != "pending"
-            or following.started_at is not None
-            or pending_assessment(state, plan) is not None
-        ):
-            return None
-        unfinished = pass_gate_failures(
-            plan,
-            state.item_executions,
-            pass_id,
-            self.tasks.read_items(state.task_id, state.run_id),
-        )
-        if not unfinished:
-            return None
-        message = (
-            f"items pass {pass_id!r} cannot complete; its items lack what its "
-            "stages declare: "
-            + "; ".join(unfinished)
-            + ". Record it with update-item, then retry"
-        )
-        return block_item_phase(state, message, _now)
+    def _require_context_exits(
+        self, state: ExecutionState, plan: WorkflowPlan, current: PlanItem
+    ) -> None:
+        paths = {*current.ancestors, current.step, current.item_context}
+        for collector in plan.items:
+            if (
+                collector.item_operation != "collect"
+                or collector.item_context not in paths
+            ):
+                continue
+            failures = collection_failures(
+                plan,
+                state,
+                str(collector.item_context),
+                self.tasks.read_items(state.task_id, state.run_id),
+            )
+            if failures:
+                raise StateError(
+                    f"items context {collector.item_context!r} cannot exit: "
+                    + "; ".join(failures)
+                )
 
     def _handoff(
         self, state: ExecutionState, snapshot: PlanSnapshot, item: PlanItem
     ) -> tuple[ExecutionState, PlanSnapshot]:
+        self._require_context_exits(state, snapshot.plan, item)
         if not snapshot.plan.handoff:
             raise StateError(
                 "workflow transitions are only supported by handoff workflows"
@@ -4184,9 +4288,15 @@ class WorkflowService:
             return None
         return take_mark(self._check_scope(state, plan, item).directory)
 
-    def render(self, state: ExecutionState, snapshot: PlanSnapshot) -> Instruction:
+    def render(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        items: tuple[WorkItem, ...] | None = None,
+    ) -> Instruction:
+        """The page for ``state``; ``items`` come from the same read when given."""
         return self._with_debug_events(
-            self.instructions.build(state, snapshot), state, snapshot
+            self.instructions.build(state, snapshot, items=items), state, snapshot
         )
 
     def _with_debug_events(

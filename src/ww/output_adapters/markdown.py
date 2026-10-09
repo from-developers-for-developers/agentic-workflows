@@ -18,22 +18,18 @@ from ww.changes import Scope, is_scoped
 from ww.children import ChildTask
 from ww.config_files import SETTINGS_FILE
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX, OperatorReason
-from ww.executable import DEFAULT_EXECUTABLE, ww_command
+from ww.executable import DEFAULT_EXECUTABLE
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
-    add_item_command,
     artifacts_command,
     check_command,
     dispute_command,
     handoff_command,
     instruction_command,
     next_command,
-    remove_item_command,
     replan_command,
     reset_command,
-    reword_item_command,
     rule_command,
-    set_item_fields_command,
     start_command,
 )
 from ww.instructions.handoff import HANDOFF_TITLE, handoff_markdown
@@ -94,8 +90,6 @@ class MarkdownOutputAdapter(OutputAdapter):
             _fix_required(lines, instruction)
             _continuation(lines, instruction)
             return _document(lines)
-        if _continues_assignment(instruction):
-            return _document(_next_stage(lines, instruction))
         _heading(lines, instruction)
         _worker_selection(lines, instruction)
         _assignment_preview(lines, instruction)
@@ -104,7 +98,6 @@ class MarkdownOutputAdapter(OutputAdapter):
             _assignment_explicit_guidance(lines, instruction)
             _worker_bootstrap(lines, instruction)
             return _document(lines)
-        _assignment_scope(lines, instruction)
         _working_directory(lines, instruction)
         _profile(lines, instruction)
         _task_requirements(lines, instruction)
@@ -114,8 +107,6 @@ class MarkdownOutputAdapter(OutputAdapter):
         _modes(lines, instruction)
         _rules(lines, instruction)
         _verification(lines, instruction)
-        _item_fields(lines, instruction)
-        _stored_items(lines, instruction)
         _interaction(lines, instruction)
         _documents(lines, instruction)
         _run_handovers(lines, instruction)
@@ -535,7 +526,6 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "fix_limit": "the step's checks reached their fix limit",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
-    "pass_incomplete": "an items pass is missing item records",
 }
 
 
@@ -648,9 +638,6 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
         if len(items) > 1:
             covered = _item_list(items, _strings(preview.get("automatic_items")))
             lines.extend(["", f"The assignment covers, in order: {covered}."])
-        scope = preview.get("item_scope")
-        if isinstance(scope, dict):
-            lines.extend(["", f"Scope: {_scope_summary(scope)}"])
     else:
         coordinator = "coordinator_item_id" in preview
         title = "Coordinator work" if coordinator else "Upcoming assignment"
@@ -658,37 +645,8 @@ def _assignment_preview(lines: Lines, instruction: Instruction) -> None:
         lines.append(str(preview["message"]))
 
 
-def _scope_summary(scope: dict[str, object]) -> str:
-    stages = ", ".join(f"`{name}`" for name in _strings(scope["stages"]))
-    item_ids = _strings(scope["item_ids"])
-    if scope["item_assignment"] == "together":
-        return (
-            f"one worker performs every stage ({stages}) of all {len(item_ids)} items."
-        )
-    return f"one worker performs every stage ({stages}) of item `{item_ids[0]}`."
-
-
 def _strings(value: object) -> list[str]:
     return [str(entry) for entry in value] if isinstance(value, list) else []
-
-
-def _assignment_scope(lines: Lines, instruction: Instruction) -> None:
-    scope = instruction.assignment_scope
-    if scope is None or audience(instruction) is not Audience.WORKER:
-        return
-    _append_section(lines, "Assignment scope")
-    unit = "stage"
-    lines.extend(
-        [
-            f"In this assignment, {_scope_summary(scope)}",
-            "",
-            f"Do one {unit} at a time and complete each with its own worker "
-            f"completion command; `ww` replies with the next {unit} straight "
-            f"away. Do not start a later {unit} early. Keep going until `ww` "
-            "says control returns to the manager.",
-        ]
-    )
-    _assignment_explicit_guidance(lines, instruction)
 
 
 def _assignment_explicit_guidance(lines: Lines, instruction: Instruction) -> None:
@@ -702,40 +660,6 @@ def _assignment_explicit_guidance(lines: Lines, instruction: Instruction) -> Non
             + ". Their own pages carry the operation and per-file diff details.",
         ]
     )
-
-
-def _continues_assignment(instruction: Instruction) -> bool:
-    """A worker moving to the next stage of the item assignment it already holds."""
-    return (
-        instruction.continues_assignment
-        and instruction.completion_registered
-        and instruction.item_status == "in_progress"
-        and audience(instruction) is Audience.WORKER
-    )
-
-
-def _next_stage(lines: Lines, instruction: Instruction) -> Lines:
-    """The compact instruction for a later stage of the same assignment.
-
-    The worker already holds the role, workspace, profile, and item
-    context, so only the new stage's work and its completion command are
-    repeated.
-    """
-    lines.extend(
-        [
-            f"## Worker: next stage, `{instruction.item_name}`",
-            "",
-            "Continue in the same assignment.",
-        ]
-    )
-    _task_requirements(lines, instruction)
-    _work(lines, instruction)
-    _explicit_guidance(lines, instruction)
-    _modes(lines, instruction)
-    _rules(lines, instruction)
-    _documents(lines, instruction)
-    _continuation(lines, instruction)
-    return lines
 
 
 def _worker_bootstrap(lines: Lines, instruction: Instruction) -> None:
@@ -1258,111 +1182,6 @@ def _assessment_answers(lines: Lines, instruction: Instruction) -> None:
     )
 
 
-def _item_fields(lines: Lines, instruction: Instruction) -> None:
-    """Custom item fields: what this step must set, and the flow's rules."""
-    if instruction.item_status != "in_progress":
-        return
-    rules = instruction.item_identity or instruction.item_unique
-    if not instruction.required_item_fields and not rules:
-        return
-    _append_section(lines, "Item fields")
-    task_id = instruction.task_id
-    if instruction.required_item_fields:
-        target = (
-            "every collected item" if instruction.collects_items else "this step's item"
-        )
-        lines.extend(
-            [
-                f"Set these custom fields on {target} before completing; "
-                "completion is refused while any is empty. Several go in one "
-                "command:",
-                "",
-            ]
-        )
-        lines.extend(
-            f"- `{field.name}`"
-            + (f" — {field.description}" if field.description else "")
-            for field in instruction.required_item_fields
-        )
-        lines.extend(["", "```console", set_item_fields_command(task_id), "```"])
-    if rules:
-        lines.append("")
-        if instruction.item_identity:
-            lines.append(
-                f"A new item must carry `{instruction.item_identity}`; `add-item` "
-                "refuses one without it:"
-            )
-            command = add_item_command(task_id, instruction.item_identity)
-            lines.extend(["", "```console", command, "```"])
-        if instruction.item_unique:
-            lines.extend(
-                [
-                    "",
-                    "Across "
-                    + ", ".join(f"`{n}`" for n in instruction.item_unique)
-                    + " a value may appear once over all items, in this run and in "
-                    "the task's stored items; ww refuses a duplicate and names the "
-                    "item that holds it. Look an item up by a field with "
-                    f"`{_command_by(task_id)}`.",
-                ]
-            )
-
-
-def _command_by(task_id: str) -> str:
-    return f"{ww_command()} item {task_id} --by <name>=<value>"
-
-
-def _stored_items(lines: Lines, instruction: Instruction) -> None:
-    """A shared item flow's collection: reconcile the stored items."""
-    if instruction.item_status != "in_progress" or not instruction.shared_items:
-        return
-    _append_section(lines, "Stored items")
-    task_id = instruction.task_id
-    if not instruction.stored_items:
-        lines.extend(
-            [
-                "This task shares its items across runs, and none are stored yet: "
-                "split as instructed above. Every later run starts from the items "
-                "you record now.",
-            ]
-        )
-        return
-    lines.extend(
-        [
-            "This task shares its items across runs. The items below were "
-            "collected in an earlier run and this run starts from them, with "
-            "their outcomes cleared. Do not split again: compare the source "
-            "with this list and make the list match it, adding what is new, "
-            "removing what is gone, and rewording what changed. Keep IDs "
-            "stable, so an item that changed is reworded, not replaced. Remove "
-            "an item only when it is gone from the source, never because it "
-            "was done: outcomes are per run, and every run keeps its own copy. "
-            "If nothing changed, complete the step as it is.",
-            "",
-        ]
-    )
-    lines.extend(
-        f"- `{item.id}`: {item.item}"
-        + (f" (refers to `{item.reference_to_id}`)" if item.reference_to_id else "")
-        + (
-            " [" + ", ".join(f"{k}={v}" for k, v in item.fields) + "]"
-            if item.fields
-            else ""
-        )
-        for item in instruction.stored_items
-    )
-    lines.extend(
-        [
-            "",
-            "```console",
-            add_item_command(task_id),
-            remove_item_command(task_id),
-            reword_item_command(task_id),
-            "```",
-        ]
-    )
-
-
 def _interaction(lines: Lines, instruction: Instruction) -> None:
     """The contract of an interactive step: talk first, then record it once."""
     if instruction.item_status != "in_progress" or not instruction.interactive:
@@ -1588,9 +1407,6 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
         return
     if instruction.operator_reason == "value_unavailable":
         _value_unavailable(lines, instruction)
-        return
-    if instruction.operator_reason == "pass_incomplete":
-        _pass_incomplete(lines, instruction)
         return
     if instruction.task_id.startswith(BOOTSTRAP_REQUEST_PREFIX):
         _identity_failed(lines, instruction)
@@ -1897,36 +1713,6 @@ def _identity_failed(lines: Lines, instruction: Instruction) -> None:
             "```",
         ]
     )
-
-
-def _pass_incomplete(lines: Lines, instruction: Instruction) -> None:
-    """A pass gate: the pass's items lack records; nothing failed or ran."""
-    lines.extend(
-        [
-            "",
-            "The items pass has finished its stages, but the items named in "
-            "the error above lack what those stages declare. No handler "
-            "failed, and the next step has not started.",
-        ]
-    )
-    if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
-        lines.extend(
-            [
-                "",
-                f"Stop here. {_return_phrase(instruction)}: the operator decides "
-                "how to go on.",
-            ]
-        )
-        return
-    _append_section(lines, "Operator recovery")
-    lines.append(
-        "Nothing else runs until the user, who is the `ww` operator, decides. "
-        "Show them what each item lacks. Once the missing values are recorded "
-        "with `update-item`, by them or by you at their request, check the "
-        "items again:"
-    )
-    for command in instruction.recovery_commands:
-        lines.extend(["", "```console", command.command, "```"])
 
 
 def _interrupted(lines: Lines, instruction: Instruction) -> None:

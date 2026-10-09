@@ -53,9 +53,16 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
             "Manager: continue with `./ww next TASK-1 --role manager`",
         ),
     },
-    "item-stage": {
+    "items-substep": {
         "completion command": (COMPLETE, ARTIFACT, SUMMARY),
-        "item": ("./ww update-item TASK-1 --id comment-1",),
+        "items context": (
+            "You are working within items context `collect` (1 item).",
+            "./ww items TASK-1 --context collect --run 01-task",
+            "./ww resolve-item TASK-1 --context collect --run 01-task",
+            "./ww report-item TASK-1 --context collect --run 01-task",
+            "--get field.thread",
+            "--field thread=<value>",
+        ),
     },
     "values-and-metadata": {
         "completion command": (COMPLETE, ARTIFACT, SUMMARY),

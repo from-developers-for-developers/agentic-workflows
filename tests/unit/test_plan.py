@@ -147,8 +147,8 @@ def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
         "review/decide": "review/check",
         "assess/positive/ship": "assess",
         "assess/negative/redo": "review",
-        "triage/{item}/fix-item": "triage",
-        "triage/{item}/report": "triage/{item}/fix-item",
+        "triage/fix-item": "triage",
+        "triage/report": "triage/fix-item",
     }
 
 
@@ -713,22 +713,22 @@ def test_items_step_hooks_wrap_the_flow_without_collect_annotations(
 
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
-    assert [(item.name, item.item_template) for item in plan.items] == [
-        ("init", False),
-        ("prepare", False),
-        ("collect", False),
-        ("handle-item", True),
-        ("clean-up", False),
-        ("update-workflow-summary", False),
+    # An empty-body container compiles no hidden per-item step: only the
+    # collection, its hooks, and the built-in completion gate.
+    assert [(item.name, item.item_operation) for item in plan.items] == [
+        ("init", None),
+        ("prepare", None),
+        ("collect", "collect"),
+        ("clean-up", None),
+        ("collect", "complete_collection"),
+        ("update-workflow-summary", None),
     ]
-    # Only the collection itself expands the plan; hooks and the summary that
-    # surround the whole item flow must not.
-    assert [item.item_operation for item in plan.items] == [
-        None,
+    assert [item.item_context for item in plan.items] == [
         None,
         "collect",
-        "handle_item",
-        None,
+        "collect",
+        "collect",
+        "collect",
         None,
     ]
 
@@ -793,7 +793,7 @@ workflows:
     ]
 
 
-def test_hook_step_path_ignores_dynamic_item_segment(tmp_path: Path) -> None:
+def test_hook_step_path_targets_an_items_substep_compiled_once(tmp_path: Path) -> None:
     path = tmp_path / "ww.yaml"
     path.write_text(
         """hooks:
@@ -807,19 +807,19 @@ workflows:
         items:
           steps:
             - name: fix
-              item_phase: analyze
 """,
         encoding="utf-8",
     )
 
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
-    assert [(item.name, item.step, item.item_template) for item in plan.items] == [
-        ("init", "init", False),
-        ("review", "review", False),
-        ("inline-argv", "review/{item}/fix", True),
-        ("fix", "review/{item}/fix", True),
-        ("update-workflow-summary", "review", False),
+    assert [(item.name, item.step, item.item_operation) for item in plan.items] == [
+        ("init", "init", None),
+        ("review", "review", "collect"),
+        ("inline-argv", "review/fix", None),
+        ("fix", "review/fix", None),
+        ("review", "review", "complete_collection"),
+        ("update-workflow-summary", "review", None),
     ]
 
 
@@ -1276,12 +1276,12 @@ def test_step_label_numbers_nested_steps_over_the_top_level_count() -> None:
     ]
 
 
-def test_step_label_total_survives_item_expansion() -> None:
+def test_step_label_total_survives_child_expansion() -> None:
     template = plan_item(
-        id="w:collect/{item}/process:1",
-        step="collect/{item}/process",
-        ancestors=("collect", "collect/{item}"),
-        item_template=True,
+        id="w:collect/{child}/process:1",
+        step="collect/{child}/process",
+        ancestors=("collect", "collect/{child}"),
+        child_template=True,
     )
     before = number_step_paths((plan_item(id="w:init:1", step="init"), template))
     expanded = number_step_paths(
@@ -1293,7 +1293,7 @@ def test_step_label_total_survives_item_expansion() -> None:
                     step=f"collect/{segment}/process",
                     ancestors=("collect", f"collect/{segment}"),
                 )
-                for segment in ("item-1", "item-2")
+                for segment in ("child-1", "child-2")
             ),
         )
     )

@@ -25,11 +25,13 @@ WORKFLOWS = """workflows:
       - name: process
         description: Split by thread.
         items:
-          report: Resolve the thread.
-          saves:
-            - metadata.pull_request.handled: The root comment id of the resolved thread.
-              append: true
-            - metadata.pull_request.url: The pull request URL.
+          steps:
+            - name: resolve
+              description: Resolve the threads.
+              saves:
+                - metadata.pull_request.handled: The root comment of a resolved thread.
+                  append: true
+                - metadata.pull_request.url: The pull request URL.
 """
 
 
@@ -39,10 +41,8 @@ def _service(tmp_path: Path) -> WorkflowService:
 
 
 def _finish_run(service: WorkflowService, task: str) -> None:
-    """Complete the built-in workflow summary so the run closes."""
-    summary = service.status(task)
-    if summary.item_status != "in_progress":
-        summary = service.next(task)
+    """Complete the built-in workflow summary; the satisfied gate passes itself."""
+    summary = service.next(task)
     assert summary.item_name == "update-workflow-summary"
     assert service.complete(task, variables=(("summary", "Done."),)).status == (
         "completed"
@@ -50,14 +50,8 @@ def _finish_run(service: WorkflowService, task: str) -> None:
 
 
 def _resolve_item(service: WorkflowService, task: str) -> None:
-    service.update_item(
-        task,
-        "t1",
-        processed_item="a",
-        actual_solution="b",
-        resolved=True,
-        reported=True,
-    )
+    service.resolve_item(task, "t1", actual_solution="b")
+    service.report_item(task, "t1")
 
 
 def _run_review(service: WorkflowService, task: str, handled: tuple[str, ...]) -> None:
@@ -94,9 +88,9 @@ def test_an_append_key_grows_across_completions_and_reads_as_a_list(
 
     collect = service.next("TASK-1")
     service.add_item("TASK-1", WorkItem("t1", "A thread"))
-    handle = service.complete("TASK-1", artifact="collected", summary_for_next="One.")
+    service.complete("TASK-1", artifact="collected", summary_for_next="One.")
     assert collect.item_name == "process"
-    service.next("TASK-1")
+    assert service.next("TASK-1").item_name == "resolve"
     handle = service.status("TASK-1")
     rendered = MarkdownOutputAdapter().render_instruction(handle)
     assert (

@@ -44,7 +44,6 @@ from ww.extensions import (
     parse_reference,
 )
 from ww.interpolation import dependencies, interpolate
-from ww.item_passes import reports_item_on_completion
 from ww.items import WorkItem
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.plan import PlanItem, WorkflowPlan
@@ -288,7 +287,7 @@ class _ExtensionService:
             ),
             workspace=workspace,
             item_id=item.id,
-            work_item_id=item.item_id,
+            work_item_id=None,
             attempt=record.attempts,
             operation_id=record.operation_id or operation_id_for(state, item),
         )
@@ -429,7 +428,7 @@ class _RecoveryExtensionService:
             values=values,
             workspace=workspace,
             item_id=self._item.id,
-            work_item_id=self._item.item_id,
+            work_item_id=None,
             attempt=record.attempts,
             operation_id=(
                 record.operation_id or operation_id_for(self._state, self._item)
@@ -595,9 +594,7 @@ class ActionExecutor:
                 {saved.name: (result.output.strip(),) for saved in item.save_metadata},
                 item.save_metadata,
             )
-            updated_items = self._item_completion(
-                dispatch.state, snapshot, item, result
-            )
+            updated_items: tuple[WorkItem, ...] | None = None
             updated_metadata, project_publication = self.metadata_publisher.prepare(
                 dispatch.state.task_id,
                 dispatch.state,
@@ -660,59 +657,6 @@ class ActionExecutor:
             self.commit_items(completed, snapshot, updated_items)
         completed, _ = self.metadata_publisher.reconcile(completed, snapshot)
         return completed
-
-    def _item_completion(
-        self,
-        state: ExecutionState,
-        snapshot: PlanSnapshot,
-        item: PlanItem,
-        result: ActionResult,
-    ) -> tuple[WorkItem, ...] | None:
-        """The item records a successful per-item command leaves behind.
-
-        Declared ``item.field.*`` saves take the command's whole trimmed
-        output, the same value every declared field receives, never a
-        selection from it.  They are valid only for exactly one concrete
-        current item.  A report-phase stage marks its item reported only
-        with its last report-phase stage, after this completion commits.
-        Returns ``None`` when the command changes no item.
-        """
-        reports = reports_item_on_completion(snapshot.plan, state.cursor)
-        if not item.update_item and not reports:
-            return None
-        if item.item_id is None or self.commit_items is None:
-            raise StateError(
-                "item field saves need exactly one current item; an automatic "
-                "command cannot distribute one output among several items"
-            )
-        items = list(self.read_items(state))
-        index = next(
-            (i for i, entry in enumerate(items) if entry.id == item.item_id), None
-        )
-        if index is None:
-            raise StateError(
-                f"item {item.item_id!r} is gone; its saves cannot be recorded"
-            )
-        updated = items[index]
-        if item.update_item:
-            value = result.output.strip()
-            if not value:
-                raise StateError(
-                    "missing required item field value(s): "
-                    + ", ".join(
-                        f"item.field.{field.name}" for field in item.update_item
-                    )
-                    + "; the command printed nothing"
-                )
-            updated = updated.with_fields(
-                {field.name: value for field in item.update_item}
-            )
-        if reports:
-            updated = replace(updated, reported=True)
-        if updated == items[index]:
-            return None
-        items[index] = updated
-        return tuple(items)
 
     def validate_inputs(self, item: PlanItem, values: Mapping[str, str]) -> str | None:
         """Ask an automatic item's action whether it would accept these inputs.

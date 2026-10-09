@@ -250,7 +250,7 @@ exact, ordered plan that would run — every step, hook, and handler — without
 creating any task state.
 
 [documentation/examples.md](documentation/examples.md) has twenty-one complete,
-tested `ww.yaml` examples, from this one up to groups, per-item work,
+tested `ww.yaml` examples, from this one up to groups, collection work,
 child tasks, and Git integration.
 
 ### 4. Ask your agent to do the work
@@ -329,13 +329,14 @@ picks up a task it did not start by reading it.
 
 Two things will interrupt the agent and come back to you. An **interactive
 step** is a question ww requires a human to answer — the agent asks it in your
-own chat, or opens a local operator page for a per-item answer sheet, and the
+own chat, or opens a local operator page for a collection answer sheet, and the
 task waits. An **automatic handler failing** — a test suite that will not pass,
 a commit that is rejected — stops the task and reports the error, because
 recovery is your decision, not the agent's: retry the handler, or force past it
-with a recorded reason. A stop for an incomplete item pass (`pass_incomplete`)
-is cleared by recording the missing values with `update-item` and then
-`next --retry`; forcing is refused there.
+with a recorded reason. Unfinished item bookkeeping is not such a stop: an
+items step's completion gate lists the unresolved or unreported items and
+missing fields with their commands, and the agent records them and completes
+again; `next --force` never marks items done.
 
 If the agent's own work genuinely cannot be finished, it records that rather
 than leaving the task open:

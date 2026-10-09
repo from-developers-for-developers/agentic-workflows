@@ -15,7 +15,6 @@ from ww.contracts import (
     CheckSource,
     ChildOperation,
     ExecutionKind,
-    ItemAssignment,
     ItemOperation,
     PlanItemOwner,
     PlanItemPhase,
@@ -77,7 +76,7 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         raise ValueError("plan modes must be strings")
     if not isinstance(data["handoff"], bool):
         raise ValueError("plan handoff must be a boolean")
-    items = _checked_item_passes(items)
+    items = _checked_item_contexts(items)
     return WorkflowPlan(
         workflow=expect_string(data["workflow"], "workflow"),
         workflow_description=expect_string(
@@ -96,36 +95,14 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
     )
 
 
-def _is_item_flow_member(item: PlanItem) -> bool:
-    """Whether a per-item stage or hook of an ``items`` step, never a child's."""
-    return item.child_stage is None and (item.item_template or item.item_id is not None)
-
-
-def _checked_item_passes(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:
-    """Refuse a plan whose ``items`` declarations lack their pass identity.
-
-    The collection item and every per-item template must already carry
-    ``item_pass``; a plan missing it was not written by a compatible ww and is
-    refused rather than guessed at.
-    """
-    collectors = [
-        item
-        for item in items
-        if item.item_operation == "collect" and item.child_operation is None
-    ]
-    members = [item for item in items if _is_item_flow_member(item)]
-    missing = [
-        item
-        for item in (*collectors, *(m for m in members if m.item_template))
-        if item.item_pass is None
-    ]
-    if missing:
-        raise ValueError(
-            f"plan item {missing[0].id!r} belongs to an items step but has "
-            "no item_pass; the snapshot was not written by a compatible ww, "
-            "so it cannot be resumed safely. Finish the run with the ww "
-            "that started it, or reset the task and start it again"
-        )
+def _checked_item_contexts(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:
+    for item in items:
+        if item.item_operation is not None and item.item_context is None:
+            raise ValueError("item operation has no collection context")
+        if item.child_template and item.child_stage is None:
+            raise ValueError(
+                "per-item plans are incompatible; use the previous ww build"
+            )
     return items
 
 
@@ -216,17 +193,12 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         workdir=_workdir(raw.get("workdir", "task")),
         summary=expect_bool(raw.get("summary", False), f"{item_path}.summary"),
         item_operation=_item_operation(raw.get("item_operation")),
-        item_template=expect_bool(
-            raw.get("item_template", False), f"{item_path}.item_template"
+        child_template=expect_bool(
+            raw.get("child_template", False), f"{item_path}.child_template"
         ),
-        item_id=expect_optional_string(raw.get("item_id"), "item ID"),
-        item_pass=expect_optional_string(
-            raw.get("item_pass"), f"{item_path}.item_pass"
+        item_context=expect_optional_string(
+            raw.get("item_context"), f"{item_path}.item_context"
         ),
-        item_collect_only=expect_bool(
-            raw.get("item_collect_only", False), f"{item_path}.item_collect_only"
-        ),
-        item_assignment=_item_assignment(raw.get("item_assignment", "per_step")),
         shared_items=expect_bool(
             raw.get("shared_items", False), f"{item_path}.shared_items"
         ),
@@ -536,12 +508,6 @@ def _metadata_scope(value: Any) -> MetadataScope:
 
 def _plan_item_phase(value: Any) -> PlanItemPhase:
     return cast(PlanItemPhase, expect_literal(value, PlanItemPhase, "plan item phase"))
-
-
-def _item_assignment(value: Any) -> ItemAssignment:
-    return cast(
-        ItemAssignment, expect_literal(value, ItemAssignment, "item assignment")
-    )
 
 
 def _workdir(value: Any) -> Workdir:

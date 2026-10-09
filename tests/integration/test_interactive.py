@@ -462,11 +462,13 @@ MANUAL_TESTS = """workflows:
       - name: collect
         description: Collect the test cases.
         items:
-          analyze: Show the test case to the operator.
-          interactive: page
-          choices:
-            - pass: The test case passed.
-            - fail: The test case failed; the operator explains why.
+          steps:
+            - name: verify
+              description: Show the test cases to the operator.
+              interactive: page
+              choices:
+                - pass: The test case passed.
+                - fail: The test case failed; the operator explains why.
 """
 
 
@@ -548,6 +550,12 @@ def _collect(
     service.complete(task_id, artifact="collected", summary_for_next="Cases.")
 
 
+def _scope(service: WorkflowService, task_id: str) -> str:
+    """The sheet scope of the open ``ui`` step: its run and plan item."""
+    state, snapshot = service.load(task_id)
+    return f"{state.run_id}:{snapshot.plan.items[state.cursor].id}"
+
+
 def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -560,7 +568,12 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     _collect(service, "TASK-4", 3)
 
     first = service.next("TASK-4")
-    assert (first.ui, first.interactive, first.agent) == (True, True, "claudecode")
+    assert (first.item_name, first.ui, first.interactive, first.agent) == (
+        "verify",
+        True,
+        True,
+        "claudecode",
+    )
     rendered = md.render_instruction(first)
     assert "### Operator page" in rendered
     assert "> **Operator page.** This stage is answered by the operator" in rendered
@@ -571,12 +584,13 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     assert "`run_in_background` option and go on with the conversation" in rendered
     assert "### Interaction with the operator" not in rendered
     assert "answer" not in first.to_dict()  # the core model knows only the flag
+    scope = _scope(service, "TASK-4")
 
-    # The sheet lists every item; answers land in the sheet file at once, in
-    # any order, and can be revised until applied.  The item is untouched.
+    # The sheet lists every item of the context; answers land in the sheet
+    # file at once, in any order, and can be revised.  The items are untouched.
     waiter = _Waiter(service, "TASK-4")
     state = _get_state(port)
-    assert state["current_item_id"] == "case-1"
+    assert (state["stage"], state["context"]) == ("verify", "collect")
     assert [(item["id"], item["status"]) for item in state["items"]] == [
         ("case-1", "open"),
         ("case-2", "open"),
@@ -599,7 +613,7 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
         == 200
     )
     sheet = _sheet_file(tmp_path, "TASK-4")
-    assert sheet["runs"]["01-manual"]["case-2"]["comment"] == "The error is not shown."
+    assert sheet["runs"][scope]["case-2"]["comment"] == "The error is not shown."
     task_files = "".join(
         path.read_text(encoding="utf-8")
         for path in (tmp_path / ".ww/tasks/TASK-4").rglob("*")
@@ -608,8 +622,8 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     assert "The error is not shown." not in task_files  # nothing in the task yet
     assert _act(port, action="answer", item_id="case-2", choice="2")[0] == 200
     sheet = _sheet_file(tmp_path, "TASK-4")
-    assert sheet["runs"]["01-manual"]["case-2"]["choice"] == "fail"
-    assert sheet["runs"]["01-manual"]["case-2"]["comment"] == ""
+    assert sheet["runs"][scope]["case-2"]["choice"] == "fail"
+    assert sheet["runs"][scope]["case-2"]["comment"] == ""
     assert "answer" not in service.item("TASK-4", "case-2").to_dict()
     state = _get_state(port)
     shown = next(item for item in state["items"] if item["id"] == "case-2")
@@ -621,52 +635,27 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     assert _act(port, action="answer", item_id="case-1", choice="pass")[0] == 200
     assert _act(port, action="pause")[0] == 200
 
-    # A pause ends the wait; the answers given so far are applied in plan
-    # order through the public calls, and the walk stops at case-3.
+    # A pause ends the wait; a partly answered sheet records nothing yet.
     result = waiter.join()
-    assert (result.outcome, result.applied, result.paused) == (
-        "paused",
-        ("case-1", "case-2"),
-        True,
-    )
+    assert (result.outcome, result.applied, result.paused) == ("paused", (), True)
     assert (result.answered, result.total) == (2, 3)
     text = result.render()
     assert "The operator said they are done for now." in text
-    assert "Applied the answers of case-1, case-2: each stage is completed" in text
+    assert "Nothing was applied." in text
     assert "Stop here; do not wait again" in text
     page = service.instruction("TASK-4")
     assert (page.item_name, page.item_status, page.ui) == (
-        "handle-item",
+        "verify",
         "in_progress",
         True,
     )
     assert "The operator is done for now. Stop here" in md.render_instruction(page)
-    execution, _snapshot = service.load("TASK-4")
-    done = [r for r in execution.item_executions if r.status == "completed"][-2:]
-    assert [r.chosen for r in done] == ["pass", "fail"]
-    assert all(r.interaction_ended for r in done)
-    case_1 = service.item("TASK-4", "case-1")
-    assert (case_1.resolved, case_1.reported) == (True, True)
-    assert done[1].artifact is not None
-    artifact = (tmp_path / done[1].artifact).read_text(encoding="utf-8")
-    assert "## Result\n\n# handle-item: case-2\n\nTest case 2.\n\n" in artifact
-    assert "Operator's answer: `fail`" in artifact
-    assert _sheet_file(tmp_path, "TASK-4")["runs"]["01-manual"] == {}
 
-    # An applied answer is shown from the record and cannot change; the last
-    # answer lifts the pause and ends the wait by itself.
+    # The last answer lifts the pause and ends the wait; the whole sheet is
+    # recorded as the operator's evidence and the interaction ends.
     waiter = _Waiter(service, "TASK-4")
     state = _get_state(port)
-    shown = next(item for item in state["items"] if item["id"] == "case-1")
-    assert (shown["status"], shown["answer"], state["paused"]) == (
-        "processed",
-        "pass",
-        True,
-    )
-    assert _act(port, action="answer", item_id="case-1", choice="fail") == (
-        400,
-        {"error": "the answer of 'case-1' was already applied; it cannot change"},
-    )
+    assert state["paused"] is True
     assert (
         _act(port, action="answer", item_id="case-3", choice="pass", comment="Fine.")[0]
         == 200
@@ -674,19 +663,33 @@ def test_the_operator_page_is_an_answer_sheet_that_ww_applies(
     result = waiter.join()
     assert (result.outcome, result.applied, result.paused) == (
         "answered",
-        ("case-3",),
+        ("case-1", "case-2", "case-3"),
         False,
     )
-    assert "Every item is answered; go on with the page above." in result.render()
-    finished = service.instruction("TASK-4")
-    assert (finished.ui, finished.item_name) == (False, "update-workflow-summary")
-
+    text = result.render()
+    assert "Recorded the answers of case-1, case-2, case-3 as input." in text
+    assert "Every item is answered; go on with the page above." in text
     record = service.interactions_text("TASK-4")
-    assert "· handle-item · case-2 · operator\n\nChoice: fail" in record
-    assert "· handle-item · case-3 · pause\n\nThe operator is" in record
-    assert "· handle-item · case-3 · operator\n\nFine." in record
-    assert "· handle-item · case-3 · end\n\nThe operator ended" in record
     assert "Answered case-3 on the operator page." in record
+    assert (
+        "Operator answers (evidence only):\ncase-1: pass\ncase-2: fail\n"
+        "case-3: pass: Fine."
+    ) in record
+    execution, _snapshot = service.load("TASK-4")
+    assert execution.item_executions[execution.cursor].interaction_ended
+
+    # The answers are evidence: resolving and reporting stay the agent's, and
+    # the context's completion gate holds until it records them.
+    assert not any(item.resolved for item in service.items("TASK-4"))
+    service.complete("TASK-4", artifact="Verified.", summary_for_next="Done.")
+    gate = service.next("TASK-4")
+    assert gate.item_name == "collect"
+    assert "case-1: unresolved" in (gate.action_text or "")
+    for case, outcome in (("case-1", "pass"), ("case-2", "fail"), ("case-3", "pass")):
+        service.resolve_item("TASK-4", case, actual_solution=outcome)
+        service.report_item("TASK-4", case)
+    service.complete("TASK-4", artifact="Recorded.", summary_for_next="Done.")
+    assert service.next("TASK-4").item_name == "update-workflow-summary"
 
 
 def test_a_cut_wait_loses_nothing_and_a_closed_tab_ends_the_wait(
@@ -702,6 +705,7 @@ def test_a_cut_wait_loses_nothing_and_a_closed_tab_ends_the_wait(
     stage = service.next("TASK-8")
     execution, _snapshot = service.load("TASK-8")
     assert stage.agent == "claudecode"
+    scope = _scope(service, "TASK-8")
 
     # A wait nobody polls opens the browser and ends by itself.
     opened: list[str] = []
@@ -712,19 +716,14 @@ def test_a_cut_wait_loses_nothing_and_a_closed_tab_ends_the_wait(
     assert (result.outcome, result.applied) == ("timed_out", ())
     assert "The wait passed with nothing new. Nothing was applied." in result.render()
 
-    # Answers left on the sheet by a wait that was killed, including a stale
-    # one whose stage was already completed, are applied first on the next
-    # wait, and the stale one is dropped.
+    # Answers left on the sheet by a wait that was killed stay there; a
+    # partly answered sheet records nothing.
     sheet = AnswerSheet(service.storage, "TASK-8", execution.created_at)
-    sheet.record("01-manual", "case-1", Answer("pass", "", "t1"))
-    sheet.record("01-manual", "case-2", Answer("fail", "Hmm.", "t2"))
-    service.interact("TASK-8", choice="pass", end=True)
-    service.complete("TASK-8", artifact="done by hand", summary_for_next="x")
+    sheet.record(scope, "case-1", Answer("pass", "", "t1"))
+    sheet.record(scope, "case-2", Answer("fail", "Hmm.", "t2"))
     result = run_operator_page(service, "TASK-8", timeout=0.3, open_browser=None)
-    assert (result.outcome, result.applied) == ("timed_out", ("case-2",))
-    assert sheet.read("01-manual") == {}
-    execution, _snapshot = service.load("TASK-8")
-    assert [r.chosen for r in execution.item_executions if r.chosen] == ["pass", "fail"]
+    assert (result.outcome, result.applied, result.answered) == ("timed_out", (), 2)
+    assert set(sheet.read(scope)) == {"case-1", "case-2"}
 
     # A tab that says it is closing ends the wait unless a poll follows.
     waiter = _Waiter(service, "TASK-8")
@@ -739,6 +738,15 @@ def test_a_cut_wait_loses_nothing_and_a_closed_tab_ends_the_wait(
     assert "The operator closed the page. Nothing was applied." in result.render()
     assert "Do not open the page again on your own" in result.render()
 
+    # Once a cut wait left the last answer, the next wait records the whole
+    # sheet first and has nothing more to wait for.
+    sheet.record(scope, "case-3", Answer("pass", "", "t3"))
+    result = run_operator_page(service, "TASK-8", timeout=0.3, open_browser=None)
+    assert (result.outcome, result.applied) == (None, ("case-1", "case-2", "case-3"))
+    assert "Nothing was waited for." in result.render()
+    execution, _snapshot = service.load("TASK-8")
+    assert execution.item_executions[execution.cursor].interaction_ended
+
 
 def test_the_operator_page_serves_stages_declared_with_ui_only(
     tmp_path: Path,
@@ -750,10 +758,10 @@ def test_the_operator_page_serves_stages_declared_with_ui_only(
     assert "#### Operator page" not in (
         MarkdownOutputAdapter().render_instruction(discuss)
     )
-    with pytest.raises(StateError, match="serves per-item stages declared with"):
+    with pytest.raises(StateError, match="serves items substeps declared with"):
         run_operator_page(service, "TASK-5", timeout=1, open_browser=None)
 
-    # An interactive item stage without ui is a conversation in the session.
+    # An interactive items substep without ui is a conversation in the session.
     (tmp_path / "ww.yaml").write_text(
         MANUAL_TESTS.replace("interactive: page", "interactive: true"), encoding="utf-8"
     )
@@ -763,12 +771,8 @@ def test_the_operator_page_serves_stages_declared_with_ui_only(
     service.add_item("TASK-7", WorkItem("case-1", "Upload."))
     service.complete("TASK-7", artifact="c", summary_for_next="s")
     stage = service.next("TASK-7")
-    assert (stage.item_name, stage.interactive, stage.ui) == (
-        "handle-item",
-        True,
-        False,
-    )
-    with pytest.raises(StateError, match="serves per-item stages declared with"):
+    assert (stage.item_name, stage.interactive, stage.ui) == ("verify", True, False)
+    with pytest.raises(StateError, match="serves items substeps declared with"):
         run_operator_page(service, "TASK-7", timeout=1, open_browser=None)
 
 
@@ -819,21 +823,23 @@ workflows:
       - name: collect
         description: Collect the test cases.
         items:
-          analyze: Show the test case to the operator.
-          interactive: page
-          saves:
-            - documents.test_cases: Record the result under the case.
-          choices:
-            - pass: The test case passed.
-            - fail: The test case failed; the operator explains why.
+          steps:
+            - name: verify
+              description: Show the test cases to the operator.
+              interactive: page
+              saves:
+                - documents.test_cases: Record the results under the cases.
+              choices:
+                - pass: The test case passed.
+                - fail: The test case failed; the operator explains why.
 """
 
 
-def test_a_worker_role_wait_applies_every_answer_and_names_the_documents(
+def test_a_worker_role_wait_records_every_answer_and_names_the_documents(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The single runtime prints worker-role commands; ``next`` is still the
-    manager's, so the session must not pass the worker role to it."""
+    """The single runtime prints worker-role commands; the session records the
+    answers with the worker role and names the documents the step updates."""
     port = _free_port()
     monkeypatch.setenv("WW_OPERATOR_PORT", str(port))
     monkeypatch.setattr(server, "_OPEN_BROWSER_AFTER", 0.1)
@@ -846,24 +852,21 @@ def test_a_worker_role_wait_applies_every_answer_and_names_the_documents(
     Path(document.path).write_text("# Cases\n", encoding="utf-8")
     execution, _snapshot = service.load("TASK-10")
     sheet = AnswerSheet(service.storage, "TASK-10", execution.created_at)
-    sheet.record("01-manual", "case-1", Answer("pass", "", "t1"))
-    sheet.record("01-manual", "case-2", Answer("fail", "No button.", "t2"))
-    sheet.record("01-manual", "case-3", Answer("pass", "", "t3"))
+    scope = _scope(service, "TASK-10")
+    sheet.record(scope, "case-1", Answer("pass", "", "t1"))
+    sheet.record(scope, "case-2", Answer("fail", "No button.", "t2"))
+    sheet.record(scope, "case-3", Answer("pass", "", "t3"))
 
     result = run_operator_page(
         service, "TASK-10", timeout=0.2, open_browser=None, caller_role="worker"
     )
     assert result.applied == ("case-1", "case-2", "case-3")
     assert result.documents == (document.path,)
-    items = {item.id: item for item in service.items("TASK-10")}
-    assert (items["case-1"].actual_solution, items["case-1"].resolved) == (
-        "pass",
-        True,
-    )
-    assert items["case-2"].actual_solution == "fail: No button."
-    assert items["case-2"].reported is True
+    # Recorded as evidence only: the items keep their markers.
+    assert not any(item.resolved for item in service.items("TASK-10"))
+    assert "case-2: fail: No button." in service.interactions_text("TASK-10")
     text = result.render()
-    assert "its item resolved with the answer as the actual solution" in text
+    assert "The agent must apply fields and explicit resolution/reporting" in text
     assert "ww cannot write them: record the operator's answers for case-1, " in text
     assert f"- `{document.path}`" in text
-    assert service.instruction("TASK-10").item_name == "update-workflow-summary"
+    assert service.instruction("TASK-10").item_name == "verify"

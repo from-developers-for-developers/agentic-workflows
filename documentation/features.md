@@ -35,7 +35,7 @@ An installation carries the same-version copies of all three: read them with
   changed, which send the step back to its worker until they pass.
 - Variables, durable task and project metadata, artifacts, and artifact
   dependencies.
-- Nested steps, dynamic per-item work, and parent/child task workflows.
+- Nested steps, bounded item collections, and parent/child task workflows.
 - Sequential workflow runs and terminal handoffs between workflows.
 - Configurable runtimes, models, reasoning levels, and modes.
 - Per-step and per-handler working directories: the task workspace, the
@@ -59,13 +59,13 @@ concrete reason. This section is the guidance; the
 ### Start linear
 
 A workflow is a list of steps in order. Write the work as steps, give them the
-defaults, and stop there until something real asks for more. Items, several
-item passes, assessments, persistence, modes and reusable groups each
+defaults, and stop there until something real asks for more. Items, items
+substeps, assessments, persistence, modes and reusable groups each
 cost the reader something, so each needs a concrete reason: the work really
 splits into independent pieces, a judgment really routes what follows, the
 same list really returns every round, a preference really varies per task.
-When `items: ~` is enough, do not write item stages; when one pass is enough,
-do not add a second. [Example 1](examples.md#1-a-linear-workflow-with-an-automatic-check)
+When `items: ~` is enough, do not write substeps under it.
+[Example 1](examples.md#1-a-linear-workflow-with-an-automatic-check)
 is a complete workflow.
 
 ### Steps, handlers and hooks
@@ -108,16 +108,15 @@ say it.
 
 Use `items` when the work splits into pieces that are independently
 completed, checked or reported: review comments, test cases, files to migrate.
-`items: ~` gives every item one stage that analyzes, resolves and reports it.
-Choose per-item stages (`items.steps`) only when the stages differ. When
-several pieces are cheaper analyzed or fixed together but each still has to be
-reported on its own, use a shared analysis or fix with one item per
-independently reportable source: the workflow has one collection and several
-passes over it, and ordinary steps between the passes run once for everyone
-([Several passes over the same items](#several-passes-over-the-same-items),
-[example 4](examples.md#4-one-analysis-one-fix-one-report-per-comment)).
-Make the item the unit that is reported: one item per source comment, even
-when a hundred comments get one fix.
+The `items` step registers the collection; its `items.steps` are ordinary
+steps that run once over the whole collection, however many items it holds,
+and the agent chooses how to group the work. `items: ~` is a collection whose
+splitting work is all there is; it adds no hidden per-item step. Make the item
+the unit that is accounted for: one item per source comment, even when a
+hundred comments get one fix. Each item is resolved and reported on its own,
+and the step does not finish until all of them are
+([Bounded item collections](#bounded-item-collections),
+[example 4](examples.md#4-related-pr-comments-handled-together)).
 
 ### External items: IDs, reconciliation and restarts
 
@@ -131,21 +130,22 @@ request, design for being run again:
   collection step then reconciles the stored items against the source
   (`add-item`, `update-item --text`, `remove-item`) instead of splitting
   again. Identity, text, references and custom fields carry over to the next
-  run; analysis, solution, `resolved` and `reported` start clear.
-- Keep remote results in item fields, such as the reply ID. Pass the saved
-  value to the command that posts, `"{{ww.item.field.reply_id}}"`, so a
-  project-owned script can update the reply it already made instead of
-  creating another. A per-item command stage that declares
-  `saves: item.field.reply_id` stores the command's whole trimmed output
-  there, and the last report-stage item is marked `reported` in the same
-  commit, only after a zero exit.
-- ww makes no exactly-once promise about remote effects. If the process dies
-  after a remote reply but before the result is saved, the next attempt runs
-  the command again. The handler or script owns idempotency, which is why it
-  takes the saved ID.
-- `next --retry` after a failed stage, or `start --fresh-items` to forget the
+  run; the solution, `resolved` and `reported` start clear.
+- Keep remote results in item fields, such as the reply ID: declare
+  `saves: item.field.reply_id` on the step that posts, and the step cannot
+  complete until every item has one. The agent reads the saved value with
+  `item --get field.reply_id` and passes it to the project's script, so the
+  script can update the reply it already made instead of creating another.
+  `{{ww.item.*}}` references are never interpolated into a command, so a
+  posting step that runs once per item is the agent's work, not an `argv`.
+- Mark an item reported only after its reply succeeded. ww makes no
+  exactly-once promise about remote effects: if a session ends after a remote
+  reply but before the item was recorded, check the remote thread before
+  posting again. The script owns idempotency, which is why it takes the saved
+  ID.
+- `next --retry` after a failed command, or `start --fresh-items` to forget the
   stored list, are the restart tools; see
-  [Items that persist across runs](#items-that-persist-across-runs).
+  [Bounded item collections](#bounded-item-collections).
 
 ### What needs the agent and what ww does itself
 
@@ -1168,7 +1168,7 @@ workflows:
 
 Every workflow begins with an artifact-producing `init` step supplied by ww.
 Do not declare it in `steps`: `init` is a reserved step name, including inside
-nested and per-item steps. Its fixed prompt asks the agent only to preserve the
+nested steps and items substeps. Its fixed prompt asks the agent only to preserve the
 passed requirements, correcting grammar and style without adding analysis,
 reasoning, or a work plan. It uses low reasoning and does not inherit a workflow
 profile, keeping the saved requirements independent of later execution choices.
@@ -1765,7 +1765,6 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `fix_limit` | A step's check failed as many times as its rule's `max_fixes`, else `limits.fixes`, allows; see [Rules and checks](#rules-and-checks). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
-| `pass_incomplete` | An `items` pass finished its stages, but some items lack what those stages declare, such as an analysis or `reported`; see [Several passes over the same items](#several-passes-over-the-same-items). The next step has not started. Record the missing values with `update-item`, then `next --retry` checks again; the gate cannot be forced. |
 | `plan_changed` | The workflow's definition changed since the run's plan was saved; see [When the workflow changes mid-run](#when-the-workflow-changes-mid-run). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
@@ -1824,8 +1823,8 @@ A change that leaves the run's own workflow as it is, such as a new workflow
 beside it, is taken silently. A configuration that does not load stops
 nothing: the run goes on with its saved plan, and `ww lint` shows the error.
 Two changes cannot be applied to a running task, and the page says why,
-offering only `--keep-plan`: a change to per-item or per-child stages that
-the run has already expanded for its items or children, and a rewind past a
+offering only `--keep-plan`: a change to per-child stages that the run has
+already expanded for its children, and a rewind past a
 children step whose child tasks already exist. For those, reset the task and
 start it again. A worker's pages never stop for a changed plan; the manager
 decides, between assignments.
@@ -2012,7 +2011,7 @@ workflows:
 An extension handler entry may carry `workdir` and nothing else; the extension
 defines its remaining fields. For a step, the setting controls the instruction
 directory, command directory, and `{{ww.task.workspace_dir}}`. Nested steps,
-per-item stages, and assessment outcomes inherit it unless they set their own.
+items substeps, and assessment outcomes inherit it unless they set their own.
 A copied root handler contributes its `workdir` unless the step overrides it.
 A hook does not inherit its step's directory: it uses its own setting, then
 the root handler's, then `task`.
@@ -2465,7 +2464,7 @@ the missing file.
 `ww rule <task> <id>` prints a rule or check as the run's plan froze it:
 its text, globs, file, command, and the steps that carry it. `ww rules` lists
 declared groups, each step's own rules, and every workflow step a `steps`
-filter can name, including nested steps and per-item stages. Each target has
+filter can name, including nested steps and items substeps. Each target has
 its path, whether it is agent-owned, the groups that reach it, and the rule
 counters. JSON exposes the targets and counters with the same information.
 `ww rules prune` lists and asks before deleting store entries no declared rule
@@ -2778,8 +2777,9 @@ ww-agentic-workflows complete TASK-123 --role worker \
   --artifact="<result>" --summary="<handover>"
 ```
 
-Under `items`, `saves` belongs to the built-in `handle-item` stage; with
-configured stages, declare it on the stage that produces the value.
+Inside an items context, declare `saves` on the substep that produces the
+value; an `item.field.<name>` entry there must be set on every item of the
+collection before that substep completes.
 
 Use a `project_metadata.<path>` entry for values shared by every task in the
 project. Project metadata has an explicit interpolation namespace so the
@@ -2855,7 +2855,7 @@ ends an interaction whose entries are already recorded.
 
 Every entry is appended to one file per task,
 `.ww/tasks/<task-id>/interactions.md`, never rewritten, each headed by the time,
-run, step, the item when the step is a per-item stage, and speaker, so the file
+run, step, and speaker, so the file
 reads as the task's whole history of operator involvement;
 `ww-agentic-workflows interactions TASK-123` prints it. The step's page shows
 the conversation recorded for it so far.
@@ -2867,7 +2867,7 @@ For work where the operator wants to follow each action and edit, set
 `explicit: true` on a workflow or step. The agent describes each meaningful
 operation before it begins and shows the concrete edits for every changed file
 afterward. Large edits can use a focused diff artifact; the agent still names
-each changed file and redacts secrets. Structural groups, item stages,
+each changed file and redacts secrets. Structural groups, items substeps,
 and child stages inherit the setting, and a nested step can turn it off with
 `explicit: false`. The compiled plan preserves the resolved value across
 resumption. WW-owned automatic handlers continue to show their command and
@@ -2909,9 +2909,10 @@ The limitation to know: a delegated worker is a subagent and cannot talk to the
 operator. An interactive step is therefore always performed by the session that
 holds the conversation, the manager in the `auto` runtime: it is a
 `role: manager` step, and the step's profile, agent, model, and reasoning
-are ignored. For a manual-testing workflow, put `interactive: true` on the
-per-item stage: the manager presents each test case, waits for the operator's
-result, records it, ends the interaction, and completes the item. Running
+are ignored. For a manual-testing workflow, put `interactive: true` on an
+items substep: the manager presents the test cases, records the operator's
+results, ends the interaction, resolves and reports each case, and completes
+the step once. Running
 `next` again while such a step is open shows its page again, as it does for
 any open step in the `single` runtime; `complete` is not the way to leave an
 interactive step before the conversation ended. Only a worker's open item is
@@ -2924,94 +2925,37 @@ session's transcript: the next session asks the operator where they were.
 
 ### The operator page
 
-A per-item stage declared with `interactive: page` is answered in the
-browser, on an answer sheet over every item of the run, and ww applies the
-answers itself. It is valid on one per-item stage per `items` step, because the page is shaped for items: other structures would
-need a page of their own, and none exists yet.
+Declare `interactive: page` on an ordinary substep inside an items context. The
+browser shows that collection's records and keeps one answer per item, scoped to
+the concrete interactive step and run. The local page is served by
+`interact --await` for the duration of the wait. Answers survive interrupted waits.
+When all answers are present, WW records them as interaction input. The agent
+then applies fields, explicitly resolves/reports each obligation as instructed,
+and completes the step. An answer is evidence; it never implies a successful
+test, a fix, a report, or automatic step completion. With `choices`, each item
+gets its own choice on the sheet, so ending the interaction needs no single
+`--choice`. Several substeps of one context may use the page; `interactive:
+page` on the `items` step itself or outside an items context is a
+configuration error.
 
 ```yaml
-items:
-  analyze: Show the test case to the operator.
-  interactive: page
-  choices:
-    - pass: The test case passed.
-    - fail: The test case failed; the operator explains why.
+workflows:
+  - name: manual-tests
+    steps:
+      - cases: Register the test cases.
+        items:
+          persistent: true
+          steps:
+            - execute: Collect outcomes from the operator.
+              interactive: page
+              choices:
+                - pass: The test passed.
+                - fail: The test failed; explain what happened.
+            - record: Record actual outcomes, resolve each case, and report results.
 ```
 
-The page is an extra on top of the engine. The core knows it by
-`interactive: page` alone: the stage's page tells the agent to run one command, and
-everything else lives in the `operator_ui` package, which drives the task
-only through the public commands an agent uses.
-
-```console
-ww-agentic-workflows interact TASK-123 --role manager --await
-```
-
-The command applies any answers left over from an earlier wait, serves the
-page on `127.0.0.1` for as long as it runs, opens the browser unless a tab is
-already polling, waits, and then applies what was answered. It returns when
-every item is answered, when the operator presses "I'm done for now", when
-the operator closes the page, or after `WW_OPERATOR_WAIT` seconds with
-nothing new. The port is derived from the task ID, so the tab survives
-between waits and reconnects by itself; `WW_OPERATOR_PORT` fixes it. There
-is no daemon. After the step's page, the command prints how the wait ended,
-which items it applied, how many are answered, and whether to wait again or
-stop.
-
-How the agent runs the wait depends on what its shell can do, and the step's
-page says which, from the same kind of per-agent table as the choice
-mechanisms. Claude Code has a background shell, so the page tells it to run
-the command with `run_in_background` and go on with the conversation: the
-operator can talk to the agent in the session while the page is open, and
-the command's output reaches the agent when the wait ends. Such a wait may
-be long, so the page puts `WW_OPERATOR_WAIT=1800` in front of the command.
-While it runs, the agent must not run commands that change the task, because
-the wait applies the answers the moment it ends; `status` and `instruction`
-are fine. Any other agent blocks on the command, so the default wait is `90`
-seconds, under its shell timeout, and the agent runs it again while items
-remain.
-
-The page lists every item with its text and analysis. The operator answers
-the items in any order, each with the stage's choices when it declares them
-and a comment, and can revise an answer until ww has applied it. An answer
-is recorded the moment it is given, as one atomic replacement of the answer
-sheet, `.ww/operator-ui/<task-id>.json`, under the task lock and before the
-browser is told it went through. It does not touch the task's state. A
-failed submission comes back to the page as an error next to the item and
-the draft stays; an answer given while no agent is waiting is kept in the
-tab and sent when a wait is back, and is lost if the tab is closed first.
-Drafts survive a reload. The sheet remembers when its task was created, so a
-sheet left behind by a reset task is discarded rather than applied to the
-task that reuses the ID.
-
-Applying walks the plan in order from the current stage. For every
-`interactive: page` stage whose item has an answer on the sheet, ww records the pick and the
-comment and ends the interaction with `interact`, writes the answer onto
-the item with `update-item` as its `actual_solution` (the pick, then the
-comment after a colon) and marks it resolved for a `handle-item` or
-`item_phase: resolve` stage and reported for a `handle-item` or
-`item_phase: report` stage, completes the stage with `complete` and an artifact written from the
-answer, and only then takes the answer off the sheet, so a wait that is
-killed mid-way leaves at most a stale entry that the next wait drops. A
-document the stage promised to update is the one thing ww cannot write: the
-printed result names such documents and tells the agent to record the
-answers of the applied items in them first. When the operator closes the
-page, the result tells the agent not to open it again on its own. The walk stops at the first stage whose item has no answer, at any
-stage that is not an `interactive: page` stage, and wherever ww needs the agent. Items are
-therefore completed one by one in plan order whatever order the operator
-answered in; an answer for a later item waits on the sheet. The applied
-answer is what an agent would have recorded: the stage's chosen label, the
-comment in the interactions file, and the artifact. The agent's loop is:
-wait, read the printed result, wait again while items remain.
-
-A pause is the operator saying they are done for now, from the page or
-recorded by the agent with `interact --pause`. It is kept on the task, and
-the page's pause is recorded after the answers given before it were applied.
-The step's page then tells the agent to stop, without waiting again, and to
-show the step with `instruction` when the operator returns. Only the
-operator's own words lift a pause: an answer on the page or an
-operator entry, whether from a transcript, `--operator-said` or `--choice`, not the
-agent's words and not the ending of a step.
+Closing the page or pausing does not authorize reopening it automatically. The
+agent follows the operator's normal continuation or pause instructions.
 
 ## Documents
 
@@ -3067,14 +3011,14 @@ artifacts and hook artifacts keep their configured ownership and paths.
 to the later step's instruction; execution still follows the written order.
 Nested steps may refer to earlier siblings or to the nearest earlier step at
 any enclosing level, up through the workflow's top-level steps and `init`.
-An assessment outcome may name its assessment, and a per-item stage may name
+An assessment outcome may name its assessment, and an items substep may name
 its `items` step, because those containers have completed before their nested
 work begins. The instruction names the dependency by its plan path, such as
 `review/check`, which is how `ww artifacts` lists it.
 
 A plain group or selected assessment outcome supplies the latest completed
 descendant artifact. An assessment outside its chosen outcome gets the latest
-artifact saved inside that outcome. Per-item and per-child descendants count;
+artifact saved inside that outcome. Items substeps and per-child descendants count;
 the selected outcome is the one that contributes. If no descendant saved an
 artifact, an assessment falls back to its own answer when available. Otherwise
 the page says that no artifact is available. Validation accepts a dependency
@@ -3147,289 +3091,98 @@ workflows:
         artifact: false
 ```
 
-## Dynamic per-item workflows
+## Bounded item collections
 
-One `items` step collects a runtime list of work items and then runs a fresh
-lifecycle for every item. The step's own work is the collection: the agent
-splits it into items with `add-item`. In the minimal form, every item then gets
-one built-in stage that analyzes, resolves, and reports it:
+An `items` step owns a bounded collection of obligations. Its prompt registers
+items; its `items.steps` are ordinary steps compiled once over the collection.
+Item count changes data, never the number of executable steps or assignments.
+Groups, hooks, commands, assessments, profiles, checks, documents, interactive
+work and child tasks keep their normal behavior inside the container.
 
-```yaml
-workflows:
-  - name: handle-feedback
-    steps:
-      - review: Review the pull request.
-        items: Split based on the comments retrieved from the Bitbucket pull request.
-```
-
-The string is splitting guidance shown to the collecting agent. Use `items: ~`
-when no guidance is needed.
-
-The built-in stage can take guidance for each of its phases without declaring
-stages. Under `items`, `analyze`, `resolve`, and `report` are
-strings appended to the `handle-item` prompt as "When analyzing it", "When
-resolving it", and "When reporting the outcome"; the item is still handled in
-one pass with one artifact:
-
-```yaml
-- process_pull_request: Split the work by comment and sub-comment.
-  items:
-    assignment: together
-    report: Reply in the same Bitbucket comment thread, then resolve the thread.
-```
-
-To control the stages, list them under `items.steps`. Mark stages with
-`item_phase: analyze`, `item_phase: resolve`, or `item_phase: report` when they
-update those standard item fields. `item_phase` is valid only on an acting
-step inside a per-item stage (nested groups, and assessment outcomes
-count). On an `assess` step itself, or on a step outside any per-item stage, it
-would do nothing, so validation and `lint` reject it: put it on the outcome
-steps that do the work. `steps: []` collects items without processing them, for
-example when a later step reads them.
+Each container has a context selected by its concrete step path, task and run.
+Nested containers introduce independent collections. Commands bind to the nearest
+context; explicitly qualified reads can inspect another context or historical run.
+IDs and identity/unique field constraints are local to a context. A child workflow
+owns its own state; its parent's collections are not implicitly writable.
 
 ```yaml
 workflows:
-  - name: handle-feedback
+  - name: address-feedback
     steps:
-      - review: Review the pull request.
+      - feedback: Read comments and register one item per source comment.
         items:
-          description: Split by pull request comment.
+          description: Keep related source comments as separate obligations.
           steps:
-            - analyze: Analyze this comment.
-              item_phase: analyze
-            - fix: Resolve this comment.
-              item_phase: resolve
-              model: opus
-            - reply: Report the outcome.
-              item_phase: report
+            - bootstrap: Record each source comment ID.
+              saves:
+                - item.field.comment_id: Original comment ID for every item.
+            - develop: Group related fixes, verify them, and resolve each item.
+            - send-replies: >-
+                Use {{ww.item.field.comment_id}} to locate each original thread.
+                Send the outcome and mark each item reported after confirmation.
+              saves:
+                - item.field.reply_id: Confirmed reply ID for every item.
+      - finish: Summarize the change.
 ```
 
-Worker settings cascade from the `items` step, to `items`, to each stage. The
-step's `agent`, `model`, `reasoning`, `profile`, and `role` apply to
-collection and are inherited by the stages; the same keys under `items` apply
-only to the stages, and a stage's own value wins.
+The `items` mapping accepts `description`, `steps`, `persistent`, `identity`, and
+`unique`. Put normal execution settings on the outer step or its descendants.
+`items: ~`, a string splitting prompt, and `steps: []` have an empty body; none
+creates a default handler. They still enforce the final collection gate.
 
-### One worker per item or for all items
-
-In the `auto` runtime, `assignment` decides how many manager-dispatched
-assignments the per-item stages become. By default one worker keeps going
-through every stage of every item:
-
-```yaml
-- review: Review the change and record each finding as an item.
-  items:
-    assignment: per_item   # or together
-    model: sonnet
-    steps:
-      - analyze: Analyze this finding.
-        item_phase: analyze
-      - fix: Resolve this finding.
-        item_phase: resolve
-      - reply: Report the outcome.
-        item_phase: report
-```
-
-- `together`, the default, keeps one worker for every stage of every item.
-- `per_item` keeps one worker for all stages of one item; the next item is a
-  new assignment.
-- `per_step` hands every stage back to the manager.
-
-The manager's preview names the scope before dispatching. The first stage of
-the assignment tells the worker which stages it covers and to do them one at a
-time. Each later stage arrives as a short instruction with only the new stage's
-work and its completion command, because the worker already has the role,
-workspace, profile, and item context. Every stage is still completed, saved,
-and recoverable on its own, so `next`, `status`, reloads, and interrupted-handler
-recovery behave exactly as with separate assignments. Because one worker
-performs the shared stages, a stage that requests a different agent, model,
-reasoning, or profile, or is the manager's (`role: manager`), starts a new assignment,
-as other agent steps do. The setting has no effect in
-the `single` runtime.
-
-### Several passes over the same items
-
-A workflow has one item collection, and each `items` step is a pass over it.
-Analysis and fixes that are cheaper together can run once between passes,
-while every source comment is still checked and reported on its own:
-
-```yaml
-- collect: Record one item per comment with its stable source ID.
-  items:
-    steps: []
-- analyze-together: Analyze all collected comments together.
-- confirm-analysis: Reuse the collected items.
-  items:
-    steps:
-      - analyze: Reuse the shared analysis; confirm and fill gaps.
-        item_phase: analyze
-- fix-together: Implement and verify the fixes for all analyzed items.
-- finish: Reuse the collected items.
-  items:
-    steps:
-      - verify-resolution: Verify the result and record actual_solution.
-        item_phase: resolve
-      - report: Report the result for this original comment.
-        item_phase: report
-```
-
-Each pass expands its own stages when its collection step completes, for the
-items recorded by then; an item added later joins the next pass. Passes share
-the items' records, so the analysis written by the batch step is there for the
-quick analyze checkpoints, and nothing an earlier pass recorded is cleared.
-Each authored pass expands once when its collection step completes.
-
-A pass with `steps: []` only collects or reconciles; `items: ~` stays the
-shorthand for a single pass with the whole built-in lifecycle.
-
-Leaving a pass requires only what its stages declare: an analyze stage needs
-the item's analysis, a resolve stage its actual solution and `resolved`, a
-report stage `reported`, and the built-in `handle-item` stage both `resolved`
-and `reported`. So an analysis-only pass can lead into a batch fix, and a
-workflow that only analyzes can end there. A linked comment reuses its
-canonical item's analysis and fix but is reported itself. When a pass ends
-with an `assess` stage, the check waits for the answer: the chosen outcome's
-work is part of the pass, and an outcome that stops the workflow ends the run.
-A pass whose items still lack something stops for the operator with
-`operator_reason: pass_incomplete`, naming each item and what it lacks; record
-it with `update-item` and run `next --retry`. `next --force` is refused at a
-pass gate; the missing values must be recorded. An `items` step nested inside
-another's per-item stages is rejected.
-
-Automatic saves into item fields belong to per-item stages. A command on the
-collecting `items` step itself cannot save item fields (one output cannot be
-distributed among several items), and that is rejected; every field a stage
-declares receives the same whole trimmed output. A report stage in which ww runs
-nothing, one done by the agent alone, still marks its item reported with
-`update-item --reported=true`.
-
-`persistent`, `identity`, and `unique` describe the one collection, so the
-first `items` step decides them. Later passes leave them out or repeat the
-same values; a later pass that sets a different value fails `lint` and names
-both steps.
-
-### Items that persist across runs
-
-Some item lists are the task's, not one run's: the test cases of a manual
-test plan are the same in round one and round two. Declare the flow
-`persistent` and the items outlive the run:
-
-```yaml
-- collect: >-
-    Read the test cases in docs/test-cases.md. Compare them with the stored
-    items and make the items match: add missing cases, remove cases that
-    are gone, reword cases that changed. Keep the item ID equal to the
-    case's heading.
-  items:
-    persistent: true
-    interactive: page
-    choices:
-      - pass: The test case passed.
-      - fail: The test case failed; the operator explains why.
-```
-
-ww keeps the task's canonical list in `.ww/tasks/<task-id>/items.json` and
-refreshes it whenever a run adds, changes, or resolves an item, so it always
-holds the latest outcome of every item. Each run still keeps its own copy in
-its record, so round one's results stay readable after round two. A new run,
-whether the task is started again or a handoff enters the workflow, starts
-from the stored items with their outcome fields cleared: every round is a
-fresh round over the same cases.
-
-The collection step then reconciles instead of splitting. Its page lists
-the stored items and carries the commands to make the list match the
-source: `add-item` for new cases, `remove-item` for cases that are gone,
-and `update-item --text` to reword one. Removing and rewording are allowed only while the
-collection step is in progress, and an item that other items refer to
-cannot be removed. Stable IDs matter: an item that changed is reworded under
-its ID, not replaced, so its history lines up across rounds. When nothing
-changed, the agent completes the step as it is. With nothing stored yet, the
-same page reads as a plain split.
+New records are unresolved and unreported. Registration includes enough analysis
+to identify the obligation; there is no separate analysis state. Records retain
+`id`, source text (`item` in stored JSON), `resolved`, `reported`, optional
+`actual_solution`, custom string `fields`, `notes`, and `reference_to_id`.
+References never copy another item's completion. A rejected suggestion or failed
+manual test can be resolved with its actual disposition; acceptance checks still
+decide correctness.
 
 ```console
-ww-agentic-workflows remove-item TASK-123 --id case-7
-ww-agentic-workflows update-item TASK-123 --id case-3 --text "Upload a 25 MB image."
+./ww items TASK-123 --context feedback
+./ww item TASK-123 --context feedback --id comment-1 --get field.comment_id
+./ww add-item TASK-123 --context feedback --id comment-1 --text "Requested change"
+./ww update-item TASK-123 --context feedback --id comment-1 --field comment_id=123
+./ww resolve-item TASK-123 --context feedback --id comment-1 --actual-solution "Fixed and verified"
+./ww report-item TASK-123 --context feedback --id comment-1
 ```
 
-To start over from the source, `start --fresh-items` forgets the stored
-items before the run begins, and the collection step splits anew. `reset`
-removes the store with the task.
+Mutation templates on live pages also carry the current run, role and worker
+assignment token. Reporting requires resolution first. `resolve-item --reopen`
+clears both markers; `report-item --reopen` clears reporting. Changing obligation
+text reopens both. `remove-item` explicitly removes an obsolete record, provided
+no other item references it. Mutations are accepted only in the active context,
+and verification pages remain read-only. These commands record bookkeeping;
+they never send replies or perform the work themselves.
 
-### Custom item fields
+A `saves: item.field.<name>` requirement applies to every item present at that
+step's completion. Missing or blank values refuse completion with item/field
+pairs. Existing values suffice. Completed requirements are rechecked at the final
+boundary, so later additions and cleared fields cannot evade them. Skipped
+assessment branches add no requirements. Nested group requirements apply at the
+group boundary; inner fields never satisfy outer requirements.
 
-An item carries the standard analysis and outcome fields, and any custom
-fields a workflow needs: the ID of the source comment, the ID of the reply
-posted for it, a flag. Values are strings. They are set with the item
-commands, several in one call, and read back with `item` or `items`:
+Successful commands retain execution evidence and request missing fields through
+an agent continuation. WW neither broadcasts stdout to all records nor reruns
+successful side effects to obtain fields. Saving fields never changes markers.
 
-```console
-ww-agentic-workflows add-item TASK-123 --id c1 --text "Rename it." --field bitbucket_comment_id=100
-ww-agentic-workflows update-item TASK-123 --id c1 --field bitbucket_reply_id=200 --field bitbucket_thread_resolved=true
-ww-agentic-workflows item TASK-123 --by bitbucket_reply_id=200
-```
+The final built-in boundary runs after the container's descendants and completion
+hooks. Every current item must be resolved and reported and satisfy accrued
+field requirements. If bookkeeping is missing, complete the displayed boundary
+after updating records. Already completed work and hooks remain complete. Setting
+a marker does not advance the workflow. Empty collections satisfy the predicates
+but still execute all authored substeps. Terminal assessments and handoffs check
+all contexts they exit. Force does not waive the collection invariant.
 
-A step declares the fields it sets as `item.field.<name>` entries of `saves`,
-beside its metadata and document entries, and ww refuses to complete the step
-while any of them is empty on the step's item, or on every item when the
-step is the collection. Such a save needs an item: it belongs on an `items`
-step or on a step, hook, or reused handler that runs within a per-item stage.
-`lint` rejects one on an ordinary step, such as a batch fix between passes,
-which updates items with `update-item` instead:
+`persistent: true` reuses identities, source text, fields and references in a new
+run of the same collection, with fresh resolution/reporting outcomes. Resume and
+retry preserve the current run's outcomes. Earlier run evidence remains readable.
 
-```yaml
-- reply: Reply in the Bitbucket thread, then resolve it.
-  item_phase: report
-  saves:
-    - item.field.bitbucket_reply_id: The ID of the reply you posted.
-    - item.field.bitbucket_thread_resolved: Set to true once the thread is resolved.
-```
-
-Per-item stage prompts can read the stage's own item: `{{ww.item.id}}`,
-`{{ww.item.text}}`, `{{ww.item.field.<name>}}`, and the lifecycle values
-`{{ww.item.processed_item}}`, `{{ww.item.proposed_solution}}`,
-`{{ww.item.actual_solution}}`, `{{ww.item.resolved}}`, `{{ww.item.reported}}`,
-and `{{ww.item.reference_to_id}}`. `resolved` and `reported` render as `true`
-or `false`; every other value renders as the empty string while unset (a
-`reference_to_id` is empty for an item that links to none). The specification's
-[Item values](specification.md#item-values) is authoritative. The effective current
-step's `{{ww.choices}}` value is a JSON array of configured choice labels in
-order, or `[]` when there are none. Use it as guidance in prompts or provided-
-variable descriptions; ww does not validate a supplied value against labels.
-
-Two flow-level rules make deduplication a refusal rather than a hope:
-
-```yaml
-items:
-  persistent: true
-  identity: bitbucket_comment_id
-  unique: [bitbucket_comment_id, bitbucket_reply_id]
-```
-
-`identity` names the field every new item must carry. `unique` is one pool
-of values across the listed fields: a value may appear once over all items,
-in the run and, when the flow is persistent, in the task's stored items, so a
-reply posted in round one cannot become an item in round two, and no two
-items can claim the same comment. `add-item` and `update-item` refuse a
-duplicate and name the item that holds it. The collection page states both
-rules and the stored list shows each item's fields, so reconciling is a
-diff on real IDs.
-
-During collection and processing, use the item commands to maintain the
-structured records:
-
-```console
-ww-agentic-workflows add-item TASK-123 --id comment-1 \
-  --text="The error path is not tested."
-ww-agentic-workflows items TASK-123
-ww-agentic-workflows item TASK-123 --id comment-1
-ww-agentic-workflows update-item TASK-123 --id comment-1 \
-  --processed-item="Missing failure-path coverage" \
-  --proposed-solution="Add an integration test"
-ww-agentic-workflows update-item TASK-123 --id comment-1 \
-  --actual-solution="Added the integration test" --resolved=true --reported=true
-```
-
-`update-item` confirms the saved item and returns the current worker completion
-command.
+This is a breaking format and behavior change (task-state schema 2, plan schema
+3, compiler `plan-v11`). Removed syntax includes `items.assignment`, item-only
+worker settings, phase properties `analyze`/`resolve`/`report`, and `item_phase`.
+Old per-item plans are rejected without rewriting their state. Inspect or finish
+those tasks with the previous build; there is no legacy execution engine.
 
 ## Ordinary work and recovery
 
@@ -4503,7 +4256,7 @@ and a note to start it under `auto`:
   `triage`, `review` — start it with `--runtime auto` so those requests apply.
 ```
 
-The search includes nested steps, per-item stages, and assessment branches, as
+The search includes nested steps, items substeps, and assessment branches, as
 well as settings on the workflow itself. A workflow with no worker-specific
 settings is listed without a note.
 
