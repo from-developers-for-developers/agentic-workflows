@@ -593,7 +593,8 @@ class WorkflowPlanCompiler:
             ) -> tuple[str, ...]:
                 start = len(items)
                 # A region's own tags replace the scope's, except that an
-                # outcome inside a per-item stage still belongs to its pass.
+                # outcome inside an items context keeps the context's
+                # ``item_context`` annotation.
                 result = compile_nested(
                     nested_steps,
                     replace(

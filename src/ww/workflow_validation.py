@@ -245,7 +245,7 @@ def _validate_steps(
     earlier sibling first, then an earlier step of each enclosing level.  A
     container's own step is visible to its nested steps only when its work
     has finished before them (``finished_containers``): an assessment to its
-    outcomes and an item collection to its per-item stages, but never an
+    outcomes and an items step to its substeps, but never an
     enclosing structural group. Such a container supplies its own artifact.
     A group, or an assessment named after its outcomes, supplies the latest
     artifact saved inside it, so it needs a step inside that can save one.

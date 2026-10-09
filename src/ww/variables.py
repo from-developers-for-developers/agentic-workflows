@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 
 from ww.errors import ConfigurationError
@@ -93,22 +93,6 @@ RESERVED_NAMESPACES = (
 CHILD_VALUE_PREFIX = "ww.child."
 CHILD_FIELD_PREFIX = "ww.child.field."
 CHILD_VALUE_NAMES = ("ww.child.id", "ww.child.text", "ww.child.project")
-
-
-def item_context_error(missing: Iterable[str]) -> str | None:
-    """The context error for ``ww.item.*`` names no value exists for, if any.
-
-    The one wording for a command's arguments and an extension handler's:
-    item references are resolved by the agent per item inside an items
-    context, never substituted into an automatic handler.
-    """
-    names = sorted(name for name in missing if name.startswith(ITEM_PREFIX))
-    if not names:
-        return None
-    return (
-        f"item variable(s) used where no work item is bound: {', '.join(names)}; "
-        "ww.item.* is available only to the agent inside an items context"
-    )
 
 
 def child_value_name(name: str) -> str:
@@ -234,7 +218,7 @@ def validate_item_references(
         name.startswith("ww.item") and not name.startswith(ITEM_PREFIX)
         for name in all_names
     ):
-        raise ConfigurationError("malformed item reference; use {{ww.item.<field>}}")
+        raise ConfigurationError("unknown ww.item reference; use {{ww.item.<field>}}")
     names = tuple(
         dict.fromkeys(name for name in all_names if name.startswith(ITEM_PREFIX))
     )

@@ -429,7 +429,7 @@ repair, reset, or delete its directory is the operator's decision.
 ```markdown
 ## Unreadable tasks
 
-- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 2
+- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 7
 
 Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
 ```

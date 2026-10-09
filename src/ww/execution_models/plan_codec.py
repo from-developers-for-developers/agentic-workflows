@@ -8,6 +8,7 @@ through the normalized plan items in that snapshot.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import Any, cast
 
 from ww.actions import Commands, actions
@@ -105,74 +106,7 @@ def _checked_item_contexts(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:
     return items
 
 
-_PLAN_ITEM_KEYS = frozenset(
-    {
-        "ancestors",
-        "artifact",
-        "artifact_dependency",
-        "assessment_outcome",
-        "assessment_outcomes",
-        "assessment_parent",
-        "assessment_question",
-        "assessment_stops",
-        "checks",
-        "child_identity",
-        "child_number",
-        "child_operation",
-        "child_stage",
-        "child_template",
-        "choices",
-        "dependencies",
-        "description",
-        "execution",
-        "explicit",
-        "id",
-        "interactive",
-        "item_context",
-        "item_identity",
-        "item_operation",
-        "item_unique",
-        "learnable",
-        "max_handler_fixes",
-        "model",
-        "modes",
-        "name",
-        "on_failure",
-        "on_failure_instruction",
-        "operation",
-        "outputs",
-        "owner",
-        "parent",
-        "phase",
-        "position",
-        "profile",
-        "profile_instruction",
-        "profile_path",
-        "provide",
-        "reasoning",
-        "registered_handler",
-        "requested_agent",
-        "requested_model",
-        "requested_reasoning",
-        "requires_agent_input",
-        "role",
-        "rules",
-        "save_metadata",
-        "shared_items",
-        "source",
-        "split_instruction",
-        "step",
-        "step_ordinals",
-        "subagents",
-        "summary",
-        "ui",
-        "update_document",
-        "update_item",
-        "verifies",
-        "workdir",
-        "workflow",
-    }
-)
+_PLAN_ITEM_KEYS = frozenset(field.name for field in fields(PlanItem))
 
 
 def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanItem:

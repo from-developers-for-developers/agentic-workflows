@@ -52,7 +52,6 @@ from ww.storage_adapters import CommandOutputAddress
 from ww.transitions import release_provided_values
 from ww.variables import (
     PROJECT,
-    item_context_error,
     item_workspace_values,
 )
 from ww.workspace import relative_workspace
@@ -265,9 +264,6 @@ class _ExtensionService:
                 if name not in values
             }
         )
-        context_error = item_context_error(missing)
-        if context_error is not None:
-            raise StateError(context_error)
         if missing:
             raise StateError(
                 "extension handler arguments are missing variable(s): "

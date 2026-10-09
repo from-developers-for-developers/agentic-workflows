@@ -117,16 +117,6 @@ def test_unavailable_values_leave_ww_own_values_out() -> None:
     assert unavailable_ww_values(names, {}) == ("ww.git.branch", "ww.child.git.branch")
 
 
-def test_item_context_error_names_the_item_variables() -> None:
-    from ww.variables import item_context_error
-
-    error = item_context_error(("ww.item.id", "other.name"))
-
-    assert error is not None and "ww.item.id" in error
-    assert "other.name" not in error
-    assert item_context_error(("other.name",)) is None
-
-
 def test_item_references_allow_whitespace_inside_the_braces() -> None:
     from ww.errors import ConfigurationError
     from ww.variables import validate_item_references
@@ -135,7 +125,7 @@ def test_item_references_allow_whitespace_inside_the_braces() -> None:
         "ww.item.id",
         "ww.item.text",
     )
-    with pytest.raises(ConfigurationError, match="malformed item reference"):
+    with pytest.raises(ConfigurationError, match="unknown ww.item reference"):
         validate_item_references("{{ww.item}}", "c")
     with pytest.raises(ConfigurationError, match="unknown item field"):
         validate_item_references("{{ ww.item.nope }}", "c")

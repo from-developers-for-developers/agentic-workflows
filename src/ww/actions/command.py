@@ -17,7 +17,6 @@ from ww.validation import (
     expect_string,
     reject_unknown_keys,
 )
-from ww.variables import item_context_error
 
 from .contracts import (
     ActionResult,
@@ -155,9 +154,6 @@ class CommandAction(AutomaticAction[Commands, Commands]):
             for name in dependencies(template)
             if name not in values
         }
-        context_error = item_context_error(missing)
-        if context_error is not None:
-            raise StateError(context_error)
         if missing:
             raise StateError(
                 "automatic handler is missing variable(s): "

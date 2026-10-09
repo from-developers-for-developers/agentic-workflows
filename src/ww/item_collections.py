@@ -71,10 +71,8 @@ def promised_fields(
             for step, record in zip(plan.items, state.item_executions, strict=True)
             if step.item_context == context
             and (
-                current is not None
-                and step.id == current.id
-                or record.status == "completed"
-                and record.started_at is not None
+                (current is not None and step.id == current.id)
+                or (record.status == "completed" and record.started_at is not None)
             )
             for field in step.update_item
         )

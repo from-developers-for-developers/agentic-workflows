@@ -13,15 +13,16 @@ from ww.errors import StateError
 FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 # The built-in item values a template or `WorkItem.get` can read besides
 # ``field.<name>``.
-ITEM_VALUE_NAMES = (
-    "id",
-    "text",
-    "resolved",
-    "reported",
-    "actual_solution",
-    "reference_to_id",
-    "notes",
-)
+# Each maps to the ``WorkItem`` attribute holding its value.
+ITEM_VALUE_NAMES = {
+    "id": "id",
+    "text": "item",
+    "resolved": "resolved",
+    "reported": "reported",
+    "actual_solution": "actual_solution",
+    "reference_to_id": "reference_to_id",
+    "notes": "notes",
+}
 
 
 @dataclass(frozen=True)
@@ -47,10 +48,8 @@ class WorkItem:
             if name not in dict(self.fields):
                 raise StateError(f"item {self.id!r} has no field {name!r}")
             return self.field(name)
-        if path == "text":
-            return self.item
         if path in ITEM_VALUE_NAMES:
-            return self.to_dict()[path]
+            return getattr(self, ITEM_VALUE_NAMES[path])
         raise StateError(f"unknown item field {path!r}")
 
     def field(self, name: str) -> str | None:
