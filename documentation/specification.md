@@ -1949,17 +1949,7 @@ handler repair. A rule's `max_fixes` can override its own check limit.
 command retries. These limits do not bound an agent's effort within an ordinary
 step and do not provide a general repetition mechanism.
 
-## Removed workflow repetition and stored-run boundary
-
-Workflow loops are removed. Authored `loop`, `break`, `continue`, `max_rounds`,
-step-level loop `assignment`, and `limits.rounds` are rejected, including in
-handlers, groups, assessments, item stages and child stages. The `loop` command
-and its options are unavailable. Item and child assignment settings retain their
-existing meaning. `next --force` applies to failed or interrupted recovery,
+`next --force` applies to failed or interrupted recovery,
 including check waivers; it cannot terminate ordinary running work.
 
-Plan snapshots require schema 3 and execution state requires schema 2. Old
-schemas fail explicitly before any state is changed. There is no migration or
-legacy executor. Finish relevant runs with the previous build before upgrading,
-or use that build to inspect/recover them. Previously written artifacts and logs
-remain on disk. New runs round-trip only the new schema.
+Task documents, plan snapshots and execution state use schema 1.

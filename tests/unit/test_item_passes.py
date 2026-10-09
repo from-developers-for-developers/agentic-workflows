@@ -236,14 +236,14 @@ def test_children_expansion_metadata_is_not_pass_identity(tmp_path: Path) -> Non
     assert all(item.item_pass is None for item in plan.items)
 
 
-# --- codec: new schema ------------------------------------------------------
+# --- codec -----------------------------------------------------------------
 
 
 def test_pass_identity_round_trips_in_the_current_schema(tmp_path: Path) -> None:
     plan = _plan(tmp_path, ONE_PASS)
     raw = json.loads(json.dumps(_snapshot(plan).to_dict()))
 
-    assert raw["schema_version"] == PLAN_SCHEMA_VERSION == 3
+    assert raw["schema_version"] == PLAN_SCHEMA_VERSION == 1
     loaded = PlanSnapshot.from_dict(raw)
     assert loaded.plan == plan
     assert loaded.template_plan == plan
@@ -270,12 +270,4 @@ def test_a_current_schema_plan_without_pass_identity_is_refused(
         item.pop("item_pass", None)
 
     with pytest.raises(ValueError, match="no item_pass.*cannot be resumed"):
-        PlanSnapshot.from_dict(raw)
-
-
-def test_a_schema_1_snapshot_is_rejected(tmp_path: Path) -> None:
-    raw = json.loads(json.dumps(_snapshot(_plan(tmp_path, ONE_PASS)).to_dict()))
-    raw["schema_version"] = 1
-
-    with pytest.raises(ValueError, match="unsupported plan snapshot schema: 1"):
         PlanSnapshot.from_dict(raw)

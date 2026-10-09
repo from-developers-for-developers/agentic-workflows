@@ -60,12 +60,6 @@ def _named_entry(
 
 
 def _only(mapping: dict[str, Any], allowed: set[str], path: str) -> None:
-    removed = set(mapping) & {"loop", "break", "continue", "max_rounds"}
-    if removed:
-        raise ConfigurationError(
-            f"{path}: workflow loops were removed; unsupported key(s): "
-            + ", ".join(sorted(removed))
-        )
     reject_unknown_keys(mapping, allowed, path, error=ConfigurationError)
 
 

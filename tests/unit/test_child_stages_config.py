@@ -177,12 +177,6 @@ def test_a_per_child_stage_can_land_the_child_with_merge_branch(
         ),
         (
             "      - slices: Split.\n        children:\n          steps:\n"
-            "            - implement:\n                workflow: child\n"
-            "            - name: again\n              loop: []\n",
-            "removed",
-        ),
-        (
-            "      - slices: Split.\n        children:\n          steps:\n"
             "            - implement:\n                workflow: nowhere\n",
             "unknown child workflow 'nowhere'",
         ),

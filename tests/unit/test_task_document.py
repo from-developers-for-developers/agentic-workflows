@@ -231,7 +231,7 @@ def test_state_without_omitted_required_fields_decodes() -> None:
     assert decoded[0][0].state.active_item_id is None
 
 
-@pytest.mark.parametrize("version", [1, 3, True, 2.0, "2", None])
+@pytest.mark.parametrize("version", [0, 2, True, 1.0, "1", None])
 def test_schema_version_must_be_the_current_strict_integer(version: object) -> None:
     encoded = encode_task_document("TASK-1", (_run(),), None, 1, {})
     encoded["schema_version"] = version
@@ -250,7 +250,7 @@ def test_children_round_trip_with_fields_and_failed_status() -> None:
     encoded = encode_task_document("TASK-1", (run,), None, 1, {})
     decoded, _, _, _ = decode_task_document(encoded, "TASK-1")
 
-    assert encoded["schema_version"] == 2
+    assert encoded["schema_version"] == 1
     assert "fields" not in encoded["runs"][0]["children"][1]
     assert decoded[0].children == children
 

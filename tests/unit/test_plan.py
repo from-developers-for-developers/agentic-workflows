@@ -1081,22 +1081,6 @@ def test_core_control_keys_compile_to_core_operations(tmp_path: Path) -> None:
     assert isinstance(dispatch.operation, ChildWorkflowRun)
     assert dispatch.operation.workflow == "target"
 
-    path.write_text(
-        """workflows:
-  - name: task
-    steps:
-      - name: odd
-        action:
-          type: loop
-          loop_id: odd
-          operation: enter
-          max_times: 2
-""",
-        encoding="utf-8",
-    )
-    with pytest.raises(ConfigurationError, match="workflow loops were removed"):
-        load_configuration(path)
-
 
 def test_handoff_hook_is_not_replaced_by_a_handler_named_start_workflow(
     tmp_path: Path,

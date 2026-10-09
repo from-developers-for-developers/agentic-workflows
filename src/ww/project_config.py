@@ -639,10 +639,6 @@ def _parse_limits(data: Any, path: str) -> Limits:
         return Limits()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.limits must be an object")
-    if "rounds" in data:
-        raise ConfigurationError(
-            f"{path}.limits.rounds was removed with workflow loops"
-        )
     unknown = set(data) - {"fixes", "auto_retries"}
     if unknown:
         raise ConfigurationError(

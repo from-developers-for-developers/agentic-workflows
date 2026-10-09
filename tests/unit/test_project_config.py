@@ -141,12 +141,8 @@ def test_a_bare_name_matching_one_vendor_validates() -> None:
         ({"enabled": "yes"}, 'enabled must be true, false, or "on_request"'),
         ({"extensions": []}, "extensions must be an object"),
         ({"extensions": {"ww/git": 5}}, "must be an object of settings"),
-        ({"max_rounds": 3}, "unknown key(s): max_rounds"),
         ({"limits": 3}, "limits must be an object"),
         ({"limits": {"max_fixes": 3}}, "limits has unknown key(s): max_fixes"),
-        ({"limits": {"rounds": 0}}, "limits.rounds was removed"),
-        ({"limits": {"rounds": True}}, "limits.rounds was removed"),
-        ({"limits": {"rounds": "3"}}, "limits.rounds was removed"),
         ({"limits": {"fixes": 0}}, "limits.fixes must be a positive integer"),
         ({"limits": {"fixes": False}}, "limits.fixes must be a positive integer"),
         (

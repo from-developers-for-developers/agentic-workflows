@@ -209,8 +209,8 @@ def test_the_store_keeps_one_record_per_run_and_marks_reports(tmp_path: Path) ->
     assert record["workflow"] == "task"
     assert record["recorded_at"] == "2026-10-06T07:45:13Z"
     assert record["modes"] == ["economy"]
-    assert record["plan_schema_version"] == 3
-    assert record["task_state_schema_version"] == 2
+    assert record["plan_schema_version"] == 1
+    assert record["task_state_schema_version"] == 1
     assert record["workflow_shape"] == SHAPE
     assert record["errors"][0]["step"] == "work"
     assert record["inconveniences"] == [

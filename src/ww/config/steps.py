@@ -394,11 +394,6 @@ def _step_mapping(
                 f"{path}.{label} is not a direct assessment branch; "
                 "use positive, negative, mixed, or outcomes"
             )
-    if "assignment" in mapping:
-        raise ConfigurationError(
-            f"{path}.assignment on a step was removed with workflow loops; "
-            "item and child assignment belongs inside items or children"
-        )
     _only(mapping, allowed, path)
     return mapping
 

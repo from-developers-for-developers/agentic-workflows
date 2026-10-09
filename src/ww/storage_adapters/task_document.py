@@ -25,7 +25,7 @@ from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
-TASK_STATE_SCHEMA_VERSION = 2
+TASK_STATE_SCHEMA_VERSION = 1
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:

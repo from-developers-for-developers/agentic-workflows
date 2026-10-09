@@ -39,7 +39,7 @@ from ww.workflow_config import ProvidedVariable
 from .decoding import _assignment_log, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 2
+EXECUTION_SCHEMA_VERSION = 1
 
 PAIR_SIZE = 2
 
@@ -1125,11 +1125,7 @@ class ExecutionState:
             raise ValueError("execution state must be a mapping")
         version = data.get("schema_version")
         if not is_strict_int(version) or version != EXECUTION_SCHEMA_VERSION:
-            raise ValueError(
-                f"unsupported execution state schema: {version!r}; "
-                "finish or inspect this run using the previous WW build; "
-                "saved state, artifacts and logs were left untouched"
-            )
+            raise ValueError(f"unsupported execution state schema: {version!r}")
         required = {
             "schema_version",
             "task_id",

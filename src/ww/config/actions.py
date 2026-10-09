@@ -135,8 +135,6 @@ def _parse_handler(
         raw_action = _mapping(mapping["action"], f"{path}.action")
         identifier = _nonempty_string(raw_action, "type", f"{path}.action")
         source = {key: value for key, value in raw_action.items() if key != "type"}
-        if identifier == "loop":
-            raise ConfigurationError(f"{path}.action.type: workflow loops were removed")
         if identifier in CORE_ACTION_TYPES:
             # Core controls are engine behaviour with their own keys, not
             # registry actions selected by type.

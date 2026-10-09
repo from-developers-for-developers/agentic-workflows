@@ -664,11 +664,7 @@ Execution progresses through ordinary plan items. Completion-check rejection,
 judged-rule verification, handler repair, automatic retries and interrupted
 operation recovery retain their existing purpose and limits. Recovery history
 keeps prior attempts and immutable stream references. Ordinary step artifact
-paths use declaration ordinals; new runs have no iteration directories.
-
-Plan schema 3 and execution schema 2 are explicit incompatibility boundaries.
-Older runs are refused without changing state or deleting evidence. Finish or
-inspect them with the previous build before switching engines.
+paths use declaration ordinals.
 
 Persisted model contracts use closed `Literal` sets across plans, execution
 records, child coordination, and instructions. `PlanItem` validates
@@ -717,8 +713,8 @@ artifacts and command output; they are not an execution index.
 
 The task document has its own format discriminator and schema version; plan
 snapshots and execution states carry theirs. Readers reject unsupported
-versions rather than guessing. Plan schema 3 retains item-pass identity and
-removes loop fields; execution schema 2 removes loop state. The separate CLI
+versions rather than guessing. Task documents, plan snapshots and execution
+states use schema 1. The separate CLI
 audit log uses one invocation ID for each started/terminal pair, redacts
 user-supplied completion values and failure text from command lines, and
 rotates by size. Workflow recovery never depends on audit files.
