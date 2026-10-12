@@ -101,17 +101,18 @@ def resolve_rules(
     item: PlanItem,
     automation: RuleAutomation,
     *,
-    directory: Path | None = None,
+    root: Path | None = None,
 ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]:
     """How each rule without a command is enforced, as the step begins.
 
     A rule whose wording has a converted check is checked by it; several
     rules sharing one check get one planned check that covers them all.
     Every other rule is judged by a verifier, whatever else the store says
-    about it. With ``directory``, the one the step's checks run in, a
-    converted check whose configuration files are not all there, such as one
-    built on a branch not merged yet, does not apply: its rules are judged,
-    naming the missing file.
+    about it. With the project ``root``, a converted check whose
+    configuration files are not all there, such as one built on a branch not
+    merged yet, does not apply: its rules are judged, naming the missing
+    file. The step's own directory does not matter: a worktree of an older
+    branch still gets the root's checks.
     """
     resolutions: list[RuleResolution] = []
     covered: dict[str, list[PlannedRule]] = {}
@@ -122,7 +123,7 @@ def resolve_rules(
         converted = automation.converted_check(rule.text_hash)
         if converted is not None:
             name, check = converted
-            missing = _missing_config(check.spec, directory)
+            missing = _missing_config(check.spec, root)
             if missing is not None:
                 resolutions.append(
                     RuleResolution(
@@ -147,9 +148,9 @@ def resolve_rules(
     return tuple(resolutions), checks
 
 
-def _missing_config(spec: CheckSpec, directory: Path | None) -> str | None:
-    """The first of a check's configuration files ``directory`` lacks."""
-    return missing_file(spec.config, directory)
+def _missing_config(spec: CheckSpec, root: Path | None) -> str | None:
+    """The first of a check's configuration files the project ``root`` lacks."""
+    return missing_file(spec.config, root)
 
 
 def derived_check(name: str, spec: CheckSpec, rules: list[PlannedRule]) -> PlannedCheck:
@@ -198,7 +199,7 @@ def verification_needs(
     rule selecting none of them is not applicable, and needs no verifier; an
     unscoped rule applies to every change, even none. What the step began
     with says the rest: a rule's reading, and the converted check whose
-    configuration is missing here.
+    configuration is missing at the project root.
     """
     unavailable = (
         {result.id: result.output for result in report.unavailable} if report else {}

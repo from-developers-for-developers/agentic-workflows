@@ -12,7 +12,7 @@ from ww.rule_checks import _unavailable_reason, missing_file
 NOW = "2026-10-08T12:00:00Z"
 
 
-def test_missing_file_names_the_first_file_the_directory_lacks(
+def test_missing_file_names_the_first_file_the_root_lacks(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "tools").mkdir()
@@ -23,12 +23,12 @@ def test_missing_file_names_the_first_file_the_directory_lacks(
     assert missing_file(("tools/lint.sh", "tools/lint.toml"), tmp_path) == (
         "tools/lint.toml"
     )
-    # A path reaching outside the directory is missing however it resolves.
+    # A path reaching outside the root is missing however it resolves.
     assert missing_file(("../lint.sh",), tmp_path / "tools") == "../lint.sh"
     assert missing_file((str(tmp_path / "tools/lint.sh"),), tmp_path) == str(
         tmp_path / "tools/lint.sh"
     )
-    # Without a directory nothing can be missing: ``ww check`` on a bare plan.
+    # Without a root nothing can be missing: ``ww check`` on a bare plan.
     assert missing_file(("tools/lint.sh",), None) is None
 
 

@@ -1246,6 +1246,17 @@ root discovery follows Git's common directory back to the primary checkout, so
 the task ledger, `.ww` runtime, and configuration remain shared rather than
 being recreated inside the worktree. An explicit `--root` remains authoritative.
 
+ww's configuration (`ww.yaml`, `ww.json`, `.ww/`, rule files, the check
+store and the files checks declare) is therefore always read from that root,
+never from the worktree, whose branch may predate it. `{{ww.root}}` (and
+`WW_ROOT` in every check's environment) names the root, so a check defined
+there runs in the worktree against its change set while reaching its own
+scripts and configs at the root. A page whose working directory differs from
+the root carries `Instruction.project_root` and tells the agent to read ww's
+configuration there, and `config.rules.shown_source` prints rule files
+root-relative only when ww runs at the root, otherwise by their absolute path
+there.
+
 The git extension separates `start-task-branch` from `create-worktree`. The
 first establishes the task branch without occupying it when worktrees are
 enabled; the second may be placed independently in workflow hooks and is a
@@ -1656,8 +1667,9 @@ repeatable, so they keep no command ledger; their outputs are stored like
 other command output and their reports live on the item record, one per
 attempt, which is the single authority for how often a step was rejected.
 A check that cannot run here is `unavailable` (`CheckStatus`) with its
-reason, never failed: a file it declares under `files` is missing in the
-step's directory (`missing_file`, tested before the command runs), the
+reason, never failed: a file it declares under `files` is missing at the
+project root (`missing_file` against `CheckScope.root`, tested before the
+command runs, which itself runs in `CheckScope.directory`), the
 command could not be launched, or the shell exited 126 or 127.
 `CheckReport.failed` leaves such results out, so they reject no completion,
 count in neither `check_failures` nor the rule statistics, and are never
@@ -1719,8 +1731,8 @@ the store; `rules prune` deletes orphan store entries after asking, and
 `rules revoke` rejects one check and its rules the same way. `rules convert`
 and `rules decline` (`rule_conversion.py`) record an operator-approved check
 or `not_convertible` rules through the same locked store write. `resolve_rules`
-is given the step's directory and resolves a converted check's rules as
-judged when one of its `config` files is missing there.
+is given the project root and resolves a converted check's rules as judged
+when one of its `config` files is missing there.
 
 Only the operator's `rules` commands write the store, and `rules convert` is
 the one approval path. `rules.check_guidance` in

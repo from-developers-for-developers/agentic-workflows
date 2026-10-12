@@ -698,6 +698,17 @@ def _working_directory(lines: Lines, instruction: Instruction) -> None:
                 "```",
             ]
         )
+    if instruction.project_root:
+        lines.extend(
+            [
+                "",
+                "ww's configuration (`ww.yaml`, `ww.json`, `.ww/`, rule files "
+                "and checks) is read from the project root, "
+                f"`{instruction.project_root}`, not from this workspace, whose "
+                "branch may hold an older copy or none: read it there, never "
+                "the copy here.",
+            ]
+        )
 
 
 def _profile(lines: Lines, instruction: Instruction) -> None:
@@ -860,8 +871,8 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
                 lines.append(f"  {rule.interpretation}")
             if rule.missing is not None:
                 lines.append(
-                    f"  Its check `{rule.check}` does not run here: "
-                    f"`{rule.missing}` is missing in this step's directory."
+                    f"  Its check `{rule.check}` does not run: `{rule.missing}` "
+                    "is missing at the project root."
                 )
         lines.extend(
             [
@@ -1071,8 +1082,8 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
             lines.append(f"  Interpretation: {rule.interpretation}")
         if rule.missing is not None:
             lines.append(
-                f"  Its check `{rule.check}` does not run here: `{rule.missing}` "
-                "is missing in this step's directory, so judge it instead."
+                f"  Its check `{rule.check}` does not run: `{rule.missing}` "
+                "is missing at the project root, so judge it instead."
             )
         if rule.unavailable is not None:
             lines.append(

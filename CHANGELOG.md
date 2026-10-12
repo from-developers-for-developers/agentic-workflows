@@ -9,6 +9,10 @@ The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-12
+
+- Changed: rules and checks are defined at the project root and applied in the task's worktree, so a task on an older branch (a hotfix from a release branch) gets the root's current rules and checks. A check's declared `files` are looked up at the root and must be reached as `{{ww.root}}/<path>` or `"$WW_ROOT/<path>"`; a check that declares files without naming the root is refused. Added the `{{ww.root}}` value and `WW_ROOT` in a check's environment; pages in a worktree name the root as the place of ww's configuration, and `ww rules` shows rule files by their absolute root path outside the root.
+
 ## 2026-10-09
 
 - Fixed: a crash during a commit can no longer wedge a task; run state is written to revision-named files (`runs/<run_id>/state.<revision>.json`), the index is published last and unnamed files are removed afterwards, so a reader always sees one consistent revision. `{{ ww.item.id }}` with spaces is accepted again; completing a children step commits once; boundary auto-completion no longer swallows unrelated state errors.

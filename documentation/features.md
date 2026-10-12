@@ -2276,7 +2276,7 @@ with a `check` field naming the check.
 ### A check that cannot run
 
 A check that cannot run here is **unavailable**, not failed: the script it
-runs is not in this checkout (its `check` lists it under `files`, tested
+runs is not at the project root (its `check` lists it under `files`, tested
 before anything runs), the `argv` program does not exist, or the shell
 answered `command not found` or `not executable` (exit 127 or 126), as when
 a check is written on a branch its tool has not reached yet. The worker is
@@ -2288,6 +2288,21 @@ whose configuration is missing is, and the verification page names the
 check and the reason. The fix page, `ww check`, the operator's fix-limit and
 dispute pages, and the step artifact list such checks apart from the failed
 ones as `check unavailable: <reason>`.
+
+### Rules and checks in a worktree of an older branch
+
+ww's configuration, `ww.yaml`, `ww.json`, `.ww/`, the rule files and the
+check store, is always read from the project root, the primary checkout,
+even when a task works in a Git worktree. A hotfix branched from a release
+branch that predates the latest rules still gets them: rules and checks are
+defined at the root and applied in the worktree. A check's command runs in
+the step's directory against its change set, while the files it declares are
+looked up at the root and reached as `{{ww.root}}/<path>` (or
+`"$WW_ROOT/<path>"` in a `shell` source); a check that declares files without
+naming the root is refused. A page whose working directory is a worktree
+names the project root and tells the agent to read ww's configuration there,
+and `ww rules` shows rule files by their absolute path at the root when run
+from anywhere else, so an agent never opens a worktree's older copy.
 
 ### In the artifact
 
@@ -2316,8 +2331,8 @@ to commit, keyed by each rule's text hash; `checks` there are named, and one
 check may cover many rules, the usual case for an ecosystem tool such as
 deptrac, PHPStan, import-linter, ruff, or eslint, whose one configuration
 expresses several rules. When a step begins, each of its rules without a
-command is settled once: `converted`, checked by its store check where the
-check's configuration files exist, or `judged`. A store written by an earlier
+command is settled once: `converted`, checked by its store check while the
+check's configuration files exist at the project root, or `judged`. A store written by an earlier
 ww may still hold the interim entries verifiers once wrote inside tasks, such
 as an approach or a proposed check; ww reads them, and their rules are judged.
 
@@ -2424,9 +2439,15 @@ verification, by `ww-scriptize-rules` or by hand:
 ```console
 ./ww rules convert phpstan --covers php/no-new-services php/typed-returns \
   --config phpstan.neon --proven \
-  --check-argv -- vendor/bin/phpstan analyse --configuration phpstan.neon
+  --check-argv -- vendor/bin/phpstan analyse --configuration '{{ww.root}}/phpstan.neon'
 ./ww rules decline docs/tone --reason "A matter of review."
 ```
+
+A check's `--config` files are read at the project root, while its command
+runs in the step's directory, which may be a worktree of an older branch:
+the command reaches them as `{{ww.root}}/<path>` (or `"$WW_ROOT/<path>"`
+in a `--check-shell` source), and a check with `--config` that does neither
+is refused.
 
 `--check-argv -- <arg>...` goes last: everything after `--` is the check's
 argv, so the tool's own options, such as `--configuration` or `--select E`,
@@ -2649,7 +2670,8 @@ it chose instead. `{{ww.project.name}}` is that project's name
 and `{{ww.project.dir}}` its directory, both empty for a task in the root;
 `{{ww.project.dir}}` keeps pointing at the project even after a worktree moves
 the task workspace. `{{ww.project.names}}` lists every configured project name, joined
-by commas. `{{ww.executable}}` is how the commands ww prints invoke ww, `./ww`
+by commas. `{{ww.root}}` is the project root, where ww's configuration lives:
+the primary checkout, even for a task in a worktree of an older branch. `{{ww.executable}}` is how the commands ww prints invoke ww, `./ww`
 or the configured [`executable`](#choosing-the-ww-binary), so a step's text can
 name a ww command as ww's own pages do: ``Run `{{ww.executable}} onboarding` ``.
 Values under `{{ww.<namespace>.*}}` come from a configured extension, such

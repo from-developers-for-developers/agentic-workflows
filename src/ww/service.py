@@ -2319,7 +2319,9 @@ class WorkflowService:
         """One rule or check of the task in full, as its plan froze it."""
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
-        return rule_view(state, snapshot.plan, self.rule_store.load(), rule_id)
+        return rule_view(
+            state, snapshot.plan, self.rule_store.load(), rule_id, self.storage.root
+        )
 
     def _active_step(
         self, state: ExecutionState, snapshot: PlanSnapshot, refusal: str
@@ -4225,26 +4227,21 @@ class WorkflowService:
 
         Read from the store once, when the step first begins; a step that
         began before keeps what it began with. A converted check applies only
-        where its configuration files exist in the directory the step's
-        checks run in.
+        where its configuration files exist at the project root.
         """
         if (
             not judged_rules(item)
             or state.item_executions[state.cursor].rule_resolutions
         ):
             return None
-        return resolve_rules(
-            item,
-            self.rule_store.load(),
-            directory=self._check_scope(state, plan, item).directory,
-        )
+        return resolve_rules(item, self.rule_store.load(), root=self.storage.root)
 
     def _check_scope(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> CheckScope:
         """The directory an item's checks run in and the values they render."""
         workspace, values = self.actions.item_scope(state, plan, item)
-        return CheckScope(workspace or self.storage.root, values)
+        return CheckScope(workspace or self.storage.root, self.storage.root, values)
 
     def _change_mark(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

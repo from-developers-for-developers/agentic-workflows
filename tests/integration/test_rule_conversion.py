@@ -73,7 +73,7 @@ def _convert(root: Path, name: str, *covers: str, config: str | None = None) -> 
         "--covers",
         *covers,
         "--check-shell",
-        "true",
+        f'test -f "$WW_ROOT/{config}"' if config else "true",
         *extra,
         "--proven",
         "--yes",
@@ -167,18 +167,24 @@ def test_a_dry_run_records_nothing(
             "lint",
             "--covers",
             "develop/1",
-            "--check-argv",
-            "ruff",
-            "check",
             "--config",
             "ruff.toml",
             "--dry-run",
+            "--check-argv",
+            "--",
+            "ruff",
+            "check",
+            "--config",
+            "{{ww.root}}/ruff.toml",
         )
         == 0
     )
 
     out = capsys.readouterr().out
-    assert "Check lint (creates the store's entry): ruff check" in out
+    assert (
+        "Check lint (creates the store's entry): ruff check --config "
+        "{{ww.root}}/ruff.toml"
+    ) in out
     assert "- config files: ruff.toml" in out
     assert "Dry run: nothing was recorded." in out
     assert not (root / STORE_FILE).exists()
@@ -207,7 +213,7 @@ def test_argv_after_the_separator_keeps_the_tools_own_options(
             "--select",
             "E",
             "--config",
-            "ruff.toml",
+            "{{ww.root}}/ruff.toml",
         )
         == 0
     )
@@ -220,7 +226,7 @@ def test_argv_after_the_separator_keeps_the_tools_own_options(
         "--select",
         "E",
         "--config",
-        "ruff.toml",
+        "{{ww.root}}/ruff.toml",
     ]
     assert check["config"] == ["ruff.toml"]
 
@@ -315,8 +321,8 @@ def test_a_check_whose_config_is_missing_is_judged_instead(
     assert (rule.check, rule.missing) == ("lint", "lint.toml")
     page = MarkdownOutputAdapter().render_instruction(held)
     assert (
-        "Its check `lint` does not run here: `lint.toml` is missing in this "
-        "step's directory, so judge it instead."
+        "Its check `lint` does not run: `lint.toml` is missing at the project "
+        "root, so judge it instead."
     ) in page
 
 
@@ -613,12 +619,11 @@ def test_the_step_page_names_the_missing_config_file(tmp_path: Path) -> None:
     assert (line.has_command, line.check, line.missing) == (False, "lint", "lint.toml")
     page = MarkdownOutputAdapter().render_instruction(step)
     assert (
-        "  Its check `lint` does not run here: `lint.toml` is missing in this "
-        "step's directory."
+        "  Its check `lint` does not run: `lint.toml` is missing at the project root."
     ) in page
 
 
-def test_a_worktree_without_the_config_judges_the_rule(tmp_path: Path) -> None:
+def test_a_worktree_without_the_config_gets_the_roots_check(tmp_path: Path) -> None:
     root = _project(tmp_path)
     (root / "ww.yaml").write_text(
         "hooks:\n  before_start_workflow:\n    - workflows: [task]\n"
@@ -648,7 +653,7 @@ def test_a_worktree_without_the_config_judges_the_rule(tmp_path: Path) -> None:
     _git("config", "commit.gpgsign", "false", cwd=root)
     _git("add", "-A", cwd=root)
     _git("commit", "-qm", "worktrees", cwd=root)
-    # Built on the project root, as on an unmerged branch: never committed.
+    # At the project root only, as on a branch the worktree's base predates.
     (root / "lint.toml").write_text("", encoding="utf-8")
     assert _convert(root, "lint", "develop/1", config="lint.toml") == 0
     service = WorkflowService(Storage(root))
@@ -660,12 +665,13 @@ def test_a_worktree_without_the_config_judges_the_rule(tmp_path: Path) -> None:
 
     state, _ = service.load("TASK-1")
     assert (root / "trees" / "TASK-1").is_dir()
+    assert not (root / "trees" / "TASK-1" / "lint.toml").exists()
     record = state.item_executions[state.cursor]
     (resolution,) = [r for r in record.rule_resolutions if r.id == "develop/1"]
     assert (resolution.status, resolution.check, resolution.missing) == (
-        "judged",
+        "converted",
         "lint",
-        "lint.toml",
+        None,
     )
 
 
@@ -762,3 +768,31 @@ def test_a_changed_check_drops_its_pending_revision(
     out = capsys.readouterr().out
     assert "- drops the pending revision of check lint" in out
     assert "check logs" not in out
+
+
+def test_a_check_with_config_files_must_reach_them_at_the_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path)
+
+    code = _cli(
+        root,
+        "convert",
+        "lint",
+        "--covers",
+        "develop/1",
+        "--config",
+        "ruff.toml",
+        "--proven",
+        "--yes",
+        "--check-argv",
+        "--",
+        "ruff",
+        "check",
+        "--config",
+        "ruff.toml",
+    )
+
+    assert code != 0
+    assert "must reach them at the project root" in capsys.readouterr().err
+    assert not (root / STORE_FILE).exists()

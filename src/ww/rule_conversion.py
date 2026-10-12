@@ -18,6 +18,7 @@ from typing import Literal
 
 from ww.builtin_workflows import missing_lane
 from ww.changes import is_scoped
+from ww.config.rules import ROOT_FILES_MESSAGE, references_root
 from ww.errors import StateError
 from ww.rule_store import (
     CheckEntry,
@@ -165,10 +166,10 @@ _COVERED_STATUSES = frozenset({"converted", "proposed"})
 
 
 def config_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
-    """A check's configuration files, normalised, relative to its directory.
+    """A check's configuration files, normalised, relative to the project root.
 
     An empty path, an absolute one, and one with a ``..`` part, which would
-    reach outside the directory the step's checks run in, are refused.
+    reach outside the root, are refused.
     """
     normalised = []
     for path in paths:
@@ -203,6 +204,8 @@ def convert(
             f"check name {name!r} must be kebab-case, at most 40 characters"
         )
     spec = replace(spec, config=config_paths(spec.config))
+    if spec.config and not references_root(spec.command):
+        raise StateError(ROOT_FILES_MESSAGE)
     hashes = tuple(dict.fromkeys(rule.text_hash for rule in rules))
     previous = automation.checks.get(name)
     before = (

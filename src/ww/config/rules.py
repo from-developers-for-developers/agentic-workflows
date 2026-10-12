@@ -26,7 +26,9 @@ from ww.actions import Commands
 from ww.actions.command import CommandAction
 from ww.errors import ConfigurationError
 from ww.extensions.api import RuleGroupContribution
+from ww.interpolation import dependencies
 from ww.validation import is_positive_int
+from ww.variables import ROOT, ROOT_ENVIRONMENT
 from ww.workflow_config import (
     ALL,
     ALL_NAMES,
@@ -79,6 +81,14 @@ STEP_RULE_KEYS = {
 _CHECK_KEYS = {"argv", "shell", "args", "env", "assert"}
 # Beside the command keys on a rule's own check: the files it needs.
 _CHECK_FILES_KEY = "files"
+# Why a check declaring files must name the root: they are read there, while
+# the command runs in the step's directory.
+ROOT_FILES_MESSAGE = (
+    "a check that declares files must reach them at the project root, as "
+    '`{{ww.root}}/<path>` in argv, args or env, or `"$WW_ROOT/<path>"` in a '
+    "shell source: it runs in the step's directory, which may be a worktree "
+    "of a branch without them"
+)
 _GROUP_KEYS = {"rules", "workflows", "steps", "agent", "model", "reasoning"}
 # A bare string shaped like this names a group or a file, never a sentence:
 # "python" and "rules/python.md" match, "Write tests first" does not.
@@ -117,6 +127,21 @@ def rule_source(source: str | None, root: Path) -> str | None:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         return str(path)
+
+
+def shown_source(source: str | None, root: Path) -> str | None:
+    """A rule file as an agent should open it.
+
+    Relative to ``root`` only when ww runs there; from anywhere else, such
+    as a task's Git worktree whose branch may hold an older copy or none,
+    the absolute path at the root, where ww read it.
+    """
+    if source is None:
+        return None
+    path = Path(source)
+    if Path.cwd().resolve() == root.resolve():
+        return rule_source(source, root)
+    return str(path if path.is_absolute() else (root / path).resolve())
 
 
 def looks_like_reference(value: str) -> bool:
@@ -265,6 +290,22 @@ def parse_check_command(mapping: dict[str, Any], context: str) -> Commands:
     return CommandAction().parse(mapping, "check", "", context)
 
 
+def references_root(command: Commands) -> bool:
+    """Whether a check's command reaches the project root's files.
+
+    A check's declared files are read at the root, while the command runs in
+    the step's directory, which may be a worktree of a branch without them:
+    an interpolated field names ``{{ww.root}}``, a ``shell`` source
+    ``$WW_ROOT``.
+    """
+    return any(
+        ROOT in dependencies(template)
+        or (definition.shell is not None and ROOT_ENVIRONMENT in definition.shell)
+        for definition in command.commands
+        for template in (*definition.templates, definition.shell or "")
+    )
+
+
 def _parse_check(
     mapping: dict[str, Any], context: str
 ) -> tuple[Commands, tuple[str, ...]]:
@@ -275,11 +316,14 @@ def _parse_check(
         else ()
     )
     command = {key: value for key, value in mapping.items() if key != _CHECK_FILES_KEY}
-    return parse_check_command(command, context), files
+    check = parse_check_command(command, context)
+    if files and not references_root(check):
+        raise ConfigurationError(f"{context}.check: {ROOT_FILES_MESSAGE}")
+    return check, files
 
 
 def _check_files(value: Any, context: str) -> tuple[str, ...]:
-    """Paths inside the step's directory: relative, without a ``..`` part."""
+    """Paths inside the project root: relative, without a ``..`` part."""
     if (
         not isinstance(value, list)
         or not value
@@ -293,7 +337,7 @@ def _check_files(value: Any, context: str) -> tuple[str, ...]:
         if PurePosixPath(item).is_absolute() or ".." in parts:
             raise ConfigurationError(
                 f"{context}.{_CHECK_FILES_KEY}: {item!r} must stay inside the "
-                "step's directory"
+                "project root"
             )
     return tuple(value)
 

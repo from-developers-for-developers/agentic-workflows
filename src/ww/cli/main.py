@@ -793,7 +793,7 @@ def _convert(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
     if not confirm_operator(
         "ww rules convert",
         f"record check {name} as converted, run for the {len(rules)} rule(s) "
-        "it covers wherever its config files exist",
+        "it covers while its config files exist at the project root",
         "Record it?",
         "Convert",
         assume_yes=args.yes,

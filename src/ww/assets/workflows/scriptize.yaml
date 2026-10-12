@@ -7,8 +7,9 @@
 # base and follows its worktree and commit settings, and the
 # operator merges what it built. ww records the approved checks in the
 # rule-automation store at the project root with `rules convert`; a check runs
-# only where its configuration files exist, so tasks pick it up once the
-# branch is merged.
+# only while its configuration files exist at the project root, so tasks pick
+# it up once the branch is merged there, also tasks in worktrees of older
+# branches, since the command reaches its files as `{{ww.root}}/<path>`.
 workflows:
   - name: ww-scriptize-rules
     description: >-
@@ -77,8 +78,13 @@ workflows:
               tool as a development dependency in the project's manifest,
               never globally, and write its configuration in the repository;
               every command follows the `check_guidance` and the project's
-              command convention, written for this directory and never naming
-              another checkout. Every check reads the files the step changed
+              command convention. ww runs it in the step's directory, which
+              may be a worktree of an older branch without this run's files,
+              and reads its files at the project root: the command reaches
+              each of them, its script, its tool's configuration, its baseline,
+              as `{{ww.root}}/<path>` in `argv`, `args` or `env`, or as
+              `"$WW_ROOT/<path>"` in a `shell` source, and never by a path
+              relative to this directory. Every check reads the files the step changed
               from `WW_STEP_CHANGED_FILES`, newline-separated, relative to
               this directory and already narrowed to its rules' globs and
               `contains_in_file` or `contains_in_diff` strings, and examines
@@ -89,7 +95,9 @@ workflows:
               compares the branch with a base branch (`git diff master...`)
               or scans the whole repository, because a step must not fail on
               files it did not change. Prove each check by running it exactly
-              as ww will, from this directory: add a deliberately violating
+              as ww will, from this directory, with `WW_ROOT` and
+              `{{ww.root}}` standing for this directory, where its files are
+              until the branch is merged: add a deliberately violating
               input and show the command fails with `WW_STEP_CHANGED_FILES`
               set to just that file and passes with it set to an unrelated
               clean file, then remove the input and show it passes.
@@ -100,9 +108,9 @@ workflows:
               offer one and say which file it would write. Leave the agreed
               not-convertible rules alone. The artifact gives, per check: its
               name, the rule IDs it covers, its command as `argv` or `shell`
-              with any output assertion, its config files (relative paths of
-              every file holding its logic, which decide where it runs), the
-              proof, and the violations.
+              with any output assertion, its config files (paths from the
+              project root of every file holding its logic, which decide when
+              it runs), the proof, and the violations.
           - name: checks
             interactive: true
             artifact_from: build
@@ -145,6 +153,7 @@ workflows:
               that file in the main checkout, on the integration branch,
               together with or right after merging this run's branch: until
               then `is-git-clean` refuses the next task's start. The checks
-              run in a task only where their config files exist,
-              so once the branch is merged. The artifact lists what was
-              recorded.
+              run in tasks once their config files exist at the project root,
+              so once the branch is merged there; from then on they apply in
+              every task, also one in a worktree of an older branch. The
+              artifact lists what was recorded.

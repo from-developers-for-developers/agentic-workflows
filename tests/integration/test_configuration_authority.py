@@ -53,3 +53,50 @@ def test_an_identical_or_missing_worktree_configuration_is_not_flagged(
     assert _notices(tmp_path, capsys) == []
     (worktree / "ww.yaml").write_text(CONFIG, encoding="utf-8")
     assert _notices(tmp_path, capsys) == []
+
+
+ROOT_CHECK_CONFIG = """workflows:
+  - name: task
+    steps:
+      - name: work
+        description: Do the work.
+        rules:
+          - text: Lint it.
+            argv: [python3, "{{ww.root}}/tools/lint.py"]
+            files: [tools/lint.py]
+"""
+# Records where it ran and the root it was given, at the root.
+LINT = (
+    "import os, pathlib\n"
+    "root = pathlib.Path(os.environ['WW_ROOT'])\n"
+    "(root / 'ran.txt').write_text(os.getcwd() + '\\n' + str(root))\n"
+)
+
+
+def test_a_worktree_step_gets_the_roots_checks_and_names_the_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The worktree's branch is older: it has neither the rule nor its script.
+    (tmp_path / "ww.yaml").write_text(ROOT_CHECK_CONFIG, encoding="utf-8")
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools/lint.py").write_text(LINT, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    service.start("task", TASK, agent="codex", init_artifact="Do it.")
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    state, snapshot = service.load(TASK)
+    service.commit(replace(state, working_directory="wt"), snapshot)
+
+    page = service.next(TASK)
+    assert page.project_root == str(tmp_path.resolve())
+    assert main(["--root", str(tmp_path), "instruction", TASK]) == 0
+    assert (
+        f"is read from the project root, `{tmp_path.resolve()}`, not from this "
+        "workspace"
+    ) in " ".join(capsys.readouterr().out.split())
+
+    service.complete(TASK, artifact="Done.", summary_for_next="Done.")
+
+    cwd, root = (tmp_path / "ran.txt").read_text(encoding="utf-8").splitlines()
+    assert Path(cwd).resolve() == worktree.resolve()
+    assert Path(root) == tmp_path.resolve()

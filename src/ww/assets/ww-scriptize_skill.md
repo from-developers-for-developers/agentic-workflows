@@ -26,8 +26,9 @@ worktree settings; this skill starts it.
    The ww/git default base branch must be configured; its absence is an
    error. Never edit ww's configuration files yourself.
 3. Follow every page until the run completes. Tell the operator that the
-   checks run in tasks only where their configuration files exist, so once
-   this run's branch is merged, and that `./ww rules convert` and
+   checks run in tasks once their configuration files exist at the project
+   root, so once this run's branch is merged there, and then in every task,
+   also one in a worktree of an older branch such as a hotfix; and that `./ww rules convert` and
    `./ww rules decline` wrote `ww-rule-automation.json` at the project root,
    in the main checkout: they commit it there, on the integration branch,
    together with or right after merging this run's branch. Until then the

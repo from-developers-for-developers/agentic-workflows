@@ -27,6 +27,13 @@ BRANCH_NAMING_STRATEGY = "__branch_naming_strategy"
 PROJECT = "ww.project.name"
 PROJECT_DIR = "ww.project.dir"
 PROJECTS = "ww.project.names"
+# The project root, where ww's configuration lives: the primary checkout even
+# when the task works in a Git worktree of an older branch, so a check reaches
+# the root's files with ``{{ww.root}}/<path>`` while it runs in the worktree.
+ROOT = "ww.root"
+# The same root in a check's environment, for a ``shell`` source, which is
+# never interpolated: ``"$WW_ROOT/<path>"``.
+ROOT_ENVIRONMENT = "WW_ROOT"
 # How a printed command invokes ww (``./ww`` or the configured executable), so
 # a step's text can name a ww command the way ww's own pages do.
 EXECUTABLE = "ww.executable"
@@ -53,6 +60,7 @@ CORE_VARIABLE_NAMES = (
     PROJECT,
     PROJECT_DIR,
     PROJECTS,
+    ROOT,
     EXECUTABLE,
     CHOICES,
 )
@@ -75,6 +83,7 @@ def unknown_template_message(names: set[str] | tuple[str, ...]) -> str:
 WW_NAMESPACE = "ww"
 RESERVED_NAMESPACES = (
     "executable",
+    "root",
     "task",
     "project",
     "documents",
@@ -185,6 +194,7 @@ def runtime_variable_values(
         PROJECT: project or "",
         PROJECT_DIR: project_dir or "",
         PROJECTS: ",".join(projects),
+        ROOT: str(root.resolve()),
         EXECUTABLE: ww_command(),
     }
 

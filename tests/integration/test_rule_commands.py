@@ -603,9 +603,12 @@ def test_yes_alone_is_refused(
 # ww rule ----------------------------------------------------------------------
 
 
-def test_rule_shows_a_rule_file_in_full(tmp_path: Path) -> None:
+def test_rule_shows_a_rule_file_in_full(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = _project(tmp_path)
     service = _develop(root)
+    monkeypatch.chdir(root)
 
     view = service.rule("TASK-1", "docs/header")
 
@@ -663,10 +666,13 @@ def test_rule_shows_a_fix_hook_and_refuses_an_unknown_id(tmp_path: Path) -> None
 
 
 def test_rule_on_the_command_line(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = _project(tmp_path)
     _develop(root)
+    monkeypatch.chdir(root)
 
     assert main(["--root", str(root), "rule", "TASK-1", "docs/header"]) == 0
     out = capsys.readouterr().out
@@ -685,9 +691,12 @@ def test_rule_on_the_command_line(
 
 
 def test_rules_lists_groups_and_step_rules(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = _project(tmp_path)
+    monkeypatch.chdir(root)
 
     assert main(["--root", str(root), "rules"]) == 0
 

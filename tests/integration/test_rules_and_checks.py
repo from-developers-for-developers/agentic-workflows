@@ -665,7 +665,8 @@ def test_lint_reports_the_rules(
 # program that cannot be launched: each on a Markdown rule of ``docs``.
 UNAVAILABLE_RULES = {
     "declared.md": (
-        '---\npaths: ["*.md"]\ncheck:\n  argv: [python3, tools/lint.py]\n'
+        '---\npaths: ["*.md"]\ncheck:\n'
+        "  argv: [python3, '{{ww.root}}/tools/lint.py']\n"
         "  files: [tools/lint.py]\n---\nLint the docs with the tool.\n"
     ),
     "program.md": (
@@ -678,7 +679,10 @@ UNAVAILABLE_RULES = {
         "Lint the docs with the script.\n"
     ),
 }
-DECLARED_REASON = "`tools/lint.py` is missing in this step's directory"
+DECLARED_REASON = (
+    "`tools/lint.py` is missing at the project root, so the check is skipped "
+    "until it is there"
+)
 
 
 def _unavailable_project(root: Path) -> Path:

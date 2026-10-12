@@ -158,8 +158,8 @@ class RuleResolution:
     checked by the derived check ``check``; ``judged`` ones get a verifier's
     verdict. ``interpretation`` is the store's one-sentence reading, shown
     under the rule on the page. ``missing`` is set on a judged rule whose
-    converted ``check`` does not apply here: the first of its configuration
-    files the step's directory lacks.
+    converted ``check`` does not apply: the first of its configuration files
+    the project root lacks.
     """
 
     id: str

@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ww.actions import actions
-from ww.config.rules import rule_source
+from ww.config.rules import rule_source, shown_source
 from ww.errors import StateError
 from ww.execution_models import CheckReport, ExecutionState, PlanItemExecution
 from ww.extensions import is_extension_reference
@@ -129,8 +129,12 @@ def rule_view(
     plan: WorkflowPlan,
     automation: RuleAutomation,
     rule_id: str,
+    root: Path,
 ) -> RuleView:
-    """Find a rule or check of the task by ID, the current step first."""
+    """Find a rule or check of the task by ID, the current step first.
+
+    A rule file is shown as an agent should open it, at the project ``root``.
+    """
     order = sorted(range(len(plan.items)), key=lambda index: index != state.cursor)
     steps = tuple(
         dict.fromkeys(
@@ -146,7 +150,13 @@ def rule_view(
         rule = next((rule for rule in item.rules if rule.id == rule_id), None)
         if rule is not None:
             return _rule(
-                item, record, automation, rule, steps, current=index == state.cursor
+                item,
+                record,
+                automation,
+                rule,
+                steps,
+                current=index == state.cursor,
+                root=root,
             )
         check = next(
             (
@@ -172,6 +182,7 @@ def _rule(
     steps: tuple[str, ...],
     *,
     current: bool,
+    root: Path,
 ) -> RuleView:
     own = next((check for check in item.checks if check.id == rule.id), None)
     entry = None if rule.has_command else automation.rules.get(rule.text_hash)
@@ -191,7 +202,7 @@ def _rule(
         paths=rule.paths,
         contains_in_file=rule.contains_in_file,
         contains_in_diff=rule.contains_in_diff,
-        source=rule.source,
+        source=shown_source(rule.source, root),
         command=describe_command(command.command) if command else None,
         assertion=(
             command.command.assertion.describe()
@@ -388,7 +399,7 @@ def rules_listing(
             contains_in_file=rule.contains_in_file,
             contains_in_diff=rule.contains_in_diff,
             has_check=rule.check is not None,
-            source=rule_source(rule.source, root),
+            source=shown_source(rule_source(rule.source, root), root),
             disputes=counts.get(rule.id, 0),
             store_check=_store_check(automation, rule),
             scriptize=scriptize_state(automation, rule),

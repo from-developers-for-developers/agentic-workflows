@@ -387,16 +387,14 @@ def _converted(config: tuple[str, ...]) -> RuleAutomation:
 
 
 @pytest.mark.parametrize("path", ["../lint.toml", "/etc/hosts"])
-def test_a_config_path_outside_the_directory_counts_as_missing(
+def test_a_config_path_outside_the_root_counts_as_missing(
     develop: PlanItem, tmp_path: Path, path: str
 ) -> None:
     (tmp_path / "lint.toml").write_text("", encoding="utf-8")
-    directory = tmp_path / "tree"
-    directory.mkdir()
+    root = tmp_path / "tree"
+    root.mkdir()
 
-    resolutions, checks = resolve_rules(
-        develop, _converted((path,)), directory=directory
-    )
+    resolutions, checks = resolve_rules(develop, _converted((path,)), root=root)
 
     cli = next(entry for entry in resolutions if entry.id == "develop/1")
     assert (cli.status, cli.check, cli.missing) == ("judged", "lint", path)
@@ -407,7 +405,7 @@ def test_a_judged_rule_names_its_check_whose_config_is_missing(
     develop: PlanItem,
 ) -> None:
     resolutions, checks = resolve_rules(
-        develop, _converted(("lint.toml",)), directory=Path("/nonexistent")
+        develop, _converted(("lint.toml",)), root=Path("/nonexistent")
     )
 
     needs, _ = verification_needs(
@@ -531,3 +529,18 @@ def test_a_covered_rule_without_strings_means_no_content_filter() -> None:
     assert check.paths == ()
     assert check.contains_in_file == ()
     assert check.contains_in_diff == ()
+
+
+def test_a_converted_check_applies_with_its_config_at_the_root_only(
+    develop: PlanItem, tmp_path: Path
+) -> None:
+    # A worktree of an older branch lacks the file; the root has it.
+    (tmp_path / "lint.toml").write_text("", encoding="utf-8")
+
+    resolutions, checks = resolve_rules(
+        develop, _converted(("lint.toml",)), root=tmp_path
+    )
+
+    cli = next(entry for entry in resolutions if entry.id == "develop/1")
+    assert (cli.status, cli.check, cli.missing) == ("converted", "lint", None)
+    assert [check.id for check in checks] == ["lint"]

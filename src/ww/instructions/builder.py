@@ -1063,6 +1063,11 @@ class InstructionBuilder:
             # A task still in the root needs no ``cd``; an item that chose
             # its own directory always names it.
             working_directory=str(workspace) if workspace is not None else None,
+            project_root=(
+                str(self.root.resolve())
+                if workspace is not None and workspace.resolve() != self.root.resolve()
+                else None
+            ),
             rules=rule_lines(item, record),
             modes=item.modes,
             fix_required=fix_required(item, record),

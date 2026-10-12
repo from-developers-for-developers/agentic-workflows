@@ -10,10 +10,16 @@ to the step's directory) narrowed to the check's globs. A check whose globs
 select no changed file is not applicable and does not run; a judged rule is
 narrowed the same way (``applicable_files``), by its verifiers. A check fails
 on a non-zero exit or a failed assertion. A check that cannot run here is
-unavailable, not failed: a file it declares is missing, its command could
-not be launched, or the shell found no command to run (exit 126 or 127); the
-result says why, the rules it checks are judged by a verifier instead, and
-nothing counts it.
+unavailable, not failed: a file it declares is missing at the project root,
+its command could not be launched, or the shell found no command to run
+(exit 126 or 127); the result says why, the rules it checks are judged by a
+verifier instead, and nothing counts it.
+
+A check is defined at the project root and applied in the step's directory:
+its declared files are looked up at the root, where ww's configuration lives,
+even when the step works in a Git worktree of an older branch that lacks
+them; the command runs in the step's directory against its change set and
+reaches those files as ``{{ww.root}}/<path>``.
 
 Checks read the working tree and report; they change no workflow state, so
 running them again after an interruption is harmless and they keep no
@@ -44,6 +50,7 @@ from ww.execution_models import CheckReport, CheckResult, ExecutionState
 from ww.plan import PlanItem, PlannedCheck
 from ww.rule_store import is_config_path
 from ww.storage_adapters import CommandOutputAddress
+from ww.variables import ROOT_ENVIRONMENT
 
 CHANGED_FILES_VARIABLE = "WW_STEP_CHANGED_FILES"
 # Lines of a check's output kept in state and shown on the fix page.
@@ -56,9 +63,13 @@ WriteOutput = Callable[[CommandOutputAddress, str], str]
 
 @dataclass(frozen=True)
 class CheckScope:
-    """Where the checks of one completing item run, and with which values."""
+    """Where the checks of one completing item run, and with which values.
+
+    ``root`` is the project root their declared files are read from.
+    """
 
     directory: Path
+    root: Path
     values: dict[str, str]
 
 
@@ -133,13 +144,13 @@ class RuleChecker:
         selected = applicable_files(files, check, scope.directory, marks)
         if selected is None:
             return CheckResult(check.id, check.source, "not_applicable")
-        missing = missing_file(check.files, scope.directory)
+        missing = missing_file(check.files, scope.root)
         if missing is not None:
             return CheckResult(
                 check.id,
                 check.source,
                 "unavailable",
-                output=f"`{missing}` is missing in this step's directory",
+                output=missing_file_reason(missing),
             )
         action = CommandAction()
         outputs: list[str] = []
@@ -166,6 +177,7 @@ class RuleChecker:
                         **os.environ,
                         **environment,
                         CHANGED_FILES_VARIABLE: "\n".join(selected),
+                        ROOT_ENVIRONMENT: str(scope.root.resolve()),
                     },
                 )
             except OSError as error:
@@ -257,21 +269,29 @@ def applicable_files(
     return selected
 
 
-def missing_file(files: tuple[str, ...], directory: Path | None) -> str | None:
-    """The first of a check's declared files that ``directory`` lacks.
+def missing_file(files: tuple[str, ...], root: Path | None) -> str | None:
+    """The first of a check's declared files the project ``root`` lacks.
 
-    A path that would reach outside ``directory`` (absolute, or with a ``..``
+    A path that would reach outside ``root`` (absolute, or with a ``..``
     part, as only a hand-edited file holds) counts as missing.
     """
-    if directory is None:
+    if root is None:
         return None
     return next(
         (
             path
             for path in files
-            if not is_config_path(path) or not (directory / path).exists()
+            if not is_config_path(path) or not (root / path).exists()
         ),
         None,
+    )
+
+
+def missing_file_reason(path: str) -> str:
+    """Why a check whose declared ``path`` is missing does not run."""
+    return (
+        f"`{path}` is missing at the project root, so the check is skipped "
+        "until it is there"
     )
 
 

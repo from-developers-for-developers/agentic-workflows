@@ -131,8 +131,9 @@ class PlannedCheck:
     shared by several rules runs once.
 
     ``files`` are the project files the command needs, relative to the
-    step's directory, such as the script it runs: when one is missing there
-    the check is unavailable and does not run.
+    project root, such as the script it runs: the command reaches them as
+    ``{{ww.root}}/<path>`` from the step's directory, and when one is missing
+    at the root the check is unavailable and does not run.
     """
 
     id: str

@@ -133,7 +133,7 @@ class RuleLine:
     # with ``missing``, the converted check that does not apply here.
     check: str | None = None
     # A verifier judges the rule because its converted ``check`` does not
-    # apply here: this configuration file is missing in the step's directory.
+    # apply: this configuration file is missing at the project root.
     missing: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -271,7 +271,7 @@ class VerificationRuleLine:
     text: str
     interpretation: str | None = None
     # Its ``check`` does not run here: a converted check whose configuration
-    # file ``missing`` names is not in the step's directory, or the rule's
+    # file ``missing`` names is not at the project root, or the rule's
     # own or derived check was found ``unavailable`` for the reason given.
     check: str | None = None
     missing: str | None = None
@@ -524,6 +524,9 @@ class Instruction:
     run_id: str | None = None
     task_runs: tuple[WorkflowRunSummary, ...] = ()
     working_directory: str | None = None
+    # The project root, where ww's configuration lives, on a page whose
+    # working directory is elsewhere, such as a task's Git worktree.
+    project_root: str | None = None
     child_tasks: tuple[ChildTask, ...] = ()
     operation_id: str | None = None
     recovery_commands: tuple[RecoveryCommand, ...] = ()
@@ -671,6 +674,7 @@ class Instruction:
             "run_id": self.run_id,
             "task_runs": [item.to_dict() for item in self.task_runs],
             "working_directory": self.working_directory,
+            "project_root": self.project_root,
             "child_tasks": [child.to_dict() for child in self.child_tasks],
             "operation_id": self.operation_id,
             "recovery_commands": [item.to_dict() for item in self.recovery_commands],

@@ -506,8 +506,9 @@ class RuleDefinition:
     contains_in_file: tuple[str, ...] = ()
     contains_in_diff: tuple[str, ...] = ()
     check: Commands | None = None
-    # The project files the check needs, relative to the step's directory;
-    # the check is unavailable where one is missing.
+    # The project files the check needs, relative to the project root, which
+    # the command reaches as ``{{ww.root}}/<path>``; the check is unavailable
+    # while one is missing there.
     check_files: tuple[str, ...] = ()
     max_fixes: int | None = None
     hints: RuleHints = RuleHints()

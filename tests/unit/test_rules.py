@@ -25,6 +25,7 @@ from ww.config.rules import (
     parse_step_rules,
     rule_summary,
     rule_text_hash,
+    shown_source,
 )
 from ww.errors import ConfigurationError
 from ww.execution_models import PLAN_SCHEMA_VERSION, PlanSnapshot
@@ -126,19 +127,41 @@ def test_a_check_declares_the_files_it_needs(tmp_path: Path) -> None:
     path = _rule(
         tmp_path,
         "rules/lint.md",
-        "---\ncheck:\n  argv: [python3, tools/lint.py]\n"
+        "---\ncheck:\n  argv: [python3, '{{ww.root}}/tools/lint.py']\n"
         "  files: [tools/lint.py, tools/lint.toml]\n---\nLint it.\n",
     )
 
     rule = parse_rule_file(path, "docs/lint")
 
     assert rule.check is not None
-    assert rule.check.commands[0].argv == ("python3", "tools/lint.py")
+    assert rule.check.commands[0].argv == ("python3", "{{ww.root}}/tools/lint.py")
     assert rule.check_files == ("tools/lint.py", "tools/lint.toml")
     inline = parse_step_rules(
-        [{"argv": ["tools/lint.sh"], "files": ["tools/lint.sh"]}], "develop", "x"
+        [{"shell": '"$WW_ROOT/tools/lint.sh"', "files": ["tools/lint.sh"]}],
+        "develop",
+        "x",
     )
     assert inline[0].check_files == ("tools/lint.sh",)  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        "  argv: [python3, tools/lint.py]\n",
+        "  shell: python3 tools/lint.py\n",
+    ],
+)
+def test_a_check_declaring_files_must_reach_them_at_the_root(
+    tmp_path: Path, check: str
+) -> None:
+    path = _rule(
+        tmp_path,
+        "rules/lint.md",
+        f"---\ncheck:\n{check}  files: [tools/lint.py]\n---\nLint it.\n",
+    )
+
+    with pytest.raises(ConfigurationError, match="must reach them at the project root"):
+        parse_rule_file(path, "docs/lint")
 
 
 def test_rule_file_frontmatter_sets_the_strings_of_both_kinds(tmp_path: Path) -> None:
@@ -217,11 +240,11 @@ def test_rule_file_without_frontmatter_is_all_body(tmp_path: Path) -> None:
         ),
         (
             "---\ncheck:\n  argv: [true]\n  files: [../tool]\n---\nText.\n",
-            "must stay inside the step's directory",
+            "must stay inside the project root",
         ),
         (
             "---\ncheck:\n  argv: [true]\n  files: [/usr/bin/tool]\n---\nText.\n",
-            "must stay inside the step's directory",
+            "must stay inside the project root",
         ),
         ("---\n- a list\n---\nText.\n", "must be a mapping"),
         ("---\nagent: auto\n---\nText.\n", "must not be 'auto'"),
@@ -1160,3 +1183,19 @@ def test_assertion_rejects_unknown_condition_and_empty_lists() -> None:
         AssertionCondition(kind="contains", value="done")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="at least one condition"):
         AssertionDefinition(())
+
+
+def test_a_rule_file_is_shown_at_the_root_from_anywhere_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = tmp_path / "ww-worktrees/TASK-1"
+    worktree.mkdir(parents=True)
+
+    monkeypatch.chdir(tmp_path)
+    assert shown_source("rules/lint.md", tmp_path) == "rules/lint.md"
+    assert shown_source(None, tmp_path) is None
+    # A worktree may hold an older copy of the file, or none.
+    monkeypatch.chdir(worktree)
+    assert shown_source("rules/lint.md", tmp_path) == str(
+        (tmp_path / "rules/lint.md").resolve()
+    )

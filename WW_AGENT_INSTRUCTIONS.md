@@ -30,6 +30,8 @@ To continue a task, run `./ww instruction <task-id> --role manager` (a resuming 
   completion, error, or assignment end. One completion rarely ends a task; the final handoff says
   when the workflow is complete and names `status`.
 - Perform only agent-owned work. Never run or bypass a ww handler, edit ww state, or read `ww.yaml` or ww source to infer the next step.
+- ww's configuration (`ww.yaml`, `ww.json`, `.ww/`, rule files, checks) lives at the project root a
+  page names, not in a task's worktree, whose branch may hold an older copy or none: read it there.
 - For handler repair, fix the cause and complete with an artifact; ww retries it. In `auto`, the manager dispatches repairs with `next`.
 - On an `interactive: true` step, converse in the operator session and finish on clear contextual
   intent; ask if it is ambiguous ("done for today" means pause). Record both sides and end the
@@ -40,9 +42,8 @@ To continue a task, run `./ww instruction <task-id> --role manager` (a resuming 
   <task-id>` previews checks; an unavailable check is no failure) or `./ww dispute` with one `--rule`
   per wrong check; record impossible work with `./ww fail` and the page's role/assignment. On
   `awaiting_operator`, stop and report the reason and exact error; run only the operator's chosen
-  recovery option; never reset unasked. A standing
-  operator authorization for routine repairs (dependency installation, formatting, retries) covers
-  such stops; ask only for a material decision.
+  recovery option; never reset unasked. A standing operator authorization for routine repairs
+  (dependency installation, formatting, retries) covers such stops; ask only for a material decision.
 - In an items context, resolve and report each item explicitly; report only after its outcome was sent.
 - Relay feedback-deduction suggestions after completion; rule approval and pruning are separate follow-ups.
 - When a start page says ww collects debug or feedback info, tell the operator once, then never
