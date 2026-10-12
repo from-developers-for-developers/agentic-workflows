@@ -11,7 +11,7 @@ yet, is in [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-12
 
-- Changed: rules and checks are defined at the project root and applied in the task's worktree, so a task on an older branch (a hotfix from a release branch) gets the root's current rules and checks. A check's declared `files` are looked up at the root and must be reached as `{{ww.root}}/<path>` or `"$WW_ROOT/<path>"`; a check that declares files without naming the root is refused. Added the `{{ww.root}}` value and `WW_ROOT` in a check's environment; pages in a worktree name the root as the place of ww's configuration, and `ww rules` shows rule files by their absolute root path outside the root.
+- Breaking: ww configuration, rule files and check files are always read from the project root, also for a task in a worktree of an older branch; checks still run in the worktree and reach their files as `{{ww.root}}/<path>` or `"$WW_ROOT/<path>"`, and a check declaring files that does neither is refused. `8b4c445`
 
 ## 2026-10-09
 
