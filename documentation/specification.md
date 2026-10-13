@@ -1618,10 +1618,16 @@ before `develop`, can choose which judged rules later steps get:
 ```
 
 Each name is a later step of the same workflow, by its own name or its
-path, outside `items` and `children`; it must name exactly one step with
-agent work of its own. `lint` refuses a name that is no later step, and
-compiling the plan refuses one that names several or a step without agent
-work.
+path, outside `items` and `children`; it must name exactly one step. A step
+with agent work of its own is chosen for itself. A step with `steps` stands
+for the agent steps inside it, at any depth, that carry at least one judged
+rule: a substep without any, such as a `plan` substep, is no target and needs
+no selection, and a parent with no such substep is refused. Each step chosen
+for keeps its own candidates and takes its own `--select-rules` entry, named
+by its own name (`implement=...`, `write-tests=...`), so two steps chosen for
+may not share one. Compiling the plan refuses a name that is no later step,
+names several, or names a step twice; `lint` compiles every workflow's plan
+and so refuses the same.
 
 ww compiles a `select-rules` item right after the step's `before_complete`
 hooks, with the step's own worker settings, so its assignment carries on

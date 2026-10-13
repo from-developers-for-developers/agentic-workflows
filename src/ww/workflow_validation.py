@@ -869,31 +869,16 @@ def _step_filter_references(steps: tuple[StepDefinition, ...]) -> set[str]:
 
 
 def _validate_rule_selections(configuration: WorkflowConfiguration) -> None:
-    """Each ``select_rules_for`` name is a later step outside items and
-    children, chosen by a step outside them too; the compiler then checks
-    that it names exactly one agent step."""
+    """A step outside items and children chooses rules; which steps its
+    ``select_rules_for`` names is resolved once, as the plan compiles, which
+    ``ww lint`` does for every workflow too."""
     for workflow in configuration.workflows:
-        ordered = tuple(_selection_walk(workflow.steps))
-        for index, (step, path, contained) in enumerate(ordered):
-            if not step.select_rules_for:
-                continue
-            label = f"{workflow.name}/{path}.select_rules_for"
-            if contained:
+        for step, path, contained in _selection_walk(workflow.steps):
+            if step.select_rules_for and contained:
                 raise ConfigurationError(
-                    f"{label}: a step inside items or children cannot select rules"
+                    f"{workflow.name}/{path}.select_rules_for: a step inside "
+                    "items or children cannot select rules"
                 )
-            later = ordered[index + 1 :]
-            for name in step.select_rules_for:
-                found = [entry for entry in later if name in {entry[0].name, entry[1]}]
-                if not found:
-                    raise ConfigurationError(
-                        f"{label}: {name!r} is not a later step of the workflow"
-                    )
-                if all(entry[2] for entry in found):
-                    raise ConfigurationError(
-                        f"{label}: {name!r} is inside items or children, which "
-                        "cannot take a rule selection"
-                    )
 
 
 def _selection_walk(

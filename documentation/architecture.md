@@ -565,7 +565,10 @@ keep ownership visible and avoid implicit task-over-project shadowing.
 `ww lint` and `ww plan --workflow <name> --agent <agent>` remain read-only.
 Linting validates the complete normalized configuration without requiring a
 particular workflow or agent, so configuration feedback does not depend on
-plan-rendering inputs or create runtime audit/state data. `start` publishes one
+plan-rendering inputs or create runtime audit/state data. It also compiles
+every workflow's plan, accepting one that compiles for any supported agent,
+so errors only compilation finds, such as `select_rules_for` targets, fail
+lint as they would fail `start`. `start` publishes one
 authoritative task state document and drains leading ww-owned automation.
 A manager-role `next` dispatches one structural assignment. For an ordinary
 leaf, the assignment contains its preparation hooks, main action, and completion
@@ -1767,7 +1770,9 @@ that selection did not keep resolved as left out (`RuleResolution.left_out_by`,
 from `selection_of`, which reads the latest completed `select-rules` item's
 `rule_selection`); `verification_needs` judges such a rule only when it is
 scoped and the change set reaches it, and returns the rest as a third set,
-kept as `rules_left_out`. The `select-rules` item is compiled after the
+kept as `rules_left_out`. `_resolve_rule_selections` turns the names into
+plan item IDs once the plan is compiled, expanding a step with substeps to
+the agent steps inside it that carry a judged rule. The `select-rules` item is compiled after the
 step's `before_complete` hooks with the step's worker settings, so
 `assignment_at` keeps it in the step's assignment. When no
 rule remains, the completion is recorded as usual. Otherwise ww holds the

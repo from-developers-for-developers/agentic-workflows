@@ -257,8 +257,8 @@ def test_the_selection_command_lists_and_completes_on_the_command_line(
 @pytest.mark.parametrize(
     ("targets", "message"),
     [
-        ("[review]", "'review' is not a later step"),
-        ("[architect]", "'architect' is not a later step"),
+        ("[review]", "'review' is not a later agent step"),
+        ("[architect]", "'architect' is not a later agent step"),
     ],
 )
 def test_a_target_must_be_one_later_agent_step(
@@ -286,7 +286,9 @@ def test_lint_rejects_a_target_that_is_no_later_step(
 
     assert main(["--root", str(root), "lint"]) == 1
 
-    assert "'review' is not a later step of the workflow" in capsys.readouterr().err
+    assert (
+        "'review' is not a later agent step of the workflow" in capsys.readouterr().err
+    )
 
 
 def test_a_target_in_an_assessment_outcome_is_found_by_its_name(
@@ -372,19 +374,78 @@ def test_a_parent_target_expands_to_its_substeps_with_judged_rules(
     assert page.item_name == "select-rules"
     candidates = service.rule_candidates("TASK-1")
     assert [step for step, _ in candidates.steps] == ["implement", "write-tests"]
+    rendered = _markdown(page)
+    assert "Choose the judged rules that `implement`, `write-tests` will get" in (
+        rendered
+    )
+    assert "--select-rules implement=" in rendered
+    assert "--select-rules write-tests=" in rendered
+
+
+def test_a_parent_target_reaches_substeps_at_any_depth(tmp_path: Path) -> None:
+    workflows = """workflows:
+  - name: task
+    steps:
+      - name: architect
+        description: Plan it.
+        select_rules_for: [develop]
+      - name: develop
+        steps:
+          - name: implement
+            description: Implement it.
+            rules:
+              - Keep the public CLI unchanged.
+          - name: verify
+            steps:
+              - name: write-tests
+                description: Write the tests.
+                rules:
+                  - Name every test after its behaviour.
+"""
+    service, _ = _selecting(_project(tmp_path, workflows))
+
+    candidates = service.rule_candidates("TASK-1")
+    assert [step for step, _ in candidates.steps] == ["implement", "write-tests"]
+
+
+def test_a_parent_target_without_judged_rules_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflows = """workflows:
+  - name: task
+    steps:
+      - name: architect
+        description: Plan it.
+        select_rules_for: [develop]
+      - name: develop
+        steps:
+          - name: plan
+            description: Plan the change.
+"""
+    root = _project(tmp_path, workflows)
+
+    with pytest.raises(ConfigurationError, match="no step inside 'develop'"):
+        WorkflowService(Storage(root)).start(
+            "task", "TASK-1", agent="codex", init_artifact="Do."
+        )
+    assert main(["--root", str(root), "lint"]) == 1
+    assert "no step inside 'develop'" in capsys.readouterr().err
 
 
 def test_lint_rejects_a_target_that_starting_the_workflow_rejects(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # ``implement`` names two steps: starting refuses it, so lint must too.
-    workflows = PARENT_WORKFLOWS.replace(
-        "select_rules_for: [develop]", "select_rules_for: [implement]"
-    ) + """      - name: polish
+    workflows = (
+        PARENT_WORKFLOWS.replace(
+            "select_rules_for: [develop]", "select_rules_for: [implement]"
+        )
+        + """      - name: polish
         steps:
           - name: implement
             description: Polish it.
 """
+    )
     root = _project(tmp_path, workflows)
     with pytest.raises(ConfigurationError, match="names several steps"):
         WorkflowService(Storage(root)).start(

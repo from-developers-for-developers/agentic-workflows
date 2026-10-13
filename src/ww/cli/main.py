@@ -32,7 +32,8 @@ from ww.config_writes import FileWrite
 from ww.defaults import PROJECT_LAUNCHER
 from ww.design_docs import read_design_document
 from ww.direct_work import SHORT_SHA
-from ww.errors import StateError, WwError
+from ww.discovery import AGENT_DIRECTORIES
+from ww.errors import ConfigurationError, StateError, WwError
 from ww.executable import printed_executable, project_command, ww_command
 from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
@@ -318,6 +319,8 @@ def _lint(context: _Context) -> _Outcome:
     configuration = load_configuration(context.storage.config_path, context.extensions)
     for project in context.extensions.config.projects:
         context.extensions.validate_configuration(project.name)
+    for workflow in configuration.workflows:
+        _compile_for_lint(context, configuration, workflow.name)
     notices = "".join(
         f"Notice: {notice}\n"
         for notice in compose_configuration(context.storage.config_path).notices
@@ -335,6 +338,36 @@ def _lint(context: _Context) -> _Outcome:
         f"{_never_applied_hint(RuleStatsStore(context.storage), configuration)}"
         f"{_disputes_summary(DisputeLog(context.storage.root))}"
     )
+
+
+def _compile_for_lint(
+    context: _Context, configuration: WorkflowConfiguration, workflow: str
+) -> None:
+    """Compile ``workflow``'s plan as ``start`` would, so that what only
+    compiling finds, such as ``select_rules_for`` targets, fails lint too.
+
+    The project's agents are not known here, and a skill may exist for one
+    agent only: the workflow passes when it compiles for any supported agent,
+    and otherwise fails with the first agent's error.
+    """
+    errors: list[ConfigurationError] = []
+    for agent in AGENT_DIRECTORIES:
+        try:
+            compile_workflow_plan(
+                configuration,
+                context.storage.root,
+                workflow,
+                agent,
+                None,
+                context.extensions,
+                PlanCompilationOptions(),
+                context.extensions.config,
+            )
+        except ConfigurationError as error:
+            errors.append(error)
+        else:
+            return
+    raise errors[0]
 
 
 def _retired_workflow_warning(config: ProjectConfig) -> str:

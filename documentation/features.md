@@ -2407,6 +2407,13 @@ so work that drifts from the design is still verified. Left-out rules show
 in the artifact and in `rules stats` as `left out`. Without
 `select_rules_for`, every step gets all its rules as usual.
 
+Naming a step with substeps, `select_rules_for: [develop]` where `develop`
+has `steps: [plan, implement, write-tests]`, chooses for each substep that
+carries a judged rule, here `implement` and `write-tests`, each with its own
+candidates and its own entry: `--select-rules implement=<id>
+--select-rules write-tests=<id>`. A target `ww lint` accepts never fails
+when the workflow starts.
+
 ### How a rule becomes a check
 
 A rule without a command is judged by another agent, a verifier, unless the

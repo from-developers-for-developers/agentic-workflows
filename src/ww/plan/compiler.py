@@ -758,16 +758,17 @@ class WorkflowPlanCompiler:
 
         It follows the step's ``before_complete`` hooks with the step's own
         worker settings, so the same assignment carries on into it. Its
-        ``selects_rules_for`` holds the names until the plan is complete.
+        ``selects_rules_for`` holds the names until the plan is complete,
+        when ``_resolve_rule_selections`` turns them into the steps they name.
         """
         label = f"{workflow.name}/{step_path}.select_rules_for"
         if (workflow.name, step_path) not in self._checked_steps:
             raise ConfigurationError(
                 f"{label}: the step has no agent work of its own to choose with"
             )
-        names = ", ".join(f"`{name}`" for name in step.select_rules_for)
         text = (
-            f"Choose the judged rules that {names} will get: each is given, and "
+            f"Choose the judged rules that {_step_names(step.select_rules_for)} "
+            "will get: each is given, and "
             "verified against, only the rules you select, so keep every rule its "
             "work could touch. Rules with a check always run, and a left-out "
             "rule whose files the change still reaches is judged anyway. List "
@@ -1468,54 +1469,123 @@ def _execution_kind(kind: PlanItemKind) -> ExecutionKind:
     return actions.get(kind).execution
 
 
+def _step_names(names: tuple[str, ...]) -> str:
+    return ", ".join(f"`{name}`" for name in names)
+
+
 def _resolve_rule_selections(items: list[PlanItem]) -> list[PlanItem]:
     """Turn each rule-selection item's step names into plan item IDs.
 
     A name is a later agent step of the workflow, matched by its path or its
-    own name, outside items and children; it must name exactly one.
+    own name, outside items and children. A name of a step with substeps
+    stands for the agent steps inside it, at any depth, that carry a judged
+    rule. Each name must name exactly one step, and the item's text then
+    names the steps it chooses for.
     """
     resolved = list(items)
     for index, item in enumerate(items):
         if not item.selects_rules_for:
             continue
-        label = f"{item.workflow}/{item.step}.select_rules_for"
-        later = [
-            entry
-            for entry in items[index + 1 :]
-            if entry.phase == "step"
-            and entry.owner == "agent"
-            and not entry.summary
-            and entry.verifies is None
-            and entry.step != item.step
+        targets = [
+            target
+            for name in item.selects_rules_for
+            for target in rule_selection_targets(items, index, name)
         ]
-        targets = []
-        for name in item.selects_rules_for:
-            found = [
-                entry
-                for entry in later
-                if name in {entry.step, entry.step.rsplit("/", 1)[-1]}
-            ]
-            if not found:
-                raise ConfigurationError(
-                    f"{label}: {name!r} is not a later agent step of the workflow"
-                )
-            if len(found) > 1:
-                raise ConfigurationError(
-                    f"{label}: {name!r} names several steps ("
-                    + ", ".join(entry.step for entry in found)
-                    + "); give its path"
-                )
-            target = found[0]
-            if target.item_context is not None or target.child_stage is not None:
-                raise ConfigurationError(
-                    f"{label}: {name!r} is inside items or children, which "
-                    "cannot take a rule selection"
-                )
-            targets.append(target.id)
-        if len(set(targets)) != len(targets):
+        label = f"{item.workflow}/{item.step}.select_rules_for"
+        if len({target.id for target in targets}) != len(targets):
             raise ConfigurationError(f"{label} names one step twice")
-        resolved[index] = replace(item, selects_rules_for=tuple(targets))
+        leaves = tuple(target.step.rsplit("/", 1)[-1] for target in targets)
+        if len(set(leaves)) != len(leaves):
+            raise ConfigurationError(
+                f"{label} chooses for two steps of the same name ("
+                + ", ".join(target.step for target in targets)
+                + "); name them apart"
+            )
+        before = _step_names(item.selects_rules_for)
+        after = _step_names(leaves)
+        operation = item.operation
+        if isinstance(operation, PlannedAction) and isinstance(
+            operation.payload, Prompt
+        ):
+            operation = PlannedAction(
+                operation.identifier,
+                Prompt(operation.payload.text.replace(before, after, 1)),
+            )
+        resolved[index] = replace(
+            item,
+            description=item.description.replace(before, after, 1),
+            operation=operation,
+            selects_rules_for=tuple(target.id for target in targets),
+        )
     return resolved
+
+
+def rule_selection_targets(
+    items: list[PlanItem], index: int, name: str
+) -> tuple[PlanItem, ...]:
+    """The steps one ``select_rules_for`` name of ``items[index]`` stands for.
+
+    A later agent step matched by its path or its own name, or else the agent
+    steps with a judged rule inside the one later step with substeps so named.
+    """
+    item = items[index]
+    label = f"{item.workflow}/{item.step}.select_rules_for"
+    later = [
+        entry
+        for entry in items[index + 1 :]
+        if entry.phase == "step"
+        and entry.owner == "agent"
+        and not entry.summary
+        and entry.verifies is None
+        and entry.step != item.step
+    ]
+    found = [entry for entry in later if name in _names_of(entry.step)]
+    parents = {
+        path
+        for entry in later
+        for path in _container_paths(entry.step)
+        if name in _names_of(path)
+    }
+    if len(found) + len(parents) > 1:
+        raise ConfigurationError(
+            f"{label}: {name!r} names several steps ("
+            + ", ".join([entry.step for entry in found] + sorted(parents))
+            + "); give its path"
+        )
+    if parents:
+        (parent,) = parents
+        found = [
+            entry
+            for entry in later
+            if entry.step.startswith(f"{parent}/")
+            and any(not rule.has_command for rule in entry.rules)
+        ]
+        if not found:
+            raise ConfigurationError(
+                f"{label}: no step inside {name!r} has a judged rule to choose"
+            )
+    if not found:
+        raise ConfigurationError(
+            f"{label}: {name!r} is not a later agent step of the workflow"
+        )
+    for target in found:
+        if target.item_context is not None or target.child_stage is not None:
+            raise ConfigurationError(
+                f"{label}: {name!r} is inside items or children, which "
+                "cannot take a rule selection"
+            )
+    return tuple(found)
+
+
+def _names_of(path: str) -> set[str]:
+    """What a step at ``path`` answers to: its path and its own name."""
+    return {path, path.rsplit("/", 1)[-1]}
+
+
+def _container_paths(path: str) -> tuple[str, ...]:
+    """The paths of the steps containing the step at ``path``."""
+    parts = path.split("/")
+    return tuple("/".join(parts[:end]) for end in range(1, len(parts)))
 
 
 def _merge_annotations(

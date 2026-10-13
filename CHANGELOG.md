@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
+- Fixed: `select_rules_for` naming a step with substeps no longer fails when the plan compiles; it chooses for each substep, at any depth, that carries a judged rule, each with its own `--select-rules` entry. `ww lint` now compiles every workflow's plan, so it refuses every target that starting the workflow would.
 - Added: `select_rules_for` lets a step choose, right after its own work, which judged rules named later steps get and are verified against; left-out scoped rules are still judged when the change reaches their files. `5fa8a45`
 - Fixed: a step's change set could miss a file rewritten with content of the same size right after the index was written, so its checks and verifiers skipped that file. `f5ce429`
 - Changed: a task command given `--root` at a git worktree, where no task state lives, now says the state is in the primary checkout and to omit `--root`.
