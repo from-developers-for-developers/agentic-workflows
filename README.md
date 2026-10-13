@@ -262,9 +262,11 @@ usual way, and it runs ww for you:
 > Implement retry handling in the upload client. Use ww.
 
 `init` has already given the agent everything it needs to act on that:
-`WW_AGENT_INSTRUCTIONS.md` tells it to route project work through ww, and the
-installed `ww` skill lets you name the tool explicitly. From there the agent
-starts at `./ww discover`, which tells it whether to use ww in this project
+`WW_AGENT_INSTRUCTIONS.md` tells it to run `./ww discover` once, right before
+its first file change (never for questions or reviews), and tells a worker
+subagent to follow only the page its command prints; the installed `ww` skill
+lets you name the tool explicitly. From there the agent starts at
+`./ww discover`, which tells it whether to use ww in this project
 by default, only when you ask for it, or not at all, and lists the project's workflows,
 modes, and the exact commands to start and resume work. It picks the workflow matching your request and opens the
 task:

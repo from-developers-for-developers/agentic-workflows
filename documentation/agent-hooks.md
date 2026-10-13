@@ -25,7 +25,7 @@ What `session-start` prints stays in the agent's context for the whole
 session, so it is one line:
 
 ```text
-This project coordinates work through ww: `./ww discover` lists its workflows.
+This project coordinates file changes through ww: before changing files, run `./ww discover` once.
 ```
 
 After a compaction it starts with a line before that one: "Context was

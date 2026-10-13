@@ -57,3 +57,9 @@ When the work is finished, run this with every `<...>` replaced.
 ```console
 ./ww complete TASK-1 --role worker --artifact="<whole result in Markdown>" --rule-result='<JSON result for develop/1>'
 ```
+
+If the work cannot be done, record why instead of completing:
+
+```console
+./ww fail TASK-1 --role worker --error "<why the work cannot be done>"
+```

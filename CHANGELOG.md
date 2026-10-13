@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
+- Changed: `WW_AGENT_INSTRUCTIONS.md` is cut to about a fifth: a worker started with `./ww instruction ... --role worker` follows its page and never runs `discover`; any other session runs `./ww discover` once, right before its first file change, never for questions, reviews or status. The rules it dropped are on the pages where they apply: worker pages now show the `ww fail` command, and `discover` says that every file change goes through ww where it is enabled. The session-start hook says the same. A project's existing copy is kept; replace it to adopt the new text.
 - Changed: the verifier page tells the verifier to judge what the step changed, reading the code around the diff only as far as a rule needs, and to leave out violations in code the step did not change unless the change brings them about.
 - Changed: `select_rules_for` works inside an `items` body: a step there may choose rules, and may be chosen for, from the same body or from before it; only `children` still refuse it.
 - Breaking: a verifier's `pass` must say what it checked, `"checked": "<what>"` in its `--rule-result`; a pass without it is refused. The verifier page now says to judge the listed rules only, not to review the code, and to carry out what a rule says establishes it, such as a run with the change reverted.

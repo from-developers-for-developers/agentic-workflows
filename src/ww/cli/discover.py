@@ -76,7 +76,11 @@ UNREADABLE_GUIDANCE = (
     "reset, or delete each task directory."
 )
 
-ENABLED_SHORT = "ww is enabled for this project."
+ENABLED_SHORT = (
+    "ww is enabled for this project: every file change goes through it, as a "
+    "workflow or as direct work registered afterwards, unless the user asks "
+    "you not to."
+)
 ON_REQUEST_START = (
     "When the user has asked for ww, choose a workflow and start a task as below."
 )

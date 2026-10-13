@@ -33,3 +33,9 @@ Detect and preserve these task metadata values:
 ```console
 ./ww complete TASK-1 --role worker --variable priority="<priority>" --metadata jira.issue_id="<jira.issue_id>" --artifact="<whole result in Markdown>" --summary="<one or two sentences for the next step>"
 ```
+
+If the work cannot be done, record why instead of completing:
+
+```console
+./ww fail TASK-1 --role worker --error "<why the work cannot be done>"
+```

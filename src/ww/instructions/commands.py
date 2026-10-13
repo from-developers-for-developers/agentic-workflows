@@ -176,6 +176,17 @@ def dispute_command(
     )
 
 
+def fail_command(task_id: str, *, assignment: str | None = None) -> str:
+    """Record that the active agent-owned work cannot be done."""
+    return _command(
+        "fail",
+        _arg(task_id),
+        *_worker("worker", assignment),
+        "--error",
+        '"<why the work cannot be done>"',
+    )
+
+
 def requirements_command(task_id: str) -> str:
     """Print the task's requirements and their amendments."""
     return _command("requirements", _arg(task_id))

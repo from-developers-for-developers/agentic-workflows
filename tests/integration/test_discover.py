@@ -89,7 +89,10 @@ def test_discover_lists_choices_options_and_commands(
 
     output = _discover(root, capsys)
 
-    assert output.startswith("# ww discover\n\nww is enabled for this project.")
+    assert output.startswith(
+        "# ww discover\n\nww is enabled for this project: every file change goes "
+        "through it"
+    )
     for expected in (
         "- task — [project: ww.yaml] Implement a change. Default modes: `economy`.",
         "- bugfix — [project: ww.yaml] No description.",
@@ -304,10 +307,10 @@ def test_the_skill_and_instructions_let_discover_decide_whether_to_use_ww() -> N
     skill = " ".join(WW_SKILL.split())
     description = WW_SKILL.split("\n")[2]
 
-    assert "whether to use ww unasked" in instructions
-    assert "Where ww is used by default" in instructions
-    assert "every file change goes through ww" in instructions
-    assert "use it only when the user asks for ww" in instructions
+    assert "It says whether ww is used here" in instructions
+    assert "before the first change, once per session" in instructions
+    assert "Do not run it for questions, reviews" in instructions
+    assert "A worker never runs `./ww discover`" in instructions
     assert "where `./ww discover` says ww is used by default" in description
     assert "used only on request and the user did not explicitly ask" in skill
 
@@ -572,9 +575,6 @@ def test_discover_tells_agents_to_use_the_ticket_key(
     assert "[<task-id>] --workflow" in output
     assert "use it as the task ID so the task matches the issue" in output
     assert "use that key as the task ID" in WW_SKILL
-    assert "When a request names an external ticket, use that as the task ID." in (
-        AGENT_INSTRUCTIONS
-    )
 
 
 def test_explicit_task_format_requires_an_id(

@@ -81,7 +81,8 @@ def test_session_start_prints_only_the_reminder(
     context = _context(_hook(root, monkeypatch, capsys, "session-start"))
 
     assert context == (
-        "This project coordinates work through ww: `./ww discover` lists its workflows."
+        "This project coordinates file changes through ww: before changing files, "
+        "run `./ww discover` once."
     )
 
 
@@ -98,7 +99,8 @@ def test_session_start_lists_no_task_however_many_are_open(
     )
 
     assert context == (
-        "This project coordinates work through ww: `./ww discover` lists its workflows."
+        "This project coordinates file changes through ww: before changing files, "
+        "run `./ww discover` once."
     )
     assert "T1" not in context
     assert "unfinished" not in context
@@ -147,7 +149,7 @@ def test_antigravity_gets_context_on_the_first_invocation_only(
     )
 
     assert json.loads(first)["injectSteps"][0]["ephemeralMessage"].startswith(
-        "This project coordinates work through ww"
+        "This project coordinates file changes through ww"
     )
     assert later == ""
 

@@ -25,6 +25,7 @@ from ww.instructions.commands import (
     artifacts_command,
     check_command,
     dispute_command,
+    fail_command,
     handoff_command,
     instruction_command,
     next_command,
@@ -1891,6 +1892,24 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
     _required_values(lines, instruction)
     _required_metadata(lines, instruction)
     lines.extend(["```console", command, "```"])
+    if (
+        title == "Worker completion command"
+        and instruction.item_status == "in_progress"
+        and instruction.next_role == "worker"
+        and not instruction.manager_input
+    ):
+        lines.extend(
+            [
+                "",
+                "If the work cannot be done, record why instead of completing:",
+                "",
+                "```console",
+                fail_command(
+                    instruction.task_id, assignment=instruction.assignment_token
+                ),
+                "```",
+            ]
+        )
 
 
 _SUMMARY_GUIDANCE = (

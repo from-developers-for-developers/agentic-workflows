@@ -37,3 +37,9 @@ When the work is finished, run this with every `<...>` replaced. `--summary` is 
 ```console
 ./ww complete TASK-1 --role worker --assignment 0a1b2c3d --artifact="<whole result in Markdown>" --summary="<one or two sentences for the next step>"
 ```
+
+If the work cannot be done, record why instead of completing:
+
+```console
+./ww fail TASK-1 --role worker --assignment 0a1b2c3d --error "<why the work cannot be done>"
+```

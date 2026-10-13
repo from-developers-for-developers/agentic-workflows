@@ -14,8 +14,8 @@ from ww.executable import ww_command
 def session_context(*, compacted: bool, on_request: bool = False) -> str:
     """What a session learns about ww when it starts, resumes, or compacts.
 
-    One short line (two after a compaction): that ww coordinates work here
-    and how to list its workflows. No task is listed.
+    One short line (two after a compaction): that ww coordinates file
+    changes here and when to run ``discover``. No task is listed.
     """
     ww = ww_command()
     lines = []
@@ -26,7 +26,7 @@ def session_context(*, compacted: bool, on_request: bool = False) -> str:
         "user explicitly asks for ww; otherwise work without it and do not "
         f"ask. `{ww} discover` lists its workflows."
         if on_request
-        else f"This project coordinates work through ww: `{ww} discover` lists "
-        "its workflows."
+        else "This project coordinates file changes through ww: before "
+        f"changing files, run `{ww} discover` once."
     )
     return "\n".join(lines) + "\n"
