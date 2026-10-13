@@ -747,8 +747,10 @@ other task layout or record schema is rejected.
 
 ## Installation updates
 
-`ww.__version__` comes from installed distribution metadata, with a fallback
-for an unpackaged source checkout. Update notices share the CLI announcement
+`ww.__version__` comes from installed distribution metadata, with the
+non-release placeholder `0+unknown` for a source tree that was never
+installed; release numbers are chosen by CI and never written into the
+source. Update notices share the CLI announcement
 path: editable source installations use Git history; packaged installations
 use `package_updates` to select newer compatible PyPI versions and persist a
 per-environment/version daily cache. The PyPI request has a two-second timeout
@@ -800,12 +802,15 @@ CI runs these focused checks before the complete test suite.
 
 Publishing calls the same release-gates workflow on each push to `main`
 (`release.yml`); pushes to `dev` run only the gates (`dev-ci.yml`). After the
-gates pass, a build job reads the version from `pyproject.toml` and, unless
-PyPI already has it, builds and checks the final wheel and sdist and uploads
-those files as a workflow artifact. A publishing job downloads that artifact
-and authenticates to PyPI through Trusted Publishing in the `pypi`
-environment. Only that job can request an OIDC token; it does not execute
-checkout code. See [releases and development builds](development-releases.md)
+gates pass, a build job releases only when the push changed `src/`, `ext/` or
+`pyproject.toml`: `scripts/release_version.py` continues `pyproject.toml`'s
+version series from what PyPI holds and stamps the result into the build's
+checkout, never into a commit; the job builds and checks the final wheel and
+sdist and uploads those files as a workflow artifact. A publishing job
+downloads that artifact and authenticates to PyPI through Trusted Publishing
+in the `pypi` environment; only that job can request an OIDC token, and it
+does not execute checkout code. A last job tags the released commit
+`v<version>`. See [releases and development builds](development-releases.md)
 for the release process, setup and retry behavior.
 
 The guarantees for the current local execution model are:

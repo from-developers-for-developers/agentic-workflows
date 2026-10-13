@@ -176,10 +176,11 @@ global unless the operator named one
 
 ## Releases
 
-Pushes to this repository's `main` branch publish the version `pyproject.toml`
-names to PyPI after the release gates pass and the final distribution files
-are validated; a version already on PyPI is not published again. ww is in
-public beta, so releases are `1.0.0b1`, `1.0.0b2`, and so on. `dev` is never
+Pushes to this repository's `main` branch that change the package publish
+the next version to PyPI after the release gates pass and the final
+distribution files are validated, and tag the commit with it. CI numbers each
+release from what PyPI holds; ww is in public beta, so releases are
+`1.0.0b1`, `1.0.0b2`, and so on. `dev` is never
 published: run it from a clone installed with `pipx install --editable`.
 Install an exact release, for example:
 
@@ -2193,14 +2194,14 @@ A workflow that is usually followed by another names it:
 
 ```yaml
 - hotfix: Fix a bug on main.
-  recommended_next_workflow: merge-to-dev
+  recommended_next_workflow: merge-to-main
   steps:
     - fix: Fix it.
 ```
 
 When a `hotfix` run completes, its page tells the agent not to start anything
 on its own but to ask the operator, through its choice menu, whether to start
-`merge-to-dev` on the same task, and shows the `start` command to run if they
+`merge-to-main` on the same task, and shows the `start` command to run if they
 agree. Nothing starts without that answer. An inheriting workflow keeps the
 recommendation unless it sets its own, or `recommended_next_workflow: ~` to
 clear it. A handoff workflow (one with a workflow transition) already starts

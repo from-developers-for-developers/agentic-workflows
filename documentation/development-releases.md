@@ -3,17 +3,42 @@
 Releases are built from `main`; `dev` is never published. Every push to
 `main` runs `.github/workflows/release.yml`: it calls the release gates
 (Python compatibility, formatting, lint, types, tests, packaging and
-dependency audit), then builds the version `pyproject.toml` names and
-publishes it to PyPI as `ww-agentic-workflows`. A version already on PyPI is
-not published again: the run ends with the notice "Nothing to publish", so a
-push to `main` that does not change the version releases nothing. Pushes to
-`dev` run the same gates through `.github/workflows/dev-ci.yml` and publish
-nothing.
+dependency audit), chooses the next version, builds it, publishes it to PyPI
+as `ww-agentic-workflows`, and tags the released commit `v<version>`. A push
+that changes nothing under `src/`, `ext/` or `pyproject.toml`, such as a
+documentation fix, releases nothing: the run ends with the notice "Nothing to
+release". Pushes to `dev` run the same gates through
+`.github/workflows/dev-ci.yml` and publish nothing.
+
+## Branches
+
+- A bug found in `main`, the released code, is fixed on a branch from `main`
+  and merged into `main` (the `hotfix` workflow, then `merge-to-main`).
+- A bug found in `dev` is fixed on a branch from `dev` and merged into `dev`
+  (the `bugfix` workflow, then `merge-to-dev`).
+- New functionality is built on a branch from `dev` and merged into `dev`
+  (`task`, `express` or `roadmap`, then `merge-to-dev`).
+- `dev` is merged into `main` by hand when its changes should be released.
 
 ## Versioning
 
-The version in `pyproject.toml` is the release. ww is in public beta:
-releases are `1.0.0b1`, `1.0.0b2`, and so on, then `1.0.0` once it is stable.
+Nobody edits the version for a release: CI numbers it.
+`scripts/release_version.py` reads the version in `pyproject.toml` as the
+release series. While PyPI lacks that exact version it is released as
+written; otherwise the highest PyPI version of the series is incremented:
+
+| Series in `pyproject.toml` | On PyPI | Released |
+| --- | --- | --- |
+| `1.0.0b1` | `1.0.0b1` … `1.0.0b4` | `1.0.0b5` |
+| `1.0.0rc1` | no RC yet | `1.0.0rc1` |
+| `1.0.0` | `1.0.0`, `1.0.1` | `1.0.2` |
+
+The number is written only into the build's checkout and never committed, so
+`main` and `dev` never disagree about it; the release tag records it. A yanked
+version stays taken. ww is in public beta: releases are `1.0.0b1`, `1.0.0b2`,
+and so on. Changing series is the one manual edit: set `pyproject.toml`'s
+version to `1.0.0rc1` for release candidates, `1.0.0` for the stable release,
+or `1.1.0` for the next minor line, on `dev`, and the next release follows it.
 pip and pipx install a beta when no stable release exists, so
 `pipx install ww-agentic-workflows` installs the newest beta today. Earlier
 `1.0.0.devN` snapshots, published from `dev` before the first beta, remain on
@@ -21,21 +46,16 @@ PyPI and sort below `1.0.0b1`.
 
 The workflow checks metadata, bundled resources and license files, and
 installs the final wheel in an isolated environment before uploading the exact
-same wheel and source distribution. A rerun keeps the version and skips files
-already on PyPI, so an interrupted upload can finish.
+same wheel and source distribution. If a publish or tag job fails, rerun
+that failed job: it reuses the built files and the chosen version. Rerunning
+the whole workflow after a successful upload chooses the next version and
+releases the same commit again.
 
 ## Making a release
 
-1. On `dev`, set the next version in `pyproject.toml` and the fallback
-   `__version__` in `src/ww/__init__.py`, and give the changes a heading in
-   `CHANGELOG.md`.
-2. Merge `dev` into `main` and push `main`. The release workflow publishes the
-   new version once the gates pass.
-
-A fix the current release needs goes to `main` first, through the `hotfix`
-workflow, with the next beta number (`1.0.0b2` after `1.0.0b1`); pushing
-`main` publishes it. Merge `main` back into `dev` afterwards, so the fix and
-the version are not lost by the next release.
+Merge `dev` into `main` and push `main`. A fix for the released code is
+merged into `main` through `hotfix` and `merge-to-main`; pushing `main`
+releases it as the next number.
 
 ## Running the development version
 
@@ -79,6 +99,9 @@ progress.
    the `pypi-dev` environment in GitHub.
 4. Push `main`. If the setup was incomplete, finish it and rerun the failed
    job.
+
+The tag job pushes `v<version>` tags with the workflow's own token, so a tag
+protection rule or ruleset on `v*` must let GitHub Actions create them.
 
 No PyPI password or API-token secret is required. Only the publish job has
 `id-token: write`; it downloads the checked artifacts without checking out or

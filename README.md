@@ -403,11 +403,12 @@ agents not to use ww in a project at all.
 
 ## Releases and branches
 
-Every push to `main` that sets a new version in `pyproject.toml` publishes
-that release to PyPI as `ww-agentic-workflows`, after the automated checks
-pass; ww is in public beta, so releases are `1.0.0b1`, `1.0.0b2`, and so on.
-`dev` is never published: unreleased changes are used from a clone,
-`pipx install --editable`, which follows whichever branch the checkout tracks.
+Every push to `main` that changes the package publishes the next release to
+PyPI as `ww-agentic-workflows`, after the automated checks pass, and tags it;
+CI numbers it, so ww is released as `1.0.0b1`, `1.0.0b2`, and so on while in
+public beta. `dev` is never published: unreleased changes are used from a
+clone, `pipx install --editable`, which follows whichever branch the checkout
+tracks.
 
 See [releases and development builds](documentation/development-releases.md)
 for the release process, versioning and publishing setup. The branches serve
@@ -415,8 +416,8 @@ these purposes:
 
 | Branch | Use it for |
 | --- | --- |
-| `main` | The released code: each release is built from it, and fixes to the current release land there first. Contributions branch from it. |
-| `dev` | The maintainers' in-flight work, merged into `main` for the next release. Install it from a clone to try unreleased changes. Do not target it in a contribution pull request. |
+| `main` | The released code. A fix for a bug found in `main` branches from `main` and is merged back into `main`. |
+| `dev` | The next release. New functionality, and fixes for bugs found in `dev`, branch from `dev` and are merged back into `dev`. `dev` is merged into `main` by hand when it is released. Install it from a clone to try unreleased changes. |
 
 To update either a source checkout or a package installation:
 
@@ -449,11 +450,11 @@ for the installer behavior and task checks.
 ## Stability and compatibility
 
 The shape of ww has largely settled. `ww.yaml` and the command surface
-have been stable in practice for a while, and most work on `main` now is
+have been stable in practice for a while, and most work on `dev` now is
 internal refactoring, new capabilities, and fixes rather than changes to what
 you have already written. Frequent updates do not mean frequent breakage.
 
-Development snapshots can be pinned, but there is not yet a formal deprecation
+Releases can be pinned, but there is not yet a formal deprecation
 cycle or a promise that an incompatible change could not land.
 When one does, it is deliberate and rare, and
 [CHANGELOG.md](CHANGELOG.md) marks it "Breaking:". A changed name is then an

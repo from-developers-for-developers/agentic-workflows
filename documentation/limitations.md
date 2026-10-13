@@ -22,7 +22,7 @@ install section of [README.md](../README.md) and
 
 **There is no formal compatibility guarantee yet**, because there are no
 stable releases to define one against: nothing is contractually promised to
-survive an upgrade to the next snapshot or a pull of `main`, and there is no
+survive an upgrade to the next release or a pull of `dev`, and there is no
 deprecation period before a change lands.
 
 In practice the surfaces have settled. `ww.yaml` and the command line

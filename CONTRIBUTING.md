@@ -16,11 +16,12 @@ Everyone taking part is expected to follow the
    or [feature request](https://github.com/from-developers-for-developers/agentic-workflows/issues/new?template=feature_request.yml)
    template. Report a security vulnerability privately, through
    [SECURITY.md](SECURITY.md), never as a public issue.
-2. **Branch from `main`, and open the pull request against `main`.** It is
-   what source checkouts track, so it is the base every change starts from. `dev`
-   carries the maintainers' in-flight work and is not an integration branch
-   for contributions — do not branch from it or target it. See the branch
-   table in [README.md](README.md#releases-and-branches).
+2. **Branch from the branch the change belongs to, and open the pull request
+   against it.** New functionality, and a fix for a bug found only in `dev`,
+   branch from `dev` and target `dev`. A fix for a bug in the released code
+   branches from `main` and targets `main`. The maintainers merge `dev` into
+   `main` for each release. See the branch table in
+   [README.md](README.md#releases-and-branches).
 3. **Keep one change per pull request.** An unrelated refactor in the same
    branch makes the real change harder to review and harder to revert.
 4. **Enable the repository's Git hook** so staged sources get their SPDX
@@ -35,8 +36,8 @@ Everyone taking part is expected to follow the
    [Run the checks](#run-the-checks).
 6. **Record it.** If the change is user-visible, add an entry to
    `CHANGELOG.md` under a `## YYYY-MM-DD` heading for the day it lands,
-   creating that heading if it is not there yet — merging to `main` puts it
-   in front of users straight away, so nothing waits for a release. Keep the
+   creating that heading if it is not there yet; it reaches users with the
+   next release from `main`. Keep the
    entry to a line or two: it is also what ww shows people in the terminal
    when it tells them an update is available. Update the affected documents
    under `documentation/` if behaviour or `ww.yaml` changed. A change to a

@@ -71,7 +71,9 @@ hooks:
         - ext/ww/git/handlers:git-commit: ~
 
 workflows:
-  - express: Implement a change in one step, with fully automated development checks.
+  - express: >-
+      Implement a change in one step, with fully automated development checks;
+      it branches from dev and lands in dev with merge-to-dev.
     steps:
       - develop: >-
           Research the request and implement the change, including relevant
@@ -87,7 +89,9 @@ workflows:
                 Fix the reported development-check failures. Complete the step
                 again so ww reruns the checks automatically.
 
-  - task: Implement a feature or a planned change, from research to a tested commit.
+  - task: >-
+      Implement a feature or a planned change, from research to a tested
+      commit; it branches from dev and lands in dev with merge-to-dev.
     steps:
       - develop: >-
           Research the codebase, analyse the request, and implement it. Do not
@@ -97,8 +101,10 @@ workflows:
       - check-code-quality: ~
       - run-tests: ~
 
-  - hotfix: The workflow for bugs that have to be released ASAP (critical/urgent/security issues).
-    recommended_next_workflow: merge-to-dev
+  - hotfix: >-
+      Fix a bug found in main, the released code: it branches from main and
+      lands in main with merge-to-main, and the next push of main releases it.
+    recommended_next_workflow: merge-to-main
     steps:
       - investigate: >-
           Find out why the bug happens and under which circumstances. Reproduce
@@ -110,8 +116,12 @@ workflows:
       - check-code-quality: ~
       - run-tests: ~
 
-  - bugfix: Copy of the hotfix workflow, but for bugfixes to be released via standard release process (dev --> main).
+  - bugfix: >-
+      Fix a bug found in dev: the same steps as hotfix, but it branches from
+      dev and lands in dev with merge-to-dev, released when dev is merged into
+      main.
     inherit: hotfix
+    recommended_next_workflow: merge-to-dev
 
   # Works in the primary checkout with plain git: ww/git has no merge handler,
   # and its handlers would select the task's own worktree instead.
@@ -151,6 +161,46 @@ workflows:
           "{{ww.task.id}}: Fix the build after merging <branch>", naming the
           merged branch. Then switch the primary checkout back to the branch it
           was on before the merge. Do not push.
+        artifact_from: merge
+
+  # The same merge into main, for a hotfix branch. Pushing main releases, so
+  # the push stays with the operator.
+  - merge-to-main: Merge a requested hotfix branch into main and leave main passing.
+    steps:
+      - merge: >-
+          Merge the branch the task requirements name into main, in the
+          repository's primary checkout; if they name no branch, ask the
+          operator which one. First make sure the checkout has no uncommitted
+          changes, and note the branch it is on. Switch to main, fast-forward
+          it from its remote with `git pull --ff-only` when it has one, and run
+          `git merge --no-ff <branch>`. Resolve every conflict so that the
+          intent of both sides survives, then conclude the merge commit. In the
+          artifact, list each conflicted file and how you resolved it. Do not
+          push: pushing main publishes a release.
+        role: manager
+
+      - assess:
+          question: >-
+            Did the merge resolve conflicts in non-trivial code, beyond
+            imports, formatting, or changelog entries?
+          outcomes:
+            positive:
+              steps:
+                - review-resolutions: >-
+                    Review each conflict resolution the merge artifact lists
+                    against both branches: neither side's intent may be lost,
+                    and no logic may be duplicated or dropped. Fix what is
+                    wrong.
+
+      - check-code-quality: ~
+      - run-tests: ~
+
+      - finish: >-
+          If the quality and test steps changed anything, commit it on main as
+          "{{ww.task.id}}: Fix the build after merging <branch>", naming the
+          merged branch. Then switch the primary checkout back to the branch it
+          was on before the merge. Do not push: tell the operator that pushing
+          main releases the fix.
         artifact_from: merge
 
   # A roadmap implements a written plan slice by slice. The parent keeps the

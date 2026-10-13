@@ -627,7 +627,7 @@ workflows:
 ## 19. A copied workflow, an early stop, and a recommended successor
 
 `bugfix` is `hotfix` under another name, so `ww/git` gives it its own branch
-format and base branch. `hotfix` recommends `merge-to-dev` when it completes,
+format and base branch. `hotfix` recommends `merge-to-main` when it completes,
 and the operator confirms before it starts. The merge's assessment stops the
 workflow outright when nothing needs a second look.
 
@@ -656,7 +656,7 @@ hooks:
 
 workflows:
   - hotfix: Fix a bug on main.
-    recommended_next_workflow: merge-to-dev
+    recommended_next_workflow: merge-to-main
     steps:
       - investigate: Find the cause.
       - fix: Fix it.
@@ -665,9 +665,9 @@ workflows:
     inherit: hotfix
     recommended_next_workflow: ~
 
-  - merge-to-dev: Merge the task's branch into dev.
+  - merge-to-main: Merge the task's branch into main.
     steps:
-      - merge: Merge the branch into dev and resolve any conflicts.
+      - merge: Merge the branch into main and resolve any conflicts.
       - assess:
           question: Were conflicts resolved in non-trivial code?
           outcomes:
@@ -680,7 +680,8 @@ workflows:
 ```
 
 The `start-task-branch` hook is written for `hotfix` and also runs for
-`bugfix`, which clears the recommendation it would otherwise inherit.
+`bugfix`, which clears the recommendation it would otherwise inherit: a fix on
+`dev` lands in `dev`, not `main`.
 
 ## 20. Rules, checks, and the fix loop
 

@@ -31,7 +31,8 @@
       },
       "branch_name_formats": {
         "default": "feature/{{ww.task.id}}",
-        "hotfix": "hotfix/{{ww.task.id}}"
+        "hotfix": "hotfix/{{ww.task.id}}",
+        "bugfix": "bugfix/{{ww.task.id}}"
       },
       "worktrees": true,
       "worktree_dir": "./ww-worktrees",

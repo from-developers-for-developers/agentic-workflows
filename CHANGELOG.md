@@ -1,13 +1,14 @@
 # Changelog
 
-Releases are published to PyPI from `main`, as public betas from `1.0.0b1`
-on; `dev` is not published. Sections are dated by the day the change landed,
-newest first. Pulled a week ago? Read down to that date and stop. What may
+Releases are published to PyPI from `main`, numbered by CI, as public betas
+from `1.0.0b1` on; `dev` is not published. Sections are dated by the day the
+change landed, newest first. Pulled a week ago? Read down to that date and stop. What may
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-13
 
+- Releases are numbered automatically: each push to `main` that changes the package publishes the next version of `pyproject.toml`'s series (`1.0.0b2`, `1.0.0b3`, …) and tags it; a push that changes only documentation releases nothing. The `hotfix` workflow now fixes bugs from and into `main` and offers the new `merge-to-main`; `bugfix` fixes bugs from and into `dev`.
 - Releases move to `main`: every push to `main` publishes the version in `pyproject.toml` to PyPI once, starting with the first public beta, `1.0.0b1`; pushes to `dev` only run the checks, and development builds are installed from a clone with `pipx install --editable`.
 
 - Breaking: in a Git project, tasks read ww configuration committed on `config_ref` (default: the ww/git base branch), pinned when each run starts, so branch switches in the main checkout no longer affect them; new `ww config refresh <task>` and `ww config prune`, and `ww status` shows the pinned commit. `6335767`
