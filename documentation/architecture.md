@@ -1254,6 +1254,11 @@ When an operator invokes ww from that linked worktree without `--root`, CLI
 root discovery follows Git's common directory back to the primary checkout, so
 the task ledger, `.ww` runtime, and configuration remain shared rather than
 being recreated inside the worktree. An explicit `--root` remains authoritative.
+Pointed at a linked worktree of a ww project, it opens a separate store there,
+so every such command warns on stderr that ww without `--root` does not read
+it. A task command that finds no task names the other store when that store
+holds it: the primary checkout's, under a `--root` at a worktree, or the current
+worktree's own, without `--root`.
 
 ww's configuration (`ww.yaml`, `ww.json`, rule files, the check store and
 the files checks declare) is therefore never read from the worktree, whose

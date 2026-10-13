@@ -1126,8 +1126,11 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
                     f"  Changed files in its scope ({len(rule.files)}): "
                     + ", ".join(f"`{path}`" for path in rule.files)
                 )
+        if rule.previous_failures:
+            lines.append("  Failed the previous round, on:")
+            lines.extend(f"  - {failure}" for failure in rule.previous_failures)
     _verification_evidence(lines, page)
-    _verification_results(lines)
+    _verification_results(lines, page)
 
 
 def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
@@ -1168,20 +1171,32 @@ def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
         )
 
 
-def _verification_results(lines: Lines) -> None:
+def _verification_results(lines: Lines, page: VerificationPage) -> None:
+    lines.extend(["", "#### What to report", ""])
+    if any(rule.previous_failures for rule in page.rules):
+        lines.extend(
+            [
+                "The rules the previous round failed come first: check that "
+                "each of those failures is fixed, then judge every rule, "
+                "those included, against the whole change set as for a first "
+                "round.",
+                "",
+            ]
+        )
     lines.extend(
         [
-            "",
-            "#### What to report",
-            "",
-            "Judge each rule against the change set: a verdict `pass` or "
-            "`fail`, with evidence `file:line — what` for each failure. "
-            "Complete with your findings as the artifact and one "
+            "Judge each rule on its own against the change set: a verdict "
+            "`pass` or `fail`, with evidence `file:line — what` for each "
+            "failure, and for a pass what you checked. When a rule says how "
+            "to establish it, such as running a test with the change "
+            "reverted, do that; a pass from reading alone is no pass for such "
+            "a rule. Complete with your findings as the artifact and one "
             "`--rule-result` JSON object per rule:",
             "",
             '`{"id": "<rule>", "status": "judged", "verdict": "fail", '
             '"failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, '
-            'or `"verdict": "pass"` without failures.',
+            'or `{"id": "<rule>", "status": "judged", "verdict": "pass", '
+            '"checked": "<what you checked>"}`.',
         ]
     )
 

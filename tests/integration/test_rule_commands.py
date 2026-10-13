@@ -51,7 +51,7 @@ Include "foo" in every Markdown file you change.
 
 A marker keeps the documentation searchable.
 """
-PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
+PASS = {"id": "develop/1", "status": "judged", "verdict": "pass", "checked": "c"}
 
 
 def _git(*arguments: str, cwd: Path) -> None:

@@ -374,9 +374,9 @@ def test_init_keeps_the_repo_files_own_enabled(
     assert json.loads((project / "ww.json").read_text())["enabled"] == "on_request"
 
 
-def test_a_task_command_rooted_at_a_worktree_names_the_primary_checkout(
-    project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def _with_worktree(project: Path) -> Path:
+    """Make ``project`` a ww project in git, with a linked worktree ``wt``."""
+
     def git(*arguments: str) -> None:
         subprocess.run(
             ["git", *arguments], cwd=project, check=True, capture_output=True
@@ -385,17 +385,16 @@ def test_a_task_command_rooted_at_a_worktree_names_the_primary_checkout(
     _write(project / "ww.yaml", _WORKFLOW)
     _write(project / ".gitignore", ".ww/\n")
     git("init", "-q", "-b", "main")
-    git(
-        "-c",
-        "user.email=t@e.st",
-        "-c",
-        "user.name=T",
-        "commit",
-        "-qm",
-        "s",
-        "--allow-empty",
-    )
+    git("add", "ww.yaml", ".gitignore")
+    git("-c", "user.email=t@e.st", "-c", "user.name=T", "commit", "-qm", "s")
     git("worktree", "add", "-q", "-b", "feature", str(project / "wt"))
+    return project / "wt"
+
+
+def test_a_task_command_rooted_at_a_worktree_names_the_primary_checkout(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _with_worktree(project)
     # The task's state, as ww keeps it, in the primary checkout only.
     (project / ".ww/tasks/TASK-1").mkdir(parents=True)
 
@@ -405,4 +404,36 @@ def test_a_task_command_rooted_at_a_worktree_names_the_primary_checkout(
     assert "is a git worktree; the task's state lives in the primary checkout" in error
     assert str(project.resolve()) in error
     assert main(["--root", str(project / "wt"), "status", "TASK-2"]) == 1
-    assert "git worktree" not in capsys.readouterr().err
+    assert "lives in the primary checkout" not in capsys.readouterr().err
+
+
+def test_a_task_command_names_the_worktree_store_that_holds_the_task(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = _with_worktree(project)
+    # Written there by commands run with --root at the worktree.
+    (worktree / ".ww/tasks/TASK-1").mkdir(parents=True)
+    monkeypatch.chdir(worktree)
+
+    assert main(["status", "TASK-1"]) == 1
+
+    error = capsys.readouterr().err
+    assert f"The task's state is in {worktree.resolve()}/.ww" in error
+    assert f"Pass --root {worktree.resolve()}" in error
+    assert main(["status", "TASK-2"]) == 1
+    assert "separate store" not in capsys.readouterr().err
+
+
+def test_root_at_a_worktree_of_a_ww_project_warns_of_a_separate_store(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    worktree = _with_worktree(project)
+
+    main(["--root", str(worktree), "status", "TASK-1"])
+    warned = capsys.readouterr().err
+    main(["--root", str(project), "status", "TASK-1"])
+    primary = capsys.readouterr().err
+
+    assert "ww warning: --root" in warned
+    assert f"separate store in {worktree.resolve()}/.ww" in warned
+    assert "ww warning" not in primary

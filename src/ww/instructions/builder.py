@@ -853,8 +853,13 @@ class InstructionBuilder:
                     contains_in_file=rule.contains_in_file,
                     contains_in_diff=rule.contains_in_diff,
                     files=rule.files,
+                    previous_failures=rule.previous_failures,
                 )
-                for rule in record.verification
+                # Rules the previous round failed come first: the verifier
+                # confirms the fix, then judges the rest.
+                for rule in sorted(
+                    record.verification, key=lambda rule: not rule.previous_failures
+                )
             ),
             files=held.files if held else (),
             all_files=held.all_files if held else False,

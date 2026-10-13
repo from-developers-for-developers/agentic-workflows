@@ -277,8 +277,18 @@ def _results(rules: tuple[VerificationRule, ...], *payloads: dict) -> tuple:
         (({"id": "develop/9", "status": "judged"},), "does not cover"),
         (
             (
-                {"id": "develop/1", "status": "judged", "verdict": "pass"},
-                {"id": "develop/1", "status": "judged", "verdict": "pass"},
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "pass",
+                    "checked": "c",
+                },
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "pass",
+                    "checked": "c",
+                },
             ),
             "given twice",
         ),
@@ -309,10 +319,38 @@ def _results(rules: tuple[VerificationRule, ...], *payloads: dict) -> tuple:
                     "id": "develop/1",
                     "status": "judged",
                     "verdict": "pass",
+                    "checked": "c",
                     "failures": [{"file": "a", "what": "b"}],
                 },
             ),
             "lists no failures",
+        ),
+        (
+            ({"id": "develop/1", "status": "judged", "verdict": "pass"},),
+            "a pass verdict needs checked",
+        ),
+        (
+            (
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "pass",
+                    "checked": " ",
+                },
+            ),
+            "a pass verdict needs checked",
+        ),
+        (
+            (
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "fail",
+                    "checked": "c",
+                    "failures": [{"file": "a", "what": "b"}],
+                },
+            ),
+            "checked belongs to a pass",
         ),
         (
             ({"id": "develop/1", "status": "judged", "verdict": "pass", "x": 1},),

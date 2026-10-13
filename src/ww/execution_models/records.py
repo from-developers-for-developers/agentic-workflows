@@ -254,21 +254,26 @@ class RuleVerdict:
     """A verifier's verdict on one rule of the held completion.
 
     ``by`` is the verification item that gave it; ``failures`` are its
-    evidence, one ``file:line — what`` each.
+    evidence, one ``file:line — what`` each, and ``checked`` a pass's: what
+    the verifier checked to pass it.
     """
 
     id: str
     verdict: Verdict
     by: str
     failures: tuple[str, ...] = ()
+    checked: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "id": self.id,
             "verdict": self.verdict,
             "by": self.by,
             "failures": list(self.failures),
         }
+        if self.checked is not None:
+            data["checked"] = self.checked
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> RuleVerdict:
@@ -280,6 +285,7 @@ class RuleVerdict:
             verdict=expect_literal(data["verdict"], Verdict, "rule verdict.verdict"),
             by=expect_string(data["by"], "rule verdict.by"),
             failures=_strings(data["failures"], "rule verdict.failures"),
+            checked=expect_optional_string(data.get("checked"), "rule verdict.checked"),
         )
 
 
@@ -469,6 +475,9 @@ class VerificationRule:
     contains_in_file: tuple[str, ...] = ()
     contains_in_diff: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
+    # The rule failed the step's previous verification round, with these
+    # failures, one ``file:line — what`` each; empty when it did not.
+    previous_failures: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -486,6 +495,8 @@ class VerificationRule:
             data["missing"] = self.missing
         if self.unavailable is not None:
             data["unavailable"] = self.unavailable
+        if self.previous_failures:
+            data["previous_failures"] = list(self.previous_failures)
         return data
 
     @classmethod
@@ -522,6 +533,10 @@ class VerificationRule:
                 data.get("contains_in_diff", []), "verification rule.contains_in_diff"
             ),
             files=_strings(data.get("files", []), "verification rule.files"),
+            previous_failures=_strings(
+                data.get("previous_failures", []),
+                "verification rule.previous_failures",
+            ),
         )
 
 

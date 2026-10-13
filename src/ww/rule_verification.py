@@ -284,6 +284,7 @@ def verification_needs(
     }
     held = record.held_completion
     began = {resolution.id: resolution for resolution in record.rule_resolutions}
+    failed_before = previous_failures(record)
     needs: list[VerificationRule] = []
     not_applicable: list[str] = []
     left_out: list[str] = []
@@ -319,9 +320,29 @@ def verification_needs(
                 contains_in_file=rule.contains_in_file,
                 contains_in_diff=rule.contains_in_diff,
                 files=selected if is_scoped(rule) else (),
+                previous_failures=failed_before.get(rule.id, ()),
             )
         )
     return tuple(needs), tuple(not_applicable), tuple(left_out)
+
+
+def previous_failures(record: PlanItemExecution) -> dict[str, tuple[str, ...]]:
+    """The rules the step's latest verification round failed, with the
+    failures the verifier gave, one ``file:line — what`` each.
+
+    A round that failed is the step's latest report with judged results; a
+    report of failed checks alone, from a completion before the next round,
+    leaves it the latest.
+    """
+    for report in reversed(record.check_reports):
+        judged = [result for result in report.results if result.source == "judged"]
+        if judged:
+            return {
+                result.id: tuple(line for line in result.output.splitlines() if line)
+                for result in judged
+                if result.status == "failed"
+            }
+    return {}
 
 
 def record_not_applicable(
@@ -358,9 +379,11 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
     """
     text = (
         f"Verify the rules of the `{item.name}` step: judge its work from the "
-        "change set and the rules alone, and do not change it. The "
-        "Verification section lists the rules, the change set, and what to "
-        "report for each rule."
+        "change set and the rules alone, and do not change it. Judge only "
+        "whether the change breaks the listed rules: this is not a code "
+        "review, which is another step's work, so report nothing outside "
+        "them. The Verification section lists the rules, the change set, and "
+        "what to report for each rule."
     )
     prompt = actions.get("prompt")
 
@@ -701,14 +724,16 @@ class JudgedFailure:
 
 @dataclass(frozen=True)
 class RuleResult:
-    """A verifier's verdict on one rule, with its evidence when it fails."""
+    """A verifier's verdict on one rule, with its evidence: the failures of a
+    fail, what was checked for a pass."""
 
     id: str
     verdict: Verdict
     failures: tuple[JudgedFailure, ...] = ()
+    checked: str | None = None
 
 
-_RULE_RESULT_KEYS = {"id", "status", "verdict", "failures"}
+_RULE_RESULT_KEYS = {"id", "status", "verdict", "failures", "checked"}
 
 
 def parse_rule_results(
@@ -748,10 +773,18 @@ def _rule_result(data: dict[str, Any], rule: VerificationRule) -> RuleResult:
     if value not in {"pass", "fail"}:
         raise StateError(f"{label}: judged requires verdict pass or fail")
     verdict: Verdict = "pass" if value == "pass" else "fail"
+    checked = data.get("checked")
+    if verdict == "fail" and checked is not None:
+        raise StateError(f"{label}: checked belongs to a pass; a fail lists failures")
+    if verdict == "pass" and not (isinstance(checked, str) and checked.strip()):
+        raise StateError(
+            f"{label}: a pass verdict needs checked, what you checked to pass it"
+        )
     return RuleResult(
         id=rule.id,
         verdict=verdict,
         failures=_failures(data.get("failures"), label, verdict),
+        checked=checked.strip() if isinstance(checked, str) else None,
     )
 
 
@@ -796,6 +829,7 @@ def verdicts_of(results: tuple[RuleResult, ...], by: str) -> tuple[RuleVerdict, 
             result.verdict,
             by,
             tuple(failure.text() for failure in result.failures),
+            result.checked,
         )
         for result in results
     )

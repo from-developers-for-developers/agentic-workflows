@@ -98,7 +98,14 @@ def _verify(service: WorkflowService) -> Instruction:
         "TASK-1",
         artifact="Verified.",
         rule_results=(
-            json.dumps({"id": "develop/1", "status": "judged", "verdict": "pass"}),
+            json.dumps(
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "pass",
+                    "checked": "c",
+                }
+            ),
         ),
     )
 
@@ -698,7 +705,9 @@ def _unavailable_project(root: Path) -> Path:
 
 def _pass(*rule_ids: str) -> tuple[str, ...]:
     return tuple(
-        json.dumps({"id": rule_id, "status": "judged", "verdict": "pass"})
+        json.dumps(
+            {"id": rule_id, "status": "judged", "verdict": "pass", "checked": "c"}
+        )
         for rule_id in rule_ids
     )
 

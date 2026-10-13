@@ -2441,12 +2441,18 @@ own assignment: under `auto` the manager hands it to a new worker; under
 as a reviewer would. The verification page lists each rule, with its
 scope (globs and `in file` / `in diff` strings) and, when they are fewer than the
 step's, the changed files in that scope, the step's changed files once and
-the `git diff` that shows them, and the path of the held artifact. The verifier gives each rule a verdict, `pass` or `fail` with
-`file:line — what` evidence, as one `--rule-result` per rule,
-`{"id": "<rule>", "status": "judged", "verdict": "pass"}`, and writes
-nothing to the store. A failing verdict is a rejected completion: the step
+the `git diff` that shows them, and the path of the held artifact. The verifier judges those rules
+and nothing else: it is no code review, which is another step's work. It gives
+each rule a verdict, `fail` with `file:line — what` evidence or `pass` with
+what it checked, as one `--rule-result` per rule,
+`{"id": "<rule>", "status": "judged", "verdict": "pass", "checked": "<what>"}`,
+and writes nothing to the store. A rule that says how to establish it, such as
+running a test with the change reverted, is done that way, not passed from
+reading alone. A failing verdict is a rejected completion: the step
 goes back to its worker with the fix page, and it counts toward the rule's
-`max_fixes` like a failed check. Once every rule passes, ww records the held
+`max_fixes` like a failed check. The next round judges every rule again, the
+ones the previous round failed listed first with their failures, to confirm
+the fix before the rest. Once every rule passes, ww records the held
 completion as submitted.
 
 `discover --json` (`rules_notice`) and the first page of `start` say how many

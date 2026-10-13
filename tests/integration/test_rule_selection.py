@@ -102,7 +102,9 @@ def _verify(service: WorkflowService, *rule_ids: str) -> Instruction:
         "TASK-1",
         artifact="Verified.",
         rule_results=tuple(
-            json.dumps({"id": rule_id, "status": "judged", "verdict": "pass"})
+            json.dumps(
+                {"id": rule_id, "status": "judged", "verdict": "pass", "checked": "c"}
+            )
             for rule_id in rule_ids
         ),
     )

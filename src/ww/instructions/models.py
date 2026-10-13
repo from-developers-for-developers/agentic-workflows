@@ -286,6 +286,8 @@ class VerificationRuleLine:
     contains_in_file: tuple[str, ...] = ()
     contains_in_diff: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
+    # The failures the step's previous verification round found for it.
+    previous_failures: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -299,6 +301,7 @@ class VerificationRuleLine:
             "contains_in_file": list(self.contains_in_file),
             "contains_in_diff": list(self.contains_in_diff),
             "files": list(self.files),
+            "previous_failures": list(self.previous_failures),
         }
 
 

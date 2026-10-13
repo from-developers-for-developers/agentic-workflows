@@ -13,7 +13,7 @@ Add a --verbose flag to the CLI.
 
 ### Work instruction
 
-Verify the rules of the `develop` step: judge its work from the change set and the rules alone, and do not change it. The Verification section lists the rules, the change set, and what to report for each rule.
+Verify the rules of the `develop` step: judge its work from the change set and the rules alone, and do not change it. Judge only whether the change breaks the listed rules: this is not a code review, which is another step's work, so report nothing outside them. The Verification section lists the rules, the change set, and what to report for each rule.
 
 ### Verification
 
@@ -40,9 +40,9 @@ The step worker's artifact, held until you finish: `<root>/.ww/tasks/TASK-1/runs
 
 #### What to report
 
-Judge each rule against the change set: a verdict `pass` or `fail`, with evidence `file:line — what` for each failure. Complete with your findings as the artifact and one `--rule-result` JSON object per rule:
+Judge each rule on its own against the change set: a verdict `pass` or `fail`, with evidence `file:line — what` for each failure, and for a pass what you checked. When a rule says how to establish it, such as running a test with the change reverted, do that; a pass from reading alone is no pass for such a rule. Complete with your findings as the artifact and one `--rule-result` JSON object per rule:
 
-`{"id": "<rule>", "status": "judged", "verdict": "fail", "failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, or `"verdict": "pass"` without failures.
+`{"id": "<rule>", "status": "judged", "verdict": "fail", "failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, or `{"id": "<rule>", "status": "judged", "verdict": "pass", "checked": "<what you checked>"}`.
 
 ### Previous artifacts
 

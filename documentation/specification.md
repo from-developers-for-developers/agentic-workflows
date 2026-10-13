@@ -1599,11 +1599,19 @@ step.
 | --- | --- |
 | `id` | The rule ID; required. |
 | `status` | `judged`; any other value is refused. |
-| `verdict`, `failures` | `pass`, or `fail` with `failures`, each `{file, line?, what}`. |
+| `verdict`, `failures`, `checked` | `pass` with `checked`, a non-empty account of what the verifier checked to pass it, or `fail` with `failures`, each `{file, line?, what}`; `checked` on a fail is refused. |
 
 A failing verdict rejects the held completion as a failed check would, under
 the rule's `max_fixes`. Once every rule of the round passed, ww records the
 held completion as submitted.
+
+The verifier judges the listed rules only: its page says it is no code
+review and to report nothing outside them, and that a rule saying how to
+establish it, such as running a test with the change reverted, is not passed
+from reading alone. The round after a failing one judges every rule again;
+its page lists first the rules the previous round failed, each with the
+failures it gave (`previous_failures` on each verification rule in `--json`),
+and asks the verifier to confirm those are fixed before judging the rest.
 
 #### Choosing the rules of later steps
 

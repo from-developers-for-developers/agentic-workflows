@@ -1897,6 +1897,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init"
         else _resolve_project_root(args.root)
     )
+    if args.command != "init":
+        print(_split_store_warning(args, root), end="", file=sys.stderr)
     try:
         storage = Storage(root, config=_config_source(args, root))
     except WwError as error:
@@ -2138,25 +2140,73 @@ def _primary_checkout(directory: Path) -> Path | None:
     return resolved.parent if resolved.name == ".git" else None
 
 
-def _worktree_root_hint(args: argparse.Namespace, root: Path) -> str:
-    """Why a task command failed under ``--root`` naming a linked worktree.
+def _checkout_of(directory: Path) -> Path | None:
+    """The top of the git checkout, primary or linked, holding ``directory``."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip()).resolve()
 
-    ww's task state lives in the primary checkout; an explicit ``--root`` at
-    one of its worktrees reads an empty one. Empty when that is not the case.
+
+def _worktree_root_hint(args: argparse.Namespace, root: Path) -> str:
+    """Why a task command failed when its state is in another checkout's store.
+
+    ww's task state lives in the primary checkout: an explicit ``--root`` at
+    one of its worktrees reads an empty store there. The other way round, a
+    worktree whose own store holds the task, written there under ``--root``,
+    is not read when ``--root`` is omitted. Empty when neither is the case.
     """
     task_id = getattr(args, "task_id", None)
-    if args.root is None or not isinstance(task_id, str) or not task_id:
+    if not isinstance(task_id, str) or not task_id:
         return ""
-    primary = _primary_checkout(root)
     task = Path(".ww/tasks") / bare_request_id(task_id)
-    if primary is None or primary == root or (root / task).exists():
+    if (root / task).exists():
         return ""
-    if not (primary / task).exists():
+    if args.root is None:
+        checkout = _checkout_of(Path.cwd())
+        if checkout is None or checkout == root or not (checkout / task).exists():
+            return ""
+        return (
+            f"\nThe task's state is in {checkout}/.ww, a separate store that "
+            f"this git worktree got under --root; ww reads {root}/.ww without "
+            f"it. Pass --root {checkout} to reach the task there."
+        )
+    primary = _primary_checkout(root)
+    if primary is None or primary == root or not (primary / task).exists():
         return ""
     return (
         f"\n--root {root} is a git worktree; the task's state lives in the "
         f"primary checkout, {primary}. Omit --root: ww finds it from any of "
         "its worktrees."
+    )
+
+
+def _split_store_warning(args: argparse.Namespace, root: Path) -> str:
+    """A warning when ``--root`` names a linked worktree of a ww project.
+
+    ww's state belongs to the primary checkout; a store in one of its
+    worktrees holds tasks the primary checkout, and ww run without
+    ``--root``, never see. Empty when ``--root`` is not such a worktree.
+    """
+    if args.root is None:
+        return ""
+    primary = _primary_checkout(root)
+    if primary is None or primary == root or not is_project_root(primary):
+        return ""
+    return (
+        f"ww warning: --root {root} is a git worktree of the ww project at "
+        f"{primary}; its tasks go to a separate store in {root}/.ww, which "
+        "ww without --root does not read. Omit --root to use the primary "
+        "checkout's store.\n"
     )
 
 

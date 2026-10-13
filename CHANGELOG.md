@@ -8,6 +8,9 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
+- Breaking: a verifier's `pass` must say what it checked, `"checked": "<what>"` in its `--rule-result`; a pass without it is refused. The verifier page now says to judge the listed rules only, not to review the code, and to carry out what a rule says establishes it, such as a run with the change reverted.
+- Changed: the verification round after a failing one lists first the rules the previous round failed, each with its failures, so the verifier confirms the fix before judging every rule again (`previous_failures` in `--json`).
+- Changed: `--root` at a linked git worktree of a ww project warns that it opens a separate task store there; a task command run without `--root` that finds no task names the current worktree's own store when it holds the task.
 - Fixed: `select_rules_for` naming a step with substeps no longer fails when the plan compiles; it chooses for each substep, at any depth, that carries a judged rule, each with its own `--select-rules` entry. `ww lint` now compiles every workflow's plan, so it refuses every target that starting the workflow would. `b2e0f13`
 - Added: `select_rules_for` lets a step choose, right after its own work, which judged rules named later steps get and are verified against; left-out scoped rules are still judged when the change reaches their files. `5fa8a45`
 - Fixed: a step's change set could miss a file rewritten with content of the same size right after the index was written, so its checks and verifiers skipped that file. `f5ce429`

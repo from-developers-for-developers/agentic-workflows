@@ -151,7 +151,14 @@ def test_a_held_completion_keeps_the_adjustments_for_the_verifier(
         "TASK-1",
         artifact="Verified.",
         rule_results=(
-            json.dumps({"id": "develop/1", "status": "judged", "verdict": "pass"}),
+            json.dumps(
+                {
+                    "id": "develop/1",
+                    "status": "judged",
+                    "verdict": "pass",
+                    "checked": "c",
+                }
+            ),
         ),
     )
     assert verified.previous_step_adjustments == ASKED
@@ -168,7 +175,14 @@ def test_a_verification_refuses_adjustments(tmp_path: Path) -> None:
             artifact="Verified.",
             adjustments=ASKED,
             rule_results=(
-                json.dumps({"id": "develop/1", "status": "judged", "verdict": "pass"}),
+                json.dumps(
+                    {
+                        "id": "develop/1",
+                        "status": "judged",
+                        "verdict": "pass",
+                        "checked": "c",
+                    }
+                ),
             ),
         )
 

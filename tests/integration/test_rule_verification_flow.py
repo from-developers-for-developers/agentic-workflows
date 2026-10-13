@@ -70,7 +70,7 @@ FOO_CHECK = {
     "shell": "grep -L foo $WW_STEP_CHANGED_FILES || true",
     "assert": ["empty"],
 }
-PASS = {"id": "develop/1", "status": "judged", "verdict": "pass"}
+PASS = {"id": "develop/1", "status": "judged", "verdict": "pass", "checked": "c"}
 
 
 def _git(*arguments: str, cwd: Path) -> None:
@@ -273,7 +273,9 @@ def test_one_verifier_judges_only_the_applicable_rules(tmp_path: Path) -> None:
     assert record.rules_not_applicable == ("docs/markdown",)
 
     accepted = _report(
-        service, PASS, {"id": "docs/printing", "status": "judged", "verdict": "pass"}
+        service,
+        PASS,
+        {"id": "docs/printing", "status": "judged", "verdict": "pass", "checked": "c"},
     )
 
     assert accepted.item_name == "check"
@@ -281,6 +283,38 @@ def test_one_verifier_judges_only_the_applicable_rules(tmp_path: Path) -> None:
     assert "- `develop/1`: verified pass (by `task:develop:verify:1`)" in artifact
     assert "- `docs/markdown`: not applicable (no changed file in scope)" in artifact
     assert "- `docs/printing`: verified pass (by `task:develop:verify:1`)" in artifact
+
+
+def test_the_next_round_puts_the_rules_that_failed_first_with_their_failures(
+    tmp_path: Path,
+) -> None:
+    root = _scoped_project(tmp_path, MIXED, PRINTING_RULE)
+    service, held = _developed(root)
+    assert held.verification is not None
+    last = held.verification.rules[-1].id
+    first = held.verification.rules[0].id
+    failing = {
+        "id": last,
+        "status": "judged",
+        "verdict": "fail",
+        "failures": [{"file": "app.py", "line": 1, "what": "prints"}],
+    }
+    _report(
+        service,
+        {"id": first, "status": "judged", "verdict": "pass", "checked": "c"},
+        failing,
+    )
+
+    again = service.complete("TASK-1", artifact="Fixed.", summary_for_next="Fixed.")
+
+    assert again.verification is not None
+    assert [rule.id for rule in again.verification.rules] == [last, first]
+    assert again.verification.rules[0].previous_failures == ("app.py:1 — prints",)
+    assert again.verification.rules[1].previous_failures == ()
+    rendered = _markdown(again)
+    assert "  Failed the previous round, on:\n  - app.py:1 — prints\n" in rendered
+    assert "The rules the previous round failed come first" in rendered
+    assert "The rules the previous round failed" not in _markdown(held)
 
 
 def test_the_verifier_page_shows_each_rules_scope_and_its_files(
