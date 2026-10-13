@@ -42,7 +42,8 @@ dev = [
   "mypy>=1.11",
   "pytest>=8.3",
   "pytest-xdist>=3.6",
-  "ruff>=0.6",
+  # Exact, so local checks and CI format alike; raise it deliberately.
+  "ruff==0.17.0",
 ]
 
 [project.scripts]

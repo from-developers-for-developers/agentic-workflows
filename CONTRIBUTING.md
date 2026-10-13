@@ -113,7 +113,10 @@ separately bundled Git extension:
 ```
 
 The code is formatted with `ruff format`; `scripts/test` and CI check that
-the same paths are formatted:
+the same paths are formatted. ruff is pinned to one exact version in
+`pyproject.toml`, so a local run and CI agree; `scripts/test` moves `.venv` to
+that version when it differs. Raise the pin deliberately, reformatting in the
+same commit:
 
 ```console
 .venv/bin/python -m ruff format src tests scripts ext/ww/git

@@ -65,8 +65,15 @@ else
     created_venv=1
 fi
 
-# Install only when setting up a new environment or repairing a partial one.
-if ! "$VENV_PYTHON" -c 'import importlib.util, sys; sys.exit(any(importlib.util.find_spec(name) is None for name in ("build", "mypy", "pytest", "xdist", "ruff")))' >/dev/null 2>&1; then
+# Install only when setting up a new environment, repairing a partial one, or
+# moving ruff to the exact version pyproject.toml pins.
+if ! "$VENV_PYTHON" -c '
+import importlib.metadata, importlib.util, pathlib, re, sys
+if any(importlib.util.find_spec(name) is None for name in ("build", "mypy", "pytest", "xdist", "ruff")):
+    sys.exit(1)
+pin = re.search(r"\"ruff==([^\"]+)\"", pathlib.Path("pyproject.toml").read_text())
+sys.exit(bool(pin) and importlib.metadata.version("ruff") != pin.group(1))
+' >/dev/null 2>&1; then
     if ! { "$VENV_PYTHON" -m pip install -q --upgrade pip &&
         "$VENV_PYTHON" -m pip install -q -e '.[dev]'; }; then
         if [ "$created_venv" -eq 1 ]; then
