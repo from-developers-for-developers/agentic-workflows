@@ -2414,6 +2414,11 @@ candidates and its own entry: `--select-rules implement=<id>
 --select-rules write-tests=<id>`. A target `ww lint` accepts never fails
 when the workflow starts.
 
+Steps of an `items` body choose and are chosen for like any others, since
+the body runs once over the whole collection: an `analyze` step can choose
+the rules of the `fix` step after it in the same body. Steps of `children`
+cannot, as each child task keeps its own state.
+
 ### How a rule becomes a check
 
 A rule without a command is judged by another agent, a verifier, unless the

@@ -1477,7 +1477,7 @@ def _resolve_rule_selections(items: list[PlanItem]) -> list[PlanItem]:
     """Turn each rule-selection item's step names into plan item IDs.
 
     A name is a later agent step of the workflow, matched by its path or its
-    own name, outside items and children. A name of a step with substeps
+    own name, outside children. A name of a step with substeps
     stands for the agent steps inside it, at any depth, that carry a judged
     rule. Each name must name exactly one step, and the item's text then
     names the steps it chooses for.
@@ -1569,10 +1569,10 @@ def rule_selection_targets(
             f"{label}: {name!r} is not a later agent step of the workflow"
         )
     for target in found:
-        if target.item_context is not None or target.child_stage is not None:
+        if target.child_stage is not None:
             raise ConfigurationError(
-                f"{label}: {name!r} is inside items or children, which "
-                "cannot take a rule selection"
+                f"{label}: {name!r} is inside children, which cannot take a "
+                "rule selection"
             )
     return tuple(found)
 

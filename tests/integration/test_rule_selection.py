@@ -456,3 +456,104 @@ def test_lint_rejects_a_target_that_starting_the_workflow_rejects(
 
     assert main(["--root", str(root), "lint"]) == 1
     assert "names several steps" in capsys.readouterr().err
+
+
+# The ``process-pull-request`` shape: inside one items body, ``analyze``
+# chooses the rules ``fix`` gets. The body is compiled once over the
+# collection, so it selects as any step does.
+IN_ITEMS = """rules:
+  docs: [rules/docs/]
+workflows:
+  - name: task
+    steps:
+      - name: comments
+        description: Register one item per comment.
+        items:
+          steps:
+            - name: analyze
+              description: Analyze the comments.
+              select_rules_for: [fix]
+            - name: fix
+              description: Fix them.
+              rules:
+                - Keep the public CLI unchanged.
+                - Log every retry.
+      - check: Check it.
+"""
+
+
+def test_a_step_inside_items_chooses_for_a_later_step_of_the_same_body(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path, IN_ITEMS)
+    assert main(["--root", str(root), "lint"]) == 0
+    service = WorkflowService(Storage(root))
+    service.start(
+        "task", "TASK-1", agent="codex", workflow_runtime="single", init_artifact="Do."
+    )
+    assert service.next("TASK-1").item_name == "comments"
+    assert (
+        service.complete("TASK-1", artifact="None.", summary_for_next="None.").item_name
+        == "analyze"
+    )
+    page = service.complete("TASK-1", artifact="Read.", summary_for_next="Read.")
+    assert page.item_name == "select-rules"
+
+    fix = _select(service, "fix=fix/1")
+
+    assert fix.item_name == "fix"
+    assert [rule.id for rule in fix.rules] == ["docs/header", "fix/1"]
+    assert fix.rules_left_out_by == "analyze"
+    (root / "app.py").write_text("x\n", encoding="utf-8")
+    held = service.complete("TASK-1", artifact="Fixed.", summary_for_next="Fixed.")
+    assert held.verification is not None
+    assert [rule.id for rule in held.verification.rules] == ["fix/1"]
+
+
+def test_a_step_before_items_chooses_for_a_step_inside_them(
+    tmp_path: Path,
+) -> None:
+    workflows = IN_ITEMS.replace("              select_rules_for: [fix]\n", "").replace(
+        "    steps:\n      - name: comments\n",
+        "    steps:\n      - name: architect\n        description: Plan it.\n"
+        "        select_rules_for: [fix]\n      - name: comments\n",
+    )
+    root = _project(tmp_path, workflows)
+
+    assert main(["--root", str(root), "lint"]) == 0
+    service, page = _selecting(root)
+    assert page.item_name == "select-rules"
+    assert _select(service, "fix=fix/2").item_name == "comments"
+    service.complete("TASK-1", artifact="None.", summary_for_next="None.")
+    fix = service.complete("TASK-1", artifact="Read.", summary_for_next="Read.")
+    assert fix.item_name == "fix"
+    assert [rule.id for rule in fix.rules] == ["docs/header", "fix/2"]
+
+
+def test_a_step_inside_children_still_cannot_select_rules(tmp_path: Path) -> None:
+    workflows = """workflows:
+  - name: task
+    steps:
+      - name: split
+        description: Split it.
+        children:
+          steps:
+            - name: refine
+              description: Refine it.
+              select_rules_for: [review]
+            - implement:
+                workflow: plain
+            - name: review
+              description: Review it.
+              rules:
+                - Log every retry.
+  - name: plain
+    steps:
+      - implement: Implement it.
+"""
+    root = _project(tmp_path, workflows)
+
+    with pytest.raises(ConfigurationError, match="inside children cannot select"):
+        WorkflowService(Storage(root)).start(
+            "task", "TASK-1", agent="codex", init_artifact="Do."
+        )

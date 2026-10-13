@@ -587,7 +587,7 @@ A step accepts every [handler key](#handlers), plus:
 | --- | --- | --- |
 | `hooks` | hooks mapping | Hooks local to this step. |
 | `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
-| `select_rules_for` | non-empty list of step names or paths | Later steps whose judged rules this step's worker chooses once its own work is done; each named step then gets, and is verified against, only those. See [Choosing the rules of later steps](#choosing-the-rules-of-later-steps). Only on a step with agent work of its own, outside `items` and `children`. |
+| `select_rules_for` | non-empty list of step names or paths | Later steps whose judged rules this step's worker chooses once its own work is done; each named step then gets, and is verified against, only those. See [Choosing the rules of later steps](#choosing-the-rules-of-later-steps). Only on a step with agent work of its own, outside `children`; inside an `items` body it chooses like any step. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, groups and items substeps inherit it in turn. |
 | `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. In `auto` the manager completes a `manager` step with `complete --role manager`, and `complete` with `--role worker` on it is refused. Inherited from the workflow and every enclosing step, like `profile`; nested steps, groups and items substeps inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
@@ -1626,7 +1626,11 @@ before `develop`, can choose which judged rules later steps get:
 ```
 
 Each name is a later step of the same workflow, by its own name or its
-path, outside `items` and `children`; it must name exactly one step. A step
+path, outside `children`; it must name exactly one step. A step in an `items`
+body, which is compiled once over its collection, chooses and is chosen for
+like any other, so a step there can choose for a later step of the same body;
+a step with `items` chooses only after its body, as any step with substeps
+does. A step
 with agent work of its own is chosen for itself. A step with `steps` stands
 for the agent steps inside it, at any depth, that carry at least one judged
 rule: a substep without any, such as a `plan` substep, is no target and needs

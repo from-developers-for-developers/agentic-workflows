@@ -869,15 +869,16 @@ def _step_filter_references(steps: tuple[StepDefinition, ...]) -> set[str]:
 
 
 def _validate_rule_selections(configuration: WorkflowConfiguration) -> None:
-    """A step outside items and children chooses rules; which steps its
+    """A step outside children chooses rules; which steps its
     ``select_rules_for`` names is resolved once, as the plan compiles, which
-    ``ww lint`` does for every workflow too."""
+    ``ww lint`` does for every workflow too. An items body is compiled once
+    over its collection, so a step in it chooses like any other."""
     for workflow in configuration.workflows:
         for step, path, contained in _selection_walk(workflow.steps):
             if step.select_rules_for and contained:
                 raise ConfigurationError(
                     f"{workflow.name}/{path}.select_rules_for: a step inside "
-                    "items or children cannot select rules"
+                    "children cannot select rules"
                 )
 
 
@@ -886,14 +887,15 @@ def _selection_walk(
     parent: str | None = None,
     contained: bool = False,
 ) -> Iterator[tuple[StepDefinition, str, bool]]:
-    """Every step in plan order with its path and whether items or children
-    enclose it; assessment outcomes count as steps, as the plan names them."""
+    """Every step in plan order with its path and whether children enclose
+    it; assessment outcomes count as steps, as the plan names them."""
     for step in steps:
         path = f"{parent}/{step.name}" if parent else step.name
         yield step, path, contained
         yield from _selection_walk(step.child_steps, path, contained)
         yield from _selection_walk(step.assessment_outcomes, path, contained)
-        yield from _selection_walk(_template_steps(step), path, True)
+        yield from _selection_walk(_item_steps(step), path, contained)
+        yield from _selection_walk(_child_stages(step), path, True)
 
 
 def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:
