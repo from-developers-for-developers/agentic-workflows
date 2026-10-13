@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
+- Changed: the verifier page tells the verifier to judge what the step changed, reading the code around the diff only as far as a rule needs, and to leave out violations in code the step did not change unless the change brings them about.
 - Changed: `select_rules_for` works inside an `items` body: a step there may choose rules, and may be chosen for, from the same body or from before it; only `children` still refuse it.
 - Breaking: a verifier's `pass` must say what it checked, `"checked": "<what>"` in its `--rule-result`; a pass without it is refused. The verifier page now says to judge the listed rules only, not to review the code, and to carry out what a rule says establishes it, such as a run with the change reverted.
 - Changed: the verification round after a failing one lists first the rules the previous round failed, each with its failures, so the verifier confirms the fix before judging every rule again (`previous_failures` in `--json`).

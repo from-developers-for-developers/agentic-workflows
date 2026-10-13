@@ -2453,7 +2453,10 @@ what it checked, as one `--rule-result` per rule,
 `{"id": "<rule>", "status": "judged", "verdict": "pass", "checked": "<what>"}`,
 and writes nothing to the store. A rule that says how to establish it, such as
 running a test with the change reverted, is done that way, not passed from
-reading alone. A failing verdict is a rejected completion: the step
+reading alone. It judges what the step changed, reading the surrounding code
+only as far as a rule needs: a violation in code the step did not change is
+not the step's, unless the change brings it about, such as a new call inside
+an existing loop. A failing verdict is a rejected completion: the step
 goes back to its worker with the fix page, and it counts toward the rule's
 `max_fixes` like a failed check. The next round judges every rule again, the
 ones the previous round failed listed first with their failures, to confirm

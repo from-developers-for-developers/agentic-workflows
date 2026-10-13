@@ -1608,7 +1608,9 @@ held completion as submitted.
 The verifier judges the listed rules only: its page says it is no code
 review and to report nothing outside them, and that a rule saying how to
 establish it, such as running a test with the change reverted, is not passed
-from reading alone. The round after a failing one judges every rule again;
+from reading alone. It judges what the step changed, reading the code around
+the diff only as far as a rule needs; a violation in code the step did not
+change is left out of its verdicts unless the change brings it about. The round after a failing one judges every rule again;
 its page lists first the rules the previous round failed, each with the
 failures it gave (`previous_failures` on each verification rule in `--json`),
 and asks the verifier to confirm those are fixed before judging the rest.

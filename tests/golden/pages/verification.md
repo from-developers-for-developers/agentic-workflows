@@ -40,6 +40,8 @@ The step worker's artifact, held until you finish: `<root>/.ww/tasks/TASK-1/runs
 
 #### What to report
 
+Judge what this step changed. Start from the diff, and read the code around it only as far as a rule needs to judge the changed lines, such as the loop a new query sits in. A violation in code the step did not change is not this step's: leave it out of your verdicts, unless the change brings it about, for example a new call placed inside an existing loop.
+
 Judge each rule on its own against the change set: a verdict `pass` or `fail`, with evidence `file:line — what` for each failure, and for a pass what you checked. When a rule says how to establish it, such as running a test with the change reverted, do that; a pass from reading alone is no pass for such a rule. Complete with your findings as the artifact and one `--rule-result` JSON object per rule:
 
 `{"id": "<rule>", "status": "judged", "verdict": "fail", "failures": [{"file": "<path>", "line": 12, "what": "<what>"}]}`, or `{"id": "<rule>", "status": "judged", "verdict": "pass", "checked": "<what you checked>"}`.

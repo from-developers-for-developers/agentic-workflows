@@ -1185,6 +1185,13 @@ def _verification_results(lines: Lines, page: VerificationPage) -> None:
         )
     lines.extend(
         [
+            "Judge what this step changed. Start from the diff, and read the "
+            "code around it only as far as a rule needs to judge the changed "
+            "lines, such as the loop a new query sits in. A violation in code "
+            "the step did not change is not this step's: leave it out of your "
+            "verdicts, unless the change brings it about, for example a new "
+            "call placed inside an existing loop.",
+            "",
             "Judge each rule on its own against the change set: a verdict "
             "`pass` or `fail`, with evidence `file:line — what` for each "
             "failure, and for a pass what you checked. When a rule says how "
