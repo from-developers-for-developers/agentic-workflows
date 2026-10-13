@@ -14,12 +14,11 @@ such as WSL.
 
 ## Distribution and versioning
 
-ww is published to PyPI as `ww-agentic-workflows`, but only as development
-snapshots, `1.0.0.devN`, built from `dev` on every push. There is no stable
-release and no Git tag to pin to yet; pinning means choosing a snapshot
-version, or a commit in a source checkout. See the install section of
-[README.md](../README.md) and
-[development releases](development-releases.md).
+ww is published to PyPI as `ww-agentic-workflows`, as public betas,
+`1.0.0b1` and on, built from `main`. There is no stable release yet; pinning
+means choosing a beta version, or a commit in a source checkout. See the
+install section of [README.md](../README.md) and
+[releases and development builds](development-releases.md).
 
 **There is no formal compatibility guarantee yet**, because there are no
 stable releases to define one against: nothing is contractually promised to

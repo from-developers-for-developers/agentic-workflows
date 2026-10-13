@@ -174,20 +174,21 @@ workflow's source, and where several fit, prefer local over project over
 global unless the operator named one
 ([example 6](examples.md#6-global-project-and-local-variants)).
 
-## Development package snapshots
+## Releases
 
-Pushes to this repository's `dev` branch publish `1.0.0.devN` snapshots to PyPI
-after the release gates pass and the final distribution files are validated.
-Snapshots identify unreleased work; they do not create Git tags or GitHub
-releases. Install an exact build, for example:
+Pushes to this repository's `main` branch publish the version `pyproject.toml`
+names to PyPI after the release gates pass and the final distribution files
+are validated; a version already on PyPI is not published again. ww is in
+public beta, so releases are `1.0.0b1`, `1.0.0b2`, and so on. `dev` is never
+published: run it from a clone installed with `pipx install --editable`.
+Install an exact release, for example:
 
 ```console
-pip install ww-agentic-workflows==1.0.0.dev42
+pip install ww-agentic-workflows==1.0.0b1
 ```
 
-Publishing requires the one-time Trusted Publisher setup described in
-[development releases](development-releases.md). That guide also covers the
-run-number sequence, retry behavior and opting into the latest snapshot.
+[Releases and development builds](development-releases.md) covers the release
+process, the development install and the one-time Trusted Publisher setup.
 
 ## Initialize a project
 
@@ -4383,14 +4384,13 @@ configuration file names and run the wrong binary, and `lint` warns about such
 a launcher, naming `init` as the fix. Choose the binary with `executable`, not
 by editing `./ww`.
 
-This is what lets two installs live side by side, for example a source
-checkout for developing ww itself, switched between branches often, and the
-PyPI development snapshots for use in other projects. pipx gives the second a
-different global name:
+This is what lets two installs live side by side, for example the PyPI
+release for everyday projects and a source checkout of `dev` for trying or
+developing ww itself. pipx gives the second a different global name:
 
 ```console
-pipx install --editable ~/tools/agentic-workflows
-pipx install --suffix=-dev --pip-args=--pre ww-agentic-workflows
+pipx install ww-agentic-workflows
+pipx install --editable --suffix=-dev ~/tools/agentic-workflows
 ```
 
 Two checkouts work the same way, with
@@ -4421,7 +4421,7 @@ project's configured executable, for example:
 ```text
 ## A newer ww is available
 
-1.0.0.dev42 → 1.0.0.dev47
+1.0.0b1 → 1.0.0b2
 Run: `ww-agentic-workflows upgrade`
 ```
 

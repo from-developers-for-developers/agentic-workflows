@@ -1,0 +1,13 @@
+name: Development checks
+
+# Pushes to dev are checked, never published: releases are built from main.
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    uses: ./.github/workflows/release-gates.yml

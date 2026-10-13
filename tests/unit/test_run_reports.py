@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from ww import __version__
 from ww.errors import StateError
 from ww.execution_models.runs import PLAN_SCHEMA_VERSION
 from ww.project_config import ProjectConfig, load_project_config
@@ -288,7 +289,9 @@ def test_feedback_records_use_their_own_arrays_and_directory(tmp_path: Path) -> 
 def test_the_issue_carries_the_record_and_fits_a_prefilled_url(tmp_path: Path) -> None:
     record = _record(tmp_path)
 
-    assert issue_title(record) == "Debug report: `task` run, ww 0.1.0, 1 error"
+    assert issue_title(record) == (
+        f"Debug report: `task` run, ww {__version__}, 1 error"
+    )
     body = issue_body(record)
     assert "| Workflow | `task` |" in body
     assert "- **complete refused a valid artifact** (step `work`): ww error" in body

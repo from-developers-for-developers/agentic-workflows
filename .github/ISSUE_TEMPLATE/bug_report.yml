@@ -60,7 +60,7 @@ body:
     attributes:
       label: ww version
       description: Output of `ww-agentic-workflows --version`, plus the commit you are on.
-      placeholder: "0.1.0 (main @ 28e55aa)"
+      placeholder: "1.0.0b1 (or dev @ 28e55aa for a source checkout)"
     validations:
       required: true
 

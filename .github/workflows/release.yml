@@ -1,0 +1,76 @@
+name: Release
+
+# Every push to main publishes the version pyproject.toml names, once: a push
+# that does not change it publishes nothing.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    uses: ./.github/workflows/release-gates.yml
+
+  build:
+    needs: gates
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.version.outputs.published }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Find whether this version is already on PyPI
+        id: version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          status=$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/ww-agentic-workflows/$version/json")
+          if [ "$status" = "200" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Nothing to publish::ww-agentic-workflows $version is already on PyPI; bump the version in pyproject.toml to release."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      # The distribution check imports ww from the checkout, so it needs the
+      # runtime dependencies as well as the build tools.
+      - if: steps.version.outputs.published == 'false'
+        run: python -m pip install build twine .
+      - if: steps.version.outputs.published == 'false'
+        run: python -m build
+      - if: steps.version.outputs.published == 'false'
+        run: python -m twine check --strict dist/*
+      - if: steps.version.outputs.published == 'false'
+        run: python scripts/check_distribution.py --dist-dir dist
+      - if: steps.version.outputs.published == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  publish:
+    needs: build
+    if: needs.build.outputs.published == 'false' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: distributions
+          path: dist
+      - name: Publish the validated distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          # A rerun keeps the version and can finish a partially uploaded release.
+          skip-existing: true

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ww-agentic-workflows"
-version = "0.1.0"
+version = "1.0.0b1"
 description = "A local-first, resumable workflow CLI for people and AI agents."
 readme = "README.md"
 requires-python = ">=3.10"

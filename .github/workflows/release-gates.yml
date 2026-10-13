@@ -1,10 +1,9 @@
 name: Release gates
 
+# Pushes to dev and main run these through dev-ci.yml and release.yml.
 on:
   workflow_call:
   pull_request:
-  push:
-    branches: [main]
 
 jobs:
   quality-and-compatibility:

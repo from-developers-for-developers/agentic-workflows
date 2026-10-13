@@ -1,15 +1,14 @@
 # Changelog
 
-`main` is the branch users run, so everything recorded here is live the moment
-it lands — there is no staging period and nothing is waiting to ship. Sections
-are dated by the day `main` changed, newest first, because there are no version
-tags yet to group them by. Pulled a week ago? Read down to that date and stop.
-
-The committed package version stays at 0.1.0; development snapshots from `dev`
-use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
-yet, is in [documentation/limitations.md](documentation/limitations.md).
+Releases are published to PyPI from `main`, as public betas from `1.0.0b1`
+on; `dev` is not published. Sections are dated by the day the change landed,
+newest first. Pulled a week ago? Read down to that date and stop. What may
+change between two releases, and what ww does not promise yet, is in
+[documentation/limitations.md](documentation/limitations.md).
 
 ## 2026-10-13
+
+- Releases move to `main`: every push to `main` publishes the version in `pyproject.toml` to PyPI once, starting with the first public beta, `1.0.0b1`; pushes to `dev` only run the checks, and development builds are installed from a clone with `pipx install --editable`.
 
 - Breaking: in a Git project, tasks read ww configuration committed on `config_ref` (default: the ww/git base branch), pinned when each run starts, so branch switches in the main checkout no longer affect them; new `ww config refresh <task>` and `ww config prune`, and `ww status` shows the pinned commit. `6335767`
 
