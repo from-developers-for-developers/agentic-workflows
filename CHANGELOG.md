@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
-- Releases are numbered automatically: each push to `main` that changes the package publishes the next version of `pyproject.toml`'s series (`1.0.0b2`, `1.0.0b3`, …) and tags it; a push that changes only documentation releases nothing. The `hotfix` workflow now fixes bugs from and into `main` and offers the new `merge-to-main`; `bugfix` fixes bugs from and into `dev`.
+- Releases are numbered automatically: each push to `main` that changes the package publishes the next version of `pyproject.toml`'s series (`1.0.0b2`, `1.0.0b3`, …) and tags it `v<version>`; a documentation-only push releases nothing. `32f0ce7`
 - Releases move to `main`: every push to `main` publishes the version in `pyproject.toml` to PyPI once, starting with the first public beta, `1.0.0b1`; pushes to `dev` only run the checks, and development builds are installed from a clone with `pipx install --editable`.
 
 - Breaking: in a Git project, tasks read ww configuration committed on `config_ref` (default: the ww/git base branch), pinned when each run starts, so branch switches in the main checkout no longer affect them; new `ww config refresh <task>` and `ww config prune`, and `ww status` shows the pinned commit. `6335767`
