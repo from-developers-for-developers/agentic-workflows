@@ -9,6 +9,10 @@ The committed package version stays at 0.1.0; development snapshots from `dev`
 use `1.0.0.devN`. What may change between two pulls, and what ww does not promise
 yet, is in [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-13
+
+- Breaking: in a Git project, tasks read ww configuration committed on `config_ref` (default: the ww/git base branch), pinned when each run starts, so branch switches in the main checkout no longer affect them; new `ww config refresh <task>` and `ww config prune`, and `ww status` shows the pinned commit. `6335767`
+
 ## 2026-10-12
 
 - Breaking: ww configuration, rule files and check files are always read from the project root, also for a task in a worktree of an older branch; checks still run in the worktree and reach their files as `{{ww.root}}/<path>` or `"$WW_ROOT/<path>"`, and a check declaring files that does neither is refused. `8b4c445`
