@@ -45,7 +45,9 @@ def take_mark(workdir: Path) -> str | None:
     with tempfile.TemporaryDirectory(prefix="ww-mark-") as scratch:
         temporary = Path(scratch) / "index"
         if real_index.is_file():
-            shutil.copyfile(real_index, temporary)
+            # The copy keeps the index's mtime: git re-reads an entry no older
+            # than the index, so a same-size edit made in its second is seen.
+            shutil.copy2(real_index, temporary)
         environment = {"GIT_INDEX_FILE": str(temporary)}
         # ww's own rule-automation store is written while a step's
         # verification runs; leaving it out keeps the mark of an unchanged

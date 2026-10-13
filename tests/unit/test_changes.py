@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -219,6 +220,31 @@ def test_a_file_that_is_not_text_or_is_gone_is_not_selected(tmp_path: Path) -> N
 
     assert "data.bin" not in select_files(files, (), ("Mail",), directory=tmp_path)
     assert "deleted.php" not in select_files(files, (), ("",), directory=tmp_path)
+
+
+def test_a_same_size_edit_as_old_as_the_index_is_still_seen(
+    repository: Path,
+) -> None:
+    # Git trusts an index entry whose size and mtime match the file, unless
+    # the entry is racily clean: no older than the index file itself. The
+    # mark's copy of the index must keep that time, or such an edit is lost.
+    _git("config", "core.trustctime", "false", cwd=repository)
+    edited = repository / "edited.txt"
+    then = (1_000_000_000, 1_000_000_000)
+    # Staged from a file older than the index, so git keeps its stat data.
+    edited.write_text("z\n", encoding="utf-8")
+    os.utime(edited, then)
+    _git("commit", "-qam", "older", cwd=repository)
+    # Then the index is as old as that entry: a racily clean entry.
+    os.utime(repository / ".git/index", then)
+    mark_a = take_mark(repository)
+    edited.write_text("y\n", encoding="utf-8")
+    os.utime(edited, then)
+
+    mark_b = take_mark(repository)
+
+    assert mark_a and mark_b
+    assert changed_files(repository, mark_a, mark_b) == ("edited.txt",)
 
 
 @pytest.fixture
