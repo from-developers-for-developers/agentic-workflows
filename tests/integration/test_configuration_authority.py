@@ -88,7 +88,7 @@ def test_a_worktree_step_gets_the_roots_checks_and_names_the_root(
     service.commit(replace(state, working_directory="wt"), snapshot)
 
     page = service.next(TASK)
-    assert page.project_root == str(tmp_path.resolve())
+    assert page.config_root == str(tmp_path.resolve())
     assert main(["--root", str(tmp_path), "instruction", TASK]) == 0
     assert (
         f"is read from the project root, `{tmp_path.resolve()}`, not from this "

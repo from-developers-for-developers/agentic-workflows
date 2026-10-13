@@ -39,6 +39,7 @@ from ww.completion_inputs import (
     validate_values,
 )
 from ww.config import YamlConfigurationLoader
+from ww.config_snapshots import ConfigSnapshots
 from ww.contracts import (
     CALLER_ROLES,
     CLOSED_RUN_STATUSES,
@@ -55,13 +56,15 @@ from ww.defaults import (
     skill_location,
 )
 from ww.direct_work import (
+    SHORT_SHA,
     DirectWork,
     RunWindow,
     reconciled_summary,
     unseen_commits,
 )
 from ww.documents import DocumentStore
-from ww.errors import ConfigurationError, StateError
+from ww.errors import ConfigurationError, StateError, WwError
+from ww.executable import ww_command
 from ww.execution_models import (
     PLAN_COMPILER_VERSION,
     PLAN_SCHEMA_VERSION,
@@ -109,6 +112,7 @@ from ww.replanning import keep_plan as keep_plan_
 from ww.replanning import replan as replan_
 from ww.results import (
     CleanupResult,
+    ConfigRefresh,
     InitializationResult,
     ItemUpdateResult,
     ResetResult,
@@ -312,7 +316,9 @@ class WorkflowService:
         self.storage = storage
         self.tasks = task_persistence or storage.task_persistence
         self.project_metadata_store = project_metadata or storage.project_metadata
-        self.extensions = extensions or ExtensionRegistry.discover(storage.root)
+        self.extensions = extensions or ExtensionRegistry.discover(
+            storage.root, storage.project_config_path
+        )
         self.configuration_loader = configuration_loader or YamlConfigurationLoader(
             storage.config_path, self.extensions
         )
@@ -322,7 +328,8 @@ class WorkflowService:
         self.run_reports = {
             name: RunReportStore(self.storage, kind) for name, kind in KINDS.items()
         }
-        self.rule_store = RuleStore(self.storage.root)
+        # Read only: the store a task's checks come from is its configuration's.
+        self.rule_store = RuleStore(self.storage.config_root)
         self.rule_disputes = DisputeLog(self.storage.root)
         self.rule_stats = RuleStatsStore(self.storage)
         self.instructions = InstructionBuilder(
@@ -335,6 +342,7 @@ class WorkflowService:
                 ).pages.worker_requirements
             ),
             root=self.storage.root,
+            config=self.storage.config,
             documents=self.documents,
             interactions=self.interactions,
         )
@@ -659,6 +667,8 @@ class WorkflowService:
             workflow_values=tuple(workflow_values.items()),
             working_directory=working_directory,
             pending_init_artifact=init_artifact,
+            config_commit=self.storage.config.commit,
+            config_ref=self.storage.config.ref,
         )
         if fresh_items:
             self.tasks.write_shared_items(task_id, ())
@@ -2320,7 +2330,11 @@ class WorkflowService:
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         return rule_view(
-            state, snapshot.plan, self.rule_store.load(), rule_id, self.storage.root
+            state,
+            snapshot.plan,
+            self.rule_store.load(),
+            rule_id,
+            self.storage.config_root,
         )
 
     def _active_step(
@@ -2412,7 +2426,79 @@ class WorkflowService:
             adjustments=(latest[1] if latest else None),
             adjustments_step=(latest[0] or None if latest else None),
             direct_work=direct_work,
+            config=self._configuration_line(state),
         )
+
+    def _configuration_line(self, state: ExecutionState) -> str | None:
+        """Which commit's configuration the run reads, and how far behind it is."""
+        if state.config_commit is None:
+            return None
+        line = f"commit {state.config_commit[:SHORT_SHA]}"
+        if state.config_ref is None:
+            return line
+        line += f" of {state.config_ref}"
+        ahead = ConfigSnapshots(self.storage.root).ahead(
+            state.config_commit, state.config_ref
+        )
+        if ahead:
+            line += (
+                f"; {state.config_ref} is {ahead} commit(s) ahead "
+                f"(`{ww_command()} config refresh {state.task_id}` moves to it)"
+            )
+        return line
+
+    def refresh_configuration(self, task_id: str) -> ConfigRefresh:
+        """Move a task's open run to the configuration its ref holds now.
+
+        The next ``next`` compares the run's plan with it, as with any changed
+        configuration.
+        """
+        validate_task_id(task_id)
+        current = ConfigSnapshots(self.storage.root).current()
+        if current.commit is None:
+            raise StateError(
+                "ww reads its configuration from the checkout here, not from a "
+                "commit, so there is nothing to refresh"
+            )
+        with self.tasks.lock_task(task_id):
+            state, snapshot = self.load(task_id)
+            if not run_is_open(state.status):
+                raise StateError(f"task {task_id!r} has no open run to refresh")
+            self.commit(
+                replace(
+                    state,
+                    config_commit=current.commit,
+                    config_ref=current.ref,
+                    updated_at=_now(),
+                ),
+                snapshot,
+            )
+        return ConfigRefresh(task_id, state.config_commit, current.commit, current.ref)
+
+    def configuration_pins(self) -> frozenset[str]:
+        """The commits whose configuration an open run of any task reads.
+
+        A task whose state cannot be read pins nothing it could be asked about.
+        """
+        pins: set[str] = set()
+        pending = list(self.tasks.task_ids())
+        seen: set[str] = set()
+        while pending:
+            task_id = pending.pop()
+            if task_id in seen:
+                continue
+            seen.add(task_id)
+            try:
+                runs, _, _ = self.tasks.read_task_record(task_id)
+                pending.extend(self.tasks.child_task_ids(task_id))
+            except (WwError, ValueError, OSError):
+                continue
+            pins.update(
+                run.state.config_commit
+                for run in runs
+                if run.state.config_commit is not None and run_is_open(run.state.status)
+            )
+        return frozenset(pins)
 
     def instruction_status(self, task_id: str, run_id: str | None) -> Instruction:
         """Render a task from one record read, so it reflects one revision."""
@@ -2648,6 +2734,7 @@ class WorkflowService:
                 project,
                 self._project_names(),
                 self._project_path(project),
+                config_root=self.storage.config_root,
             ),
         }
         current = plan.items[state.cursor] if state.cursor < len(plan.items) else None
@@ -3727,6 +3814,8 @@ class WorkflowService:
                 {**dict(base_state.workflow_values), **carried}.items()
             ),
             working_directory=self._project_directory(carried.get(PROJECT)),
+            config_commit=state.config_commit,
+            config_ref=state.config_ref,
             pending_init_artifact=(
                 "Continue task requirements after handoff from "
                 f"{state.workflow} to {target}."
@@ -4227,21 +4316,25 @@ class WorkflowService:
 
         Read from the store once, when the step first begins; a step that
         began before keeps what it began with. A converted check applies only
-        where its configuration files exist at the project root.
+        where its configuration files exist in the configuration the run reads.
         """
         if (
             not judged_rules(item)
             or state.item_executions[state.cursor].rule_resolutions
         ):
             return None
-        return resolve_rules(item, self.rule_store.load(), root=self.storage.root)
+        return resolve_rules(
+            item, self.rule_store.load(), root=self.storage.config_root
+        )
 
     def _check_scope(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> CheckScope:
         """The directory an item's checks run in and the values they render."""
         workspace, values = self.actions.item_scope(state, plan, item)
-        return CheckScope(workspace or self.storage.root, self.storage.root, values)
+        return CheckScope(
+            workspace or self.storage.root, self.storage.config_root, values
+        )
 
     def _change_mark(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

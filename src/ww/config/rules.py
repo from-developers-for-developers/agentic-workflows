@@ -24,6 +24,7 @@ import yaml
 
 from ww.actions import Commands
 from ww.actions.command import CommandAction
+from ww.config_files import snapshot_of
 from ww.errors import ConfigurationError
 from ww.extensions.api import RuleGroupContribution
 from ww.interpolation import dependencies
@@ -84,10 +85,10 @@ _CHECK_FILES_KEY = "files"
 # Why a check declaring files must name the root: they are read there, while
 # the command runs in the step's directory.
 ROOT_FILES_MESSAGE = (
-    "a check that declares files must reach them at the project root, as "
-    '`{{ww.root}}/<path>` in argv, args or env, or `"$WW_ROOT/<path>"` in a '
-    "shell source: it runs in the step's directory, which may be a worktree "
-    "of a branch without them"
+    "a check that declares files must reach them where ww reads its "
+    "configuration, as `{{ww.root}}/<path>` in argv, args or env, or "
+    '`"$WW_ROOT/<path>"` in a shell source: it runs in the step\'s directory, '
+    "which may be a worktree of a branch without them"
 )
 _GROUP_KEYS = {"rules", "workflows", "steps", "agent", "model", "reasoning"}
 # A bare string shaped like this names a group or a file, never a sentence:
@@ -119,12 +120,17 @@ def rule_summary(text: str) -> str:
 
 
 def rule_source(source: str | None, root: Path) -> str | None:
-    """A rule file as ww shows it: relative to ``root`` when it lies inside."""
+    """A rule file as ww shows it: relative to ``root`` when it lies inside.
+
+    A rule file read from a configuration snapshot is relative to the
+    snapshot, which stands for the root it was committed in.
+    """
     if source is None:
         return None
     path = Path(source)
+    resolved = path.resolve()
     try:
-        return path.resolve().relative_to(root.resolve()).as_posix()
+        return resolved.relative_to(snapshot_of(resolved) or root.resolve()).as_posix()
     except ValueError:
         return str(path)
 
@@ -291,7 +297,7 @@ def parse_check_command(mapping: dict[str, Any], context: str) -> Commands:
 
 
 def references_root(command: Commands) -> bool:
-    """Whether a check's command reaches the project root's files.
+    """Whether a check's command reaches the configuration's files.
 
     A check's declared files are read at the root, while the command runs in
     the step's directory, which may be a worktree of a branch without them:

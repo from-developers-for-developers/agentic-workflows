@@ -680,8 +680,8 @@ UNAVAILABLE_RULES = {
     ),
 }
 DECLARED_REASON = (
-    "`tools/lint.py` is missing at the project root, so the check is skipped "
-    "until it is there"
+    "`tools/lint.py` is missing where ww reads its configuration, so the check "
+    "is skipped until it is committed there"
 )
 
 

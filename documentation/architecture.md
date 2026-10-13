@@ -1246,16 +1246,19 @@ root discovery follows Git's common directory back to the primary checkout, so
 the task ledger, `.ww` runtime, and configuration remain shared rather than
 being recreated inside the worktree. An explicit `--root` remains authoritative.
 
-ww's configuration (`ww.yaml`, `ww.json`, `.ww/`, rule files, the check
-store and the files checks declare) is therefore always read from that root,
-never from the worktree, whose branch may predate it. `{{ww.root}}` (and
-`WW_ROOT` in every check's environment) names the root, so a check defined
-there runs in the worktree against its change set while reaching its own
-scripts and configs at the root. A page whose working directory differs from
-the root carries `Instruction.project_root` and tells the agent to read ww's
-configuration there, and `config.rules.shown_source` prints rule files
-root-relative only when ww runs at the root, otherwise by their absolute path
-there.
+ww's configuration (`ww.yaml`, `ww.json`, rule files, the check store and
+the files checks declare) is therefore never read from the worktree, whose
+branch may predate it. It is read from `Storage.config_root`: in a Git project
+a read-only copy of a commit (see
+[Configuration snapshots](#configuration-snapshots)), otherwise the root.
+`{{ww.root}}` (and `WW_ROOT` in every check's environment) names that
+directory, so a check defined there runs in the worktree against its change set
+while reaching its own scripts and configs there. A page whose working
+directory differs from it carries `Instruction.config_root`, with
+`config_commit` and `config_ref` for a copy, and tells the agent to read ww's
+configuration only there or through `$WW_ROOT`; `config.rules.shown_source`
+prints rule files relative only when ww runs in that directory, otherwise by
+their absolute path there.
 
 The git extension separates `start-task-branch` from `create-worktree`. The
 first establishes the task branch without occupying it when worktrees are
@@ -1292,6 +1295,61 @@ After staging, the handler also requires a non-empty index before it invokes
 pre-commit tooling such as Husky and lint-staged: an ignored or otherwise empty
 change set is reported by ww directly instead of being misrepresented as a hook
 integration failure.
+
+## Configuration snapshots
+
+An operator switching branches in the main checkout must not change what a
+running task's agents read. In a Git project, `../src/ww/config_snapshots.py`
+therefore reads ww's configuration from a commit, never from what is checked
+out. `ConfigSnapshots(root)` resolves `config_ref` from the checkout's
+`ww.json` levels. `config_ref` says where snapshots come from, so it is never
+read from one. Its default is the ww/git `base_branches.default`. It resolves
+the ref to a commit and materializes `<root>/.ww/config/<sha>/` without a
+checkout (`git ls-tree` and `git cat-file`). The materialization starts from
+`ww.yaml`, `ww.json` and `ww-rule-automation.json` and follows every YAML or
+JSON string that names a committed file, every `{{ww.root}}/<path>` and
+`$WW_ROOT/<path>` reference, and every rule directory's `*.md`. A project in
+a subdirectory of its repository is addressed through `rev-parse
+--show-prefix`. The copy is written to a temporary directory, made read-only,
+and renamed into place, so a reader never sees half of one. One commit has
+one copy, reused by every reader, and a missing copy is written again on the
+next read. The result is a `ConfigSource`, a directory plus the commit and
+ref it came from. Without Git, with `config_ref: false`, with a default ref
+that does not resolve, or with a commit that has no `ww.yaml`, the result is
+`ConfigSource(root)`, the checkout as before. An explicit `config_ref` that
+names no commit is a `ConfigurationError`.
+
+`Storage(root, config=ConfigSource)` keeps the two apart: `config_root` is
+where the configuration is read (`config_path`, `project_config_path`, the
+`RuleStore`, `resolve_rules`, `CheckScope.root`, the `{{ww.root}}` value,
+the extension registry's `ww.json`), and `root` is where everything ww writes
+lives: task state, locks, executions, logs, rule statistics, disputes and the
+configuration edits ww makes. `config_files._levels` reads the local level
+(`ww.local.*`), which no commit holds, from the checkout that
+`checkout_directory` derives from a snapshot path, so it still applies on top
+of the copy.
+
+The CLI chooses the source once per invocation (`_config_source`). Commands
+that edit the configuration or read none of it (`init`, `lint`, `setup`,
+`onboarding`, `inspect`, the writing `rules` commands, and others) read the
+checkout, where the edit is made and committed. A command that addresses a
+task whose run has pinned a commit reads that commit's copy. Every other
+command, `start` included, reads the ref's current commit. `start` records
+that commit and ref on the run (`ExecutionState.config_commit` and
+`config_ref`). The pin is carried across handoffs, and child tasks inherit
+it through the process's storage. `WorkflowService.refresh_configuration`
+(`ww config refresh`) moves an open run to the ref's current commit, and the
+next `next` compares the plan with it like any other configuration change.
+`TaskStatus.config` reports the pin and how many commits the ref has moved
+ahead. Pruning keeps `configuration_pins()`, the commits open runs read, plus
+the ref's current commit. `ww config prune` runs it, and so do `next`,
+`complete`, `reset`, `cleanup` and `config` after they succeed, and a
+failure there never fails the command.
+
+The copy holds only committed configuration and the logic files checks name.
+Documents named in step text are read in the worktree. Tools come from
+`PATH` or the step's directory, so `rules convert` refuses a `--config` file
+that Git ignores (`rule_conversion.require_committable`).
 
 ## Parent and child tasks
 
@@ -1667,8 +1725,8 @@ repeatable, so they keep no command ledger; their outputs are stored like
 other command output and their reports live on the item record, one per
 attempt, which is the single authority for how often a step was rejected.
 A check that cannot run here is `unavailable` (`CheckStatus`) with its
-reason, never failed: a file it declares under `files` is missing at the
-project root (`missing_file` against `CheckScope.root`, tested before the
+reason, never failed: a file it declares under `files` is missing where
+ww reads its configuration (`missing_file` against `CheckScope.root`, tested before the
 command runs, which itself runs in `CheckScope.directory`), the
 command could not be launched, or the shell exited 126 or 127.
 `CheckReport.failed` leaves such results out, so they reject no completion,
@@ -1706,7 +1764,8 @@ own. A verifier only judges: it gives verdicts with evidence and never
 writes anything else.
 Turning rules into checks is a project task of its own,
 `ww-scriptize-rules`, whose checks the operator records with `rules
-convert`. They live in `ww-rule-automation.json` at the project root, keyed
+convert`. They live in `ww-rule-automation.json`, read with the rest of the
+configuration and written in the checkout, keyed
 by the hash of the rule text, with checks that may cover several rules; it is
 derived knowledge that ww owns and commits, never configuration, so YAML and
 rule files are never rewritten. When a step begins, `resolve_rules` settles
@@ -1731,8 +1790,8 @@ the store; `rules prune` deletes orphan store entries after asking, and
 `rules revoke` rejects one check and its rules the same way. `rules convert`
 and `rules decline` (`rule_conversion.py`) record an operator-approved check
 or `not_convertible` rules through the same locked store write. `resolve_rules`
-is given the project root and resolves a converted check's rules as judged
-when one of its `config` files is missing there.
+is given the configuration directory and resolves a converted check's rules
+as judged when one of its `config` files is missing there.
 
 Only the operator's `rules` commands write the store, and `rules convert` is
 the one approval path. `rules.check_guidance` in

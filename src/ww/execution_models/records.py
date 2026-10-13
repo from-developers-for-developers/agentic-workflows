@@ -159,7 +159,7 @@ class RuleResolution:
     verdict. ``interpretation`` is the store's one-sentence reading, shown
     under the rule on the page. ``missing`` is set on a judged rule whose
     converted ``check`` does not apply: the first of its configuration files
-    the project root lacks.
+    the configuration read lacks.
     """
 
     id: str
@@ -1065,6 +1065,11 @@ class ExecutionState:
     operator_paused: bool = False
     # Why a ``failed`` run failed when that is not the item's own error.
     failure_kind: FailureKind | None = None
+    # The commit whose configuration the run reads, and the ref it was taken
+    # from; ``None`` when the run reads the checkout's (see
+    # ``ww.config_snapshots``).
+    config_commit: str | None = None
+    config_ref: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1117,6 +1122,8 @@ class ExecutionState:
             else None,
             "operator_paused": self.operator_paused,
             "failure_kind": self.failure_kind,
+            "config_commit": self.config_commit,
+            "config_ref": self.config_ref,
         }
 
     @classmethod
@@ -1258,5 +1265,11 @@ class ExecutionState:
                 else expect_literal(
                     data["failure_kind"], FailureKind, "execution state.failure_kind"
                 )
+            ),
+            config_commit=expect_optional_string(
+                data.get("config_commit"), "execution state.config_commit"
+            ),
+            config_ref=expect_optional_string(
+                data.get("config_ref"), "execution state.config_ref"
             ),
         )

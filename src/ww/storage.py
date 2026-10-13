@@ -21,6 +21,7 @@ from ww.config_files import (
     user_directory,
     workflow_levels,
 )
+from ww.config_snapshots import ConfigSource
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
 from ww.results import NO_WORKFLOWS_ACTION, InitializationResult
@@ -36,15 +37,22 @@ EXECUTION_LOG_RETENTION = 5
 
 
 class Storage:
-    """Path conventions and filesystem operations for one project root."""
+    """Path conventions and filesystem operations for one project root.
+
+    ``config`` says where this invocation reads ww's configuration: the
+    checkout at ``root`` by default, else a commit's snapshot. Everything ww
+    writes, its state and the configuration edits it makes, stays at ``root``.
+    """
 
     def __init__(
         self,
         root: Path,
         task_persistence: TaskStorageAdapter | None = None,
         project_metadata: ProjectMetadataStorage | None = None,
+        config: ConfigSource | None = None,
     ) -> None:
         self.root = root
+        self.config = config or ConfigSource(root)
         self.locks = FileLocks(root)
         self.task_persistence = task_persistence or FileTaskStorageAdapter(root)
         self.project_metadata = project_metadata or FileProjectMetadataStorageAdapter(
@@ -56,8 +64,13 @@ class Storage:
         return self.locks.lock(self.root, purpose="project files")
 
     @property
+    def config_root(self) -> Path:
+        """The directory ww's configuration is read from."""
+        return self.config.directory
+
+    @property
     def config_path(self) -> Path:
-        return self.root / WORKFLOWS_FILE
+        return self.config_root / WORKFLOWS_FILE
 
     @property
     def runtime_path(self) -> Path:
@@ -65,7 +78,7 @@ class Storage:
 
     @property
     def project_config_path(self) -> Path:
-        return self.root / SETTINGS_FILE
+        return self.config_root / SETTINGS_FILE
 
     def initialize_project(
         self,

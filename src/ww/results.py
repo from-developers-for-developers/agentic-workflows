@@ -53,6 +53,24 @@ class CleanupResult:
 
 
 @dataclass(frozen=True)
+class ConfigRefresh:
+    """A task moved to the configuration its ref holds now."""
+
+    task_id: str
+    previous: str | None
+    commit: str
+    ref: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "previous": self.previous,
+            "commit": self.commit,
+            "ref": self.ref,
+        }
+
+
+@dataclass(frozen=True)
 class ItemUpdateResult:
     item: WorkItem
 
@@ -76,6 +94,8 @@ class TaskStatus:
     adjustments_step: str | None = None
     # The task's direct work, oldest first; shown only when there is some.
     direct_work: tuple[DirectWork, ...] = ()
+    # The configuration the run reads, as one line, when it is a commit's.
+    config: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -91,6 +111,8 @@ class TaskStatus:
         if self.adjustments is not None:
             data["adjustments"] = self.adjustments
             data["adjustments_step"] = self.adjustments_step
+        if self.config is not None:
+            data["config"] = self.config
         if self.direct_work:
             data["direct_work"] = [entry.to_dict() for entry in self.direct_work]
         return data

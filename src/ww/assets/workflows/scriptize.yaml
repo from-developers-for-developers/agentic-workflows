@@ -7,9 +7,11 @@
 # base and follows its worktree and commit settings, and the
 # operator merges what it built. ww records the approved checks in the
 # rule-automation store at the project root with `rules convert`; a check runs
-# only while its configuration files exist at the project root, so tasks pick
-# it up once the branch is merged there, also tasks in worktrees of older
-# branches, since the command reaches its files as `{{ww.root}}/<path>`.
+# only while its configuration files exist where ww reads its configuration,
+# in a Git project the commit of its configured branch, so tasks pick it up
+# once the branch is merged and the store committed there, also tasks in
+# worktrees of older branches, since the command reaches its files as
+# `{{ww.root}}/<path>`.
 workflows:
   - name: ww-scriptize-rules
     description: >-
@@ -80,11 +82,15 @@ workflows:
               every command follows the `check_guidance` and the project's
               command convention. ww runs it in the step's directory, which
               may be a worktree of an older branch without this run's files,
-              and reads its files at the project root: the command reaches
+              and reads its files where ww reads its configuration, a
+              read-only copy of the committed files: the command reaches
               each of them, its script, its tool's configuration, its baseline,
               as `{{ww.root}}/<path>` in `argv`, `args` or `env`, or as
               `"$WW_ROOT/<path>"` in a `shell` source, and never by a path
-              relative to this directory. Every check reads the files the step changed
+              relative to this directory. Only committed files are there:
+              the tool itself, installed under an ignored directory such as
+              `node_modules` or a virtual environment, runs from `PATH` or
+              this directory, never through `{{ww.root}}`. Every check reads the files the step changed
               from `WW_STEP_CHANGED_FILES`, newline-separated, relative to
               this directory and already narrowed to its rules' globs and
               `contains_in_file` or `contains_in_diff` strings, and examines
@@ -153,7 +159,9 @@ workflows:
               that file in the main checkout, on the integration branch,
               together with or right after merging this run's branch: until
               then `is-git-clean` refuses the next task's start. The checks
-              run in tasks once their config files exist at the project root,
-              so once the branch is merged there; from then on they apply in
-              every task, also one in a worktree of an older branch. The
+              run in tasks once their config files and that file are
+              committed on the branch ww reads its configuration from, the
+              integration branch; from then on they apply in every task
+              started after, also one in a worktree of an older branch, and
+              in a running one after `ww config refresh`. The
               artifact lists what was recorded.

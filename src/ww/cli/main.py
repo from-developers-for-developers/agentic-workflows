@@ -27,11 +27,14 @@ from ww.config_files import (
     display_path,
     staged_files,
 )
+from ww.config_snapshots import ConfigSnapshots, ConfigSource
 from ww.config_writes import FileWrite
 from ww.defaults import PROJECT_LAUNCHER
 from ww.design_docs import read_design_document
+from ww.direct_work import SHORT_SHA
 from ww.errors import StateError, WwError
 from ww.executable import printed_executable, project_command, ww_command
+from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
 from ww.hooks import (
     HOOK_EVENTS,
@@ -94,6 +97,8 @@ from ww.rule_views import (
 from ww.run_reports import DEBUG, FEEDBACK, listing, render_listing, render_record
 from ww.service import WorkflowService
 from ww.storage import Storage
+from ww.storage_adapters import FileTaskStorageAdapter
+from ww.task_ids import bare_request_id
 from ww.upgrade import upgrade
 from ww.workflow_config import (
     ALL,
@@ -152,6 +157,25 @@ _READ_ONLY_COMMANDS = frozenset(
         "workflow-feedback",
     }
 )
+# Commands that edit ww's configuration, or read none of it, read the
+# checkout: an edit is made there and committed, and the rest need no Git.
+_CHECKOUT_CONFIG_COMMANDS = frozenset(
+    {
+        "init",
+        "lint",
+        "setup",
+        "onboarding",
+        "inspect",
+        "docs",
+        "runtimes",
+        "agents",
+        "updates",
+        "upgrade",
+    }
+)
+# Commands after which a run may have ended or moved to another commit, so a
+# configuration snapshot may no longer be read by anyone.
+_PRUNING_COMMANDS = frozenset({"next", "complete", "reset", "cleanup", "config"})
 # Commands whose stdout is consumed by a program rather than read, whether or
 # not ``--json`` was passed. An update notice goes to stderr for these, so it
 # never lands in the middle of a document someone is parsing.
@@ -597,9 +621,9 @@ def _rules(context: _Context) -> _Outcome:
     listing = replace(
         rules_listing(
             configuration,
-            context.storage.root,
+            context.storage.config_root,
             DisputeLog(context.storage.root).load(),
-            RuleStore(context.storage.root).load(),
+            RuleStore(context.storage.config_root).load(),
             RuleStatsStore(context.storage).load(),
         ),
         check_guidance=settings.rule_check_guidance,
@@ -778,6 +802,9 @@ def _convert(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
         config=tuple(args.config),
         proven=args.proven,
     )
+    rule_conversion.require_committable(
+        rule_conversion.config_paths(spec.config), context.storage.root
+    )
     store = RuleStore(context.storage.root)
     name = args.check_name
     now = _store_time()
@@ -793,7 +820,7 @@ def _convert(context: _Context, configuration: WorkflowConfiguration) -> _Outcom
     if not confirm_operator(
         "ww rules convert",
         f"record check {name} as converted, run for the {len(rules)} rule(s) "
-        "it covers while its config files exist at the project root",
+        "it covers once its config files are in the configuration tasks read",
         "Record it?",
         "Convert",
         assume_yes=args.yes,
@@ -1677,6 +1704,34 @@ def _cleanup(context: _Context) -> _Outcome:
     return _Outcome(f"Removed {result.removed_locks} inactive lock file(s).\n")
 
 
+def _config(context: _Context) -> _Outcome:
+    """Move a task to its ref's current configuration, or prune snapshots."""
+    args = context.args
+    if args.config_action == "refresh":
+        refreshed = context.service.refresh_configuration(context.task_id)
+        if args.json_output:
+            return _Outcome(_json(refreshed.to_dict()), None, refreshed.task_id)
+        if refreshed.previous == refreshed.commit:
+            text = (
+                f"{refreshed.task_id} already reads the configuration of "
+                f"{refreshed.commit[:SHORT_SHA]}, the current commit of "
+                f"{refreshed.ref}.\n"
+            )
+        else:
+            text = (
+                f"{refreshed.task_id} now reads the configuration of "
+                f"{refreshed.commit[:SHORT_SHA]}, the current commit of "
+                f"{refreshed.ref}. Its next `next` compares the run's plan with "
+                "it.\n"
+            )
+        return _Outcome(text, None, refreshed.task_id)
+    snapshots = ConfigSnapshots(context.storage.root)
+    removed = snapshots.prune(_read_snapshots(context.service, snapshots))
+    if args.json_output:
+        return _Outcome(_json({"removed": list(removed)}))
+    return _Outcome(f"Removed {len(removed)} configuration snapshot(s).\n")
+
+
 def _extension(context: _Context) -> _Outcome:
     """Run one extension command against that extension's own store."""
     args = context.args
@@ -1763,6 +1818,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "start-child": _start_child,
     "reset": _reset,
     "cleanup": _cleanup,
+    "config": _config,
     "updates": lambda c: _Outcome(render_updates(c.storage, c.args)),
     "hook": _hook,
 }
@@ -1794,11 +1850,16 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-    storage = Storage(
+    root = (
         (args.root or Path.cwd()).resolve()
         if args.command == "init"
         else _resolve_project_root(args.root)
     )
+    try:
+        storage = Storage(root, config=_config_source(args, root))
+    except WwError as error:
+        print(f"ww error: {error}", file=sys.stderr)
+        return 1
     if args.command == "upgrade":
         try:
             sys.stdout.write(upgrade(pre=args.pre))
@@ -1832,7 +1893,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     try:
-        extensions = ExtensionRegistry.discover(storage.root)
+        extensions = ExtensionRegistry.discover(
+            storage.root, storage.project_config_path
+        )
         service = WorkflowService(storage, extensions=extensions)
         # Check what the force would do before asking the operator to approve
         # it, so a refused force is reported instead of confirmed and refused.
@@ -1878,8 +1941,63 @@ def main(argv: list[str] | None = None) -> int:
             result.workflow,
             result.task_id,
         )
+    if result.exit_code == 0 and args.command in _PRUNING_COMMANDS:
+        _prune_snapshots(service)
     sys.stdout.write(result.text)
     return result.exit_code
+
+
+def _config_source(args: argparse.Namespace, root: Path) -> ConfigSource:
+    """Where this invocation reads ww's configuration.
+
+    A command that edits the configuration reads the checkout, where the
+    edit is made; one addressing a task whose run pinned a commit reads that
+    commit's snapshot; any other, ``start`` included, which pins anew, the
+    ref's current commit.
+    """
+    snapshots = ConfigSnapshots(root)
+    if args.command in _CHECKOUT_CONFIG_COMMANDS or (
+        args.command == "rules" and args.rules_action not in {None, "stats"}
+    ):
+        return snapshots.checkout()
+    task_id = getattr(args, "task_id", None)
+    if args.command not in {"start", "config"} and isinstance(task_id, str) and task_id:
+        state = _pinned_state(root, task_id)
+        if state is not None and state.config_commit is not None:
+            return snapshots.pinned(state.config_commit, state.config_ref)
+    return snapshots.current()
+
+
+def _pinned_state(root: Path, task_id: str) -> ExecutionState | None:
+    """The run a task command addresses, when its state can be read.
+
+    Anything unreadable is left to the command, which reports it.
+    """
+    try:
+        return FileTaskStorageAdapter(root).read_execution_state(
+            bare_request_id(task_id)
+        )
+    except (WwError, ValueError, OSError):
+        return None
+
+
+def _prune_snapshots(service: WorkflowService) -> None:
+    """Remove the snapshots no open run reads once a run may have ended.
+
+    The ref's current commit is kept for the next command. A failure here
+    never fails the command that ran.
+    """
+    snapshots = ConfigSnapshots(service.storage.root)
+    if len(snapshots.snapshots()) <= 1:
+        return
+    with contextlib.suppress(Exception):
+        snapshots.prune(_read_snapshots(service, snapshots))
+
+
+def _read_snapshots(service: WorkflowService, snapshots: ConfigSnapshots) -> set[str]:
+    """The commits whose snapshot is still read: open runs' and the ref's."""
+    current = snapshots.current().commit
+    return {*service.configuration_pins(), *((current,) if current else ())}
 
 
 def _runtime_hook_call(arguments: list[str]) -> bool:

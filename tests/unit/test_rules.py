@@ -160,7 +160,9 @@ def test_a_check_declaring_files_must_reach_them_at_the_root(
         f"---\ncheck:\n{check}  files: [tools/lint.py]\n---\nLint it.\n",
     )
 
-    with pytest.raises(ConfigurationError, match="must reach them at the project root"):
+    with pytest.raises(
+        ConfigurationError, match="must reach them where ww reads its configuration"
+    ):
         parse_rule_file(path, "docs/lint")
 
 

@@ -57,6 +57,12 @@ the file — that ``extensions`` is a mapping of mappings — and nothing about 
 is inside a section, because it cannot know a third party's schema. Each
 extension validates its own settings and reports its own errors.
 
+``config_ref`` names the Git ref, usually the integration branch, whose
+committed configuration tasks read (see :mod:`ww.config_snapshots`); it
+defaults to the ww/git ``base_branches.default``, and ``false`` reads the
+configuration from the checkout instead. It is read from the checkout's own
+settings files, never from a snapshot, since it says where snapshots come from.
+
 ``task_format`` is the generated task ID format: a template over the
 ``{{timestamp}}``, ``{{digit}}``, and ``{{uuid}}`` placeholders, or ``explicit`` to
 require an ID for every task. It is a setting of the checkout and of the
@@ -332,6 +338,9 @@ class ProjectConfig:
     executable: str | None = None
     # The generated task ID format; ``None`` keeps ww's ``TASK-{{timestamp}}``.
     task_format: str | None = None
+    # The Git ref whose committed configuration tasks read: ``None`` falls
+    # back to the ww/git default base branch, ``False`` reads the checkout.
+    config_ref: str | Literal[False] | None = None
 
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
@@ -543,6 +552,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "executable",
         "task_format",
         "rules",
+        "config_ref",
     }
     if unknown:
         raise ConfigurationError(
@@ -605,6 +615,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         retired_workflows=retired_workflows,
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
+        config_ref=_parse_config_ref(raw.get("config_ref"), path),
         **_parse_rules(raw.get("rules"), path),
     )
 
@@ -697,6 +708,16 @@ def _parse_task_format(data: Any, path: str) -> str | None:
             + ", ".join(sorted(unknown))
         )
     return data
+
+
+def _parse_config_ref(data: Any, path: str) -> str | Literal[False] | None:
+    if data is None or data is False:
+        return data
+    if not isinstance(data, str) or not data.strip():
+        raise ConfigurationError(
+            f"{path}.config_ref must be a Git ref, such as a branch name, or false"
+        )
+    return data.strip()
 
 
 def _parse_executable(data: Any, path: str) -> str | None:

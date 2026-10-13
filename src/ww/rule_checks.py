@@ -10,16 +10,20 @@ to the step's directory) narrowed to the check's globs. A check whose globs
 select no changed file is not applicable and does not run; a judged rule is
 narrowed the same way (``applicable_files``), by its verifiers. A check fails
 on a non-zero exit or a failed assertion. A check that cannot run here is
-unavailable, not failed: a file it declares is missing at the project root,
+unavailable, not failed: a file it declares is missing where ww reads its
+configuration,
 its command could not be launched, or the shell found no command to run
 (exit 126 or 127); the result says why, the rules it checks are judged by a
 verifier instead, and nothing counts it.
 
-A check is defined at the project root and applied in the step's directory:
-its declared files are looked up at the root, where ww's configuration lives,
-even when the step works in a Git worktree of an older branch that lacks
-them; the command runs in the step's directory against its change set and
-reaches those files as ``{{ww.root}}/<path>``.
+A check is defined with ww's configuration and applied in the step's
+directory: its declared files are looked up where the configuration is read,
+in a Git project the snapshot of the commit the run is pinned to (see
+:mod:`ww.config_snapshots`), else the project root, even when the step works
+in a Git worktree of an older branch that lacks them; the command runs in the
+step's directory against its change set and reaches those files as
+``{{ww.root}}/<path>``. Its tools come from ``PATH`` or the step's directory:
+a snapshot holds only committed configuration files.
 
 Checks read the working tree and report; they change no workflow state, so
 running them again after an interruption is harmless and they keep no
@@ -65,7 +69,7 @@ WriteOutput = Callable[[CommandOutputAddress, str], str]
 class CheckScope:
     """Where the checks of one completing item run, and with which values.
 
-    ``root`` is the project root their declared files are read from.
+    ``root`` is where ww's configuration is read, their declared files with it.
     """
 
     directory: Path
@@ -290,8 +294,8 @@ def missing_file(files: tuple[str, ...], root: Path | None) -> str | None:
 def missing_file_reason(path: str) -> str:
     """Why a check whose declared ``path`` is missing does not run."""
     return (
-        f"`{path}` is missing at the project root, so the check is skipped "
-        "until it is there"
+        f"`{path}` is missing where ww reads its configuration, so the check is "
+        "skipped until it is committed there"
     )
 
 

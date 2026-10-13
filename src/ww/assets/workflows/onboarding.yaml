@@ -417,8 +417,9 @@ workflows:
           {{ww.documents.project}} records it and as the `check_guidance` of
           `{{ww.executable}} rules --json` says when it is set, never with
           the main checkout's absolute path; a rule's check that declares
-          `files` reaches them at the project root, as `{{ww.root}}/<path>`
-          in `argv` or `"$WW_ROOT/<path>"` in a `shell` source. Write it as a setup fragment to
+          `files` reaches them where ww reads its configuration, as
+          `{{ww.root}}/<path>` in `argv` or `"$WW_ROOT/<path>"` in a `shell`
+          source, and they must be committed, never ignored by Git. Write it as a setup fragment to
           {{ww.documents.setup_proposal}} (the root keys `workflows`, `modes`,
           `documents`, `handlers`, `hooks`, `rules` and `settings`; rules as
           literal sentences in the `rules` lists of the steps they govern). A

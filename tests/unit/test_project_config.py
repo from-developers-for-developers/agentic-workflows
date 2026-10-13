@@ -569,3 +569,21 @@ def test_malformed_collection_settings_are_refused(
 ) -> None:
     with pytest.raises(ConfigurationError, match=message):
         load_project_config(write(tmp_path, payload))
+
+
+@pytest.mark.parametrize("value", ["main", " release/1.0 ", False])
+def test_config_ref_names_a_ref_or_turns_snapshots_off(
+    tmp_path: Path, value: object
+) -> None:
+    config = load_project_config(write(tmp_path, {"config_ref": value}))
+    assert config.config_ref == (value.strip() if isinstance(value, str) else value)
+
+
+def test_config_ref_is_unset_by_default(tmp_path: Path) -> None:
+    assert load_project_config(write(tmp_path, {})).config_ref is None
+
+
+@pytest.mark.parametrize("value", ["", "  ", True, 3, ["main"]])
+def test_config_ref_is_validated(tmp_path: Path, value: object) -> None:
+    with pytest.raises(ConfigurationError, match="config_ref must be a Git ref"):
+        load_project_config(write(tmp_path, {"config_ref": value}))

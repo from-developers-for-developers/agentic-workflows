@@ -1060,6 +1060,67 @@ the repo's `ww/git` settings.
 composed result: it adds no default workflow to the YAML, and no `task_format`
 to the JSON, when another level already provides them.
 
+## Configuration read from a commit
+
+In a Git project, tasks read the configuration that is committed on a ref,
+not what happens to be checked out in the main checkout. So an operator can
+switch branches there while agents keep working in their worktrees, and
+nothing changes for those agents. By default the ref is the ww/git default
+base branch (`base_branches.default`). `config_ref` in `ww.json` names
+another ref, and `false` turns the feature off:
+
+```json
+{"config_ref": "main"}
+```
+
+ww resolves the ref to a commit and copies the configuration out of that
+commit, without a checkout, into `.ww/config/<sha>/`. The copy holds
+`ww.yaml`, `ww.json`, `ww-rule-automation.json`, their imports, every rule
+file and rule directory they declare, and every committed file a check
+reaches as `{{ww.root}}/<path>` or `$WW_ROOT/<path>`. The copy is written to
+a temporary directory and renamed into place, and it is read-only. Each
+commit gets one copy, made the first time it is needed. A copy that is
+missing, for example after `git clean`, is written again on the next read.
+`{{ww.root}}` and every check's `WW_ROOT` name that copy, while checks still
+run in the step's directory. Pages and `ww rules` give its absolute paths.
+
+A task records the commit when it starts and reads that copy until it ends,
+even after new commits land on the ref. Commands outside a task, such as
+`discover`, `start` and `rules`, read the ref's current commit. `status`
+shows the commit a task reads and whether the ref has moved ahead, as
+`config` (also a key of `status --json`):
+
+```console
+$ ./ww status TASK-7
+...
+config: commit 3f2a9c1 of main; main is 2 commit(s) ahead (`./ww config refresh TASK-7` moves to it)
+$ ./ww config refresh TASK-7
+TASK-7 now reads the configuration of 8be04d2, the current commit of main. Its next `next` compares the run's plan with it.
+$ ./ww config prune
+Removed 3 configuration snapshot(s).
+```
+
+`next`, `complete`, `reset`, `cleanup` and `config` also prune
+automatically: they remove every copy that no open run reads, except the
+copy of the ref's current commit. A configuration change takes effect once
+it is committed on the ref; for a running task, after `config refresh`.
+The commands that edit the configuration (`init`, `lint`, `setup`,
+`onboarding`, `inspect`, and the `rules` commands that write) read the
+checkout, because that is where the edit is made and committed.
+
+Some things stay in the checkout: task state, locks, logs, rule counters,
+disputes, and the untracked `ww.local.yaml` and `ww.local.json`, which still
+apply on top of the copy. Documents that a step's text only mentions are not
+copied; agents read them in their worktree. Without Git, with
+`config_ref: false`, or when the ref's commit has no `ww.yaml` yet, ww reads
+the configuration from the checkout as before. An explicit `config_ref` that
+names no commit is an error.
+
+Agents read ww's configuration only through the paths a page gives or
+through `$WW_ROOT`, and never browse `.ww/config/`. A check gets its tools
+from `PATH` or the step's directory. `WW_ROOT` holds only committed files,
+never untracked tooling such as `node_modules` or a virtualenv.
+
 ## Configuration
 
 Every mode is a mapping with a required `name` and an optional description.
@@ -2276,8 +2337,8 @@ with a `check` field naming the check.
 ### A check that cannot run
 
 A check that cannot run here is **unavailable**, not failed: the script it
-runs is not at the project root (its `check` lists it under `files`, tested
-before anything runs), the `argv` program does not exist, or the shell
+runs is missing where ww reads its configuration (its `check` lists it under
+`files`, tested before anything runs), the `argv` program does not exist, or the shell
 answered `command not found` or `not executable` (exit 127 or 126), as when
 a check is written on a branch its tool has not reached yet. The worker is
 not sent back for it, it counts toward no `max_fixes`, the rule statistics
@@ -2291,18 +2352,20 @@ ones as `check unavailable: <reason>`.
 
 ### Rules and checks in a worktree of an older branch
 
-ww's configuration, `ww.yaml`, `ww.json`, `.ww/`, the rule files and the
-check store, is always read from the project root, the primary checkout,
-even when a task works in a Git worktree. A hotfix branched from a release
+ww's configuration, `ww.yaml`, `ww.json`, the rule files and the check
+store, is never read from a task's worktree. In a Git project it comes from
+the task's [commit of `config_ref`](#configuration-read-from-a-commit);
+without Git it comes from the project root. A hotfix branched from a release
 branch that predates the latest rules still gets them: rules and checks are
-defined at the root and applied in the worktree. A check's command runs in
-the step's directory against its change set, while the files it declares are
-looked up at the root and reached as `{{ww.root}}/<path>` (or
-`"$WW_ROOT/<path>"` in a `shell` source); a check that declares files without
-naming the root is refused. A page whose working directory is a worktree
-names the project root and tells the agent to read ww's configuration there,
-and `ww rules` shows rule files by their absolute path at the root when run
-from anywhere else, so an agent never opens a worktree's older copy.
+defined where ww reads its configuration and applied in the worktree. A
+check's command runs in the step's directory against its change set. The
+files the check declares are looked up where ww reads its configuration and
+reached as `{{ww.root}}/<path>` (or `"$WW_ROOT/<path>"` in a `shell`
+source); a check that declares files without naming that directory is
+refused. A page whose working directory differs from that directory names it
+and tells the agent to read ww's configuration there. `ww rules` shows rule
+files by their absolute path there when run from anywhere else, so an agent
+never opens a worktree's older copy.
 
 ### In the artifact
 
@@ -2332,7 +2395,7 @@ check may cover many rules, the usual case for an ecosystem tool such as
 deptrac, PHPStan, import-linter, ruff, or eslint, whose one configuration
 expresses several rules. When a step begins, each of its rules without a
 command is settled once: `converted`, checked by its store check while the
-check's configuration files exist at the project root, or `judged`. A store written by an earlier
+check's configuration files exist where ww reads its configuration, or `judged`. A store written by an earlier
 ww may still hold the interim entries verifiers once wrote inside tasks, such
 as an approach or a proposed check; ww reads them, and their rules are judged.
 
@@ -2443,11 +2506,14 @@ verification, by `ww-scriptize-rules` or by hand:
 ./ww rules decline docs/tone --reason "A matter of review."
 ```
 
-A check's `--config` files are read at the project root, while its command
-runs in the step's directory, which may be a worktree of an older branch:
-the command reaches them as `{{ww.root}}/<path>` (or `"$WW_ROOT/<path>"`
-in a `--check-shell` source), and a check with `--config` that does neither
-is refused.
+A check's `--config` files are read where ww reads its configuration, while
+its command runs in the step's directory, which may be a worktree of an
+older branch. The command reaches them as `{{ww.root}}/<path>` (or
+`"$WW_ROOT/<path>"` in a `--check-shell` source), and a check with
+`--config` that does neither is refused. In a Git project, tasks read
+configuration from a commit, so `--config` refuses a file that Git ignores.
+The check runs in tasks once it and its files are committed on `config_ref`;
+in a running task, it runs after `ww config refresh`.
 
 `--check-argv -- <arg>...` goes last: everything after `--` is the check's
 argv, so the tool's own options, such as `--configuration` or `--select E`,
@@ -2670,8 +2736,10 @@ it chose instead. `{{ww.project.name}}` is that project's name
 and `{{ww.project.dir}}` its directory, both empty for a task in the root;
 `{{ww.project.dir}}` keeps pointing at the project even after a worktree moves
 the task workspace. `{{ww.project.names}}` lists every configured project name, joined
-by commas. `{{ww.root}}` is the project root, where ww's configuration lives:
-the primary checkout, even for a task in a worktree of an older branch. `{{ww.executable}}` is how the commands ww prints invoke ww, `./ww`
+by commas. `{{ww.root}}` is the directory ww reads its configuration from:
+in a Git project, the read-only copy of the task's
+[commit of `config_ref`](#configuration-read-from-a-commit), otherwise the
+project root; never a task worktree. `{{ww.executable}}` is how the commands ww prints invoke ww, `./ww`
 or the configured [`executable`](#choosing-the-ww-binary), so a step's text can
 name a ww command as ww's own pages do: ``Run `{{ww.executable}} onboarding` ``.
 Values under `{{ww.<namespace>.*}}` come from a configured extension, such

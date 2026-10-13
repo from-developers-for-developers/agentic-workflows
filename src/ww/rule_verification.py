@@ -199,7 +199,7 @@ def verification_needs(
     rule selecting none of them is not applicable, and needs no verifier; an
     unscoped rule applies to every change, even none. What the step began
     with says the rest: a rule's reading, and the converted check whose
-    configuration is missing at the project root.
+    configuration is missing where ww reads its configuration.
     """
     unavailable = (
         {result.id: result.output for result in report.unavailable} if report else {}

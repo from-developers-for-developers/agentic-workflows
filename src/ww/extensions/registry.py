@@ -127,8 +127,12 @@ class ExtensionRegistry:
         root: Path,
         extensions: tuple[Extension, ...] = (),
         config: ProjectConfig | None = None,
+        settings_path: Path | None = None,
     ) -> None:
         self.root = Path(root)
+        # ``ww.json``, read where ww reads its configuration, which may be a
+        # commit's snapshot; extension stores and providers stay at the root.
+        self.settings_path = settings_path or self.root / FILE_NAME
         self._config = config
         self._project_settings: dict[str, ProjectSettings] = {}
         self._providers: dict[str, _ExtensionProvider] = {}
@@ -146,9 +150,11 @@ class ExtensionRegistry:
             )
 
     @classmethod
-    def discover(cls, root: Path) -> ExtensionRegistry:
+    def discover(
+        cls, root: Path, settings_path: Path | None = None
+    ) -> ExtensionRegistry:
         root = Path(root)
-        registry = cls(root)
+        registry = cls(root, settings_path=settings_path)
         for provider in _bundled_providers():
             registry._add_provider(provider)
         for provider in _project_providers(root):
@@ -171,7 +177,7 @@ class ExtensionRegistry:
     @property
     def config(self) -> ProjectConfig:
         if self._config is None:
-            self._config = load_project_config(self.root / FILE_NAME)
+            self._config = load_project_config(self.settings_path)
         return self._config
 
     def project_settings(self, project: str) -> ProjectSettings:

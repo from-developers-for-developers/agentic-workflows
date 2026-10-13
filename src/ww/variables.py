@@ -27,9 +27,10 @@ BRANCH_NAMING_STRATEGY = "__branch_naming_strategy"
 PROJECT = "ww.project.name"
 PROJECT_DIR = "ww.project.dir"
 PROJECTS = "ww.project.names"
-# The project root, where ww's configuration lives: the primary checkout even
-# when the task works in a Git worktree of an older branch, so a check reaches
-# the root's files with ``{{ww.root}}/<path>`` while it runs in the worktree.
+# Where ww's configuration is read: in a Git project the read-only snapshot of
+# the commit the run is pinned to, else the primary checkout; never the task's
+# worktree, so a check reaches the configured files with ``{{ww.root}}/<path>``
+# while it runs in a worktree of an older branch.
 ROOT = "ww.root"
 # The same root in a check's environment, for a ``shell`` source, which is
 # never interpolated: ``"$WW_ROOT/<path>"``.
@@ -184,8 +185,14 @@ def runtime_variable_values(
     project: str | None = None,
     projects: tuple[str, ...] = (),
     project_dir: str | None = None,
+    *,
+    config_root: Path | None = None,
 ) -> dict[str, str]:
-    """Return core values resolved from current task execution state."""
+    """Return core values resolved from current task execution state.
+
+    ``{{ww.root}}`` is where ww's configuration is read, ``config_root``,
+    which is ``root`` itself unless a commit's snapshot is read.
+    """
     directory = (root / workspace).resolve() if workspace else root.resolve()
     return {
         TASK_ID: task_id,
@@ -194,7 +201,7 @@ def runtime_variable_values(
         PROJECT: project or "",
         PROJECT_DIR: project_dir or "",
         PROJECTS: ",".join(projects),
-        ROOT: str(root.resolve()),
+        ROOT: str((config_root or root).resolve()),
         EXECUTABLE: ww_command(),
     }
 

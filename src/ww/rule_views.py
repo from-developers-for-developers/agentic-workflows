@@ -133,7 +133,8 @@ def rule_view(
 ) -> RuleView:
     """Find a rule or check of the task by ID, the current step first.
 
-    A rule file is shown as an agent should open it, at the project ``root``.
+    A rule file is shown as an agent should open it, in ``root``, where ww
+    reads its configuration.
     """
     order = sorted(range(len(plan.items)), key=lambda index: index != state.cursor)
     steps = tuple(

@@ -157,7 +157,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             "guidance": _onboarding_guidance(onboarding, on_request=config.on_request),
         },
         # Declared rules no check covers yet; never a reason not to start.
-        "rules_notice": _rules_notice(configuration, storage.root),
+        "rules_notice": _rules_notice(configuration, storage.config_root),
         "projects": [
             {
                 **project.to_dict(),

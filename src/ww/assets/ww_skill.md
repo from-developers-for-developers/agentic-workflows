@@ -59,10 +59,10 @@ change, start from step 1 then.
    Deduction uses ww commands and explicit existing point IDs; rule review
    and pruning are separate, and rules require operator approval.
 5. Never run a ww-owned handler yourself, edit ww state, or read
-   `ww.yaml` or ww's source to work out what to do next. ww's configuration
-   (`ww.yaml`, `ww.json`, `.ww/`, rule files, checks) lives at the project
-   root a page names, never in a task's worktree, whose branch may hold an
-   older copy or none: read it there, never the worktree copy. For a handler repair
+   `ww.yaml` or ww's source to work out what to do next. Read ww's
+   configuration (`ww.yaml`, `ww.json`, rule files, checks) only at the paths
+   a page gives or through `$WW_ROOT`, never in a task's worktree, whose
+   branch may hold another copy or none, and never browse `.ww/config/`. For a handler repair
    assignment, fix the cause and complete with an artifact; ww retries the
    command. In `auto`, the manager dispatches the repair with `next`. When
    ww reports `awaiting_operator` (a failed handler or work, an interrupted

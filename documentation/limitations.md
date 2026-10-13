@@ -88,12 +88,18 @@ fails loudly rather than hanging.
 
 ## Configuration authority
 
-Configuration is read from the primary checkout only. A task working in a git
-worktree does not make its worktree's `ww.yaml`, `ww.json`, or imports take
-effect, for itself or for the child tasks it launches; a copy that differs from
-the primary's is only flagged on the task's instruction pages. Land a
-configuration change in the primary checkout (or its branch there) for it to
-apply.
+A task never reads configuration from its git worktree. Its worktree's
+`ww.yaml`, `ww.json`, or imports do not take effect, for itself or for the
+child tasks it launches; a copy that differs is only flagged on the task's
+instruction pages. In a Git project tasks read the configuration committed on
+`config_ref` (the ww/git default base branch unless set), pinned to the
+commit at which each run started: commit a configuration change there, then
+run `ww config refresh <task>` for running tasks. Uncommitted edits in the
+primary checkout reach only the commands that edit the configuration, and
+the untracked `ww.local.*` files. Checks cannot use untracked tooling such
+as `node_modules` or a virtualenv through `WW_ROOT`; they find tools on
+`PATH` or in the step's directory. Without Git, configuration is read from
+the primary checkout.
 
 ## Storage
 

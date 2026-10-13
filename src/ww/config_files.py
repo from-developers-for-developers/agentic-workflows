@@ -10,11 +10,16 @@ three levels, applied top to bottom so a lower level wins:
 2. repo: ``ww.{yaml,json}`` in the project root;
 3. local: ``ww.local.{yaml,json}`` next to the repo files,
    kept out of version control.
+
+In a Git project the repo level is usually read from a snapshot of a commit
+under :data:`SNAPSHOT_DIRECTORY` (see :mod:`ww.config_snapshots`); the local
+level, which no commit holds, is then still read from the checkout.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -36,6 +41,10 @@ RULES_IMPORT_FILE = "ww-rules.yaml"
 # for the local level, which stays out of version control.
 SETUP_IMPORT_FILE = "ww-setup.yaml"
 LOCAL_SETUP_IMPORT_FILE = "ww-setup.local.yaml"
+# Where ww keeps the read-only copies of committed configuration, one
+# directory per commit, inside the checkout's ignored ``.ww``.
+SNAPSHOT_DIRECTORY = Path(".ww") / "config"
+_COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 # The .gitignore patterns ``init`` adds; they also cover local files a local
 # configuration imports, such as ``git.ww.local.yaml``.
 LOCAL_IGNORE_PATTERNS = (
@@ -140,13 +149,45 @@ def configuration_file_exists(path: Path) -> bool:
 
 
 def display_path(file: Path, base: Path) -> str:
-    """How messages name ``file``: from the repo root, from home, or in full."""
-    for root, prefix in ((base, ""), (Path.home(), "~/")):
+    """How messages name ``file``: from the repo root, from home, or in full.
+
+    A file of the checkout a snapshot ``base`` belongs to, such as a local
+    file, is named from that checkout.
+    """
+    for root, prefix in (
+        (base, ""),
+        (checkout_directory(base), ""),
+        (Path.home(), "~/"),
+    ):
         try:
             return prefix + str(file.relative_to(root))
         except ValueError:
             continue
     return str(file)
+
+
+def checkout_directory(directory: Path) -> Path:
+    """The checkout a configuration directory belongs to.
+
+    A snapshot of a commit, ``<root>/.ww/config/<sha>``, belongs to ``<root>``;
+    any other directory is its own checkout.
+    """
+    parent = directory.parent
+    if (
+        _COMMIT.fullmatch(directory.name)
+        and parent.name == SNAPSHOT_DIRECTORY.name
+        and parent.parent.name == SNAPSHOT_DIRECTORY.parent.name
+    ):
+        return parent.parent.parent
+    return directory
+
+
+def snapshot_of(path: Path) -> Path | None:
+    """The configuration snapshot ``path`` lies in, if any."""
+    for directory in (path, *path.parents):
+        if checkout_directory(directory) != directory:
+            return directory
+    return None
 
 
 def _levels(
@@ -155,7 +196,8 @@ def _levels(
     """The user, repo, and local levels around ``repo_file``.
 
     The user file shares the repo file's name, so a user directory that is
-    the project root itself contributes no separate level.
+    the project root itself contributes no separate level. The local file
+    lies in the checkout, also when ``repo_file`` is in a snapshot.
     """
     user = user_directory() / user_name
     return (
@@ -165,7 +207,7 @@ def _levels(
             else ()
         ),
         ConfigurationLevel("repo", repo_file),
-        ConfigurationLevel("local", repo_file.with_name(local_name)),
+        ConfigurationLevel("local", checkout_directory(repo_file.parent) / local_name),
     )
 
 

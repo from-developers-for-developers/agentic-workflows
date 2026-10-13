@@ -20,8 +20,10 @@ and `ww docs examples` (`docs` is read-only and takes no project state).
   `{{ww.task.id}}`, `{{ww.task.slug}}` (the task ID as one path component,
   a child's `/` replaced by `-`), `{{ww.task.workspace_dir}}`,
   `{{ww.task.workflows}}` (the configured workflow names), `{{ww.project.name}}`,
-  `{{ww.project.dir}}`, `{{ww.project.names}}`, `{{ww.root}}` (the project
-  root, where ww's configuration lives, also from a task worktree),
+  `{{ww.project.dir}}`, `{{ww.project.names}}`, `{{ww.root}}` (the directory
+  ww reads its configuration from: in a Git project the read-only copy of the
+  task's commit of `config_ref`, otherwise the project root; never a task
+  worktree),
   `{{ww.executable}}` (how
   printed commands invoke ww: `./ww` or the configured `executable`),
   `{{ww.documents.<name>}}`,
@@ -167,6 +169,25 @@ Projects, the directories a task may work in, are configured in
 `ww.json` rather than here because their locations differ per
 machine; see the features guide.
 
+### Configuration read from a commit
+
+In a Git project the repo level is read from a commit rather than from the
+checkout. The commit is the one `config_ref` in `ww.json` names, by default the ww/git
+`base_branches.default`. ww copies `ww.yaml`, `ww.json`,
+`ww-rule-automation.json`, their imports, the rule files and directories
+they declare, and every committed file a check reaches as
+`{{ww.root}}/<path>` or `$WW_ROOT/<path>` into the read-only directory
+`.ww/config/<sha>/`, which `{{ww.root}}` and `WW_ROOT` then name. A run
+records the commit it starts with and reads it until it ends; `ww config
+refresh <task>` moves it to the ref's current commit. Commands outside a
+task read the ref's current commit. Commands that edit the configuration
+read the checkout. `config_ref` itself and the local level (`ww.local.yaml`,
+`ww.local.json`) are always read from the checkout, and the local level
+applies on top of the copy. Without Git, with `config_ref: false`, or when the
+ref's commit has no `ww.yaml`, the repo level is read from the checkout. An
+explicit `config_ref` that names no commit is an error. Files that a step's
+text only mentions are not copied.
+
 ## Setup fragments
 
 `ww setup apply <file> --for me|team` places configuration a setup skill
@@ -302,8 +323,11 @@ off by name; a same-named workflow in a YAML configuration replaces the bundled
 one. `executable` selects the command printed for the project and run by the
 `./ww` launcher. `runtime` defaults `start` when neither the command nor the
 workflow sets one. `update_check` controls update notices. `debug` and
-`feedback` enable the optional local run reports. `task_format` controls
-generated task IDs, `rules` configures check guidance, `projects` lists
+`feedback` enable the optional local run reports. `config_ref` names the Git
+ref whose committed configuration tasks read, defaulting to the ww/git default
+base branch, or is `false` to read the checkout (see
+[Configuration read from a commit](#configuration-read-from-a-commit)).
+`task_format` controls generated task IDs, `rules` configures check guidance, `projects` lists
 available project directories, and `extensions` holds extension settings.
 Missing keys retain their defaults; the following example shows the complete
 shape written by `init`:
@@ -1428,7 +1452,7 @@ Controllers must not instantiate services; inject them.
 | `contains_in_file` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, and a rule without a check is not applicable then, as for `paths`. The step page prints the strings after the globs, as `in file "<string>"`. |
 | `contains_in_diff` | non-empty list of non-empty strings | Narrows the rule to files whose changed lines contain any of the strings: the lines the step added or removed, read from the diff between its two tree marks (no context lines; a new file contributes every line, a binary file none). Plain substrings as for `contains_in_file`, and the two keys combine: a file must satisfy each key present. Without git there are no marks and the whole file is read, as for `contains_in_file`. The step page prints the strings as `in diff "<string>"`. |
 | `contains` | — | Refused: the error names `contains_in_file` and `contains_in_diff`. |
-| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. An optional `files` lists the project files the command needs, such as the script it runs, relative to the project root and without a `..` part: when one is missing at the root, the check is unavailable (see [Running checks](#running-checks)). A check with `files` must reach them at the root, as `{{ww.root}}/<path>` in `argv`, `args` or `env`, or `"$WW_ROOT/<path>"` in a `shell` source, since it runs in the step's directory, which may be a worktree of a branch without them; one that does neither is refused. |
+| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. An optional `files` lists the project files the command needs, such as the script it runs, relative to the project root and without a `..` part: when one is missing where ww reads its configuration, the check is unavailable (see [Running checks](#running-checks)). A check with `files` must reach them there, as `{{ww.root}}/<path>` in `argv`, `args` or `env`, or `"$WW_ROOT/<path>"` in a `shell` source, since it runs in the step's directory, which may be a worktree of a branch without them; one that does neither is refused. |
 | `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
 
@@ -1517,12 +1541,15 @@ the check's `paths`. A check fails on a non-zero exit or a failed assertion.
 In a shell check, a bare `$WW_STEP_CHANGED_FILES` splits on whitespace, so a
 path containing a space needs `printf '%s\n' "$WW_STEP_CHANGED_FILES" | xargs -d '\n'`;
 an `argv` check receives the variable in its environment only. Each also sees
-`WW_ROOT`, the project root: a check is defined at the root and applied in
-the step's directory, so its own files are read there even when the step
-works in a Git worktree of an older branch.
+`WW_ROOT`, the directory ww reads its configuration from (see
+[Configuration read from a commit](#configuration-read-from-a-commit)): a
+check is defined there and applied in the step's directory, so its own files
+are read there even when the step works in a Git worktree of an older branch.
+A check gets its tools from `PATH` or the step's directory. `WW_ROOT` holds
+only committed files.
 
 A check that cannot run is `unavailable`, never failed: a file its `files`
-lists is missing at the project root (tested before the command runs),
+lists is missing where ww reads its configuration (tested before the command runs),
 the command could not be launched (an `argv` program that does not exist),
 or the shell exited 126 or 127 because the program was not found or not
 executable. The result carries the reason. An unavailable check rejects no
@@ -1611,7 +1638,10 @@ written by an earlier ww may still hold `auto`.
 checks and what is known about each rule wording. It is meant to be
 committed; ww writes it under its own lock, only for the operator's `rules`
 commands, and leaves it out of every change set. Verification never edits
-it, YAML, or rule files; only the operator's `rules` write commands do.
+it, YAML, or rule files; only the operator's `rules` write commands do. The
+operator's commands write it in the checkout. In a Git project, tasks read the
+copy committed on `config_ref`, so a recorded check reaches tasks once the
+store is committed there.
 
 ```json
 {
@@ -1667,7 +1697,7 @@ or `schema_version` is an error.
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed, its local `stats` counters as `rules stats` lists them), then each step's own rules and the groups it names, then the `targets`: every workflow's steps in tree order, `init` left out, each with its leaf `step` name, its logical `path` (the precise `steps` selector; nested steps, collection and per-child stages take their parent's path as a prefix), whether it is `agent_owned` (a nested sequence only holds its steps; an extension or ww-owned action takes no rules), and the `groups` reaching it now, by filter or by name, empty for a step that is not an agent's. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
 | `rules stats [--json]` | Every declared rule with the checkout's local counters from `.ww/rules/stats.json`, counted once per settled completion of a step that carried the rule: `applied` (checked or judged), `checked`, `check_failures`, `judged`, `judged_failures`, `waived`, `not_applicable`, `last_applied_at`, `last_failed_at` and `last_failure` (`task`, `step`, `kind`: `check` or `verdict`), with `text_hash` the wording last evaluated. The most failing rule first (check plus verdict failures), then the most applied, then by ID; a rule never applied is marked (`never_applied` in JSON). Read-only: not in the audit log. |
-| `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project root and refused when absolute or with a `..` part; a check with `--config` paths must reach them as `{{ww.root}}/<path>` in its argv or `"$WW_ROOT/<path>"` in its shell source, or it is refused, since it runs in the step's directory, which may be a worktree of a branch without them. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
+| `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project root and refused when absolute, with a `..` part, or ignored by Git; a check with `--config` paths must reach them as `{{ww.root}}/<path>` in its argv or `"$WW_ROOT/<path>"` in its shell source, or it is refused, since it runs in the step's directory, which may be a worktree of a branch without them. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
 | `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--contains-in-file <text>...] [--contains-in-diff <text>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in `--dir <path>`, else in the group's first directory item, else beside the group's last file item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. A file no listed directory holds is appended to the group's `rules` list, relative to the declaring file as its other entries are: in `ww-rules.yaml` by rewriting the file whole, in any other file as one added line, checked to change nothing else and refused, naming the line to add by hand, when the list cannot be extended that way (a flow list, an anchor, a tag). Refuses an existing file, a group that lists neither a directory nor a file when `--dir` is absent, and a group an extension ships. Reports each glob's match count and the number of project files containing each string, and warns about a `--contains-in-file` string found nowhere (a `--contains-in-diff` string may arrive with a change, so it only gets the count). `--assert` is repeatable, one condition each. |

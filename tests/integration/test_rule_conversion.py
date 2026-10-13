@@ -321,8 +321,8 @@ def test_a_check_whose_config_is_missing_is_judged_instead(
     assert (rule.check, rule.missing) == ("lint", "lint.toml")
     page = MarkdownOutputAdapter().render_instruction(held)
     assert (
-        "Its check `lint` does not run: `lint.toml` is missing at the project "
-        "root, so judge it instead."
+        "Its check `lint` does not run: `lint.toml` is missing where ww reads "
+        "its configuration, so judge it instead."
     ) in page
 
 
@@ -619,11 +619,12 @@ def test_the_step_page_names_the_missing_config_file(tmp_path: Path) -> None:
     assert (line.has_command, line.check, line.missing) == (False, "lint", "lint.toml")
     page = MarkdownOutputAdapter().render_instruction(step)
     assert (
-        "  Its check `lint` does not run: `lint.toml` is missing at the project root."
+        "  Its check `lint` does not run: `lint.toml` is missing where ww reads "
+        "its configuration."
     ) in page
 
 
-def test_a_worktree_without_the_config_gets_the_roots_check(tmp_path: Path) -> None:
+def test_a_worktree_without_the_config_gets_the_snapshots_check(tmp_path: Path) -> None:
     root = _project(tmp_path)
     (root / "ww.yaml").write_text(
         "hooks:\n  before_start_workflow:\n    - workflows: [task]\n"
@@ -632,20 +633,21 @@ def test_a_worktree_without_the_config_gets_the_roots_check(tmp_path: Path) -> N
         "        - ext/ww/git/handlers:create-worktree: ~\n" + WORKFLOWS,
         encoding="utf-8",
     )
-    (root / ".gitignore").write_text(".ww/\ntrees/\nlint.toml\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".ww/\ntrees/\n", encoding="utf-8")
     (root / "ww.json").write_text(
         json.dumps(
             {
+                "config_ref": "main",
                 "extensions": {
                     "ww/git": {
                         "separate_branch": True,
-                        "base_branches": {"default": "main"},
+                        "base_branches": {"default": "old"},
                         "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
                         "worktrees": True,
                         "worktree_dir": "./trees",
                         "worktree_name_format": "{{ww.task.id}}",
                     }
-                }
+                },
             }
         ),
         encoding="utf-8",
@@ -653,9 +655,15 @@ def test_a_worktree_without_the_config_gets_the_roots_check(tmp_path: Path) -> N
     _git("config", "commit.gpgsign", "false", cwd=root)
     _git("add", "-A", cwd=root)
     _git("commit", "-qm", "worktrees", cwd=root)
-    # At the project root only, as on a branch the worktree's base predates.
+    # The task branch starts from a base that predates the check's file,
+    # which is committed only on the configuration ref.
+    _git("branch", "old", cwd=root)
     (root / "lint.toml").write_text("", encoding="utf-8")
+    _git("add", "lint.toml", cwd=root)
+    _git("commit", "-qm", "lint config", cwd=root)
     assert _convert(root, "lint", "develop/1", config="lint.toml") == 0
+    _git("add", "-A", cwd=root)
+    _git("commit", "-qm", "lint check", cwd=root)
     service = WorkflowService(Storage(root))
     service.start(
         "task", "TASK-1", agent="codex", workflow_runtime="single", init_artifact="Do."
@@ -794,5 +802,6 @@ def test_a_check_with_config_files_must_reach_them_at_the_root(
     )
 
     assert code != 0
-    assert "must reach them at the project root" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "must reach them where ww reads its configuration" in err
     assert not (root / STORE_FILE).exists()

@@ -18,6 +18,7 @@ from ww.changes import Scope, is_scoped
 from ww.children import ChildTask
 from ww.config_files import SETTINGS_FILE
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX, OperatorReason
+from ww.direct_work import SHORT_SHA
 from ww.executable import DEFAULT_EXECUTABLE
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
@@ -698,17 +699,31 @@ def _working_directory(lines: Lines, instruction: Instruction) -> None:
                 "```",
             ]
         )
-    if instruction.project_root:
-        lines.extend(
-            [
-                "",
-                "ww's configuration (`ww.yaml`, `ww.json`, `.ww/`, rule files "
-                "and checks) is read from the project root, "
-                f"`{instruction.project_root}`, not from this workspace, whose "
-                "branch may hold an older copy or none: read it there, never "
-                "the copy here.",
-            ]
+    if not instruction.config_root:
+        return
+    if not instruction.working_directory:
+        _append_section(lines, "Configuration")
+    else:
+        lines.append("")
+    if instruction.config_commit is None:
+        lines.append(
+            "ww's configuration (`ww.yaml`, `ww.json`, `.ww/`, rule files "
+            "and checks) is read from the project root, "
+            f"`{instruction.config_root}`, not from this workspace, whose "
+            "branch may hold an older copy or none: read it there, never "
+            "the copy here."
         )
+        return
+    source = f"commit `{instruction.config_commit[:SHORT_SHA]}`" + (
+        f" of `{instruction.config_ref}`" if instruction.config_ref else ""
+    )
+    lines.append(
+        "ww's configuration (`ww.yaml`, `ww.json`, rule files and checks) is "
+        f"read from `{instruction.config_root}`, a read-only copy of {source}, "
+        "not from this workspace or the checkout, whose branches may hold "
+        "another copy: read it through the paths this page gives or "
+        "`$WW_ROOT`, and never browse the other copies beside it."
+    )
 
 
 def _profile(lines: Lines, instruction: Instruction) -> None:
@@ -872,7 +887,7 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
             if rule.missing is not None:
                 lines.append(
                     f"  Its check `{rule.check}` does not run: `{rule.missing}` "
-                    "is missing at the project root."
+                    "is missing where ww reads its configuration."
                 )
         lines.extend(
             [
@@ -1083,7 +1098,7 @@ def _verification(lines: Lines, instruction: Instruction) -> None:
         if rule.missing is not None:
             lines.append(
                 f"  Its check `{rule.check}` does not run: `{rule.missing}` "
-                "is missing at the project root, so judge it instead."
+                "is missing where ww reads its configuration, so judge it instead."
             )
         if rule.unavailable is not None:
             lines.append(

@@ -18,7 +18,8 @@ from ww.assignments import (
     input_only,
     selection_item,
 )
-from ww.config_files import WORKFLOWS_FILE
+from ww.config_files import SETTINGS_FILE, WORKFLOWS_FILE
+from ww.config_snapshots import ConfigSource
 from ww.contracts import (
     CallerRole,
     Control,
@@ -155,6 +156,7 @@ class InstructionBuilder:
         root: Path,
         documents: DocumentStore,
         interactions: InteractionLog,
+        config: ConfigSource | None = None,
         child_values: StepValues = no_step_values,
         worker_requirements: Callable[[], str] = lambda: "full",
     ) -> None:
@@ -167,6 +169,8 @@ class InstructionBuilder:
         # Persisted paths are project-relative; instructions print them
         # absolute for the filesystem this process runs in.
         self.root = root
+        # Where this process reads ww's configuration: ``root`` or a snapshot.
+        self.config = config or ConfigSource(root)
         self.task_values = task_values
 
     def build(
@@ -346,7 +350,9 @@ class InstructionBuilder:
                 feedback_deduction_command=(
                     f"{ww_command()} feedback sources {state.task_id} "
                     f"--run {state.run_id} --json"
-                    if load_project_config(self.root / "ww.json").feedback_learning
+                    if load_project_config(
+                        self.config.directory / SETTINGS_FILE
+                    ).feedback_learning
                     and any(
                         record.status == "completed"
                         and record.artifact
@@ -686,14 +692,15 @@ class InstructionBuilder:
         """Say which ``ww.yaml`` is in force when the task's worktree has another.
 
         Every command, child launches included, reads the configuration of the
-        primary checkout; a copy in the worktree that differs from it is not
-        in force, which is easy to miss after editing the wrong one.
+        primary checkout or of the commit the run is pinned to; a copy in the
+        worktree that differs from it is not in force, which is easy to miss
+        after editing the wrong one.
         """
         workspace = resolve_workspace(self.root, state.working_directory)
         if workspace is None or workspace == self.root.resolve():
             return ()
         local = workspace / WORKFLOWS_FILE
-        primary = self.root / WORKFLOWS_FILE
+        primary = self.config.directory / WORKFLOWS_FILE
         try:
             if not local.is_file() or local.read_bytes() == primary.read_bytes():
                 return ()
@@ -701,7 +708,7 @@ class InstructionBuilder:
             return ()
         return (
             f"This task's worktree has its own `{WORKFLOWS_FILE}` that differs from "
-            f"the primary checkout's; ww reads `{primary}` for every command, "
+            f"the one in force; ww reads `{primary}` for every command, "
             "child launches included, so the worktree's copy is not in force.",
         )
 
@@ -1063,11 +1070,16 @@ class InstructionBuilder:
             # A task still in the root needs no ``cd``; an item that chose
             # its own directory always names it.
             working_directory=str(workspace) if workspace is not None else None,
-            project_root=(
-                str(self.root.resolve())
-                if workspace is not None and workspace.resolve() != self.root.resolve()
+            config_root=(
+                str(self.config.directory.resolve())
+                if self.config.pinned
+                or (
+                    workspace is not None and workspace.resolve() != self.root.resolve()
+                )
                 else None
             ),
+            config_commit=self.config.commit,
+            config_ref=self.config.ref,
             rules=rule_lines(item, record),
             modes=item.modes,
             fix_required=fix_required(item, record),

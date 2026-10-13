@@ -11,9 +11,10 @@ confirmation, so a check built once for the project (by
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from ww.builtin_workflows import missing_lane
@@ -180,6 +181,39 @@ def config_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
             )
         normalised.append(PurePosixPath(path.strip()).as_posix())
     return tuple(dict.fromkeys(normalised))
+
+
+def require_committable(paths: tuple[str, ...], root: Path) -> None:
+    """Refuse configuration files Git ignores at the project ``root``.
+
+    In a Git project tasks read checks from a commit's snapshot, which holds
+    only committed files: a file Git ignores, such as an installed tool under
+    ``node_modules`` or a virtual environment, is never there, so the check
+    would never run. Its tools come from ``PATH`` or the step's directory
+    instead. Outside Git nothing is refused.
+    """
+    if not paths:
+        return
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--", *paths],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return
+    ignored = [line for line in result.stdout.splitlines() if line]
+    if result.returncode == 0 and ignored:
+        raise StateError(
+            "--config "
+            + ", ".join(f"`{path}`" for path in ignored)
+            + " is ignored by Git, so no commit holds it and tasks, which read "
+            "checks from a commit, never see it: name only files committed "
+            "with the check, and run its tools from PATH or the step's "
+            "directory instead of through `{{ww.root}}`"
+        )
 
 
 def convert(

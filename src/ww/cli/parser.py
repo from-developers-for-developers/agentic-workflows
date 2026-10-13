@@ -879,6 +879,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "cleanup", parents=[json_output], help="Remove inactive ww lock sidecar files."
     )
+    _config_parser(subparsers, json_output)
     updates = subparsers.add_parser(
         "updates",
         parents=[json_output],
@@ -915,6 +916,37 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def _config_parser(
+    subparsers: argparse._SubParsersAction[_Parser],
+    json_output: _Parser,
+) -> None:
+    """``config refresh`` and ``config prune``: the configuration tasks read."""
+    config = subparsers.add_parser(
+        "config",
+        parents=[json_output],
+        help="Manage the committed configuration tasks read in a Git project.",
+    )
+    actions = config.add_subparsers(dest="config_action", required=True)
+    after = _Parser(add_help=False)
+    after.add_argument(
+        "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
+    )
+    refresh = actions.add_parser(
+        "refresh",
+        parents=[after],
+        help=(
+            "Move a task to the configuration its ref holds now; the next "
+            "`next` compares its plan with it."
+        ),
+    )
+    refresh.add_argument("task_id")
+    actions.add_parser(
+        "prune",
+        parents=[after],
+        help="Remove configuration snapshots no open task reads.",
+    )
 
 
 def _setup_parser(
