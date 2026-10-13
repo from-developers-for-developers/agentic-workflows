@@ -41,7 +41,7 @@ def _ids(ids: tuple[str, ...]) -> str:
 
 def render_check_preview(preview: CheckPreview) -> str:
     lines: Lines = [f"# {preview.task_id} · check `{preview.step}`", ""]
-    if not preview.checks and not preview.judged:
+    if not (preview.checks or preview.judged or preview.judged_out_of_scope):
         lines.append(
             "This step has no checks to run and no rules for a verifier to judge."
         )
@@ -88,8 +88,21 @@ def render_check_preview(preview: CheckPreview) -> str:
         lines.extend(
             [
                 "",
-                f"Judged at completion: {_ids(preview.judged)}. A verifier, not "
-                "you, judges these rules after you complete.",
+                "Judged at completion, by a verifier, not you; follow them in "
+                "what you change:",
+                "",
+            ]
+        )
+        for rule in preview.judged:
+            lines.append(f"- `{rule.id}`{rule_scope(rule)} — {rule.summary}")
+            if rule.interpretation:
+                lines.append(f"  {rule.interpretation}")
+    if preview.judged_out_of_scope:
+        lines.extend(
+            [
+                "",
+                "Not judged unless your changes reach their scope: "
+                f"{_ids(preview.judged_out_of_scope)}.",
             ]
         )
     for reason, waived in _waivers(preview.waived):

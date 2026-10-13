@@ -2232,16 +2232,17 @@ class WorkflowService:
         """Run the active step's checks now, as its completion would.
 
         Nothing is recorded: no attempt counts, the record is untouched, and
-        no command output is kept. Rules a verifier judges are only named,
-        since a verifier judges them when the step completes.
+        no command output is kept. Rules a verifier judges are narrowed by the
+        change set so far, as completion narrows them, and only listed, since
+        a verifier judges them when the step completes.
         """
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         item, record = self._active_step(state, snapshot, "nothing to check")
-        report = RuleChecker(None, _now).run(
-            state, item, self._check_scope(state, snapshot.plan, item)
-        )
-        return check_preview(state, item, report)
+        scope = self._check_scope(state, snapshot.plan, item)
+        report = RuleChecker(None, _now).run(state, item, scope)
+        files, marks = change_set(scope.directory, record.change_mark, report.mark)
+        return check_preview(state, item, report, files, scope.directory, marks)
 
     def dispute(
         self,

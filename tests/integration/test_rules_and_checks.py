@@ -745,12 +745,12 @@ def test_a_check_that_cannot_run_is_unavailable_not_failed(tmp_path: Path) -> No
         "docs/program",
         "docs/script",
     ]
-    assert preview.judged == (
+    assert [rule.id for rule in preview.judged] == [
         "docs/declared",
         "docs/program",
         "docs/script",
         "develop/1",
-    )
+    ]
 
 
 def test_a_rule_whose_check_is_unavailable_is_judged_for_that_completion(

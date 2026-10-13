@@ -20,14 +20,14 @@ from ww.config.rules import rule_source, shown_source
 from ww.errors import StateError
 from ww.execution_models import CheckReport, ExecutionState, PlanItemExecution
 from ww.extensions import is_extension_reference
-from ww.instructions.builder import checks_unavailable, fix_failures
+from ww.instructions.builder import checks_unavailable, fix_failures, rule_lines
 from ww.instructions.models import CheckPreview
 from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
 from ww.rule_conversion import ScriptizeState, every_rule, scriptize_state
 from ww.rule_disputes import DisputeEntry
 from ww.rule_stats import STATS_FILE, RuleStats
 from ww.rule_store import RuleAutomation, describe_command
-from ww.rule_verification import judged_now
+from ww.rule_verification import verification_needs
 from ww.workflow_config import (
     INIT_STEP_NAME,
     HandlerDefinition,
@@ -42,10 +42,24 @@ from ww.workflow_config import (
 
 
 def check_preview(
-    state: ExecutionState, item: PlanItem, report: CheckReport
+    state: ExecutionState,
+    item: PlanItem,
+    report: CheckReport,
+    files: tuple[str, ...],
+    directory: Path,
+    marks: tuple[str, str] | None,
 ) -> CheckPreview:
-    """What ``ww check`` shows for a report it ran and did not record."""
+    """What ``ww check`` shows for a report it ran and did not record.
+
+    The judged rules are narrowed by ``files``, the change set so far, as a
+    completion narrows them: each one left is listed as the step page lists
+    it, and the scoped ones it leaves out are only named.
+    """
     record = state.item_executions[state.cursor]
+    needs, out_of_scope = verification_needs(
+        item, record, files, directory, report, marks
+    )
+    judged = {rule.id for rule in needs}
     return CheckPreview(
         task_id=state.task_id,
         step=item.name,
@@ -58,12 +72,8 @@ def check_preview(
             result.id for result in report.results if result.status == "not_applicable"
         ),
         unavailable=checks_unavailable(report),
-        judged=tuple(
-            rule.id
-            for rule in judged_now(
-                item, record, {result.id for result in report.unavailable}
-            )
-        ),
+        judged=tuple(line for line in rule_lines(item, record) if line.id in judged),
+        judged_out_of_scope=out_of_scope,
         waived=record.checks_waived,
         all_files=report.all_files,
     )

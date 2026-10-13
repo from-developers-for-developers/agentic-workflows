@@ -227,8 +227,9 @@ class CheckPreview:
 
     ``failures`` are shown like a fix page; ``passed`` and ``not_applicable``
     name the other checks and ``unavailable`` those that could not run;
-    ``judged`` are the rules a verifier judges only when the step completes;
-    ``waived`` the checks the operator waived.
+    ``judged`` are the rules a verifier judges only when the step completes,
+    as far as the change set so far reaches, and ``judged_out_of_scope`` the
+    scoped ones it does not; ``waived`` the checks the operator waived.
     """
 
     task_id: str
@@ -238,7 +239,8 @@ class CheckPreview:
     passed: tuple[str, ...] = ()
     not_applicable: tuple[str, ...] = ()
     unavailable: tuple[CheckUnavailable, ...] = ()
-    judged: tuple[str, ...] = ()
+    judged: tuple[RuleLine, ...] = ()
+    judged_out_of_scope: tuple[str, ...] = ()
     waived: tuple[tuple[str, str], ...] = ()
     all_files: bool = False
 
@@ -252,7 +254,8 @@ class CheckPreview:
             "passed_checks": list(self.passed),
             "not_applicable": list(self.not_applicable),
             "unavailable": [check.to_dict() for check in self.unavailable],
-            "judged_at_completion": list(self.judged),
+            "judged_at_completion": [rule.to_dict() for rule in self.judged],
+            "judged_out_of_scope": list(self.judged_out_of_scope),
             "waived": dict(self.waived),
             "all_files": self.all_files,
         }

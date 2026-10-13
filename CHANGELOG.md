@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
+- Changed: `ww check` narrows the judged rules by the change set so far, as completion does, and lists each with its scope and summary; the scoped ones the change does not reach yet are named apart. In `--json`, `judged_at_completion` holds rule objects and `judged_out_of_scope` is new.
 - Releases are numbered automatically: each push to `main` that changes the package publishes the next version of `pyproject.toml`'s series (`1.0.0b2`, `1.0.0b3`, …) and tags it `v<version>`; a documentation-only push releases nothing. `32f0ce7`
 - Releases move to `main`: every push to `main` publishes the version in `pyproject.toml` to PyPI once, starting with the first public beta, `1.0.0b1`; pushes to `dev` only run the checks, and development builds are installed from a clone with `pipx install --editable`.
 

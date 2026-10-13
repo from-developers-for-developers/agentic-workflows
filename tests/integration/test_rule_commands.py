@@ -17,6 +17,7 @@ from ww.execution_models import ExecutionState, PlanItemExecution, TaskRunAggreg
 from ww.instructions import Instruction
 from ww.output_adapters.json_adapter import JsonOutputAdapter
 from ww.output_adapters.markdown import MarkdownOutputAdapter
+from ww.output_adapters.rule_pages import render_check_preview
 from ww.rule_disputes import DISPUTES_FILE, DisputeLog
 from ww.rule_stats import RuleEvaluation, RuleStatsStore
 from ww.rule_store import STORE_FILE, RuleStore
@@ -164,7 +165,7 @@ def test_check_runs_the_checks_and_records_nothing(tmp_path: Path) -> None:
     assert preview.failures[0].text is not None
     assert preview.failures[0].text.startswith('Include "foo"')
     assert preview.checks == 2
-    assert preview.judged == ("develop/1",)
+    assert [rule.id for rule in preview.judged] == ["develop/1"]
     assert _record(service) == before
     assert not (root / ".ww/tasks/TASK-1/runs/01-task/command-output").exists()
     assert not any("check" in entry for entry in service.artifacts("TASK-1"))
@@ -188,6 +189,38 @@ def test_check_marks_a_check_whose_globs_match_nothing(tmp_path: Path) -> None:
     assert preview.passed == ("develop/sh",)
 
 
+def test_check_lists_the_judged_rules_the_change_set_reaches(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    (root / "rules/docs/api.md").write_text(
+        '---\npaths: ["api/*.py"]\n---\nDocument every public API function.\n',
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=root)
+    _git("commit", "-qm", "api rule", cwd=root)
+    service = _develop(root)
+    (root / "app.py").write_text("x\n", encoding="utf-8")
+
+    outside = service.check("TASK-1")
+
+    assert [rule.id for rule in outside.judged] == ["develop/1"]
+    assert outside.judged[0].summary == JUDGED
+    assert outside.judged_out_of_scope == ("docs/api",)
+    assert "Not judged unless your changes reach their scope: `docs/api`." in (
+        render_check_preview(outside)
+    )
+    (root / "api").mkdir()
+    (root / "api/v1.py").write_text("x\n", encoding="utf-8")
+
+    inside = service.check("TASK-1")
+
+    assert [rule.id for rule in inside.judged] == ["docs/api", "develop/1"]
+    assert inside.judged_out_of_scope == ()
+    assert (
+        "- `docs/api` — api/*.py — Document every public API function."
+        in render_check_preview(inside)
+    )
+
+
 def test_check_on_the_command_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -203,7 +236,7 @@ def test_check_on_the_command_line(
     assert "## 2 of 2 checks failed" in out
     assert "### `develop/sh` (hook)" in out
     assert "    notes.md" in out
-    assert "Judged at completion: `develop/1`." in out
+    assert f"- `develop/1` — {JUDGED}" in out
     assert "Nothing was recorded" in out
     assert main(["--root", str(root), "check", "TASK-1", "--json"]) == 1
     data = json.loads(capsys.readouterr().out)
@@ -212,7 +245,7 @@ def test_check_on_the_command_line(
         "docs/header",
         "develop/sh",
     ]
-    assert data["judged_at_completion"] == ["develop/1"]
+    assert [rule["id"] for rule in data["judged_at_completion"]] == ["develop/1"]
     (root / "notes.md").unlink()
     (root / "broken").unlink()
     assert main(["--root", str(root), "check", "TASK-1"]) == 0
