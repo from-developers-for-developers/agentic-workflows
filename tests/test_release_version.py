@@ -13,6 +13,13 @@ script = runpy.run_path(
 next_version = script["next_version"]
 project_version = script["project_version"]
 stamp = script["stamp"]
+PYPROJECT = """[project]
+name = "x"
+version = "1.0.0b1"
+
+[tool.other]
+version = "9"
+"""
 
 
 @pytest.mark.parametrize(
@@ -46,10 +53,7 @@ def test_a_series_must_be_a_release_version(series: str) -> None:
 
 def test_the_version_is_read_and_stamped_in_the_project_table(tmp_path: Path) -> None:
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(
-        '[project]\nname = "x"\nversion = "1.0.0b1"\n\n'
-        '[tool.other]\nversion = "9"\n'
-    )
+    pyproject.write_text(PYPROJECT)
     assert project_version(pyproject) == "1.0.0b1"
     stamp(pyproject, "1.0.0b2")
     assert project_version(pyproject) == "1.0.0b2"
