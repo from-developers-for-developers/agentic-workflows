@@ -228,8 +228,9 @@ class CheckPreview:
     ``failures`` are shown like a fix page; ``passed`` and ``not_applicable``
     name the other checks and ``unavailable`` those that could not run;
     ``judged`` are the rules a verifier judges only when the step completes,
-    as far as the change set so far reaches, and ``judged_out_of_scope`` the
-    scoped ones it does not; ``waived`` the checks the operator waived.
+    as far as the change set so far reaches, ``judged_out_of_scope`` the
+    scoped ones it does not, and ``judged_left_out`` those a rule selection
+    left out; ``waived`` the checks the operator waived.
     """
 
     task_id: str
@@ -241,6 +242,7 @@ class CheckPreview:
     unavailable: tuple[CheckUnavailable, ...] = ()
     judged: tuple[RuleLine, ...] = ()
     judged_out_of_scope: tuple[str, ...] = ()
+    judged_left_out: tuple[str, ...] = ()
     waived: tuple[tuple[str, str], ...] = ()
     all_files: bool = False
 
@@ -256,6 +258,7 @@ class CheckPreview:
             "unavailable": [check.to_dict() for check in self.unavailable],
             "judged_at_completion": [rule.to_dict() for rule in self.judged],
             "judged_out_of_scope": list(self.judged_out_of_scope),
+            "judged_left_out": list(self.judged_left_out),
             "waived": dict(self.waived),
             "all_files": self.all_files,
         }
@@ -588,6 +591,10 @@ class Instruction:
     # the step, each with the reason; ``dispute`` is the worker's objection
     # to one at a ``check_disputed`` stop.
     rules: tuple[RuleLine, ...] = ()
+    # How many judged rules the rule selection of step ``rules_left_out_by``
+    # left out of ``rules``.
+    rules_left_out: int = 0
+    rules_left_out_by: str | None = None
     # The modes the active step works in: the run's selected modes, then the
     # automatic ones whose filters admit the step.
     modes: tuple[PlannedMode, ...] = ()
@@ -719,6 +726,14 @@ class Instruction:
             "operator_reason": self.operator_reason,
             "result_saved": self.result_saved,
             "rules": [rule.to_dict() for rule in self.rules],
+            **(
+                {
+                    "rules_left_out": self.rules_left_out,
+                    "rules_left_out_by": self.rules_left_out_by,
+                }
+                if self.rules_left_out
+                else {}
+            ),
             "modes": [mode.to_dict() for mode in self.modes],
             **(
                 {"handler_repair": self.handler_repair}

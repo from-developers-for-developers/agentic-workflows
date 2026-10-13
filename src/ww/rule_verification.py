@@ -18,6 +18,12 @@ turning rules into checks is ``ww-scriptize-rules``'s job, outside tasks.
 A failing verdict sends the step back to its worker through the fix loop;
 once every rule passes, ww records the held completion.
 
+A step with ``select_rules_for`` is followed by a rule-selection item in
+which its worker chooses, among the judged rules of each step it names,
+those that step gets. A rule it leaves out is resolved as such when that
+step begins: the step's page does not list it and no verifier judges it,
+unless the step's change set reaches the rule's scope.
+
 This module holds the pure parts: resolving a step's rules against the store,
 choosing what a round must ask, the verification items and round records,
 and parsing verifier results. The service orchestrates them inside
@@ -49,6 +55,7 @@ from ww.execution_models.records import (
     HeldCompletion,
     PlanItemExecution,
     RuleResolution,
+    RuleSelection,
     RuleVerdict,
     VerificationRule,
 )
@@ -97,11 +104,60 @@ def judged_now(
     )
 
 
+@dataclass(frozen=True)
+class LeftOut:
+    """What a rule-selection item chose for one step, and which step chose."""
+
+    selection: RuleSelection
+    by: str
+
+    def leaves_out(self, rule_id: str) -> bool:
+        return (
+            rule_id in self.selection.candidates and rule_id not in self.selection.rules
+        )
+
+
+def selection_candidates(
+    item: PlanItem, automation: RuleAutomation, root: Path | None = None
+) -> tuple[PlannedRule, ...]:
+    """The rules of ``item`` a rule selection chooses among.
+
+    Its judged rules as they would resolve now: not those a converted check
+    checks, nor those whose converted check does not apply here, which are
+    judged whatever is selected.
+    """
+    resolutions, _ = resolve_rules(item, automation, root=root)
+    judged = {
+        entry.id
+        for entry in resolutions
+        if entry.status == "judged" and entry.missing is None
+    }
+    return tuple(rule for rule in judged_rules(item) if rule.id in judged)
+
+
+def selection_of(
+    state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+) -> LeftOut | None:
+    """The latest completed rule selection made for ``item``, if any."""
+    for index in range(len(plan.items) - 1, -1, -1):
+        entry = plan.items[index]
+        if item.id not in entry.selects_rules_for:
+            continue
+        record = state.item_executions[index]
+        if record.status != "completed":
+            continue
+        for chosen in record.rule_selection:
+            if chosen.step == item.id:
+                return LeftOut(chosen, entry.step.rsplit("/", 1)[-1])
+    return None
+
+
 def resolve_rules(
     item: PlanItem,
     automation: RuleAutomation,
     *,
     root: Path | None = None,
+    selection: LeftOut | None = None,
 ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]]:
     """How each rule without a command is enforced, as the step begins.
 
@@ -112,7 +168,9 @@ def resolve_rules(
     configuration files are not all there, such as one built on a branch not
     merged yet, does not apply: its rules are judged, naming the missing
     file. The step's own directory does not matter: a worktree of an older
-    branch still gets the root's checks.
+    branch still gets the root's checks. A judged rule ``selection`` chose
+    among and did not keep is left out by its step; one whose converted check
+    does not apply here is not, being a checked rule.
     """
     resolutions: list[RuleResolution] = []
     covered: dict[str, list[PlannedRule]] = {}
@@ -141,7 +199,19 @@ def resolve_rules(
                 RuleResolution(rule.id, "converted", name, interpretation)
             )
             continue
-        resolutions.append(RuleResolution(rule.id, "judged", None, interpretation))
+        resolutions.append(
+            RuleResolution(
+                rule.id,
+                "judged",
+                None,
+                interpretation,
+                left_out_by=(
+                    selection.by
+                    if selection is not None and selection.leaves_out(rule.id)
+                    else None
+                ),
+            )
+        )
     checks = tuple(
         derived_check(name, specs[name].spec, rules) for name, rules in covered.items()
     )
@@ -187,9 +257,10 @@ def verification_needs(
     directory: Path,
     report: CheckReport | None = None,
     marks: tuple[str, str] | None = None,
-) -> tuple[tuple[VerificationRule, ...], tuple[str, ...]]:
-    """The rules of a completing step a verifier must still judge, and the
-    IDs of those its change set makes not applicable.
+) -> tuple[tuple[VerificationRule, ...], tuple[str, ...], tuple[str, ...]]:
+    """The rules of a completing step a verifier must still judge, the IDs of
+    those its change set makes not applicable, and of those a rule selection
+    left out.
 
     Rules checked by a resolved derived check, rules with a verdict in the
     current hold, and rules the operator waived for this step are done for
@@ -197,9 +268,11 @@ def verification_needs(
     judged, with the reason. The rest are narrowed by ``files``, the step's
     change set measured between the tree ``marks``, as a check is: a scoped
     rule selecting none of them is not applicable, and needs no verifier; an
-    unscoped rule applies to every change, even none. What the step began
-    with says the rest: a rule's reading, and the converted check whose
-    configuration is missing where ww reads its configuration.
+    unscoped rule applies to every change, even none. A rule a selection
+    left out is judged only when it is scoped and the change set reaches its
+    scope. What the step began with says the rest: a rule's reading, and the
+    converted check whose configuration is missing where ww reads its
+    configuration.
     """
     unavailable = (
         {result.id: result.output for result in report.unavailable} if report else {}
@@ -213,14 +286,19 @@ def verification_needs(
     began = {resolution.id: resolution for resolution in record.rule_resolutions}
     needs: list[VerificationRule] = []
     not_applicable: list[str] = []
+    left_out: list[str] = []
     for rule in judged_now(item, record, unavailable):
         if held is not None and held.verdict(rule.id):
             continue
+        resolution = began.get(rule.id)
+        dropped = resolution is not None and resolution.left_out_by is not None
+        if dropped and not is_scoped(rule):
+            left_out.append(rule.id)
+            continue
         selected = applicable_files(files, rule, directory, marks)
         if selected is None:
-            not_applicable.append(rule.id)
+            (left_out if dropped else not_applicable).append(rule.id)
             continue
-        resolution = began.get(rule.id)
         check = rule.id if rule.has_command else derived.get(rule.id)
         needs.append(
             VerificationRule(
@@ -243,16 +321,20 @@ def verification_needs(
                 files=selected if is_scoped(rule) else (),
             )
         )
-    return tuple(needs), tuple(not_applicable)
+    return tuple(needs), tuple(not_applicable), tuple(left_out)
 
 
 def record_not_applicable(
-    state: ExecutionState, rule_ids: tuple[str, ...], now: Clock
+    state: ExecutionState,
+    rule_ids: tuple[str, ...],
+    left_out: tuple[str, ...],
+    now: Clock,
 ) -> ExecutionState:
-    """Settle on the active item which judged rules its change set left out."""
+    """Settle on the active item which judged rules its change set made not
+    applicable, and which a rule selection left out."""
     records = list(state.item_executions)
     records[state.cursor] = replace(
-        records[state.cursor], rules_not_applicable=rule_ids
+        records[state.cursor], rules_not_applicable=rule_ids, rules_left_out=left_out
     )
     return replace(state, item_executions=tuple(records), updated_at=now())
 

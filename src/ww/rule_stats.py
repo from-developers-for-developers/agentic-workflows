@@ -41,6 +41,7 @@ Outcome = Literal[
     "verdict fail",
     "waived",
     "not applicable",
+    "left out",
 ]
 FailureKind = Literal["check", "verdict"]
 
@@ -68,9 +69,9 @@ class RuleStats:
     """One rule's counters, zero until a completion evaluates it.
 
     ``applied`` counts the evaluations that applied the rule, checked or
-    judged; ``waived`` and ``not_applicable`` are the evaluations that did
-    not. ``text_hash`` is the wording last evaluated: the counts follow the
-    rule's ID across rewordings.
+    judged; ``waived``, ``not_applicable`` and ``left_out``, by a rule
+    selection, are the evaluations that did not. ``text_hash`` is the wording
+    last evaluated: the counts follow the rule's ID across rewordings.
     """
 
     applied: int = 0
@@ -80,6 +81,7 @@ class RuleStats:
     judged_failures: int = 0
     waived: int = 0
     not_applicable: int = 0
+    left_out: int = 0
     last_applied_at: str | None = None
     last_failed_at: str | None = None
     last_failure: RuleFailure | None = None
@@ -99,7 +101,7 @@ class RuleStats:
         failure = data.get("last_failure")
         return cls(
             **{
-                name: _count(data.get(name))
+                name: _count(data.get(name, 0))
                 for name in (
                     "applied",
                     "checked",
@@ -108,6 +110,7 @@ class RuleStats:
                     "judged_failures",
                     "waived",
                     "not_applicable",
+                    "left_out",
                 )
             },
             last_applied_at=_optional_string(data.get("last_applied_at")),
@@ -134,6 +137,8 @@ class RuleStats:
             return replace(stats, waived=stats.waived + 1)
         if outcome == "not applicable":
             return replace(stats, not_applicable=stats.not_applicable + 1)
+        if outcome == "left out":
+            return replace(stats, left_out=stats.left_out + 1)
         stats = replace(stats, applied=stats.applied + 1, last_applied_at=now)
         if outcome.startswith("check"):
             stats = replace(stats, checked=stats.checked + 1)
@@ -225,6 +230,8 @@ def evaluations(
             outcome = "verdict pass" if verdict.verdict == "pass" else "verdict fail"
         elif rule.id in record.rules_not_applicable:
             outcome = "not applicable"
+        elif rule.id in record.rules_left_out:
+            outcome = "left out"
         else:
             continue
         found.append(RuleEvaluation(rule.id, rule.text_hash, outcome))
@@ -290,7 +297,8 @@ def never_applied_rules(
     configuration: WorkflowConfiguration, stats: dict[str, RuleStats]
 ) -> tuple[RuleDefinition, ...]:
     """The declared rules evaluated at least ``NEVER_APPLIED_THRESHOLD`` times
-    without ever applying: each time waived or left out by the change set."""
+    without ever applying: each time waived, or left out by the change set
+    or a rule selection."""
     found: dict[str, RuleDefinition] = {}
     for rule in every_rule(configuration):
         entry = stats.get(rule.id)
@@ -298,7 +306,8 @@ def never_applied_rules(
             entry is not None
             and rule.id not in found
             and entry.applied == 0
-            and entry.waived + entry.not_applicable >= NEVER_APPLIED_THRESHOLD
+            and entry.waived + entry.not_applicable + entry.left_out
+            >= NEVER_APPLIED_THRESHOLD
         ):
             found[rule.id] = rule
     return tuple(found.values())

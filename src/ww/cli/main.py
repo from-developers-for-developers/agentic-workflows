@@ -72,6 +72,7 @@ from ww.output_adapters.rule_pages import (
     render_orphans,
     render_revoke_preview,
     render_revoked,
+    render_rule_candidates,
     render_rule_stats,
     render_rule_view,
     render_rules_listing,
@@ -615,6 +616,13 @@ def _rules(context: _Context) -> _Outcome:
         return _decline(context, configuration)
     if args.rules_action == "stats":
         return _rule_stats(context, configuration)
+    if args.rules_action == "candidates":
+        candidates = context.service.rule_candidates(args.task_id)
+        return _Outcome(
+            _json(candidates.to_dict())
+            if args.json_output
+            else render_rule_candidates(candidates)
+        )
     if args.rules_action is not None:
         return _rule_write(context, configuration)
     settings = context.extensions.config
@@ -999,6 +1007,7 @@ def _complete(context: _Context) -> _Outcome:
         adjustments=args.adjustments,
         caller_role=args.role,
         rule_results=tuple(args.rule_result),
+        rule_selection=tuple(args.select_rules),
         assignment=args.assignment,
     )
     if args.role == "manager" and not args.no_dispatch:
@@ -1875,7 +1884,7 @@ def main(argv: list[str] | None = None) -> int:
     workflow = cast(str | None, getattr(args, "workflow", None))
     task_id = cast(str | None, getattr(args, "task_id", None))
     logged = args.command not in _READ_ONLY_COMMANDS and not (
-        (args.command == "rules" and args.rules_action in {None, "stats"})
+        (args.command == "rules" and args.rules_action in {None, "stats", "candidates"})
         or (
             args.command == "feedback"
             and (args.feedback_action not in {"record", "prune"} or args.dry_run)
@@ -1957,7 +1966,8 @@ def _config_source(args: argparse.Namespace, root: Path) -> ConfigSource:
     """
     snapshots = ConfigSnapshots(root)
     if args.command in _CHECKOUT_CONFIG_COMMANDS or (
-        args.command == "rules" and args.rules_action not in {None, "stats"}
+        args.command == "rules"
+        and args.rules_action not in {None, "stats", "candidates"}
     ):
         return snapshots.checkout()
     task_id = getattr(args, "task_id", None)

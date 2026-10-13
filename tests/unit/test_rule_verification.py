@@ -173,7 +173,7 @@ def test_needs_skip_checked_verified_and_waived_rules(develop: PlanItem) -> None
     )
     record = _record(resolved_checks=lint, rule_resolutions=resolutions)
 
-    needs, not_applicable = verification_needs(develop, record, ("app.py",), Path())
+    needs, not_applicable, _ = verification_needs(develop, record, ("app.py",), Path())
 
     assert [(need.id, need.interpretation) for need in needs] == [
         ("develop/2", "Clear."),
@@ -189,7 +189,7 @@ def test_needs_skip_checked_verified_and_waived_rules(develop: PlanItem) -> None
         ),
         checks_waived=(("develop/2", "not here"),),
     )
-    assert verification_needs(develop, done, ("app.py",), Path()) == ((), ())
+    assert verification_needs(develop, done, ("app.py",), Path()) == ((), (), ())
 
 
 def _scoped_step(develop: PlanItem) -> PlanItem:
@@ -211,7 +211,7 @@ def test_a_scoped_rule_selecting_no_changed_file_is_not_applicable(
     (tmp_path / "app.py").write_text("print(1)\n", encoding="utf-8")
     (tmp_path / "quiet.py").write_text("pass\n", encoding="utf-8")
 
-    needs, not_applicable = verification_needs(
+    needs, not_applicable, _ = verification_needs(
         _scoped_step(develop), _record(), ("app.py", "quiet.py"), tmp_path
     )
 
@@ -227,7 +227,7 @@ def test_a_scoped_rule_selecting_no_changed_file_is_not_applicable(
 def test_without_changed_files_only_unscoped_rules_are_judged(
     develop: PlanItem,
 ) -> None:
-    needs, not_applicable = verification_needs(
+    needs, not_applicable, _ = verification_needs(
         _scoped_step(develop), _record(), (), Path()
     )
 
@@ -243,7 +243,7 @@ def test_a_rule_already_settled_is_not_scoped_again(develop: PlanItem) -> None:
         ),
     )
 
-    needs, not_applicable = verification_needs(
+    needs, not_applicable, _ = verification_needs(
         _scoped_step(develop), record, (), Path()
     )
 
@@ -408,7 +408,7 @@ def test_a_judged_rule_names_its_check_whose_config_is_missing(
         develop, _converted(("lint.toml",)), root=Path("/nonexistent")
     )
 
-    needs, _ = verification_needs(
+    needs, _, _ = verification_needs(
         develop, _record(rule_resolutions=resolutions), ("app.py",), Path()
     )
 
@@ -441,7 +441,7 @@ def test_a_rule_whose_own_check_is_unavailable_is_judged_with_the_reason(
         "develop/3",
         "develop/4",
     ]
-    needs, _ = verification_needs(develop, _record(), ("app.py",), Path(), report)
+    needs, _, _ = verification_needs(develop, _record(), ("app.py",), Path(), report)
     foo = next(need for need in needs if need.id == "develop/4")
     assert (foo.check, foo.missing, foo.unavailable) == (
         "develop/4",
@@ -459,7 +459,7 @@ def test_a_rule_whose_own_check_is_unavailable_is_judged_with_the_reason(
             verdicts=(RuleVerdict("develop/4", "pass", "v"),)
         )
     )
-    needs, _ = verification_needs(develop, judged, ("app.py",), Path(), report)
+    needs, _, _ = verification_needs(develop, judged, ("app.py",), Path(), report)
     assert "develop/4" not in [need.id for need in needs]
     waived = _record(checks_waived=(("develop/4", "not here"),))
     assert "develop/4" not in [
@@ -479,8 +479,8 @@ def test_rules_covered_by_an_unavailable_derived_check_are_judged(
     record = _record(resolved_checks=lint, rule_resolutions=resolutions)
     report = _unavailable("lint", "derived", "`lint-tool` is missing")
 
-    covered, _ = verification_needs(develop, record, ("app.py",), Path())
-    needs, _ = verification_needs(develop, record, ("app.py",), Path(), report)
+    covered, _, _ = verification_needs(develop, record, ("app.py",), Path())
+    needs, _, _ = verification_needs(develop, record, ("app.py",), Path(), report)
 
     assert "develop/1" not in [need.id for need in covered]
     cli = next(need for need in needs if need.id == "develop/1")

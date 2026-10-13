@@ -853,6 +853,7 @@ def test_rules_carries_each_rules_counters(
         "judged_failures": 0,
         "waived": 0,
         "not_applicable": 0,
+        "left_out": 0,
         "last_applied_at": "2026-10-08T03:00:00+00:00",
         "last_failed_at": "2026-10-08T02:00:00+00:00",
         "last_failure": {"task": "TASK-1", "step": "develop", "kind": "check"},
@@ -868,7 +869,7 @@ def test_rules_stats_lists_the_most_failing_first_and_marks_the_never_applied(
     root = _project(tmp_path)
     assert main(["--root", str(root), "rules", "stats"]) == 0
     out = capsys.readouterr().out
-    assert "| `docs/header` | never | 0 (0/0) | 0 | 0 | 0 | 0 | — |" in out
+    assert "| `docs/header` | never | 0 (0/0) | 0 | 0 | 0 | 0 | 0 | — |" in out
     assert "Never applied: `develop/1`, `docs/header`." in out
     _counted(root)
 
@@ -879,10 +880,10 @@ def test_rules_stats_lists_the_most_failing_first_and_marks_the_never_applied(
     assert "kept locally in `.ww/rules/stats.json`" in out
     rows = [line for line in out.splitlines() if line.startswith("| `")]
     assert rows == [
-        "| `docs/header` | 3 | 2 (2/0) | 3 | 0 | 0 | 0 | 2026-10-08T02:00:00+00:00 "
+        "| `docs/header` | 3 | 2 (2/0) | 3 | 0 | 0 | 0 | 0 | 2026-10-08T02:00:00+00:00 "
         "in TASK-1 `develop` (check) |",
-        "| `develop/1` | 1 | 0 (0/0) | 0 | 1 | 0 | 0 | — |",
-        "| `docs/never` | never | 0 (0/0) | 0 | 0 | 1 | 3 | — |",
+        "| `develop/1` | 1 | 0 (0/0) | 0 | 1 | 0 | 0 | 0 | — |",
+        "| `docs/never` | never | 0 (0/0) | 0 | 0 | 1 | 3 | 0 | — |",
     ]
     assert out.endswith("Never applied: `docs/never`.\n")
     assert main(["--root", str(root), "rules", "stats", "--json"]) == 0

@@ -21,13 +21,13 @@ from ww.errors import StateError
 from ww.execution_models import CheckReport, ExecutionState, PlanItemExecution
 from ww.extensions import is_extension_reference
 from ww.instructions.builder import checks_unavailable, fix_failures, rule_lines
-from ww.instructions.models import CheckPreview
+from ww.instructions.models import CheckPreview, RuleLine
 from ww.plan import PlanItem, PlannedCheck, PlannedRule, WorkflowPlan
 from ww.rule_conversion import ScriptizeState, every_rule, scriptize_state
 from ww.rule_disputes import DisputeEntry
 from ww.rule_stats import STATS_FILE, RuleStats
 from ww.rule_store import RuleAutomation, describe_command
-from ww.rule_verification import verification_needs
+from ww.rule_verification import selection_candidates, verification_needs
 from ww.workflow_config import (
     INIT_STEP_NAME,
     HandlerDefinition,
@@ -53,10 +53,11 @@ def check_preview(
 
     The judged rules are narrowed by ``files``, the change set so far, as a
     completion narrows them: each one left is listed as the step page lists
-    it, and the scoped ones it leaves out are only named.
+    it, and the scoped ones it leaves out, like those a rule selection left
+    out, are only named.
     """
     record = state.item_executions[state.cursor]
-    needs, out_of_scope = verification_needs(
+    needs, out_of_scope, left_out = verification_needs(
         item, record, files, directory, report, marks
     )
     judged = {rule.id for rule in needs}
@@ -74,8 +75,58 @@ def check_preview(
         unavailable=checks_unavailable(report),
         judged=tuple(line for line in rule_lines(item, record) if line.id in judged),
         judged_out_of_scope=out_of_scope,
+        judged_left_out=left_out,
         waived=record.checks_waived,
         all_files=report.all_files,
+    )
+
+
+@dataclass(frozen=True)
+class RuleCandidates:
+    """The judged rules a rule-selection item chooses among, step by step."""
+
+    task_id: str
+    steps: tuple[tuple[str, tuple[RuleLine, ...]], ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            "steps": [
+                {"step": step, "rules": [rule.to_dict() for rule in rules]}
+                for step, rules in self.steps
+            ],
+        }
+
+
+def rule_candidates(
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    item: PlanItem,
+    automation: RuleAutomation,
+    root: Path | None,
+) -> RuleCandidates:
+    """Each step ``item`` chooses for, with the judged rules it chooses among."""
+    if not item.selects_rules_for:
+        raise StateError(f"{item.name!r} is not a rule selection")
+    return RuleCandidates(
+        task_id=state.task_id,
+        steps=tuple(
+            (
+                target.step.rsplit("/", 1)[-1],
+                tuple(
+                    RuleLine(
+                        rule.id,
+                        rule.summary,
+                        rule.paths,
+                        rule.contains_in_file,
+                        rule.contains_in_diff,
+                    )
+                    for rule in selection_candidates(target, automation, root)
+                ),
+            )
+            for target in plan.items
+            if target.id in item.selects_rules_for
+        ),
     )
 
 

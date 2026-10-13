@@ -1761,7 +1761,15 @@ change set through the one applicability test checks use,
 verifier must still judge, each with its scope and the changed files in it,
 and the IDs the change set left out, which `record_not_applicable` keeps on
 the item record (`rules_not_applicable`) so the artifact reports them and
-the statistics count them; `reject_completion` clears that set. When no
+the statistics count them; `reject_completion` clears that set. A step
+named by an earlier step's `select_rules_for` begins with the judged rules
+that selection did not keep resolved as left out (`RuleResolution.left_out_by`,
+from `selection_of`, which reads the latest completed `select-rules` item's
+`rule_selection`); `verification_needs` judges such a rule only when it is
+scoped and the change set reaches it, and returns the rest as a third set,
+kept as `rules_left_out`. The `select-rules` item is compiled after the
+step's `before_complete` hooks with the step's worker settings, so
+`assignment_at` keeps it in the step's assignment. When no
 rule remains, the completion is recorded as usual. Otherwise ww holds the
 completion: the arguments, the change set and the draft artifact stay on
 the item record, and ww inserts one verification item per distinct worker

@@ -2375,13 +2375,37 @@ The step's artifact gains a `## Rules` section after `## Result`: one line per
 rule with its status, `passed`, `not applicable`, `failed`, which only a
 waiver lets through, `verified pass (by <verification item>)` for a rule a
 verifier judged, `not applicable (no changed file in scope)` for a judged
-rule the change set left out, `passed (check <name>)` for one a derived
+rule the change set left out, `left out (by <step>)` for one a rule
+selection left out, `passed (check <name>)` for one a derived
 check covers, or `check unavailable (<reason>)` for a check that could not
 run, with the verdict first when a verifier judged its rule instead; hook
 checks carry `(hook)`. A rule is `self-declared` only when the operator
 waived it, which skips its verification too. The section ends with the
 waived IDs and the operator's reason for each, if any, and how many
 completions ww rejected before this one.
+
+### Letting an earlier step choose the rules
+
+A workflow with an expensive step before the work, such as an `architect`
+step before `develop`, can let that step choose which judged rules the work
+gets:
+
+```yaml
+- name: architect
+  description: Design the change.
+  select_rules_for: [develop]
+- develop: Implement the design.
+```
+
+Once `architect` completes, its worker, in the same session, gets one short
+extra page: list the candidates with `ww rules candidates <task>`, then
+`complete --select-rules develop=<id>,<id>` with a line on why as the
+artifact (`develop=` keeps none). `develop` then sees, and its verifier
+judges, only the rules kept; checked rules always run. A left-out rule with
+`paths` or `contains_*` is still judged when the change reaches its files,
+so work that drifts from the design is still verified. Left-out rules show
+in the artifact and in `rules stats` as `left out`. Without
+`select_rules_for`, every step gets all its rules as usual.
 
 ### How a rule becomes a check
 
@@ -2567,8 +2591,9 @@ step's rules: a completion accepted, or one rejected because a check or a
 verifier's verdict failed. A rule counts once per settlement: `applied` when
 it was evaluated, `checked` or `judged` by how, `check_failures` or
 `judged_failures` when that evaluation failed it, `waived` when the operator
-let the step complete without it, and `not_applicable` when the change set
-selected none of its files. A step rejected three times by one rule's check
+let the step complete without it, `not_applicable` when the change set
+selected none of its files, and `left_out` when an earlier step's rule
+selection left it out. A step rejected three times by one rule's check
 and then accepted counts that rule as applied 4, checked 4, check failures
 3. Each rule also keeps when it last applied and last failed, and the task,
 step and kind (`check` or `verdict`) of the last failure.

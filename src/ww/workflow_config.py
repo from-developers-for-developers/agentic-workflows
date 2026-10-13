@@ -597,6 +597,9 @@ class StepDefinition(HandlerDefinition):
     hooks: tuple[HookDefinition, ...] = ()
     # The step's own rules, and the root groups it names, in declaration order.
     rules: tuple[StepRule, ...] = ()
+    # Later steps, by name or path, whose judged rules this step's worker
+    # chooses once its own work is done; each then gets only those.
+    select_rules_for: tuple[str, ...] = ()
     # The compiler flattens nested steps while preserving their parent identity.
     child_steps: tuple[StepDefinition, ...] = ()
     # A step with ``items`` collects work items, then runs ``items.steps``

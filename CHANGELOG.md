@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
+- Added: `select_rules_for` on a step lets its worker, right after its own work and in the same assignment, choose which judged rules the named later steps get (`rules candidates <task>`, `complete --select-rules <step>=<ids>`); those steps are given and verified against only the kept rules, a left-out scoped rule is still judged when the change reaches its files, and left-out rules show in artifacts, `check` and `rules stats` (`left_out`).
 - Changed: a task command given `--root` at a git worktree, where no task state lives, now says the state is in the primary checkout and to omit `--root`.
 - Changed: `ww-scriptize-rules` never rewords or splits rules; a rule that needs it is left unscriptized, to be reworded and merged before a later run.
 - Changed: `ww check` narrows the judged rules by the change set so far, as completion does, and lists each with its scope and summary; the scoped ones the change does not reach yet are named apart. In `--json`, `judged_at_completion` holds rule objects and `judged_out_of_scope` is new.

@@ -66,6 +66,11 @@ def rule_outcomes(
         detail = result.output if result.status == "unavailable" else None
         return RuleOutcome(check_id, _REPORTED[result.status], hook=hook, detail=detail)
 
+    left_out_by = {
+        entry.id: entry.left_out_by
+        for entry in record.rule_resolutions
+        if entry.left_out_by is not None
+    }
     outcomes = []
     for rule in item.rules:
         if rule.id in checked:
@@ -109,6 +114,12 @@ def rule_outcomes(
             outcomes.append(
                 RuleOutcome(
                     rule.id, "not applicable", detail="no changed file in scope"
+                )
+            )
+        elif rule.id in record.rules_left_out:
+            outcomes.append(
+                RuleOutcome(
+                    rule.id, "left out", detail=f"by `{left_out_by.get(rule.id)}`"
                 )
             )
         else:

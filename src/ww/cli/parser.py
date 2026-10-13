@@ -447,6 +447,16 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="JSON",
         help="A verification's verdict on one rule, as a JSON object. Repeatable.",
     )
+    complete.add_argument(
+        "--select-rules",
+        action="append",
+        default=[],
+        metavar="STEP=IDS",
+        help=(
+            "A rule selection's choice for one step: <step>=<id>,<id>; "
+            "<step>= selects none. One per step."
+        ),
+    )
     feedback = subparsers.add_parser(
         "feedback",
         parents=[_shared("json", "role", "run")],
@@ -1086,6 +1096,15 @@ def _rules_parser(
         action="store_true",
         help="Revoke without the y/N prompt, on the operator's word.",
     )
+    candidates = actions.add_parser(
+        "candidates",
+        parents=[after],
+        help=(
+            "List the judged rules the rule selection in progress chooses "
+            "among, for each step it chooses for."
+        ),
+    )
+    candidates.add_argument("task_id", metavar="TASK")
     actions.add_parser(
         "stats",
         parents=[after],
