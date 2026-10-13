@@ -28,6 +28,7 @@ from ww.rule_store import (
 from ww.rule_views import (
     ListedRule,
     Orphans,
+    RuleCandidates,
     RulesListing,
     RuleStatsListing,
     RuleView,
@@ -39,9 +40,27 @@ def _ids(ids: tuple[str, ...]) -> str:
     return ", ".join(f"`{item}`" for item in ids)
 
 
+def render_rule_candidates(candidates: RuleCandidates) -> str:
+    lines: Lines = [f"# {candidates.task_id} · rule candidates", ""]
+    for step, rules in candidates.steps:
+        lines.extend([f"## `{step}`", ""])
+        lines.extend(
+            f"- `{rule.id}`{rule_scope(rule)} — {rule.summary}" for rule in rules
+        )
+        if not rules:
+            lines.append("No judged rules: select none.")
+        lines.append("")
+    return _document(lines)
+
+
 def render_check_preview(preview: CheckPreview) -> str:
     lines: Lines = [f"# {preview.task_id} · check `{preview.step}`", ""]
-    if not (preview.checks or preview.judged or preview.judged_out_of_scope):
+    if not (
+        preview.checks
+        or preview.judged
+        or preview.judged_out_of_scope
+        or preview.judged_left_out
+    ):
         lines.append(
             "This step has no checks to run and no rules for a verifier to judge."
         )
@@ -104,6 +123,10 @@ def render_check_preview(preview: CheckPreview) -> str:
                 "Not judged unless your changes reach their scope: "
                 f"{_ids(preview.judged_out_of_scope)}.",
             ]
+        )
+    if preview.judged_left_out:
+        lines.extend(
+            ["", f"Left out by the rule selection: {_ids(preview.judged_left_out)}."]
         )
     for reason, waived in _waivers(preview.waived):
         lines.extend(["", f"Waived by the operator ({_ids(tuple(waived))}): {reason}."])
@@ -277,7 +300,7 @@ def _rule_lines(lines: Lines, rules: tuple[ListedRule, ...]) -> None:
 
 def stats_clause(stats: RuleStats) -> str:
     """A rule's counters in one phrase; nothing before any completion counted it."""
-    if not (stats.applied or stats.waived or stats.not_applicable):
+    if not (stats.applied or stats.waived or stats.not_applicable or stats.left_out):
         return ""
     parts = [
         (
@@ -293,6 +316,7 @@ def stats_clause(stats: RuleStats) -> str:
         ),
         f"waived {stats.waived}",
         f"not applicable {stats.not_applicable}",
+        *([f"left out {stats.left_out}"] if stats.left_out else []),
     ]
     return ", ".join(parts) + _last_failure(stats, "; last failed ")
 
@@ -317,12 +341,13 @@ def render_rule_stats(listing: RuleStatsListing) -> str:
         [
             "Counted from every settled completion of a step, accepted or "
             f"rejected, and kept locally in `{STATS_FILE}`. A rule never "
-            "applied was waived or left out by the change set every time, or "
+            "applied was waived or left out, by the change set or a rule "
+            "selection, every time, or "
             "never reached by a completed step.",
             "",
             "| Rule | Applied | Failed (check/verdict) | Checked | Judged | "
-            "Waived | Not applicable | Last failure |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+            "Waived | Not applicable | Left out | Last failure |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for entry in listing.rules:
@@ -331,7 +356,8 @@ def render_rule_stats(listing: RuleStatsListing) -> str:
             f"| `{entry.id}` | {'never' if entry.never_applied else stats.applied} "
             f"| {stats.failures} ({stats.check_failures}/{stats.judged_failures}) "
             f"| {stats.checked} | {stats.judged} | {stats.waived} "
-            f"| {stats.not_applicable} | {_last_failure(stats, '').strip() or '—'} |"
+            f"| {stats.not_applicable} | {stats.left_out} "
+            f"| {_last_failure(stats, '').strip() or '—'} |"
         )
     never = tuple(entry.id for entry in listing.rules if entry.never_applied)
     if never:

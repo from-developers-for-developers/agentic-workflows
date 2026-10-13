@@ -221,13 +221,15 @@ def complete_command(
     role: CallerRole = "worker",
     summary: bool = False,
     rule_results: tuple[str, ...] = (),
+    rule_selection: tuple[str, ...] = (),
     assignment: str | None = None,
 ) -> str:
     """The command that submits a step.
 
     ``role`` is the manager only when the pending input belongs to an
     input-only assignment that the manager supplies itself. A verification
-    item reports one ``--rule-result`` per rule ID in ``rule_results``.
+    item reports one ``--rule-result`` per rule ID in ``rule_results``, a
+    rule selection one ``--select-rules`` per step in ``rule_selection``.
     """
     parts = ["complete", _arg(task_id)]
     parts.extend(_worker(role, assignment))
@@ -245,6 +247,10 @@ def complete_command(
     if summary:
         parts.append(f'{SUMMARY_FLAG}="<one or two sentences for the next step>"')
     parts.extend(f"--rule-result='<JSON result for {rule}>'" for rule in rule_results)
+    parts.extend(
+        f"--select-rules {step}='<rule IDs, comma-separated; none: empty>'"
+        for step in rule_selection
+    )
     return _command(*parts)
 
 

@@ -75,6 +75,7 @@ from ww.execution_models import (
     PlanItemExecution,
     PlanSnapshot,
     RuleResolution,
+    RuleSelection,
     TaskRunAggregate,
     initial_state,
     operation_scope_for,
@@ -137,11 +138,19 @@ from ww.rule_verification import (
     resolve_rules,
     resume_held,
     round_open,
+    selection_candidates,
+    selection_of,
     skip_idle_verification,
     verdicts_of,
     verification_needs,
 )
-from ww.rule_views import RuleView, check_preview, rule_view
+from ww.rule_views import (
+    RuleCandidates,
+    RuleView,
+    check_preview,
+    rule_candidates,
+    rule_view,
+)
 from ww.run_coordination import RunCoordinator
 from ww.run_reports import (
     DEBUG,
@@ -1698,12 +1707,14 @@ class WorkflowService:
         adjustments: str | None = None,
         caller_role: CallerRole | None = None,
         rule_results: tuple[str, ...] = (),
+        rule_selection: tuple[str, ...] = (),
         assignment: str | None = None,
     ) -> Instruction:
         """Complete the active agent item.
 
         A verification item reports one ``rule_results`` JSON object, a
-        verdict, per rule it covers.
+        verdict, per rule it covers; a rule-selection item one
+        ``rule_selection`` entry, ``<step>=<id>,...``, per step it chooses for.
         """
         self._validate_caller_role(caller_role)
         self._validate_selected_agent(selected_agent)
@@ -1722,7 +1733,7 @@ class WorkflowService:
         if request is not None:
             if metadata_values:
                 raise StateError("bootstrap completion cannot save task metadata")
-            if rule_results:
+            if rule_results or rule_selection:
                 raise StateError("a bootstrap completion verifies no rules")
             if adjustments:
                 raise StateError("a bootstrap completion records no adjustments")
@@ -1758,6 +1769,7 @@ class WorkflowService:
                 adjustments=adjustments,
                 caller_role=caller_role,
                 rule_results=rule_results,
+                rule_selection=rule_selection,
             )
             held = instruction.completion_held
             instruction = self._with_handoff(
@@ -1819,6 +1831,7 @@ class WorkflowService:
         initialization: bool = False,
         drain_stop: int | None = None,
         rule_results: tuple[str, ...] = (),
+        rule_selection: tuple[str, ...] = (),
         replayed: bool = False,
     ) -> Instruction:
         """Complete the active agent item; see :meth:`complete`.
@@ -1833,7 +1846,13 @@ class WorkflowService:
         if state.status == "failed":
             return self.render(state, snapshot)
         if needs_repair(state):
-            if variables or metadata_values or rule_results or adjustments:
+            if (
+                variables
+                or metadata_values
+                or rule_results
+                or rule_selection
+                or adjustments
+            ):
                 raise StateError(
                     "repair completion accepts only an artifact and summary"
                 )
@@ -1945,6 +1964,14 @@ class WorkflowService:
         if rule_results:
             raise StateError(
                 f"--rule-result reports a verification; {item.name!r} is not one"
+            )
+        if item.selects_rules_for:
+            state = self._record_rule_selection(
+                state, snapshot.plan, item, rule_selection, artifact
+            )
+        elif rule_selection:
+            raise StateError(
+                f"--select-rules reports a rule selection; {item.name!r} is not one"
             )
         held = active_record.held_completion
         waived = {key for key, _ in active_record.checks_waived}
@@ -2227,6 +2254,19 @@ class WorkflowService:
                 interact_commands=None,
             )
         return replace(self._tag_caller(instruction, caller_role), manager_intro=True)
+
+    def rule_candidates(self, task_id: str) -> RuleCandidates:
+        """The judged rules the rule selection in progress chooses among."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        item, _ = self._active_step(state, snapshot, "no rule selection is in progress")
+        return rule_candidates(
+            state,
+            snapshot.plan,
+            item,
+            self.rule_store.load(),
+            self.storage.config_root,
+        )
 
     def check(self, task_id: str) -> CheckPreview:
         """Run the active step's checks now, as its completion would.
@@ -4032,10 +4072,10 @@ class WorkflowService:
         else:
             mark = take_mark(directory) if record.change_mark else None
         files, marks = change_set(directory, record.change_mark, mark)
-        needs, not_applicable = verification_needs(
+        needs, not_applicable, left_out = verification_needs(
             item, record, files, directory, check_report, marks
         )
-        state = record_not_applicable(state, not_applicable, _now)
+        state = record_not_applicable(state, not_applicable, left_out, _now)
         if not needs:
             return state, None
         held = replace(
@@ -4310,6 +4350,83 @@ class WorkflowService:
             replayed=True,
         )
 
+    def _record_rule_selection(
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        entries: tuple[str, ...],
+        artifact: str | None,
+    ) -> ExecutionState:
+        """Check a rule-selection item's ``--select-rules`` and keep them.
+
+        Each step it chooses for takes exactly one entry, ``<step>=<id>,...``,
+        named as ``select_rules_for`` names it or by its path; nothing after
+        ``=`` selects no rule. Every ID must be one of that step's candidates.
+        """
+        if artifact is None or not artifact.strip():
+            raise StateError(
+                f"{item.name!r} needs --artifact: a line on why these rules"
+            )
+        store = self.rule_store.load()
+        targets = {
+            target.id: target
+            for target in plan.items
+            if target.id in item.selects_rules_for
+        }
+        chosen: dict[str, tuple[str, ...]] = {}
+        for entry in entries:
+            name, separator, listed = entry.partition("=")
+            name = name.strip()
+            found = [
+                target
+                for target in targets.values()
+                if name in {target.step, target.step.rsplit("/", 1)[-1]}
+            ]
+            if not separator or len(found) != 1:
+                raise StateError(
+                    f"--select-rules {entry!r}: write <step>=<id>,... for one of "
+                    + ", ".join(
+                        target.step.rsplit("/", 1)[-1] for target in targets.values()
+                    )
+                )
+            target = found[0]
+            if target.id in chosen:
+                raise StateError(f"--select-rules for {name!r} is given twice")
+            chosen[target.id] = tuple(
+                dict.fromkeys(
+                    rule for rule in map(str.strip, listed.split(",")) if rule
+                )
+            )
+        selections = []
+        for target in targets.values():
+            name = target.step.rsplit("/", 1)[-1]
+            if target.id not in chosen:
+                raise StateError(
+                    f"--select-rules is missing for {name!r}; "
+                    f"`--select-rules {name}=` selects none of its rules"
+                )
+            allowed = tuple(
+                rule.id
+                for rule in selection_candidates(
+                    target, store, self.storage.config_root
+                )
+            )
+            unknown = [rule for rule in chosen[target.id] if rule not in allowed]
+            if unknown:
+                raise StateError(
+                    f"--select-rules for {name!r} names "
+                    + ", ".join(unknown)
+                    + ", not among its candidates: "
+                    + (", ".join(allowed) or "none")
+                )
+            selections.append(RuleSelection(target.id, chosen[target.id], allowed))
+        records = list(state.item_executions)
+        records[state.cursor] = replace(
+            records[state.cursor], rule_selection=tuple(selections)
+        )
+        return replace(state, item_executions=tuple(records))
+
     def _resolution(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> tuple[tuple[RuleResolution, ...], tuple[PlannedCheck, ...]] | None:
@@ -4318,6 +4435,7 @@ class WorkflowService:
         Read from the store once, when the step first begins; a step that
         began before keeps what it began with. A converted check applies only
         where its configuration files exist in the configuration the run reads.
+        The rules an earlier step's rule selection left out are marked so.
         """
         if (
             not judged_rules(item)
@@ -4325,7 +4443,10 @@ class WorkflowService:
         ):
             return None
         return resolve_rules(
-            item, self.rule_store.load(), root=self.storage.config_root
+            item,
+            self.rule_store.load(),
+            root=self.storage.config_root,
+            selection=selection_of(state, plan, item),
         )
 
     def _check_scope(

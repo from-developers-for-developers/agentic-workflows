@@ -191,6 +191,7 @@ def reject_completion(
         draft_artifact=artifact,
         held_completion=None,
         rules_not_applicable=(),
+        rules_left_out=(),
     )
     limits = fix_limits(item, record)
     exhausted = [

@@ -76,6 +76,7 @@ STEP_ONLY_KEYS: set[str] = {
     "negative",
     "mixed",
     "rules",
+    "select_rules_for",
 }
 
 CHILD_FLOW_KEYS = {"description", "workflow", "steps", "assignment"}
@@ -243,6 +244,7 @@ def _parse_step(
         raise ConfigurationError(f"{path}.learnable requires artifact: true")
     hooks = _parse_step_hooks(mapping, path, referenced)
     rules = _parse_rules(mapping, path, base.name, referenced)
+    select_rules_for = _parse_select_rules_for(mapping, path, referenced)
     items = (
         _parse_items(mapping, path, handlers_by_name, profile, role, subagents)
         if "items" in mapping
@@ -288,6 +290,7 @@ def _parse_step(
         profile_description=profile["profile_description"],
         hooks=hooks,
         rules=rules,
+        select_rules_for=select_rules_for,
         child_steps=children,
         items=items,
         child_launch=child_launch,
@@ -548,6 +551,26 @@ def _parse_rules(
     if "rules" in mapping:
         return parse_step_rules(mapping["rules"], name, path)
     return referenced.rules if referenced is not None else ()
+
+
+def _parse_select_rules_for(
+    mapping: dict[str, Any], path: str, referenced: StepDefinition | None
+) -> tuple[str, ...]:
+    """Parse ``select_rules_for``: the later steps whose judged rules this
+    step chooses, or take the referenced step's."""
+    if "select_rules_for" not in mapping:
+        return referenced.select_rules_for if referenced is not None else ()
+    value = mapping["select_rules_for"]
+    label = f"{path}.select_rules_for"
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(name, str) and name.strip() for name in value)
+    ):
+        raise ConfigurationError(f"{label} must be a non-empty list of step names")
+    names = tuple(name.strip() for name in value)
+    _unique(names, f"step in {label}")
+    return names
 
 
 def _parse_children(

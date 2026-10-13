@@ -969,6 +969,13 @@ class InstructionBuilder:
         )
 
         verification = self._verification(state, plan, item)
+        # The judged rules an earlier step's rule selection left out, and that
+        # step: the page lists only the rules it kept.
+        left_out = {
+            entry.id: entry.left_out_by
+            for entry in record.rule_resolutions
+            if entry.left_out_by is not None
+        }
 
         def completion(artifact: bool) -> str:
             return complete_command(
@@ -986,6 +993,11 @@ class InstructionBuilder:
                     if verification
                     else ()
                 ),
+                rule_selection=tuple(
+                    target.step.rsplit("/", 1)[-1]
+                    for target in plan.items
+                    if target.id in item.selects_rules_for
+                ),
                 assignment=worker_token(state),
             )
 
@@ -995,9 +1007,11 @@ class InstructionBuilder:
             state.working_directory,
             {**dict(state.workflow_values), **self.task_values(state, plan)},
         )
+        # A rule selection's page stays short: its worker has just done the
+        # step it chooses after, whose result the page still names.
         requirements = (
             self._requirements_page(state, plan, item)
-            if item.step != INIT_STEP_NAME
+            if item.step != INIT_STEP_NAME and not item.selects_rules_for
             else _RequirementsPage()
         )
         return replace(
@@ -1015,7 +1029,9 @@ class InstructionBuilder:
             required_values=required,
             required_metadata=item.save_metadata,
             automatic_context=context,
-            has_previous_artifacts=_has_previous_artifacts(state, plan),
+            has_previous_artifacts=(
+                _has_previous_artifacts(state, plan) and not item.selects_rules_for
+            ),
             next_steps=_next_steps(state, plan),
             artifact=record.artifact,
             continuation_command=completion(item.artifact),
@@ -1080,7 +1096,11 @@ class InstructionBuilder:
             ),
             config_commit=self.config.commit,
             config_ref=self.config.ref,
-            rules=rule_lines(item, record),
+            rules=tuple(
+                line for line in rule_lines(item, record) if line.id not in left_out
+            ),
+            rules_left_out=len(left_out),
+            rules_left_out_by=next(iter(left_out.values()), None),
             modes=item.modes,
             fix_required=fix_required(item, record),
             checks_waived=record.checks_waived,

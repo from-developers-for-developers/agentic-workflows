@@ -587,6 +587,7 @@ A step accepts every [handler key](#handlers), plus:
 | --- | --- | --- |
 | `hooks` | hooks mapping | Hooks local to this step. |
 | `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
+| `select_rules_for` | non-empty list of step names or paths | Later steps whose judged rules this step's worker chooses once its own work is done; each named step then gets, and is verified against, only those. See [Choosing the rules of later steps](#choosing-the-rules-of-later-steps). Only on a step with agent work of its own, outside `items` and `children`. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, groups and items substeps inherit it in turn. |
 | `role` | `manager` or `worker` | Who performs the step. `manager` keeps it in the managing session in every runtime and ignores its profile, agent, model, and reasoning settings; `worker`, the default, lets an `auto` run delegate it. In `auto` the manager completes a `manager` step with `complete --role manager`, and `complete` with `--role worker` on it is refused. Inherited from the workflow and every enclosing step, like `profile`; nested steps, groups and items substeps inherit it in turn. Only agent steps take it: on a step ww runs, such as a command, it is an error. |
 | `subagents` | boolean | When `false`, whoever performs the step, the manager or a worker, does all of its work alone and spawns no subagent for anything; the step's page says so. It says nothing about who performs the step (`role`) or with which model. Inherited like `profile`; a nested step may set `true` again. Defaults to `true`. |
@@ -1604,6 +1605,50 @@ A failing verdict rejects the held completion as a failed check would, under
 the rule's `max_fixes`. Once every rule of the round passed, ww records the
 held completion as submitted.
 
+#### Choosing the rules of later steps
+
+A step that already understands the change, such as an `architect` step
+before `develop`, can choose which judged rules later steps get:
+
+```yaml
+- name: architect
+  description: Design the change.
+  select_rules_for: [develop]
+- develop: Implement the design.
+```
+
+Each name is a later step of the same workflow, by its own name or its
+path, outside `items` and `children`; it must name exactly one step with
+agent work of its own. `lint` refuses a name that is no later step, and
+compiling the plan refuses one that names several or a step without agent
+work.
+
+ww compiles a `select-rules` item right after the step's `before_complete`
+hooks, with the step's own worker settings, so its assignment carries on
+into it: in `auto` the same worker gets its short page, and the manager can
+still dispatch it to a fresh worker if that session is gone; the page names
+the step's result. It cannot be skipped. Its candidates for each named step
+are that step's judged rules as they would resolve now: not those a
+converted check checks, nor those whose converted check does not apply here,
+which are judged whatever is selected. `rules candidates <task>` lists them.
+The worker completes with its reason as `--artifact` and one
+`--select-rules <step>=<id>,<id>` per named step; `<step>=` selects none.
+`complete` refuses a missing, repeated or unknown step, an ID that is no
+candidate, a missing artifact, and the option on any other item.
+
+When a named step begins, each candidate the selection did not keep is
+resolved as left out by the selecting step. The step's page lists only the
+judged rules kept, its checked rules as always, and says how many were left
+out. At completion a left-out rule is judged only when it is scoped and the
+change set reaches its scope, so a change the selection did not foresee is
+still verified; otherwise it is recorded on the step as left out, the
+artifact's Rules section reports it as `left out` by the selecting step, and
+`rules stats` counts it as `left_out`. `check` names the left-out rules apart.
+The latest completed selection for a step counts: when the selecting step
+runs again, its new selection replaces the old for a named step that has not
+begun yet; a step's fix rounds keep what it began with. Without
+`select_rules_for` nothing of this applies.
+
 `discover` (JSON only: `rules_notice`) and the first page of
 `start` (JSON: `rules_notice`) say how many declared rules are
 `unscriptized` and suggest the `ww-scriptize` skill, which starts
@@ -1614,8 +1659,8 @@ suggests `ww-scriptize-rules` only while it is switched on. `lint` also
 hints at the judged rules with neither `paths` nor `contains_in_file` nor
 `contains_in_diff`, which a verifier judges after every step, and at a rule
 the local counters
-(`rules stats`) show waived or left out by the change set five times or
-more without ever applying.
+(`rules stats`) show waived, or left out by the change set or a rule
+selection, five times or more without ever applying.
 
 #### Guiding checks: `rules.check_guidance`
 
@@ -1691,13 +1736,14 @@ or `schema_version` is an error.
 | Command | Effect |
 | --- | --- |
 | `handoff <task> [--run ID] [--assignment TOKEN] [--json]` | Prints the "Handoff to manager" block of an ended assignment again, exactly as `handoff_markdown` gave it to the worker; `--json` prints the block's `to_dict()` (`task_id`, `continuation_task_id`, `assignment`, `steps`, `files`, `files_reproducible`, `summary`, `error`). Without `--assignment` it is the most recently ended assignment of the run. An assignment still open is refused with "assignment <token> has not ended; complete or fail its step first"; an unknown token is refused too. The block is built from saved state: the file list is reproduced only while the assignment is the latest one and its change mark is available, and otherwise reads "Files changed: not reproducible after the assignment ended" (`files_reproducible` false). Read only; not written to the audit log. |
-| `check <task> [--json]` | Runs the checks of the step in progress against its change set so far, exactly as `complete` would, and prints the failures in the fix page's shape, or `All checks pass`, plus the rules a verifier judges at completion, narrowed by that change set as completion narrows them: each with its scope and summary as the step page lists it, then the IDs of the scoped ones the change set does not reach yet (`judged_at_completion` and `judged_out_of_scope` in `--json`), and lists a check that cannot run here apart as `check unavailable: <reason>`. Records nothing: no attempt counts and no output is kept. Exits 1 when a check fails; an unavailable check is no failure. Not written to the audit log. |
+| `check <task> [--json]` | Runs the checks of the step in progress against its change set so far, exactly as `complete` would, and prints the failures in the fix page's shape, or `All checks pass`, plus the rules a verifier judges at completion, narrowed by that change set as completion narrows them: each with its scope and summary as the step page lists it, then the IDs of the scoped ones the change set does not reach yet and of those a rule selection left out (`judged_at_completion`, `judged_out_of_scope` and `judged_left_out` in `--json`), and lists a check that cannot run here apart as `check unavailable: <reason>`. Records nothing: no attempt counts and no output is kept. Exits 1 when a check fails; an unavailable check is no failure. Not written to the audit log. |
 | `dispute <task> --rule <id>... --reason "<why>"` | Only while the step is in progress, and only for IDs a rejected completion of it failed: a rule, a `fix` hook, a derived check, or a judged rule. `--rule` is repeated for several checks, with one reason for them all; an ID none failed refuses the whole dispute, and each disputed check gets its own entry in the dispute log. Stops the task with `operator_reason: check_disputed`; the page shows each check's text, command, and last output, and the worker's reason; `disputes` in JSON lists them. `next --retry` lets them all stand, `next --force` waives them all. |
 | `rule <task> <id> [--json]` | One rule or check of the task as its plan froze it: full text, globs, rule file (or the step's own list), command and assertion, `max_fixes`, the steps of the task that carry it, and for a rule without a command what the rule-automation store knows about its wording. |
 | `rules [--json]` | The declared root groups with their filters, verifier hints, and rules (ID, summary, globs, whether it has a check, file, times disputed, its local `stats` counters as `rules stats` lists them), then each step's own rules and the groups it names, then the `targets`: every workflow's steps in tree order, `init` left out, each with its leaf `step` name, its logical `path` (the precise `steps` selector; nested steps, collection and per-child stages take their parent's path as a prefix), whether it is `agent_owned` (a nested sequence only holds its steps; an extension or ww-owned action takes no rules), and the `groups` reaching it now, by filter or by name, empty for a step that is not an agent's. |
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
-| `rules stats [--json]` | Every declared rule with the checkout's local counters from `.ww/rules/stats.json`, counted once per settled completion of a step that carried the rule: `applied` (checked or judged), `checked`, `check_failures`, `judged`, `judged_failures`, `waived`, `not_applicable`, `last_applied_at`, `last_failed_at` and `last_failure` (`task`, `step`, `kind`: `check` or `verdict`), with `text_hash` the wording last evaluated. The most failing rule first (check plus verdict failures), then the most applied, then by ID; a rule never applied is marked (`never_applied` in JSON). Read-only: not in the audit log. |
+| `rules stats [--json]` | Every declared rule with the checkout's local counters from `.ww/rules/stats.json`, counted once per settled completion of a step that carried the rule: `applied` (checked or judged), `checked`, `check_failures`, `judged`, `judged_failures`, `waived`, `not_applicable`, `left_out` (by a [rule selection](#choosing-the-rules-of-later-steps)), `last_applied_at`, `last_failed_at` and `last_failure` (`task`, `step`, `kind`: `check` or `verdict`), with `text_hash` the wording last evaluated. The most failing rule first (check plus verdict failures), then the most applied, then by ID; a rule never applied is marked (`never_applied` in JSON). Read-only: not in the audit log. |
 | `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project root and refused when absolute, with a `..` part, or ignored by Git; a check with `--config` paths must reach them as `{{ww.root}}/<path>` in its argv or `"$WW_ROOT/<path>"` in its shell source, or it is refused, since it runs in the step's directory, which may be a worktree of a branch without them. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
+| `rules candidates <task> [--json]` | While a `select-rules` item is in progress: each step it chooses for, with the judged rules it chooses among (ID, scope, summary). Read-only: not in the audit log. |
 | `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--contains-in-file <text>...] [--contains-in-diff <text>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in `--dir <path>`, else in the group's first directory item, else beside the group's last file item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. A file no listed directory holds is appended to the group's `rules` list, relative to the declaring file as its other entries are: in `ww-rules.yaml` by rewriting the file whole, in any other file as one added line, checked to change nothing else and refused, naming the line to add by hand, when the list cannot be extended that way (a flow list, an anchor, a tag). Refuses an existing file, a group that lists neither a directory nor a file when `--dir` is absent, and a group an extension ships. Reports each glob's match count and the number of project files containing each string, and warns about a `--contains-in-file` string found nowhere (a `--contains-in-diff` string may arrive with a change, so it only gets the count). `--assert` is repeatable, one condition each. |

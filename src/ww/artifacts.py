@@ -10,6 +10,7 @@ RuleStatus = Literal[
     "passed",
     "failed",
     "not applicable",
+    "left out",
     "check unavailable",
     "self-declared",
     "verified pass",

@@ -244,6 +244,9 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         checks=_planned_checks_from_list(raw.get("checks", []), item_path),
         modes=_planned_modes_from_list(raw.get("modes", []), item_path),
         verifies=_verification_target(raw.get("verifies"), item_path),
+        selects_rules_for=_string_list(
+            raw.get("selects_rules_for", []), f"{item_path}.selects_rules_for"
+        ),
     )
 
 

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import replace
 from types import MappingProxyType
 
@@ -140,6 +140,7 @@ def validate_configuration(
     _validate_child_tasks(normalized.workflows)
     _validate_item_saves(normalized)
     _validate_child_launches(normalized)
+    _validate_rule_selections(normalized)
     return normalized
 
 
@@ -865,6 +866,49 @@ def _logical_step_paths(steps: tuple[StepDefinition, ...]) -> set[str]:
 def _step_filter_references(steps: tuple[StepDefinition, ...]) -> set[str]:
     """Return both compatible leaf names and precise logical step paths."""
     return {name for step, path in step_paths(steps) for name in (step.name, path)}
+
+
+def _validate_rule_selections(configuration: WorkflowConfiguration) -> None:
+    """Each ``select_rules_for`` name is a later step outside items and
+    children, chosen by a step outside them too; the compiler then checks
+    that it names exactly one agent step."""
+    for workflow in configuration.workflows:
+        ordered = tuple(_selection_walk(workflow.steps))
+        for index, (step, path, contained) in enumerate(ordered):
+            if not step.select_rules_for:
+                continue
+            label = f"{workflow.name}/{path}.select_rules_for"
+            if contained:
+                raise ConfigurationError(
+                    f"{label}: a step inside items or children cannot select rules"
+                )
+            later = ordered[index + 1 :]
+            for name in step.select_rules_for:
+                found = [entry for entry in later if name in {entry[0].name, entry[1]}]
+                if not found:
+                    raise ConfigurationError(
+                        f"{label}: {name!r} is not a later step of the workflow"
+                    )
+                if all(entry[2] for entry in found):
+                    raise ConfigurationError(
+                        f"{label}: {name!r} is inside items or children, which "
+                        "cannot take a rule selection"
+                    )
+
+
+def _selection_walk(
+    steps: tuple[StepDefinition, ...],
+    parent: str | None = None,
+    contained: bool = False,
+) -> Iterator[tuple[StepDefinition, str, bool]]:
+    """Every step in plan order with its path and whether items or children
+    enclose it; assessment outcomes count as steps, as the plan names them."""
+    for step in steps:
+        path = f"{parent}/{step.name}" if parent else step.name
+        yield step, path, contained
+        yield from _selection_walk(step.child_steps, path, contained)
+        yield from _selection_walk(step.assessment_outcomes, path, contained)
+        yield from _selection_walk(_template_steps(step), path, True)
 
 
 def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:

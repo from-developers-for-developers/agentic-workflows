@@ -298,6 +298,9 @@ class PlanItem:
     # Set on a verification item ww inserts before an agent step whose rules
     # without a command need a verifier; never compiled from configuration.
     verifies: VerificationTarget | None = None
+    # Set on the rule-selection item ww compiles after a step with
+    # ``select_rules_for``: the plan item IDs of the steps it chooses for.
+    selects_rules_for: tuple[str, ...] = ()
     on_failure: str = "operator"
     on_failure_instruction: str | None = None
     max_handler_fixes: int = 3
@@ -413,6 +416,13 @@ class PlanItem:
                 "a verification item is agent-owned and carries no rules, checks, "
                 "or provided values"
             )
+        if self.selects_rules_for and (
+            self.owner != "agent" or self.rules or self.checks or self.provide
+        ):
+            raise ValueError(
+                "a rule-selection item is agent-owned and carries no rules, "
+                "checks, or provided values"
+            )
         if self.save_metadata and self.owner != "agent" and self.kind != "cli":
             raise ValueError("only agent-owned or CLI plan items can save metadata")
         if self.update_document and self.owner != "agent":
@@ -474,6 +484,8 @@ class PlanItem:
             del data["modes"]
         if self.verifies is None:
             del data["verifies"]
+        if not self.selects_rules_for:
+            del data["selects_rules_for"]
         if self.child_stage is None:
             del data["child_stage"]
         if self.child_number is None:
@@ -547,6 +559,7 @@ class PlanItem:
             "checks": [check.to_dict() for check in self.checks],
             "modes": [mode.to_dict() for mode in self.modes],
             "verifies": self.verifies.to_dict() if self.verifies else None,
+            "selects_rules_for": list(self.selects_rules_for),
         }
 
 

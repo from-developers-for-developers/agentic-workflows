@@ -8,7 +8,8 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-13
 
-- Fixed: a step's change set could miss a file rewritten with content of the same size right after the index was written, so its checks and verifiers skipped that file.
+- Added: `select_rules_for` lets a step choose, right after its own work, which judged rules named later steps get and are verified against; left-out scoped rules are still judged when the change reaches their files. `5fa8a45`
+- Fixed: a step's change set could miss a file rewritten with content of the same size right after the index was written, so its checks and verifiers skipped that file. `f5ce429`
 - Changed: a task command given `--root` at a git worktree, where no task state lives, now says the state is in the primary checkout and to omit `--root`.
 - Changed: `ww-scriptize-rules` never rewords or splits rules; a rule that needs it is left unscriptized, to be reworded and merged before a later run.
 - Changed: `ww check` narrows the judged rules by the change set so far, as completion does, and lists each with its scope and summary; the scoped ones the change does not reach yet are named apart. In `--json`, `judged_at_completion` holds rule objects and `judged_out_of_scope` is new.

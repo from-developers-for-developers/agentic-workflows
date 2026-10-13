@@ -167,6 +167,10 @@ class RuleResolution:
     check: str | None = None
     interpretation: str | None = None
     missing: str | None = None
+    # A judged rule an earlier step's rule selection left out: the step it
+    # names neither lists it on the page nor has it judged, unless the
+    # change set reaches the rule's scope.
+    left_out_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -177,6 +181,8 @@ class RuleResolution:
         }
         if self.missing is not None:
             data["missing"] = self.missing
+        if self.left_out_by is not None:
+            data["left_out_by"] = self.left_out_by
         return data
 
     @classmethod
@@ -204,6 +210,42 @@ class RuleResolution:
             missing=expect_optional_string(
                 data.get("missing"), "rule resolution.missing"
             ),
+            left_out_by=expect_optional_string(
+                data.get("left_out_by"), "rule resolution.left_out_by"
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class RuleSelection:
+    """The judged rules a rule-selection item chose for one later step.
+
+    ``step`` is that step's plan item ID; ``candidates`` are the rules it
+    chose among and ``rules`` those it kept, so a rule that only became
+    judged later is never counted as left out.
+    """
+
+    step: str
+    rules: tuple[str, ...]
+    candidates: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "rules": list(self.rules),
+            "candidates": list(self.candidates),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> RuleSelection:
+        if not isinstance(data, dict) or set(data) != {"step", "rules", "candidates"}:
+            raise ValueError(
+                "rule selection must be an object of step, rules, candidates"
+            )
+        return cls(
+            step=expect_string(data["step"], "rule selection.step"),
+            rules=_strings(data["rules"], "rule selection.rules"),
+            candidates=_strings(data["candidates"], "rule selection.candidates"),
         )
 
 
@@ -636,8 +678,13 @@ class PlanItemExecution:
     # settled against the change set each time a completion is evaluated: no
     # verifier judges them, and the artifact reports them as not applicable.
     rules_not_applicable: tuple[str, ...] = ()
+    # The judged rules a rule selection left out that this completion did not
+    # bring back by reaching their scope: no verifier judges them.
+    rules_left_out: tuple[str, ...] = ()
     # On a verification item's record: the rules it is asked about.
     verification: tuple[VerificationRule, ...] = ()
+    # On a rule-selection item's record: what it chose for each step.
+    rule_selection: tuple[RuleSelection, ...] = ()
 
     def check_failures(self, check_id: str) -> int:
         """How many rejected completions this check failed.
@@ -691,6 +738,16 @@ class PlanItemExecution:
             ),
             "rules_not_applicable": list(self.rules_not_applicable),
             "verification": [rule.to_dict() for rule in self.verification],
+            **(
+                {"rules_left_out": list(self.rules_left_out)}
+                if self.rules_left_out
+                else {}
+            ),
+            **(
+                {"rule_selection": [entry.to_dict() for entry in self.rule_selection]}
+                if self.rule_selection
+                else {}
+            ),
             **(
                 {"assessment_outcome": self.assessment_outcome}
                 if self.assessment_outcome is not None
@@ -805,6 +862,11 @@ class PlanItemExecution:
             verification=tuple(
                 VerificationRule.from_dict(entry)
                 for entry in _list(data.get("verification", []), "verification")
+            ),
+            rules_left_out=_strings(data.get("rules_left_out", []), "rules left out"),
+            rule_selection=tuple(
+                RuleSelection.from_dict(entry)
+                for entry in _list(data.get("rule_selection", []), "rule selection")
             ),
         )
 

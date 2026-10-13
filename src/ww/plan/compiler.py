@@ -434,6 +434,7 @@ class WorkflowPlanCompiler:
                 annotations=step_annotations(terminal_step),
             )
         items = self._mark_child_identity(items)
+        items = _resolve_rule_selections(items)
         plan = WorkflowPlan(
             workflow=workflow.name,
             workflow_description=workflow.description,
@@ -673,6 +674,18 @@ class WorkflowPlanCompiler:
                     annotations=step_annotations,
                 ),
             )
+            if step.select_rules_for:
+                self._append_rule_selection(
+                    items,
+                    workflow,
+                    step,
+                    path,
+                    parent,
+                    available_after,
+                    ancestors=ancestors,
+                    boundary_hints=step_hints,
+                    annotations=step_annotations,
+                )
             available_after = (
                 *available_after,
                 *self._append_hooks(
@@ -726,6 +739,62 @@ class WorkflowPlanCompiler:
                 )
             values = available_after
         return values
+
+    def _append_rule_selection(
+        self,
+        items: list[PlanItem],
+        workflow: WorkflowDefinition,
+        step: StepDefinition,
+        step_path: str,
+        parent: str | None,
+        available_variables: tuple[str, ...],
+        *,
+        ancestors: tuple[str, ...],
+        boundary_hints: ExecutionHints,
+        annotations: ItemAnnotations,
+    ) -> None:
+        """The item in which the step's worker, its own work done, chooses the
+        judged rules of the steps its ``select_rules_for`` names.
+
+        It follows the step's ``before_complete`` hooks with the step's own
+        worker settings, so the same assignment carries on into it. Its
+        ``selects_rules_for`` holds the names until the plan is complete.
+        """
+        label = f"{workflow.name}/{step_path}.select_rules_for"
+        if (workflow.name, step_path) not in self._checked_steps:
+            raise ConfigurationError(
+                f"{label}: the step has no agent work of its own to choose with"
+            )
+        names = ", ".join(f"`{name}`" for name in step.select_rules_for)
+        text = (
+            f"Choose the judged rules that {names} will get: each is given, and "
+            "verified against, only the rules you select, so keep every rule its "
+            "work could touch. Rules with a check always run, and a left-out "
+            "rule whose files the change still reaches is judged anyway. List "
+            "the candidates with `{{ww.executable}} rules candidates "
+            "{{ww.task.id}}`; read one in full with `{{ww.executable}} rule "
+            "{{ww.task.id}} <id>`. Complete with one `--select-rules` per step "
+            "and, as the artifact, a line on why."
+        )
+        self._append_handler(
+            items,
+            workflow,
+            step,
+            step_path,
+            parent,
+            "after_complete",
+            "select-rules",
+            HandlerDefinition(
+                "select-rules",
+                description=text,
+                action=DefinedAction("prompt", Prompt(text)),
+            ),
+            available_variables,
+            ancestors=ancestors,
+            boundary_hints=boundary_hints,
+            annotations=annotations,
+        )
+        items[-1] = replace(items[-1], selects_rules_for=step.select_rules_for)
 
     def _append_hooks(
         self,
@@ -1397,6 +1466,56 @@ def compile_workflow_plan(
 
 def _execution_kind(kind: PlanItemKind) -> ExecutionKind:
     return actions.get(kind).execution
+
+
+def _resolve_rule_selections(items: list[PlanItem]) -> list[PlanItem]:
+    """Turn each rule-selection item's step names into plan item IDs.
+
+    A name is a later agent step of the workflow, matched by its path or its
+    own name, outside items and children; it must name exactly one.
+    """
+    resolved = list(items)
+    for index, item in enumerate(items):
+        if not item.selects_rules_for:
+            continue
+        label = f"{item.workflow}/{item.step}.select_rules_for"
+        later = [
+            entry
+            for entry in items[index + 1 :]
+            if entry.phase == "step"
+            and entry.owner == "agent"
+            and not entry.summary
+            and entry.verifies is None
+            and entry.step != item.step
+        ]
+        targets = []
+        for name in item.selects_rules_for:
+            found = [
+                entry
+                for entry in later
+                if name in {entry.step, entry.step.rsplit("/", 1)[-1]}
+            ]
+            if not found:
+                raise ConfigurationError(
+                    f"{label}: {name!r} is not a later agent step of the workflow"
+                )
+            if len(found) > 1:
+                raise ConfigurationError(
+                    f"{label}: {name!r} names several steps ("
+                    + ", ".join(entry.step for entry in found)
+                    + "); give its path"
+                )
+            target = found[0]
+            if target.item_context is not None or target.child_stage is not None:
+                raise ConfigurationError(
+                    f"{label}: {name!r} is inside items or children, which "
+                    "cannot take a rule selection"
+                )
+            targets.append(target.id)
+        if len(set(targets)) != len(targets):
+            raise ConfigurationError(f"{label} names one step twice")
+        resolved[index] = replace(item, selects_rules_for=tuple(targets))
+    return resolved
 
 
 def _merge_annotations(

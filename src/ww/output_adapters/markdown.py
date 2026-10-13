@@ -865,7 +865,10 @@ def _modes(lines: Lines, instruction: Instruction) -> None:
 
 def _rules(lines: Lines, instruction: Instruction) -> None:
     """The rules the step's worker follows, and those ww checks at completion."""
-    if not instruction.rules or instruction.item_status != "in_progress":
+    if (
+        not (instruction.rules or instruction.rules_left_out)
+        or instruction.item_status != "in_progress"
+    ):
         return
     _append_section(lines, "Rules")
     lines.extend(
@@ -894,6 +897,17 @@ def _rules(lines: Lines, instruction: Instruction) -> None:
                 "",
                 "A verifier, not you, judges these rules against the files you "
                 "changed after you complete.",
+            ]
+        )
+    if instruction.rules_left_out:
+        lines.extend(
+            [
+                "",
+                f"`{instruction.rules_left_out_by}` left out "
+                f"{instruction.rules_left_out} more judged rule"
+                f"{'s' * (instruction.rules_left_out != 1)}; a scoped one is "
+                "still judged if your change reaches its files, and "
+                f"`{check_command(instruction.task_id)}` names it then.",
             ]
         )
     if checked:
