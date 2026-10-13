@@ -53,8 +53,13 @@ workflows:
           branch with a base branch (`git diff master...`) or scans the whole
           repository, because a step must not fail on files it did not
           change. Then the rules
-          proposed as not convertible. When no rule is `unscriptized`, say so;
-          that is a fine result.
+          proposed as not convertible. Never reword or split a rule in this
+          run: ww matches a check to a rule by its wording as committed on
+          the configured branch, so a rule changed on this run's branch would
+          leave the check tied to the old wording. List a rule that needs
+          rewording as such, leave it unscriptized, and say it is to be
+          reworded and merged before a later run converts it. When no rule
+          is `unscriptized`, say so; that is a fine result.
       - name: approaches
         interactive: true
         artifact_from: collect

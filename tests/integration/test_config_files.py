@@ -372,3 +372,37 @@ def test_init_keeps_the_repo_files_own_enabled(
     _init(project, capsys)
 
     assert json.loads((project / "ww.json").read_text())["enabled"] == "on_request"
+
+
+def test_a_task_command_rooted_at_a_worktree_names_the_primary_checkout(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def git(*arguments: str) -> None:
+        subprocess.run(
+            ["git", *arguments], cwd=project, check=True, capture_output=True
+        )
+
+    _write(project / "ww.yaml", _WORKFLOW)
+    _write(project / ".gitignore", ".ww/\n")
+    git("init", "-q", "-b", "main")
+    git(
+        "-c",
+        "user.email=t@e.st",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-qm",
+        "s",
+        "--allow-empty",
+    )
+    git("worktree", "add", "-q", "-b", "feature", str(project / "wt"))
+    # The task's state, as ww keeps it, in the primary checkout only.
+    (project / ".ww/tasks/TASK-1").mkdir(parents=True)
+
+    assert main(["--root", str(project / "wt"), "status", "TASK-1"]) == 1
+
+    error = capsys.readouterr().err
+    assert "is a git worktree; the task's state lives in the primary checkout" in error
+    assert str(project.resolve()) in error
+    assert main(["--root", str(project / "wt"), "status", "TASK-2"]) == 1
+    assert "git worktree" not in capsys.readouterr().err

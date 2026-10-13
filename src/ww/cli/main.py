@@ -1932,7 +1932,7 @@ def main(argv: list[str] | None = None) -> int:
         if logged:
             with contextlib.suppress(OSError, WwError):
                 log("error", str(error))
-        print(f"ww error: {error}", file=sys.stderr)
+        print(f"ww error: {error}{_worktree_root_hint(args, root)}", file=sys.stderr)
         return 1
     if logged:
         log(
@@ -2074,6 +2074,49 @@ def _machine_readable(args: argparse.Namespace) -> bool:
     )
 
 
+def _primary_checkout(directory: Path) -> Path | None:
+    """The checkout owning the git directory ``directory`` shares, if any."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    common_dir = Path(result.stdout.strip())
+    if not common_dir.is_absolute():
+        common_dir = directory / common_dir
+    resolved = common_dir.resolve()
+    return resolved.parent if resolved.name == ".git" else None
+
+
+def _worktree_root_hint(args: argparse.Namespace, root: Path) -> str:
+    """Why a task command failed under ``--root`` naming a linked worktree.
+
+    ww's task state lives in the primary checkout; an explicit ``--root`` at
+    one of its worktrees reads an empty one. Empty when that is not the case.
+    """
+    task_id = getattr(args, "task_id", None)
+    if args.root is None or not isinstance(task_id, str) or not task_id:
+        return ""
+    primary = _primary_checkout(root)
+    task = Path(".ww/tasks") / bare_request_id(task_id)
+    if primary is None or primary == root or (root / task).exists():
+        return ""
+    if not (primary / task).exists():
+        return ""
+    return (
+        f"\n--root {root} is a git worktree; the task's state lives in the "
+        f"primary checkout, {primary}. Omit --root: ww finds it from any of "
+        "its worktrees."
+    )
+
+
 def _resolve_project_root(explicit_root: Path | None) -> Path:
     """Find the durable project root when invoked from a linked worktree.
 
@@ -2086,23 +2129,9 @@ def _resolve_project_root(explicit_root: Path | None) -> Path:
     if explicit_root is not None:
         return explicit_root.resolve()
     current = Path.cwd().resolve()
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            cwd=current,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        result = None
-    if result is not None and result.returncode == 0:
-        common_dir = Path(result.stdout.strip())
-        if not common_dir.is_absolute():
-            common_dir = current / common_dir
-        resolved = common_dir.resolve()
-        if resolved.name == ".git":
-            return resolved.parent
+    primary = _primary_checkout(current)
+    if primary is not None:
+        return primary
     for candidate in (current, *current.parents):
         if (candidate / WORKFLOWS_FILE).is_file() or (candidate / ".ww").exists():
             return candidate
