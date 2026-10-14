@@ -82,6 +82,14 @@ from ww.execution_models import (
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
 from ww.feedback import FeedbackStore
+from ww.gotos import (
+    drop_goto,
+    goto_due,
+    limit_reached,
+    request_goto,
+    stop_at_limit,
+    take_goto,
+)
 from ww.handler_repairs import close_assignment, needs_repair, request_repair
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
@@ -1317,7 +1325,18 @@ class WorkflowService:
                 if replayed is None:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
-        if state.status == "failed":
+        if state.status == "failed" and state.failure_kind == "goto_limit":
+            # The operator either lets the goto run once more or leaves it
+            # untaken, and the run continues after the step that asked.
+            state = project_steps(
+                drop_goto(state, _now)
+                if force
+                else take_goto(state, snapshot.plan, _now),
+                snapshot.plan,
+                _now,
+            )
+            self.commit(state, snapshot)
+        elif state.status == "failed":
             if (
                 force
                 and state.failure_kind in {"fix_limit", "check_disputed"}
@@ -1709,12 +1728,15 @@ class WorkflowService:
         rule_results: tuple[str, ...] = (),
         rule_selection: tuple[str, ...] = (),
         assignment: str | None = None,
+        goto: str | None = None,
     ) -> Instruction:
         """Complete the active agent item.
 
         A verification item reports one ``rule_results`` JSON object, a
         verdict, per rule it covers; a rule-selection item one
         ``rule_selection`` entry, ``<step>=<id>,...``, per step it chooses for.
+        ``goto`` names the step the flow goes to once this one is done, as
+        the workflow's ``allowed_gotos`` allows.
         """
         self._validate_caller_role(caller_role)
         self._validate_selected_agent(selected_agent)
@@ -1737,6 +1759,8 @@ class WorkflowService:
                 raise StateError("a bootstrap completion verifies no rules")
             if adjustments:
                 raise StateError("a bootstrap completion records no adjustments")
+            if goto:
+                raise StateError("a bootstrap completion takes no goto")
             return replace(
                 self._tag_caller(
                     self.bootstrap.complete(
@@ -1770,6 +1794,7 @@ class WorkflowService:
                 caller_role=caller_role,
                 rule_results=rule_results,
                 rule_selection=rule_selection,
+                goto=goto,
             )
             held = instruction.completion_held
             instruction = self._with_handoff(
@@ -1832,6 +1857,7 @@ class WorkflowService:
         drain_stop: int | None = None,
         rule_results: tuple[str, ...] = (),
         rule_selection: tuple[str, ...] = (),
+        goto: str | None = None,
         replayed: bool = False,
     ) -> Instruction:
         """Complete the active agent item; see :meth:`complete`.
@@ -1852,6 +1878,7 @@ class WorkflowService:
                 or rule_results
                 or rule_selection
                 or adjustments
+                or goto
             ):
                 raise StateError(
                     "repair completion accepts only an artifact and summary"
@@ -1866,6 +1893,8 @@ class WorkflowService:
         if state.status == "awaiting_input":
             if adjustments:
                 raise StateError("supplying values records no adjustments")
+            if goto:
+                raise StateError("supplying values takes no goto")
             return self._complete_pending_input(
                 state,
                 snapshot,
@@ -1881,6 +1910,7 @@ class WorkflowService:
         item = snapshot.plan.items[state.cursor]
         if item.id != state.active_item_id or item.owner != "agent":
             raise StateError("active plan item does not match the execution cursor")
+        goto_request = request_goto(snapshot.plan, item, goto) if goto else None
         assignment = active_assignment(
             snapshot.plan, state.assignment_item_id, runtime=state.workflow_runtime
         )
@@ -2021,6 +2051,7 @@ class WorkflowService:
                     selected_reasoning=selected_reasoning,
                     summary_for_next=summary_for_next,
                     adjustments=adjustments,
+                    goto=goto,
                 ),
             )
             if held_page is not None:
@@ -2065,6 +2096,8 @@ class WorkflowService:
         )
         if initialization:
             state = replace(state, pending_init_artifact=None)
+        if goto_request is not None:
+            state = replace(state, pending_goto=goto_request)
         state = replace(
             state,
             pending_task_metadata=(updated_metadata.values if updated_metadata else ()),
@@ -3622,7 +3655,20 @@ class WorkflowService:
         stop_at: int | None = None,
     ) -> tuple[ExecutionState, PlanSnapshot]:
         plan = snapshot.plan
-        while state.cursor < len(plan.items):
+        while True:
+            if goto_due(state, plan):
+                limit = self.extensions.config.limits.gotos
+                if limit_reached(state, limit):
+                    state = project_steps(stop_at_limit(state, limit, _now), plan, _now)
+                    self.commit(state, snapshot)
+                    return state, snapshot
+                state = project_steps(take_goto(state, plan, _now), plan, _now)
+                self.commit(state, snapshot)
+                # The goto ends the assignment: the manager dispatches the
+                # step it reached as a new one.
+                assignment_item_id = None
+            if state.cursor >= len(plan.items):
+                break
             if stop_at is not None and state.cursor >= stop_at:
                 return state, snapshot
             assignment = active_assignment(
@@ -4347,6 +4393,7 @@ class WorkflowService:
             summary_for_next=held.summary_for_next,
             adjustments=held.adjustments,
             caller_role=caller_role,
+            goto=held.goto,
             replayed=True,
         )
 

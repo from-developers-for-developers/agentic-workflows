@@ -104,6 +104,23 @@ where the operator's say matters. Prefer the compact and standard-branch
 forms, and custom labels in `outcomes` only when positive and negative do not
 say it.
 
+### Going back: goto
+
+When review finds work to redo, a **goto** sends the flow back to an earlier
+step instead of a loop: develop, review, develop, review, until review is
+satisfied. List the moves a step's worker may make in the workflow's
+`allowed_gotos`, as `[from, to]` step paths (`develop/fix` for a substep),
+and say in the step's description when to make one; the page then shows the
+`complete --goto <step>` it adds. An assessment outcome can be a goto too,
+`goto: develop` or `goto: [develop, "<detail>"]`, when the agent's verdict
+should decide. Going back keeps everything: the steps run again with fresh
+records, the earlier ones stay in the history, and their new artifacts sit
+beside the first as `<step>-N.md`. Every step on the way is told it is a next
+round, why, and where the asking step's artifact is. A goto can also skip
+ahead; the steps between are marked skipped. `limits.gotos` (default 5) stops
+for the operator before a loop runs away
+([Gotos](specification.md#gotos)).
+
 ### Items: independent pieces of work
 
 Use `items` when the work splits into pieces that are independently
@@ -1391,8 +1408,10 @@ step after `assess`. An outcome that should end the run instead is
 ```
 
 Choosing it completes the workflow, skipping every later step and hook. An
-assessment needs at least one outcome with work; one that only stops is the
-compact form.
+outcome can also send the flow to another step with `goto: <step path>` or
+`goto: [<step path>, <detail>]`, on its own, as in
+[Going back: goto](#going-back-goto). An assessment needs at least one outcome
+with work or a goto; one that only stops is the compact form.
 
 A gate declares only the outcome that has work. `positive`, `negative`, and
 `mixed` are accepted whether declared or not, and an undeclared one runs nothing

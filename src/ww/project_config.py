@@ -34,7 +34,8 @@ times a step's completion may be rejected for a failed check before ww stops
 for the operator, unless a rule sets its own ``max_fixes``. ``auto_retries``
 (default 0) is how many times ww retries a failed automatic step itself,
 recording each failure on the step, before the step's own failure handling (a
-repair assignment, or the operator) applies.
+repair assignment, or the operator) applies. ``gotos`` (default 5) is how many
+times a run may take one goto edge before ww stops for the operator.
 
 ``pages`` tunes what pages print. ``worker_requirements`` is ``full`` (the
 default: the first page of every delegated worker assignment prints the task
@@ -111,6 +112,8 @@ BUILTIN_DEFAULTS: dict[str, dict[str, str]] = {
     "workflow_summary": {"model": "auto", "reasoning": "auto"},
 }
 DEFAULT_FIXES = 3
+# How often one run may take the same goto edge.
+DEFAULT_GOTOS = 5
 # A ``task_format`` that forbids generated IDs: every task is started with an
 # explicit ID, or binds one in its workflow's first step.
 EXPLICIT_TASK_FORMAT = "explicit"
@@ -241,12 +244,17 @@ class Limits:
     # How often ww itself retries a failed automatic step before the step's
     # failure handling (a repair assignment, or the operator) applies.
     auto_retries: int = 0
+    # How often one run may take the same goto edge before ww stops for the
+    # operator.
+    gotos: int = DEFAULT_GOTOS
 
     def to_dict(self) -> dict[str, int]:
-        # The retries appear once set, so a default file stays as ``init`` wrote it.
+        # The retries and gotos appear once set, so a default file stays as
+        # ``init`` wrote it.
         return {
             "fixes": self.fixes,
             **({"auto_retries": self.auto_retries} if self.auto_retries else {}),
+            **({"gotos": self.gotos} if self.gotos != DEFAULT_GOTOS else {}),
         }
 
 
@@ -621,12 +629,12 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
 
 
 def _parse_limits(data: Any, path: str) -> Limits:
-    """``limits``: optional positive ``fixes``, and ``auto_retries``."""
+    """``limits``: optional positive ``fixes`` and ``gotos``, and ``auto_retries``."""
     if data is None:
         return Limits()
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.limits must be an object")
-    unknown = set(data) - {"fixes", "auto_retries"}
+    unknown = set(data) - {"fixes", "auto_retries", "gotos"}
     if unknown:
         raise ConfigurationError(
             f"{path}.limits has unknown key(s): {', '.join(sorted(unknown))}"

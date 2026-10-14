@@ -24,6 +24,7 @@ from ww.operations import (
 from ww.workflow_config import (
     ChildFlow,
     ChoiceDefinition,
+    GotoTarget,
     HandlerDefinition,
     HookDefinition,
     ItemFlow,
@@ -816,6 +817,19 @@ def _parse_assessment_branches(
                 )
             result.append(StepDefinition(label, stop_workflow=True))
             continue
+        if "goto" in value:
+            if set(value) != {"goto"}:
+                raise ConfigurationError(
+                    f"{path}{field_path}.{label}.goto must stand alone: the "
+                    "outcome sends the flow to that step and runs nothing"
+                )
+            result.append(
+                StepDefinition(
+                    label,
+                    goto=parse_goto(value["goto"], f"{path}{field_path}.{label}.goto"),
+                )
+            )
+            continue
         result.append(
             _parse_step(
                 {"name": label, **value},
@@ -824,6 +838,25 @@ def _parse_assessment_branches(
             )
         )
     return tuple(result)
+
+
+# ``goto: [<step path>, <detail>]`` holds at most these two.
+_GOTO_PARTS = 2
+
+
+def parse_goto(value: Any, path: str) -> GotoTarget:
+    """``<step path>``, or ``[<step path>]`` or ``[<step path>, <detail>]``."""
+    parts = [value] if isinstance(value, str) else value
+    if (
+        not isinstance(parts, list)
+        or not 1 <= len(parts) <= _GOTO_PARTS
+        or not all(isinstance(part, str) and part.strip() for part in parts)
+    ):
+        raise ConfigurationError(
+            f"{path} must be a step path, or [<step path>, <detail>]"
+        )
+    target = parts[0].strip()
+    return GotoTarget(target, parts[1].strip() if len(parts) == _GOTO_PARTS else None)
 
 
 def _parse_nested_steps(

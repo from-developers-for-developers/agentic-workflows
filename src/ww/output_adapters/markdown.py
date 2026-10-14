@@ -103,6 +103,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _working_directory(lines, instruction)
         _profile(lines, instruction)
         _task_requirements(lines, instruction)
+        _goto_notice(lines, instruction)
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
         _explicit_guidance(lines, instruction)
@@ -528,6 +529,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "fix_limit": "the step's checks reached their fix limit",
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
+    "goto_limit": "a goto reached its limit",
 }
 
 
@@ -1212,6 +1214,8 @@ def _verification_results(lines: Lines, page: VerificationPage) -> None:
 def _outcome_effect(outcome: AssessmentOutcome) -> str:
     if outcome.stops:
         return "ends the workflow here, skipping everything after it"
+    if outcome.goto is not None:
+        return f"sends the flow to `{outcome.goto}` with a goto"
     if not outcome.declared:
         return (
             f"runs nothing extra and continues with `{outcome.first_step}`"
@@ -1416,6 +1420,82 @@ def _run_handovers(lines: Lines, instruction: Instruction) -> None:
         lines.append(f"- `{handover.step}`: {text} (artifact: `{handover.artifact}`)")
 
 
+def _goto_limit(lines: Lines, instruction: Instruction) -> None:
+    """A goto asked once more than ``limits.gotos`` allows: the operator says."""
+    if instruction.workflow_runtime != "single" and instruction.caller_role == "worker":
+        return
+    _append_section(lines, "Operator recovery")
+    lines.append(
+        "Tell the user, who is the `ww` operator, that the work keeps going "
+        "round this goto, quoting the reason the last step gave, and wait for "
+        "their choice; do not pick for them. Run exactly the option they choose:"
+    )
+    for command in instruction.recovery_commands:
+        purpose = (
+            "To take the goto once more"
+            if command.action == "retry"
+            else "To leave it untaken and continue after the step that asked, "
+            "with their reason"
+        )
+        lines.extend(["", f"{purpose}:", "", "```console", command.command, "```"])
+
+
+def _goto_notice(lines: Lines, instruction: Instruction) -> None:
+    """Say how a goto brought the flow here, so the step builds on what was."""
+    notice = instruction.goto_notice
+    if notice is None or instruction.item_status != "in_progress":
+        return
+    source, target = f"`{notice.source}`", f"`{notice.target}`"
+    if notice.kind == "target":
+        _append_section(lines, "Sent back by a goto")
+        lead = (
+            f"{source} sent the flow back to this step (goto round "
+            f"{notice.round}). This is not a fresh start: this step's earlier "
+            "result is among the previous artifacts. Rework it for the reason "
+            f"below, then complete as usual; the steps after this one, up to "
+            f"{source}, run again too."
+        )
+    elif notice.kind == "path":
+        _append_section(lines, "Running again after a goto")
+        lead = (
+            f"{source} sent the flow back to {target} (goto round "
+            f"{notice.round}), and this step runs again on the way back to "
+            f"{source}. This is not a fresh start: build on this step's "
+            "earlier result, among the previous artifacts, and on what "
+            "changed since."
+        )
+    elif notice.kind == "source":
+        _append_section(lines, "Running again after a goto")
+        lines.append(
+            f"This step sent the flow back to {target} (goto round "
+            f"{notice.round}), and the steps from {target} to here ran again "
+            "since. This is not a fresh start: judge the new work against "
+            "your earlier result, and send it back again only for what is "
+            "still not done."
+        )
+        if notice.artifact:
+            lines.extend(["", f"Your earlier result: `{notice.artifact}`"])
+        return
+    else:
+        _append_section(lines, "Reached by a goto")
+        lead = (
+            f"{source} sent the flow ahead to this step; the steps between "
+            "were skipped."
+        )
+    lines.append(lead)
+    if (
+        instruction.previous_step == notice.source
+        and instruction.previous_step_summary == notice.text
+    ):
+        # The previous step result below is the one the goto came with.
+        lines.extend(["", f"Why: {source}'s result, below."])
+        return
+    if notice.text:
+        lines.extend(["", f"Why, from {source}: {notice.text}"])
+    if notice.artifact:
+        lines.extend(["", f"{source}'s artifact: `{notice.artifact}`"])
+
+
 def _input_context(lines: Lines, instruction: Instruction) -> None:
     """Show a value-waiting handler the work its values are about."""
     if instruction.item_status != "awaiting_input" or not instruction.input_context:
@@ -1470,6 +1550,9 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
         return
     if instruction.operator_reason == "value_unavailable":
         _value_unavailable(lines, instruction)
+        return
+    if instruction.operator_reason == "goto_limit":
+        _goto_limit(lines, instruction)
         return
     if instruction.task_id.startswith(BOOTSTRAP_REQUEST_PREFIX):
         _identity_failed(lines, instruction)
@@ -1892,6 +1975,23 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
     _required_values(lines, instruction)
     _required_metadata(lines, instruction)
     lines.extend(["```console", command, "```"])
+    if instruction.goto_targets and instruction.item_status == "in_progress":
+        targets = instruction.goto_targets
+        flag = (
+            f"`--goto {targets[0]}`"
+            if len(targets) == 1
+            else "`--goto <step>`, `<step>` one of "
+            + ", ".join(f"`{target}`" for target in targets)
+        )
+        lines.extend(
+            [
+                "",
+                "When the work instruction says to send the flow to another "
+                f"step, complete with {flag} added to this command (allowed "
+                "from this step): ww runs that step next, and the steps it "
+                "reaches get your summary and artifact as the reason.",
+            ]
+        )
     if (
         title == "Worker completion command"
         and instruction.item_status == "in_progress"

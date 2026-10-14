@@ -20,6 +20,7 @@ from ww.execution_models import (
     CommandExecution,
     Dispute,
     ExecutionState,
+    GotoRequest,
     InputRequest,
     PlanItemExecution,
     PlanSnapshot,
@@ -1159,6 +1160,29 @@ def select_assessment_outcome(
     records = list(state.item_executions)
     records[pending.index] = replace(records[pending.index], assessment_outcome=outcome)
     skipped = f"skipped: assessment selected {outcome}"
+    if chosen.goto is not None:
+        # The outcome's goto is taken once the assessment's step is done;
+        # no outcome's work runs.
+        group = outcome_region(plan, pending.index)
+        for index in group:
+            records[index] = replace(
+                records[index], status="completed", completed_at=now(), result=skipped
+            )
+        source = plan.items[pending.index].step
+        return replace(
+            state,
+            cursor=max(group) + 1 if group else state.cursor,
+            item_executions=tuple(records),
+            pending_goto=GotoRequest(
+                source,
+                chosen.goto,
+                next(
+                    goto.detail
+                    for goto in plan.gotos
+                    if goto.source == source and goto.outcome == outcome
+                ),
+            ),
+        )
     if chosen.stops:
         for index in range(state.cursor, len(records)):
             records[index] = replace(
@@ -1174,9 +1198,9 @@ def select_assessment_outcome(
                 records[index], status="completed", completed_at=now(), result=skipped
             )
     # An undeclared standard outcome has no work of its own: continue after
-    # every outcome's work.
+    # every outcome's work, if any outcome has some.
     selected = next(
         (index for index in group if plan.items[index].assessment_outcome == outcome),
-        max(group) + 1,
+        max(group) + 1 if group else state.cursor,
     )
     return replace(state, cursor=selected, item_executions=tuple(records))

@@ -104,6 +104,15 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
         "checks": ("## Fix required", "`develop/sh`", "./ww check TASK-1"),
         "dispute": ("./ww dispute TASK-1 --role worker",),
     },
+    "goto-target": {
+        "completion command": (COMPLETE, ARTIFACT, SUMMARY),
+        "goto": (
+            "### Sent back by a goto",
+            "`review` sent the flow back to this step (goto round 1)",
+            "This is not a fresh start",
+            "<root>/.ww/tasks/TASK-1/runs/01-task/steps/03-review.md",
+        ),
+    },
     "operator-stop": {
         "operator stop": (
             "`operator_reason: handler_failed`",

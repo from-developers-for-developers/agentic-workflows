@@ -40,10 +40,12 @@ from ww.execution_models import (
     PlanItemExecution,
     PlanSnapshot,
 )
+from ww.gotos import allowed_targets
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
 from ww.items import WorkItem
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
+from ww.plan.gotos import step_span
 from ww.project_config import load_project_config
 from ww.runtimes import requested_setting, runtime_instruction
 from ww.step_values import StepValues, no_step_values
@@ -75,6 +77,7 @@ from .models import (
     DocumentTask,
     FixFailure,
     FixRequired,
+    GotoNotice,
     Instruction,
     RecoveryCommand,
     RuleLine,
@@ -537,6 +540,52 @@ class InstructionBuilder:
             input_context=input_context,
         )
 
+    def _goto_notice(
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        record: PlanItemExecution,
+    ) -> GotoNotice | None:
+        """What the page of ``item`` says about the goto that reached it."""
+        if (
+            record.goto is None
+            or item.phase != "step"
+            or item.verifies is not None
+            or item.selects_rules_for
+        ):
+            return None
+        goto = state.gotos[record.goto - 1]
+        span = step_span(plan.items, goto.target)
+        first = (
+            next(
+                (
+                    entry.id
+                    for entry in plan.items[span[0] : span[1] + 1]
+                    if entry.phase == "step" and entry.owner == "agent"
+                ),
+                None,
+            )
+            if span is not None
+            else None
+        )
+        if goto.direction == "forward":
+            if item.id != first:
+                return None
+            kind = "ahead"
+        elif item.id == first:
+            kind = "target"
+        else:
+            kind = "source" if item.step == goto.source else "path"
+        return GotoNotice(
+            kind,
+            goto.source,
+            goto.target,
+            goto.round,
+            goto.text,
+            str((self.root / goto.artifact).resolve()) if goto.artifact else None,
+        )
+
     def _previous_step_result(
         self, state: ExecutionState, plan: WorkflowPlan
     ) -> _StepResult | None:
@@ -557,17 +606,23 @@ class InstructionBuilder:
         retains evidence from earlier attempts.
         """
         by_id = {entry.id: entry for entry in plan.items}
+        # A record in the history was replaced, by a retry or a goto, so it
+        # is older than every current one completed in the same second.
         candidates = sorted(
             (
-                (record.completed_at, record.position, entry, record)
-                for record in (*state.item_executions, *state.execution_history)
+                (record.completed_at, current, record.position, entry, record)
+                for current, records in (
+                    (False, state.execution_history),
+                    (True, state.item_executions),
+                )
+                for record in records
                 if record.status == "completed"
                 and record.artifact is not None
                 and record.completed_at is not None
                 and (entry := by_id.get(record.plan_item_id)) is not None
                 and entry.hands_over
             ),
-            key=lambda found: found[:2],
+            key=lambda found: found[:3],
         )
         return tuple(
             _StepResult(
@@ -578,7 +633,7 @@ class InstructionBuilder:
                 record.adjustments,
                 record.position,
             )
-            for _, _, entry, record in candidates
+            for _, _, _, entry, record in candidates
         )
 
     def _container_artifact(
@@ -808,7 +863,9 @@ class InstructionBuilder:
             ),
             operation_id=record.operation_id if record else None,
             recovery_commands=(
-                () if current is None else recovery_commands(state.task_id)
+                ()
+                if current is None and state.failure_kind != "goto_limit"
+                else recovery_commands(state.task_id)
             ),
             # At the fix limit the operator decides on what the checks said.
             fix_required=(
@@ -1051,6 +1108,10 @@ class InstructionBuilder:
             previous_step_summary=previous.summary if previous else None,
             previous_step_adjustments=previous.adjustments if previous else None,
             summary_required=item.hands_over,
+            goto_targets=(
+                allowed_targets(plan, item.step) if item.phase == "step" else ()
+            ),
+            goto_notice=self._goto_notice(state, plan, item, record),
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
             explicit=item.explicit and item.owner == "agent",

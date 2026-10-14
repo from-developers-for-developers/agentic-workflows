@@ -298,6 +298,7 @@ Each item in `workflows` accepts:
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
 | `manual` | boolean | no | The workflow is started only when the operator names it; `discover` leaves it out (the `workflows` catalog still lists it, with `manual: true`), and `start` accepts it unchanged. Never inherited through `inherit`: a copy is listed unless it sets `manual` itself. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
+| `allowed_gotos` | list of `[<from>, <to>]` step paths | no | The gotos a step's worker may take with `complete --goto`; see [Gotos](#gotos). |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a `handoff_to` transition). |
 
 Execution settings inherit from workflow to enclosing steps to the current
@@ -312,7 +313,8 @@ Project behavior lives in `ww.json`, separately from workflow syntax.
 `enabled` defaults to `true`; `false` tells `discover` not to use ww and makes
 `start` refuse, while `"on_request"` leaves ww available only when the user
 asks for it. `limits.fixes` defaults to 3 and bounds failed checks and automatic handler
-repair; `limits.auto_retries` defaults to 0 and bounds automatic retries.
+repair; `limits.auto_retries` defaults to 0 and bounds automatic retries;
+`limits.gotos` defaults to 5 and bounds how often a run takes one goto.
 `pages.worker_requirements` is `full` by
 default or `pointer` to replace the first delegated worker page's full
 requirements with a link to `ww requirements`.
@@ -1188,8 +1190,10 @@ Each outcome is one ordinary step shape: a direct handler/action, `handler`,
 `handlers`, or `steps`. These work types remain mutually exclusive. After the
 chosen outcome's work, the workflow continues with the step after `assess`.
 An outcome may instead be `stop_workflow: true`, alone: choosing it completes
-the workflow, skipping everything after it, completion hooks included. At
-least one outcome must have work. The standard answers `positive`, `negative`,
+the workflow, skipping everything after it, completion hooks included. Or it
+may be a `goto`, alone, which sends the flow to another step (see
+[Gotos](#gotos)). At
+least one outcome must have work or a goto. The standard answers `positive`, `negative`,
 and `mixed` are always accepted: one the assessment does not declare runs
 nothing and continues after the assessment, so a gate declares only the outcome
 that has work. Any other label must be declared. The compact form, `- assess: <question>`,
@@ -1211,6 +1215,90 @@ The assessment's page lists every outcome with what it does, and the page
 after it offers one `next --outcome <label>` command per outcome. An outcome
 made of an automatic command runs only after the outcome is chosen: the run
 pauses at a pending assessment and no branch executes before then.
+
+### Gotos
+
+A goto sends the flow from one step to another: back to a step already run,
+so the steps from there run again (a develop and review loop), or ahead past
+the steps between. Steps are named by their full path, `develop/fix` for a
+substep. A workflow lists the gotos a step's worker may take:
+
+```yaml
+workflows:
+  - name: task
+    allowed_gotos:
+      - [review, develop]
+      - [develop/fix, summary]
+    steps:
+      - develop: Implement it.
+      - review: Review it; when it needs more work, send it back to develop.
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `allowed_gotos` | list of `[<from>, <to>]` | The step paths a step's worker may send the flow between with `complete --goto <to>`. A pair listed twice is an error; an inheriting workflow copies the list and may not declare its own. |
+
+An assessment outcome may be a goto instead of work, on its own like
+`stop_workflow`: `goto: <step path>`, or `goto: [<step path>, <detail>]`.
+Choosing the outcome takes the goto; the outcome declares its own edge, so
+`allowed_gotos` need not list it.
+
+```yaml
+- assess:
+    question: Did the review find issues that must be fixed?
+    outcomes:
+      positive:
+        goto: [develop, "Fix what {{ww.goto.from}} found: {{ww.goto.summary}}"]
+```
+
+The `detail` is what the step reached is told; without one it is told the
+summary of the step that asked. A detail may read only `{{ww.goto.summary}}`,
+that step's `--summary`, and `{{ww.goto.from}}`, its path; any other reference,
+and either value anywhere else, is an error. An assessment whose declared
+outcomes are all gotos is valid: the standard outcomes it does not declare
+continue after it.
+
+Every goto is checked when the plan is compiled: its source is an agent step
+and its target a step of the workflow, neither is `init` nor inside
+`children`, the target is not the source or inside it, both are in the same
+`items` body or both outside every one, and the steps a goto back would run
+again hold no `children` step. The plan keeps the checked gotos (`gotos`).
+
+A step with an allowed goto shows it under its completion command, with the
+targets; the step's description says when to take it. `complete --goto <to>`
+records the completion as usual, artifact and summary included, and refuses a
+target the workflow does not allow from that step, a repair, a verification,
+a bootstrap completion and a completion that only supplies values. A completion
+held for verification keeps the goto until the verifiers pass it.
+
+ww takes a goto once the step that asked is done, its completion hooks
+included; until then it is the run's `pending_goto`. The run records each goto
+in `gotos`: `source`, `target`, `direction` (`back` or `forward`), `round`
+(how often the run took this edge, this one included), `text` (the detail or
+the summary), the asking step's `artifact` and `at`. Going back, every plan
+item from the target to the asking step starts over with a fresh record: the
+earlier record stays in the run's `execution_history`, the new one carries
+`goto_round` (how often a goto sent the flow back over it) and `goto` (the
+goto's number in `gotos`), and its artifact of round N is written beside the
+first as `<step>-N.md`, hook artifacts as `<hook>-N.md`. Going ahead, the
+items between are completed with the result `skipped: goto from <source> to
+<target>`. A goto ends the open assignment: the manager dispatches the step it
+reached.
+
+The step a goto reached says so on its page: the target that the asking step
+sent the flow back, with the round, and that it is not a fresh start; a step
+after it that it runs again on the way back; the asking step, on its next
+round, that it judges the new work against its earlier result; a step reached
+ahead that the steps between were skipped. Each names the reason, the text,
+and the asking step's artifact; where the page's previous step result is that
+same result, it points there instead. The instruction JSON carries
+`goto_targets` and `goto_notice` (`kind`: `target`, `path`, `source` or
+`ahead`; `source`, `target`, `round`, `text`, `artifact`).
+
+`limits.gotos` in `ww.json` (default 5) bounds how often a run takes one
+edge. Asked once more, ww stops for the operator (`operator_reason:
+goto_limit`): `next --retry` takes the goto once more, and `next --force
+--reason "<why>"` leaves it untaken and continues after the step that asked.
 
 ### Saves
 
@@ -1868,7 +1956,8 @@ selected workflow's resulting execution plan.
 `limits.fixes` is a positive integer, default 3, bounding failed checks and
 handler repair. A rule's `max_fixes` can override its own check limit.
 `limits.auto_retries` is a non-negative integer, default 0, bounding automatic
-command retries. These limits do not bound an agent's effort within an ordinary
+command retries. `limits.gotos` is a positive integer, default 5, bounding how
+often a run takes one goto edge (see [Gotos](#gotos)). These limits do not bound an agent's effort within an ordinary
 step and do not provide a general repetition mechanism.
 
 `next --force` applies to failed or interrupted recovery,

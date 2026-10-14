@@ -619,6 +619,26 @@ class StepDefinition(HandlerDefinition):
     assessment_outcomes: tuple[StepDefinition, ...] = ()
     # An assessment outcome that ends the workflow instead of running steps.
     stop_workflow: bool = False
+    # An assessment outcome that sends the flow to another step instead of
+    # running steps.
+    goto: GotoTarget | None = None
+
+    @property
+    def runs_nothing(self) -> bool:
+        """An outcome that stops the workflow or goes elsewhere: no work."""
+        return self.stop_workflow or self.goto is not None
+
+
+@dataclass(frozen=True)
+class GotoTarget:
+    """Where an assessment outcome sends the flow, by step path.
+
+    ``detail`` is what the step reached is told; ``None`` gives it the
+    summary of the step that sent it there.
+    """
+
+    target: str
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -703,6 +723,9 @@ class WorkflowDefinition:
     # not run without the project's lane handling (a built-in that installs
     # tools and writes configuration, for example).
     needs_hooks_from: bool = False
+    # The ``[from, to]`` step-path pairs a step's worker may take with
+    # ``complete --goto``; an assessment outcome's ``goto`` declares its own.
+    allowed_gotos: tuple[tuple[str, str], ...] = ()
 
     @property
     def lane(self) -> str:

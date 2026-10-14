@@ -115,6 +115,19 @@ RULES = """workflows:
 """
 
 
+GOTO = """workflows:
+  - name: task
+    allowed_gotos:
+      - [review, develop]
+    steps:
+      - name: develop
+        description: Implement the change described in the requirements.
+      - name: review
+        description: >-
+          Review the change; when it needs more work, send it back to develop.
+"""
+
+
 def _service(root: Path, config: str) -> WorkflowService:
     (root / "ww.yaml").write_text(config, encoding="utf-8")
     return WorkflowService(Storage(root))
@@ -203,6 +216,19 @@ def step_rules(root: Path) -> Instruction:
     return service.next(TASK)
 
 
+def goto_target(root: Path) -> Instruction:
+    """The step a goto sent the flow back to, with the reason it came with."""
+    service, _ = _start(root, GOTO)
+    service.next(TASK)
+    service.complete(TASK, artifact="Implemented.", summary_for_next="Added the flag.")
+    return service.complete(
+        TASK,
+        artifact="The flag is not documented.",
+        summary_for_next="Document the flag in the CLI help.",
+        goto="develop",
+    )
+
+
 def operator_stop(root: Path) -> Instruction:
     """A failed automatic handler: the task waits for the operator."""
     service, _ = _start(root, FAILING)
@@ -276,6 +302,7 @@ SCENARIOS: dict[str, Callable[[Path], Instruction]] = {
     "step-rules": step_rules,
     "verification": verification,
     "fix-required": fix_required,
+    "goto-target": goto_target,
     "operator-stop": operator_stop,
     "completion": completion,
 }

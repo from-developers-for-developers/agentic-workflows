@@ -307,6 +307,20 @@ the cursor past it. The transition that applies an outcome and the instruction p
 ask for it both use it, so the page never offers a command the transition
 refuses.
 
+Gotos stay inside the same frozen plan: the plan never grows a loop. The
+compiler checks every goto against the compiled items in
+`../src/ww/plan/gotos.py` and freezes them as the plan's `gotos`; a step's
+`complete --goto` or an outcome's `goto` only records a `pending_goto` on the
+run. `../src/ww/gotos.py` takes it once the cursor has left the asking step's
+items, hooks included, in the same drain loop that runs automatic items. Going
+back it moves the earlier records of the span into `execution_history` and
+starts each item over with a round-specific operation scope, so a re-run hook's
+command streams and external operations never collide with the earlier
+round's; going ahead it marks the items between skipped. The run's `gotos`
+log, the records' `goto` number and `goto_round`, and the artifact address's
+round suffix are what the pages and the history read; nothing about the
+plan's items changes.
+
 ## Handlers and discovery
 
 `HandlerDefinition` holds a typed `DefinedAction` or a core handoff definition,

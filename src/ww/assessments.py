@@ -24,11 +24,13 @@ STANDARD_OUTCOMES = ("positive", "negative", "mixed")
 
 @dataclass(frozen=True)
 class AssessmentOutcome:
-    """One answer: the step it runs first, or that it ends the workflow."""
+    """One answer: the step it runs first, that it ends the workflow, or the
+    step it sends the flow to."""
 
     label: str
     stops: bool = False
     first_step: str | None = None
+    goto: str | None = None
     # A standard answer the assessment does not declare: it skips every
     # outcome's work and continues after the assessment.
     declared: bool = True
@@ -69,6 +71,14 @@ def assessment_outcomes(
         AssessmentOutcome(
             label,
             stops=label in item.assessment_stops,
+            goto=next(
+                (
+                    goto.target
+                    for goto in plan.gotos
+                    if goto.source == item.step and goto.outcome == label
+                ),
+                None,
+            ),
             first_step=next(
                 (
                     plan.items[position].name
@@ -138,8 +148,13 @@ def pending_assessment(
             raise StateError(f"assessment outcome has no parent assessment: {parent}")
         return _unanswered(state, plan, index, declared=True)
     previous = plan.items[state.cursor - 1]
-    if previous.assessment_question is not None and not previous.assessment_outcomes:
+    if previous.assessment_question is None:
+        return None
+    if not previous.assessment_outcomes:
         return _unanswered(state, plan, state.cursor - 1, declared=False)
+    if not outcome_region(plan, state.cursor - 1):
+        # Every declared outcome goes to a step: none has work of its own.
+        return _unanswered(state, plan, state.cursor - 1, declared=True)
     return None
 
 

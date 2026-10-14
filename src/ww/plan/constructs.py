@@ -236,8 +236,9 @@ class AssessmentPlanner(ConstructPlanner[AssessmentDefinition]):
             parent_ancestors=context.scope.ancestors,
         )
         for outcome in definition.outcomes:
-            if outcome.stop_workflow:
-                # Selecting it completes the workflow; there is nothing to run.
+            if outcome.runs_nothing:
+                # Selecting it completes the workflow or sends the flow to
+                # another step; there is nothing to run.
                 continue
             context.compile_scoped_region(
                 (outcome,),

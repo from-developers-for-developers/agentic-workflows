@@ -56,6 +56,37 @@ class StepHandover:
 
 
 @dataclass(frozen=True)
+class GotoNotice:
+    """How a goto brought the flow to this step, for its page.
+
+    ``kind`` is ``target`` for the step a goto sent the flow back to,
+    ``path`` for a step after it that runs again on the way back to the step
+    that asked, ``source`` for that step itself, and ``ahead`` for the step
+    a goto skipped ahead to.
+    ``round`` counts the gotos of that edge, and ``text`` is the goto's
+    detail, or the summary of the step that asked, whose artifact is
+    ``artifact``.
+    """
+
+    kind: str
+    source: str
+    target: str
+    round: int
+    text: str | None
+    artifact: str | None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "source": self.source,
+            "target": self.target,
+            "round": self.round,
+            "text": self.text,
+            "artifact": self.artifact,
+        }
+
+
+@dataclass(frozen=True)
 class DocumentTask:
     """A document the active step must create or update, with its file."""
 
@@ -478,6 +509,10 @@ class Instruction:
     previous_step_adjustments: str | None = None
     # The completion of this step must include a summary for the next step.
     summary_required: bool = False
+    # The steps ``complete --goto`` may send the flow to from this one.
+    goto_targets: tuple[str, ...] = ()
+    # How a goto brought the flow to this step, when one did.
+    goto_notice: GotoNotice | None = None
     # For the built-in workflow summary: every step's handover in this run.
     run_handovers: tuple[StepHandover, ...] = ()
     # For pending input: the steps completed since the waiting handler last
@@ -647,6 +682,12 @@ class Instruction:
             "previous_step_summary": self.previous_step_summary,
             "previous_step_adjustments": self.previous_step_adjustments,
             "summary_required": self.summary_required,
+            **({"goto_targets": list(self.goto_targets)} if self.goto_targets else {}),
+            **(
+                {"goto_notice": self.goto_notice.to_dict()}
+                if self.goto_notice is not None
+                else {}
+            ),
             "run_handovers": [item.to_dict() for item in self.run_handovers],
             "input_context": [item.to_dict() for item in self.input_context],
             "documents": [item.to_dict() for item in self.documents],
@@ -682,6 +723,7 @@ class Instruction:
                     "label": outcome.label,
                     "stops": outcome.stops,
                     "first_step": outcome.first_step,
+                    **({"goto": outcome.goto} if outcome.goto is not None else {}),
                 }
                 for outcome in self.assessment_outcomes
             ],

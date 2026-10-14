@@ -17,6 +17,7 @@ from ww.contracts import (
     CommandStatus,
     ExecutionStatus,
     FailureKind,
+    GotoDirection,
     ItemStatus,
     RuleResolutionStatus,
     StepStatus,
@@ -318,6 +319,8 @@ class HeldCompletion:
     verdicts: tuple[RuleVerdict, ...] = ()
     report: CheckReport | None = None
     previous_artifact: str | None = None
+    # The step ``complete --goto`` named, taken once the completion is recorded.
+    goto: str | None = None
 
     def verdict(self, rule_id: str) -> RuleVerdict | None:
         return next((entry for entry in self.verdicts if entry.id == rule_id), None)
@@ -338,6 +341,7 @@ class HeldCompletion:
             "verdicts": [verdict.to_dict() for verdict in self.verdicts],
             "report": self.report.to_dict() if self.report else None,
             "previous_artifact": self.previous_artifact,
+            **({"goto": self.goto} if self.goto is not None else {}),
         }
 
     @classmethod
@@ -401,6 +405,7 @@ class HeldCompletion:
             previous_artifact=expect_optional_string(
                 data["previous_artifact"], "held completion.previous_artifact"
             ),
+            goto=expect_optional_string(data.get("goto"), "held completion.goto"),
         )
 
 
@@ -558,6 +563,84 @@ def _pairs(value: Any, context: str) -> tuple[tuple[str, str], ...]:
 
 
 @dataclass(frozen=True)
+class GotoRequest:
+    """A goto asked for and not yet taken.
+
+    The step that asked still finishes first, its completion hooks included;
+    then ww takes it. ``detail`` is the declared text, ``None`` for the
+    asking step's summary.
+    """
+
+    source: str
+    target: str
+    detail: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"source": self.source, "target": self.target, "detail": self.detail}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> GotoRequest:
+        if not isinstance(data, dict):
+            raise ValueError("goto request must be a mapping")
+        require_keys(data, {"source", "target", "detail"}, "goto request")
+        return cls(
+            source=expect_string(data["source"], "goto request.source"),
+            target=expect_string(data["target"], "goto request.target"),
+            detail=expect_optional_string(data["detail"], "goto request.detail"),
+        )
+
+
+@dataclass(frozen=True)
+class Goto:
+    """One goto ww took: the step that asked, where the flow went, and why.
+
+    ``round`` counts the gotos of this edge, this one included. ``text`` is
+    the declared detail, or else the asking step's summary, and ``artifact``
+    that step's artifact reference.
+    """
+
+    source: str
+    target: str
+    direction: GotoDirection
+    round: int
+    text: str | None
+    artifact: str | None
+    at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "target": self.target,
+            "direction": self.direction,
+            "round": self.round,
+            "text": self.text,
+            "artifact": self.artifact,
+            "at": self.at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Goto:
+        if not isinstance(data, dict):
+            raise ValueError("goto must be a mapping")
+        require_keys(
+            data,
+            {"source", "target", "direction", "round", "text", "artifact", "at"},
+            "goto",
+        )
+        return cls(
+            source=expect_string(data["source"], "goto.source"),
+            target=expect_string(data["target"], "goto.target"),
+            direction=expect_literal(
+                data["direction"], GotoDirection, "goto.direction"
+            ),
+            round=expect_positive_int(data["round"], "goto.round"),
+            text=expect_optional_string(data["text"], "goto.text"),
+            artifact=expect_optional_string(data["artifact"], "goto.artifact"),
+            at=expect_string(data["at"], "goto.at"),
+        )
+
+
+@dataclass(frozen=True)
 class CommandExecution:
     index: int
     status: CommandStatus = "pending"
@@ -700,6 +783,12 @@ class PlanItemExecution:
     verification: tuple[VerificationRule, ...] = ()
     # On a rule-selection item's record: what it chose for each step.
     rule_selection: tuple[RuleSelection, ...] = ()
+    # How often a goto sent the flow back over this item: its artifact of a
+    # later round is kept apart with the round as a ``-N`` suffix.
+    goto_round: int = 0
+    # The goto, numbered from 1 in the run's ``gotos``, that brought the flow
+    # to this item: back over it, or ahead to it.
+    goto: int | None = None
 
     def check_failures(self, check_id: str) -> int:
         """How many rejected completions this check failed.
@@ -769,6 +858,8 @@ class PlanItemExecution:
                 else {}
             ),
             **({"retry_errors": list(self.retry_errors)} if self.retry_errors else {}),
+            **({"goto_round": self.goto_round} if self.goto_round else {}),
+            **({"goto": self.goto} if self.goto is not None else {}),
         }
 
     @classmethod
@@ -882,6 +973,12 @@ class PlanItemExecution:
             rule_selection=tuple(
                 RuleSelection.from_dict(entry)
                 for entry in _list(data.get("rule_selection", []), "rule selection")
+            ),
+            goto_round=expect_nonnegative_int(data.get("goto_round", 0), "goto round"),
+            goto=(
+                None
+                if data.get("goto") is None
+                else expect_positive_int(data["goto"], "goto")
             ),
         )
 
@@ -1147,6 +1244,10 @@ class ExecutionState:
     # ``ww.config_snapshots``).
     config_commit: str | None = None
     config_ref: str | None = None
+    # Every goto the run took, oldest first, and the one asked for that waits
+    # for its step to finish.
+    gotos: tuple[Goto, ...] = ()
+    pending_goto: GotoRequest | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1201,6 +1302,16 @@ class ExecutionState:
             "failure_kind": self.failure_kind,
             "config_commit": self.config_commit,
             "config_ref": self.config_ref,
+            **(
+                {"gotos": [entry.to_dict() for entry in self.gotos]}
+                if self.gotos
+                else {}
+            ),
+            **(
+                {"pending_goto": self.pending_goto.to_dict()}
+                if self.pending_goto is not None
+                else {}
+            ),
         }
 
     @classmethod
@@ -1348,5 +1459,13 @@ class ExecutionState:
             ),
             config_ref=expect_optional_string(
                 data.get("config_ref"), "execution state.config_ref"
+            ),
+            gotos=tuple(
+                Goto.from_dict(entry) for entry in _list(data.get("gotos", []), "gotos")
+            ),
+            pending_goto=(
+                GotoRequest.from_dict(data["pending_goto"])
+                if data.get("pending_goto") is not None
+                else None
             ),
         )

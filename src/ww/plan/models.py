@@ -608,6 +608,31 @@ def step_label(
 
 
 @dataclass(frozen=True)
+class PlannedGoto:
+    """A goto the plan allows: ``source`` may send the flow to ``target``.
+
+    Both are step paths. An ``allowed_gotos`` pair is taken by the source
+    step's worker with ``complete --goto``; an assessment outcome's goto,
+    which names its ``outcome``, when that outcome is chosen, and its
+    ``detail`` is what the step reached is told instead of the source's
+    summary.
+    """
+
+    source: str
+    target: str
+    outcome: str | None = None
+    detail: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source": self.source,
+            "target": self.target,
+            **({"outcome": self.outcome} if self.outcome is not None else {}),
+            **({"detail": self.detail} if self.detail is not None else {}),
+        }
+
+
+@dataclass(frozen=True)
 class WorkflowPlan:
     workflow: str
     workflow_description: str
@@ -625,6 +650,8 @@ class WorkflowPlan:
     # The workflow whose project handling the run takes (``hooks_from``),
     # frozen so extensions key their settings by the lane the run started on.
     hooks_from: str | None = None
+    # The gotos the run may take, frozen with the plan.
+    gotos: tuple[PlannedGoto, ...] = ()
 
     @property
     def lane(self) -> str:
@@ -647,4 +674,6 @@ class WorkflowPlan:
             data["recommended_next_workflow"] = self.recommended_next_workflow
         if self.hooks_from is not None:
             data["hooks_from"] = self.hooks_from
+        if self.gotos:
+            data["gotos"] = [goto.to_dict() for goto in self.gotos]
         return data

@@ -441,6 +441,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     complete.add_argument(
+        "--goto",
+        default=None,
+        metavar="STEP",
+        help=(
+            "Send the flow to this step, by its full path, once this one is "
+            "done; the workflow's allowed_gotos must allow it."
+        ),
+    )
+    complete.add_argument(
         "--rule-result",
         action="append",
         default=[],

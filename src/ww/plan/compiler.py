@@ -72,6 +72,7 @@ from .constructs import (
     normalize_construct,
     step_annotations,
 )
+from .gotos import planned_gotos
 from .models import (
     PlanItem,
     PlannedCheck,
@@ -447,6 +448,7 @@ class WorkflowPlanCompiler:
             recommended_next_workflow=workflow.recommended_next_workflow,
             hooks_from=workflow.hooks_from,
         )
+        plan = replace(plan, gotos=planned_gotos(workflow, plan.items))
         return self._apply_options(plan)
 
     def _mark_child_identity(self, items: list[PlanItem]) -> list[PlanItem]:

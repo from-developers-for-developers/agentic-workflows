@@ -186,6 +186,7 @@ def write_completion_artifacts(
                 plan_item.phase,
                 run_id=state.run_id,
                 step_ordinals=plan_item.step_ordinals,
+                goto_round=record.goto_round,
             ),
             content,
         )

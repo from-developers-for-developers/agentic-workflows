@@ -1042,6 +1042,7 @@ def _complete(context: _Context) -> _Outcome:
         rule_results=tuple(args.rule_result),
         rule_selection=tuple(args.select_rules),
         assignment=args.assignment,
+        goto=args.goto,
     )
     if args.role == "manager" and not args.no_dispatch:
         # The manager's own next step is dispatched here, as ``next`` would,

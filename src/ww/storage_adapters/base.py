@@ -164,7 +164,9 @@ class ArtifactAddress:
 
     Rewriting the same address replaces the content and keeps the reference.
     Declaration ordinals are part of the address so nested step executions
-    do not overwrite earlier results.
+    do not overwrite earlier results. ``goto_round`` is how often a goto sent
+    the flow back over the item: a later round's artifact takes it as a
+    ``-N`` suffix, so the earlier rounds' stay.
     """
 
     task_id: str
@@ -175,6 +177,7 @@ class ArtifactAddress:
     phase: str
     run_id: str | None = None
     step_ordinals: tuple[int, ...] = ()
+    goto_round: int = 0
 
     @property
     def run_namespace(self) -> str:
@@ -189,9 +192,15 @@ class ArtifactAddress:
         parts: list[str] = []
         for ordinal, segment in zip(ordinals, names, strict=True):
             parts.append(f"{ordinal:02d}-{segment}")
+        suffix = f"-{self.goto_round}" if self.goto_round else ""
         if self.phase == "step":
-            return (*parts[:-1], f"{parts[-1]}.md")
-        return (*parts, ".hooks", self.phase, f"{self.position:02d}-{self.name}.md")
+            return (*parts[:-1], f"{parts[-1]}{suffix}.md")
+        return (
+            *parts,
+            ".hooks",
+            self.phase,
+            f"{self.position:02d}-{self.name}{suffix}.md",
+        )
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,7 @@ from ww.operations import decode_operation
 from ww.plan import (
     PlanItem,
     PlannedCheck,
+    PlannedGoto,
     PlannedMode,
     PlannedRule,
     VerificationTarget,
@@ -94,7 +95,27 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
             data.get("recommended_next_workflow"), "recommended next workflow"
         ),
         hooks_from=expect_optional_string(data.get("hooks_from"), "hooks_from"),
+        gotos=_gotos_from_list(data.get("gotos", [])),
     )
+
+
+def _gotos_from_list(value: Any) -> tuple[PlannedGoto, ...]:
+    if not isinstance(value, list):
+        raise ValueError("plan gotos must be a list")
+    gotos: list[PlannedGoto] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise ValueError("plan goto must be a mapping")
+        reject_unknown_keys(raw, {"source", "target", "outcome", "detail"}, "plan goto")
+        gotos.append(
+            PlannedGoto(
+                source=expect_string(raw.get("source"), "plan goto.source"),
+                target=expect_string(raw.get("target"), "plan goto.target"),
+                outcome=expect_optional_string(raw.get("outcome"), "plan goto.outcome"),
+                detail=expect_optional_string(raw.get("detail"), "plan goto.detail"),
+            )
+        )
+    return tuple(gotos)
 
 
 def _checked_item_contexts(items: tuple[PlanItem, ...]) -> tuple[PlanItem, ...]:

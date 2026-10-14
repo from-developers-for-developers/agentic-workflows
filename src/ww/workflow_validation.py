@@ -421,7 +421,7 @@ def _supplies_artifact(step: StepDefinition, *, own: bool) -> bool:
 
 def _can_save_artifact(step: StepDefinition) -> bool:
     """Whether running ``step`` can save an artifact, itself or inside it."""
-    if step.stop_workflow:
+    if step.runs_nothing:
         return False
     if step.child_steps:
         return any(_can_save_artifact(child) for child in step.child_steps)

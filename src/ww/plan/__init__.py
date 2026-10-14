@@ -12,6 +12,7 @@ from .compiler import (
 from .models import (
     PlanItem,
     PlannedCheck,
+    PlannedGoto,
     PlannedMode,
     PlannedRule,
     VerificationTarget,
@@ -27,6 +28,7 @@ __all__ = [
     "PlanCompilationOptions",
     "PlanItem",
     "PlannedCheck",
+    "PlannedGoto",
     "PlannedMode",
     "PlannedRule",
     "VerificationTarget",

@@ -6,6 +6,11 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-14
+
+- Added: goto, a light way back to an earlier step (develop, review, develop, review) or ahead past others. A workflow's `allowed_gotos` lists the `[from, to]` step paths a step's worker may take with `complete --goto <step>`, which its page offers; an `assess` outcome may be `goto: <step>` or `goto: [<step>, <detail>]`, the detail reading `{{ww.goto.summary}}` and `{{ww.goto.from}}`. ww takes it once the asking step and its hooks are done: going back, the steps run again with fresh records while the earlier ones stay in the history and their new artifacts are kept as `<step>-N.md`; going ahead, the steps between are skipped. Every step on the way is told it is a next round, why, and where the asking step's artifact is. `limits.gotos` (default 5) stops for the operator when one goto is asked once more (`operator_reason: goto_limit`).
+- Fixed: a step's "Previous step result" could name an earlier round's record over a newer one completed in the same second.
+
 ## 2026-10-13
 
 - Changed: `WW_AGENT_INSTRUCTIONS.md` is cut to about a fifth: a worker started with `./ww instruction ... --role worker` follows its page and never runs `discover`; any other session runs `./ww discover` once, right before its first file change, never for questions, reviews or status. The rules it dropped are on the pages where they apply: worker pages now show the `ww fail` command, and `discover` says that every file change goes through ww where it is enabled. The session-start hook says the same. A project's existing copy is kept; replace it to adopt the new text.
