@@ -20,9 +20,7 @@ from ww.workflow_config import StepDefinition, WorkflowDefinition
 from .models import PlanItem, PlannedGoto
 
 INIT_STEP = "init"
-# The values a goto's ``detail`` may read, and only it: the asking step's
-# summary and path.
-GOTO_SUMMARY = "{{ww.goto.summary}}"
+# The value a goto's ``detail`` may read, and only it: the asking step's path.
 GOTO_FROM = "{{ww.goto.from}}"
 DETAIL_REFERENCE = re.compile(r"\{\{.*?\}\}")
 # The phases that belong to a step: its own item and its hooks. A workflow's
@@ -122,12 +120,12 @@ def _check(workflow: str, goto: PlannedGoto, items: tuple[PlanItem, ...]) -> Non
                 reference.replace(" ", "")
                 for reference in DETAIL_REFERENCE.findall(goto.detail)
             }
-            - {GOTO_SUMMARY, GOTO_FROM}
+            - {GOTO_FROM}
         )
         if unknown:
             raise ConfigurationError(
                 f"{label}: the detail reads {unknown[0]}; a goto's detail reads "
-                f"only {GOTO_SUMMARY} and {GOTO_FROM}"
+                f"only {GOTO_FROM}; the source summary is always passed"
             )
     if goto.target == goto.source or goto.target.startswith(f"{goto.source}/"):
         raise ConfigurationError(

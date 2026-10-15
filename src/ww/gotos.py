@@ -26,7 +26,7 @@ from ww.execution_models import (
     operation_scope_for,
 )
 from ww.plan import PlanItem, PlannedGoto, WorkflowPlan
-from ww.plan.gotos import DETAIL_REFERENCE, GOTO_FROM, GOTO_SUMMARY, step_span
+from ww.plan.gotos import DETAIL_REFERENCE, GOTO_FROM, step_span
 
 Clock = Callable[[], str]
 
@@ -119,23 +119,23 @@ def take_goto(state: ExecutionState, plan: WorkflowPlan, now: Clock) -> Executio
     records = list(state.item_executions)
     asker = _asking_record(plan, records, request.source)
     summary = asker.summary_for_next if asker is not None else None
+    detail = (
+        DETAIL_REFERENCE.sub(
+            lambda found: {GOTO_FROM: request.source}.get(
+                found.group(0).replace(" ", ""), found.group(0)
+            ),
+            request.detail,
+        )
+        if request.detail is not None
+        else None
+    )
     number = len(state.gotos) + 1
     goto = Goto(
         source=request.source,
         target=request.target,
         direction="back" if target[0] <= source[0] else "forward",
         round=taken(state, request.source, request.target) + 1,
-        text=(
-            DETAIL_REFERENCE.sub(
-                lambda found: {
-                    GOTO_SUMMARY: summary or "",
-                    GOTO_FROM: request.source,
-                }.get(found.group(0).replace(" ", ""), found.group(0)),
-                request.detail,
-            )
-            if request.detail is not None
-            else summary
-        ),
+        text="\n\n".join(part for part in (summary, detail) if part) or None,
         artifact=asker.artifact if asker is not None else None,
         at=now(),
     )

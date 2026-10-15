@@ -633,8 +633,8 @@ class StepDefinition(HandlerDefinition):
 class GotoTarget:
     """Where an assessment outcome sends the flow, by step path.
 
-    ``detail`` is what the step reached is told; ``None`` gives it the
-    summary of the step that sent it there.
+    The step reached always receives the summary of the step that sent it
+    there; ``detail`` adds instructions alongside it.
     """
 
     target: str

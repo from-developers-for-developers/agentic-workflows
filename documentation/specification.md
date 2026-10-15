@@ -1248,13 +1248,14 @@ Choosing the outcome takes the goto; the outcome declares its own edge, so
     question: Did the review find issues that must be fixed?
     outcomes:
       positive:
-        goto: [develop, "Fix what {{ww.goto.from}} found: {{ww.goto.summary}}"]
+        goto: [develop, "Fix what {{ww.goto.from}} found."]
 ```
 
-The `detail` is what the step reached is told; without one it is told the
-summary of the step that asked. A detail may read only `{{ww.goto.summary}}`,
-that step's `--summary`, and `{{ww.goto.from}}`, its path; any other reference,
-and either value anywhere else, is an error. An assessment whose declared
+The step reached always receives the `--summary` of the step that asked.
+The optional `detail` adds instructions after that summary; it never replaces
+it. A detail may read only `{{ww.goto.from}}`, the asking step's path; any
+other reference, including the removed `{{ww.goto.summary}}`, and this value
+anywhere else, is an error. An assessment whose declared
 outcomes are all gotos is valid: the standard outcomes it does not declare
 continue after it.
 

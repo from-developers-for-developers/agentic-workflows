@@ -595,8 +595,8 @@ class Goto:
     """One goto ww took: the step that asked, where the flow went, and why.
 
     ``round`` counts the gotos of this edge, this one included. ``text`` is
-    the declared detail, or else the asking step's summary, and ``artifact``
-    that step's artifact reference.
+    the asking step's summary followed by any declared detail, and
+    ``artifact`` that step's artifact reference.
     """
 
     source: str

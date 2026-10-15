@@ -35,7 +35,7 @@ REVIEWED = """workflows:
       - publish: Publish it.
 """
 # An assessment outcome goes back to ``develop``; the short form passes the
-# assessment's summary, the long form a detail reading it.
+# assessment's summary, the long form adds a detail alongside it.
 ASSESSED = """workflows:
   - name: task
     steps:
@@ -307,12 +307,13 @@ def test_an_assessment_outcome_continues_when_it_has_no_goto(tmp_path: Path) -> 
     assert page.item_name == "publish"
 
 
-def test_a_goto_detail_reads_the_summary_and_the_asking_step(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "detail", ["Fix the findings.", "Fix what {{ww.goto.from}} found."]
+)
+def test_a_goto_detail_always_keeps_the_summary(tmp_path: Path, detail: str) -> None:
     service = _service(
         tmp_path,
-        ASSESSED.format(
-            goto='[develop, "Fix what {{ww.goto.from}} found: {{ww.goto.summary}}"]'
-        ),
+        ASSESSED.format(goto=f'[develop, "{detail}"]'),
     )
     service.next(TASK)
     _complete(service, "Developed.", "Developed it.")
@@ -321,7 +322,20 @@ def test_a_goto_detail_reads_the_summary_and_the_asking_step(tmp_path: Path) -> 
     page = service.next(TASK, outcome="positive")
 
     assert page.goto_notice is not None
-    assert page.goto_notice.text == "Fix what assess found: Fix the two issues."
+    expected = "Fix the two issues.\n\n" + detail.replace("{{ww.goto.from}}", "assess")
+    assert page.goto_notice.text == expected
+    assert expected in md.render_instruction(page)
+    resumed = WorkflowService(Storage(tmp_path)).instruction(TASK)
+    assert resumed.goto_notice is not None
+    assert resumed.goto_notice.text == expected
+
+
+def test_a_goto_detail_rejects_the_removed_summary_variable(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="source summary is always passed"):
+        _service(
+            tmp_path,
+            ASSESSED.format(goto='[develop, "Fix {{ww.goto.summary}}"]'),
+        )
 
 
 def test_a_goto_between_substeps_uses_their_paths(tmp_path: Path) -> None:

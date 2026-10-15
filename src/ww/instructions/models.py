@@ -63,9 +63,9 @@ class GotoNotice:
     ``path`` for a step after it that runs again on the way back to the step
     that asked, ``source`` for that step itself, and ``ahead`` for the step
     a goto skipped ahead to.
-    ``round`` counts the gotos of that edge, and ``text`` is the goto's
-    detail, or the summary of the step that asked, whose artifact is
-    ``artifact``.
+    ``round`` counts the gotos of that edge, and ``text`` is the summary of
+    the step that asked followed by any goto detail; ``artifact`` is that
+    step's artifact.
     """
 
     kind: str
