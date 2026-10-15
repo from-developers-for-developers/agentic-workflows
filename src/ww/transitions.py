@@ -667,6 +667,7 @@ def complete_agent_item(
     summary_for_next: str | None = None,
     check_report: CheckReport | None = None,
     adjustments: str | None = None,
+    result_text: str | None = None,
 ) -> ExecutionState:
     """Complete the active agent item and merge its provided values.
 
@@ -687,6 +688,7 @@ def complete_agent_item(
         supplied_values=tuple(supplied.items()),
         artifact=artifact_reference,
         summary_for_next=summary_for_next,
+        result_text=result_text,
         adjustments=adjustments,
         selected_agent=selected_agent or records[state.cursor].selected_agent,
         selected_model=(
@@ -1156,6 +1158,12 @@ def select_assessment_outcome(
         raise StateError(
             f"unknown assessment outcome {outcome!r}; expected "
             + ", ".join(pending.labels)
+        )
+    terminal = plan.items[pending.index].repeat_until
+    if terminal is not None and outcome != terminal and not chosen.declared:
+        raise StateError(
+            f"repeating assess has no work for {outcome!r}; declare that outcome "
+            f"to resolve the uncertainty, or choose {terminal!r} when established"
         )
     records = list(state.item_executions)
     records[pending.index] = replace(records[pending.index], assessment_outcome=outcome)

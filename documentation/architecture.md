@@ -307,6 +307,27 @@ the cursor past it. The transition that applies an outcome and the instruction p
 ask for it both use it, so the page never offers a command the transition
 refuses.
 
+Repeating assessments also use the frozen plan. The assessment leaf carries
+`repeat_until`, which is validated against its outcomes. The service waits
+until the selected branch and the assessment's hooks finish, then
+`../src/ww/assessment_repeats.py` resets only that lifecycle, retains the
+assessment session key and archives the previous records in execution history.
+Operation IDs and artifact generations change for the new round. Round-local
+provided values are cleared before it starts. A terminal outcome exits this
+local repetition; a nonterminal answer without work is refused.
+
+The host still owns agent sessions. `repeat_communication` on instruction
+pages and durable handoff blocks carries exact submitted findings and outcome
+result texts, their references, session key and round. The manager maps that
+key to an actual agent ID and resumes it across rounds. In auto, branch agent
+work must use its own worker assignment. The assessor launches that worker
+when nested delegation is available; otherwise the manager relays the same
+findings to the worker and its unchanged result back to the waiting assessor.
+Assignment tokens prevent an earlier round from submitting later work, and
+recorded worker tokens let handoff reprints resolve their original generation.
+The round limit stops before resetting the exhausted round, retaining all
+evidence for a retry or an explicit operator waiver.
+
 Gotos stay inside the same frozen plan: the plan never grows a loop. The
 compiler checks every goto against the compiled items in
 `../src/ww/plan/gotos.py` and freezes them as the plan's `gotos`; a step's

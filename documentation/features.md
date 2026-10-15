@@ -1490,6 +1490,33 @@ An artifact-enabled workflow step must be completed with a non-empty
 This prevents a successful-looking completion from silently losing the agent's
 work.
 
+### Repeating assessments
+
+Use `repeat_until: negative` on an assessment to keep the same assessor and
+repeat only its selected outcome work until the answer is negative. In
+`auto`, outcome agent work is always delegated to a separate worker. If the
+assessor cannot spawn a nested worker, the manager launches it, forwards the
+findings unchanged and returns its exact result to the waiting assessor.
+Earlier rounds remain saved; `limits.assessments` (default 5) stops repeated
+nonterminal rounds for the operator. See [Assessments](specification.md#assessments).
+
+```yaml
+- assess:
+    question: Are there issues in the change?
+    repeat_until: negative
+    positive:
+      steps:
+        - fix-findings: Fix the exact assessment findings.
+    mixed:
+      steps:
+        - investigate: Resolve the uncertainty before assessing again.
+```
+
+An already launched outcome worker performs its current assignment and returns
+its own WW handoff. The manager and assessment agent handle delegation and
+message delivery. The assessment's normal hooks and checks finish before a
+new round starts; values produced inside that round are cleared for the next.
+
 ## Modes and execution settings
 
 Modes add reusable guidance to a workflow. Define defaults on the workflow and

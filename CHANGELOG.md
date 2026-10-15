@@ -8,6 +8,8 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-15
 
+- Added: `assess.repeat_until` repeats one assessment and its outcome work until the named outcome, retaining its agent session and every round's evidence. Auto outcome work uses a separate worker; when nested delegation is unavailable, the manager relays findings and results unchanged. `limits.assessments` defaults to 5 rounds before an operator decision.
+
 - Changed: a goto always passes the source step's summary, with any custom detail added after it. Removed `{{ww.goto.summary}}`; details may still read `{{ww.goto.from}}`.
 
 ## 2026-10-14

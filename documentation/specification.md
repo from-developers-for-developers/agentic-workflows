@@ -315,6 +315,7 @@ Project behavior lives in `ww.json`, separately from workflow syntax.
 asks for it. `limits.fixes` defaults to 3 and bounds failed checks and automatic handler
 repair; `limits.auto_retries` defaults to 0 and bounds automatic retries;
 `limits.gotos` defaults to 5 and bounds how often a run takes one goto.
+`limits.assessments` defaults to 5 and bounds rounds of one repeating assessment.
 `pages.worker_requirements` is `full` by
 default or `pointer` to replace the first delegated worker page's full
 requirements with a link to `ww requirements`.
@@ -1162,6 +1163,59 @@ in application code; WW never chooses the first item or joins values into a scal
 
 ### Assessments
 
+An assessment may declare `repeat_until: <outcome>`:
+
+```yaml
+- assess:
+    question: Are there issues?
+    repeat_until: negative
+    positive:
+      handler: fix-findings
+```
+
+After a nonterminal outcome's ordinary steps and lifecycle hooks finish, WW
+asks the same assessment again. Only that assessment and its outcome work
+repeat; preceding and following workflow steps do not run again. The named
+terminal outcome continues after the assessment, after its own work if it
+declares any. It may name a standard outcome or a declared custom label.
+A nonterminal outcome must declare work: an undeclared `mixed`, for example,
+is refused instead of silently exiting or repeating without resolving the
+uncertainty. Add a `mixed` branch to investigate before assessing again.
+
+In `auto`, retain the assessment agent session across rounds. Every outcome
+assignment containing agent work runs in a separate subagent, with its normal
+settings, checks, artifacts and worker token. The manager still runs manager
+commands and prepares the assignments. When the assessment agent can delegate,
+it launches the outcome worker. If its host tools or subagent policy prevent
+that, it asks the manager to launch the worker, passing exactly its findings
+unchanged. The manager returns that worker's exact result to the same waiting
+assessment agent. This protocol applies to any assessment and outcome steps.
+Automatic handlers remain WW-owned and run normally. In `single`, the same
+session performs the outcome and the next assessment without subagents.
+
+Pages and worker handoffs expose `repeat_communication`: a stable WW session
+key, the one-based round, terminal outcome, exact submitted findings, exact
+outcome result texts and artifact references. The manager maps that key to the
+host's actual agent ID; it must retain or resume that agent rather than launch
+a replacement each round. If the host loses the session and cannot resume it,
+report this to the operator. WW stores these messages; the host performs the
+agent launches and delivery. No paraphrasing by the manager is needed.
+
+Earlier round records stay in execution history; their artifacts and command
+operations have distinct round addresses. `limits.assessments` in `ww.json`
+is a positive integer, default 5, counting the initial assessment round too.
+After that many nonterminal rounds WW stops for the operator
+(`operator_reason: assessment_limit`). The operator may authorize one more
+round with `next --retry` or explicitly waive the remaining assessment with
+`next --force --reason "..."`; a waiver preserves the actual chosen outcome.
+
+`repeat_until` requires an assessment question and at least one nonterminal
+outcome with work, and the assessment must save an artifact. Its outcomes use
+ordinary steps or handlers with `role: worker`; `goto` and `stop_workflow`
+cannot be combined with repeating outcomes. Nested assessments, task launches
+and collection steps inside the repeated region are currently refused. An
+assessment may itself be inside an existing items or child context.
+
 `assess` asks the agent to choose a named outcome before work continues. Prefer
 `positive` or `negative` when the evidence supports either; reserve `mixed` for
 material uncertainty. Select the result with `next --outcome <label>`.
@@ -1958,7 +2012,10 @@ selected workflow's resulting execution plan.
 handler repair. A rule's `max_fixes` can override its own check limit.
 `limits.auto_retries` is a non-negative integer, default 0, bounding automatic
 command retries. `limits.gotos` is a positive integer, default 5, bounding how
-often a run takes one goto edge (see [Gotos](#gotos)). These limits do not bound an agent's effort within an ordinary
+often a run takes one goto edge (see [Gotos](#gotos)).
+`limits.assessments` is a positive integer, default 5, bounding rounds of one
+`repeat_until` assessment, including the initial round.
+These limits do not bound an agent's effort within an ordinary
 step and do not provide a general repetition mechanism.
 
 `next --force` applies to failed or interrupted recovery,

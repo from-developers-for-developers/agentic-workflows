@@ -34,7 +34,7 @@ from ww.instructions.commands import (
     rule_command,
     start_command,
 )
-from ww.instructions.handoff import HANDOFF_TITLE, handoff_markdown
+from ww.instructions.handoff import HANDOFF_TITLE, handoff_markdown, repeat_markdown
 from ww.instructions.models import (
     CheckUnavailable,
     FixFailure,
@@ -93,6 +93,8 @@ class MarkdownOutputAdapter(OutputAdapter):
             _continuation(lines, instruction)
             return _document(lines)
         _heading(lines, instruction)
+        if instruction.repeat_communication is not None:
+            lines.extend(["", *repeat_markdown(instruction.repeat_communication)])
         _worker_selection(lines, instruction)
         _assignment_preview(lines, instruction)
         delegating = audience(instruction) is Audience.MANAGER_DELEGATING
@@ -530,6 +532,7 @@ _OPERATOR_REASONS: dict[OperatorReason, str] = {
     "check_disputed": "the step's worker disputed a check",
     "value_unavailable": "a value the step reads is not available yet",
     "goto_limit": "a goto reached its limit",
+    "assessment_limit": "a repeating assessment reached its round limit",
 }
 
 
@@ -1553,6 +1556,22 @@ def _failure(lines: Lines, instruction: Instruction) -> None:
         return
     if instruction.operator_reason == "goto_limit":
         _goto_limit(lines, instruction)
+        return
+    if instruction.operator_reason == "assessment_limit":
+        _append_section(lines, "Operator recovery")
+        lines.append(
+            "The assessment has not reached its terminal outcome. Its findings "
+            "and branch results are saved. Ask the operator whether to allow "
+            "one more round or explicitly waive the remaining assessment; "
+            "do not decide for them."
+        )
+        for command in instruction.recovery_commands:
+            purpose = (
+                "To allow one more round"
+                if command.action == "retry"
+                else "To waive the remaining assessment with the operator's reason"
+            )
+            lines.extend(["", purpose + ":", "", "```console", command.command, "```"])
         return
     if instruction.task_id.startswith(BOOTSTRAP_REQUEST_PREFIX):
         _identity_failed(lines, instruction)

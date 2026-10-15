@@ -11,6 +11,7 @@ worker returns the block verbatim.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ww.execution_models import PlanItemExecution
@@ -35,6 +36,7 @@ def handoff_block(
     run_completed: bool = False,
     choosing_outcome_of: str | None = None,
     outcomes: tuple[str, ...] = (),
+    repeat_communication: dict[str, object] | None = None,
 ) -> HandoffBlock:
     """Report the agent items of one ended assignment, in plan order.
 
@@ -75,6 +77,7 @@ def handoff_block(
         run_completed=run_completed,
         choosing_outcome_of=choosing_outcome_of,
         outcomes=outcomes,
+        repeat_communication=repeat_communication,
     )
 
 
@@ -160,6 +163,8 @@ def handoff_markdown(block: HandoffBlock) -> str:
         lines.extend(["", f"Error: {_one_line(block.error)}"])
     if block.summary:
         lines.extend(["", f"Worker summary: {_one_line(block.summary)}"])
+    if block.repeat_communication is not None:
+        lines.extend(["", *repeat_markdown(block.repeat_communication)])
     target = block.continuation_task_id or block.task_id
     if block.outcomes:
         # The assessment is the worker's; choosing its outcome is the
@@ -196,3 +201,64 @@ def handoff_markdown(block: HandoffBlock) -> str:
 
 def _one_line(text: str) -> str:
     return " ".join(text.split())
+
+
+def repeat_markdown(message: dict[str, object]) -> list[str]:
+    """The same protocol on dispatch pages and the worker's durable handoff."""
+    lines = [
+        "Repeating assessment",
+        "",
+        "Manager and assessment agent: keep the assessor under WW session key "
+        f"`{message['session']}` for "
+        f"`{message['step']}` across rounds. This is round {message['round']}; "
+        f"finish only on outcome `{message['until']}`.",
+    ]
+    if message["delegation_required"]:
+        lines.extend(
+            [
+                "Manager: when first launching the assessment agent, remember its "
+                "actual "
+                "host agent ID under this WW session key; the key itself is not "
+                "a host agent ID.",
+                "In runtime auto, every outcome assignment containing agent work "
+                "must run in a separate subagent; neither the assessment agent "
+                "nor the manager may do that work itself.",
+                "Manager: run WW's manager commands and prepare each worker "
+                "assignment. Ask the waiting assessment agent to launch that "
+                "assignment as a nested subagent when its tools and subagent "
+                "policy allow it. If they do not, the assessment agent asks "
+                "the manager to launch "
+                "the worker instead. The manager passes the exact findings "
+                "below to that new subagent and returns its exact result to "
+                "the same waiting assessment agent.",
+                "Already launched outcome worker: perform your current WW "
+                "assignment yourself. Do not launch another worker for that "
+                "same assignment; the delegation and relay instructions above "
+                "address the manager and assessment agent.",
+                "Do not close or replace the assessment agent after its handoff. "
+                "Resume that same session for the next assessment round, with "
+                "the results below. If the session is lost and cannot be "
+                "resumed, report that to the operator instead of silently "
+                "starting a fresh assessment agent.",
+            ]
+        )
+    else:
+        lines.append(
+            "In runtime single, perform the outcome and re-assessment in this "
+            "same session without spawning subagents."
+        )
+    lines.extend(
+        [
+            "Manager and assessment agent: forward the findings and result text "
+            "values in this JSON unchanged: "
+            "do not summarize, reword, omit, or merge messages. Artifact paths "
+            "are references; they do not replace the message text. Each "
+            "outcome worker submits only its own WW assignment with its token "
+            "and returns the WW handoff block unchanged.",
+            "",
+            "```json",
+            json.dumps(message, ensure_ascii=False, indent=2),
+            "```",
+        ]
+    )
+    return lines

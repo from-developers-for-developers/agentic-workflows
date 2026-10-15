@@ -35,6 +35,7 @@ class ItemAnnotations:
     item_operation: ItemOperation | None = None
     child_operation: ChildOperation | None = None
     assessment_question: str | None = None
+    repeat_until: str | None = None
     assessment_outcomes: tuple[str, ...] = ()
     assessment_stops: tuple[str, ...] = ()
     assessment_parent: str | None = None
@@ -220,6 +221,7 @@ class AssessmentPlanner(ConstructPlanner[AssessmentDefinition]):
                 definition.step,
                 annotations=ItemAnnotations(
                     assessment_question=definition.question,
+                    repeat_until=definition.step.repeat_until,
                     assessment_outcomes=tuple(
                         outcome.name for outcome in definition.outcomes
                     ),

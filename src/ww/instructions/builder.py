@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ww.agents import choice_mechanism
 from ww.amendments import Amendment
+from ww.assessment_repeats import communication as repeat_communication
 from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
@@ -241,6 +242,9 @@ class InstructionBuilder:
         choosing = pending_assessment(state, plan)
         return replace(
             built,
+            repeat_communication=repeat_communication(
+                state, plan, choosing.index if choosing is not None else state.cursor
+            ),
             assessment_outcomes=(
                 choosing.outcomes
                 if choosing is not None
@@ -331,11 +335,18 @@ class InstructionBuilder:
                 # A rejected or held completion keeps only a draft result.
                 False
                 if state.failure_kind is not None
+                and state.failure_kind != "assessment_limit"
                 else _result_saved(state, plan)
                 if state.status in {"failed", "interrupted"} or automatic_running
                 else None
             ),
-            workflow_runtime_instruction=_guidance(state, shape, selection, next_role),
+            workflow_runtime_instruction=_guidance(
+                state, shape, selection, next_role,
+                repeating=repeat_communication(
+                    state, plan,
+                    choosing.index if choosing is not None else state.cursor,
+                ) is not None,
+            ),
             is_child_workflow_control=item is not None
             and child_workflow(item) is not None,
         )
@@ -864,7 +875,8 @@ class InstructionBuilder:
             operation_id=record.operation_id if record else None,
             recovery_commands=(
                 ()
-                if current is None and state.failure_kind != "goto_limit"
+                if current is None
+                and state.failure_kind not in {"goto_limit", "assessment_limit"}
                 else recovery_commands(state.task_id)
             ),
             # At the fix limit the operator decides on what the checks said.
@@ -1558,9 +1570,22 @@ def _guidance(
     item: PlanItem | None,
     selection: _Selection,
     next_role: NextRole,
+    *,
+    repeating: bool = False,
 ) -> tuple[str, ...]:
     """Runtime guidance plus notes about worker selection."""
     guidance = runtime_instruction(state.workflow_runtime, next_role)
+    if repeating and state.workflow_runtime == "auto":
+        guidance = tuple(
+            line for line in guidance
+            if not line.startswith("You may use one worker for every step")
+        )
+        guidance = (
+            *guidance,
+            "For repeat_until, keep the assessment agent session and delegate "
+            "every outcome agent assignment to a separate subagent. Use the "
+            "manager relay when nested delegation is unavailable or prohibited.",
+        )
     if item is not None and not item.subagents:
         guidance = (*guidance, NO_SUBAGENTS)
     if state.workflow_runtime != "auto" or item is None:

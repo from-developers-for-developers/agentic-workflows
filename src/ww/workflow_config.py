@@ -617,6 +617,8 @@ class StepDefinition(HandlerDefinition):
     # subtree.  Empty outcomes use the compact positive/negative continuation.
     assessment_question: str | None = None
     assessment_outcomes: tuple[StepDefinition, ...] = ()
+    # Repeat this assessment and its chosen work until this outcome is chosen.
+    repeat_until: str | None = None
     # An assessment outcome that ends the workflow instead of running steps.
     stop_workflow: bool = False
     # An assessment outcome that sends the flow to another step instead of

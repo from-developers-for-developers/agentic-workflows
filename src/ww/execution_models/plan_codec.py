@@ -249,6 +249,7 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         assessment_question=expect_optional_string(
             raw.get("assessment_question"), "assessment question"
         ),
+        repeat_until=expect_optional_string(raw.get("repeat_until"), "repeat until"),
         assessment_outcomes=tuple(
             _string_list(raw.get("assessment_outcomes", []), "assessment outcomes")
         ),

@@ -449,6 +449,9 @@ class WorkflowPlanCompiler:
             hooks_from=workflow.hooks_from,
         )
         plan = replace(plan, gotos=planned_gotos(workflow, plan.items))
+        from ww.assessment_repeats import validate_repeats
+
+        validate_repeats(plan)
         return self._apply_options(plan)
 
     def _mark_child_identity(self, items: list[PlanItem]) -> list[PlanItem]:
@@ -1194,6 +1197,7 @@ class WorkflowPlanCompiler:
                     else None
                 ),
                 assessment_question=annotations.assessment_question,
+                repeat_until=annotations.repeat_until,
                 assessment_outcomes=annotations.assessment_outcomes,
                 assessment_stops=annotations.assessment_stops,
                 assessment_parent=annotations.assessment_parent,
@@ -1610,6 +1614,7 @@ def _merge_annotations(
             if emitted.assessment_question is not None
             else inherited.assessment_question
         ),
+        repeat_until=emitted.repeat_until,
         assessment_outcomes=(
             emitted.assessment_outcomes
             if emitted.assessment_outcomes

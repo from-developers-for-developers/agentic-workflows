@@ -16,3 +16,10 @@ whether ww is used here and how to start or record the work. Do not run it
 for questions, reviews, explanations or investigations, which never use ww;
 not to look around or check status; and not again once you know the answer.
 To continue a task, run `./ww instruction <task-id> --role manager` instead.
+
+For `repeat_until` assessments, follow the page's session and exact-message
+protocol. In auto, keep the assessor alive; delegate outcome agent work to a
+separate worker. If nested delegation is unavailable, the manager relays the
+unchanged findings and result between that worker and the same assessor. An
+already launched outcome worker performs its own assignment, without
+delegating that assignment again. WW continues to own all handlers.

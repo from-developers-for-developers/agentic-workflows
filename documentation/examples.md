@@ -852,3 +852,26 @@ and its `settings` go into `ww.json`:
 A smaller project, one `test` script on a single `main` branch, gets one
 lane, the `run-tests` handler and the git settings; worktrees appear only when
 the operator asks for tasks in parallel.
+
+## 22. Repeat an assessment until its terminal outcome
+
+A repeating assessment keeps its agent context while another agent performs
+the selected work. The manager relays exact findings and results when the
+assessor cannot launch a nested subagent. Run this workflow with `--runtime auto`:
+
+```yaml
+workflows:
+  - name: review-until-clear
+    steps:
+      - develop: Implement the change.
+      - assess:
+          question: Are there issues in the change?
+          repeat_until: negative
+          positive:
+            steps:
+              - fix-findings: Fix the exact findings passed by the assessment.
+          mixed:
+            steps:
+              - investigate: Resolve the uncertainty before assessing again.
+      - publish: Publish the accepted change.
+```

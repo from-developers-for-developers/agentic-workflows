@@ -20,6 +20,17 @@ from ww.actions import (
     actions,
 )
 from ww.amendments import MAX_AMENDMENT_LENGTH, Amendment, TaskRequirements
+from ww.assessment_repeats import (
+    communication as repeat_communication,
+)
+from ww.assessment_repeats import (
+    repeat_due,
+    repeat_owner,
+    take_repeat,
+)
+from ww.assessment_repeats import (
+    stop_at_limit as stop_at_assessment_limit,
+)
 from ww.assessments import pending_assessment
 from ww.assignments import (
     active_assignment,
@@ -1227,6 +1238,10 @@ class WorkflowService:
             )
         if retry:
             validate_task_id(task_id)
+            state, _ = self.load(task_id)
+            if state.failure_kind == "assessment_limit":
+                with self.tasks.lock_task(task_id):
+                    return self._next(task_id, caller_role=caller_role)
             return self.recovery.recover(task_id, retry=True)
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
@@ -1325,7 +1340,24 @@ class WorkflowService:
                 if replayed is None:
                     return self.render(state, snapshot)
                 return self.resume(replayed, snapshot)
-        if state.status == "failed" and state.failure_kind == "goto_limit":
+        if state.status == "failed" and state.failure_kind == "assessment_limit":
+            index = repeat_due(state, snapshot.plan)
+            if index is None:
+                raise StateError("assessment limit has no pending repeat")
+            if force:
+                if not force_reason:
+                    raise StateError("waiving a repeating assessment requires --reason")
+                records = list(state.item_executions)
+                records[index] = replace(records[index], repeat_waived=force_reason)
+                state = replace(
+                    state, status="pending", failure_kind=None, last_error=None,
+                    item_executions=tuple(records),
+                )
+            else:
+                state = take_repeat(state, snapshot.plan, index, _now)
+            state = project_steps(state, snapshot.plan, _now)
+            self.commit(state, snapshot)
+        elif state.status == "failed" and state.failure_kind == "goto_limit":
             # The operator either lets the goto run once more or leaves it
             # untaken, and the run continues after the step that asked.
             state = project_steps(
@@ -1408,6 +1440,13 @@ class WorkflowService:
             snapshot,
             state.assignment_item_id if caller_role == "manager" else None,
         )
+        if (
+            caller_role == "manager"
+            and state.assignment_item_id is None
+            and state.cursor < len(snapshot.plan.items)
+            and state.item_executions[state.cursor].repeat_round
+        ):
+            return self.render(state, snapshot)
         if caller_role == "manager" and (
             state.execution_instance_id != starting_instance
             or state.assignment_item_id is not None
@@ -2093,6 +2132,11 @@ class WorkflowService:
             summary_for_next=summary_for_next,
             check_report=check_report,
             adjustments=adjustments,
+            result_text=(
+                artifact
+                if repeat_owner(snapshot.plan, state.cursor) is not None
+                else None
+            ),
         )
         if initialization:
             state = replace(state, pending_init_artifact=None)
@@ -3656,6 +3700,16 @@ class WorkflowService:
     ) -> tuple[ExecutionState, PlanSnapshot]:
         plan = snapshot.plan
         while True:
+            repeat = repeat_due(state, plan)
+            if repeat is not None:
+                state = self._advance_assessment_round(state, plan, repeat)
+                self.commit(state, snapshot)
+                if state.status == "failed":
+                    return state, snapshot
+                assignment_item_id = None
+                # A new assessment round always goes back to its existing
+                # session through the manager; never run it in the branch worker.
+                return state, snapshot
             if goto_due(state, plan):
                 limit = self.extensions.config.limits.gotos
                 if limit_reached(state, limit):
@@ -3781,6 +3835,16 @@ class WorkflowService:
         state = complete_run(state, plan, _now)
         self.commit(state, snapshot)
         return state, snapshot
+
+    def _advance_assessment_round(
+        self, state: ExecutionState, plan: WorkflowPlan, index: int
+    ) -> ExecutionState:
+        limit = self.extensions.config.limits.assessments
+        if state.item_executions[index].repeat_round + 1 >= limit:
+            return project_steps(
+                stop_at_assessment_limit(state, plan, index, limit, _now), plan, _now
+            )
+        return project_steps(take_repeat(state, plan, index, _now), plan, _now)
 
     def _require_context_exits(
         self, state: ExecutionState, plan: WorkflowPlan, current: PlanItem
@@ -4004,8 +4068,13 @@ class WorkflowService:
         assigned_model = model if model != "auto" else None
         assigned_reasoning = reasoning if reasoning != "auto" else None
         token = secrets.token_hex(4)
+        records = list(state.item_executions)
+        for index in range(assignment.start, assignment.stop):
+            if repeat_owner(snapshot.plan, index) is not None:
+                records[index] = replace(records[index], worker_assignment=token)
         state = replace(
             state,
+            item_executions=tuple(records),
             assignment_item_id=assignment.first_item_id,
             assignment_token=token,
             assignment_log=(
@@ -4058,6 +4127,9 @@ class WorkflowService:
                 and state.item_executions[state.cursor].status == "completed"
             ):
                 state = advance_completed_item(state, _now)
+            repeat = repeat_due(state, snapshot.plan)
+            if repeat is not None:
+                state = self._advance_assessment_round(state, snapshot.plan, repeat)
             state = replace(
                 state,
                 assignment_item_id=None,
@@ -4642,6 +4714,18 @@ class WorkflowService:
             and item.id == state.active_item_id
             and item.role == "manager"
         )
+        owner = repeat_owner(plan, state.cursor)
+        if (
+            state.workflow_runtime == "auto"
+            and item is not None
+            and owner is not None
+            and item.step != plan.items[owner].step
+            and caller_role != "worker"
+        ):
+            raise StateError(
+                "repeat_until outcome agent work must be completed by a "
+                "separate worker in runtime auto"
+            )
         if caller_role == "worker" and managers:
             assert item is not None
             raise StateError(
@@ -4743,6 +4827,13 @@ class WorkflowService:
         task_id = state.task_id
         items = {item.id: item for item in snapshot.plan.items}
         current = {record.plan_item_id: record for record in state.item_executions}
+        # A repeat may already have reset the current records. An ended
+        # assignment still reports its own generation, also on handoff reprint.
+        current.update(
+            (record.plan_item_id, record)
+            for record in (*state.execution_history, *state.item_executions)
+            if record.worker_assignment == ended.token
+        )
         performed = tuple(
             (items[item_id], current[item_id])
             for item_id in ended.items
@@ -4794,6 +4885,18 @@ class WorkflowService:
                 else None
             ),
             outcomes=choosing.labels if choosing is not None else (),
+            repeat_communication=next(
+                (
+                    repeat_communication(
+                        state, snapshot.plan, index,
+                        generation=current[item.id].goto_round,
+                    )
+                    for index, item in enumerate(snapshot.plan.items)
+                    if item.id in ended.items
+                    and repeat_owner(snapshot.plan, index) is not None
+                ),
+                None,
+            ),
         )
         return block, taken
 

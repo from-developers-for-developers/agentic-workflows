@@ -79,3 +79,11 @@ change, start from step 1 then.
    failed identity request (`REQUEST-…`) is only retried with `--retry` or dropped
    with `./ww reset <request-id> --yes`, both shown on its page; `--force`
    is refused there too.
+
+6. For `repeat_until`, retain or resume the same assessment agent under the
+   session key the page gives. In auto, outcome agent work uses a separate
+   worker assignment. If the assessor cannot spawn it, the manager launches
+   it, forwards the findings unchanged and returns the worker's exact result
+   to the same waiting assessor. Already launched outcome workers perform
+   their own assignments without delegating them again. Follow WW's normal
+   commands, checks, round limit and recovery; never run its handlers yourself.

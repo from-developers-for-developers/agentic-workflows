@@ -164,8 +164,8 @@ class ArtifactAddress:
 
     Rewriting the same address replaces the content and keeps the reference.
     Declaration ordinals are part of the address so nested step executions
-    do not overwrite earlier results. ``goto_round`` is how often a goto sent
-    the flow back over the item: a later round's artifact takes it as a
+    do not overwrite earlier results. ``goto_round`` counts execution
+    generations after a goto or assessment repeat: a later artifact takes it as a
     ``-N`` suffix, so the earlier rounds' stay.
     """
 

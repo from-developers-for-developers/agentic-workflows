@@ -741,6 +741,12 @@ class PlanItemExecution:
     # On an assessment's record: the outcome ``next --outcome`` chose, once
     # chosen.  Until then the assessment is waiting for its answer.
     assessment_outcome: str | None = None
+    # Repeat rounds keep their original assessment session and exact messages.
+    repeat_round: int = 0
+    repeat_session: str | None = None
+    repeat_waived: str | None = None
+    result_text: str | None = None
+    worker_assignment: str | None = None
     # Stable across retries of this plan item.  It identifies the external
     # operation whose outcome may be checked after an interrupted process.
     operation_id: str | None = None
@@ -783,7 +789,7 @@ class PlanItemExecution:
     verification: tuple[VerificationRule, ...] = ()
     # On a rule-selection item's record: what it chose for each step.
     rule_selection: tuple[RuleSelection, ...] = ()
-    # How often a goto sent the flow back over this item: its artifact of a
+    # How often a goto or assessment repeat reset this item: its artifact of a
     # later round is kept apart with the round as a ``-N`` suffix.
     goto_round: int = 0
     # The goto, numbered from 1 in the run's ``gotos``, that brought the flow
@@ -822,6 +828,19 @@ class PlanItemExecution:
             "summary_for_next": self.summary_for_next,
             "adjustments": self.adjustments,
             "interaction_entries": self.interaction_entries,
+            **({"repeat_round": self.repeat_round} if self.repeat_round else {}),
+            **({"repeat_session": self.repeat_session} if self.repeat_session else {}),
+            **({"repeat_waived": self.repeat_waived} if self.repeat_waived else {}),
+            **(
+                {"result_text": self.result_text}
+                if self.result_text is not None
+                else {}
+            ),
+            **(
+                {"worker_assignment": self.worker_assignment}
+                if self.worker_assignment
+                else {}
+            ),
             "interaction_ended": self.interaction_ended,
             "chosen": self.chosen,
             "operation_id": self.operation_id,
@@ -926,6 +945,19 @@ class PlanItemExecution:
             chosen=expect_optional_string(data.get("chosen"), "chosen option"),
             assessment_outcome=expect_optional_string(
                 data.get("assessment_outcome"), "assessment outcome"
+            ),
+            repeat_round=expect_nonnegative_int(
+                data.get("repeat_round", 0), "repeat round"
+            ),
+            repeat_session=expect_optional_string(
+                data.get("repeat_session"), "repeat session"
+            ),
+            repeat_waived=expect_optional_string(
+                data.get("repeat_waived"), "repeat waiver"
+            ),
+            result_text=expect_optional_string(data.get("result_text"), "result text"),
+            worker_assignment=expect_optional_string(
+                data.get("worker_assignment"), "worker assignment"
             ),
             operation_id=expect_optional_string(
                 data.get("operation_id"), "operation_id"

@@ -283,6 +283,7 @@ class PlanItem:
     step_ordinals: tuple[int, ...] = ()
     artifact_dependency: str | None = None
     assessment_question: str | None = None
+    repeat_until: str | None = None
     assessment_outcomes: tuple[str, ...] = ()
     # The outcomes that end the workflow; they emit no items of their own.
     assessment_stops: tuple[str, ...] = ()
@@ -546,6 +547,7 @@ class PlanItem:
             "step_ordinals": list(self.step_ordinals),
             "artifact_dependency": self.artifact_dependency,
             "assessment_question": self.assessment_question,
+            **({"repeat_until": self.repeat_until} if self.repeat_until else {}),
             "assessment_outcomes": list(self.assessment_outcomes),
             "assessment_parent": self.assessment_parent,
             "assessment_outcome": self.assessment_outcome,

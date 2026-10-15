@@ -73,6 +73,7 @@ STEP_ONLY_KEYS: set[str] = {
     "handler",
     "question",
     "outcomes",
+    "repeat_until",
     "positive",
     "negative",
     "mixed",
@@ -212,6 +213,7 @@ def _parse_step(
         )
     )
     question, outcomes, base = _parse_assessment(mapping, path, base, handlers_by_name)
+    repeat_until = _parse_repeat_until(mapping, path, question, outcomes)
     base, referenced = _resolve_handler(mapping, path, base, handlers_by_name)
     if base.handlers and (base.action is not None or base.operation is not None):
         raise ConfigurationError(f"{path} cannot combine handlers with an action")
@@ -300,6 +302,7 @@ def _parse_step(
         artifact_dependency=artifact_from,
         assessment_question=question,
         assessment_outcomes=outcomes,
+        repeat_until=repeat_until,
     )
 
 
@@ -408,6 +411,37 @@ def _parse_assessment(
         workdir=base.workdir,
     )
     return question, outcomes, prompt
+
+
+def _parse_repeat_until(
+    mapping: dict[str, Any],
+    path: str,
+    question: str | None,
+    outcomes: tuple[StepDefinition, ...],
+) -> str | None:
+    if "repeat_until" not in mapping:
+        return None
+    terminal = _nonempty_string(mapping, "repeat_until", path)
+    if question is None or not outcomes:
+        raise ConfigurationError(
+            f"{path}.repeat_until requires an assess question and outcome work"
+        )
+    labels = {"positive", "negative", "mixed", *(outcome.name for outcome in outcomes)}
+    if terminal not in labels:
+        raise ConfigurationError(
+            f"{path}.repeat_until names unknown outcome {terminal!r}"
+        )
+    if any(outcome.runs_nothing for outcome in outcomes):
+        raise ConfigurationError(
+            f"{path}.repeat_until outcomes cannot use goto or stop_workflow"
+        )
+    if not any(outcome.name != terminal for outcome in outcomes):
+        raise ConfigurationError(
+            f"{path}.repeat_until needs work for a nonterminal outcome"
+        )
+    if mapping.get("artifact") is False:
+        raise ConfigurationError(f"{path}.repeat_until requires artifact: true")
+    return terminal
 
 
 def _resolve_handler(

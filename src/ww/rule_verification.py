@@ -432,6 +432,7 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         child_identity=False,
         artifact_dependency=None,
         assessment_question=None,
+        repeat_until=None,
         assessment_outcomes=(),
         assessment_stops=(),
         assessment_parent=None,

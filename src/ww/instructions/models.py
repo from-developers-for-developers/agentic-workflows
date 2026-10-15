@@ -458,6 +458,7 @@ class HandoffBlock:
     files_reproducible: bool = True
     choosing_outcome_of: str | None = None
     outcomes: tuple[str, ...] = ()
+    repeat_communication: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -472,6 +473,11 @@ class HandoffBlock:
             "error": self.error,
             "choosing_outcome_of": self.choosing_outcome_of,
             "outcomes": list(self.outcomes),
+            **(
+                {"repeat_communication": self.repeat_communication}
+                if self.repeat_communication is not None
+                else {}
+            ),
         }
 
 
@@ -651,6 +657,7 @@ class Instruction:
     # The worker's assignment ended with this command: ww's report of it,
     # which the worker returns to the manager verbatim.
     handoff_block: HandoffBlock | None = None
+    repeat_communication: dict[str, object] | None = None
     # A verification item's rules and evidence.
     verification: VerificationPage | None = None
     # At a ``plan_changed`` stop: how the workflow's current definition
@@ -664,6 +671,11 @@ class Instruction:
         return {
             "task_id": self.task_id,
             "workflow": self.workflow,
+            **(
+                {"repeat_communication": self.repeat_communication}
+                if self.repeat_communication is not None
+                else {}
+            ),
             "status": self.status,
             "item_id": self.item_id,
             "item_name": self.item_name,
