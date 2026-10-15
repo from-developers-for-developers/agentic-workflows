@@ -8,6 +8,8 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-15
 
+- Changed: judged-rule verification retains its verifier session and launches focused `fix-rule-violations` repair work by default, keeping the original completion held until all selected rules pass. Optional `verification.on_failure` accepts custom handlers/steps with settings and hooks, or a standalone `goto`. Every round preserves exact findings and repair results; auto uses separate repair workers and manager relays when needed. Existing fix limits still apply.
+
 - Added: `assess.repeat_until` retains the assessor and repeats selected outcome work until the named outcome, saving every round. Auto uses separate outcome workers and exact manager relays when needed; `limits.assessments` bounds rounds (default 5). `18b55ec`
 
 - Changed: a goto always passes the source step's summary, with any custom detail added after it. Removed `{{ww.goto.summary}}`; details may still read `{{ww.goto.from}}`.

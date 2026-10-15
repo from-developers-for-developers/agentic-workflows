@@ -23,3 +23,13 @@ separate worker. If nested delegation is unavailable, the manager relays the
 unchanged findings and result between that worker and the same assessor. An
 already launched outcome worker performs its own assignment, without
 delegating that assignment again. WW continues to own all handlers.
+
+Judged-rule verification follows the same retained-session and exact-message
+protocol. Keep the verifier alive while a separate worker fixes its findings;
+if it cannot delegate, the manager relays the exact findings and repair result
+back to that verifier. Follow `repeat_communication` to locate each round's
+evidence. Verifiers submit structured `--rule-result` verdicts, not assessment
+outcomes; the original completion stays held until the selected rules pass.
+Repair only the reported violations using the repair assignment's settings
+and lifecycle; do not repeat the source action or its hooks. A repair worker
+performs its own assignment and may dispute a reported rule with evidence.

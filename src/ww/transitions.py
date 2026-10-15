@@ -137,6 +137,7 @@ def waive_checks(
         error=None,
         checks_waived=tuple(waivers.items()),
         disputes=(),
+        verification_repair_pending=False,
     )
     return project_steps(
         replace(

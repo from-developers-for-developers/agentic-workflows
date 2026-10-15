@@ -531,8 +531,7 @@ def test_a_held_step_shows_the_checks_of_the_held_attempt(tmp_path: Path) -> Non
     )
     assert block.to_dict()["steps"][0]["checks_note"] == develop.checks_note
 
-    # The verifier rejects it: the step is open again, and the block printed
-    # again names the attempt it shows.
+    # The verifier rejects it: the step stays held, with the failed evidence.
     assert service.next(TASK, caller_role="manager").item_name == "develop-verify-1"
     failing = {
         "id": "develop/1",
@@ -549,13 +548,14 @@ def test_a_held_step_shows_the_checks_of_the_held_attempt(tmp_path: Path) -> Non
     )
     again = service.handoff(TASK, assignment=token)
     (develop,) = again.steps
-    assert develop.outcome == "not completed"
+    assert develop.outcome == "held for verification"
     assert dict(develop.checks)["develop/1"] == "failed"
     assert develop.checks_note == (
-        "last rejected attempt, re-checked on the next complete"
+        "held completion rejected; focused repair and verification pending"
     )
-    assert "failed (last rejected attempt, re-checked on the next complete)" in (
-        handoff_markdown(again)
+    assert (
+        "failed (held completion rejected; focused repair and verification pending)"
+        in (handoff_markdown(again))
     )
 
 

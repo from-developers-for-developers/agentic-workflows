@@ -36,7 +36,11 @@ CheckStatus = Literal["passed", "failed", "not_applicable", "unavailable"]
 CheckSource = Literal["rule", "hook", "derived", "judged"]
 # Why a failed run failed, when the reason is not the item's own error.
 FailureKind = Literal[
-    "fix_limit", "check_disputed", "value_unavailable", "work_failed", "goto_limit",
+    "fix_limit",
+    "check_disputed",
+    "value_unavailable",
+    "work_failed",
+    "goto_limit",
     "assessment_limit",
 ]
 # Whether a goto sent the flow back to a step already run, or ahead past the

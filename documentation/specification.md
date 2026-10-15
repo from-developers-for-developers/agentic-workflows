@@ -1745,8 +1745,82 @@ step.
 | `verdict`, `failures`, `checked` | `pass` with `checked`, a non-empty account of what the verifier checked to pass it, or `fail` with `failures`, each `{file, line?, what}`; `checked` on a fail is refused. |
 
 A failing verdict rejects the held completion as a failed check would, under
-the rule's `max_fixes`. Once every rule of the round passed, ww records the
-held completion as submitted.
+`limits.fixes` (default 3) and the rule's `max_fixes`. WW keeps the original
+completion held and launches focused repair work using the built-in
+`fix-rule-violations` handler. It fixes the reported violations without
+repeating the original action. After repair, the same retained verifier
+session judges the rules again. Once every selected rule passes, ww records
+the held completion as submitted. Verification uses the existing fix
+counters across workers and sessions; `limits.assessments` does not cap it.
+Reaching a fix limit stops for the operator's retry or reasoned waiver.
+
+No configuration is needed for this behavior. To choose the repair handler:
+
+```yaml
+- develop: Implement the change.
+  rules:
+    - Public functions have tests.
+  verification:
+    on_failure:
+      handler: fix-findings
+```
+
+`verification` accepts `agent`, `model`, `reasoning`, `profile`, `workdir`,
+`subagents`, `explicit`, and `hooks` for the verifier. Rule-specific worker
+settings take precedence. `on_failure` accepts ordinary `handler`, `handlers`,
+or `steps` work, with applicable execution settings and hooks:
+
+```yaml
+verification:
+  model: review-model
+  reasoning: high
+  on_failure:
+    handler: fix-rule-violations
+    model: repair-model
+    hooks:
+      before_complete:
+        - argv: [scripts/test]
+```
+
+A settings-only override such as `on_failure: {model: repair-model}` keeps
+the built-in focused repair action and applies those settings to it.
+
+The repair inherits the originating step's effective agent, model,
+reasoning, profile, workdir and subagent restrictions. Explicit repair
+settings take precedence, then the source step, then workflow defaults.
+Changing the model without setting reasoning uses the new model's default.
+The built-in repair has its own focused instructions and lifecycle; it does
+not copy the source action or source hooks such as publication or commit.
+Custom repair work can declare its own hooks. In `auto`, repair agent work
+always gets a separate worker, including when the original step belongs to
+the manager.
+
+Each verifier group has a stable session key across rounds. The instructions
+and handoff include `repeat_communication` with the exact findings artifact
+text, original `--rule-result` strings, original work and selected rules,
+and exact repair results. Keep the verifier alive while a nested worker
+repairs. When nested delegation is unavailable or prohibited, the manager
+launches the repair worker, forwards the findings unchanged, and returns
+its result unchanged to the same waiting verifier. An already launched
+repair worker performs its assignment without delegating it again. Each
+round keeps durable execution records, unique operation IDs and artifacts.
+Verifier hooks belong to that verifier's assignment and finish before its
+verdict is settled. A focused repair worker may dispute a reported source
+rule with `dispute --rule <id> --reason "<evidence>"`: operator retry resumes
+repair, while a waiver applies to the held source completion.
+
+To leave the local verification/repair cycle, `on_failure` may instead be a
+standalone goto:
+
+```yaml
+verification:
+  on_failure:
+    goto: redesign
+```
+
+It uses normal goto target validation and `limits.gotos`, preserves the
+failed verdict and held completion as evidence, and never accepts the held
+completion as passed. Do not combine `goto` with repair work.
 
 The verifier judges the listed rules only: its page says it is no code
 review and to report nothing outside them, and that a rule saying how to

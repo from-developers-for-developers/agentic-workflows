@@ -323,10 +323,12 @@ def render_page(name: str, root: Path) -> str:
     for path in sorted({str(root.resolve()), str(root)}, key=len, reverse=True):
         page = page.replace(path, "<root>")
     page = _COMMIT.sub("<commit>", page)
+    page = _SESSION_INSTANCE.sub(r"\1<id>\2", page)
     return _OUTPUT_DIRECTORY.sub("command-output/<id>/<id>/", page)
 
 
 _COMMIT = re.compile(r"\b[0-9a-f]{40}\b")
+_SESSION_INSTANCE = re.compile(r"(TASK-1:01-task:)[0-9a-f]{32}(:)")
 _OUTPUT_DIRECTORY = re.compile(r"command-output/[0-9a-f]+/[0-9a-f]+/")
 
 

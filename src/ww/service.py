@@ -82,6 +82,7 @@ from ww.execution_models import (
     CheckReport,
     Dispute,
     ExecutionState,
+    GotoRequest,
     HeldCompletion,
     PlanItemExecution,
     PlanSnapshot,
@@ -125,6 +126,7 @@ from ww.plan import (
     WorkflowPlan,
     compile_workflow_plan,
 )
+from ww.plan.gotos import step_span
 from ww.project_config import load_project_config
 from ww.recovery import RecoveryCoordinator
 from ww.replanning import PlanChange, plan_change
@@ -234,6 +236,15 @@ from ww.variables import (
     child_values,
     runtime_variable_values,
     unavailable_ww_values,
+)
+from ww.verification_flow import (
+    communication as verification_communication,
+)
+from ww.verification_flow import (
+    decision_due as verification_decision_due,
+)
+from ww.verification_flow import (
+    open_repair as open_verification_repair,
 )
 from ww.workflow_config import (
     INIT_STEP_NAME,
@@ -1350,7 +1361,10 @@ class WorkflowService:
                 records = list(state.item_executions)
                 records[index] = replace(records[index], repeat_waived=force_reason)
                 state = replace(
-                    state, status="pending", failure_kind=None, last_error=None,
+                    state,
+                    status="pending",
+                    failure_kind=None,
+                    last_error=None,
                     item_executions=tuple(records),
                 )
             else:
@@ -1444,7 +1458,12 @@ class WorkflowService:
             caller_role == "manager"
             and state.assignment_item_id is None
             and state.cursor < len(snapshot.plan.items)
-            and state.item_executions[state.cursor].repeat_round
+            and (
+                state.item_executions[state.cursor].repeat_round
+                or snapshot.plan.items[state.cursor].verifies is not None
+                or snapshot.plan.items[state.cursor].repair_of is not None
+                or snapshot.plan.items[state.cursor].verification_hook is not None
+            )
         ):
             return self.render(state, snapshot)
         if caller_role == "manager" and (
@@ -2069,6 +2088,21 @@ class WorkflowService:
                     _now,
                     keep_active=held is None,
                 )
+                if (
+                    held is not None
+                    and active_record.verification_failed_by is not None
+                ):
+                    records = list(state.item_executions)
+                    records[state.cursor] = replace(
+                        records[state.cursor],
+                        held_completion=replace(held, verdicts=(), report=None),
+                        verification_repair_pending=True,
+                    )
+                    state = replace(state, item_executions=tuple(records))
+                    if state.status != "failed":
+                        state, snapshot = open_verification_repair(
+                            state, snapshot, item, _now
+                        )
                 self.commit(state, snapshot)
                 self._count_rules(task_id, item, active_record, check_report)
                 return self.render(state, snapshot)
@@ -2135,6 +2169,8 @@ class WorkflowService:
             result_text=(
                 artifact
                 if repeat_owner(snapshot.plan, state.cursor) is not None
+                or item.repair_of is not None
+                or item.verification_hook is not None
                 else None
             ),
         )
@@ -2394,6 +2430,30 @@ class WorkflowService:
                 for report in item_reports(state)
                 for result in report.failed
             }
+            if item.repair_of is not None and any(
+                check_id not in last_failed for check_id in check_ids
+            ):
+                # A focused repair may dispute its source's reported rule.
+                # Keep ordinary repair-check disputes on the repair itself.
+                source_index = index_of(snapshot.plan, item.repair_of)
+                source_state = replace(state, cursor=source_index)
+                source_failed = {
+                    result.id: (report, result)
+                    for report in item_reports(source_state)
+                    for result in report.failed
+                }
+                if all(check_id in source_failed for check_id in check_ids):
+                    item = snapshot.plan.items[source_index]
+                    records = list(source_state.item_executions)
+                    records[source_index] = replace(
+                        records[source_index], verification_repair_pending=True
+                    )
+                    state = replace(
+                        source_state,
+                        active_item_id=item.id,
+                        item_executions=tuple(records),
+                    )
+                    last_failed = source_failed
             unknown = [
                 check_id for check_id in check_ids if check_id not in last_failed
             ]
@@ -3700,6 +3760,9 @@ class WorkflowService:
     ) -> tuple[ExecutionState, PlanSnapshot]:
         plan = snapshot.plan
         while True:
+            decision = verification_decision_due(state, plan)
+            if decision is not None:
+                return self._settle_verification(state, snapshot, decision)
             repeat = repeat_due(state, plan)
             if repeat is not None:
                 state = self._advance_assessment_round(state, plan, repeat)
@@ -3768,6 +3831,17 @@ class WorkflowService:
                 state = skip_idle_verification(state, _now)
                 self.commit(state, snapshot)
                 continue
+            if item.repair_of is not None:
+                source_record = state.item_executions[index_of(plan, item.repair_of)]
+                if (
+                    source_record.held_completion is None
+                    or source_record.verification_failed_by is None
+                ):
+                    # Dynamic repair items survive backward gotos and enclosing
+                    # repeats, but run only for a newly rejected held attempt.
+                    state = skip_idle_verification(state, _now)
+                    self.commit(state, snapshot)
+                    continue
             if item.item_operation in {
                 "complete_collection",
                 "save_fields",
@@ -3784,6 +3858,12 @@ class WorkflowService:
                 self.commit(state, snapshot)
                 continue
             if item.owner == "agent" and record.held_completion is not None:
+                if record.verification_repair_pending:
+                    state, snapshot = open_verification_repair(
+                        state, snapshot, item, _now
+                    )
+                    self.commit(state, snapshot)
+                    return state, snapshot
                 # Its verification finished, but ww stopped before recording
                 # the completion: record it now.
                 self._replay_held(state.task_id, state.cursor, caller_role=None)
@@ -4070,7 +4150,13 @@ class WorkflowService:
         token = secrets.token_hex(4)
         records = list(state.item_executions)
         for index in range(assignment.start, assignment.stop):
-            if repeat_owner(snapshot.plan, index) is not None:
+            assigned = snapshot.plan.items[index]
+            if (
+                repeat_owner(snapshot.plan, index) is not None
+                or assigned.verifies is not None
+                or assigned.repair_of is not None
+                or assigned.verification_hook is not None
+            ):
                 records[index] = replace(records[index], worker_assignment=token)
         state = replace(
             state,
@@ -4154,7 +4240,12 @@ class WorkflowService:
             or state.model,
             reasoning=state.assignment_reasoning
             or requested_setting(item.reasoning)
-            or state.reasoning,
+            or (
+                "auto"
+                if (item.repair_of is not None or item.verifies is not None)
+                and requested_setting(item.model) is not None
+                else state.reasoning
+            ),
             selected_agent=state.assignment_selected_agent,
             selected_model=state.assignment_selected_model,
             selected_reasoning=state.assignment_selected_reasoning,
@@ -4365,8 +4456,8 @@ class WorkflowService:
     ) -> Instruction:
         """Record a verifier's verdicts, then continue the held step.
 
-        A failing verdict sends the step back to its worker; otherwise the
-        next verifier of the round goes on, or ww records the held completion.
+        A failing verdict opens focused repair after the verifier's hooks;
+        otherwise the next verifier goes on, or ww records the held completion.
         """
         record = state.item_executions[state.cursor]
         target = item.verifies
@@ -4380,15 +4471,41 @@ class WorkflowService:
             )
         plan = snapshot.plan
         index = index_of(plan, target.item_id)
-        step = plan.items[index]
         results = parse_rule_results(rule_results, record.verification)
         artifact_reference = write_completion_artifacts(
             self.tasks, state.task_id, state, snapshot, item, artifact
         )
-        state = complete_agent_item(state, plan, {}, artifact_reference, _now)
+        records = list(state.item_executions)
+        records[state.cursor] = replace(
+            record,
+            verification_results=rule_results,
+        )
+        state = replace(state, item_executions=tuple(records))
+        state = complete_agent_item(
+            state, plan, {}, artifact_reference, _now, result_text=artifact
+        )
         verdicts = verdicts_of(results, item.id)
         state = record_round(state, index, verdicts, _now)
+        self.commit(state, snapshot)
+        return self._after_verification(state, snapshot, caller_role)
+
+    def _settle_verification(
+        self, state: ExecutionState, snapshot: PlanSnapshot, verifier_index: int
+    ) -> tuple[ExecutionState, PlanSnapshot]:
+        plan = snapshot.plan
+        item = plan.items[verifier_index]
+        target = item.verifies
+        assert target is not None
+        record = state.item_executions[verifier_index]
+        records = list(state.item_executions)
+        records[verifier_index] = replace(record, verification_decided=True)
+        state = replace(state, item_executions=tuple(records))
+        index = index_of(plan, target.item_id)
+        step = plan.items[index]
         step_record = state.item_executions[index]
+        held = step_record.held_completion
+        assert held is not None
+        verdicts = tuple(entry for entry in held.verdicts if entry.by == item.id)
         if any(verdict.verdict == "fail" for verdict in verdicts):
             at_step = replace(close_round(state, plan, step.id, _now), cursor=index)
             held = step_record.held_completion
@@ -4403,14 +4520,78 @@ class WorkflowService:
                 _now,
                 keep_active=False,
             )
+            records = list(state.item_executions)
+            records[index] = replace(
+                records[index],
+                held_completion=replace(held, verdicts=(), report=None),
+                verification_failed_by=item.id,
+                verification_repair_pending=True,
+            )
+            state = replace(state, item_executions=tuple(records))
+            if step.verification_plan is not None and step.verification_plan.goto:
+                state = self._verification_goto(state, snapshot, index, record)
+            elif state.status != "failed":
+                state, snapshot = open_verification_repair(state, snapshot, step, _now)
             self.commit(state, snapshot)
             self._count_rules(state.task_id, step, step_record, held.report)
-            return self._after_verification(state, snapshot, caller_role)
+            if state.pending_goto is not None:
+                return self.drain(state, snapshot)
+            return state, snapshot
         if round_open(state, plan, step.id):
             self.commit(state, snapshot)
-            return self._after_verification(state, snapshot, caller_role)
+            return state, snapshot
         self.commit(state, snapshot)
-        return self._replay_held(state.task_id, index, caller_role=caller_role)
+        self._replay_held(
+            state.task_id,
+            index,
+            caller_role="worker" if state.assignment_token is not None else None,
+        )
+        return self.load(state.task_id, state.run_id)
+
+    def _verification_goto(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        index: int,
+        verifier: PlanItemExecution,
+    ) -> ExecutionState:
+        """Leave failed verification explicitly, without accepting its hold."""
+        step = snapshot.plan.items[index]
+        policy = step.verification_plan
+        assert policy is not None and policy.goto is not None
+        span = step_span(snapshot.plan.items, step.step)
+        assert span is not None
+        records = list(state.item_executions)
+        failed = records[index]
+        history = (*state.execution_history, replace(failed, status="failed"))
+        for position in range(span[0], span[1] + 1):
+            if records[position].status != "completed":
+                records[position] = replace(
+                    records[position],
+                    status="completed",
+                    completed_at=_now(),
+                    result=f"skipped: verification.on_failure goto {policy.goto}",
+                    held_completion=None,
+                    verification_repair_pending=False,
+                )
+        records[index] = replace(
+            records[index],
+            artifact=failed.held_completion.draft_ref
+            if failed.held_completion
+            else None,
+            summary_for_next=verifier.result_text,
+        )
+        return replace(
+            close_assignment(state),
+            status="pending",
+            active_item_id=None,
+            cursor=span[1] + 1,
+            item_executions=tuple(records),
+            execution_history=history,
+            failure_kind=None,
+            last_error=None,
+            pending_goto=GotoRequest(step.step, policy.goto, policy.detail),
+        )
 
     def _after_verification(
         self,
@@ -4726,6 +4907,16 @@ class WorkflowService:
                 "repeat_until outcome agent work must be completed by a "
                 "separate worker in runtime auto"
             )
+        if (
+            state.workflow_runtime == "auto"
+            and item is not None
+            and item.repair_of is not None
+            and caller_role != "worker"
+        ):
+            raise StateError(
+                "verification repairs must be completed by a separate worker "
+                "in runtime auto"
+            )
         if caller_role == "worker" and managers:
             assert item is not None
             raise StateError(
@@ -4888,12 +5079,37 @@ class WorkflowService:
             repeat_communication=next(
                 (
                     repeat_communication(
-                        state, snapshot.plan, index,
+                        state,
+                        snapshot.plan,
+                        index,
                         generation=current[item.id].goto_round,
                     )
                     for index, item in enumerate(snapshot.plan.items)
                     if item.id in ended.items
                     and repeat_owner(snapshot.plan, index) is not None
+                ),
+                None,
+            )
+            or next(
+                (
+                    verification_communication(
+                        replace(
+                            state,
+                            item_executions=tuple(
+                                current[entry.plan_item_id]
+                                for entry in state.item_executions
+                            ),
+                        ),
+                        snapshot.plan,
+                        position,
+                    )
+                    for position, entry in enumerate(snapshot.plan.items)
+                    if entry.id in ended.items
+                    and (
+                        entry.verifies is not None
+                        or entry.repair_of is not None
+                        or entry.verification_hook is not None
+                    )
                 ),
                 None,
             ),

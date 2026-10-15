@@ -284,6 +284,10 @@ class PlanItem:
     artifact_dependency: str | None = None
     assessment_question: str | None = None
     repeat_until: str | None = None
+    verification_plan: VerificationPlan | None = None
+    # Generated verification repair work and verifier lifecycle hooks.
+    repair_of: str | None = None
+    verification_hook: str | None = None
     assessment_outcomes: tuple[str, ...] = ()
     # The outcomes that end the workflow; they emit no items of their own.
     assessment_stops: tuple[str, ...] = ()
@@ -548,6 +552,17 @@ class PlanItem:
             "artifact_dependency": self.artifact_dependency,
             "assessment_question": self.assessment_question,
             **({"repeat_until": self.repeat_until} if self.repeat_until else {}),
+            **(
+                {"verification_plan": self.verification_plan.to_dict()}
+                if self.verification_plan is not None
+                else {}
+            ),
+            **({"repair_of": self.repair_of} if self.repair_of else {}),
+            **(
+                {"verification_hook": self.verification_hook}
+                if self.verification_hook
+                else {}
+            ),
             "assessment_outcomes": list(self.assessment_outcomes),
             "assessment_parent": self.assessment_parent,
             "assessment_outcome": self.assessment_outcome,
@@ -607,6 +622,24 @@ def step_label(
             *(entry.step_ordinals[0] for entry in items if entry.step_ordinals),
         ),
     )
+
+
+@dataclass(frozen=True)
+class VerificationPlan:
+    """Frozen ordinary lifecycles used by a ruled step's verification loop."""
+
+    verifier: tuple[PlanItem, ...] = ()
+    on_failure: tuple[PlanItem, ...] = ()
+    goto: str | None = None
+    detail: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "verifier": [item.to_dict() for item in self.verifier],
+            "on_failure": [item.to_dict() for item in self.on_failure],
+            "goto": self.goto,
+            "detail": self.detail,
+        }
 
 
 @dataclass(frozen=True)

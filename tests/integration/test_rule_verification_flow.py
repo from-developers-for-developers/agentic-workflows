@@ -434,14 +434,13 @@ def test_a_failing_verdict_is_a_fix_round_counted_with_the_checks(
 
     back = _report(service, failing)
 
-    assert back.item_name == "develop"
+    assert back.item_name == "fix-rule-violations"
     assert back.item_status == "in_progress"
-    assert back.fix_required is not None
-    assert back.fix_required.attempt == 1
-    assert back.fix_required.failures[0].judged is True
-    rendered = _markdown(back)
-    assert "### `develop/1` (verifier's verdict)" in rendered
-    assert "    app.py:1 — prints to stdout" in rendered
+    assert back.repeat_communication is not None
+    assert back.repeat_communication["rule_results"] == [json.dumps(failing)]
+    state, snapshot = service.load("TASK-1")
+    source = state.item_executions[_index(snapshot, "develop")]
+    assert source.check_failures("develop/1") == 1
     again = service.complete("TASK-1", artifact="Fixed.", summary_for_next="Fixed.")
     assert again.verification is not None
     assert [rule.id for rule in again.verification.rules] == ["develop/1"]
@@ -870,7 +869,7 @@ def test_the_handoff_shows_the_held_re_check_after_a_rejection(
     )
     assert service.handoff("TASK-1", assignment=token) == held.handoff_block
 
-    # A failing verdict reopens the step; the block now shows that attempt.
+    # A failing verdict holds the step; the block shows the rejected attempt.
     assert service.next("TASK-1", caller_role="manager").item_name == (
         "develop-verify-1"
     )
@@ -889,10 +888,10 @@ def test_the_handoff_shows_the_held_re_check_after_a_rejection(
     )
     again = service.handoff("TASK-1", assignment=token)
     (develop,) = again.steps
-    assert develop.outcome == "not completed"
+    assert develop.outcome == "held for verification"
     assert dict(develop.checks)["develop/2"] == "failed"
     assert develop.checks_note == (
-        "last rejected attempt, re-checked on the next complete"
+        "held completion rejected; focused repair and verification pending"
     )
 
 

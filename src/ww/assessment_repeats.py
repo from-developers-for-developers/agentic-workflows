@@ -35,8 +35,10 @@ def validate_repeats(plan: WorkflowPlan) -> None:
                 raise ConfigurationError(
                     f"{item.step}.repeat_until cannot contain another assess"
                 )
-            if is_coordinator(nested) or nested.child_operation is not None or (
-                nested.item_operation == "collect"
+            if (
+                is_coordinator(nested)
+                or nested.child_operation is not None
+                or (nested.item_operation == "collect")
             ):
                 raise ConfigurationError(
                     f"{item.step}.repeat_until cannot repeat task launches or "
@@ -176,8 +178,11 @@ def take_repeat(
 
 
 def communication(
-    state: ExecutionState, plan: WorkflowPlan, index: int,
-    *, generation: int | None = None,
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    index: int,
+    *,
+    generation: int | None = None,
 ) -> dict[str, object] | None:
     """Stable session identity and verbatim persisted messages for either route."""
     owner = repeat_owner(plan, index)
@@ -191,8 +196,7 @@ def communication(
             (
                 earlier
                 for earlier in reversed(all_records)
-                if earlier.plan_item_id == item.id
-                and earlier.goto_round == generation
+                if earlier.plan_item_id == item.id and earlier.goto_round == generation
             ),
             record,
         )
@@ -235,9 +239,7 @@ def communication(
         if earlier.plan_item_id not in outcome_ids or not earlier.attempts:
             continue
         message = (
-            earlier.result_text
-            if earlier.result_text is not None
-            else earlier.result
+            earlier.result_text if earlier.result_text is not None else earlier.result
         )
         if message is not None:
             results.append(

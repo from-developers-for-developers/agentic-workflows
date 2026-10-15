@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ww.execution_models import PlanItemExecution
+from ww.execution_models import CheckReport, PlanItemExecution
 from ww.plan import PlanItem
 
 from .commands import next_command, status_command
@@ -101,9 +101,14 @@ def _step(
     # The results of a held completion live with it until it is recorded;
     # the record's own last report is then the rejected attempt before it.
     note = None
+    last: CheckReport | None
     if record.held_completion is not None:
-        last = record.held_completion.report
-        note = "checks passed; rules being verified"
+        if record.verification_failed_by is not None and record.check_reports:
+            last = record.check_reports[-1]
+            note = "held completion rejected; focused repair and verification pending"
+        else:
+            last = record.held_completion.report
+            note = "checks passed; rules being verified"
     else:
         last = record.check_reports[-1] if record.check_reports else None
         if record.status in {"pending", "in_progress"}:
@@ -213,6 +218,16 @@ def repeat_markdown(message: dict[str, object]) -> list[str]:
         f"`{message['step']}` across rounds. This is round {message['round']}; "
         f"finish only on outcome `{message['until']}`.",
     ]
+    if message.get("kind") == "rule_verification":
+        lines[:3] = [
+            "Repeating rule verification",
+            "",
+            f"Keep verifier `{message['step']}` under WW session key "
+            f"`{message['session']}` across rounds (round {message['round']}). "
+            "Judge only the selected rules and submit the structured "
+            "--rule-result verdicts shown on the page. Do not use --outcome. "
+            "The original step's completion stays held until all selected rules pass.",
+        ]
     if message["delegation_required"]:
         lines.extend(
             [

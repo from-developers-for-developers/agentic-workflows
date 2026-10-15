@@ -747,6 +747,10 @@ class PlanItemExecution:
     repeat_waived: str | None = None
     result_text: str | None = None
     worker_assignment: str | None = None
+    verification_results: tuple[str, ...] = ()
+    verification_decided: bool = False
+    verification_failed_by: str | None = None
+    verification_repair_pending: bool = False
     # Stable across retries of this plan item.  It identifies the external
     # operation whose outcome may be checked after an interrupted process.
     operation_id: str | None = None
@@ -842,6 +846,22 @@ class PlanItemExecution:
                 else {}
             ),
             "interaction_ended": self.interaction_ended,
+            **(
+                {"verification_results": list(self.verification_results)}
+                if self.verification_results
+                else {}
+            ),
+            **({"verification_decided": True} if self.verification_decided else {}),
+            **(
+                {"verification_failed_by": self.verification_failed_by}
+                if self.verification_failed_by
+                else {}
+            ),
+            **(
+                {"verification_repair_pending": True}
+                if self.verification_repair_pending
+                else {}
+            ),
             "chosen": self.chosen,
             "operation_id": self.operation_id,
             "model": self.model,
@@ -958,6 +978,22 @@ class PlanItemExecution:
             result_text=expect_optional_string(data.get("result_text"), "result text"),
             worker_assignment=expect_optional_string(
                 data.get("worker_assignment"), "worker assignment"
+            ),
+            verification_results=tuple(
+                expect_string(value, "verification result")
+                for value in _list(
+                    data.get("verification_results", []), "verification results"
+                )
+            ),
+            verification_decided=expect_bool(
+                data.get("verification_decided", False), "verification decided"
+            ),
+            verification_failed_by=expect_optional_string(
+                data.get("verification_failed_by"), "failed verifier"
+            ),
+            verification_repair_pending=expect_bool(
+                data.get("verification_repair_pending", False),
+                "verification repair pending",
             ),
             operation_id=expect_optional_string(
                 data.get("operation_id"), "operation_id"

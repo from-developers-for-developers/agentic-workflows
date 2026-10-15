@@ -1821,6 +1821,37 @@ the item record, and ww inserts one verification item per distinct worker
 setting before the step as a new plan revision, each an assignment of its
 own. A verifier only judges: it gives verdicts with evidence and never
 writes anything else.
+
+`VerificationDefinition` carries optional verifier settings and an ordinary
+`on_failure` repair tree or a standalone goto. The compiler freezes these
+lifecycles in the source item's `VerificationPlan`; runtime materialization
+rebases them into the source's current item/child paths. The default repair
+is the focused `fix-rule-violations` prompt, inheriting source execution
+settings without copying its action or hooks. Verifier lifecycle hooks run
+each round within the verifier's assignment; source completion hooks wait
+for accepted verification. This keeps hook results inside the verdict's
+lifecycle rather than allowing a verdict to settle before its hooks finish.
+
+`verification_flow` installs and resets repair lifecycles, waits for verifier
+hooks before settling verdicts, and builds exact communication envelopes.
+The source keeps its `HeldCompletion` through rejected verdicts and repair.
+`verification_repair_pending` marks a repair to open after an operator retry;
+a waiver clears it before replaying the held submission. Each failed
+verifier's raw `--rule-result` strings and exact artifact text are retained;
+repair records identify that verifier and round. Reused plan items archive
+their prior executions with unique operation/artifact generations.
+`repeat_session` identifies the retained verifier context across rounds and
+`repeat_communication` exposes findings, repair results, and original context
+on both instruction and handoff pages. Auto requires separate repair workers;
+hosts without nested delegation use the manager's exact-message relay to
+the same verifier. Existing fix counters apply without an assessment cap.
+An explicit failure goto archives the failed held submission and uses the
+ordinary pending-goto transition and goto limit without recording a pass.
+Repair items remain in the frozen plan for evidence and reuse, but a later
+goto or enclosing repeat skips them until another source rejection asks
+for repair. A repair worker's source-rule dispute stops on the held source
+record so retry and waiver retain their existing meaning and counters.
+
 Turning rules into checks is a project task of its own,
 `ww-scriptize-rules`, whose checks the operator records with `rules
 convert`. They live in `ww-rule-automation.json`, read with the rest of the

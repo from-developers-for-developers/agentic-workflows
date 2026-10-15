@@ -15,8 +15,8 @@ recorded on the step so the
 artifact reports it, and judged by no one. A verifier never writes the store:
 turning rules into checks is ``ww-scriptize-rules``'s job, outside tasks.
 
-A failing verdict sends the step back to its worker through the fix loop;
-once every rule passes, ww records the held completion.
+A failing verdict opens focused repair work, then resumes the retained
+verifier session. Once every rule passes, ww records the held completion.
 
 A step with ``select_rules_for`` is followed by a rule-selection item in
 which its worker chooses, among the judged rules of each step it names,
@@ -362,10 +362,28 @@ def record_not_applicable(
 
 def effective_hints(rule: PlannedRule, item: PlanItem) -> RuleHints:
     """The worker a rule is verified by: the rule's hints, else the step's."""
+    base = (
+        next(
+            (
+                entry
+                for entry in item.verification_plan.verifier
+                if entry.phase == "step"
+            ),
+            item,
+        )
+        if item.verification_plan is not None
+        else item
+    )
+    model = rule.hints.model or base.requested_model
+    reasoning = rule.hints.reasoning or (
+        "auto"
+        if rule.hints.model and rule.hints.model != base.requested_model
+        else base.requested_reasoning
+    )
     return RuleHints(
-        rule.hints.agent or item.requested_agent,
-        rule.hints.model or item.requested_model,
-        rule.hints.reasoning or item.requested_reasoning,
+        rule.hints.agent or base.requested_agent,
+        model,
+        reasoning,
     )
 
 
@@ -386,13 +404,33 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         "what to report for each rule."
     )
     prompt = actions.get("prompt")
+    template = (
+        next(
+            (
+                entry
+                for entry in item.verification_plan.verifier
+                if entry.phase == "step"
+            ),
+            None,
+        )
+        if item.verification_plan is not None
+        else None
+    )
+    base = template or item
 
     def concrete(value: str | None, fallback: str | None) -> str | None:
         return value if value is not None and value != "auto" else fallback
 
     return replace(
-        item,
+        base,
         id=f"{item.workflow}:{item.step}:verify:{ordinal}",
+        step=item.step,
+        parent=item.parent,
+        ancestors=item.ancestors,
+        step_ordinals=item.step_ordinals,
+        item_context=item.item_context,
+        child_stage=item.child_stage,
+        child_number=item.child_number,
         name=f"{item.name}-verify-{ordinal}",
         description=text,
         operation=PlannedAction("prompt", Prompt(text)),
@@ -415,11 +453,16 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         interactive=False,
         choices=(),
         ui=False,
-        model=concrete(hints.model, item.model),
-        reasoning=concrete(hints.reasoning, item.reasoning),
-        profile=None,
-        profile_instruction=None,
-        profile_path=None,
+        model=concrete(hints.model, base.model),
+        reasoning=(
+            "auto"
+            if hints.model not in {None, "auto", base.model}
+            and hints.reasoning in {None, "auto"}
+            else concrete(hints.reasoning, base.reasoning)
+        ),
+        profile=template.profile if template else None,
+        profile_instruction=template.profile_instruction if template else None,
+        profile_path=template.profile_path if template else None,
         summary=False,
         item_operation=None,
         child_template=False,
@@ -433,6 +476,9 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         artifact_dependency=None,
         assessment_question=None,
         repeat_until=None,
+        verification_plan=None,
+        repair_of=None,
+        verification_hook=None,
         assessment_outcomes=(),
         assessment_stops=(),
         assessment_parent=None,
@@ -526,10 +572,15 @@ def open_verification_round(
     plan = snapshot.plan
     existing = [plan.items[index] for index in verification_items(plan, item.id)]
     known = {entry.verifies.hints for entry in existing if entry.verifies is not None}
+    from ww.verification_flow import verifier_lifecycle
+
     added = [
-        verification_item(item, len(existing) + number, hints)
+        entry
         for number, hints in enumerate(
             (hints for hints in groups if hints not in known), 1
+        )
+        for entry in verifier_lifecycle(
+            item, verification_item(item, len(existing) + number, hints)
         )
     ]
     if added:
@@ -560,17 +611,56 @@ def open_verification_round(
     history = list(state.execution_history)
     scope = operation_scope_for(state)
     first: int | None = None
+    values = dict(state.workflow_values)
     for index in verification_items(plan, item.id):
         entry = plan.items[index]
         assert entry.verifies is not None
         earlier = records[index]
         if earlier.status != "pending" or earlier.verification:
             history.append(earlier)
-        fresh = new_item_execution(state.task_id, scope, entry)
+        generation = earlier.goto_round + int(
+            bool(
+                earlier.verification or earlier.attempts or earlier.status != "pending"
+            )
+        )
+        fresh = replace(
+            new_item_execution(
+                state.task_id, f"{scope}:verification-{generation}", entry
+            ),
+            goto_round=generation,
+            repeat_round=earlier.repeat_round + int(bool(earlier.verification)),
+            repeat_session=earlier.repeat_session or earlier.operation_id,
+        )
         asked = groups.get(entry.verifies.hints)
+        hooks = [
+            position
+            for position, hook in enumerate(plan.items)
+            if hook.verification_hook == entry.id
+        ]
+        for position in hooks:
+            prior = records[position]
+            if prior.status != "pending" or prior.attempts:
+                history.append(prior)
+            for name in (
+                *(value.name for value in plan.items[position].provide),
+                *plan.items[position].outputs,
+            ):
+                values.pop(name, None)
+            records[position] = replace(
+                new_item_execution(
+                    state.task_id,
+                    f"{scope}:verification-{generation}",
+                    plan.items[position],
+                ),
+                goto_round=generation,
+                status="pending" if asked else "completed",
+                completed_at=None if asked else now(),
+                result=None if asked else SKIPPED_ROUND,
+            )
         if asked:
             records[index] = replace(fresh, verification=tuple(asked))
-            first = index if first is None else first
+            start = min([index, *hooks])
+            first = start if first is None else first
         else:
             records[index] = replace(
                 fresh, status="completed", completed_at=now(), result=SKIPPED_ROUND
@@ -587,6 +677,7 @@ def open_verification_round(
                     active_item_id=None,
                     item_executions=tuple(records),
                     execution_history=tuple(history),
+                    workflow_values=tuple(values.items()),
                     updated_at=now(),
                 )
             ),
@@ -623,6 +714,18 @@ def close_round(
                 completed_at=now(),
                 result="skipped: an earlier verdict of the round failed",
             )
+            verifier = plan.items[index].id
+            for position, entry in enumerate(plan.items):
+                if (
+                    entry.verification_hook == verifier
+                    and records[position].status == "pending"
+                ):
+                    records[position] = replace(
+                        records[position],
+                        status="completed",
+                        completed_at=now(),
+                        result="skipped: an earlier verdict of the round failed",
+                    )
     return replace(state, item_executions=tuple(records), updated_at=now())
 
 

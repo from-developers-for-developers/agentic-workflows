@@ -1831,7 +1831,9 @@ that counts now: a step held for verification shows its held re-check,
 attempt before it, and a step still open after a rejection shows that
 attempt as what it is, `checks: lint failed (last rejected attempt,
 re-checked on the next complete)`; `checks_note` in the JSON block carries
-the label. "Files changed" is the change set since the first step of
+the label. A failed judged verdict keeps the completion held and shows its
+failed evidence as `held completion rejected; focused repair and verification
+pending`. "Files changed" is the change set since the first step of
 the assignment with rules or checks began; without such a step, or without git,
 it reads "not tracked". A failed handler's error is shown too. The worker's
 own judgment reaches the manager only through its `--summary`.
@@ -2502,9 +2504,25 @@ running a test with the change reverted, is done that way, not passed from
 reading alone. It judges what the step changed, reading the surrounding code
 only as far as a rule needs: a violation in code the step did not change is
 not the step's, unless the change brings it about, such as a new call inside
-an existing loop. A failing verdict is a rejected completion: the step
-goes back to its worker with the fix page, and it counts toward the rule's
-`max_fixes` like a failed check. The next round judges every rule again, the
+an existing loop. A failing verdict is a rejected completion, counting toward
+the rule's `max_fixes` like a failed check. WW holds the original submission
+and launches the built-in `fix-rule-violations` repair handler, then returns
+the exact repair result to the same retained verifier session. In `auto`,
+repair uses a separate worker; when nested delegation is unavailable the
+manager relays findings and results unchanged. Every round is recorded.
+`verification.on_failure: {handler: my-fixer}` selects a custom repair;
+ordinary handler/handlers/steps work supports its own settings and hooks.
+Omitting it uses focused built-in repair with the source's effective worker
+settings, without replaying the source action or hooks. A model override
+without reasoning uses that model's default; a settings-only override such
+as `on_failure: {model: repair-model}` keeps the built-in action. A repair
+worker can dispute the reported source rules with the usual `dispute`
+command. Alternatively a standalone
+`verification.on_failure: {goto: redesign}` leaves the local cycle using
+normal goto validation and limits, retaining failed evidence without accepting
+the original completion. Fix limits still apply; assessment limits do not.
+See [verification configuration](specification.md#verifying-rules-without-a-command).
+The next round judges every rule again, the
 ones the previous round failed listed first with their failures, to confirm
 the fix before the rest. Once every rule passes, ww records the held
 completion as submitted.

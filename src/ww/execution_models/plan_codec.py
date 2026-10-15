@@ -31,6 +31,7 @@ from ww.plan import (
     VerificationTarget,
     WorkflowPlan,
 )
+from ww.plan.models import VerificationPlan
 from ww.validation import (
     expect_bool,
     expect_literal,
@@ -250,6 +251,13 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
             raw.get("assessment_question"), "assessment question"
         ),
         repeat_until=expect_optional_string(raw.get("repeat_until"), "repeat until"),
+        verification_plan=_verification_plan(
+            raw.get("verification_plan"), default_agent
+        ),
+        repair_of=expect_optional_string(raw.get("repair_of"), "repair source"),
+        verification_hook=expect_optional_string(
+            raw.get("verification_hook"), "verification hook"
+        ),
         assessment_outcomes=tuple(
             _string_list(raw.get("assessment_outcomes", []), "assessment outcomes")
         ),
@@ -269,6 +277,31 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         selects_rules_for=_string_list(
             raw.get("selects_rules_for", []), f"{item_path}.selects_rules_for"
         ),
+    )
+
+
+def _verification_plan(value: Any, agent: str) -> VerificationPlan | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("verification plan must be a mapping")
+    require_keys(
+        value, {"verifier", "on_failure", "goto", "detail"}, "verification plan"
+    )
+    for name in ("verifier", "on_failure"):
+        if not isinstance(value[name], list):
+            raise ValueError(f"verification plan {name} must be a list")
+    return VerificationPlan(
+        verifier=tuple(
+            _plan_item_from_dict(item, index, agent)
+            for index, item in enumerate(value["verifier"])
+        ),
+        on_failure=tuple(
+            _plan_item_from_dict(item, index, agent)
+            for index, item in enumerate(value["on_failure"])
+        ),
+        goto=expect_optional_string(value["goto"], "verification goto"),
+        detail=expect_optional_string(value["detail"], "verification goto detail"),
     )
 
 
