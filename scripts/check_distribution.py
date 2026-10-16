@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DESIGN_DOCUMENTS = ("specification", "features", "examples")
+DESIGN_DOCUMENTS = ("specification", "features", "examples", "deprecations")
 REQUIRED_WHEEL_PATHS = {
     *(f"ww/assets/docs/{name}.md" for name in DESIGN_DOCUMENTS),
     "ww/assets/agent_instructions.md",
@@ -163,7 +163,8 @@ def main() -> int:
                 "asset = files('ww.assets').joinpath('agent_instructions.md')\n"
                 "assert asset.is_file()\n"
                 "from ww.design_docs import read_design_document\n"
-                "for name in ('specification', 'features', 'examples'):\n"
+                "for name in ('specification', 'features', 'examples', "
+                "'deprecations'):\n"
                 "    assert read_design_document(name).startswith('# ')\n"
                 "assert Path(ww.__file__).parent.joinpath("
                 "'_bundled_extensions/ww/git/extension.py').is_file()\n"

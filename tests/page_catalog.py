@@ -117,14 +117,16 @@ RULES = """workflows:
 
 GOTO = """workflows:
   - name: task
-    allowed_gotos:
-      - [review, develop]
     steps:
       - name: develop
         description: Implement the change described in the requirements.
       - name: review
         description: >-
-          Review the change; when it needs more work, send it back to develop.
+          Review the change thoroughly.
+        assess:
+          assess: Are there issues requiring development?
+          positive:
+            goto: develop
 """
 
 
@@ -221,12 +223,13 @@ def goto_target(root: Path) -> Instruction:
     service, _ = _start(root, GOTO)
     service.next(TASK)
     service.complete(TASK, artifact="Implemented.", summary_for_next="Added the flag.")
-    return service.complete(
+    service.complete(
         TASK,
         artifact="The flag is not documented.",
         summary_for_next="Document the flag in the CLI help.",
         goto="develop",
     )
+    return service.next(TASK, outcome="positive")
 
 
 def operator_stop(root: Path) -> Instruction:

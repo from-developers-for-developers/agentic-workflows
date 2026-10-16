@@ -298,7 +298,6 @@ Each item in `workflows` accepts:
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
 | `manual` | boolean | no | The workflow is started only when the operator names it; `discover` leaves it out (the `workflows` catalog still lists it, with `manual: true`), and `start` accepts it unchanged. Never inherited through `inherit`: a copy is listed unless it sets `manual` itself. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
-| `allowed_gotos` | list of `[<from>, <to>]` step paths | no | The gotos a step's worker may take with `complete --goto`; see [Gotos](#gotos). |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a `handoff_to` transition). |
 
 Execution settings inherit from workflow to enclosing steps to the current
@@ -589,6 +588,7 @@ A step accepts every [handler key](#handlers), plus:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `hooks` | hooks mapping | Hooks local to this step. |
+| `assess` | prompt string or assessment mapping | Decision attached after the step's work. Full form uses an inner `assess` prompt, outcome branches and optional `repeat_until`; see [Assessments](#assessments). |
 | `rules` | list of rule entries | The step's own rules and the rule groups it names; see [Step rules](#step-rules). Not allowed on a step without agent work of its own, such as a container or a command. |
 | `select_rules_for` | non-empty list of step names or paths | Later steps whose judged rules this step's worker chooses once its own work is done; each named step then gets, and is verified against, only those. See [Choosing the rules of later steps](#choosing-the-rules-of-later-steps). Only on a step with agent work of its own, outside `children`; inside an `items` body it chooses like any step. |
 | `profile` | profile value | Overrides the profile inherited from the workflow and every enclosing step. Nested steps, groups and items substeps inherit it in turn. |
@@ -1163,11 +1163,44 @@ in application code; WW never chooses the first item or joins values into a scal
 
 ### Assessments
 
+The full form uses `assess: {assess: <prompt>, ...}`. The former `question`
+key remains accepted with a deprecation warning; see
+[deprecations](deprecations.md). Both keys together are an error.
+
+Attach an assessment to an ordinary step to put its decision after the work:
+
+```yaml
+- code-review: Review the changes thoroughly.
+  assess:
+    assess: Are there issues?
+    repeat_until: negative
+    positive:
+      steps:
+        - fix: Fix the exact findings.
+```
+
+The description/action is delivered first, followed by the assessment prompt
+and outcomes in the same agent assignment. Commands and groups get a final
+agent assessment after their work. Named handler references support the same
+attachment. Completion hooks wait until the selected outcome work finishes;
+with `repeat_until` they run only after the terminal outcome. The initial
+work and start hooks run once. Later local rounds ask only for reassessment,
+retain the same session and original context, and repeat the chosen outcome
+work. They do not replay the original action or repeat its metadata/document
+updates. Standalone assessments keep their existing lifecycle behavior.
+
+The final assessor inherits the ordinary step's profile, model, reasoning,
+working directory and subagent policy. `role: manager` may place the decision
+with the manager even when WW runs the source command. Assessment prompts use
+normal interpolation, including values produced by the source action or group.
+Attached reassessment preserves the source change set, rule resolutions and
+accumulated check failures, so its rule repair limits apply across rounds.
+
 An assessment may declare `repeat_until: <outcome>`:
 
 ```yaml
 - assess:
-    question: Are there issues?
+    assess: Are there issues?
     repeat_until: negative
     positive:
       handler: fix-findings
@@ -1220,7 +1253,7 @@ assessment may itself be inside an existing items or child context.
 `positive` or `negative` when the evidence supports either; reserve `mixed` for
 material uncertainty. Select the result with `next --outcome <label>`.
 
-The standard branches may be written beside `question` as `positive`,
+The standard branches may be written beside the inner `assess` as `positive`,
 `negative`, and `mixed`, using the same ordinary step shapes as entries under
 `outcomes`. Do not combine these direct branches with `outcomes`; use
 `outcomes` when custom labels are needed. Omitted standard outcomes retain the
@@ -1228,7 +1261,7 @@ existing behavior of doing no branch work and continuing after the assessment.
 
 ```yaml
 - assess:
-    question: Does recent development warrant refactoring?
+    assess: Does recent development warrant refactoring?
     outcomes:
       positive:
         handler: refactor-plan
@@ -1256,7 +1289,7 @@ negative completes the workflow, like an outcome with `stop_workflow: true`.
 
 ```yaml
 - assess:
-    question: Were conflicts resolved in non-trivial code?
+    assess: Were conflicts resolved in non-trivial code?
     outcomes:
       positive:
         steps:
@@ -1275,31 +1308,26 @@ pauses at a pending assessment and no branch executes before then.
 A goto sends the flow from one step to another: back to a step already run,
 so the steps from there run again (a develop and review loop), or ahead past
 the steps between. Steps are named by their full path, `develop/fix` for a
-substep. A workflow lists the gotos a step's worker may take:
+substep. Declare the decision and destination in an assessment branch.
+WW derives its internal permitted edges from those declarations and
+verification failure branches; there is no separate permission configuration.
 
 ```yaml
-workflows:
-  - name: task
-    allowed_gotos:
-      - [review, develop]
-      - [develop/fix, summary]
-    steps:
-      - develop: Implement it.
-      - review: Review it; when it needs more work, send it back to develop.
+- develop: Implement it.
+- review: Review the change thoroughly.
+  assess:
+    assess: Are there issues that require development work?
+    positive:
+      goto: develop
 ```
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `allowed_gotos` | list of `[<from>, <to>]` | The step paths a step's worker may send the flow between with `complete --goto <to>`. A pair listed twice is an error; an inheriting workflow copies the list and may not declare its own. |
 
 An assessment outcome may be a goto instead of work, on its own like
 `stop_workflow`: `goto: <step path>`, or `goto: [<step path>, <detail>]`.
-Choosing the outcome takes the goto; the outcome declares its own edge, so
-`allowed_gotos` need not list it.
+Choosing the outcome takes its declared edge.
 
 ```yaml
 - assess:
-    question: Did the review find issues that must be fixed?
+    assess: Did the review find issues that must be fixed?
     outcomes:
       positive:
         goto: [develop, "Fix what {{ww.goto.from}} found."]
@@ -1319,12 +1347,15 @@ and its target a step of the workflow, neither is `init` nor inside
 `items` body or both outside every one, and the steps a goto back would run
 again hold no `children` step. The plan keeps the checked gotos (`gotos`).
 
-A step with an allowed goto shows it under its completion command, with the
-targets; the step's description says when to take it. `complete --goto <to>`
+A step shows the goto destinations declared by its assessment branches.
+The assessment states the condition and the manager selects its outcome. `complete --goto <to>`
 records the completion as usual, artifact and summary included, and refuses a
 target the workflow does not allow from that step, a repair, a verification,
 a bootstrap completion and a completion that only supplies values. A completion
 held for verification keeps the goto until the verifiers pass it.
+An assessment must still have its outcome selected. A completion flag cannot
+bypass that decision, and choosing another outcome clears a queued request
+from that assessment; the authored selected branch determines the route.
 
 ww takes a goto once the step that asked is done, its completion hooks
 included; until then it is the run's `pending_goto`. The run records each goto

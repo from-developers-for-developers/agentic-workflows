@@ -34,9 +34,11 @@ Clock = Callable[[], str]
 def allowed_targets(plan: WorkflowPlan, source: str) -> tuple[str, ...]:
     """Where ``source``'s worker may send the flow with ``complete --goto``."""
     return tuple(
-        goto.target
-        for goto in plan.gotos
-        if goto.outcome is None and goto.source == source
+        dict.fromkeys(
+            goto.target
+            for goto in plan.gotos
+            if goto.outcome != "__verification_failure" and goto.source == source
+        )
     )
 
 
@@ -61,16 +63,31 @@ def request_goto(plan: WorkflowPlan, item: PlanItem, target: str) -> GotoRequest
             + (
                 "it may go to " + ", ".join(repr(entry) for entry in allowed)
                 if allowed
-                else "the workflow's allowed_gotos lists no goto from it"
+                else "no assessment branch declares this goto"
             )
         )
-    return GotoRequest(item.step, target)
+    edge = next(
+        edge
+        for edge in plan.gotos
+        if edge.source == item.step
+        and edge.target == target
+        and edge.outcome != "__verification_failure"
+    )
+    return GotoRequest(item.step, target, edge.detail)
 
 
 def goto_due(state: ExecutionState, plan: WorkflowPlan) -> bool:
     """Whether the step that asked for the pending goto has finished."""
     request = state.pending_goto
     if request is None:
+        return False
+    if any(
+        item.step == request.source
+        and item.assessment_question is not None
+        and record.assessment_outcome is None
+        for item, record in zip(plan.items, state.item_executions, strict=True)
+    ):
+        # A completion flag cannot bypass the authored assessment decision.
         return False
     span = step_span(plan.items, request.source)
     if span is None:  # pragma: no cover - the plan checked the source

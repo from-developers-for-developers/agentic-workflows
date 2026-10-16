@@ -624,6 +624,7 @@ class StepDefinition(HandlerDefinition):
     # An assessment is an agent prompt whose named outcome selects a conditional
     # subtree.  Empty outcomes use the compact positive/negative continuation.
     assessment_question: str | None = None
+    assessment_attached: bool = False
     assessment_outcomes: tuple[StepDefinition, ...] = ()
     # Repeat this assessment and its chosen work until this outcome is chosen.
     repeat_until: str | None = None
@@ -743,9 +744,6 @@ class WorkflowDefinition:
     # not run without the project's lane handling (a built-in that installs
     # tools and writes configuration, for example).
     needs_hooks_from: bool = False
-    # The ``[from, to]`` step-path pairs a step's worker may take with
-    # ``complete --goto``; an assessment outcome's ``goto`` declares its own.
-    allowed_gotos: tuple[tuple[str, str], ...] = ()
 
     @property
     def lane(self) -> str:

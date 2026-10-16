@@ -143,6 +143,7 @@ def default_repair(item: PlanItem) -> PlanItem:
         verification_plan=None,
         repeat_until=None,
         assessment_question=None,
+        assessment_attached=False,
         assessment_outcomes=(),
         assessment_stops=(),
         assessment_parent=None,

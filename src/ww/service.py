@@ -23,6 +23,7 @@ from ww.amendments import MAX_AMENDMENT_LENGTH, Amendment, TaskRequirements
 from ww.assessment_repeats import (
     communication as repeat_communication,
 )
+from ww.assessment_repeats import instruction_plan as assessment_instruction_plan
 from ww.assessment_repeats import (
     repeat_due,
     repeat_owner,
@@ -1794,7 +1795,7 @@ class WorkflowService:
         verdict, per rule it covers; a rule-selection item one
         ``rule_selection`` entry, ``<step>=<id>,...``, per step it chooses for.
         ``goto`` names the step the flow goes to once this one is done, as
-        the workflow's ``allowed_gotos`` allows.
+        a declared assessment branch permits.
         """
         self._validate_caller_role(caller_role)
         self._validate_selected_agent(selected_agent)
@@ -1965,7 +1966,8 @@ class WorkflowService:
             )
         if not state.active_item_id or state.cursor >= len(snapshot.plan.items):
             raise StateError("no agent item is in progress; use next")
-        item = snapshot.plan.items[state.cursor]
+        completion_plan = assessment_instruction_plan(state, snapshot.plan)
+        item = completion_plan.items[state.cursor]
         if item.id != state.active_item_id or item.owner != "agent":
             raise StateError("active plan item does not match the execution cursor")
         goto_request = request_goto(snapshot.plan, item, goto) if goto else None
@@ -1976,7 +1978,7 @@ class WorkflowService:
             window_stop: int | None = state.cursor + 1
         else:
             window_stop = assignment.stop if assignment else None
-        required, _ = completion_window(snapshot.plan, state.cursor, window_stop)
+        required, _ = completion_window(completion_plan, state.cursor, window_stop)
         validate_requested_values(supplied, required)
         if asks_for_reports(item):
             # The run reports' arrays are checked before anything is saved, so
@@ -1984,7 +1986,7 @@ class WorkflowService:
             validate_report_values(supplied)
         self._validate_supplied_inputs(
             state,
-            completion_window_items(snapshot.plan, state.cursor, window_stop),
+            completion_window_items(completion_plan, state.cursor, window_stop),
             supplied,
         )
         task_metadata, project_metadata = validate_metadata_values(

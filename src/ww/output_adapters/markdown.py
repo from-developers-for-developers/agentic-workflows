@@ -1256,6 +1256,9 @@ def _outcome_effect(outcome: AssessmentOutcome) -> str:
 def _assessment_answers(lines: Lines, instruction: Instruction) -> None:
     if not instruction.assessment_outcomes or instruction.choosing_outcome_of:
         return
+    if instruction.assessment_prompt is not None:
+        _append_section(lines, "Assessment")
+        lines.extend([instruction.assessment_prompt, ""])
     _append_section(lines, "Possible outcomes")
     lines.append(
         "Your answer decides what runs next. Say plainly in the artifact which "
@@ -2028,10 +2031,10 @@ def _continuation(lines: Lines, instruction: Instruction) -> None:
         lines.extend(
             [
                 "",
-                "When the work instruction says to send the flow to another "
-                f"step, complete with {flag} added to this command (allowed "
-                "from this step): ww runs that step next, and the steps it "
-                "reaches get your summary and artifact as the reason.",
+                f"Declared assessment destinations permit {flag}. Select the "
+                "assessment outcome with `next --outcome <label>`; its declared "
+                "branch determines the route. The destination receives your "
+                "summary and artifact as the reason.",
             ]
         )
     if (

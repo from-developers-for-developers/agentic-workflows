@@ -1942,6 +1942,11 @@ def main(argv: list[str] | None = None) -> int:
             storage.root, storage.project_config_path
         )
         service = WorkflowService(storage, extensions=extensions)
+        if args.command != "lint":
+            with contextlib.suppress(OSError, WwError):
+                for notice in compose_configuration(storage.config_path).notices:
+                    if notice.startswith("Deprecated:"):
+                        print(f"ww warning: {notice}", file=sys.stderr)
         # Check what the force would do before asking the operator to approve
         # it, so a refused force is reported instead of confirmed and refused.
         if args.command == "next" and args.force:

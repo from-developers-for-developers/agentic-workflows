@@ -115,7 +115,7 @@ workflow's requested outcome was achieved.
 An assessment asks the agent for a judgment and routes the rest of the
 workflow. The compact form takes only a question: `positive` continues,
 `negative` completes the workflow. The standard branches can sit beside
-`question`, each one an ordinary step shape, and an undeclared branch runs
+the inner `assess`, each one an ordinary step shape, and an undeclared branch runs
 nothing and continues. With labels of your own, wrap the branches in
 `outcomes`; each one here is a direct handler. The agent picks with
 `next --outcome <label>`.
@@ -137,7 +137,7 @@ workflows:
   - name: branches
     steps:
       - assess:
-          question: Does the change touch public behavior?
+          assess: Does the change touch public behavior?
           positive:
             steps:
               - changelog: Add a changelog entry.
@@ -150,7 +150,7 @@ workflows:
     steps:
       - dry-run: Run the migration against a scratch database.
       - assess:
-          question: How did the dry run go?
+          assess: How did the dry run go?
           outcomes:
             clean:
               handler: apply-migration
@@ -669,7 +669,7 @@ workflows:
     steps:
       - merge: Merge the branch into main and resolve any conflicts.
       - assess:
-          question: Were conflicts resolved in non-trivial code?
+          assess: Were conflicts resolved in non-trivial code?
           outcomes:
             positive:
               steps:
@@ -865,7 +865,7 @@ workflows:
     steps:
       - develop: Implement the change.
       - assess:
-          question: Are there issues in the change?
+          assess: Are there issues in the change?
           repeat_until: negative
           positive:
             steps:
@@ -906,3 +906,28 @@ Run with `--runtime auto` for separate repair workers. Hosts that cannot
 launch nested workers relay exact findings and results through the manager
 to the waiting verifier. Replace the failure body with `goto: develop-design`
 to leave this local cycle for an existing step named `develop-design`.
+
+## 24. Attach a review decision and declare its goto
+
+The reviewer receives its work instructions first, then its assessment. The
+positive branch declares the goto; WW derives the permitted edge from it.
+
+```yaml
+workflows:
+  - name: reviewed-change
+    steps:
+      - develop: Implement the change and its tests.
+      - code-review: Review the changes thoroughly.
+        assess:
+          assess: Are there issues requiring further development?
+          positive:
+            goto: [develop, "Address what {{ww.goto.from}} found."]
+      - publish: Publish the accepted change.
+```
+
+After the review completes, the manager records its answer with
+`ww next <task-id> --outcome positive` or `--outcome negative`. Negative
+continues to publication. Positive returns to development, carrying the
+review summary and the additional detail. To fix locally while retaining
+the reviewer, instead declare `repeat_until: negative` and give the positive
+branch ordinary fix steps.

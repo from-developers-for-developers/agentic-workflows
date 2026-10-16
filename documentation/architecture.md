@@ -294,6 +294,27 @@ made its judgment. Once the assessment completes, the manager selects one
 declared label through `next --outcome`; execution activates only that subtree
 and records all alternatives as skipped. This makes the decision explicit and
 auditable while preserving normal substep lifecycles, artifacts, and recovery.
+Attached assessments retain the ordinary step action. The compiler annotates
+its final agent leaf with `assessment_attached`; for automatic actions and
+groups it appends a final agent decision. The instruction page renders the
+work first and `assessment_prompt` afterward. `assessment_repeats.instruction_plan`
+creates a transient view of later rounds containing only reassessment, without
+rewriting the frozen source action. `round_positions` restricts attached
+repetition to the assessor and outcomes, preserving original work/start hooks
+and deferring completion hooks until a terminal outcome. Source values remain
+available while repeat-local outcome values are cleared. Attached rounds also
+retain the original source change mark, rule resolutions and check reports:
+reassessment judges the same work, so it cannot restart the rule repair budget.
+Synthetic assessors inherit the step's execution settings, including profiles;
+attached prompts use normal validation and value interpolation.
+
+The parser accepts canonical inner `assess` and deprecated `question`, rejects
+conflicting spellings, and composition records source-located notices for
+applied legacy declarations. CLI commands print these to stderr, keeping JSON
+clean; lint includes them in its normal notice output. The registry in
+`documentation/deprecations.md` ships with `ww docs deprecations`. Goto edges
+are derived only from assessment outcome and verification failure declarations;
+there is no separate workflow permission list.
 The compact assessment has the same boundary without a subtree: a positive
 outcome continues normally and a negative outcome completes the workflow. A
 declared outcome with `stop_workflow: true` compiles to no subtree at all; the

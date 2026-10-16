@@ -53,6 +53,7 @@ from ww.config_files import (
     read_configuration_file,
     workflow_levels,
 )
+from ww.deprecations import assessment_deprecations
 from ww.errors import ConfigurationError
 from ww.workflow_config import WorkflowConfigLevel, WorkflowProvenance
 
@@ -153,6 +154,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
                 sources=(label,),
                 workflow_provenance=_workflow_provenance(raw, label, "project"),
                 rule_notices=(
+                    *assessment_deprecations(raw, label),
                     *_absolute_rule_notices(raw, label),
                     *_manager_setting_notices(raw, label),
                 ),
@@ -167,6 +169,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
     composer = _Composer()
     notices: list[str] = []
     for file_label, raw, file, level_name in applied:
+        notices.extend(assessment_deprecations(raw, file_label))
         notices.extend(_absolute_rule_notices(raw, file_label))
         notices.extend(_manager_setting_notices(raw, file_label))
         composer.apply(

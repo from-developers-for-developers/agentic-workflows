@@ -568,6 +568,7 @@ class Instruction:
     # An assessment's answers and what each does: on the assessment's own
     # page, and on the page that asks ``next`` for the chosen one.
     assessment_outcomes: tuple[AssessmentOutcome, ...] = ()
+    assessment_prompt: str | None = None
     # This page asks for the outcome of the named, completed assessment.
     choosing_outcome_of: str | None = None
     profile_instruction: str | None = None
@@ -739,6 +740,7 @@ class Instruction:
                 }
                 for outcome in self.assessment_outcomes
             ],
+            "assessment_prompt": self.assessment_prompt,
             "choosing_outcome_of": self.choosing_outcome_of,
             "profile_instruction": self.profile_instruction,
             "run_id": self.run_id,

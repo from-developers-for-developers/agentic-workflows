@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from ww.actions import PlannedAction, Prompt
 from ww.control import is_coordinator
 from ww.errors import ConfigurationError
 from ww.execution_models import (
@@ -30,7 +31,8 @@ def validate_repeats(plan: WorkflowPlan) -> None:
             continue
         span = step_span(plan.items, item.step)
         assert span is not None
-        for nested in plan.items[span[0] : span[1] + 1]:
+        for position in round_positions(plan, plan.items.index(item)):
+            nested = plan.items[position]
             if nested.id != item.id and nested.assessment_question is not None:
                 raise ConfigurationError(
                     f"{item.step}.repeat_until cannot contain another assess"
@@ -74,7 +76,11 @@ def repeat_owner(plan: WorkflowPlan, index: int) -> int | None:
     for position, item in enumerate(plan.items):
         if item.repeat_until is not None:
             span = step_span(plan.items, item.step)
-            if span is not None and span[0] <= index <= span[1]:
+            if span is not None and (
+                index in round_positions(plan, position)
+                if item.assessment_attached
+                else span[0] <= index <= span[1]
+            ):
                 owners.append(position)
     return max(owners, default=None)
 
@@ -93,9 +99,10 @@ def repeat_due(state: ExecutionState, plan: WorkflowPlan) -> int | None:
             continue
         span = step_span(plan.items, item.step)
         assert span is not None
-        if state.cursor > span[1] and all(
-            entry.status == "completed"
-            for entry in state.item_executions[span[0] : span[1] + 1]
+        positions = round_positions(plan, index)
+        if state.cursor > max(positions) and all(
+            state.item_executions[position].status == "completed"
+            for position in positions
         ):
             return index
     return None
@@ -129,13 +136,16 @@ def take_repeat(
     records = list(state.item_executions)
     history = list(state.execution_history)
     scope = operation_scope_for(state)
+    positions = round_positions(plan, index)
     # Values produced in this round must not leak into its next round.
     provided = {
         name
-        for item in plan.items[span[0] : span[1] + 1]
+        for position in positions
+        for item in (plan.items[position],)
+        if not (position == index and item.assessment_attached)
         for name in (*(variable.name for variable in item.provide), *item.outputs)
     }
-    for position in range(span[0], span[1] + 1):
+    for position in positions:
         earlier = records[position]
         if earlier.status != "pending":
             history.append(earlier)
@@ -152,10 +162,23 @@ def take_repeat(
                 else None
             ),
         )
+        if position == index and plan.items[index].assessment_attached:
+            # The assessed work is still the same work instance. Keep its
+            # original change set and enforcement budget across decisions.
+            records[position] = replace(
+                records[position],
+                change_mark=earlier.change_mark,
+                rule_resolutions=earlier.rule_resolutions,
+                resolved_checks=earlier.resolved_checks,
+                check_reports=earlier.check_reports,
+                checks_waived=earlier.checks_waived,
+                disputes=earlier.disputes,
+                rule_selection=earlier.rule_selection,
+            )
     return replace(
         state,
         status="pending",
-        cursor=span[0],
+        cursor=min(positions),
         active_item_id=None,
         item_executions=tuple(records),
         execution_history=tuple(history),
@@ -174,6 +197,51 @@ def take_repeat(
         failure_kind=None,
         last_error=None,
         updated_at=now(),
+    )
+
+
+def round_positions(plan: WorkflowPlan, index: int) -> tuple[int, ...]:
+    """Attached rounds repeat decisions/outcomes, never source work or hooks."""
+    item = plan.items[index]
+    if item.assessment_attached:
+        return (
+            index,
+            *(
+                position
+                for position, entry in enumerate(plan.items)
+                if entry.assessment_parent == item.step
+            ),
+        )
+    span = step_span(plan.items, item.step)
+    assert span is not None
+    return tuple(range(span[0], span[1] + 1))
+
+
+def instruction_plan(state: ExecutionState, plan: WorkflowPlan) -> WorkflowPlan:
+    """Present a retained agent with reassessment, without replaying its action."""
+    if state.cursor >= len(plan.items):
+        return plan
+    item = plan.items[state.cursor]
+    record = state.item_executions[state.cursor]
+    if not item.assessment_attached or not record.repeat_round:
+        return plan
+    text = item.assessment_question or ""
+    current = replace(
+        item,
+        description=text,
+        operation=PlannedAction("prompt", Prompt(text)),
+        provide=(),
+        outputs=(),
+        save_metadata=(),
+        update_document=(),
+        update_item=(),
+        interactive=False,
+        choices=(),
+        ui=False,
+    )
+    return replace(
+        plan,
+        items=(*plan.items[: state.cursor], current, *plan.items[state.cursor + 1 :]),
     )
 
 

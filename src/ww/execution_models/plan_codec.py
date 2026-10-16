@@ -250,6 +250,9 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         assessment_question=expect_optional_string(
             raw.get("assessment_question"), "assessment question"
         ),
+        assessment_attached=expect_bool(
+            raw.get("assessment_attached", False), "attached assessment"
+        ),
         repeat_until=expect_optional_string(raw.get("repeat_until"), "repeat until"),
         verification_plan=_verification_plan(
             raw.get("verification_plan"), default_agent

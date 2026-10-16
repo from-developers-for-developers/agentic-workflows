@@ -2,10 +2,9 @@
 """The gotos a workflow allows, checked against its compiled plan.
 
 A goto sends the flow from one step to another, back to a step already run
-or ahead past the steps between. ``allowed_gotos`` lists the pairs a step's
-worker may take with ``complete --goto``; an assessment outcome's ``goto``
-declares its own. Both name steps by their full path, and both are checked
-here once the plan's items exist, since only they say which paths there are.
+or ahead past the steps between. Assessment outcomes and verification
+failure branches declare every permitted edge. Targets name full step paths
+and are validated once the compiled plan identifies all existing paths.
 """
 
 from __future__ import annotations
@@ -47,7 +46,6 @@ def planned_gotos(
 ) -> tuple[PlannedGoto, ...]:
     """Every goto of ``workflow``, each checked against the plan's ``items``."""
     gotos = [
-        *(PlannedGoto(source, target) for source, target in workflow.allowed_gotos),
         *(
             PlannedGoto(path, outcome.goto.target, outcome.name, outcome.goto.detail)
             for path, step in _paths(workflow.steps, None)
@@ -89,7 +87,7 @@ def _check(workflow: str, goto: PlannedGoto, items: tuple[PlanItem, ...]) -> Non
     label = (
         f"{workflow}/{goto.source}.outcomes.{goto.outcome}.goto"
         if goto.outcome is not None
-        else f"{workflow}.allowed_gotos [{goto.source}, {goto.target}]"
+        else f"{workflow}/{goto.source}.goto"
     )
     source = next(
         (

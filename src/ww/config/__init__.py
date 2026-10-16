@@ -283,34 +283,6 @@ class _ParsedWorkflow:
     overrides: frozenset[str]
 
 
-# An ``allowed_gotos`` entry: from, to.
-_GOTO_PAIR = 2
-
-
-def _allowed_gotos(value: Any, path: str) -> tuple[tuple[str, str], ...]:
-    """``allowed_gotos``: a list of ``[<from step path>, <to step path>]``."""
-    if not isinstance(value, list):
-        raise ConfigurationError(f"{path}.allowed_gotos must be a list")
-    pairs: list[tuple[str, str]] = []
-    for index, entry in enumerate(value):
-        if (
-            not isinstance(entry, list)
-            or len(entry) != _GOTO_PAIR
-            or not all(isinstance(part, str) and part.strip() for part in entry)
-        ):
-            raise ConfigurationError(
-                f"{path}.allowed_gotos[{index}] must be [<from step path>, "
-                "<to step path>]"
-            )
-        pair = (entry[0].strip(), entry[1].strip())
-        if pair in pairs:
-            raise ConfigurationError(
-                f"{path}.allowed_gotos lists [{pair[0]}, {pair[1]}] twice"
-            )
-        pairs.append(pair)
-    return tuple(pairs)
-
-
 def _parse_workflow(
     data: Any, path: str, handlers_by_name: dict[str, HandlerDefinition]
 ) -> _ParsedWorkflow:
@@ -334,7 +306,6 @@ def _parse_workflow(
         "recommended_next_workflow",
         "hooks_from",
         "needs_hooks_from",
-        "allowed_gotos",
     }
     mapping = _named_entry(
         _mapping(data, path),
@@ -365,7 +336,7 @@ def _parse_workflow(
     if inherits is not None:
         # A workflow that needs other steps or hooks is a workflow of its
         # own, not a copy of another one.
-        declared = sorted({"steps", "hooks", "allowed_gotos"}.intersection(mapping))
+        declared = sorted({"steps", "hooks"}.intersection(mapping))
         if declared:
             raise ConfigurationError(
                 f"workflow {name!r} inherits {inherits!r} and cannot declare "
@@ -415,7 +386,6 @@ def _parse_workflow(
         recommended_next_workflow=recommended,
         hooks_from=hooks_from,
         needs_hooks_from=needs_hooks_from,
-        allowed_gotos=_allowed_gotos(mapping.get("allowed_gotos", []), path),
     )
     return _ParsedWorkflow(
         definition,

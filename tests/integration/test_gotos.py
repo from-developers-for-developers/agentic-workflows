@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.workflow_helpers import assignment_token
+from ww.assessments import pending_assessment
 from ww.cli import main
 from ww.errors import ConfigurationError, StateError
 from ww.instructions import Instruction
@@ -25,12 +26,17 @@ TASK = "TASK-1"
 # ahead to ``publish``.
 REVIEWED = """workflows:
   - name: task
-    allowed_gotos:
-      - [review, develop]
-      - [develop, publish]
     steps:
       - develop: Develop it.
-      - review: Review it; when it needs more work, send it back to develop.
+        assess:
+          assess: Is this already complete?
+          positive:
+            goto: publish
+      - review: Review it.
+        assess:
+          assess: Are there issues?
+          positive:
+            goto: develop
       - check: Check it.
       - publish: Publish it.
 """
@@ -41,7 +47,7 @@ ASSESSED = """workflows:
     steps:
       - develop: Develop it.
       - assess:
-          question: Did the review find issues that must be fixed?
+          assess: Did the review find issues that must be fixed?
           outcomes:
             positive:
               goto: {goto}
@@ -50,20 +56,20 @@ ASSESSED = """workflows:
 # A goto between substeps, named by their full paths.
 NESTED = """workflows:
   - name: task
-    allowed_gotos:
-      - [develop/review, develop/write]
     steps:
       - name: develop
         steps:
           - write: Write it.
           - review: Review it.
+            assess:
+              assess: Does it need rewriting?
+              positive:
+                goto: develop/write
       - publish: Publish it.
 """
 # A goto inside one items body.
 ITEMS = """workflows:
   - name: task
-    allowed_gotos:
-      - [triage/review, triage/fix]
     steps:
       - name: triage
         description: Collect the issues.
@@ -71,6 +77,10 @@ ITEMS = """workflows:
           steps:
             - fix: Fix them.
             - review: Review the fixes.
+              assess:
+                assess: Do the fixes need more work?
+                positive:
+                  goto: triage/fix
       - publish: Publish it.
 """
 
@@ -91,9 +101,24 @@ def _service(
 def _complete(
     service: WorkflowService, artifact: str, summary: str, goto: str | None = None
 ) -> Instruction:
-    return service.complete(
+    page = service.complete(
         TASK, artifact=artifact, summary_for_next=summary, goto=goto
     )
+    state, snapshot = service.load(TASK)
+    pending = pending_assessment(state, snapshot.plan)
+    if pending is not None and snapshot.plan.items[pending.index].assessment_attached:
+        label = (
+            "negative"
+            if goto is None
+            else next(
+                edge.outcome
+                for edge in snapshot.plan.gotos
+                if edge.source == snapshot.plan.items[pending.index].step
+                and edge.target == goto
+            )
+        )
+        return service.next(TASK, outcome=label)
+    return page
 
 
 def _to_review(service: WorkflowService) -> Instruction:
@@ -108,11 +133,7 @@ def test_a_page_offers_the_gotos_its_step_may_take(tmp_path: Path) -> None:
     rendered = md.render_instruction(page)
 
     assert page.goto_targets == ("develop",)
-    assert (
-        "When the work instruction says to send the flow to another step, "
-        "complete with `--goto develop` added to this command (allowed from "
-        "this step)" in rendered
-    )
+    assert "Declared assessment destinations permit `--goto develop`." in rendered
 
 
 def test_a_page_without_an_allowed_goto_offers_none(tmp_path: Path) -> None:
@@ -242,7 +263,7 @@ def test_a_goto_the_workflow_does_not_allow_is_refused(tmp_path: Path) -> None:
     with pytest.raises(StateError, match="'review' may not go to 'publish'"):
         _complete(service, "Reviewed.", "Fine.", goto="publish")
     _complete(service, "Reviewed.", "Fine.")
-    with pytest.raises(StateError, match="allowed_gotos lists no goto from it"):
+    with pytest.raises(StateError, match="no assessment branch declares this goto"):
         _complete(service, "Checked.", "Fine.", goto="develop")
 
 
@@ -378,7 +399,7 @@ def test_a_goto_ends_the_workers_assignment(tmp_path: Path) -> None:
         caller_role="worker",
         assignment=assignment_token(service, TASK),
     )
-    service.next(TASK, caller_role="manager")
+    service.next(TASK, caller_role="manager", outcome="negative")
 
     ended = service.complete(
         TASK,
@@ -390,35 +411,28 @@ def test_a_goto_ends_the_workers_assignment(tmp_path: Path) -> None:
     )
 
     assert ended.next_role == "manager"
-    page = service.next(TASK, caller_role="manager")
+    page = service.next(TASK, caller_role="manager", outcome="positive")
     assert page.item_name == "develop"
 
 
 @pytest.mark.parametrize(
-    ("gotos", "message"),
+    ("target", "message"),
     [
-        ("[[review, nowhere]]", "'nowhere' is not a step of the workflow"),
-        ("[[nowhere, develop]]", "'nowhere' is not an agent step of the workflow"),
-        ("[[review, review]]", "a step cannot go to itself"),
-        ("[[review, init]]", "init takes no goto"),
-        ("[review]", r"allowed_gotos\[0\] must be \[<from step path>"),
-        ("[[review, develop], [review, develop]]", "lists \\[review, develop\\] twice"),
+        ("nowhere", "'nowhere' is not a step of the workflow"),
+        ("review", "a step cannot go to itself"),
+        ("init", "init takes no goto"),
     ],
 )
-def test_allowed_gotos_are_checked(tmp_path: Path, gotos: str, message: str) -> None:
-    workflows = REVIEWED.replace(
-        "    allowed_gotos:\n      - [review, develop]\n      - [develop, publish]\n",
-        f"    allowed_gotos: {gotos}\n",
-    )
-    (tmp_path / "ww.yaml").write_text(workflows, encoding="utf-8")
-    service = WorkflowService(Storage(tmp_path))
-
+def test_declared_goto_targets_are_checked(
+    tmp_path: Path, target: str, message: str
+) -> None:
+    workflows = REVIEWED.replace("goto: develop", f"goto: {target}")
     with pytest.raises(ConfigurationError, match=message):
-        service.start("task", TASK, agent="codex", init_artifact="Do it.")
+        _service(tmp_path, workflows)
 
 
 def test_a_goto_cannot_cross_an_items_boundary(tmp_path: Path) -> None:
-    workflows = ITEMS.replace("[triage/review, triage/fix]", "[triage/review, publish]")
+    workflows = ITEMS.replace("goto: triage/fix", "goto: publish")
     (tmp_path / "ww.yaml").write_text(workflows, encoding="utf-8")
 
     with pytest.raises(ConfigurationError, match="not in the same items body"):
@@ -498,13 +512,13 @@ def test_complete_takes_goto_on_the_command_line(
     )
 
     assert code == 0
+    assert main(["next", TASK, "--outcome", "positive"]) == 0
     assert "### Sent back by a goto" in capsys.readouterr().out
 
 
 def test_a_goto_waits_for_the_verifier_of_a_held_completion(tmp_path: Path) -> None:
     workflows = REVIEWED.replace(
-        "      - review: Review it; when it needs more work, send it back "
-        "to develop.\n",
+        "      - review: Review it.\n",
         "      - name: review\n"
         "        description: Review it; when it needs more work, send it back.\n"
         "        rules: [Keep the public CLI unchanged.]\n",
@@ -540,6 +554,7 @@ def test_a_goto_waits_for_the_verifier_of_a_held_completion(tmp_path: Path) -> N
             ),
         ),
     )
+    page = service.next(TASK, outcome="positive")
     assert page.item_name == "develop"
     assert page.goto_notice is not None
     assert page.goto_notice.source == "review"
@@ -566,13 +581,6 @@ def test_an_inheriting_workflow_keeps_the_gotos_it_copies(tmp_path: Path) -> Non
     page = _complete(service, "Developed.", "Developed it.")
 
     assert page.goto_targets == ("develop",)
-    (tmp_path / "ww.yaml").write_text(
-        workflows + "    allowed_gotos: [[review, develop]]\n", encoding="utf-8"
-    )
-    with pytest.raises(ConfigurationError, match="cannot declare allowed_gotos"):
-        WorkflowService(Storage(tmp_path)).start(
-            "copy", "TASK-2", agent="codex", init_artifact="Do it."
-        )
 
 
 def test_only_a_goto_detail_reads_the_goto_values(tmp_path: Path) -> None:

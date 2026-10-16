@@ -58,6 +58,7 @@ include = ["src/ww/assets/*.md", "src/ww/assets/workflows/*.yaml", "src/ww/opera
 "documentation/specification.md" = "ww/assets/docs/specification.md"
 "documentation/features.md" = "ww/assets/docs/features.md"
 "documentation/examples.md" = "ww/assets/docs/examples.md"
+"documentation/deprecations.md" = "ww/assets/docs/deprecations.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

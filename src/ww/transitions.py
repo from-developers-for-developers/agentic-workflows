@@ -1168,6 +1168,11 @@ def select_assessment_outcome(
         )
     records = list(state.item_executions)
     records[pending.index] = replace(records[pending.index], assessment_outcome=outcome)
+    if (
+        state.pending_goto is not None
+        and state.pending_goto.source == plan.items[pending.index].step
+    ):
+        state = replace(state, pending_goto=None)
     skipped = f"skipped: assessment selected {outcome}"
     if chosen.goto is not None:
         # The outcome's goto is taken once the assessment's step is done;

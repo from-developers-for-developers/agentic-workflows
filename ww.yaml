@@ -141,7 +141,7 @@ workflows:
 
       # Only a non-trivial conflict resolution is new code worth reviewing.
       - assess:
-          question: >-
+          assess: >-
             Did the merge resolve conflicts in non-trivial code, beyond
             imports, formatting, or changelog entries?
           outcomes:
@@ -180,7 +180,7 @@ workflows:
         role: manager
 
       - assess:
-          question: >-
+          assess: >-
             Did the merge resolve conflicts in non-trivial code, beyond
             imports, formatting, or changelog entries?
           outcomes:
@@ -292,7 +292,7 @@ workflows:
       architecture where it has drifted. Run it periodically.
     steps:
       - assess:
-          question: >-
+          assess: >-
             Does the development since the last refactoring
             ({{ww.project_metadata.last_auto_refactored_at}}; empty means never)
             show code smells or architectural drift worth refactoring?

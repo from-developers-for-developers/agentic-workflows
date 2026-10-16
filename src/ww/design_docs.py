@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .errors import StateError
 
-DESIGN_DOCUMENTS = ("specification", "features", "examples")
+DESIGN_DOCUMENTS = ("specification", "features", "examples", "deprecations")
 PACKAGED_DIRECTORY = "docs"
 _CHECKOUT = Path(__file__).resolve().parents[2] / "documentation"
 

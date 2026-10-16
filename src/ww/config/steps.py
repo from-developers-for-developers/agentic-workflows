@@ -75,6 +75,7 @@ STEP_ONLY_KEYS: set[str] = {
     "children",
     "handler",
     "question",
+    "assess",
     "outcomes",
     "repeat_until",
     "verification",
@@ -161,6 +162,7 @@ _STEP_CONTENT_KEYS = frozenset(
         "explicit",
         "handoff_to",
         "question",
+        "assess",
         "outcomes",
         "positive",
         "negative",
@@ -304,9 +306,27 @@ def _parse_step(
         artifact=artifact,
         children=child_flow,
         artifact_dependency=artifact_from,
-        assessment_question=question,
-        assessment_outcomes=outcomes,
-        repeat_until=repeat_until,
+        assessment_question=(
+            question
+            if question is not None
+            else referenced.assessment_question
+            if referenced
+            else None
+        ),
+        assessment_attached=(question is not None and base.name != "assess")
+        or bool(referenced and referenced.assessment_attached),
+        assessment_outcomes=(
+            outcomes
+            if question is not None
+            else referenced.assessment_outcomes
+            if referenced
+            else ()
+        ),
+        repeat_until=repeat_until
+        if question is not None
+        else referenced.repeat_until
+        if referenced
+        else None,
         verification=(
             _parse_verification(mapping["verification"], path, handlers_by_name)
             if "verification" in mapping
@@ -322,39 +342,57 @@ def _step_mapping(
 ) -> dict[str, Any]:
     """Normalize a step entry to one mapping of its declared keys."""
     raw = _mapping(data, path)
-    # ``assess`` is deliberately a construct rather than a conventional step
-    # name: its compact spelling is a question and its long spelling owns
-    # outcome substeps.
+    # A standalone assessment owns the entry; an attached assessment extends
+    # the named step's work and shares its execution settings.
     mapping: dict[str, Any]
     if "assess" in raw:
         value = raw["assess"]
         rest = {key: item for key, item in raw.items() if key != "assess"}
+        known = _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}
+        attached = rest.get("name", "assess") != "assess" or bool(set(rest) - known)
+        ordinary = _named_entry(rest, path) if attached else {"name": "assess", **rest}
         if isinstance(value, str):
-            if rest:
-                raise ConfigurationError(
-                    f"{path}.assess compact form cannot have other keys"
-                )
-            mapping = {"name": "assess", "question": value}
+            mapping = {**ordinary, "assess": value}
         elif isinstance(value, dict):
             overlap = set(rest).intersection(value)
             if overlap:
                 raise ConfigurationError(
                     f"{path}.assess repeats key(s): {', '.join(sorted(overlap))}"
                 )
-            mapping = {"name": "assess", **value, **rest}
+            mapping = {**ordinary, **value}
         else:
             raise ConfigurationError(
                 f"{path}.assess must be a question string or mapping"
             )
     else:
         mapping = _named_entry(raw, path)
-    if _is_bare_reference(mapping) and mapping["name"] in handlers_by_name:
+        if "question" in mapping and mapping.get("name") != "assess":
+            raise ConfigurationError(f"{path}.question belongs inside an assess block")
+    work_mapping = (
+        {
+            key: value
+            for key, value in mapping.items()
+            if key
+            not in {
+                "assess",
+                "question",
+                "repeat_until",
+                "outcomes",
+                "positive",
+                "negative",
+                "mixed",
+            }
+        }
+        if mapping.get("name") != "assess"
+        else mapping
+    )
+    if _is_bare_reference(work_mapping) and mapping["name"] in handlers_by_name:
         # ``- fetch_requirements: ~`` with a root handler of that name means
         # the handler, exactly as a bare hook entry does; settings such as
         # ``profile`` or ``model`` on the step still override the copy.
         mapping = {**mapping, "handler": mapping["name"]}
     allowed = _handler_keys() | STEP_ONLY_KEYS | {"handoff_to"}
-    if mapping.get("name") == "assess":
+    if "assess" in mapping or mapping.get("name") == "assess":
         unknown_branches = {
             key
             for key, value in mapping.items()
@@ -377,11 +415,12 @@ def _parse_assessment(
     handlers_by_name: dict[str, HandlerDefinition],
 ) -> tuple[str | None, tuple[StepDefinition, ...], HandlerDefinition]:
     """Parse an assess step's question and outcomes, and its prompt handler."""
-    question = (
-        _nonempty_string(mapping, "question", path) if "question" in mapping else None
-    )
-    if question is not None and mapping["name"] != "assess":
-        raise ConfigurationError(f"{path}.question is only valid for an assess step")
+    if "assess" in mapping and "question" in mapping:
+        raise ConfigurationError(
+            f"{path} cannot combine assess and deprecated question"
+        )
+    key = "assess" if "assess" in mapping else "question"
+    question = _nonempty_string(mapping, key, path) if key in mapping else None
     direct = {
         label: mapping[label]
         for label in ("positive", "negative", "mixed")
@@ -404,6 +443,8 @@ def _parse_assessment(
     )
     if question is None:
         return None, outcomes, base
+    if mapping["name"] != "assess":
+        return question, outcomes, base
     if any(
         (
             base.action is not None,

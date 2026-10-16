@@ -283,6 +283,7 @@ class PlanItem:
     step_ordinals: tuple[int, ...] = ()
     artifact_dependency: str | None = None
     assessment_question: str | None = None
+    assessment_attached: bool = False
     repeat_until: str | None = None
     verification_plan: VerificationPlan | None = None
     # Generated verification repair work and verifier lifecycle hooks.
@@ -551,6 +552,7 @@ class PlanItem:
             "step_ordinals": list(self.step_ordinals),
             "artifact_dependency": self.artifact_dependency,
             "assessment_question": self.assessment_question,
+            **({"assessment_attached": True} if self.assessment_attached else {}),
             **({"repeat_until": self.repeat_until} if self.repeat_until else {}),
             **(
                 {"verification_plan": self.verification_plan.to_dict()}
@@ -646,11 +648,8 @@ class VerificationPlan:
 class PlannedGoto:
     """A goto the plan allows: ``source`` may send the flow to ``target``.
 
-    Both are step paths. An ``allowed_gotos`` pair is taken by the source
-    step's worker with ``complete --goto``; an assessment outcome's goto,
-    which names its ``outcome``, when that outcome is chosen, and its
-    ``detail`` is what the step reached is told instead of the source's
-    summary.
+    Both are step paths. Every edge comes from an assessment outcome or
+    verification failure branch. Its detail supplements the source summary.
     """
 
     source: str

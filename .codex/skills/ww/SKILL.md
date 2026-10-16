@@ -69,3 +69,10 @@ change, start from step 1 then.
    `--replan` / `--keep-plan` for a changed workflow. A `pass_incomplete`
    stop is cleared by recording what it names with `./ww update-item`, then
    `./ww next <task-id> --retry`; `--force` is refused there.
+
+A regular step may attach `assess: {assess: <prompt>, ...}`. Perform its work
+first, then assess in the same session and record the selected outcome through
+WW. For attached `repeat_until`, reassess after exact repair results without
+replaying the original action; completion hooks wait for the terminal outcome.
+Goto branches declare their own permissions. The inner `question` spelling is
+deprecated; use `assess` and see `ww docs deprecations` for migration guidance.

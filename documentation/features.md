@@ -108,12 +108,12 @@ say it.
 
 When review finds work to redo, a **goto** sends the flow back to an earlier
 step instead of a loop: develop, review, develop, review, until review is
-satisfied. List the moves a step's worker may make in the workflow's
-`allowed_gotos`, as `[from, to]` step paths (`develop/fix` for a substep),
-and say in the step's description when to make one; the page then shows the
-`complete --goto <step>` it adds. An assessment outcome can be a goto too,
-`goto: develop` or `goto: [develop, "<detail>"]`, when the agent's verdict
-should decide. Going back keeps everything: the steps run again with fresh
+satisfied. Attach an assessment to the review step and declare its positive
+branch as `goto: develop`. WW derives every permitted edge from assessment
+branches and verification failure branches. The assessment formalizes when
+to take it; no separate permission list is needed. An assessment outcome
+accepts `goto: develop` or `goto: [develop, "<detail>"]`.
+Going back keeps everything: the steps run again with fresh
 records, the earlier ones stay in the history, and their new artifacts sit
 beside the first as `<step>-N.md`. Every step on the way is told it is a next
 round, why, and where the asking step's artifact is. A goto can also skip
@@ -1371,6 +1371,20 @@ be fully automatic.
 
 ### Outcome-based assessments
 
+An ordinary step can attach an `assess` block. Its agent first receives the
+step's description or handler instructions, then the assessment prompt and
+outcomes, in the same assignment. Use `assess.assess` for the prompt;
+`assess.question` remains a deprecated alias that produces a warning.
+With `repeat_until`, the original action runs once and the same assessor
+stays alive across focused outcome work and reassessment. Start hooks run
+once and completion hooks wait for the terminal outcome. Commands and groups
+can attach a final assessment too. See [deprecations](deprecations.md).
+
+The final assessor uses the step's normal execution settings. Its prompt can
+read values produced by the step or its group. Attached rounds keep the
+original work's change set and rule repair budget, so reassessing cannot reset
+the number of permitted fixes.
+
 Use `assess` when an agent's judgment should route the remainder of a workflow.
 The agent should choose `positive` or `negative` whenever possible, reserving
 `mixed` for material uncertainty. After completing the assessment, select the
@@ -1378,7 +1392,7 @@ declared route with `ww next <task-id> --outcome <label> --role manager`.
 
 ```yaml
 - assess:
-    question: Does recent development warrant refactoring?
+    assess: Does recent development warrant refactoring?
     outcomes:
       positive:
         handler: refactor-plan
@@ -1398,7 +1412,7 @@ step after `assess`. An outcome that should end the run instead is
 
 ```yaml
 - assess:
-    question: Were conflicts resolved in non-trivial code?
+    assess: Were conflicts resolved in non-trivial code?
     outcomes:
       positive:
         steps:
@@ -1419,7 +1433,7 @@ and continues after the assessment:
 
 ```yaml
 - assess:
-    question: Were conflicts resolved in non-trivial code?
+    assess: Were conflicts resolved in non-trivial code?
     outcomes:
       positive:
         steps:
@@ -1431,11 +1445,11 @@ Here `negative` and `mixed` go straight to `verify`. A label of your own, such
 as `partial`, is accepted only when declared. For a simple gate, `- assess: <question>` accepts `positive` or
 `negative`; positive continues normally and negative completes the workflow.
 
-The standard branches can also sit directly beside `question`:
+The standard branches can also sit directly beside the inner `assess`:
 
 ```yaml
 - assess:
-    question: Does recent development warrant refactoring?
+    assess: Does recent development warrant refactoring?
     positive:
       handler: refactor-plan
     negative:
@@ -1502,7 +1516,7 @@ nonterminal rounds for the operator. See [Assessments](specification.md#assessme
 
 ```yaml
 - assess:
-    question: Are there issues in the change?
+    assess: Are there issues in the change?
     repeat_until: negative
     positive:
       steps:
@@ -3232,7 +3246,7 @@ handlers:
   - name: analyse
     steps:
       - assess:
-          question: Is the cause clear?
+          assess: Is the cause clear?
           outcomes:
             positive: {handler: investigate}
             negative: {handler: research}

@@ -10,6 +10,7 @@ from pathlib import Path
 from ww.agents import choice_mechanism
 from ww.amendments import Amendment
 from ww.assessment_repeats import communication as repeat_communication
+from ww.assessment_repeats import instruction_plan as assessment_instruction_plan
 from ww.assessments import assessment_outcomes, pending_assessment
 from ww.assignments import (
     Assignment,
@@ -44,6 +45,7 @@ from ww.execution_models import (
 from ww.gotos import allowed_targets
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
+from ww.interpolation import interpolate
 from ww.items import WorkItem
 from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.plan.gotos import step_span
@@ -267,6 +269,18 @@ class InstructionBuilder:
                 else assessment_outcomes(plan, state.cursor)
                 if item is not None and item.assessment_question is not None
                 else ()
+            ),
+            assessment_prompt=(
+                interpolate(
+                    item.assessment_question or "",
+                    {
+                        **dict(state.workflow_values),
+                        **self.task_values(state, plan),
+                        **self.child_values(state, plan, item),
+                    },
+                )
+                if item is not None and item.assessment_attached
+                else None
             ),
             choosing_outcome_of=(
                 plan.items[choosing.index].name if choosing is not None else None
@@ -1037,6 +1051,8 @@ class InstructionBuilder:
         record: PlanItemExecution,
     ) -> Instruction:
         """The agent item in progress: its work text and completion commands."""
+        plan = assessment_instruction_plan(state, plan)
+        item = plan.items[state.cursor]
         assignment = active_assignment(
             plan, state.assignment_item_id, runtime=state.workflow_runtime
         )

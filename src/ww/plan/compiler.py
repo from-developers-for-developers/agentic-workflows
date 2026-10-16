@@ -710,6 +710,8 @@ class WorkflowPlanCompiler:
                 nested_steps: tuple[StepDefinition, ...],
                 nested_scope: PlanningScope,
                 region_annotations: ItemAnnotations,
+                current_step: StepDefinition = step,
+                current_hints: ExecutionHints = step_hints,
             ) -> tuple[str, ...]:
                 start = len(items)
                 # A region's own tags replace the scope's, except that an
@@ -723,6 +725,12 @@ class WorkflowPlanCompiler:
                             region_annotations,
                             item_context=nested_scope.annotations.item_context,
                         ),
+                    ),
+                    current_hints=(
+                        replace(current_hints, role="worker")
+                        if current_step.repeat_until is not None
+                        and region_annotations.assessment_parent is not None
+                        else current_hints
                     ),
                 )
                 for index in range(start, len(items)):
@@ -764,9 +772,107 @@ class WorkflowPlanCompiler:
                 compile_region,
                 emit_leaf,
             )
-            expansion = self.construct_planners.expand(
-                self.construct_normalizer(step), context
+            work_step = (
+                replace(
+                    step,
+                    assessment_question=None,
+                    assessment_outcomes=(),
+                    repeat_until=None,
+                )
+                if step.assessment_attached
+                else step
             )
+            work_start = len(items)
+            expansion = self.construct_planners.expand(
+                self.construct_normalizer(work_step), context
+            )
+            if step.assessment_attached:
+                assessment_values = (
+                    expansion.available_values
+                    if expansion.available_values is not None
+                    else (*values, *expansion.outputs)
+                )
+                assessment_prompt = self.actions._interpolate(
+                    step.assessment_question or "",
+                    {
+                        *CORE_VARIABLE_NAMES,
+                        *assessment_values,
+                        *(value.name for value in step.provide),
+                        *self._namespace_variables,
+                        *(
+                            f"{DOCUMENTS_PREFIX}{document.name}"
+                            for document in self.configuration.documents
+                        ),
+                        *(
+                            self._child_variables
+                            if step_annotations.child_stage is not None
+                            else ()
+                        ),
+                    },
+                )
+                validate_item_references(
+                    assessment_prompt, step_annotations.item_context
+                )
+                # Reuse the final agent action in this logical step so its
+                # description and assessment share one assignment/session.
+                # Commands and groups need a final agent decision of their own.
+                if (
+                    len(items) == work_start
+                    or items[-1].step != path
+                    or items[-1].owner != "agent"
+                ):
+                    assessment = HandlerDefinition(
+                        name=step.name,
+                        description=step.assessment_question or "",
+                        action=DefinedAction(
+                            "prompt", Prompt(step.assessment_question or "")
+                        ),
+                    )
+                    self._append_handler(
+                        items,
+                        workflow,
+                        step,
+                        path,
+                        parent,
+                        "step",
+                        "assessment",
+                        assessment,
+                        assessment_values,
+                        child_template=child_template,
+                        ancestors=ancestors,
+                        boundary_hints=step_hints,
+                        annotations=step_annotations,
+                    )
+                items[-1] = replace(
+                    items[-1],
+                    assessment_question=assessment_prompt,
+                    assessment_attached=True,
+                    repeat_until=step.repeat_until,
+                    assessment_outcomes=tuple(
+                        outcome.name for outcome in step.assessment_outcomes
+                    ),
+                    assessment_stops=tuple(
+                        outcome.name
+                        for outcome in step.assessment_outcomes
+                        if outcome.stop_workflow
+                    ),
+                )
+                outcome_scope = replace(
+                    context.derive_scope(parent=path, parent_ancestors=ancestors),
+                    available_values=(
+                        *assessment_values,
+                        *(value.name for value in step.provide),
+                    ),
+                )
+                for outcome in step.assessment_outcomes:
+                    if not outcome.runs_nothing:
+                        context.compile_scoped_region(
+                            (outcome,),
+                            outcome_scope,
+                            ItemAnnotations(
+                                assessment_parent=path, assessment_outcome=outcome.name
+                            ),
+                        )
             expanded_values = (
                 expansion.available_values
                 if expansion.available_values is not None
@@ -1035,7 +1141,7 @@ class WorkflowPlanCompiler:
             hints = hints.overlay(reference)
         profile, profile_instruction, profile_path = (
             self._resolve_profile(hints.profile, hints.profile_description)
-            if source == "step" and step.name != INIT_STEP_NAME
+            if source in {"step", "assessment"} and step.name != INIT_STEP_NAME
             else (None, None, None)
         )
         # A step inherits its directory along the step chain; a hook works in
@@ -1081,7 +1187,12 @@ class WorkflowPlanCompiler:
                 owner = actions.get(kind).owner
                 action = action_override
             execution = _execution_kind(kind)
-        if phase == "step" and step.role is not None and owner != "agent":
+        if (
+            phase == "step"
+            and step.role is not None
+            and owner != "agent"
+            and not step.assessment_attached
+        ):
             raise ConfigurationError(
                 f"step {step.name!r} sets role, but ww runs it: role applies to "
                 "agent steps only"

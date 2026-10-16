@@ -409,7 +409,10 @@ def test_backward_goto_after_repair_runs_source_before_any_new_repair(
     tmp_path: Path,
 ) -> None:
     data = yaml.safe_load(WORKFLOWS)
-    data["workflows"][0]["allowed_gotos"] = [["check", "develop"]]
+    data["workflows"][0]["steps"][1]["assess"] = {
+        "assess": "More development needed?",
+        "positive": {"goto": "develop"},
+    }
     root = _project(tmp_path, yaml.safe_dump(data, sort_keys=False))
     service, _ = _developed(root)
     _report(service, FAIL)
@@ -418,6 +421,7 @@ def test_backward_goto_after_repair_runs_source_before_any_new_repair(
     page = service.complete(
         TASK, artifact="Another iteration.", summary_for_next="Again.", goto="develop"
     )
+    page = service.next(TASK, outcome="positive")
     assert page.item_name == "develop"
     state, snapshot = service.load(TASK)
     assert all(

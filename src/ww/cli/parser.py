@@ -217,7 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     docs.add_argument(
         "document",
-        choices=("specification", "features", "examples"),
+        choices=("specification", "features", "examples", "deprecations"),
         help="specification: exact syntax; features: design guidance; "
         "examples: runnable examples.",
     )
@@ -446,7 +446,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="STEP",
         help=(
             "Send the flow to this step, by its full path, once this one is "
-            "done; the workflow's allowed_gotos must allow it."
+            "done; an assessment branch must declare this goto."
         ),
     )
     complete.add_argument(

@@ -33,3 +33,10 @@ outcomes; the original completion stays held until the selected rules pass.
 Repair only the reported violations using the repair assignment's settings
 and lifecycle; do not repeat the source action or its hooks. A repair worker
 performs its own assignment and may dispute a reported rule with evidence.
+
+A regular step may attach `assess: {assess: <prompt>, ...}`. Perform its work
+first, then assess in the same session and record the selected outcome through
+WW. For attached `repeat_until`, reassess after exact repair results without
+replaying the original action; completion hooks wait for the terminal outcome.
+Goto branches declare their own permissions. The inner `question` spelling is
+deprecated; use `assess` and see `ww docs deprecations` for migration guidance.

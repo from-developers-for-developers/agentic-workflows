@@ -619,6 +619,8 @@ ww-agentic-workflows complete TASK-123 --role worker \
 
 - [specification.md](documentation/specification.md) is the exact `ww.yaml`
   specification: keys, value types, defaults, scopes and failure semantics.
+- [deprecations.md](documentation/deprecations.md) lists supported syntax being
+  retired and its replacements; print it with `ww docs deprecations`.
 - [features.md](documentation/features.md) is the design guide and feature
   reference: when to use what, with configuration and command examples.
 - Both, with the examples below, are the authorities for designing workflows.
