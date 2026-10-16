@@ -464,8 +464,7 @@ def _expanded_refusal(
     for name in sorted(stages):
         before, after = stage(old, name), stage(template, name)
         if [item.id for item in before] == [item.id for item in after] and all(
-            _definition(a) == _definition(b)
-            for a, b in zip(before, after, strict=True)
+            _definition(a) == _definition(b) for a, b in zip(before, after, strict=True)
         ):
             continue
         known = {item.id: item for item in before}

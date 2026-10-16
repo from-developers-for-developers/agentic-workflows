@@ -895,7 +895,6 @@ def test_the_handoff_shows_the_held_re_check_after_a_rejection(
     )
 
 
-
 def test_a_focused_repair_names_the_assignment_that_performed_the_step(
     tmp_path: Path,
 ) -> None:
@@ -934,6 +933,7 @@ def test_a_focused_repair_names_the_assignment_that_performed_the_step(
         f"The work this assignment repairs, `develop`, was performed by the "
         f"worker of assignment `{token}`" in _markdown(repair)
     )
+
 
 def test_next_no_longer_takes_rule_decisions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
