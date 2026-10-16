@@ -27,7 +27,7 @@ import re
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -143,18 +143,7 @@ def unseen_commits(
     reported as no commits.
     """
     store = ExtensionStore(root, GIT_EXTENSION)
-    branch = _recorded_branch(store, task_id)
-    default_base = _default_base(config)
-    if branch is not None and isinstance(branch.get("branch"), str):
-        base = branch.get("base")
-        start = base if isinstance(base, str) and base else default_base
-        found = (
-            _log(_repository(root, branch), [f"{start}..{branch['branch']}"])
-            if start
-            else ()
-        )
-    else:
-        found = _mentioning(root, default_base, task_id)
+    found = _found_commits(root, config, store, task_id)
     seen = _ww_commits(store) | {
         commit.sha for entry in registered for commit in entry.commits
     }
@@ -166,8 +155,76 @@ def unseen_commits(
     )
 
 
+def task_commits(
+    root: Path,
+    config: ProjectConfig,
+    task_id: str,
+    registered: Iterable[DirectWork] = (),
+) -> tuple[DirectCommit, ...]:
+    """Every commit ww knows was made for ``task_id``, oldest first.
+
+    The commits ww's own handlers made for it (``commits.jsonl``), those
+    ``registered`` as its direct work, and the ones on its recorded branch
+    since its base, each once. Once the branch is merged its range is empty,
+    and the records remain. Unlike ``unseen_commits`` it does not guess from
+    commit messages naming the task, which an older task of the same ID may
+    have written too.
+    """
+    store = ExtensionStore(root, GIT_EXTENSION)
+    commits: dict[str, DirectCommit] = {}
+    for line in store.read_lines(COMMITS_FILE):
+        record = _json_line(line)
+        if (
+            record is not None
+            and record.get("task_id") == task_id
+            and isinstance(record.get("sha"), str)
+        ):
+            message = record.get("message")
+            committed = record.get("committed_at")
+            commits[record["sha"]] = DirectCommit(
+                record["sha"],
+                message.splitlines()[0] if isinstance(message, str) and message else "",
+                committed if isinstance(committed, str) else "",
+            )
+    for entry in registered:
+        for commit in entry.commits:
+            commits.setdefault(commit.sha, commit)
+    if _recorded_branch(store, task_id) is not None:
+        for commit in _found_commits(root, config, store, task_id):
+            commits.setdefault(commit.sha, commit)
+    return tuple(
+        sorted(commits.values(), key=lambda commit: _moment(commit.committed_at))
+    )
+
+
+def _found_commits(
+    root: Path, config: ProjectConfig, store: ExtensionStore, task_id: str
+) -> tuple[DirectCommit, ...]:
+    """The task's branch since its base, or, without one, commits naming it."""
+    branch = _recorded_branch(store, task_id)
+    default_base = _default_base(config)
+    if branch is not None and isinstance(branch.get("branch"), str):
+        base = branch.get("base")
+        start = base if isinstance(base, str) and base else default_base
+        return (
+            _log(_repository(root, branch), [f"{start}..{branch['branch']}"])
+            if start
+            else ()
+        )
+    return _mentioning(root, default_base, task_id)
+
+
 # A run's active window: its start and, once it is over, its end.
 RunWindow = tuple[datetime, datetime | None]
+
+
+def _moment(committed_at: str) -> datetime:
+    """A commit time as an aware moment; an unreadable one sorts first."""
+    try:
+        moment = datetime.fromisoformat(committed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def _inside(committed_at: str, windows: tuple[RunWindow, ...]) -> bool:

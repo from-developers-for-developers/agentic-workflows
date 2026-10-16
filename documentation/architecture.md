@@ -1743,8 +1743,13 @@ configuration, not a snapshot, so edits show while it runs.
   labels. The library comes from `rules_listing`, the rule statistics, the
   handlers, documents, modes, profiles and composed settings.
 - `tasks.py` builds the Tasks tab through the task storage adapter,
-  `unreadable_tasks`, `operator_reason`, extension namespace values and the
-  service's artifact listing. A step's rules come from the same
+  `unreadable_tasks`, `operator_reason`, extension namespace values, the
+  service's artifact and document listings, and
+  `direct_work.task_commits`: ww's own commits for the task, its registered
+  direct work's and its recorded branch's since the base, without the guess
+  from commit messages that `unseen_commits` falls back to. Outcome steps
+  of an outcome the assessment did not choose, and that never ran, are left
+  out. A step's rules come from the same
   `rule_outcomes` that writes its artifact's `## Rules` section, with
   `item_reports` and `rule_verification.recorded_verdicts` for a look back at
   any item: `rule_outcomes` and `item_reports` take an item `index` (the

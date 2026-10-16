@@ -15,11 +15,12 @@ from typing import Any
 
 import pytest
 
+from ww.errors import StateError
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.visualize.project import Project
 from ww.visualize.server import VisualizerServer
-from ww.visualize.tasks import artifact_text, task_detail, task_list
+from ww.visualize.tasks import artifact_text, document_text, task_detail, task_list
 from ww.visualize.watch import Watcher
 
 # A judged rule, a checked rule scoped to Markdown, and a ``fix`` hook.
@@ -309,3 +310,54 @@ def test_the_command_serves_the_checkout_until_interrupted(
     assert seen["open_browser"] is None
     assert seen["config_root"] == root
     assert not (root / ".ww/executions.jsonl").exists()
+
+
+DOCUMENTED = """documents:
+  - notes: The task's notes.
+workflows:
+  - name: flow
+    steps:
+      - write: Write {{ww.documents.notes}}.
+        saves:
+          - documents.notes: The notes.
+      - assess:
+          assess: Is there more to do?
+          positive:
+            steps:
+              - more: Do more.
+      - finish: Finish.
+"""
+
+
+def test_only_the_chosen_outcome_and_the_task_s_documents_are_shown(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ww.yaml").write_text(DOCUMENTED, encoding="utf-8")
+    service = WorkflowService(Storage(tmp_path))
+    service.start("flow", "TASK-1", agent="codex", init_artifact="Do it.")
+    service.next("TASK-1")
+    notes = next(
+        entry
+        for entry in service.documents_listing("TASK-1")
+        if entry["name"] == "notes"
+    )
+    Path(str(notes["path"])).parent.mkdir(parents=True, exist_ok=True)
+    Path(str(notes["path"])).write_text("# Notes\n", encoding="utf-8")
+    service.complete("TASK-1", artifact="Wrote.", summary_for_next="Done.")
+    service.next("TASK-1")
+    service.complete("TASK-1", artifact="Nothing more.", summary_for_next="No.")
+    service.next("TASK-1", outcome="negative", caller_role="manager")
+    project = Project.load(Storage(tmp_path))
+
+    detail = task_detail(project, "TASK-1")
+
+    paths = [item["path"] for item in detail["runs"][0]["items"]]
+    assert "assess" in paths
+    assert "assess/positive/more" not in paths
+    assert [(doc["name"], doc["scope"]) for doc in detail["documents"]] == [
+        ("notes", "task")
+    ]
+    assert detail["documents"][0]["last_update"]["step"] == "write"
+    assert document_text(project, "TASK-1", "notes") == "# Notes\n"
+    with pytest.raises(StateError, match="no document"):
+        document_text(project, None, "notes")

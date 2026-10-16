@@ -503,6 +503,12 @@ def _library(
         for name, reference in extensions.items()
         if name not in known
     )
+    try:
+        files = {
+            entry["name"]: entry for entry in project.service().documents_listing(None)
+        }
+    except (WwError, OSError, ValueError):
+        files = {}
     root = project.storage.config_root
     for group in listing["groups"]:
         for rule in group["rules"]:
@@ -516,6 +522,9 @@ def _library(
                 "description": doc.description,
                 "scope": doc.scope,
                 "path": doc.path,
+                # Task documents live with each task; the Tasks tab opens them.
+                "exists": bool(files.get(doc.name, {}).get("exists")),
+                "last_update": files.get(doc.name, {}).get("last_update"),
             }
             for doc in configuration.documents
         ],

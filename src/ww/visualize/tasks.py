@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ww.completion_artifacts import rule_outcomes
+from ww.direct_work import task_commits
 from ww.errors import StateError, WwError
 from ww.execution_models import ExecutionState, PlanItemExecution, TaskRunAggregate
 from ww.instructions.policy import operator_reason
@@ -22,6 +23,7 @@ from ww.operations import ChildWorkflowRun, WorkflowHandoff
 from ww.plan import PlanItem, WorkflowPlan
 from ww.rule_checks import item_reports
 from ww.rule_verification import recorded_verdicts
+from ww.service import WorkflowService
 from ww.storage_adapters.base import TaskStorageAdapter
 
 from .project import Project
@@ -104,6 +106,7 @@ def task_detail(project: Project, task_id: str) -> JSON:
         return {"id": task_id, "status": "unreadable", "unreadable": str(error)}
     metadata = tasks.read_task_metadata(task_id)
     direct = tasks.read_direct_work(task_id)
+    config = project.extensions.config if project.extensions else None
     ledger = {run.run_id: run for run in tasks.summarize_runs(runs)}
     service = project.service()
     detail_runs = []
@@ -121,9 +124,48 @@ def task_detail(project: Project, task_id: str) -> JSON:
         "metadata": dict(metadata.values) if metadata else {},
         "direct_work": [entry.to_dict() for entry in direct],
         "values": _namespace_values(project, last) if last else {},
+        "commits": [
+            commit.to_dict()
+            for commit in (
+                task_commits(project.storage.root, config, task_id, direct)
+                if config is not None
+                else ()
+            )
+        ],
+        "documents": _documents(service, task_id),
         "children": list(tasks.child_task_ids(task_id)),
         "runs": detail_runs,
     }
+
+
+def _documents(service: WorkflowService, task_id: str) -> list[JSON]:
+    """The task's own documents that have a file, with their last update.
+
+    Project and user documents are shared by every task; the library lists them.
+    """
+    try:
+        listing = service.documents_listing(task_id)
+    except (WwError, OSError, ValueError):
+        return []
+    return [
+        {key: entry[key] for key in ("name", "description", "scope", "last_update")}
+        for entry in listing
+        if entry["exists"] and entry["scope"] == "task"
+    ]
+
+
+def document_text(project: Project, task_id: str | None, name: str) -> str:
+    """A declared document's text, where the service lists its file.
+
+    Without a task only project and user documents are listed.
+    """
+    for entry in project.service().documents_listing(task_id):
+        if entry["name"] == name and entry["exists"]:
+            return Path(str(entry["path"])).read_text(
+                encoding="utf-8", errors="replace"
+            )
+    owner = task_id or "the project"
+    raise StateError(f"{owner} has no document {name!r} with a file")
 
 
 def _namespace_values(project: Project, run: TaskRunAggregate) -> dict[str, str]:
@@ -157,11 +199,23 @@ def _run(
 ) -> JSON:
     state, plan = run.state, run.snapshot.plan
     references = {entry["artifact"] for entry in artifacts if "artifact" in entry}
+    # Each assessment's answer: only the outcome it chose ran, or will run.
+    chosen = {
+        item.step: record.assessment_outcome
+        for item, record in zip(plan.items, state.item_executions, strict=True)
+        if item.assessment_question
+    }
     items = []
     for index, (item, record) in enumerate(
         zip(plan.items, state.item_executions, strict=True)
     ):
         if item.verifies is not None and record.status == "pending":
+            continue
+        if (
+            item.assessment_parent is not None
+            and chosen.get(item.assessment_parent) != item.assessment_outcome
+            and _never_ran(record)
+        ):
             continue
         items.append(_item(state, plan, index, item, record, references))
     reason = operator_reason(state, plan)
@@ -190,6 +244,15 @@ def _run(
         # Repair results and command output, which no item row shows.
         "extra_artifacts": [entry for entry in artifacts if "artifact" not in entry],
     }
+
+
+def _never_ran(record: PlanItemExecution) -> bool:
+    """Not run: still pending, or passed over when another outcome was chosen.
+
+    A repeating assessment may run an outcome in an earlier round and choose
+    another last; what ran stays on the page.
+    """
+    return record.status == "pending" or (record.result or "").startswith("skipped:")
 
 
 def _item(

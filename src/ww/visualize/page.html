@@ -479,6 +479,7 @@ details.attempt[open] > summary { margin-bottom: 6px; }
 .stopnote { font-size: 13px; color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 6px 10px; overflow-wrap: anywhere; }
 .run-sum { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); max-width: 76ch; }
 .md pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.doc-row { display: flex; gap: 10px; align-items: baseline; }
 .page-error { position: sticky; top: 0; z-index: 30; margin: 0; border-radius: 0; }
 </style>
 </head>
@@ -843,7 +844,7 @@ function renderLibrary() {
   const rules = rulesListing.groups.map(g => `<div class="entry"><div class="entry-name">${esc(g.name)}<span class="mini">${g.rules.length}</span>${g.origin !== "configuration" ? `<span class="mini">${esc(g.origin)}</span>` : ""}</div>
     <div class="entry-desc">${g.rules.map(r => `${r.has_check ? "▸ " : ""}${esc(r.summary)}${r.stats && r.stats.applied ? ` <span class="used">· applied ${r.stats.applied}, failed ${r.stats.check_failures + r.stats.judged_failures}</span>` : ""}`).join("<br>")}</div>
     <div class="used">workflows ${esc(filter(g.workflows))} · steps ${esc(filter(g.steps))}</div></div>`).join("") || '<div class="note">No rule groups are declared.</div>';
-  const named = list => (list || []).map(d => `<div class="entry"><div class="entry-name">${esc(d.name)}${d.scope && d.scope !== "task" ? `<span class="mini">${esc(d.scope)}</span>` : ""}${d.automatic ? '<span class="mini">automatic</span>' : ""}</div><div class="entry-desc">${prose(d.description || "")}</div>${d.path ? `<div class="used mono">${esc(d.path)}</div>` : ""}</div>`).join("") || '<div class="note">None.</div>';
+  const named = list => (list || []).map(d => `<div class="entry"><div class="entry-name">${esc(d.name)}${d.scope && d.scope !== "task" ? `<span class="mini">${esc(d.scope)}</span>` : ""}${d.automatic ? '<span class="mini">automatic</span>' : ""}${d.exists && d.scope !== "task" ? `<span class="iact" style="display:inline-flex;margin-left:auto">${documentButton(null, d.name, d.name)}</span>` : ""}</div><div class="entry-desc">${prose(d.description || "")}</div>${d.path ? `<div class="used mono">${esc(d.path)}</div>` : ""}${d.scope === "task" ? '<div class="used">kept per task; open it from the task</div>' : d.last_update ? `<div class="used">updated by ${esc(d.last_update.step)} · ${esc(fmtTime(d.last_update.updated_at))}</div>` : d.exists === false ? '<div class="used">no file yet</div>' : ""}</div>`).join("") || '<div class="note">None.</div>';
   const st = lib.settings || {};
   const rows = [["runtime", st.runtime], ["task_format", st.task_format], ["config_ref", st.config_ref == null ? "ww/git base branch" : String(st.config_ref)]];
   if (st.limits) Object.entries(st.limits).forEach(([k, v]) => rows.push(["limits." + k, v]));
@@ -924,6 +925,7 @@ function renderAtlas() {
 ================================================================ */
 const STATUS_LABEL = { completed: "completed", in_progress: "in progress", awaiting_operator: "waiting for you", awaiting_input: "waiting for input", interrupted: "interrupted", failed: "failed", pending: "pending", abandoned: "abandoned", direct: "direct work", unreadable: "unreadable" };
 const PHASE_LABEL = { before_start_workflow: "Before start", step: "Steps", before_start: "Before start", before_complete: "Before complete", after_complete: "After complete", before_complete_workflow: "Before complete" };
+const SILENT_RULES = new Set(["not applicable", "left out"]);
 const RULE_CLASS = { "passed": "ok", "verified pass": "ok", "failed": "bad", "check unavailable": "warn", "not applicable": "muted", "left out": "muted", "self-declared": "muted" };
 const pill = s => `<span class="status st-${esc(s)}">${esc(STATUS_LABEL[s] || s)}</span>`;
 let tasks = [];
@@ -996,13 +998,13 @@ const STATUS_ICON = {
 
 function ruleSummaryPill(r, key) {
   const counts = {};
-  r.outcomes.forEach(o => { const c = RULE_CLASS[o.status] || "muted"; counts[c] = (counts[c] || 0) + 1; });
+  r.outcomes.filter(o => !SILENT_RULES.has(o.status)).forEach(o => { const c = RULE_CLASS[o.status] || "muted"; counts[c] = (counts[c] || 0) + 1; });
   const parts = [];
-  if (!r.outcomes.length) parts.push(`${r.applied.length} applied`);
+  if (!r.outcomes.length) parts.push(`${r.applied.length} to follow`);
   if (counts.ok) parts.push(`<span class="rs-ok">${counts.ok} passed</span>`);
   if (counts.bad) parts.push(`<span class="rs-bad">${counts.bad} failed</span>`);
   if (counts.warn) parts.push(`<span class="rs-warn">${counts.warn} unavailable</span>`);
-  if (counts.muted) parts.push(`${counts.muted} other`);
+  if (counts.muted) parts.push(`${counts.muted} self-declared`);
   if (r.fix_attempts) parts.push(`<span class="rs-warn">${r.fix_attempts} rejected</span>`);
   return `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>${parts.join(" · ")}</button>`;
 }
@@ -1025,9 +1027,11 @@ function renderItemRules(r, key, task, run) {
     return { pill: `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>verifies ${r.verifies.length} rule${r.verifies.length > 1 ? "s" : ""}</button>`, panel: `<div class="rules-panel" id="${key}" hidden>${rows}</div>` };
   }
   const outcome = Object.fromEntries(r.outcomes.map(o => [o.id, o]));
-  const rows = r.applied.map((a, i) => {
+  const silent = a => { const o = outcome[a.id]; return o ? SILENT_RULES.has(o.status) : r.not_applicable.includes(a.id) || r.left_out.includes(a.id); };
+  const shown = r.applied.filter(a => !silent(a));
+  const rows = shown.map((a, i) => {
     const o = outcome[a.id];
-    const status = o ? o.status : (r.not_applicable.includes(a.id) ? "not applicable" : r.left_out.includes(a.id) ? "left out" : null);
+    const status = o ? o.status : null;
     return `<div class="rule"><span class="rule-glyph">${a.checked ? ICON.checked : ICON.judged}</span><div style="min-width:0">
       <div class="rule-sum">${prose(a.summary)}<span class="rule-id">${esc(a.id)}${a.hook ? " · hook" : ""}</span>${status ? ` <span class="rstat ${RULE_CLASS[status] || "muted"}">${esc(status)}</span>` : ' <span class="rstat muted">not checked yet</span>'}</div>
       ${o && o.detail ? `<div class="quiet" style="padding:2px 0">${prose(o.detail)}</div>` : ""}
@@ -1041,9 +1045,13 @@ function renderItemRules(r, key, task, run) {
     r.disputes.length ? `<div class="quiet">Disputed: ${r.disputes.map(d => `<span class="mono">${esc(d.check)}</span> — ${esc(d.reason)}`).join("; ")}</div>` : "",
     r.resolutions.filter(x => x.status === "converted").length ? `<div class="quiet">Checked by derived checks: ${r.resolutions.filter(x => x.status === "converted").map(x => `<span class="mono">${esc(x.id)}</span> → <span class="mono">${esc(x.check)}</span>`).join(", ")}</div>` : ""
   ].join("");
+  if (!shown.length && !r.reports.length && !r.waived.length && !r.disputes.length) return { pill: "", panel: "" };
   return { pill: ruleSummaryPill(r, key), panel: `<div class="rules-panel" id="${key}" hidden>${rows}${extra}${attempts ? `<div class="attempts">${attempts}</div>` : ""}</div>` };
 }
 
+function documentButton(task, name, title) {
+  return `<button type="button" data-doc="${esc(name)}" data-doc-task="${esc(task || "")}" data-doc-title="${esc(title)}">Open</button>`;
+}
 function artifactButton(task, run, ref, title, label) {
   artifactIndex.push({ task, run, ref, title });
   return `<button type="button" data-art="${artifactIndex.length - 1}">${esc(label || "Read artifact")}</button>`;
@@ -1069,7 +1077,7 @@ function renderRun(t, r, n) {
     const width = d != null ? Math.max(.6, d / total * 100) : 0;
     const key = `t${++uid}`;
     const rules = i.rules ? renderItemRules(i.rules, key, t.id, r.id) : { pill: "", panel: "" };
-    if (i.rules && i.rules.outcomes) i.rules.outcomes.forEach(o => { ruleTally[o.status] = (ruleTally[o.status] || 0) + 1; });
+    if (i.rules && i.rules.outcomes) i.rules.outcomes.filter(o => !SILENT_RULES.has(o.status)).forEach(o => { ruleTally[o.status] = (ruleTally[o.status] || 0) + 1; });
     const actions = [];
     if (i.artifact) actions.push(artifactButton(t.id, r.id, i.artifact, `${t.id} · ${i.name}${i.round ? ` · round ${i.round + 1}` : ""}`));
     if (rules.pill) actions.push(rules.pill);
@@ -1141,7 +1149,9 @@ function renderTaskDetail() {
     </div>
     ${last && last.summary ? `<div><div class="outcome-lbl">Outcome</div><p class="outcome">${prose(last.summary)}</p></div>` : ""}
     ${t.children.length ? `<details class="panel" open><summary><h3>Child tasks</h3><span class="n">${t.children.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.children.map(c => `<button class="linkbtn" type="button" data-task="${esc(c)}">${esc(c)}</button>`).join(" · ")}</div></details>` : ""}
-    ${recorded.length ? `<details class="panel"${store.get("panel-recorded", true) ? " open" : ""} data-panel="recorded"><summary><h3>Recorded by ww</h3><span class="n">${recorded.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${recorded.map(x => `<div class="commit"><span class="h">${esc(x.name)}</span><span class="mono" style="font-size:12px">${esc(x.result)}</span></div>`).join("")}</div></details>` : ""}
+    ${t.commits.length ? `<details class="panel" open><summary><h3>Commits</h3><span class="n">${t.commits.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${t.commits.map(c => `<div class="commit"><span class="h" title="${esc(c.sha)}">${esc(c.sha.slice(0, 7))}</span><span>${esc(c.subject)} <span class="quiet">${esc(fmtTime(c.committed_at))}</span></span></div>`).join("")}</div></details>` : ""}
+    ${t.documents.length ? `<details class="panel" open><summary><h3>Documents</h3><span class="n">${t.documents.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.documents.map(d => `<div class="dw"><div class="doc-row"><b class="mono">${esc(d.name)}</b><span class="iact" style="display:inline-flex">${documentButton(t.id, d.name, `${t.id} · ${d.name}`)}</span></div>${d.description ? `<div>${prose(d.description)}</div>` : ""}${d.last_update ? `<time>updated by ${esc(d.last_update.step)} · ${esc(fmtTime(d.last_update.updated_at))}</time>` : ""}</div>`).join("")}</div></details>` : ""}
+    ${recorded.length ? `<details class="panel" data-panel="recorded"><summary><h3>Recorded by ww</h3><span class="n">${recorded.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${recorded.map(x => `<div class="commit"><span class="h">${esc(x.name)}</span><span class="mono" style="font-size:12px">${esc(x.result)}</span></div>`).join("")}</div></details>` : ""}
     <details class="panel"${meta.length ? " open" : ""}><summary><h3>Metadata</h3><span class="n">${meta.length || "none"}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${meta.length ? `<table class="settings">${meta.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : '<div class="quiet">No step saved task metadata.</div>'}</div></details>
     ${t.direct_work.length ? `<details class="panel"${runs.length ? "" : " open"}><summary><h3>Direct work</h3><span class="n">${t.direct_work.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.direct_work.map(d => `<div class="dw"><time>${esc(fmtTime(d.recorded_at))} · ${esc(d.source || "")}</time>${prose(d.summary)}${(d.commits || []).length ? `<div class="quiet mono">${esc(d.commits.map(c => typeof c === "string" ? c : (c.sha || "").slice(0, 7) + " " + (c.subject || "")).join(" · "))}</div>` : ""}</div>`).join("")}</div></details>` : ""}
     ${runs.slice().reverse().map((x, i) => renderRun(t, x, runs.length - i)).join("")}`;
@@ -1210,17 +1220,20 @@ function md(src) {
   flushP(); flushL();
   return html;
 }
-async function openArtifact(i) {
-  const a = artifactIndex[i];
+async function openArtifact(i) { return openDrawer(artifactIndex[i]); }
+async function openDrawer(a) {
   const drawer = $("#drawer");
   drawer.innerHTML = `<div class="drawer-head"><div style="min-width:0"><b>${esc(a.title)}</b><span class="path">${esc(a.ref)}</span></div><button class="x" type="button" data-close aria-label="Close">✕</button></div><div class="md"><p class="quiet">Loading…</p></div>`;
   drawer.hidden = false; $("#scrim").hidden = false;
   $(".x", drawer).focus();
   try {
-    const response = await fetch(`/api/artifact?task=${encodeURIComponent(a.task)}&run=${encodeURIComponent(a.run)}&ref=${encodeURIComponent(a.ref)}`, { cache: "no-store" });
+    const url = a.doc
+      ? `/api/document?name=${encodeURIComponent(a.doc)}${a.task ? `&task=${encodeURIComponent(a.task)}` : ""}`
+      : `/api/artifact?task=${encodeURIComponent(a.task)}&run=${encodeURIComponent(a.run)}&ref=${encodeURIComponent(a.ref)}`;
+    const response = await fetch(url, { cache: "no-store" });
     const text = await response.text();
     if (!response.ok) throw new Error(JSON.parse(text).error);
-    $(".md", drawer).innerHTML = /\.md$/.test(a.ref) ? md(text) : `<pre>${esc(text)}</pre>`;
+    $(".md", drawer).innerHTML = a.doc || /\.md$/.test(a.ref) ? md(text) : `<pre>${esc(text)}</pre>`;
   } catch (e) {
     $(".md", drawer).innerHTML = `<p class="quiet">ww cannot read the artifact: ${esc(e.message)}</p>`;
   }
@@ -1283,6 +1296,7 @@ document.addEventListener("click", e => {
   const tr = e.target.closest("[data-task]"); if (tr) { selectTask(tr.dataset.task); return; }
   const ch = e.target.closest("[data-filter]"); if (ch) { taskFilter = ch.dataset.filter; store.set("taskFilter", taskFilter); renderChips(); renderTaskList(); return; }
   const ar = e.target.closest("[data-art]"); if (ar) { openArtifact(+ar.dataset.art); return; }
+  const dc = e.target.closest("[data-doc]"); if (dc) { openDrawer({ doc: dc.dataset.doc, task: dc.dataset.docTask || null, ref: `documents.${dc.dataset.doc}`, title: dc.dataset.docTitle }); return; }
   if (e.target.closest("[data-close]") || e.target.id === "scrim") { closeArtifact(); return; }
   const t = e.target.closest("[data-toggle]"); if (t) { const p = document.getElementById(t.dataset.toggle); if (p) { p.hidden = !p.hidden; t.setAttribute("aria-expanded", !p.hidden); } return; }
   const m = e.target.closest("[data-clamp]"); if (m) { const d = document.getElementById(m.dataset.clamp); const c = d.classList.toggle("clamp"); m.textContent = c ? "Read all" : "Show less"; }

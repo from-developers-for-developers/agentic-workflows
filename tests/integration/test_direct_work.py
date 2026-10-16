@@ -13,8 +13,9 @@ from pathlib import Path
 import pytest
 
 from ww.cli import main
-from ww.direct_work import unseen_commits
+from ww.direct_work import DirectCommit, DirectWork, task_commits, unseen_commits
 from ww.errors import StateError
+from ww.project_config import load_project_config
 from ww.service import WorkflowService, _run_windows
 from ww.storage import Storage
 
@@ -580,3 +581,53 @@ def test_lint_warns_about_a_stale_catchall_entry_without_failing(
     # Every other command keeps working with the stale entry.
     assert "## Direct work" in _run(project, capsys, "discover")
     assert _lookup(project, capsys, "--agent", "codex")["outcome"] == "direct"
+
+
+# --------------------------------------------------------------------------- #
+# task_commits
+# --------------------------------------------------------------------------- #
+
+
+def test_a_tasks_commits_are_ww_s_its_registered_and_its_branch_s_each_once(
+    project: Path,
+) -> None:
+    _branch(project, "TASK-7", "feature/task-7")
+    by_ww = _commit(project, "a.txt", "TASK-7: made by ww", "2026-01-01T10:00:00Z")
+    by_hand = _commit(project, "b.txt", "Tidy the helper", "2026-01-01T12:00:00+01:00")
+    later = _commit(project, "c.txt", "Rename a flag", "2026-01-01T13:00:00+00:00")
+    _store(
+        project,
+        "commits.jsonl",
+        {
+            "sha": by_ww,
+            "task_id": "TASK-7",
+            "message": "TASK-7: made by ww\n\nBody.",
+            "committed_at": "2026-01-01T10:00:00Z",
+        },
+        {"sha": "f" * 40, "task_id": "TASK-8", "message": "Other task"},
+    )
+    registered = (
+        DirectWork(
+            "t",
+            "Tidied.",
+            "agent",
+            (DirectCommit(by_hand, "Tidy", "2026-01-01T12:00:00+01:00"),),
+        ),
+    )
+    config = load_project_config(project / "ww.json")
+
+    found = task_commits(project, config, "TASK-7", registered)
+
+    assert [(commit.sha, commit.subject) for commit in found] == [
+        (by_ww, "TASK-7: made by ww"),
+        (by_hand, "Tidy"),
+        (later, "Rename a flag"),
+    ]
+    # Once merged, the branch's range is empty and the records remain.
+    _git(project, "checkout", "-q", "main")
+    _git(project, "merge", "-q", "--ff-only", "feature/task-7")
+    merged = task_commits(project, config, "TASK-7", registered)
+    assert [commit.sha for commit in merged] == [by_ww, by_hand]
+    # Without a recorded branch, a commit merely naming the task is not its.
+    _commit(project, "d.txt", "TASK-9: an older task of the same ID")
+    assert task_commits(project, config, "TASK-9") == ()

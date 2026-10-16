@@ -25,7 +25,7 @@ from ww.storage import Storage
 
 from .atlas import build_atlas
 from .project import Project
-from .tasks import artifact_text, task_detail, task_list
+from .tasks import artifact_text, document_text, task_detail, task_list
 from .watch import Watcher
 
 # The lowest and the number of ports a project's page is hashed into; the
@@ -125,6 +125,11 @@ class _Handler(BaseHTTPRequestHandler):
                 )
             elif url.path == "/api/task":
                 self._json(task_detail(self.server.project(), _required(query, "id")))
+            elif url.path == "/api/document":
+                text = document_text(
+                    self.server.project(), query.get("task"), _required(query, "name")
+                )
+                self._send(200, text.encode("utf-8"), "text/plain")
             elif url.path == "/api/artifact":
                 text = artifact_text(
                     self.server.project(),
