@@ -88,13 +88,36 @@ class MarkdownOutputAdapter(OutputAdapter):
         if instruction.manager_only:
             _manager_only(lines, instruction)
             return _document(lines)
-        if instruction.fix_required is not None and instruction.status != "failed":
+        verification_repair = (
+            instruction.repeat_communication is not None
+            and instruction.repeat_communication.get("kind") == "rule_verification"
+        )
+        if (
+            instruction.fix_required is not None
+            and instruction.status != "failed"
+            and not verification_repair
+        ):
             _fix_required(lines, instruction)
             _continuation(lines, instruction)
             return _document(lines)
         _heading(lines, instruction)
         if instruction.repeat_communication is not None:
             lines.extend(["", *repeat_markdown(instruction.repeat_communication)])
+        if verification_repair and instruction.fix_required is not None:
+            _fix_failures(lines, instruction.fix_required.failures)
+            lines.extend(
+                [
+                    "",
+                    "If a reported rule is wrong for this change, "
+                    "dispute it with evidence:",
+                    "",
+                    "```console",
+                    dispute_command(
+                        instruction.task_id, assignment=instruction.assignment_token
+                    ),
+                    "```",
+                ]
+            )
         _worker_selection(lines, instruction)
         _assignment_preview(lines, instruction)
         delegating = audience(instruction) is Audience.MANAGER_DELEGATING

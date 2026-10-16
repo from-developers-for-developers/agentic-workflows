@@ -54,6 +54,16 @@ def planned_gotos(
             for outcome in step.assessment_outcomes
             if outcome.goto is not None
         ),
+        *(
+            PlannedGoto(
+                path,
+                step.verification.goto.target,
+                "__verification_failure",
+                step.verification.goto.detail,
+            )
+            for path, step in _paths(workflow.steps, None)
+            if step.verification is not None and step.verification.goto is not None
+        ),
     ]
     for goto in gotos:
         _check(workflow.name, goto, items)

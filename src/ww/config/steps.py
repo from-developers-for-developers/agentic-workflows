@@ -22,6 +22,8 @@ from ww.operations import (
     WorkflowHandoff,
 )
 from ww.workflow_config import (
+    FIX_RULE_VIOLATIONS,
+    FIX_RULE_VIOLATIONS_PROMPT,
     ChildFlow,
     ChoiceDefinition,
     GotoTarget,
@@ -30,6 +32,7 @@ from ww.workflow_config import (
     ItemFlow,
     StepDefinition,
     StepRule,
+    VerificationDefinition,
     step_tree,
 )
 
@@ -74,6 +77,7 @@ STEP_ONLY_KEYS: set[str] = {
     "question",
     "outcomes",
     "repeat_until",
+    "verification",
     "positive",
     "negative",
     "mixed",
@@ -303,6 +307,13 @@ def _parse_step(
         assessment_question=question,
         assessment_outcomes=outcomes,
         repeat_until=repeat_until,
+        verification=(
+            _parse_verification(mapping["verification"], path, handlers_by_name)
+            if "verification" in mapping
+            else referenced.verification
+            if referenced is not None
+            else None
+        ),
     )
 
 
@@ -444,6 +455,73 @@ def _parse_repeat_until(
     return terminal
 
 
+def _parse_verification(
+    value: Any, path: str, handlers: dict[str, HandlerDefinition]
+) -> VerificationDefinition:
+    location = f"{path}.verification"
+    raw = _mapping(value, location)
+    _only(
+        raw,
+        {
+            "agent",
+            "model",
+            "reasoning",
+            "profile",
+            "workdir",
+            "subagents",
+            "hooks",
+            "explicit",
+            "on_failure",
+        },
+        location,
+    )
+    verifier = _parse_step(
+        {
+            "name": "verify-rules",
+            **{key: item for key, item in raw.items() if key != "on_failure"},
+        },
+        location,
+        handlers,
+    )
+    failure = raw.get("on_failure")
+    if "on_failure" not in raw:
+        return VerificationDefinition(verifier)
+    branch = _mapping(failure, f"{location}.on_failure")
+    if "goto" in branch:
+        if set(branch) != {"goto"}:
+            raise ConfigurationError(f"{location}.on_failure.goto must stand alone")
+        return VerificationDefinition(
+            verifier, goto=parse_goto(branch["goto"], f"{location}.on_failure.goto")
+        )
+    if not branch:
+        raise ConfigurationError(
+            f"{location}.on_failure requires ordinary work or goto"
+        )
+    repair = _parse_step(
+        {"name": FIX_RULE_VIOLATIONS, **branch}, f"{location}.on_failure", handlers
+    )
+    if repair.action is None and not repair.handlers and not repair.child_steps:
+        repair = replace(
+            repair,
+            description=FIX_RULE_VIOLATIONS_PROMPT,
+            action=DefinedAction("prompt", Prompt(FIX_RULE_VIOLATIONS_PROMPT)),
+        )
+    for step in step_tree((repair,)):
+        if (
+            step.verification is not None
+            or step.assessment_question is not None
+            or step.items is not None
+            or step.children is not None
+            or step.operation is not None
+            or step.role == "manager"
+            or step.interactive
+        ):
+            raise ConfigurationError(
+                f"{location}.on_failure requires ordinary worker steps or handlers"
+            )
+    return VerificationDefinition(verifier, repair)
+
+
 def _resolve_handler(
     mapping: dict[str, Any],
     path: str,
@@ -457,7 +535,15 @@ def _resolve_handler(
     if not isinstance(handler_name, str) or not _NAME.fullmatch(handler_name):
         raise ConfigurationError(f"{path}.handler must be a handler name")
     try:
-        referenced = handlers_by_name[handler_name]
+        referenced = handlers_by_name.get(handler_name)
+        if referenced is None and handler_name == FIX_RULE_VIOLATIONS:
+            referenced = HandlerDefinition(
+                FIX_RULE_VIOLATIONS,
+                description=FIX_RULE_VIOLATIONS_PROMPT,
+                action=DefinedAction("prompt", Prompt(FIX_RULE_VIOLATIONS_PROMPT)),
+            )
+        if referenced is None:
+            raise KeyError(handler_name)
     except KeyError as error:
         raise ConfigurationError(
             f"{path}.handler references unknown handler {handler_name!r}"

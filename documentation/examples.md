@@ -875,3 +875,34 @@ workflows:
               - investigate: Resolve the uncertainty before assessing again.
       - publish: Publish the accepted change.
 ```
+
+## 23. Customize verification repair
+
+Judged rules retain their verifier until they pass. Without `verification`,
+WW uses the built-in focused repair handler. This example gives that handler
+its own model and validation hook; the original develop action is held while
+repair and verification repeat under the existing fix limits.
+
+```yaml
+workflows:
+  - name: verified-change
+    steps:
+      - develop: Implement the change and its tests.
+        rules:
+          - Public functions have tests.
+        verification:
+          model: review-model
+          reasoning: high
+          on_failure:
+            handler: fix-rule-violations
+            model: repair-model
+            hooks:
+              before_complete:
+                - argv: [scripts/test]
+      - publish: Publish the accepted change.
+```
+
+Run with `--runtime auto` for separate repair workers. Hosts that cannot
+launch nested workers relay exact findings and results through the manager
+to the waiting verifier. Replace the failure body with `goto: develop-design`
+to leave this local cycle for an existing step named `develop-design`.

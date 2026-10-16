@@ -45,6 +45,8 @@ from ww.variables import (
     validate_item_references,
 )
 from ww.workflow_config import (
+    FIX_RULE_VIOLATIONS,
+    FIX_RULE_VIOLATIONS_PROMPT,
     INIT_STEP_NAME,
     HandlerDefinition,
     HookDefinition,
@@ -436,6 +438,7 @@ class WorkflowPlanCompiler:
             )
         items = self._mark_child_identity(items)
         items = _resolve_rule_selections(items)
+        items = self._verification_templates(workflow, items)
         plan = WorkflowPlan(
             workflow=workflow.name,
             workflow_description=workflow.description,
@@ -453,6 +456,117 @@ class WorkflowPlanCompiler:
 
         validate_repeats(plan)
         return self._apply_options(plan)
+
+    def _verification_templates(
+        self, workflow: WorkflowDefinition, items: list[PlanItem]
+    ) -> list[PlanItem]:
+        from ww.plan.gotos import _paths
+        from ww.plan.models import VerificationPlan
+
+        definitions = dict(_paths(workflow.steps, None))
+        result = []
+        for item in items:
+            definition = definitions.get(item.step)
+            if (
+                definition is None
+                or item.phase != "step"
+                or item.owner != "agent"
+                or not item.rules
+            ):
+                if (
+                    definition is not None
+                    and definition.verification is not None
+                    and item.phase == "step"
+                    and item.owner != "agent"
+                ):
+                    raise ConfigurationError(
+                        f"{item.step}.verification requires an agent step"
+                    )
+                result.append(item)
+                continue
+            configured = definition.verification
+            hints = ExecutionHints(
+                item.requested_agent or self.agent,
+                item.model or "auto",
+                item.reasoning or "auto",
+                item.profile,
+                definition.profile_description,
+                item.workdir,
+                "worker",
+                item.subagents,
+            )
+
+            def compile_template(
+                step: StepDefinition,
+                name: str,
+                *,
+                item: PlanItem = item,
+                hints: ExecutionHints = hints,
+            ) -> tuple[PlanItem, ...]:
+                compiled: list[PlanItem] = []
+                available = tuple(
+                    dict.fromkeys(
+                        variable
+                        for prior in items
+                        if prior.position <= item.position
+                        for variable in (
+                            *(value.name for value in prior.provide),
+                            *prior.outputs,
+                        )
+                    )
+                )
+                self._compile_steps(
+                    compiled,
+                    workflow,
+                    (replace(step, name=name, role=None),),
+                    item.step,
+                    available,
+                    parent_ancestors=item.ancestors,
+                    parent_hints=hints,
+                    annotations=ItemAnnotations(item_context=item.item_context),
+                )
+                return tuple(
+                    replace(entry, name=step.name)
+                    if entry.phase == "step" and entry.step == f"{item.step}/{name}"
+                    else entry
+                    for entry in compiled
+                )
+
+            repair = (
+                configured.on_failure
+                if configured is not None and configured.on_failure is not None
+                else StepDefinition(
+                    FIX_RULE_VIOLATIONS,
+                    description=FIX_RULE_VIOLATIONS_PROMPT,
+                    action=DefinedAction("prompt", Prompt(FIX_RULE_VIOLATIONS_PROMPT)),
+                )
+            )
+            verifier = (
+                compile_template(configured.verifier, "__verification")
+                if configured is not None
+                else ()
+            )
+            failure = (
+                ()
+                if configured is not None and configured.goto is not None
+                else compile_template(repair, "__verification_fix")
+            )
+            result.append(
+                replace(
+                    item,
+                    verification_plan=VerificationPlan(
+                        verifier,
+                        failure,
+                        configured.goto.target
+                        if configured and configured.goto
+                        else None,
+                        configured.goto.detail
+                        if configured and configured.goto
+                        else None,
+                    ),
+                )
+            )
+        return result
 
     def _mark_child_identity(self, items: list[PlanItem]) -> list[PlanItem]:
         """Flag the children collection when the child workflow binds its ID."""

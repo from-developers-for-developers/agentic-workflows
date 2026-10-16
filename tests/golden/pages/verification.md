@@ -7,6 +7,46 @@
 
 You play both roles in this session: act as the worker and do the work yourself, not through a subagent.
 
+
+Repeating rule verification
+
+Keep verifier `develop-verify-1` under WW session key `TASK-1:01-task:<id>:task:develop:verify:1` across rounds (round 1). Judge only the selected rules and submit the structured --rule-result verdicts shown on the page. Do not use --outcome. The original step's completion stays held until all selected rules pass.
+In runtime single, perform the outcome and re-assessment in this same session without spawning subagents.
+Manager and assessment agent: forward the findings and result text values in this JSON unchanged: do not summarize, reword, omit, or merge messages. Artifact paths are references; they do not replace the message text. Each outcome worker submits only its own WW assignment with its token and returns the WW handoff block unchanged.
+
+```json
+{
+  "kind": "rule_verification",
+  "step": "develop-verify-1",
+  "source_step": "develop",
+  "session": "TASK-1:01-task:<id>:task:develop:verify:1",
+  "round": 1,
+  "until": "all selected rules pass",
+  "phase": "assessment",
+  "findings": null,
+  "findings_artifact": null,
+  "rule_results": [],
+  "original_instruction": "Develop it.",
+  "original_artifact": ".ww/tasks/TASK-1/runs/01-task/command-output/<id>/<id>/attempt-01/01.stdout",
+  "rules": [
+    {
+      "id": "develop/1",
+      "text": "Keep the public CLI unchanged.",
+      "text_hash": "3fff3a2de18f580ae8c02edbe22ea9ed3dd17a8cbf5da0995b0191f2fccad939",
+      "interpretation": null,
+      "check": null,
+      "paths": [],
+      "contains_in_file": [],
+      "contains_in_diff": [],
+      "files": []
+    }
+  ],
+  "check_failures": [],
+  "results": [],
+  "delegation_required": false
+}
+```
+
 ### Task requirements
 
 Add a --verbose flag to the CLI.

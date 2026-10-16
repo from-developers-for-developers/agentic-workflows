@@ -97,13 +97,18 @@ def test_only_the_assessment_and_its_work_repeat_with_exact_messages(
         assert assignment_token(service, TASK) != original_token
         with pytest.raises(StateError, match="separate worker"):
             service.complete(
-                TASK, artifact="Manager shortcut.", caller_role="manager",
+                TASK,
+                artifact="Manager shortcut.",
+                caller_role="manager",
                 summary_for_next="Shortcut.",
             )
         with pytest.raises(StateError, match="assignment"):
             service.complete(
-                TASK, artifact="Stale worker.", caller_role="worker",
-                assignment=original_token, summary_for_next="Stale.",
+                TASK,
+                artifact="Stale worker.",
+                caller_role="worker",
+                assignment=original_token,
+                summary_for_next="Stale.",
             )
     branch_token = assignment_token(service, TASK)
     after = _complete(service, result)
@@ -127,9 +132,7 @@ def test_only_the_assessment_and_its_work_repeat_with_exact_messages(
     state, plan = service.load(TASK)
     developed = next(
         record
-        for item, record in zip(
-            plan.plan.items, state.item_executions, strict=False
-        )
+        for item, record in zip(plan.plan.items, state.item_executions, strict=False)
         if item.name == "develop"
     )
     assert developed.attempts == 1
@@ -209,7 +212,9 @@ def test_the_round_limit_keeps_evidence_for_an_operator_decision(
         assert page.repeat_communication["round"] == 2
     else:
         page = service.next(
-            TASK, force=True, force_reason="Operator accepts the remaining issue.",
+            TASK,
+            force=True,
+            force_reason="Operator accepts the remaining issue.",
             caller_role="manager",
         )
         assert page.item_name == "publish"
@@ -266,16 +271,19 @@ def test_an_automatic_outcome_runs_normally_before_reassessment(tmp_path: Path) 
         ),
         (
             "steps:\n              - fix: Fix the exact findings.",
-            "goto: develop", "goto or stop_workflow",
+            "goto: develop",
+            "goto or stop_workflow",
         ),
         (
             "steps:\n              - fix: Fix the exact findings.",
-            "stop_workflow: true", "goto or stop_workflow",
+            "stop_workflow: true",
+            "goto or stop_workflow",
         ),
         (
             "steps:\n              - fix: Fix the exact findings.",
             "steps:\n              - fix: Fix the exact findings.\n"
-            "                role: manager", "role: worker",
+            "                role: manager",
+            "role: worker",
         ),
     ],
 )
@@ -327,8 +335,10 @@ def test_assessment_hooks_finish_before_reset_and_run_in_each_round(
     hooks = [
         record
         for record in state.execution_history
-        if record.plan_item_id in {
-            item.id for item in snapshot.plan.items
+        if record.plan_item_id
+        in {
+            item.id
+            for item in snapshot.plan.items
             if item.step == "assess"
             and item.phase in {"before_start", "after_complete"}
         }
@@ -360,8 +370,11 @@ def test_round_local_provided_values_are_cleared_before_reassessment(
         branch = _next(service, "positive")
         assert "round_note" in [value.name for value in branch.required_values]
         service.complete(
-            TASK, artifact="Fixed them.", variables=(("round_note", note),),
-            summary_for_next="Fixed findings.", caller_role="worker",
+            TASK,
+            artifact="Fixed them.",
+            variables=(("round_note", note),),
+            summary_for_next="Fixed findings.",
+            caller_role="worker",
             assignment=assignment_token(service, TASK),
         )
         state, _ = service.load(TASK)

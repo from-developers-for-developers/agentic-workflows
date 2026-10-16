@@ -29,6 +29,7 @@ def selection_item(plan: WorkflowPlan, assignment: Assignment) -> PlanItem | Non
     """
     items = plan.items[assignment.start : assignment.stop]
     for choose in (
+        lambda item: item.verifies is not None,
         lambda item: item.phase == "step" and item.owner == "agent",
         lambda item: item.owner == "agent",
         lambda item: item.requires_agent_input,
@@ -48,8 +49,15 @@ def assignment_at(
     first = plan.items[cursor]
     if _coordinator(first):
         return None
-    if first.verifies is not None:
-        return Assignment(first.id, cursor, cursor + 1)
+    verifier_id = first.id if first.verifies is not None else first.verification_hook
+    if verifier_id is not None:
+        stop = cursor + 1
+        while stop < len(plan.items) and (
+            plan.items[stop].id == verifier_id
+            or plan.items[stop].verification_hook == verifier_id
+        ):
+            stop += 1
+        return Assignment(first.id, cursor, stop)
     lineage = {first.step, *first.ancestors}
     worker = first if first.owner == "agent" else None
     stop = cursor + 1

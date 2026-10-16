@@ -239,12 +239,28 @@ class InstructionBuilder:
                     caller_role,
                 ),
             )
+        # Verification orchestration depends on the public instruction contract;
+        # load it after this module has finished defining that contract.
+        from ww.verification_flow import communication as verification_communication
+
         choosing = pending_assessment(state, plan)
+        source_fix = None
+        if item is not None and item.repair_of is not None:
+            source_index = next(
+                index
+                for index, entry in enumerate(plan.items)
+                if entry.id == item.repair_of
+            )
+            source_fix = fix_required(
+                plan.items[source_index], state.item_executions[source_index]
+            )
+        repetition = repeat_communication(
+            state, plan, choosing.index if choosing is not None else state.cursor
+        ) or verification_communication(state, plan, state.cursor)
         return replace(
             built,
-            repeat_communication=repeat_communication(
-                state, plan, choosing.index if choosing is not None else state.cursor
-            ),
+            fix_required=built.fix_required or source_fix,
+            repeat_communication=repetition,
             assessment_outcomes=(
                 choosing.outcomes
                 if choosing is not None
@@ -341,11 +357,11 @@ class InstructionBuilder:
                 else None
             ),
             workflow_runtime_instruction=_guidance(
-                state, shape, selection, next_role,
-                repeating=repeat_communication(
-                    state, plan,
-                    choosing.index if choosing is not None else state.cursor,
-                ) is not None,
+                state,
+                shape,
+                selection,
+                next_role,
+                repeating=repetition is not None,
             ),
             is_child_workflow_control=item is not None
             and child_workflow(item) is not None,
@@ -1577,12 +1593,14 @@ def _guidance(
     guidance = runtime_instruction(state.workflow_runtime, next_role)
     if repeating and state.workflow_runtime == "auto":
         guidance = tuple(
-            line for line in guidance
+            line
+            for line in guidance
             if not line.startswith("You may use one worker for every step")
         )
         guidance = (
             *guidance,
-            "For repeat_until, keep the assessment agent session and delegate "
+            "For repeated assessments and rule verification, keep the assessor session "
+            "and delegate "
             "every outcome agent assignment to a separate subagent. Use the "
             "manager relay when nested delegation is unavailable or prohibited.",
         )

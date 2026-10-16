@@ -87,3 +87,13 @@ change, start from step 1 then.
    to the same waiting assessor. Already launched outcome workers perform
    their own assignments without delegating them again. Follow WW's normal
    commands, checks, round limit and recovery; never run its handlers yourself.
+   Judged-rule verification uses the same retained-session and exact-message
+   protocol: retain the verifier while a separate repair worker fixes only
+   its reported violations. If nested delegation is unavailable or prohibited,
+   the manager relays the unchanged findings and exact result to that same
+   waiting verifier. Follow `repeat_communication` and submit structured
+   `--rule-result` verdicts rather than `--outcome`. Repairs use their own
+   settings and lifecycle without repeating the source action or its hooks;
+   already launched repair workers do their own assignment. The source
+   completion stays held until every selected rule passes, under the existing
+   fix limits. A repair worker may dispute a reported source rule with evidence.

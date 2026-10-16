@@ -299,6 +299,25 @@ def _validate_steps(
         _validate_hooks(step.hooks, set(), expected_scope="step")
         visible = {**enclosing, **prior}
         finished = (*finished_containers, step)
+        if step.verification is not None:
+            policy = step.verification
+            if policy.goto is not None and policy.on_failure is not None:
+                raise ConfigurationError(
+                    f"{step.name}.verification.on_failure.goto must stand alone"
+                )
+            _validate_steps(
+                workflow_name,
+                (policy.verifier,),
+                enclosing=visible,
+                finished_containers=finished_containers,
+            )
+            if policy.on_failure is not None:
+                _validate_steps(
+                    workflow_name,
+                    (policy.on_failure,),
+                    enclosing={**visible, step.name: step},
+                    finished_containers=finished,
+                )
         _validate_steps(
             workflow_name,
             step.child_steps,

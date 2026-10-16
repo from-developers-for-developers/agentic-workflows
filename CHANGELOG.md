@@ -8,6 +8,8 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-15
 
+- Changed: rule verification retains its verifier and delegates focused repairs until all rules pass. Customize repairs or leave verification with `verification.on_failure`. `e819b59`
+
 - Added: `assess.repeat_until` retains the assessor and repeats selected outcome work until the named outcome, saving every round. Auto uses separate outcome workers and exact manager relays when needed; `limits.assessments` bounds rounds (default 5). `18b55ec`
 
 - Changed: a goto always passes the source step's summary, with any custom detail added after it. Removed `{{ww.goto.summary}}`; details may still read `{{ww.goto.from}}`.

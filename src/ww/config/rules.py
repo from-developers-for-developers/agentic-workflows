@@ -586,6 +586,19 @@ def resolve_step_rules(
             rules=rules,
             child_steps=tuple(map(resolve, step.child_steps)),
             assessment_outcomes=tuple(map(resolve, step.assessment_outcomes)),
+            verification=(
+                replace(
+                    step.verification,
+                    verifier=resolve(step.verification.verifier),
+                    on_failure=(
+                        resolve(step.verification.on_failure)
+                        if step.verification.on_failure is not None
+                        else None
+                    ),
+                )
+                if step.verification is not None
+                else None
+            ),
             items=(
                 replace(step.items, steps=tuple(map(resolve, step.items.steps)))
                 if isinstance(step.items, ItemFlow)

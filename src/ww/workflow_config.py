@@ -47,6 +47,14 @@ _SAVED_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*"
 _FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
 INIT_STEP_NAME = "init"
+FIX_RULE_VIOLATIONS = "fix-rule-violations"
+FIX_RULE_VIOLATIONS_PROMPT = (
+    "Fix only the rule violations in the exact verification findings supplied "
+    "by WW. Use the original step, selected rules and change context. Do not "
+    "repeat the original full action or its publication/commit hooks. Preserve "
+    "unrelated work. Report the actual changes and validation as your result; "
+    "the waiting verifier, not this repair worker, decides whether rules pass."
+)
 INIT_STEP_PROMPT = (
     "Record the passed requirements for this task. Correct their grammar and "
     "style while preserving their meaning. Do not analyze, reason about, or "
@@ -619,6 +627,7 @@ class StepDefinition(HandlerDefinition):
     assessment_outcomes: tuple[StepDefinition, ...] = ()
     # Repeat this assessment and its chosen work until this outcome is chosen.
     repeat_until: str | None = None
+    verification: VerificationDefinition | None = None
     # An assessment outcome that ends the workflow instead of running steps.
     stop_workflow: bool = False
     # An assessment outcome that sends the flow to another step instead of
@@ -629,6 +638,15 @@ class StepDefinition(HandlerDefinition):
     def runs_nothing(self) -> bool:
         """An outcome that stops the workflow or goes elsewhere: no work."""
         return self.stop_workflow or self.goto is not None
+
+
+@dataclass(frozen=True)
+class VerificationDefinition:
+    """Optional verifier settings and ordinary failure work (or a goto)."""
+
+    verifier: StepDefinition
+    on_failure: StepDefinition | None = None
+    goto: GotoTarget | None = None
 
 
 @dataclass(frozen=True)
