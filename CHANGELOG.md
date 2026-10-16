@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-16
 
+- Fixed: `{{ww.git.*}}` resolve without a branch record; extension updates and settings edits no longer stop a run with `plan_changed`, and `--replan` reruns only changed steps. `start` refuses a `--root` at a worktree without `--separate-store`; handoff, failure, model and repair-worker wording on manager pages is clearer. `c048dca`
 - Added: steps can attach assessments with retained reassessment; goto edges come from declared branches.
   `assess.question` is deprecated in favor of `assess.assess`, with migration warnings. `5110bd9`
 
