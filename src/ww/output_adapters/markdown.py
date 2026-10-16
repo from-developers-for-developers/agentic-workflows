@@ -604,6 +604,11 @@ def _worker_selection(lines: Lines, instruction: Instruction) -> None:
             ),
             f"- Profile: `{instruction.requested_profile or 'none'}`",
             "",
+            "These settings are this assignment's own: a previous step's model, "
+            "reasoning and worker do not carry over. A setting not listed here "
+            "keeps the worker's default; launch a new worker rather than reuse "
+            "one launched with other settings.",
+            "",
         ]
     )
     if (
@@ -697,7 +702,11 @@ def _worker_bootstrap(lines: Lines, instruction: Instruction) -> None:
     lines.extend(
         [
             "Pass only this command to the selected worker, with no task "
-            "details or commentary; it gives the worker its whole assignment:",
+            "details or commentary; it gives the worker its whole assignment. "
+            "Host or environment context a worker needs belongs in an automatic "
+            "mode, which every agent step page shows (for example in the "
+            'untracked `ww.local.yaml` with `workflows: "*"`), not in notes '
+            "passed with the command:",
             "",
             "```console",
             instruction_command(
@@ -708,6 +717,18 @@ def _worker_bootstrap(lines: Lines, instruction: Instruction) -> None:
             ),
             "```",
             "",
+            *(
+                [
+                    "The work this assignment repairs, "
+                    f"`{instruction.repaired_step}`, was performed by the "
+                    f"worker of assignment `{instruction.repaired_assignment}`: "
+                    "if that worker is still available, give this command to "
+                    "it rather than to a new one.",
+                    "",
+                ]
+                if instruction.repaired_assignment
+                else []
+            ),
             f"The worker's final message is `ww`'s \"{HANDOFF_TITLE}\" block "
             f"for assignment `{instruction.assignment_token or '<token>'}`: read "
             "the outcome there; nothing else the worker says is a `ww` result.",
@@ -1563,7 +1584,15 @@ def _error(lines: Lines, instruction: Instruction) -> None:
     if instruction.error:
         _append_section(lines, "Error")
         lines.append(instruction.error)
-        if instruction.result_saved is not None:
+        if instruction.operator_reason == "work_failed":
+            lines.extend(
+                [
+                    "",
+                    "The worker reported this failure itself with `ww fail`; "
+                    "the error above is its recorded reason.",
+                ]
+            )
+        elif instruction.result_saved is not None:
             saved = "was" if instruction.result_saved else "was not"
             lines.extend(["", f"The worker result {saved} saved before this stop."])
 
@@ -1669,7 +1698,13 @@ def _plan_changed(lines: Lines, instruction: Instruction) -> None:
     for item in change.changes:
         lines.append(f"- {item.kind.capitalize()}: {item.label}")
         for field in item.fields:
-            lines.append(f"  - `{field.name}`: `{field.before}` → `{field.after}`")
+            lines.extend(
+                [
+                    f"  - field `{field.name}`:",
+                    f"    - before: {_plan_value(field.before)}",
+                    f"    - after: {_plan_value(field.after)}",
+                ]
+            )
     if change.refusal is not None:
         _append_section(lines, "Options")
         lines.extend(
@@ -1687,13 +1722,15 @@ def _plan_changed(lines: Lines, instruction: Instruction) -> None:
         return
     _append_section(lines, "Options")
     take = (
-        "To take the new definition from the first change on. This reruns "
+        "To take the new definition. The steps and hooks it changed run, "
+        "with the rest of their step; every other step keeps its result. "
+        "This reruns "
         "finished steps, which needs the operator's explicit agreement: "
         + ", ".join(change.reruns)
         + "."
         if change.reruns
-        else "To take the new definition from the first change on; nothing "
-        "that already finished runs again."
+        else "To take the new definition. The steps and hooks it changed run; "
+        "nothing that already finished runs again."
     )
     lines.extend(
         [
@@ -1711,6 +1748,14 @@ def _plan_changed(lines: Lines, instruction: Instruction) -> None:
             "```",
         ]
     )
+
+
+def _plan_value(value: str) -> str:
+    """A field's compact JSON as one code span, whatever backticks it holds."""
+    longest = max((len(run) for run in re.findall(r"`+", value)), default=0)
+    fence = "`" * (longest + 1)
+    padded = f" {value} " if value.startswith("`") or value.endswith("`") else value
+    return f"{fence}{padded}{fence}"
 
 
 def _fix_limit(lines: Lines, instruction: Instruction) -> None:

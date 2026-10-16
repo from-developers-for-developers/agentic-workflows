@@ -318,6 +318,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Work in this configured project directory instead of the root.",
     )
     start.add_argument(
+        "--separate-store",
+        action="store_true",
+        dest="separate_store",
+        help=(
+            "Allow --root at a git worktree of a ww project, keeping the task "
+            "in that worktree's own store, which ww without --root never reads."
+        ),
+    )
+    start.add_argument(
         "-r",
         "--runtime",
         dest="workflow_runtime",

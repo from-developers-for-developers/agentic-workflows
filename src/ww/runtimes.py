@@ -22,6 +22,11 @@ RUNTIME_INSTRUCTIONS = {
         "requests; they take precedence over profile or skill preferences. "
         "Where none are shown, launch it with its default settings and do not "
         "choose them yourself.",
+        "Each assignment's requested model and reasoning apply to that "
+        "assignment only: a previous step's model, reasoning and worker never "
+        "carry over, and an assignment requesting none uses the worker's "
+        "defaults. Do not reuse a worker launched with other settings than the "
+        "assignment requests; launch a new one instead.",
         "If the exact request is unavailable, select the closest worker and "
         "report the difference. Agent hints are advisory and currently unenforced.",
         "The worker submits its own results and associated hook results with "

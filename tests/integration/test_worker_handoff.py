@@ -259,6 +259,33 @@ workflows:
     assert visible.control == "awaiting_operator"
 
 
+def test_a_workers_own_failure_is_reported_as_its_failure(tmp_path: Path) -> None:
+    (tmp_path / "ww.yaml").write_text(
+        "workflows:\n  - name: task\n    steps:\n      - work: Do it.\n",
+        encoding="utf-8",
+    )
+    service = WorkflowService(Storage(tmp_path))
+    service.start("task", "TASK-1", agent="codex", caller_role="manager")
+    service.next("TASK-1", caller_role="manager")
+
+    failed = service.fail(
+        "TASK-1",
+        "The API is down.",
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+    )
+    manager = service.instruction("TASK-1", caller_role="manager")
+    markdown = MarkdownOutputAdapter().render_instruction(manager)
+
+    assert failed.operator_reason == "work_failed"
+    assert "The API is down." in markdown
+    assert (
+        "The worker reported this failure itself with `ww fail`; the error "
+        "above is its recorded reason." in markdown
+    )
+    assert "was not saved" not in markdown
+
+
 def test_an_items_substep_and_successor_run_are_manager_boundaries(
     tmp_path: Path,
 ) -> None:

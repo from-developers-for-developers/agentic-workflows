@@ -1475,9 +1475,10 @@ def test_git_variables_come_from_the_branch_record(repository: Path) -> None:
         "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
     }
     task_context = context(repository, config)
-    # Nothing recorded yet: not available, which ww reports as an error.
+    # Nothing recorded and no task branch yet: the branch is not available,
+    # which ww reports as an error; the configured base already is.
     assert git_variable("branch")(task_context) is None
-    assert git_variable("base_branch")(task_context) is None
+    assert git_variable("base_branch")(task_context) == "main"
 
     assert handler("start-task-branch")(task_context).ok
     _run("git", "switch", "-q", "main", cwd=repository)
@@ -1485,6 +1486,106 @@ def test_git_variables_come_from_the_branch_record(repository: Path) -> None:
     # The record, not whatever the checkout is on now.
     assert git_variable("branch")(task_context) == "feature/task-1"
     assert git_variable("base_branch")(task_context) == "main"
+
+
+def _records(repository: Path) -> list[dict[str, object]]:
+    return [
+        json.loads(line)
+        for line in ExtensionStore(repository, "ww/git").read_lines("branches.jsonl")
+        if line
+    ]
+
+
+def test_starting_on_an_existing_task_branch_records_it(repository: Path) -> None:
+    config = {"separate_branch": True, "base_branches": {"default": "main"}}
+    _run("git", "switch", "-q", "-c", "task-1", cwd=repository)
+
+    result = handler("start-task-branch")(context(repository, config))
+
+    assert result.ok, result.error
+    assert "already on task-1" in result.output
+    assert [(r["branch"], r["base"]) for r in _records(repository)] == [
+        ("task-1", "main")
+    ]
+    # Starting again adopts the record instead of adding another.
+    assert handler("start-task-branch")(context(repository, config)).ok
+    assert len(_records(repository)) == 1
+
+
+def test_switching_to_an_existing_task_branch_records_it(repository: Path) -> None:
+    config = {"separate_branch": True, "base_branches": {"default": "main"}}
+    _run("git", "branch", "task-1", cwd=repository)
+
+    result = handler("start-task-branch")(context(repository, config))
+
+    assert "switched to existing task-1" in result.output
+    task_context = context(repository, config)
+    assert git_variable("branch")(task_context) == "task-1"
+    assert git_variable("base_branch")(task_context) == "main"
+
+
+def test_an_unconfigured_base_that_is_the_branch_itself_is_not_recorded(
+    repository: Path,
+) -> None:
+    _run("git", "switch", "-q", "-c", "task-1", cwd=repository)
+
+    assert handler("start-task-branch")(
+        context(repository, {"separate_branch": True})
+    ).ok
+
+    assert _records(repository) == []
+
+
+def test_a_primary_checkout_on_the_task_branch_records_it(repository: Path) -> None:
+    config = _worktree_config(repository)
+    _run("git", "switch", "-q", "-c", "feature/task-1", cwd=repository)
+
+    assert handler("create-worktree")(context(repository, config)).ok
+
+    [record] = _records(repository)
+    assert (record["branch"], record["base"], record["worktree"]) == (
+        "feature/task-1",
+        "main",
+        None,
+    )
+
+
+def test_working_on_the_current_branch_records_nothing(repository: Path) -> None:
+    config = {"base_branches": {"default": "main"}}
+    _run("git", "switch", "-q", "-c", "topic", cwd=repository)
+
+    assert handler("start-task-branch")(context(repository, config)).ok
+
+    # A record would make ww record read main..topic instead of the commits
+    # naming the task; the variables derive the values instead.
+    assert _records(repository) == []
+    task_context = context(repository, config)
+    assert git_variable("branch")(task_context) == "topic"
+    assert git_variable("base_branch")(task_context) == "main"
+
+
+def test_without_a_configured_base_the_current_branch_is_its_own_base(
+    repository: Path,
+) -> None:
+    task_context = context(repository, {})
+
+    assert git_variable("branch")(task_context) == "main"
+    assert git_variable("base_branch")(task_context) == "main"
+
+
+def test_an_unrecorded_existing_task_branch_is_derived(repository: Path) -> None:
+    config = {
+        "separate_branch": True,
+        "branch_name_formats": {"default": "feature/{{ww.task.id}}"},
+    }
+    task_context = context(repository, config)
+    assert git_variable("branch")(task_context) is None
+
+    _run("git", "branch", "feature/task-1", cwd=repository)
+
+    assert git_variable("branch")(task_context) == "feature/task-1"
+    # No configured base, and the checkout's branch says nothing about it.
+    assert git_variable("base_branch")(task_context) is None
 
 
 def test_a_child_git_branch_is_its_parent_branch_and_child_id(

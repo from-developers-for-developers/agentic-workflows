@@ -1588,7 +1588,11 @@ task's pages.
 lets a manager dispatch assignments to separate workers; it does not make `ww`
 launch models. Both runtimes use the same command exchange and persisted state.
 Workflow and step `model` and `reasoning` values are recorded with the work, and
-step values override workflow values. Use `modes`, `runtimes`, and `agents` to
+step values override workflow values. Each assignment's requested model and
+reasoning are its own: a previous step's never carry over, so after the
+built-in `init`, which requests `cheapest`, a step that requests no model
+runs on the worker's default. The manager's page says so and tells it to
+launch a new worker rather than reuse one launched with other settings. Use `modes`, `runtimes`, and `agents` to
 inspect the available choices.
 
 ### Steps the manager performs
@@ -1741,7 +1745,9 @@ coordinator, workflow transition, or successor execution instance is always a
 manager boundary.
 
 On a failure or an interruption, the response reports `awaiting_operator`
-and states whether a preceding worker result was already saved.
+and states whether a preceding worker result was already saved. After the
+worker's own `ww fail` (`operator_reason: work_failed`) it says instead that
+the worker reported the failure itself, the error shown being its reason.
 `instruction --role worker` reconstructs the same continuation or handoff from
 persisted state after a restart. Caller roles do not change the concurrency
 guarantees; a stale worker is stopped by its [assignment
@@ -1836,6 +1842,11 @@ refused: "Manager: the workflow is complete; `./ww status TASK-7` shows the
 result." (`run_completed` in the JSON block).
 
 It lists every agent item the worker performed in the assignment with its
+outcome, found by the assignment's token, which every item dispatched in the
+assignment carries: so a step whose record was replaced since (a goto, a
+replan, a retry or a verification round) still appears, from the run's
+history, and a handler-repair handoff names the step it repaired. When
+nothing is found, it reads "Steps: none recorded". Each step shows its
 outcome (`completed`, `held for verification`,
 `failed` with the error, or `not completed`), each artifact's path, the checks
 that are current for the step with their status, the checks the operator
@@ -1923,8 +1934,17 @@ task, and the operator fixed it in `ww.yaml`, the manager's next `next` (and
 its `instruction` page) compiles the workflow again and compares it with the
 saved plan, step by step and hook by hook. If anything differs, ww stops
 before doing anything else, with `operator_reason: plan_changed`, and lists
-each changed, added or removed step or hook, with the fields that changed,
-before and after. This comes ahead of `--retry` too, so the fixed command is
+each changed, added, removed or moved step or hook, with every field that
+changed and its value before and after:
+
+```text
+- Changed: step `review`
+  - field `description`:
+    - before: `"Review the change."`
+    - after: `"Review the change against the issue."`
+```
+
+This comes ahead of `--retry` too, so the fixed command is
 offered instead of the old one being run again. The operator picks one of two
 answers:
 
@@ -1933,24 +1953,32 @@ answers:
 ./ww next TASK-1 --keep-plan --role manager
 ```
 
-- `--replan` takes the new definition from the first changed item on. Items
-  before it keep what they did; the first changed item and everything after
-  it are the new ones, with fresh records, and `next` goes on from there.
-  When the first change is in a step or hook that already finished, the run
-  rewinds to it and runs it, and everything after it, again. The page names
-  those steps, and `next --replan` asks the operator to confirm, or takes
-  `--yes` once they have agreed. Earlier attempts move to the run's history,
-  so their artifacts and output stay readable.
+- `--replan` takes the new definition and reruns only what it changed. A
+  changed or added step or hook gets a fresh record, and so does the rest of
+  its step: the hooks around it and the steps inside it, which finish the
+  work it redoes, such as its commit. Every other step and hook keeps what it
+  did, wherever it now sits in the plan, including one that only moved; a
+  removed one drops. `next` goes on from the earliest item to (re)run. When a
+  step or hook that already finished runs again, the run rewinds to it; the
+  page names every finished step that reruns, and `next --replan` asks the
+  operator to confirm, or takes `--yes` once they have agreed. Earlier
+  attempts move to the run's history, so their artifacts and output stay
+  readable.
 - `--keep-plan` carries on with the saved plan and is not asked again for
   the same configuration.
 
 A change that leaves the run's own workflow as it is, such as a new workflow
-beside it, is taken silently. A configuration that does not load stops
+beside it, is taken silently. So is a change to an extension: its version,
+source and fingerprint, and its settings in the root `ww.json`, are not part
+of any step's definition, since an extension may be fixed or reconfigured
+while a task is in flight. The run's extension items adopt the current
+extension and settings at the manager's next `next`, without stopping and
+without rerunning anything, and so do they under `--keep-plan`. A configuration that does not load stops
 nothing: the run goes on with its saved plan, and `ww lint` shows the error.
 Two changes cannot be applied to a running task, and the page says why,
 offering only `--keep-plan`: a change to per-child stages that the run has
-already expanded for its children, and a rewind past a
-children step whose child tasks already exist. For those, reset the task and
+already expanded for its children, and a replan that reruns, or moves the run
+back past, a children step whose child tasks already exist. For those, reset the task and
 start it again. A worker's pages never stop for a changed plan; the manager
 decides, between assignments.
 
@@ -2070,8 +2098,11 @@ not installed is an error that names the project's file, for example
 extension 'acme/notes'`.
 
 The settings follow the directory a step or hook acts on, not the task as a
-whole, and are frozen into the plan when the task starts like every extension
-setting. An item working in the task workspace or the project directory
+whole, and are copied into the plan when the task starts like every extension
+setting. An edit to the root's settings reaches a running task at the
+manager's next `next` (see [When the workflow changes
+mid-run](#when-the-workflow-changes-mid-run)); a project file's edit reaches
+it with the next configuration change ww adopts. An item working in the task workspace or the project directory
 (`workdir` `task` or `project`) gets the project's settings; one working in the
 root (`workdir: root`) gets the root's. Relative paths inside a project's
 section, such as `worktree_dir`, resolve against that project's repository,
@@ -3900,9 +3931,22 @@ of every workflow may read the task's branch:
 ```
 
 The branch values come from what `start-task-branch` or `create-worktree`
-recorded for the task, never from a live `git rev-parse`: the primary
-checkout and a task's worktree can be on different branches. Before the task
-has a branch, an agent step that reads one does not start: the task stops
+recorded for the task, never from the checkout's current branch: the primary
+checkout and a task's worktree can be on different branches. Both handlers
+record the branch even when they find it ready rather than create it: the
+task branch already exists (a retried or resumed start), or the checkout, or
+the primary checkout for `create-worktree`, is already on it. A task with no
+record, because its workflow never ran either handler, gets values derived
+from the settings and git instead: with a task branch (`separate_branch` or
+`worktrees`), `branch` is the task branch its format names once that branch
+exists, and `base_branch` the parent task's branch or the configured
+`base_branches` entry; working on the current branch, `branch` is the primary
+checkout's current branch and `base_branch` the configured base, else that
+same branch. That mode records nothing, so [`record`](#direct-work)
+keeps finding the task's commits by its ID. `ww lint` warns about a workflow
+whose steps read `{{ww.git.*}}` while none of its hooks runs
+`start-task-branch` or `create-worktree`. When no value can be given, an agent
+step that reads one does not start: the task stops
 for the operator with `operator_reason: value_unavailable` and an error naming
 the variable and its extension; `next --retry` checks again once the branch
 exists, and `next --force` skips the step. An automatic handler that reads one
@@ -4050,7 +4094,10 @@ available yet": an agent step that reads it stops the task for the operator
 namespace `ww` and the names ww keeps for its own values (`task`, `project`,
 `documents`, `metadata`, `project_metadata`, `item`, `child`) cannot be
 claimed, and two listed extensions claiming one namespace are an error.
-`ww/git` declares `git`:
+`recorded_by` optionally names the extension's handlers that record what the
+values are read from; `ww lint` then warns about a workflow whose steps read
+the namespace while none of its hooks runs one of them. `ww/git` declares
+`git`:
 
 ```python
 namespace = (
@@ -4060,6 +4107,7 @@ namespace = (
             ExtensionVariable("branch", _branch_variable),
             ExtensionVariable("base_branch", _base_branch_variable),
         ),
+        recorded_by=("start-task-branch", "create-worktree"),
     ),
 )
 ```
@@ -4127,7 +4175,20 @@ changing the rest of the assignment.
 Human-facing instructions identify themselves as generated by `ww` and name the
 reader's current role. In `auto`, the manager receives only a worker
 bootstrap command and passes it to the selected worker without task details or
-commentary. The worker runs `ww instruction` with `--role worker` to retrieve its
+commentary. Host or environment context every worker needs, such as how to
+reach a sandboxed service, belongs in an automatic mode, which every agent
+step page shows, rather than in notes passed with the command; for one
+machine, put it in the untracked `ww.local.yaml`:
+
+```yaml
+# ww.local.yaml
+modes:
+  - name: host
+    description: Run the test suite with scripts/test; the database is on port 5433.
+    workflows: "*"
+```
+
+The worker runs `ww instruction` with `--role worker` to retrieve its
 complete, role-specific assignment, then receives instructions for when and
 what to hand back. `single` identifies the session as both manager and worker and
 states which role to perform without spawning. A short explanation of how `ww`
@@ -4226,6 +4287,11 @@ needs because `.ww` lives under the primary checkout.
 Lifecycle commands support `--json` when machine-readable output is needed.
 By default, `ww` detects the primary Git checkout so linked worktrees share task
 state. Pass global `--root /path/to/project` to select a project explicitly.
+A `--root` naming a linked worktree of a ww project opens a separate store in
+that worktree, which ww without `--root` never reads: commands on tasks
+already there work with a warning, but `start` refuses to create a task there
+and says to omit `--root`, unless `start --separate-store` asks for that store
+deliberately.
 
 ### Interrupted automatic handlers
 
@@ -4320,7 +4386,11 @@ preceding handlers stay completed. The repair belongs to the failed execution
 and creates no workflow step or hooks.
 
 In `auto`, the manager dispatches the repair and repeated failures stay with
-that worker; in `single`, the session receives it directly. Repair artifacts
+that worker. When the repaired work was performed by a worker of an earlier
+assignment (a handler repair after a step's hooks, or a focused rule-repair
+of a step), the manager's bootstrap page names that step and assignment and
+says to give the command to the same worker if it is still available
+(`repaired_step` and `repaired_assignment` in the JSON instruction); in `single`, the session receives it directly. Repair artifacts
 survive reloads and are available through `artifacts`. Repeated failures reach
 the existing `limits.fixes` operator stop (default 3). An operator retry renews
 the budget, and an operator force skips the handler. Known failure retries

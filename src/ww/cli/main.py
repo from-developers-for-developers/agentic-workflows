@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import cast
 
 from ww import rule_conversion, rule_writes, run_reports, setup_apply, workflow_update
+from ww.actions import PlannedAction, actions
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
@@ -78,7 +79,7 @@ from ww.output_adapters.rule_pages import (
     render_rule_view,
     render_rules_listing,
 )
-from ww.plan import PlanCompilationOptions, compile_workflow_plan
+from ww.plan import PlanCompilationOptions, WorkflowPlan, compile_workflow_plan
 from ww.project_config import ProjectConfig, compose_settings, load_project_config
 from ww.rule_disputes import DisputeLog
 from ww.rule_stats import RuleStatsStore, never_applied_rules
@@ -319,8 +320,10 @@ def _lint(context: _Context) -> _Outcome:
     configuration = load_configuration(context.storage.config_path, context.extensions)
     for project in context.extensions.config.projects:
         context.extensions.validate_configuration(project.name)
-    for workflow in configuration.workflows:
+    plans = tuple(
         _compile_for_lint(context, configuration, workflow.name)
+        for workflow in configuration.workflows
+    )
     notices = "".join(
         f"Notice: {notice}\n"
         for notice in compose_configuration(context.storage.config_path).notices
@@ -331,6 +334,7 @@ def _lint(context: _Context) -> _Outcome:
         f"{notices}"
         f"{_launcher_warning(context.storage.root)}"
         f"{_retired_workflow_warning(context.extensions.config)}"
+        f"{_unrecorded_namespace_warning(plans, context.extensions)}"
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
         f"{_unscriptized_warning(RuleStore(context.storage.root), configuration)}"
@@ -342,7 +346,7 @@ def _lint(context: _Context) -> _Outcome:
 
 def _compile_for_lint(
     context: _Context, configuration: WorkflowConfiguration, workflow: str
-) -> None:
+) -> WorkflowPlan:
     """Compile ``workflow``'s plan as ``start`` would, so that what only
     compiling finds, such as ``select_rules_for`` targets, fails lint too.
 
@@ -353,7 +357,7 @@ def _compile_for_lint(
     errors: list[ConfigurationError] = []
     for agent in AGENT_DIRECTORIES:
         try:
-            compile_workflow_plan(
+            return compile_workflow_plan(
                 configuration,
                 context.storage.root,
                 workflow,
@@ -365,9 +369,67 @@ def _compile_for_lint(
             )
         except ConfigurationError as error:
             errors.append(error)
-        else:
-            return
     raise errors[0]
+
+
+def _unrecorded_namespace_warning(
+    plans: tuple[WorkflowPlan, ...], extensions: ExtensionRegistry
+) -> str:
+    """Warn about a workflow reading ``{{ww.<namespace>.*}}`` it never records.
+
+    An extension names the handlers that make its namespace's values
+    available (``recorded_by``, such as ww/git's ``start-task-branch``).  A
+    workflow whose items read the namespace while none of its hooks run one
+    of them relies on whatever the extension can derive without a record,
+    and may stop for the operator (``value_unavailable``) instead.  A
+    warning only, since a value may still be derivable, or recorded by an
+    earlier task.
+    """
+    warnings = []
+    for name, (identifier, namespace) in extensions.namespaces().items():
+        if not namespace.recorded_by:
+            continue
+        prefix = f"ww.{name}."
+        recorders = {
+            f"ext/{identifier}/handlers:{handler}" for handler in namespace.recorded_by
+        }
+        for plan in plans:
+            read = sorted(
+                {
+                    dependency
+                    for item in plan.items
+                    for dependency in item.dependencies
+                    if dependency.startswith(prefix)
+                }
+            )
+            if not read or recorders & _extension_references(plan):
+                continue
+            warnings.append(
+                f"Warning: workflow {plan.workflow!r} reads "
+                + ", ".join(f"{{{{{value}}}}}" for value in read)
+                + " but none of its hooks runs "
+                + " or ".join(sorted(recorders))
+                + f"; without that record {identifier} derives the value"
+                " where it can, and the step otherwise stops for the operator.\n"
+            )
+    return "".join(warnings)
+
+
+def _extension_references(plan: WorkflowPlan) -> set[str]:
+    """The extension handlers ``plan``'s items run, as ``ext/...`` references."""
+    references = set()
+    for item in plan.items:
+        if not isinstance(item.operation, PlannedAction) or not actions.contains(
+            item.kind
+        ):
+            continue
+        implementation = actions.get(item.kind)
+        binding = implementation.traits(
+            item.payload_as(implementation.planned_type)
+        ).extension_binding
+        if binding is not None:
+            references.add(binding.reference)
+    return references
 
 
 def _retired_workflow_warning(config: ProjectConfig) -> str:
@@ -1899,7 +1961,21 @@ def main(argv: list[str] | None = None) -> int:
         else _resolve_project_root(args.root)
     )
     if args.command != "init":
-        print(_split_store_warning(args, root), end="", file=sys.stderr)
+        split_store = _split_store_primary(args, root)
+        if args.command == "start" and split_store is not None:
+            if not args.separate_store:
+                print(
+                    f"ww error: --root {root} is a git worktree of the ww project "
+                    f"at {split_store}; a task started here would live in a "
+                    "separate store that ww without --root never reads. Omit "
+                    "--root: ww finds the primary checkout's store from any of "
+                    "its worktrees. Pass --separate-store to start it there "
+                    "anyway.",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            print(_split_store_warning(args, root), end="", file=sys.stderr)
     try:
         storage = Storage(root, config=_config_source(args, root))
     except WwError as error:
@@ -2196,17 +2272,31 @@ def _worktree_root_hint(args: argparse.Namespace, root: Path) -> str:
     )
 
 
+def _split_store_primary(args: argparse.Namespace, root: Path) -> Path | None:
+    """The ww project's primary checkout when ``--root`` names its worktree.
+
+    ``None`` when ``--root`` is omitted, or names no linked worktree of a
+    ww project.
+    """
+    if args.root is None:
+        return None
+    primary = _primary_checkout(root)
+    if primary is None or primary == root or not is_project_root(primary):
+        return None
+    return primary
+
+
 def _split_store_warning(args: argparse.Namespace, root: Path) -> str:
     """A warning when ``--root`` names a linked worktree of a ww project.
 
     ww's state belongs to the primary checkout; a store in one of its
     worktrees holds tasks the primary checkout, and ww run without
     ``--root``, never see. Empty when ``--root`` is not such a worktree.
+    ``start`` refuses such a root instead, unless ``--separate-store``
+    asks for that store deliberately.
     """
-    if args.root is None:
-        return ""
-    primary = _primary_checkout(root)
-    if primary is None or primary == root or not is_project_root(primary):
+    primary = _split_store_primary(args, root)
+    if primary is None:
         return ""
     return (
         f"ww warning: --root {root} is a git worktree of the ww project at "

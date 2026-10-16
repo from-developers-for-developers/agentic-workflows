@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.workflow_helpers import start_after_init
+from ww.cli.main import main
 from ww.errors import ConfigurationError
 from ww.output_adapters.markdown import MarkdownOutputAdapter
 from ww.service import WorkflowService
@@ -115,6 +116,39 @@ def test_a_branch_not_recorded_yet_stops_for_the_operator(tmp_path: Path) -> Non
     # Every page of the task still builds: nothing is bricked.
     assert service.instruction("T1").operator_reason == "value_unavailable"
     assert service.instruction_status("T1", None).operator_reason == "value_unavailable"
+
+
+def test_a_configured_base_is_available_before_any_branch(tmp_path: Path) -> None:
+    service = WorkflowService(
+        Storage(
+            _root(
+                tmp_path,
+                "workflows:\n  - name: feature\n    steps:\n"
+                "      - review: Review against {{ww.git.base_branch}}.\n",
+            )
+        )
+    )
+    start_after_init(service, "feature", "T1", agent="codex")
+
+    instruction = service.next("T1")
+
+    assert instruction.operator_reason is None
+    assert instruction.action_text is not None
+    assert "Review against main." in instruction.action_text
+
+
+def test_lint_warns_about_git_values_no_hook_records(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+
+    assert main(["--root", str(root), "lint"]) == 0
+
+    output = capsys.readouterr().out
+    assert "Warning: workflow 'unbranched' reads {{ww.git.branch}}" in output
+    assert "ext/ww/git/handlers:start-task-branch" in output
+    # ``feature`` runs start-task-branch before it starts.
+    assert "workflow 'feature'" not in output
 
 
 def test_retry_checks_the_values_again(tmp_path: Path) -> None:

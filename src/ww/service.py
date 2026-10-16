@@ -4154,7 +4154,8 @@ class WorkflowService:
         for index in range(assignment.start, assignment.stop):
             assigned = snapshot.plan.items[index]
             if (
-                repeat_owner(snapshot.plan, index) is not None
+                assigned.owner == "agent"
+                or repeat_owner(snapshot.plan, index) is not None
                 or assigned.verifies is not None
                 or assigned.repair_of is not None
                 or assigned.verification_hook is not None
@@ -4352,14 +4353,15 @@ class WorkflowService:
         item = snapshot.plan.items[state.cursor]
         if state.active_item_id is not None:
             return self.render(state, snapshot)
+        token = secrets.token_hex(4) if state.workflow_runtime == "auto" else None
         records = list(state.item_executions)
         records[state.cursor] = replace(
             records[state.cursor],
+            worker_assignment=token or records[state.cursor].worker_assignment,
             selected_agent=selected_agent,
             selected_model=model if model != "auto" else None,
             selected_reasoning=reasoning if reasoning != "auto" else None,
         )
-        token = secrets.token_hex(4) if state.workflow_runtime == "auto" else None
         state = replace(
             close_assignment(state),
             item_executions=tuple(records),
@@ -4830,7 +4832,25 @@ class WorkflowService:
                 (token if entry[0] == state.assignment_token else entry[0], entry[1])
                 for entry in state.assignment_log
             )
-            state = replace(state, assignment_token=token, assignment_log=log)
+
+            # Its records move to the new token too, so its handoff finds them.
+            def retagged(
+                records: tuple[PlanItemExecution, ...],
+            ) -> tuple[PlanItemExecution, ...]:
+                return tuple(
+                    replace(record, worker_assignment=token)
+                    if record.worker_assignment == state.assignment_token
+                    else record
+                    for record in records
+                )
+
+            state = replace(
+                state,
+                item_executions=retagged(state.item_executions),
+                execution_history=retagged(state.execution_history),
+                assignment_token=token,
+                assignment_log=log,
+            )
             self.commit(state, snapshot)
             return self.render(state, snapshot)
 
@@ -5217,7 +5237,14 @@ class WorkflowService:
     def _detect_plan_change(
         self, state: ExecutionState, snapshot: PlanSnapshot
     ) -> tuple[str | None, PlanChange | None]:
-        """The current configuration's digest and what it changes in the run.
+        """The current configuration's digest and what it changes in the run."""
+        digest, _, change = self._compare_plan(state, snapshot)
+        return digest, change
+
+    def _compare_plan(
+        self, state: ExecutionState, snapshot: PlanSnapshot
+    ) -> tuple[str | None, WorkflowPlan | None, PlanChange | None]:
+        """The current digest, the workflow compiled under it, and the change.
 
         Nothing is compiled while the digest matches the one the plan was
         saved under. A configuration that no longer loads, or no longer
@@ -5225,14 +5252,14 @@ class WorkflowService:
         with its saved plan, and ``lint`` reports the configuration.
         """
         if not run_is_open(state.status):
-            return None, None
+            return None, None, None
         try:
             configuration = self._load_configuration()
             digest = self._configuration_digest(configuration)
             if digest == snapshot.configuration_digest:
-                return digest, None
+                return digest, None, None
             if state.workflow not in configuration.workflows_by_name:
-                return None, None
+                return None, None, None
             template = compile_workflow_plan(
                 configuration,
                 self.storage.root,
@@ -5249,12 +5276,12 @@ class WorkflowService:
                 self.extensions.config,
             )
         except ConfigurationError:
-            return None, None
+            return None, None, None
         change = plan_change(state, snapshot, template, digest)
         lane_missing = missing_lane(configuration.workflows_by_name[state.workflow])
         if change is not None and change.refusal is None and lane_missing:
             change = replace(change, refusal=lane_missing)
-        return digest, change
+        return digest, template, change
 
     def _plan_gate(
         self, task_id: str, *, replan: bool, keep_plan: bool
@@ -5263,15 +5290,17 @@ class WorkflowService:
 
         Returns the ``plan_changed`` page, or ``None`` for ``next`` to go on.
         A configuration whose change leaves the run's plan as it is is
-        adopted silently, so it is not compiled again.
+        adopted silently, so it is not compiled again; so are the current
+        extensions' identity and settings, which no item's definition
+        includes.
         """
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
             state, snapshot = self.load(task_id)
-            digest, change = self._detect_plan_change(state, snapshot)
-            if digest is not None and digest != snapshot.configuration_digest:
+            digest, template, change = self._compare_plan(state, snapshot)
+            if digest is not None and template is not None:
                 if change is None or keep_plan:
-                    self.commit(*keep_plan_(state, snapshot, digest))
+                    self.commit(*keep_plan_(state, snapshot, digest, template))
                     return None
                 if replan:
                     if change.refusal is not None:
@@ -5297,8 +5326,16 @@ class WorkflowService:
         return validate_configuration(self.configuration_loader(), self.extensions)
 
     def _configuration_digest(self, configuration: WorkflowConfiguration) -> str:
-        """Fingerprint semantics rather than one frontend's source bytes."""
-        value = (configuration, self.extensions.config.builtins)
+        """Fingerprint semantics rather than one frontend's source bytes.
+
+        The root's extension settings count too: a run adopts edited
+        settings at its next ``next``, without stopping for the operator.
+        """
+        value = (
+            configuration,
+            self.extensions.config.builtins,
+            self.extensions.config.extensions,
+        )
         return hashlib.sha256(repr(value).encode("utf-8")).hexdigest()
 
     def _unknown_modes(

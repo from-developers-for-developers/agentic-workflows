@@ -443,6 +443,73 @@ def test_a_reprint_of_a_handler_repair_lists_the_repaired_step(
     assert [step.name for step in again.steps] == ["gate"]
 
 
+def test_a_handler_repair_names_the_assignment_that_did_the_work(
+    tmp_path: Path,
+) -> None:
+    service = _auto(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - work: Do the manual work.
+      - name: gate
+        shell: test -e fixed
+        on_failure: fix
+""",
+    )
+    service.next(TASK, caller_role="manager")
+    worked = assignment_token(service, TASK)
+    result = _worker_complete(service, "Worked.")
+    while result.handler_repair is None:
+        result = service.next(TASK, caller_role="manager")
+
+    repair = service.next(TASK, caller_role="manager")
+
+    assert repair.repaired_step == "work"
+    assert repair.repaired_assignment == worked
+    assert (
+        f"was performed by the worker of assignment `{worked}`"
+        in MarkdownOutputAdapter().render_instruction(repair)
+    )
+
+
+def test_a_reprint_after_a_goto_keeps_the_step_it_sent_back(tmp_path: Path) -> None:
+    service = _auto(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - develop: Develop it.
+      - review: Review it.
+        assess:
+          assess: Are there issues?
+          positive:
+            goto: develop
+      - publish: Publish it.
+""",
+    )
+    service.next(TASK, caller_role="manager")
+    _worker_complete(service, "Developed.")
+    service.next(TASK, caller_role="manager")
+    token = assignment_token(service, TASK)
+    service.complete(
+        TASK,
+        artifact="Issues.",
+        summary_for_next="Fix them.",
+        caller_role="worker",
+        assignment=token,
+        goto="develop",
+    )
+    service.next(TASK, caller_role="manager", outcome="positive")
+
+    again = service.handoff(TASK, assignment=token)
+
+    assert [(step.name, step.outcome) for step in again.steps] == [
+        ("review", "completed")
+    ]
+    assert "none recorded" not in handoff_markdown(again)
+
+
 def test_the_reprint_json_has_the_shape_of_the_block(tmp_path: Path) -> None:
     service = _auto(tmp_path, ROUND)
     service.next(TASK, caller_role="manager")

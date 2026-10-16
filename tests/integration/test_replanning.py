@@ -36,6 +36,26 @@ TWO_STEPS = """workflows:
       - first: {first}
       - second: {second}
 """
+THREE_STEPS = """workflows:
+  - name: task
+    steps:
+      - first: {first}
+      - second: Two.
+      - third: Three.
+"""
+CHECKED = """handlers:
+  - name: check
+    argv: ["true"]
+workflows:
+  - name: task
+    steps:
+      - name: work
+        description: {work}
+        hooks:
+          before_complete:
+            - name: check
+      - name: later
+"""
 ITEMS = """workflows:
   - name: task
     steps:
@@ -170,6 +190,11 @@ def test_a_change_ahead_of_the_cursor_reruns_nothing(tmp_path: Path) -> None:
         '"Two."',
         '"Two, done well."',
     )
+    page = _markdown(stop)
+    assert "- Changed: step `second`" in page
+    assert "  - field `description`:" in page
+    assert '    - before: `"Two."`' in page
+    assert '    - after: `"Two, done well."`' in page
     service.next("TASK-1", caller_role="manager", replan=True)
     _complete(service)
     page = service.next("TASK-1", caller_role="manager")
@@ -200,6 +225,145 @@ def test_a_change_to_a_finished_step_reruns_it_from_there(tmp_path: Path) -> Non
     assert {record.plan_item_id for record in state.execution_history} >= {
         "task:first:step:step:1",
         "task:second:step:step:1",
+    }
+
+
+def test_only_the_changed_step_reruns_and_the_run_goes_on_where_it_was(
+    tmp_path: Path,
+) -> None:
+    service = _started(tmp_path, THREE_STEPS.format(first="One."))
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    service = _write(tmp_path, THREE_STEPS.format(first="One, again."))
+
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    assert stop.plan_change.reruns == ("step `first`",)
+    resumed = service.next("TASK-1", caller_role="manager", replan=True)
+    assert resumed.item_name == "first"
+    assert _progress(service)[1:4] == [
+        ("first", "in_progress"),
+        ("second", "completed"),
+        ("third", "pending"),
+    ]
+    _complete(service)
+    assert service.next("TASK-1", caller_role="manager").item_name == "third"
+    state, _ = service.load("TASK-1")
+    assert "task:second:step:step:1" not in {
+        record.plan_item_id for record in state.execution_history
+    }
+
+
+def test_a_rerun_step_takes_its_later_hooks_with_it(tmp_path: Path) -> None:
+    service = _started(tmp_path, CHECKED.format(work="Work."))
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    assert ("check", "completed") in _progress(service)
+    service = _write(tmp_path, CHECKED.format(work="Work harder."))
+
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    assert [change.label for change in stop.plan_change.changes] == ["step `work`"]
+    assert stop.plan_change.reruns == (
+        "step `work`",
+        "`check` (before complete of `work`)",
+    )
+    service.next("TASK-1", caller_role="manager", replan=True)
+    assert _progress(service)[1:4] == [
+        ("work", "in_progress"),
+        ("check", "pending"),
+        ("later", "pending"),
+    ]
+
+
+def test_a_changed_hook_reruns_alone(tmp_path: Path) -> None:
+    service = _started(tmp_path, HOOKED.format(command="true"))
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    service = _write(tmp_path, HOOKED.format(command="echo"))
+
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    assert stop.plan_change.reruns == ("`reject` (before complete of `work`)",)
+    service.next("TASK-1", caller_role="manager", replan=True)
+    progress = _progress(service)
+    assert ("work", "completed") in progress
+    assert ("reject", "completed") in progress
+    state, snapshot = service.load("TASK-1")
+    assert snapshot.plan.items[state.cursor].name == "later"
+
+
+def test_a_moved_step_keeps_its_record_and_an_added_one_runs(tmp_path: Path) -> None:
+    service = _started(tmp_path, THREE_STEPS.format(first="One."))
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    service = _write(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - zero: Zero.
+      - second: Two.
+      - first: One.
+      - third: Three.
+""",
+    )
+
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    kinds = [(change.kind, change.label) for change in stop.plan_change.changes]
+    assert ("added", "step `zero`") in kinds
+    assert any(kind == "moved" for kind, _ in kinds)
+    assert stop.plan_change.reruns == ()
+    resumed = service.next("TASK-1", caller_role="manager", replan=True)
+    assert resumed.item_name == "zero"
+    assert _progress(service)[1:5] == [
+        ("zero", "in_progress"),
+        ("second", "pending"),
+        ("first", "completed"),
+        ("third", "pending"),
+    ]
+    _complete(service)
+    assert service.next("TASK-1", caller_role="manager").item_name == "second"
+
+
+def test_a_removed_step_drops_and_the_rest_keep_their_records(
+    tmp_path: Path,
+) -> None:
+    service = _started(tmp_path, THREE_STEPS.format(first="One."))
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    _complete(service)
+    service.next("TASK-1", caller_role="manager")
+    service = _write(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - first: One.
+      - third: Three.
+""",
+    )
+
+    stop = service.next("TASK-1", caller_role="manager")
+
+    assert stop.plan_change is not None
+    assert [(c.kind, c.label) for c in stop.plan_change.changes] == [
+        ("removed", "step `second`")
+    ]
+    assert stop.plan_change.reruns == ()
+    service.next("TASK-1", caller_role="manager", replan=True)
+    assert _progress(service)[1:3] == [("first", "completed"), ("third", "in_progress")]
+    state, snapshot = service.load("TASK-1")
+    assert snapshot.plan.items[state.cursor].name == "third"
+    assert "task:second:step:step:1" in {
+        record.plan_item_id for record in state.execution_history
     }
 
 

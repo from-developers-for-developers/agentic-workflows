@@ -259,6 +259,7 @@ class InstructionBuilder:
         repetition = repeat_communication(
             state, plan, choosing.index if choosing is not None else state.cursor
         ) or verification_communication(state, plan, state.cursor)
+        repaired_step, repaired_assignment = _repaired_work(state, plan, item)
         return replace(
             built,
             fix_required=built.fix_required or source_fix,
@@ -307,6 +308,8 @@ class InstructionBuilder:
             role=shape.role if shape else "worker",
             subagents=shape.subagents if shape else True,
             assignment_token=worker_token(state),
+            repaired_step=repaired_step,
+            repaired_assignment=repaired_assignment,
             profile_instruction=(
                 built.profile_instruction
                 or (
@@ -1466,6 +1469,43 @@ def _current_assignment(
     if active is not None and active.start <= state.cursor < active.stop:
         return active
     return assignment_at(plan, state.cursor, runtime=state.workflow_runtime)
+
+
+def _repaired_work(
+    state: ExecutionState, plan: WorkflowPlan, item: PlanItem | None
+) -> tuple[str | None, str | None]:
+    """The step a repair assignment repairs and the assignment that performed it.
+
+    A rule-verification repair repairs its source step, last performed by the
+    source's own assignment or an earlier repair of it; a handler repair
+    follows the last assignment a worker performed work in. Both None when the
+    cursor is not on a repair in the ``auto`` runtime.
+    """
+    if state.workflow_runtime != "auto" or item is None:
+        return None, None
+    by_id = {entry.id: entry for entry in plan.items}
+    source = by_id.get(item.repair_of) if item.repair_of is not None else None
+    if source is None and not needs_repair(state):
+        return None, None
+    # Each assignment that did work, with the step of its latest work.
+    performed: dict[str, str] = {}
+    for record in (*state.execution_history, *state.item_executions):
+        entry = by_id.get(record.plan_item_id)
+        if (
+            record.worker_assignment is None
+            or entry is None
+            or not (record.attempts or record.repair_artifacts)
+        ):
+            continue
+        if source is not None:
+            if source.id in {entry.id, entry.repair_of}:
+                performed[record.worker_assignment] = source.name
+        elif entry.verifies is None and entry.verification_hook is None:
+            performed[record.worker_assignment] = entry.step
+    for token, _ in reversed(state.assignment_log):
+        if token != state.assignment_token and token in performed:
+            return performed[token], token
+    return None, None
 
 
 def _completed_items(

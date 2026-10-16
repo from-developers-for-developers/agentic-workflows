@@ -655,6 +655,10 @@ class Instruction:
     # The open assignment's token in the ``auto`` runtime, carried by every
     # worker command the page prints.
     assignment_token: str | None = None
+    # A repair assignment's earlier work: the step it repairs and the
+    # assignment that last performed it, whose worker may take the repair.
+    repaired_step: str | None = None
+    repaired_assignment: str | None = None
     # The worker's assignment ended with this command: ww's report of it,
     # which the worker returns to the manager verbatim.
     handoff_block: HandoffBlock | None = None
@@ -806,6 +810,8 @@ class Instruction:
             "disputes": [dispute.to_dict() for dispute in self.disputes],
             "manager_only": self.manager_only,
             "assignment_token": self.assignment_token,
+            "repaired_step": self.repaired_step,
+            "repaired_assignment": self.repaired_assignment,
             "handoff_block": (
                 self.handoff_block.to_dict() if self.handoff_block else None
             ),

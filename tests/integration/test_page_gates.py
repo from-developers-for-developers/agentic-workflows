@@ -34,6 +34,8 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
             f"./ww instruction TASK-1 --run 01-task --role worker --assignment {TOKEN}",
             "Pass only this command",
         ),
+        "environment context": ("belongs in an automatic mode", "`ww.local.yaml`"),
+        "own settings": ("do not carry over",),
         "handoff block": ('"Handoff to manager" block', f"assignment `{TOKEN}`"),
     },
     "step-auto-worker": {

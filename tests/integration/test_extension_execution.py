@@ -348,7 +348,9 @@ def test_an_extension_handler_runs_and_keeps_its_own_state(tmp_path: Path) -> No
     }
 
 
-def test_a_run_uses_the_extension_settings_frozen_in_its_plan(tmp_path: Path) -> None:
+def test_a_run_adopts_edited_extension_settings_without_stopping(
+    tmp_path: Path,
+) -> None:
     _project(tmp_path)
     config = tmp_path / "ww.json"
     config.write_text(
@@ -363,7 +365,9 @@ def test_a_run_uses_the_extension_settings_frozen_in_its_plan(tmp_path: Path) ->
         encoding="utf-8",
     )
     resumed = _service(tmp_path)
-    resumed.next("TASK-SETTINGS")
+    page = resumed.next("TASK-SETTINGS")
+    assert page.plan_change is None
+    assert page.item_name == "work"
     resumed.complete(
         "TASK-SETTINGS",
         (("note", "hello"),),
@@ -374,7 +378,46 @@ def test_a_run_uses_the_extension_settings_frozen_in_its_plan(tmp_path: Path) ->
     recorded = json.loads(
         (tmp_path / ".ww/ext/acme/notes/log.jsonl").read_text(encoding="utf-8")
     )
-    assert recorded["marker"] == "original"
+    assert recorded["marker"] == "changed"
+
+
+def test_a_changed_configuration_adopts_an_extension_fix_without_replanning(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    service = _service(tmp_path)
+    start_after_init(service, "task", "TASK-FIXED", agent="codex")
+    _, before = service.load("TASK-FIXED")
+    extension_path = tmp_path / "ext/acme/notes/extension.py"
+    extension_path.write_text(
+        extension_path.read_text(encoding="utf-8") + "\n# fixed after compile\n",
+        encoding="utf-8",
+    )
+    workflow = tmp_path / "ww.yaml"
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8")
+        + "  - name: other\n    steps:\n      - x: X.\n",
+        encoding="utf-8",
+    )
+
+    resumed = _service(tmp_path)
+    page = resumed.next("TASK-FIXED")
+
+    assert page.plan_change is None
+    assert page.item_name == "work"
+    _, after = resumed.load("TASK-FIXED")
+    (planned,) = (
+        item.payload_as(Extension)
+        for item in after.plan.items
+        if item.kind == "extension"
+    )
+    (frozen,) = (
+        item.payload_as(Extension)
+        for item in before.plan.items
+        if item.kind == "extension"
+    )
+    assert planned.fingerprint != frozen.fingerprint
+    assert after.configuration_digest != before.configuration_digest
 
 
 def test_dispatch_accepts_an_in_place_fix_of_the_same_extension_version(

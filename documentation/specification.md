@@ -35,8 +35,11 @@ and `ww docs examples` (`docs` is read-only and takes no project state).
   with `ww/git` listed in the settings, `{{ww.git.branch}}` (the task's
   branch), `{{ww.git.base_branch}}` (the branch it was created from) and
   `{{ww.git.branch_strategy}}` (the branch format key in use). Any other
-  `ww.` name is an error at load, and a value its extension cannot give yet,
-  such as the branch before ww/git recorded one, stops the task before an
+  `ww.` name is an error at load. Without a record, ww/git derives the
+  branch values from its settings and git where it can, and `ww lint` warns
+  about a workflow reading `{{ww.git.*}}` with no hook running
+  `start-task-branch` or `create-worktree`. A value its extension cannot give
+  yet, such as a task branch that does not exist yet, stops the task before an
   agent step reading it starts (`operator_reason: value_unavailable`;
   `next --retry` checks again) and fails an automatic handler reading it.
 
@@ -1028,6 +1031,10 @@ worker. The handler's agent/model/reasoning/profile guidance applies to its
 repair assignment. Repair artifacts and command output survive reloads and are
 available through `artifacts`. JSON repair pages include `handler_repair` with
 the item ID, attempt count, limit, instruction, output references and artifacts.
+The manager's bootstrap page of a repair carries `repaired_step` and
+`repaired_assignment`, the repaired step and the assignment whose worker last
+performed it, to which the manager gives the command if it is still
+available.
 
 The handler stops for the operator with `operator_reason: fix_limit` after
 `limits.fixes` failures (default 3), using the same counting policy as checks.
@@ -2057,8 +2064,9 @@ At a `check_disputed` stop the operator answers with `next`:
 
 At the `fix_limit` stop `--force` waives every check and rule of the step. The
 step record keeps its waivers as `checks_waived`, a mapping of ID to reason.
-`next --replan` (take the changed workflow definition from the first changed
-item on; confirmed when it reruns finished steps) and `next --keep-plan` (carry
+`next --replan` (take the changed workflow definition, rerunning only the
+steps and hooks it changed with the rest of their step; confirmed when it
+reruns finished steps) and `next --keep-plan` (carry
 on with the saved plan) answer the `plan_changed` stop; see
 [features.md](features.md#when-the-workflow-changes-mid-run).
 `next --yes` confirms `--retry`, `--force`, or a rewinding `--replan`

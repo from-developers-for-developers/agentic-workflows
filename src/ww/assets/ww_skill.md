@@ -62,7 +62,10 @@ change, start from step 1 then.
    `ww.yaml` or ww's source to work out what to do next. Read ww's
    configuration (`ww.yaml`, `ww.json`, rule files, checks) only at the paths
    a page gives or through `$WW_ROOT`, never in a task's worktree, whose
-   branch may hold another copy or none, and never browse `.ww/config/`. For a handler repair
+   branch may hold another copy or none, and never browse `.ww/config/`.
+   Run `./ww` without `--root` from the checkout or any of its worktrees: ww
+   finds the shared store itself, and `start` refuses a `--root` naming a
+   worktree. For a handler repair
    assignment, fix the cause and complete with an artifact; ww retries the
    command. In `auto`, the manager dispatches the repair with `next`. When
    ww reports `awaiting_operator` (a failed handler or work, an interrupted

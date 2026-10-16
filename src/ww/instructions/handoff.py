@@ -86,7 +86,11 @@ def _step(
     record: PlanItemExecution,
     root: Path,
 ) -> HandoffStep | None:
-    if record.status == "completed" and not record.attempts:
+    if (
+        record.status == "completed"
+        and not record.attempts
+        and not record.repair_artifacts
+    ):
         return None
     if record.status == "completed":
         outcome = "completed"
@@ -140,7 +144,7 @@ def handoff_markdown(block: HandoffBlock) -> str:
     lines = [f"{HANDOFF_TITLE} · assignment {block.token}", ""]
     lines.append("Steps:")
     if not block.steps:
-        lines.append("- none completed")
+        lines.append("- none recorded")
     for step in block.steps:
         lines.append(f"- {step.name}: {step.outcome}")
         if step.artifact:

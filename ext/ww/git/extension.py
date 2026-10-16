@@ -560,6 +560,33 @@ def _record_branch(context: ExtensionContext, **fields: Any) -> None:
     )
 
 
+def _adopt_branch(
+    context: ExtensionContext, branch: str, base: str, worktree: str | None = None
+) -> None:
+    """Record a task branch ww/git found ready instead of creating it.
+
+    A retried or resumed start, or a checkout already on the task branch,
+    skips the creation that records the branch; this back-fills the record
+    so ``{{ww.git.*}}`` and later handlers still find it.  An existing
+    record for this branch is kept, and a base that is the branch itself
+    (the checkout's current branch standing in for an unconfigured base) is
+    not a base and records nothing.
+    """
+    if base == branch:
+        return
+    record = _recorded_branch(context, context.task_id or "")
+    if record is not None and record.get("branch") == branch:
+        return
+    _record_branch(
+        context,
+        task_id=context.task_id,
+        workflow=context.workflow,
+        branch=branch,
+        base=base,
+        worktree=worktree,
+    )
+
+
 def _recorded_branch(context: ExtensionContext, task_id: str) -> dict[str, Any] | None:
     for line in reversed(context.store.read_lines(BRANCHES_FILE)):
         if not line:
@@ -1395,26 +1422,19 @@ def _start_branch(context: ExtensionContext) -> ExtensionResult:
                 worktree=None,
             )
             return ExtensionResult(True, output=f"created {branch} from {base}")
+        _adopt_branch(context, branch, base)
         if _root_uses_task_branch(context, branch):
             return ExtensionResult(
                 True,
                 output=f"primary checkout already uses {branch}",
                 working_directory=repository,
             )
-        if _recorded_branch(context, context.task_id or "") is None:
-            _record_branch(
-                context,
-                task_id=context.task_id,
-                workflow=context.workflow,
-                branch=branch,
-                base=base,
-                worktree=None,
-            )
         return ExtensionResult(True, output=f"branch {branch} is ready")
 
     if _branch_exists(context, branch, cwd=repository):
         # Retried, or resumed after a switch: adopt the branch instead of
         # failing, and never re-point it at base.
+        _adopt_branch(context, branch, base)
         if _current_branch(context, cwd=repository) == branch:
             return ExtensionResult(True, output=f"already on {branch}")
         switched = _git(context, "switch", branch, cwd=repository)
@@ -1466,6 +1486,7 @@ def _create_worktree(context: ExtensionContext) -> ExtensionResult:
         return ExtensionResult(False, error=error)
     assert branch is not None and base is not None
     if _root_uses_task_branch(context, branch):
+        _adopt_branch(context, branch, base)
         return ExtensionResult(
             True,
             output=f"primary checkout already uses {branch}",
@@ -1559,14 +1580,62 @@ def _recorded_field(context: ExtensionContext, key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _derived_branch(context: ExtensionContext) -> tuple[str | None, str | None]:
+    """The task's (branch, base) from configuration and git, without a record.
+
+    For a task whose workflow never ran ``start-task-branch``, or ran it
+    before it recorded adopted branches.  Each value is given only where it
+    is well-defined, else ``None``:
+
+    - working on the current branch (no ``separate_branch``, no worktrees),
+      the branch is the primary checkout's current branch and the base is
+      the configured one, else that same branch; nothing is recorded in
+      this mode, since a record would make ``ww record`` read the task's
+      commits as ``base..branch`` instead of finding those naming the task;
+    - with a task branch, the branch is the rendered task branch once it
+      exists, and the base is the parent task's branch or the configured
+      one, never the checkout's current branch, which may be the task
+      branch itself by now.
+    """
+    if not context.task_id:
+        return None, None
+    settings = _task_settings(context)
+    repository = _repository(context)
+    configured, error = _resolve_base_branch(
+        context, settings.base_branch_for(_lane(context))
+    )
+    if error:
+        configured = None
+    if not settings.separate_branch and not settings.worktrees:
+        current = _current_branch(context, cwd=repository)
+        if not current or current == "HEAD":
+            return None, configured
+        return current, configured or current
+    branch_format = settings.branch_format(
+        _lane(context), context.values.get(BRANCH_NAMING_STRATEGY)
+    )
+    if branch_format is None:
+        return None, configured
+    branch, parent_branch, error = _branch_name(context, branch_format)
+    if error or branch is None or not _branch_exists(context, branch, cwd=repository):
+        branch = None
+    return branch, parent_branch or configured
+
+
 def _branch_variable(context: ExtensionContext) -> str | None:
-    """``{{ww.git.branch}}``: the task's branch, once ww/git recorded it."""
-    return _recorded_field(context, "branch")
+    """``{{ww.git.branch}}``: the task's branch.
+
+    The one ww/git recorded, else one derived by :func:`_derived_branch`.
+    """
+    return _recorded_field(context, "branch") or _derived_branch(context)[0]
 
 
 def _base_branch_variable(context: ExtensionContext) -> str | None:
-    """``{{ww.git.base_branch}}``: the branch the task's branch was made from."""
-    return _recorded_field(context, "base")
+    """``{{ww.git.base_branch}}``: the branch the task's branch was made from.
+
+    The one ww/git recorded, else one derived by :func:`_derived_branch`.
+    """
+    return _recorded_field(context, "base") or _derived_branch(context)[1]
 
 
 def _branch_strategy_variable(context: ExtensionContext) -> str | None:
@@ -1699,6 +1768,7 @@ EXTENSION = Extension(
             ExtensionVariable("base_branch", _base_branch_variable),
             ExtensionVariable("branch_strategy", _branch_strategy_variable),
         ),
+        recorded_by=("start-task-branch", "create-worktree"),
     ),
     reserved_paths=_reserved_paths,
     claims_task=_claims_task,

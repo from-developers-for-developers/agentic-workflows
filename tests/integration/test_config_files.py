@@ -437,3 +437,32 @@ def test_root_at_a_worktree_of_a_ww_project_warns_of_a_separate_store(
     assert "ww warning: --root" in warned
     assert f"separate store in {worktree.resolve()}/.ww" in warned
     assert "ww warning" not in primary
+
+
+_START = ("start", "TASK-1", "-w", "task", "-a", "codex", "--requirements", "Do it.")
+
+
+def test_start_refuses_root_at_a_worktree_of_a_ww_project(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    worktree = _with_worktree(project)
+
+    assert main(["--root", str(worktree), *_START]) == 1
+
+    error = capsys.readouterr().err
+    assert f"--root {worktree.resolve()} is a git worktree" in error
+    assert "Omit --root" in error
+    assert "--separate-store" in error
+    assert not (worktree / ".ww").exists()
+
+
+def test_start_with_separate_store_keeps_the_task_in_the_worktree(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    worktree = _with_worktree(project)
+
+    assert main(["--root", str(worktree), *_START, "--separate-store"]) == 0
+
+    assert "ww error" not in capsys.readouterr().err
+    assert (worktree / ".ww/tasks/TASK-1").is_dir()
+    assert not (project / ".ww/tasks/TASK-1").exists()

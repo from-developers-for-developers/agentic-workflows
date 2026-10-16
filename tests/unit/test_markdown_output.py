@@ -365,9 +365,70 @@ def test_orchestrate_manager_delegates_a_worker_bootstrap_command() -> None:
     assert "Pass only this command to the selected worker" in rendered
     assert "./ww instruction TASK-1 --role worker" in rendered
     assert "with no task details or commentary" in rendered
+    assert "belongs in an automatic mode" in rendered
+    assert '`ww.local.yaml` with `workflows: "*"`' in rendered
+    assert "worker do not carry over" in rendered
+    assert "keeps the worker's default" in rendered
+    assert "The work this assignment repairs" not in rendered
     assert "### Working directory" not in rendered
     assert "### Work instruction" not in rendered
     assert "### Worker completion command" not in rendered
+
+
+def test_a_repair_bootstrap_names_the_worker_that_did_the_work() -> None:
+    instruction = Instruction(
+        task_id="TASK-1",
+        workflow="task",
+        status="in_progress",
+        item_id="item-2",
+        item_name="develop-fix-1",
+        stage="Workflow step",
+        step="develop",
+        parent=None,
+        item_status="in_progress",
+        action_kind="prompt",
+        action_text="Fix the findings.",
+        workflow_runtime="auto",
+        caller_role="manager",
+        next_role="worker",
+        requested_agent="codex",
+        assignment_token="0a1b2c3d",
+        repaired_step="develop",
+        repaired_assignment="9f8e7d6c",
+    )
+
+    rendered = MarkdownOutputAdapter().render_instruction(instruction)
+
+    assert (
+        "The work this assignment repairs, `develop`, was performed by the "
+        "worker of assignment `9f8e7d6c`: if that worker is still available, "
+        "give this command to it rather than to a new one." in rendered
+    )
+
+
+def test_a_worker_reported_failure_is_not_called_an_unsaved_result() -> None:
+    instruction = Instruction(
+        task_id="TASK-1",
+        workflow="task",
+        status="failed",
+        item_id="item-1",
+        item_name="develop",
+        stage="Workflow step",
+        step="develop",
+        parent=None,
+        item_status="failed",
+        action_kind="prompt",
+        action_text="Implement the requested change.",
+        error="agent item 'develop' failed: the API is down",
+        operator_reason="work_failed",
+        result_saved=False,
+    )
+
+    rendered = MarkdownOutputAdapter().render_instruction(instruction)
+
+    assert "agent item 'develop' failed: the API is down" in rendered
+    assert "The worker reported this failure itself with `ww fail`" in rendered
+    assert "was not saved" not in rendered
 
 
 def test_orchestrate_worker_status_renders_the_full_assignment() -> None:

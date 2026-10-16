@@ -13,9 +13,11 @@ Requested worker:
 - Agent: `codex` (advisory)
 - Profile: `none`
 
+These settings are this assignment's own: a previous step's model, reasoning and worker do not carry over. A setting not listed here keeps the worker's default; launch a new worker rather than reuse one launched with other settings.
+
 ### Worker bootstrap
 
-Pass only this command to the selected worker, with no task details or commentary; it gives the worker its whole assignment:
+Pass only this command to the selected worker, with no task details or commentary; it gives the worker its whole assignment. Host or environment context a worker needs belongs in an automatic mode, which every agent step page shows (for example in the untracked `ww.local.yaml` with `workflows: "*"`), not in notes passed with the command:
 
 ```console
 ./ww instruction TASK-1 --run 01-task --role worker --assignment 0a1b2c3d

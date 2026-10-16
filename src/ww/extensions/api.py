@@ -413,10 +413,16 @@ class ExtensionNamespace:
     are new names, available whenever the project configures the extension
     (a section in the settings, even an empty one), not only when a handler
     of the extension is referenced.
+
+    ``recorded_by`` names this extension's handlers that make the values
+    available for a task, such as ww/git's ``start-task-branch``; ``ww lint``
+    warns about a workflow whose steps read the namespace while none of its
+    hooks run one of them.
     """
 
     name: str
     variables: tuple[ExtensionVariable, ...]
+    recorded_by: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _SEGMENT.fullmatch(self.name):
@@ -433,6 +439,10 @@ class ExtensionNamespace:
         names = [value.name for value in self.variables]
         if len(names) != len(set(names)):
             raise ValueError("extension namespace variable names must be unique")
+        if not isinstance(self.recorded_by, tuple) or not all(
+            isinstance(handler, str) and handler for handler in self.recorded_by
+        ):
+            raise TypeError("extension namespace recorded_by must name handlers")
 
 
 @dataclass(frozen=True)
@@ -550,6 +560,13 @@ class Extension:
                 isinstance(line, str) for line in mode.description
             ):
                 raise TypeError("extension mode description must be a tuple of strings")
+        if self.namespace is not None:
+            unknown = set(self.namespace.recorded_by) - set(self.handlers_by_name)
+            if unknown:
+                raise ValueError(
+                    "extension namespace recorded_by names unknown handlers: "
+                    + ", ".join(sorted(unknown))
+                )
 
     @property
     def identifier(self) -> str:

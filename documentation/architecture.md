@@ -929,7 +929,19 @@ continue, the task's own or a child's parent's, has nothing left; the block
 then ends by pointing at `status`, since `next` on a completed run is
 refused and no page may name a command that errors. The service takes the open
 assignment's items before a worker command runs, so the block can still name
-them after the command closed the assignment. When the assignment ended with
+them after the command closed the assignment. Every agent item dispatched in
+an assignment, and the record a handler repair repairs, carries the
+assignment's token as `worker_assignment` (moved with the token on
+`--reassign`), so the block recovers an item from `execution_history` when
+its record was replaced by a goto, replan, retry or verification round, and
+a completed record that only holds repair artifacts still counts; an empty
+list reads "none recorded". A manager page after the worker's own `fail`
+(`operator_reason: work_failed`) presents the error as the worker's reported
+reason rather than the saved/not-saved line other stops use. A repair's
+bootstrap page carries `Instruction.repaired_step` and
+`repaired_assignment`: the step a rule-repair or handler repair serves and
+the latest assignment whose worker performed it, to which the manager gives
+the command when that worker is still available. When the assignment ended with
 an assessment, the block also carries that step's name and its pending
 outcome labels (`choosing_outcome_of`, `outcomes`, from `pending_assessment`),
 so its manager line is one `next --outcome <label>` command per label rather
@@ -1090,13 +1102,21 @@ reference and declared output names rather than the callable, so a persisted
 snapshot stays readable without loading anyone's code, and an unknown extension
 or item fails at compile time — before a task exists.
 
-The item also freezes the public API version, extension version, provider
+The item also records the public API version, extension version, provider
 source, source fingerprint, and that extension's settings. Dispatch uses the
-frozen settings and rejects a different version, API version, or provider
-source; the extension receives a detached copy of the frozen settings. The
+recorded settings and rejects a different version, API version, or provider
+source; the extension receives a detached copy of the recorded settings. The
 fingerprint is recorded for audit only: like ww's own code, an
 extension may be fixed in place while a task is in flight, so a change in
 behaviour is signalled by a version bump rather than by the bytes of the file.
+For the same reason none of these fields is part of an item's definition when
+a run compares plans (`replanning._EXTENSION_ADOPTED`): the configuration
+digest covers the root's extension settings, and whenever a run takes a new
+digest, by replan, `keep_plan` or a change that leaves its template as it is,
+its planned extension items adopt the current identity and settings without
+a `plan_changed` stop. The digest does not cover the extension's code, so a
+new version or source with the configuration unchanged adopts nothing and is
+still rejected at dispatch.
 Project-extension fingerprints cover `extension.py`; installed-provider
 fingerprints cover distribution name, version, and entry-point metadata. The
 plan schema requires identity metadata.
@@ -1239,22 +1259,31 @@ bootstrap request performed the first step, that step's name
 started. The manager's `next` and `instruction` compare the digest first and
 compile only when it differs; `plan_change` then compares the saved template
 with the new one item by item, ignoring placement fields (`id`, `position`,
-`step_ordinals`), and the first difference is the change point. Changes are
-listed by aligning items on their identity (workflow, step, parent, phase,
-name) with `difflib`.
+`step_ordinals`) and an extension item's identity and settings
+(`_EXTENSION_ADOPTED`). Changes are listed by aligning items on their identity
+(workflow, step, parent, phase, name) with `difflib`, as added, removed,
+moved or changed, each changed field with its compact JSON before and after.
 
-The change point is found in the concrete plan through each item's template
-origin: its own ID, or for a verification item the step it verifies. Items
-before it are kept with their records; the new template's items from the
-change point on are appended with fresh records under a `replan-<revision>`
-operation scope, the displaced records move to `execution_history`, and the
-plan revision is bumped. When the change point is at or before the cursor,
-the cursor moves to it and whatever stopped the run there (a failure, an
-input request, an open assignment) is cleared. Expanded per-child
-stages, recognised
-as template items (`child_template`) missing from the concrete plan, and a
-started children step in the rerun range refuse the replan. `keep_plan`
-adopts the new digest without touching the plan, which is also how a change
+The new concrete plan follows the new template's order (`_entries`). Each
+concrete item maps to its template origin: its own ID, or for a generated
+verification or repair item the item it serves. An unchanged template item
+keeps its concrete items, its per-child expansion and generated items
+included, with their records wherever they now sit; a changed or added item
+is the newly compiled one with a fresh record. A fresh item renews every
+later item of the same step, of a step inside it, or of a step around it
+(`_related`), since those finish the work it redoes, and drops generated items
+serving a renewed one; sibling steps keep their records. Fresh records use a
+`replan-<revision>` operation scope, displaced finished records move to
+`execution_history`, and the plan revision is bumped. The cursor moves to
+the earliest fresh item, or stays at the item it was on; when that takes the
+run off its current item (`_rewinds`), whatever stopped the run there (a
+failure, an input request, an open assignment) is cleared. `reruns` names
+only finished items that run again, which is what the operator confirms. A
+changed expanded per-child stage, recognised as template items
+(`child_template`) the run has expanded, and a replan that reruns or moves
+the cursor back past a children step with a record refuse the replan.
+`keep_plan` adopts the new digest and the current extension identity and
+settings without otherwise touching the plan, which is also how a change
 that leaves the run's template as it is gets taken silently.
 
 ## External task identity bootstrap
@@ -1312,7 +1341,9 @@ the task ledger, `.ww` runtime, and configuration remain shared rather than
 being recreated inside the worktree. An explicit `--root` remains authoritative.
 Pointed at a linked worktree of a ww project, it opens a separate store there,
 so every such command warns on stderr that ww without `--root` does not read
-it. A task command that finds no task names the other store when that store
+it, and `start` refuses to create a task in it unless `--separate-store`
+asks for that store deliberately: sandboxed agents passing `--root` from
+their worktree otherwise created tasks the operator's ww never saw. A task command that finds no task names the other store when that store
 holds it: the primary checkout's, under a `--root` at a worktree, or the current
 worktree's own, without `--root`.
 
@@ -1353,6 +1384,18 @@ for a named workflow; structured `argv` execution keeps arguments separate from
 shell syntax. The selected branch is recorded when the task branch is created,
 so later worktree creation, retries, and return-to-base behavior use the same
 resolved value even if a command would subsequently produce something else.
+A handler that finds the task branch ready instead of creating it (it exists
+already, or the checkout is on it) back-fills the record (`_adopt_branch`),
+so `{{ww.git.*}}` and later handlers see it too. Current-branch mode
+records nothing on purpose: a record means "the task has its own branch",
+and direct-work reconciliation would then read `base..branch` instead of
+finding the commits that name the task. With no record, the namespace's
+resolvers derive values from settings and git (`_derived_branch`): the task
+branch only once it exists, its base from the parent's branch or
+`base_branches`, never from whatever the checkout happens to be on. The
+namespace declares `recorded_by` (`start-task-branch`, `create-worktree`),
+and `ww lint` compiles every workflow and warns when one reads an extension
+namespace whose `recorded_by` handlers none of its items run.
 
 The git extension treats that selected checkout as a safety boundary. Before
 its commit handler stages work, it confirms the workspace is the Git worktree
@@ -1561,8 +1604,9 @@ resolved per plan item, not per task, because an item may work in the root
 while its task works in a project: `PlanCompilationOptions.project` reaches the
 action resolver, which asks `ExtensionRegistry.settings(identifier, project)`
 for items whose `workdir` is `task` or `project` and for the root's settings
-otherwise, and the result is frozen into the plan like every extension
-setting. Dispatch, preflight checks, and recovery take the frozen copy from
+otherwise, and the result is recorded in the plan like every extension
+setting, then refreshed from the root's settings whenever the run adopts a
+new configuration digest. Dispatch, preflight checks, and recovery take the frozen copy from
 one place, `ActionExecutor.item_settings`, which falls back to the same
 per-item resolution. Reserved-path and branch-strategy queries take the
 project too, so ID generation and `discover` see what a task there will see.

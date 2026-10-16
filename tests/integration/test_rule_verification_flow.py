@@ -895,6 +895,46 @@ def test_the_handoff_shows_the_held_re_check_after_a_rejection(
     )
 
 
+
+def test_a_focused_repair_names_the_assignment_that_performed_the_step(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path, TWO_HINTS, store=_converted(CLI))
+    service = _started(root, runtime="auto")
+    service.next("TASK-1", caller_role="manager")
+    token = assignment_token(service, "TASK-1")
+    (root / "app.py").write_text("foo\n", encoding="utf-8")
+    service.complete(
+        "TASK-1",
+        artifact="Built.",
+        summary_for_next="Built.",
+        caller_role="worker",
+        assignment=token,
+    )
+    service.next("TASK-1", caller_role="manager")
+    failing = {
+        "id": "develop/2",
+        "status": "judged",
+        "verdict": "fail",
+        "failures": [{"file": "app.py", "what": "unclear name"}],
+    }
+    service.complete(
+        "TASK-1",
+        artifact="Findings.",
+        rule_results=(json.dumps(failing),),
+        caller_role="worker",
+        assignment=assignment_token(service, "TASK-1"),
+    )
+
+    repair = service.next("TASK-1", caller_role="manager")
+
+    assert repair.repaired_step == "develop"
+    assert repair.repaired_assignment == token
+    assert (
+        f"The work this assignment repairs, `develop`, was performed by the "
+        f"worker of assignment `{token}`" in _markdown(repair)
+    )
+
 def test_next_no_longer_takes_rule_decisions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
