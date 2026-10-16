@@ -8,8 +8,8 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-16
 
-- Added: regular steps can attach an `assess` decision after their work in the same agent assignment, with retained local reassessment and focused outcome workers. Goto permissions are derived from assessment and verification branches.
-- Deprecated: `assess.question`; use `assess.assess`. Existing syntax remains accepted with visible warnings; see [deprecations](documentation/deprecations.md).
+- Added: steps can attach assessments with retained reassessment; goto edges come from declared branches.
+  `assess.question` is deprecated in favor of `assess.assess`, with migration warnings. `5110bd9`
 
 ## 2026-10-15
 
