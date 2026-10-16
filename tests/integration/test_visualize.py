@@ -220,6 +220,26 @@ def test_the_server_answers_the_page_and_its_data(server: VisualizerServer) -> N
     assert _get(server, "/nowhere")[0] == 404
 
 
+def test_a_request_naming_another_host_is_refused(server: VisualizerServer) -> None:
+    port = server.server_address[1]
+    for host, expected in (
+        (f"attacker.example:{port}", 403),
+        ("127.0.0.1:1", 403),
+        ("", 403),
+        (f"localhost:{port}", 200),
+        (f"127.0.0.1:{port}", 200),
+    ):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/tasks", headers={"Host": host}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                status = response.status
+        except urllib.error.HTTPError as error:
+            status = error.code
+        assert (host, status) == (host, expected)
+
+
 def test_a_watched_change_is_announced_and_refreshes_the_data(
     server: VisualizerServer,
 ) -> None:

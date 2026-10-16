@@ -35,6 +35,8 @@ _PORT_SPAN = 10000
 # How often the event stream sends a comment, so a closed tab is noticed and
 # proxies keep the connection.
 _HEARTBEAT = 15.0
+# The host names a request to this server may name; any other is refused.
+_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
 
 
 def visualizer_port(storage: Storage) -> int:
@@ -87,6 +89,9 @@ class _Handler(BaseHTTPRequestHandler):
         """The page is served to a person; its request log has no reader."""
 
     def do_GET(self) -> None:  # noqa: N802 - http.server's name
+        if not self._addressed_here():
+            self._send(403, b"forbidden", "text/plain")
+            return
         url = urlsplit(self.path)
         query = {key: values[0] for key, values in parse_qs(url.query).items()}
         watcher = self.server.watcher
@@ -136,6 +141,19 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"error": str(error)}, 500)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _addressed_here(self) -> bool:
+        """Whether the request names this server as the host it was sent to.
+
+        Binding to 127.0.0.1 keeps other machines out, and the missing CORS
+        headers keep other sites from reading a response, but a site whose
+        domain is re-pointed at 127.0.0.1 (DNS rebinding) is then same-origin
+        with the page. Its requests still carry that domain in ``Host``, so
+        only a loopback name on this server's port is answered.
+        """
+        port = self.server.server_address[1]
+        allowed = {f"{name}:{port}" for name in _LOOPBACK_NAMES}
+        return (self.headers.get("Host") or "").lower() in allowed
 
     def _events(self) -> None:
         """Say ``change`` with what changed, each time a watched file does."""

@@ -1761,7 +1761,9 @@ configuration, not a snapshot, so edits show while it runs.
   `/api/task?id=`, `/api/artifact?task=&run=&ref=` (only references the run
   records) and `/api/events`, a server-sent event stream whose `change`
   event says whether the configuration, the tasks or both changed. Built data
-  is cached per watcher version.
+  is cached per watcher version. A request whose `Host` is not `127.0.0.1` or
+  `localhost` on the server's port is refused with 403, against DNS
+  rebinding.
 
 ## Agent hooks
 

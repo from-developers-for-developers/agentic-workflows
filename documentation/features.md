@@ -682,7 +682,9 @@ YAML level and import, the JSON settings levels, the rule files and the
 rule-automation store, including levels that have no file yet — and the task
 store, and pushes a change event; the page refetches only what changed and
 keeps the open cards, panels and scroll position. Only artifacts a run
-records are served.
+records are served, and only to a request addressed to `127.0.0.1` or
+`localhost` on the page's port, so another site cannot read the page by
+pointing its own domain at this machine.
 
 ## Setting ww up: learning and suggestions
 
