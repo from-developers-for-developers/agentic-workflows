@@ -1724,6 +1724,45 @@ completed sheet records an interaction; the agent applies fields and explicit
 transitions and completes the ordinary step. This avoids conflating an operator's
 answer with successful resolution, external reporting, or acceptance checks.
 
+## The visualizer
+
+`ww visualize` is an extra on top of the engine, like the operator page:
+`../src/ww/visualize/` holds everything UI-specific (the server, the page, the
+view models and the watcher), and the core knows nothing of it beyond the CLI
+handler. The command is read-only (no execution log) and reads the checkout's
+configuration, not a snapshot, so edits show while it runs.
+
+- `project.py` loads the extension registry and the configuration afresh
+  through `load_configuration`; a load error becomes part of the page, not a
+  failure of the server.
+- `atlas.py` builds the Workflows tab from each workflow's compiled plan
+  (`ww.plan.compile_for_any_agent`, shared with `lint`), using the plan's own
+  container fields, so inherited steps, resolved handler groups, hooks, rules,
+  checks, gotos, items, children and hand-offs are what ww would run; the
+  definitions add only whether an assessment is standalone and its outcome
+  labels. The library comes from `rules_listing`, the rule statistics, the
+  handlers, documents, modes, profiles and composed settings.
+- `tasks.py` builds the Tasks tab through the task storage adapter,
+  `unreadable_tasks`, `operator_reason`, extension namespace values and the
+  service's artifact listing. A step's rules come from the same
+  `rule_outcomes` that writes its artifact's `## Rules` section, with
+  `item_reports` and `rule_verification.recorded_verdicts` for a look back at
+  any item: `rule_outcomes` and `item_reports` take an item `index` (the
+  cursor by default), and `recorded_verdicts` reads what each verification
+  item submitted once the held completion is gone.
+- `watch.py` polls modification times and sizes of the files the core names
+  (`config.composition.configuration_files` for the YAML levels and their
+  imports, the settings levels, the declared rule files and the
+  rule-automation store) and of `.ww/tasks` and `.ww/ext`, keeping one
+  version per kind.
+- `server.py` is a standard-library `ThreadingHTTPServer` bound to
+  `127.0.0.1` on a port hashed from the project (30000–39999; the operator
+  page uses 40000 and up). It serves `/`, `/api/atlas`, `/api/tasks`,
+  `/api/task?id=`, `/api/artifact?task=&run=&ref=` (only references the run
+  records) and `/api/events`, a server-sent event stream whose `change`
+  event says whether the configuration, the tasks or both changed. Built data
+  is cached per watcher version.
+
 ## Agent hooks
 
 See [documentation/agent-hooks.md](agent-hooks.md) for the user-facing

@@ -21,6 +21,8 @@ An installation carries the same-version copies of all three: read them with
   the workflows ww ships itself.
 - A read-only profile of the checkout (`inspect`): branches, activity, fix
   signals, hot paths, manifests and verify commands, and conventions.
+- A live, read-only page of the project's workflows and tasks (`visualize`),
+  served on 127.0.0.1 for the operator.
 - Onboarding state, and setup fragments that ww validates and places in the
   shared or local configuration after asking.
 - Built-in learning and setup workflows, started by the `ww-setup` skills:
@@ -652,6 +654,35 @@ Outside a Git repository only the layout and the agent instruction files are
 reported, under a line saying the Git facts are unavailable. An empty
 repository, a shallow clone or one without remotes is reported as it is; a Git
 call that fails or takes too long leaves only its own fact not found.
+
+## Visualize workflows and tasks
+
+`ww visualize` is for the operator, not the agent: it serves a read-only page
+of the project on `127.0.0.1` and opens it in the browser, until Ctrl+C stops
+it. It never changes ww state and keeps no execution log.
+
+```console
+$ ./ww visualize
+ww visualize: http://127.0.0.1:34817/ (Ctrl+C to stop)
+$ ./ww visualize --port 8765 --no-open   # print the address only
+```
+
+The port is fixed per project, so a bookmarked page finds it again; when it is
+in use, ww says a page may already be open there and suggests `--port`.
+
+The page has two tabs:
+
+| Tab | Shows |
+| --- | --- |
+| Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. A configuration that does not load is shown with ww's error; the Tasks tab still works. |
+| Tasks | Every task in the store, active ones first, with status filters and search; a task that cannot be read is listed with the reason. A task shows its outcome, why it waits for the operator, branch and other extension values, metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. Each step also shows how its rules worked: which applied, each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes, and rules that were not applicable. |
+
+The page is live. ww watches the configuration as the checkout has it — every
+YAML level and import, the JSON settings levels, the rule files and the
+rule-automation store, including levels that have no file yet — and the task
+store, and pushes a change event; the page refetches only what changed and
+keeps the open cards, panels and scroll position. Only artifacts a run
+records are served.
 
 ## Setting ww up: learning and suggestions
 

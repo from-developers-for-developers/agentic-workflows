@@ -51,7 +51,7 @@ ww-agentic-workflows = "ww.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ww"]
-include = ["src/ww/assets/*.md", "src/ww/assets/workflows/*.yaml", "src/ww/operator_ui/*.html"]
+include = ["src/ww/assets/*.md", "src/ww/assets/workflows/*.yaml", "src/ww/operator_ui/*.html", "src/ww/visualize/*.html"]
 # The design documents ship as copies of the canonical files; `ww docs` reads them.
 [tool.hatch.build.targets.wheel.force-include]
 "ext/ww/git/extension.py" = "ww/_bundled_extensions/ww/git/extension.py"

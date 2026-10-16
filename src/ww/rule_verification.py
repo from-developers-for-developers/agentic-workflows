@@ -940,6 +940,33 @@ def verdicts_of(results: tuple[RuleResult, ...], by: str) -> tuple[RuleVerdict, 
     )
 
 
+def recorded_verdicts(
+    plan: WorkflowPlan, state: ExecutionState, index: int
+) -> tuple[RuleVerdict, ...]:
+    """The verdicts the verifiers of item ``index`` recorded, for a look back.
+
+    A held completion carries its verdicts only while it is held; the
+    verification items keep what each verifier submitted.  Each rule's
+    latest verdict wins, in plan order.
+    """
+    target = plan.items[index].id
+    found: dict[str, RuleVerdict] = {}
+    for item, record in zip(plan.items, state.item_executions, strict=True):
+        if item.verifies is None or item.verifies.item_id != target:
+            continue
+        if not record.verification_results:
+            continue
+        try:
+            results = parse_rule_results(
+                record.verification_results, record.verification
+            )
+        except StateError:
+            continue
+        for verdict in verdicts_of(results, item.id):
+            found[verdict.id] = verdict
+    return tuple(found.values())
+
+
 def judged_report(
     verdicts: tuple[RuleVerdict, ...],
     attempt: int,

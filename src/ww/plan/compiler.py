@@ -26,7 +26,7 @@ from ww.contracts import (
     StepRole,
 )
 from ww.control import child_workflow, workflow_transition
-from ww.discovery import AgentDiscovery
+from ww.discovery import AGENT_DIRECTORIES, AgentDiscovery
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies, interpolate
@@ -1694,6 +1694,37 @@ def compile_workflow_plan(
     return WorkflowPlanCompiler(
         configuration, root, agent, task_id, extensions, options, project_config
     ).compile(workflow)
+
+
+def compile_for_any_agent(
+    configuration: WorkflowConfiguration,
+    root: Path,
+    workflow: str,
+    extensions: ExtensionRegistry | None = None,
+    project_config: ProjectConfig | None = None,
+) -> WorkflowPlan:
+    """Compile ``workflow``'s plan as ``start`` would, for no agent in particular.
+
+    A skill may exist for one agent only: the workflow compiles when it
+    compiles for any supported agent, and otherwise fails with the first
+    agent's error.
+    """
+    errors: list[ConfigurationError] = []
+    for agent in AGENT_DIRECTORIES:
+        try:
+            return compile_workflow_plan(
+                configuration,
+                root,
+                workflow,
+                agent,
+                None,
+                extensions,
+                PlanCompilationOptions(),
+                project_config,
+            )
+        except ConfigurationError as error:
+            errors.append(error)
+    raise errors[0]
 
 
 def _execution_kind(kind: PlanItemKind) -> ExecutionKind:

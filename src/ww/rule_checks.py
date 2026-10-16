@@ -313,14 +313,17 @@ def change_set(
     return all_files(directory), None
 
 
-def item_reports(state: ExecutionState) -> tuple[CheckReport, ...]:
-    """Every check report of the current item's operation, retries included.
+def item_reports(
+    state: ExecutionState, index: int | None = None
+) -> tuple[CheckReport, ...]:
+    """Every check report of an item's operation, retries included.
 
-    An operator retry moves a copy of the record into the history, so a
-    report may appear twice; attempts number the reports of one operation,
-    and each attempt is one report.
+    The item is the current one unless ``index`` names another.  An operator
+    retry moves a copy of the record into the history, so a report may
+    appear twice; attempts number the reports of one operation, and each
+    attempt is one report.
     """
-    record = state.item_executions[state.cursor]
+    record = state.item_executions[state.cursor if index is None else index]
     kept = [
         entry
         for entry in state.execution_history

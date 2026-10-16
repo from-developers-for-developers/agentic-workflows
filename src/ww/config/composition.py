@@ -136,11 +136,7 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
     base = path.parent
     label = display_path(path, base)
     text = read_configuration_file(path)
-    present = tuple(
-        level
-        for level in workflow_levels(path)
-        if level.name == "repo" or configuration_file_exists(level.path)
-    )
+    present = _present_levels(path)
     if len(present) == 1:
         try:
             root = yaml.safe_load(text)
@@ -207,12 +203,7 @@ def workflow_sites(path: Path, name: str) -> tuple[WorkflowSite, ...]:
     it. Files a lower level's ``extends: false`` leaves out are not applied and
     not listed.
     """
-    present = tuple(
-        level
-        for level in workflow_levels(path)
-        if level.name == "repo" or configuration_file_exists(level.path)
-    )
-    _, _, _, applied = _fold_order(path, present)
+    _, _, _, applied = _fold_order(path, _present_levels(path))
     sites: list[WorkflowSite] = []
     for label, raw, file, level_name in applied:
         workflows = raw.get("workflows")
@@ -224,6 +215,25 @@ def workflow_sites(path: Path, name: str) -> tuple[WorkflowSite, ...]:
             if entry_name(entry) == name
         )
     return tuple(sites)
+
+
+def configuration_files(path: Path) -> tuple[Path, ...]:
+    """Every YAML file folded for the repo file ``path``, from user to local.
+
+    A level's imports come before the file that lists them. Files a lower
+    level's ``extends: false`` leaves out are not applied and not listed.
+    """
+    _, _, _, applied = _fold_order(path, _present_levels(path))
+    return tuple(file for _, _, file, _ in applied)
+
+
+def _present_levels(path: Path) -> tuple[ConfigurationLevel, ...]:
+    """The levels around ``path`` that have a file; the repo level always."""
+    return tuple(
+        level
+        for level in workflow_levels(path)
+        if level.name == "repo" or configuration_file_exists(level.path)
+    )
 
 
 def _fold_order(

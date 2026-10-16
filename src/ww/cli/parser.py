@@ -236,6 +236,25 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help=f"How many recent commits to read (default {DEFAULT_COMMITS}).",
     )
+    visualize = subparsers.add_parser(
+        "visualize",
+        help=(
+            "Open a live, read-only page of the project's workflows and tasks, "
+            "served on 127.0.0.1 until interrupted."
+        ),
+    )
+    visualize.add_argument(
+        "--port",
+        type=_positive,
+        default=None,
+        help="The port to listen on (default: one fixed for the project).",
+    )
+    visualize.add_argument(
+        "--no-open",
+        dest="open_browser",
+        action="store_false",
+        help="Print the page's address without opening a browser.",
+    )
     for name, help_text in (
         ("modes", "List configured modes as JSON."),
         ("workflows", "List configured workflows as JSON."),

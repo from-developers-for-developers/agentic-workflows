@@ -7,6 +7,7 @@ from .compiler import (
     ExecutionHints,
     PlanCompilationOptions,
     WorkflowPlanCompiler,
+    compile_for_any_agent,
     compile_workflow_plan,
 )
 from .models import (
@@ -35,6 +36,7 @@ __all__ = [
     "WorkflowPlan",
     "WorkflowHandoff",
     "WorkflowPlanCompiler",
+    "compile_for_any_agent",
     "compile_workflow_plan",
     "number_step_paths",
     "step_label",

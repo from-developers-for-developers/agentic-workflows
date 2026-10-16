@@ -1,0 +1,1315 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ww</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,750&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an atlas — a catalog column of workflow cards that unfold into a step rail
+   (with goto arcs drawn in its left gutter), beside a quiet library column. */
+:root {
+  --bg: #F2F4F7;
+  --surface: #FFFFFF;
+  --sunken: #EBEEF3;
+  --ink: #131A2C;
+  --muted: #5B6579;
+  --faint: #8A93A6;
+  --line: #DCE1E9;
+  --accent: #2E44C2;
+  --accent-soft: #E3E7FB;
+
+  --k-worker: #2E44C2;
+  --k-manager: #8B3D9E;
+  --k-auto: #0E7C74;
+  --k-workflow: #A86400;
+  --k-assess: #B54A17;
+  --k-items: #457519;
+  --k-group: #6A7387;
+  --k-hook: #6A7387;
+  --rule: #55617E;
+  --rule-soft: #ECEEF4;
+  --demo: #9A6B00;
+
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Instrument Sans", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --r: 12px;
+  --shadow: 0 1px 2px rgb(19 26 44 / .05), 0 10px 32px -16px rgb(19 26 44 / .16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1220; --surface: #141A2A; --sunken: #1A2134; --ink: #E5E9F2; --muted: #9AA3B8; --faint: #6E7891;
+    --line: #262E45; --accent: #93A3FF; --accent-soft: #222B4D;
+    --k-worker: #93A3FF; --k-manager: #D79BE6; --k-auto: #5CCFC3; --k-workflow: #F0B357; --k-assess: #F59569;
+    --k-items: #9BD161; --k-group: #8F98AD; --k-hook: #8F98AD; --rule: #A9B3CC; --rule-soft: #1E2539; --demo: #E9B949;
+    --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 10px 32px -16px rgb(0 0 0 / .6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1220; --surface: #141A2A; --sunken: #1A2134; --ink: #E5E9F2; --muted: #9AA3B8; --faint: #6E7891;
+  --line: #262E45; --accent: #93A3FF; --accent-soft: #222B4D;
+  --k-worker: #93A3FF; --k-manager: #D79BE6; --k-auto: #5CCFC3; --k-workflow: #F0B357; --k-assess: #F59569;
+  --k-items: #9BD161; --k-group: #8F98AD; --k-hook: #8F98AD; --rule: #A9B3CC; --rule-soft: #1E2539; --demo: #E9B949;
+  --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 10px 32px -16px rgb(0 0 0 / .6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code, .mono { font-family: var(--f-mono); font-size: .86em; }
+
+.wrap {
+  max-width: 1260px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- Header ---------- */
+header.top { padding-block: 44px 0; border-bottom: 1px solid var(--line); }
+.eyebrow {
+  font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.eyebrow .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); }
+h1 {
+  font-family: var(--f-display); font-weight: 750; font-size: clamp(34px, 5vw, 54px);
+  line-height: 1.02; letter-spacing: -.025em; margin: 16px 0 12px; text-wrap: balance;
+}
+h1 .slash { color: var(--faint); font-weight: 500; }
+.lede { color: var(--muted); max-width: 62ch; margin: 0; }
+.census { display: flex; flex-wrap: wrap; gap: 8px 26px; margin-top: 26px; font-variant-numeric: tabular-nums; }
+.census span { color: var(--muted); font-size: 14px; }
+.census b { font-family: var(--f-display); font-weight: 650; font-size: 20px; color: var(--ink); margin-right: 5px; }
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.toolbar .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-block: 12px; }
+.search {
+  flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px;
+}
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; color: var(--ink); }
+.search svg { flex: none; color: var(--faint); }
+.tbtn {
+  font-size: 13px; font-weight: 500; padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.tbtn:hover { border-color: var(--faint); }
+.tbtn[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+
+/* ---------- Main grid ---------- */
+main.wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; padding-block: 34px 72px; align-items: start; }
+@media (max-width: 980px) { main.wrap { grid-template-columns: minmax(0, 1fr); } }
+.section-label {
+  font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 14px; display: flex; justify-content: space-between; gap: 8px;
+}
+
+/* ---------- Workflow cards ---------- */
+.catalog { display: grid; gap: 18px; min-width: 0; }
+.wf { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; transition: box-shadow .2s, border-color .2s; }
+.wf.open { box-shadow: var(--shadow); }
+.wf-head { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; width: 100%; text-align: left; padding: 22px 24px; align-items: start; }
+.wf-name { font-family: var(--f-display); font-weight: 650; font-size: 22px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; line-height: 1.25; }
+.wf-desc { grid-column: 1 / -1; color: var(--muted); font-size: 14.5px; max-width: 70ch; }
+.chev { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); border: 1px solid var(--line); transition: transform .2s; }
+.wf.open .chev { transform: rotate(180deg); }
+.tag { font-family: var(--f-mono); font-size: 11.5px; font-weight: 400; letter-spacing: 0; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.tag.inherit { color: var(--k-workflow); border-color: color-mix(in srgb, var(--k-workflow) 35%, transparent); }
+.tag.demo { color: var(--demo); border-color: color-mix(in srgb, var(--demo) 40%, transparent); border-style: dashed; }
+.wf-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+.wf-meta .flow { font-family: var(--f-mono); font-size: 12px; }
+.wf-meta .flow b { color: var(--ink); font-weight: 500; }
+
+/* miniature step strip */
+.strip { display: flex; align-items: center; }
+.strip .s { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.strip .s.dia { border-radius: 2px; transform: rotate(45deg) scale(.85); }
+.strip .s.box { border-radius: 2px; }
+.strip .s.ring { background: transparent; border: 2px solid var(--c); }
+.strip .s.hook { width: 5px; height: 5px; background: var(--k-hook); opacity: .7; }
+.strip .ln { width: 11px; height: 1.5px; background: var(--line); flex: none; }
+.strip .gap { width: 7px; }
+
+.wf-body { border-top: 1px solid var(--line); padding: 10px 24px 30px; min-width: 0; }
+.wf-body[hidden] { display: none; }
+
+/* lifecycle lanes */
+.lane { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 16px 0; font-size: 13px; color: var(--muted); }
+.lane + .rail-wrap, .rail-wrap + .lane { border-top: 1px dashed var(--line); }
+.lane-label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); min-width: 130px; }
+.hookchip { font-family: var(--f-mono); font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--sunken); color: var(--ink); white-space: nowrap; }
+.hookchip.ext::before { content: "ext · "; color: var(--faint); }
+.lane .arrow { color: var(--faint); }
+.lane .via { font-size: 12px; color: var(--faint); font-style: italic; }
+.handoff-lane .hookchip { background: color-mix(in srgb, var(--k-workflow) 14%, transparent); color: var(--k-workflow); }
+
+/* ---------- Step rail ---------- */
+.rail-wrap { position: relative; padding-block: 8px; }
+.rail { list-style: none; margin: 0; padding: 0; position: relative; }
+.rail::before { content: ""; position: absolute; left: 14px; top: 22px; bottom: 22px; width: 1.5px; background: var(--line); }
+.rail.main.has-arcs { margin-left: 34px; }
+svg.arcs { position: absolute; left: -34px; top: 0; width: 34px; height: 100%; overflow: visible; pointer-events: none; }
+svg.arcs path { fill: none; stroke: var(--k-assess); stroke-width: 1.5; }
+svg.arcs path.fwd { stroke-dasharray: 4 4; }
+svg.arcs .head { fill: var(--k-assess); stroke: none; }
+
+.step { position: relative; padding: 18px 0 18px 48px; min-width: 0; }
+.step + .step { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.node {
+  position: absolute; left: 3px; top: 20px; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--surface); border: 2px solid var(--c);
+  font-family: var(--f-mono); font-size: 10.5px; font-weight: 500; color: var(--c); font-variant-numeric: tabular-nums;
+}
+.node.dia { border-radius: 4px; transform: rotate(45deg); width: 21px; height: 21px; left: 4.5px; top: 21.5px; }
+.node.dia span { transform: rotate(-45deg); }
+.node.box { border-radius: 6px; }
+.node.fill { background: var(--c); color: var(--surface); }
+
+.step-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.step-name { font-family: var(--f-display); font-weight: 650; font-size: 17px; letter-spacing: -.005em; }
+.kind { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--c); cursor: help; }
+.badge { font-size: 11.5px; color: var(--muted); background: var(--sunken); border-radius: 999px; padding: 0 9px; white-space: nowrap; }
+.badge.you { color: var(--k-manager); background: color-mix(in srgb, var(--k-manager) 12%, transparent); }
+.step-desc { color: var(--muted); font-size: 14px; margin: 6px 0 0; max-width: 72ch; }
+.step-desc.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.more { font-size: 12.5px; color: var(--accent); margin-top: 4px; }
+.more:hover { text-decoration: underline; }
+.cmd { margin: 8px 0 0; font-family: var(--f-mono); font-size: 12.5px; color: var(--ink); background: var(--sunken); border-radius: 6px; padding: 6px 10px; overflow-x: auto; white-space: pre; max-width: 100%; }
+.cmd .p { color: var(--faint); }
+.members { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.members .m { font-family: var(--f-mono); font-size: 12px; background: var(--sunken); color: var(--ink); border-radius: 6px; padding: 2px 8px; }
+.choices { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.choice { font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--k-manager) 30%, var(--line)); border-radius: 8px; padding: 3px 10px; color: var(--muted); }
+.choice b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+
+/* facts: calm, borderless */
+.facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; align-items: center; }
+.fact { font-size: 12.5px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.fact .mono { color: var(--ink); }
+.fact svg { color: var(--faint); flex: none; }
+
+.var { font-family: var(--f-mono); font-size: .84em; color: var(--accent); background: var(--accent-soft); padding: 0 4px; border-radius: 4px; white-space: nowrap; }
+
+/* rules pill: deliberately quiet */
+.rules-pill {
+  font-size: 12px; color: var(--rule); display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px 2px 7px; border-radius: 6px; background: var(--rule-soft); border: 1px solid transparent;
+}
+button.rules-pill:hover { border-color: color-mix(in srgb, var(--rule) 35%, transparent); }
+.rules-pill .sec { font-family: var(--f-display); font-weight: 650; }
+.rules-pill .ck { font-family: var(--f-mono); font-size: 10.5px; opacity: .8; }
+.hide-rules .rules-pill, .hide-rules .rules-panel, .hide-rules .fact.rulesel { display: none; }
+
+.rules-panel { margin-top: 14px; border-left: 2px solid var(--rule-soft); padding-left: 14px; display: grid; gap: 4px; }
+.rules-panel[hidden] { display: none; }
+.rule { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; padding: 8px 0; }
+.rule-glyph { width: 18px; height: 18px; display: grid; place-items: center; color: var(--rule); margin-top: 1px; }
+.rule-sum { font-size: 13.5px; color: var(--ink); text-align: left; width: 100%; }
+.rule-sum:hover { color: var(--accent); }
+.rule-id { font-family: var(--f-mono); font-size: 11px; color: var(--faint); margin-left: 8px; }
+.rule-scope { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.scope { font-family: var(--f-mono); font-size: 11px; color: var(--muted); background: var(--sunken); border-radius: 4px; padding: 0 6px; }
+.rule-more { margin-top: 8px; font-size: 13px; color: var(--muted); display: grid; gap: 8px; }
+.rule-more[hidden] { display: none; }
+.rule-more pre { margin: 0; font-family: var(--f-mono); font-size: 12px; background: var(--sunken); color: var(--ink); padding: 8px 10px; border-radius: 6px; overflow-x: auto; white-space: pre; }
+.kv { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; }
+.kv span b { font-weight: 500; color: var(--ink); }
+
+/* nested containers: outcomes, items, children, sub-workflows */
+.branch { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--sunken) 40%, var(--surface)); padding: 12px 16px 8px; min-width: 0; }
+.branch.loop { border-style: dashed; border-color: color-mix(in srgb, var(--k-assess) 45%, var(--line)); }
+.branch-head { font-size: 13px; color: var(--muted); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.branch-head .lbl { font-family: var(--f-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--c); }
+.branch .rail::before { left: 11px; top: 20px; bottom: 20px; }
+.branch .step { padding: 14px 0 14px 36px; }
+.branch .node { width: 19px; height: 19px; left: 2px; font-size: 9.5px; top: 17px; }
+.branch .node.dia { width: 16px; height: 16px; left: 3.5px; top: 18.5px; }
+.branch .step-name { font-size: 15.5px; }
+
+.decision { margin-top: 14px; }
+.decision.attached { border-top: 1px dashed var(--line); padding-top: 12px; }
+.decision-lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--k-assess); }
+.question { font-family: var(--f-display); font-weight: 500; font-size: 16px; color: var(--ink); margin: 4px 0 0; max-width: 66ch; line-height: 1.4; }
+.question::before { content: "“"; color: var(--k-assess); margin-right: 1px; }
+.question::after { content: "”"; color: var(--k-assess); }
+.repeat { margin-top: 10px; display: inline-flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--k-assess); background: color-mix(in srgb, var(--k-assess) 10%, transparent); border-radius: 8px; padding: 3px 10px; }
+.repeat .sub { color: var(--muted); }
+.outcomes { display: grid; gap: 0; margin-top: 10px; }
+.oc { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 7px 0; align-items: baseline; font-size: 13.5px; }
+.oc + .oc { border-top: 1px dotted var(--line); }
+.oc-lbl { font-family: var(--f-mono); font-size: 11.5px; color: var(--k-assess); }
+.oc-lbl::before { content: "if "; color: var(--faint); }
+.oc-what { color: var(--muted); min-width: 0; }
+.oc-what b { color: var(--ink); font-weight: 600; }
+.oc-what .detail { display: block; font-size: 12.5px; color: var(--faint); margin-top: 2px; }
+.oc-what .end { color: var(--ink); }
+.oc .branch { margin-top: 0; }
+@media (max-width: 560px) { .oc { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+.linkbtn { font-size: 12.5px; color: var(--k-workflow); display: inline-flex; gap: 4px; align-items: center; }
+.linkbtn:hover { text-decoration: underline; }
+.peek { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 6px; font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.peek .sep { color: var(--faint); }
+.inherited-note { font-size: 12.5px; color: var(--k-workflow); margin: 12px 0 4px; display: flex; gap: 6px; align-items: center; }
+
+/* ---------- Library ---------- */
+aside.lib { display: grid; gap: 12px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 80px); min-width: 0; max-height: calc(100vh - 100px); overflow-y: auto; padding-bottom: 8px; }
+@media (max-width: 980px) { aside.lib { position: static; max-height: none; overflow: visible; } }
+details.shelf { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+details.shelf > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+details.shelf > summary::-webkit-details-marker { display: none; }
+details.shelf > summary h3 { margin: 0; font-family: var(--f-display); font-weight: 650; font-size: 15.5px; }
+details.shelf > summary .n { font-family: var(--f-mono); font-size: 12px; color: var(--faint); }
+details.shelf[open] > summary { border-bottom: 1px solid var(--line); }
+.shelf-body { padding: 6px 16px 14px; display: grid; font-size: 13.5px; min-width: 0; }
+.entry { padding: 10px 0; border-bottom: 1px dashed var(--line); min-width: 0; }
+.entry:last-child { border-bottom: 0; }
+.entry-name { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.entry-desc { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.entry-desc.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.used { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+.mini { font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.mini.demo { color: var(--demo); border-style: dashed; }
+.key { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+.key:last-child { border-bottom: 0; }
+.key .ico { width: 18px; height: 18px; margin-top: 2px; border: 2px solid var(--c); border-radius: 50%; }
+.key .ico.dia { border-radius: 3px; transform: rotate(45deg) scale(.85); }
+.key .ico.box { border-radius: 4px; }
+.key .ico.fill { background: var(--c); }
+.key .ico.arc { border: 0; border-left: 2px solid var(--k-assess); border-top: 2px solid var(--k-assess); border-radius: 10px 0 0 0; }
+.key .ico.sec { border: 0; color: var(--rule); font-family: var(--f-display); font-weight: 650; font-size: 17px; line-height: 18px; text-align: center; }
+.key b { font-family: var(--f-mono); font-size: 12px; font-weight: 500; color: var(--c, var(--ink)); }
+.key p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+table.settings { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.settings td { padding: 6px 0; border-bottom: 1px dashed var(--line); vertical-align: top; }
+table.settings td:first-child { color: var(--muted); padding-right: 10px; white-space: nowrap; }
+table.settings td:last-child { font-family: var(--f-mono); font-size: 12px; overflow-wrap: anywhere; }
+.settings-scroll { overflow-x: auto; }
+.note { font-size: 12px; color: var(--faint); padding: 6px 2px 0; }
+
+.empty { text-align: center; color: var(--muted); padding: 40px 10px; border: 1px dashed var(--line); border-radius: var(--r); }
+.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: var(--shadow); } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+@media (max-width: 560px) {
+  .lane-label { min-width: 0; width: 100%; }
+  .wf-head { padding: 18px 16px; }
+  .wf-body { padding: 8px 16px 24px; }
+  .wf-name { font-size: 19px; }
+}
+
+/* ---------- Tasks ---------- */
+:root { --ok: #2F7A3E; --warn: #A15C00; --bad: #B4232F; --ok-soft: #E3F1E6; --warn-soft: #FBEFD9; --bad-soft: #F9E1E3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ok: #7BD08A; --warn: #F2B65A; --bad: #FF8D96; --ok-soft: #17301F; --warn-soft: #34270F; --bad-soft: #3A1A1F; } }
+:root[data-theme="dark"] { --ok: #7BD08A; --warn: #F2B65A; --bad: #FF8D96; --ok-soft: #17301F; --warn-soft: #34270F; --bad-soft: #3A1A1F; }
+
+/* tabs in the header */
+.tabs { display: flex; gap: 4px; align-items: flex-end; margin-top: 30px; flex-wrap: wrap; }
+.tab { font-family: var(--f-display); font-weight: 650; font-size: 16px; padding: 10px 16px 12px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab-n { font-family: var(--f-mono); font-size: 11.5px; font-weight: 400; color: var(--faint); margin-left: 4px; }
+.live { margin-left: auto; align-self: center; font-size: 12px; color: var(--muted); display: inline-flex; gap: 8px; align-items: center; padding-bottom: 6px; }
+.pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2.4s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (max-width: 640px) { .live { margin-left: 0; width: 100%; padding: 4px 0 10px; } }
+
+/* tasks layout */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 12.5px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chip .n { font-family: var(--f-mono); font-size: 11px; opacity: .7; margin-left: 4px; }
+.tasks-main { display: grid; grid-template-columns: 370px minmax(0, 1fr); gap: 32px; padding-block: 28px 72px; align-items: start; }
+@media (max-width: 980px) { .tasks-main { grid-template-columns: minmax(0, 1fr); } }
+
+.tlist { display: grid; gap: 8px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 76px); max-height: calc(100vh - 96px); overflow-y: auto; padding: 2px 4px 8px 2px; min-width: 0; }
+@media (max-width: 980px) { .tlist { position: static; max-height: 420px; } }
+.trow { text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; min-width: 0; }
+.trow:hover { border-color: color-mix(in srgb, var(--faint) 60%, var(--line)); }
+.trow[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.trow-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.trow-id { font-family: var(--f-display); font-weight: 650; font-size: 15.5px; }
+.trow-wf { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); }
+.trow-when { margin-left: auto; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.trow-sum { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.trow.unreadable { background: transparent; border-style: dashed; }
+.trow.unreadable .trow-id { color: var(--faint); }
+.group-label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 10px 2px 2px; }
+
+.status { font-size: 11.5px; font-weight: 500; border-radius: 999px; padding: 1px 9px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.st-completed { color: var(--ok); background: var(--ok-soft); }
+.st-in_progress { color: var(--accent); background: var(--accent-soft); }
+.st-in_progress::before { animation: pulse 2.4s infinite; }
+.st-awaiting_operator { color: var(--warn); background: var(--warn-soft); }
+.st-failed { color: var(--bad); background: var(--bad-soft); }
+.st-pending, .st-skipped, .st-direct, .st-unreadable { color: var(--muted); background: var(--sunken); }
+
+/* detail */
+.tdetail { min-width: 0; display: grid; gap: 22px; }
+.td-head { display: grid; gap: 10px; }
+.td-title { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.td-title h2 { margin: 0; font-family: var(--f-display); font-weight: 750; font-size: 34px; letter-spacing: -.02em; line-height: 1.1; }
+.td-sub { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; color: var(--muted); }
+.td-sub .mono { color: var(--ink); }
+.outcome { font-size: 15px; color: var(--ink); max-width: 72ch; margin: 0; line-height: 1.65; }
+.outcome-lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+details.panel > summary { list-style: none; cursor: pointer; padding: 14px 18px; display: flex; gap: 10px; align-items: baseline; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary h3 { margin: 0; font-family: var(--f-display); font-weight: 650; font-size: 16px; }
+details.panel > summary .n { font-family: var(--f-mono); font-size: 12px; color: var(--faint); }
+details.panel > summary .chev { margin-left: auto; width: 24px; height: 24px; }
+details.panel[open] > summary .chev { transform: rotate(180deg); }
+details.panel[open] > summary { border-bottom: 1px solid var(--line); }
+.panel-body { padding: 8px 18px 16px; min-width: 0; }
+.quiet { color: var(--faint); font-size: 13px; padding: 8px 0; }
+.commits { display: grid; gap: 6px; }
+.commit { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; font-size: 13px; align-items: baseline; }
+.commit .h { font-family: var(--f-mono); font-size: 12px; color: var(--accent); }
+.dw { padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+.dw:last-child { border-bottom: 0; }
+.dw time { font-family: var(--f-mono); font-size: 11.5px; color: var(--faint); display: block; }
+
+/* runs */
+.run { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.run-head { padding: 16px 20px; display: grid; gap: 6px; border-bottom: 1px solid var(--line); }
+.run-title { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.run-title b { font-family: var(--f-display); font-weight: 650; font-size: 18px; }
+.run-title .rid { font-family: var(--f-mono); font-size: 12px; color: var(--faint); }
+.run-title .linkbtn { margin-left: auto; }
+.run-meta { display: flex; gap: 4px 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.run-meta .mono { color: var(--ink); }
+.run-body { padding: 6px 20px 16px; }
+.phase-lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 14px 0 4px; }
+.irow { display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(90px, 160px); gap: 4px 12px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); align-items: start; }
+.phase-lbl + .irow { border-top: 0; }
+.ist { width: 18px; height: 18px; display: grid; place-items: center; margin-top: 2px; }
+.ist svg { display: block; }
+.iname { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.iname b { font-family: var(--f-display); font-weight: 650; font-size: 15px; }
+.iname.hook b { font-family: var(--f-mono); font-weight: 500; font-size: 13px; }
+.owner { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+.round { font-size: 11.5px; color: var(--k-assess); background: color-mix(in srgb, var(--k-assess) 10%, transparent); border-radius: 999px; padding: 0 8px; }
+.isum { grid-column: 2 / 4; font-size: 13px; color: var(--muted); max-width: 76ch; }
+.isum.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ires { grid-column: 2 / 4; font-family: var(--f-mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.iact { grid-column: 2 / 4; display: flex; gap: 14px; flex-wrap: wrap; margin-top: 2px; }
+.iact button { font-size: 12.5px; color: var(--accent); }
+.iact button:hover { text-decoration: underline; }
+.timing { display: grid; gap: 4px; justify-items: end; }
+.dur { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { width: 100%; height: 4px; border-radius: 2px; background: var(--sunken); position: relative; overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--c, var(--accent)); min-width: 2px; }
+@media (max-width: 560px) { .irow { grid-template-columns: 20px minmax(0, 1fr); } .timing { grid-column: 2; justify-items: start; } .bar { max-width: 160px; } }
+
+/* artifact drawer */
+.scrim { position: fixed; inset: 0; background: rgb(10 14 26 / .35); z-index: 20; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 21; width: min(760px, 100%);
+  background: var(--surface); border-left: 1px solid var(--line); box-shadow: -20px 0 60px -30px rgb(0 0 0 / .4);
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+.drawer-head { padding: 16px 22px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: center; }
+.drawer-head .path { font-family: var(--f-mono); font-size: 12px; color: var(--faint); overflow-wrap: anywhere; }
+.drawer-head b { font-family: var(--f-display); font-weight: 650; font-size: 17px; display: block; }
+.drawer-head .x { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+.md { overflow-y: auto; padding: 18px 26px 40px; font-size: 14.5px; line-height: 1.65; }
+.md h1, .md h2, .md h3, .md h4 { font-family: var(--f-display); font-weight: 650; line-height: 1.25; margin: 1.4em 0 .4em; text-wrap: balance; }
+.md h1 { font-size: 24px; margin-top: .4em; } .md h2 { font-size: 19px; } .md h3 { font-size: 16px; } .md h4 { font-size: 14.5px; }
+.md p { margin: .6em 0; max-width: 72ch; }
+.md ul, .md ol { padding-left: 1.3em; margin: .5em 0; max-width: 72ch; }
+.md li { margin: .25em 0; }
+.md code { background: var(--sunken); border-radius: 4px; padding: 0 4px; }
+.md pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; }
+.md pre code { background: none; padding: 0; }
+.md .trunc { color: var(--faint); font-size: 12.5px; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 18px; }
+
+/* ---------- Live page additions ---------- */
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.tag.builtin, .mini.builtin { color: var(--demo); border-color: color-mix(in srgb, var(--demo) 40%, transparent); border-style: dashed; }
+.hookchip.builtin { background: transparent; border: 1px dashed var(--line); color: var(--muted); }
+.builtin-label { margin-top: 18px; }
+.banner { background: var(--bad-soft); color: var(--bad); border-radius: var(--r); padding: 12px 16px; margin-bottom: 18px; font-size: 14px; overflow-wrap: anywhere; }
+.live.off .pulse { background: var(--faint); animation: none; }
+.trow.child { margin-left: 18px; width: calc(100% - 18px); }
+.irow.current { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); border-radius: 8px; padding-inline: 8px; margin-inline: -8px; }
+.irow.builtin .iname b { color: var(--muted); }
+.ipanel { grid-column: 2 / 4; min-width: 0; }
+.iact { align-items: center; }
+.iact .rules-pill { color: var(--rule); }
+.rstat { font-size: 11px; font-weight: 500; border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.rstat.ok { color: var(--ok); background: var(--ok-soft); }
+.rstat.bad { color: var(--bad); background: var(--bad-soft); }
+.rstat.warn { color: var(--warn); background: var(--warn-soft); }
+.rstat.muted { color: var(--muted); background: var(--sunken); }
+.rs-ok { color: var(--ok); } .rs-bad { color: var(--bad); } .rs-warn { color: var(--warn); }
+.rule-sum { display: inline; }
+.fails { margin: 4px 0 0; padding-left: 1.2em; font-size: 12.5px; color: var(--bad); }
+.attempts { display: grid; gap: 6px; margin-top: 8px; }
+details.attempt { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-top: 10px; font-size: 13px; }
+details.attempt > summary { cursor: pointer; color: var(--muted); }
+details.attempt[open] > summary { margin-bottom: 6px; }
+.check { padding: 6px 0; border-top: 1px dotted var(--line); min-width: 0; }
+.check pre { margin: 6px 0 0; font-family: var(--f-mono); font-size: 12px; background: var(--sunken); color: var(--ink); padding: 8px 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; }
+.stopnote { font-size: 13px; color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 6px 10px; overflow-wrap: anywhere; }
+.run-sum { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); max-width: 76ch; }
+.md pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-error { position: sticky; top: 0; z-index: 30; margin: 0; border-radius: 0; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow" id="eyebrow"><span>ww · visualize</span></div>
+    <h1 id="title">ww</h1>
+    <p class="lede">Every workflow this project defines, as ww compiles it, and every task that ran through them. The page follows the configuration and the task store as they change.</p>
+    <div class="census" id="census"></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" type="button" data-view="workflows" aria-selected="true">Workflows</button>
+      <button class="tab" role="tab" type="button" data-view="tasks" aria-selected="false">Tasks <span class="tab-n" id="tabTasksN"></span></button>
+      <span class="live" id="live" title="The page reloads its data when a watched file changes"><span class="pulse"></span><span id="liveText">Connecting</span></span>
+    </nav>
+  </div>
+</header>
+
+<div id="view-workflows" class="view">
+  <div class="toolbar">
+    <div class="wrap">
+      <label class="search" for="q">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
+        <input id="q" type="search" placeholder="Find a workflow, step, handler or rule" autocomplete="off">
+      </label>
+      <button class="tbtn" id="expandAll" type="button">Expand all</button>
+      <button class="tbtn" id="collapseAll" type="button">Collapse all</button>
+      <button class="tbtn" id="toggleRules" type="button" aria-pressed="true">Rules shown</button>
+      <button class="tbtn" id="toggleBuiltin" type="button" aria-pressed="false">ww's own workflows hidden</button>
+    </div>
+  </div>
+  <main class="wrap atlas-main">
+    <section style="min-width:0">
+      <div class="banner" id="atlasError" hidden></div>
+      <p class="section-label"><span>Workflows</span><span id="countLabel"></span></p>
+      <div class="catalog" id="catalog"><div class="empty">Loading the configuration…</div></div>
+    </section>
+    <aside class="lib" id="library"></aside>
+  </main>
+</div>
+
+<div id="view-tasks" class="view" hidden>
+  <div class="toolbar">
+    <div class="wrap">
+      <label class="search" for="tq">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
+        <input id="tq" type="search" placeholder="Find a task by ID, workflow or what it did" autocomplete="off">
+      </label>
+      <div class="chips" id="statusChips"></div>
+    </div>
+  </div>
+  <div class="wrap tasks-main">
+    <div class="tlist" id="tlist"><div class="empty">Loading tasks…</div></div>
+    <section class="tdetail" id="tdetail"></section>
+  </div>
+</div>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Artifact"></aside>
+
+<script>
+"use strict";
+function showFailure(message) {
+  let el = document.getElementById("pageError");
+  if (!el) { el = document.createElement("div"); el.id = "pageError"; el.className = "banner page-error"; document.body.prepend(el); }
+  el.textContent = "The page hit an error: " + message + ". Reload it; if it persists, report it with this message.";
+}
+window.addEventListener("error", e => showFailure(e.message));
+window.addEventListener("unhandledrejection", e => showFailure(e.reason && e.reason.stack ? e.reason.stack.split("\n").slice(0, 2).join(" ") : String(e.reason)));
+/* ------------------------------------------------------------------
+   ww visualize. All data comes from the local server, which reads it
+   through ww's core: /api/atlas, /api/tasks, /api/task?id=, and
+   /api/artifact?task=&run=&ref=. /api/events says when to refetch.
+------------------------------------------------------------------- */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const prose = text => esc(text)
+  .replace(/\{\{([\w.]+)\}\}/g, '<span class="var">$1</span>')
+  .replace(/`([^`]+)`/g, "<code>$1</code>");
+const firstSentence = t => ((t || "").match(/^.*?[.!?](\s|$)/) || [t || ""])[0].trim();
+const store = {
+  get(key, fallback) { try { const v = JSON.parse(localStorage.getItem("ww-visualize-" + key)); return v == null ? fallback : v; } catch (e) { return fallback; } },
+  set(key, value) { try { localStorage.setItem("ww-visualize-" + key, JSON.stringify(value)); } catch (e) {} }
+};
+async function getJSON(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || response.statusText);
+  return body;
+}
+
+const ICON = {
+  chev: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg>',
+  from: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 6H2M5 3L2 6l3 3"/></svg>',
+  save: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h6l2 2v6H2z"/><path d="M4 2v3h4V2"/></svg>',
+  hook: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 1v6a2.5 2.5 0 1 1-5 0"/></svg>',
+  gear: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="6" r="2"/><path d="M6 .8v1.6M6 9.6v1.6M.8 6h1.6M9.6 6h1.6M2.3 2.3l1.1 1.1M8.6 8.6l1.1 1.1M2.3 9.7l1.1-1.1M8.6 3.4l1.1-1.1"/></svg>',
+  back: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2L1.5 4.5 4 7"/><path d="M1.5 4.5H7a3.5 3.5 0 0 1 0 7H5"/></svg>',
+  fwd: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 1.5"><path d="M1 6h9"/><path d="M7.5 3L10.5 6 7.5 9" stroke-dasharray="none"/></svg>',
+  loop: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 6a4 4 0 1 1-1.2-2.8"/><path d="M9.5 1v2.5H7"/></svg>',
+  stop: '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor"/></svg>',
+  judged: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="5.5" r="3"/><path d="M2.5 12.5c.8-2.2 2.5-3.2 4.5-3.2s3.7 1 4.5 3.2"/></svg>',
+  checked: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2.5" width="11" height="9" rx="1.5"/><path d="M4 6l1.6 1.4L4 8.8M7.2 9h2.6"/></svg>',
+  arrow: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6h8M7 3l3 3-3 3"/></svg>'
+};
+
+/* ================================================================
+   Workflows
+================================================================ */
+const KINDS = {
+  worker:   { label: "worker",    color: "var(--k-worker)",   shape: "",      about: "An agent does the step. In the auto runtime the manager can hand it to a separate worker session with its own model and profile." },
+  manager:  { label: "manager",   color: "var(--k-manager)",  shape: " fill", about: "The session that runs the task does the step itself and never delegates it. Steps that talk with you are always manager steps." },
+  auto:     { label: "automatic", color: "var(--k-auto)",     shape: " box",  about: "ww runs a command, a handler group or an extension itself. An agent is involved only to repair a failure marked fix." },
+  assess:   { label: "assess",    color: "var(--k-assess)",   shape: " dia",  about: "An agent answers a question; the answer picks what happens next: more steps, a jump, a loop or the end." },
+  items:    { label: "items",     color: "var(--k-items)",    shape: " box",  about: "Registers a collection of items, then runs its steps once over the whole collection." },
+  children: { label: "children",  color: "var(--k-items)",    shape: " box",  about: "Creates child tasks and runs the stages below once per child, one child at a time." },
+  workflow: { label: "workflow",  color: "var(--k-workflow)", shape: " box",  about: "Runs another workflow as the child's own task." },
+  handoff:  { label: "hand-off",  color: "var(--k-workflow)", shape: " ring", about: "Ends this workflow and starts another one as the task's next run." },
+  group:    { label: "group",     color: "var(--k-group)",    shape: " box",  about: "Groups nested steps under one name." }
+};
+const STD = ["positive", "negative", "mixed"];
+let atlas = null;
+let wfByName = {};
+let showBuiltin = store.get("builtin", false);
+let uid = 0;
+
+function walkSteps(steps, fn) {
+  (steps || []).forEach(s => {
+    fn(s);
+    walkSteps(s.steps, fn);
+    if (s.items) walkSteps(s.items.steps, fn);
+    if (s.children) walkSteps(s.children.steps, fn);
+    if (s.assessment) s.assessment.outcomes.forEach(o => walkSteps(o.steps, fn));
+  });
+}
+function countSteps(wf) { let n = 0; walkSteps(wf.steps, () => n++); return n; }
+function countRules(wf) { let n = 0; walkSteps(wf.steps, s => n += (s.rules || []).length); return n; }
+function topGotos(wf) {
+  const top = (wf.steps || []).map(s => s.path), out = [];
+  (wf.steps || []).forEach((s, i) => {
+    if (!s.assessment) return;
+    s.assessment.outcomes.forEach(o => {
+      if (!o.goto) return;
+      const j = top.indexOf(o.goto.target);
+      if (j >= 0) out.push({ from: i, to: j, label: o.label, back: o.goto.direction === "back" });
+    });
+  });
+  return out;
+}
+const hasLoop = wf => topGotos(wf).some(g => g.back) || (wf.steps || []).some(s => s.assessment && s.assessment.repeat_until);
+
+function renderStrip(wf) {
+  const parts = [];
+  if (wf.lanes && wf.lanes.before_start.length) parts.push('<span class="s hook"></span><span class="gap"></span>');
+  (wf.steps || []).forEach((s, i) => {
+    const k = KINDS[s.kind] || KINDS.worker;
+    if (i) parts.push('<span class="ln"></span>');
+    parts.push(`<span class="s ${k.shape.replace(" fill", "").trim()}" style="--c:${k.color}" title="${esc(s.name)} · ${k.label}"></span>`);
+    if (s.assessment && s.assessment.attached) parts.push('<span class="ln" style="width:4px"></span><span class="s dia" style="--c:var(--k-assess);width:7px;height:7px"></span>');
+  });
+  if (wf.lanes && wf.lanes.before_complete.some(h => !h.builtin)) parts.push('<span class="gap"></span><span class="s hook"></span>');
+  return `<span class="strip" aria-hidden="true">${parts.join("")}</span>`;
+}
+function hookChip(h) {
+  const title = h.command ? "$ " + h.command : h.extension || h.description || h.name;
+  return `<span class="hookchip${h.extension ? " ext" : ""}${h.builtin ? " builtin" : ""}" title="${esc(title)}">${esc(h.name)}</span>`;
+}
+function renderLane(wf, key, label) {
+  const hooks = (wf.lanes || {})[key] || [];
+  const own = hooks.filter(h => !h.builtin), builtin = hooks.filter(h => h.builtin);
+  if (!own.length && !builtin.length) return "";
+  return `<div class="lane"><span class="lane-label">${label}</span>${own.map(hookChip).join('<span class="arrow">→</span>')}${builtin.length ? `${own.length ? '<span class="arrow">→</span>' : ""}${builtin.map(hookChip).join("")}` : ""}${wf.hooks_from && key === "before_start" && own.length ? `<span class="via">via the ${esc(wf.hooks_from)} lane</span>` : ""}</div>`;
+}
+
+function renderRules(rules, key) {
+  if (!rules || !rules.length) return { pill: "", panel: "" };
+  const checks = rules.filter(r => r.command).length;
+  const pill = `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>${rules.length} rule${rules.length > 1 ? "s" : ""}${checks ? `<span class="ck">· ${checks} checked</span>` : ""}</button>`;
+  const rows = rules.map((r, i) => {
+    const checked = !!r.command;
+    const scope = [...(r.paths || []), ...(r.contains_in_diff || []).map(s => `in diff "${s}"`), ...(r.contains_in_file || []).map(s => `in file "${s}"`)];
+    const verifier = r.verifier && (r.verifier.model || r.verifier.agent) ? `${r.verifier.model || r.verifier.agent}${r.verifier.reasoning ? " · " + r.verifier.reasoning : ""}` : null;
+    return `<div class="rule">
+      <span class="rule-glyph" title="${checked ? "Checked by a command when the step completes" : "Judged by a separate verifier"}">${checked ? ICON.checked : ICON.judged}</span>
+      <div style="min-width:0">
+        <button class="rule-sum" type="button" data-toggle="${key}-r${i}" aria-expanded="false">${prose(r.summary)}<span class="rule-id">${esc(r.id)}</span></button>
+        ${scope.length ? `<div class="rule-scope">${scope.map(s => `<span class="scope">${esc(s)}</span>`).join("")}</div>` : ""}
+        <div class="rule-more" id="${key}-r${i}" hidden>
+          <div>${prose(r.text)}</div>
+          ${checked ? `<pre>$ ${esc(r.command)}</pre>` : ""}
+          <div class="kv">
+            <span>${checked ? "Checked by command" : "Judged by a verifier"}${verifier ? ` <b>${esc(verifier)}</b>` : checked ? "" : " with the step's worker settings"}</span>
+            ${checked ? `<span>max fixes <b>${esc(r.max_fixes)}</b></span>` : ""}
+            <span>${r.group ? `From group <b>${esc(r.group)}</b>` : "Declared on this step"}${r.source ? ` · ${esc(r.source)}` : ""}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  return { pill, panel: `<div class="rules-panel" id="${key}" hidden>${rows}</div>` };
+}
+
+function renderDecision(wf, s) {
+  const a = s.assessment;
+  let html = `<div class="decision${a.attached ? " attached" : ""}"><div class="decision-lbl">${a.attached ? "then decides" : "asks"}</div><p class="question">${prose(a.question)}</p>`;
+  if (a.repeat_until) {
+    const limit = atlas.library.settings ? atlas.library.settings.limits.assessments : 5;
+    html += `<div class="repeat">${ICON.loop} Repeats until <b>${esc(a.repeat_until)}</b><span class="sub">· same assessor each round · at most ${esc(limit)} rounds</span></div>`;
+  }
+  const declared = a.outcomes.filter(o => o.steps.length || o.stop || o.goto);
+  if (!declared.length) {
+    html += `<div class="outcomes"><div class="oc"><span class="oc-lbl">positive</span><span class="oc-what">continue with the next step</span></div>
+      <div class="oc"><span class="oc-lbl">negative</span><span class="oc-what"><span class="end">${ICON.stop} end the workflow</span></span></div></div>`;
+    return html + "</div>";
+  }
+  html += '<div class="outcomes">';
+  const labels = declared.map(o => o.label);
+  for (const o of declared) {
+    const loops = a.repeat_until && o.label !== a.repeat_until;
+    let what;
+    if (o.stop) what = `<span class="end">${ICON.stop} end the workflow</span>, skipping everything after it`;
+    else if (o.goto) {
+      const g = o.goto;
+      what = g.direction === "back"
+        ? `${ICON.back} go back to <b>${esc(g.target)}</b> and run again from there`
+        : `${ICON.fwd} jump ahead to <b>${esc(g.target)}</b>${g.skipped ? `, skipping ${g.skipped} step${g.skipped > 1 ? "s" : ""}` : ""}`;
+      if (g.detail) what += `<span class="detail">with the note “${prose(g.detail)}”</span>`;
+    } else {
+      what = `<div class="branch${loops ? " loop" : ""}" style="--c:var(--k-assess)">${loops ? `<div class="branch-head"><span class="lbl">${ICON.loop} then asks again</span></div>` : ""}${renderSteps(wf, o.steps)}</div>`;
+    }
+    html += `<div class="oc"><span class="oc-lbl">${esc(o.label)}</span><span class="oc-what">${what}</span></div>`;
+  }
+  if (a.repeat_until && !labels.includes(a.repeat_until)) html += `<div class="oc"><span class="oc-lbl">${esc(a.repeat_until)}</span><span class="oc-what">stop repeating and continue</span></div>`;
+  const rest = STD.filter(x => !labels.includes(x) && x !== a.repeat_until);
+  if (rest.length) html += `<div class="oc"><span class="oc-lbl">${rest.join(" / ")}</span><span class="oc-what">continue with the next step</span></div>`;
+  return html + "</div></div>";
+}
+
+function renderSteps(wf, steps, main) {
+  return `<ol class="rail${main ? " main" : ""}">${steps.map((s, i) => renderStep(wf, s, i)).join("")}</ol>`;
+}
+function renderStep(wf, s, i) {
+  const K = KINDS[s.kind] || KINDS.worker, key = `x${++uid}`;
+  const desc = s.description || "";
+  const long = desc.length > 170;
+  const badges = [];
+  if (s.interactive === "conversation") badges.push('<span class="badge you">talks with you</span>');
+  if (s.interactive === "page") badges.push('<span class="badge you">you answer on the operator page</span>');
+  if (s.handler && s.handler !== s.name) badges.push(`<span class="badge">handler ${esc(s.handler)}</span>`);
+
+  const facts = [];
+  if (s.model && s.model !== "auto") facts.push(`<span class="fact">${ICON.gear} <span class="mono">${esc(s.model)}</span>${s.reasoning && s.reasoning !== "auto" ? ` · ${esc(s.reasoning)} reasoning` : ""}</span>`);
+  if (s.profile) facts.push(`<span class="fact">profile <span class="mono">${esc(s.profile)}</span></span>`);
+  if (s.subagents === false) facts.push('<span class="fact">works alone, no subagents</span>');
+  if (s.explicit) facts.push('<span class="fact">explicit: narrates each edit</span>');
+  if (s.artifact === false) facts.push('<span class="fact">no artifact</span>');
+  if (s.artifact_from) facts.push(`<span class="fact">${ICON.from} reads the artifact of <span class="mono">${esc(s.artifact_from)}</span></span>`);
+  (s.variables || []).forEach(v => facts.push(`<span class="fact">sets <span class="var">${esc(v)}</span></span>`));
+  (s.saves || []).forEach(t => facts.push(`<span class="fact">${ICON.save} saves <span class="mono">${esc(t)}</span></span>`));
+  if (s.on_failure === "fix") facts.push(`<span class="fact">${ICON.hook} on failure an agent repairs it${s.max_fixes ? `, up to ${esc(s.max_fixes)} times` : ""}</span>`);
+  (s.hooks || []).forEach(h => facts.push(`<span class="fact" title="${esc(h.description || "")}">${ICON.hook} ${esc(h.phase)} <span class="mono">${esc(h.command || h.extension || h.name)}</span>${h.on_failure === "fix" ? " · failures go back to the worker" : ""}</span>`));
+  if (s.selects_rules_for) facts.push(`<span class="fact rulesel"><span style="color:var(--rule)">§</span> chooses the rules of <span class="mono">${esc(s.selects_rules_for.join(", "))}</span></span>`);
+  if (s.rules_chosen_by) facts.push(`<span class="fact rulesel"><span style="color:var(--rule)">§</span> rules chosen by <span class="mono">${esc(s.rules_chosen_by)}</span></span>`);
+  const rr = renderRules(s.rules, key);
+  if (rr.pill) facts.push(rr.pill);
+
+  let body = "";
+  if (desc) body += `<p class="step-desc${long ? " clamp" : ""}" id="${key}-d">${prose(desc)}</p>${long ? `<button class="more" type="button" data-clamp="${key}-d">Read all</button>` : ""}`;
+  const members = s.members || [];
+  if (members.length === 1 && (members[0].command || members[0].extension)) {
+    body += members[0].command ? `<div class="cmd"><span class="p">$ </span>${esc(members[0].command)}</div>` : `<div class="cmd"><span class="p">ext </span>${esc(members[0].extension)}</div>`;
+  } else if (members.length > 1) {
+    body += `<div class="members">runs in order ${members.map(m => `<span class="m" title="${esc(m.command || m.extension || "")}">${esc(m.command ? "$ " + m.command : m.name)}</span>`).join('<span class="arrow">→</span>')}</div>`;
+  }
+  if (s.choices && s.choices.length) body += `<div class="choices">${s.choices.map(c => `<span class="choice"><b>${esc(c.label)}</b>${esc(c.description)}</span>`).join("")}</div>`;
+  if (s.handoff_to) body += `<div class="facts"><span class="fact">${ICON.arrow} starts ${/\{\{/.test(s.handoff_to) ? prose(s.handoff_to) : `<b>${esc(s.handoff_to)}</b>`} as the task's next run</span></div>`;
+  if (s.assessment) body += renderDecision(wf, s);
+  if (s.kind === "workflow" && s.workflow) {
+    const sub = wfByName[s.workflow];
+    body += `<div class="branch"><div class="branch-head"><span class="lbl" style="--c:var(--k-workflow)">runs workflow</span><b class="mono">${esc(s.workflow)}</b>${sub ? `<button class="linkbtn" type="button" data-goto="${esc(s.workflow)}">Open ${esc(s.workflow)} ${ICON.arrow}</button>` : ""}</div>
+      ${sub ? `<div class="peek">${(sub.steps || []).map(x => esc(x.name)).join('<span class="sep">·</span>')}</div>` : ""}</div>`;
+  }
+  if (s.children) {
+    const c = s.children;
+    body += `<div class="branch"><div class="branch-head"><span class="lbl" style="--c:var(--k-items)">for each child</span>${prose(c.description || "")}${c.workflow ? ` runs <b class="mono">${esc(c.workflow)}</b>` : ""}</div>${c.steps.length ? renderSteps(wf, c.steps) : ""}</div>`;
+  }
+  if (s.items) body += `<div class="branch"><div class="branch-head"><span class="lbl" style="--c:var(--k-items)">over the collection</span>${prose(s.items.description || "")}</div>${renderSteps(wf, s.items.steps)}</div>`;
+  if (s.steps && s.steps.length) body += `<div class="branch">${renderSteps(wf, s.steps)}</div>`;
+
+  return `<li class="step" style="--c:${K.color}" data-step="${esc(s.path)}">
+    <span class="node${K.shape}"><span>${i + 1}</span></span>
+    <div class="step-top"><span class="step-name">${esc(s.name)}</span><span class="kind" title="${esc(K.about)}">${K.label}</span>${badges.join("")}</div>
+    ${body}
+    ${facts.length ? `<div class="facts">${facts.join("")}</div>` : ""}
+    ${rr.panel}
+  </li>`;
+}
+
+function renderWorkflow(wf) {
+  const tags = [];
+  if (wf.inherits) tags.push(`<span class="tag inherit">inherits ${esc(wf.inherits)}</span>`);
+  if (wf.builtin) tags.push('<span class="tag builtin">ww</span>');
+  if (wf.manual) tags.push('<span class="tag">manual</span>');
+  if (wf.level && wf.level !== "project") tags.push(`<span class="tag">${esc(wf.level)}</span>`);
+  if (wf.error) {
+    return `<article class="wf" id="wf-${esc(wf.name)}" data-name="${esc(wf.name)}"${wf.builtin ? " data-builtin" : ""}>
+      <div class="wf-head" style="cursor:default"><span class="wf-name">${esc(wf.name)}${tags.join("")}</span><span></span>
+      <span class="wf-desc">${prose(wf.description)}</span><span class="wf-meta"><span class="flow" style="color:var(--bad)">ww cannot compile it: ${esc(wf.error)}</span></span></div></article>`;
+  }
+  const nRules = countRules(wf), gotos = topGotos(wf);
+  const meta = [renderStrip(wf), `<span>${countSteps(wf)} steps</span>`];
+  if (wf.hooks_from) meta.push(`<span class="flow"><b>${esc(wf.hooks_from)}</b> lane</span>`);
+  if (wf.runtime) meta.push(`<span class="flow">runtime <b>${esc(wf.runtime)}</b></span>`);
+  if (wf.modes && wf.modes.length) meta.push(`<span class="flow">mode <b>${esc(wf.modes.join(", "))}</b></span>`);
+  if (wf.restartable) meta.push('<span class="flow">restartable</span>');
+  if (wf.recommended_next) meta.push(`<span class="flow">then offers <b>${esc(wf.recommended_next)}</b></span>`);
+  if (hasLoop(wf)) meta.push(`<span class="flow" style="color:var(--k-assess)">${ICON.loop} loops</span>`);
+  if (nRules) meta.push(`<span class="rules-pill"><span class="sec">§</span>${nRules}</span>`);
+  if (wf.source && wf.level !== "project") meta.push(`<span class="flow">${esc(wf.source)}</span>`);
+  return `<article class="wf" id="wf-${esc(wf.name)}" data-name="${esc(wf.name)}"${wf.builtin ? " data-builtin" : ""}>
+    <button class="wf-head" type="button" aria-expanded="false">
+      <span class="wf-name">${esc(wf.name)}${tags.join("")}</span>
+      <span class="chev">${ICON.chev}</span>
+      <span class="wf-desc">${prose(wf.description)}</span>
+      <span class="wf-meta">${meta.join("")}</span>
+    </button>
+    <div class="wf-body" hidden>
+      ${renderLane(wf, "before_start", "Before start")}
+      ${wf.inherits ? `<div class="inherited-note">${ICON.from} Steps inherited from <button class="linkbtn" type="button" data-goto="${esc(wf.inherits)}">${esc(wf.inherits)}</button></div>` : ""}
+      <div class="rail-wrap">${renderSteps(wf, wf.steps || [], true).replace('class="rail main"', `class="rail main${gotos.length ? " has-arcs" : ""}"`)}</div>
+      ${renderLane(wf, "before_complete", "Before complete")}
+    </div>
+  </article>`;
+}
+
+function drawArcs(card) {
+  const rail = $(".rail.main", card);
+  if (!rail || !rail.classList.contains("has-arcs") || $(".wf-body", card).hidden) return;
+  const wf = wfByName[card.dataset.name];
+  const items = [...rail.children].filter(n => n.tagName === "LI");
+  let svg = $("svg.arcs", rail);
+  if (!svg) { svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "arcs"); rail.prepend(svg); }
+  const y = i => items[i].offsetTop + 32;
+  svg.innerHTML = topGotos(wf).map((g, n) => {
+    const y1 = y(g.from), y2 = y(g.to), x = 34, w = 14 + n * 7;
+    return `<path class="${g.back ? "" : "fwd"}" d="M ${x} ${y1} C ${x - w * 2} ${y1}, ${x - w * 2} ${y2}, ${x} ${y2}"><title>${esc(g.label)}: ${g.back ? "back" : "ahead"} to step ${g.to + 1}</title></path><path class="head" d="M ${x + 1} ${y2} l -7 -4 v 8 z"></path>`;
+  }).join("");
+}
+
+function renderLibrary() {
+  const lib = atlas.library || {};
+  const shelf = (id, title, n, body, open) => `<details class="shelf" data-shelf="${id}"${open ? " open" : ""}><summary><h3>${title}</h3><span class="n">${esc(n)}</span></summary><div class="shelf-body">${body}</div></details>`;
+  const openShelves = store.get("shelves", ["key"]);
+  const key = Object.values(KINDS).filter(k => k.label !== "group").map(k => `<div class="key" style="--c:${k.color}"><span class="ico${k.shape}"></span><div><b>${k.label}</b><p>${esc(k.about)}</p></div></div>`).join("") +
+    `<div class="key"><span class="ico arc"></span><div><b style="color:var(--k-assess)">goto arc</b><p>A decision sends the flow back (solid) or ahead (dashed), at most ${esc(lib.settings ? lib.settings.limits.gotos : 5)} times per edge.</p></div></div>` +
+    '<div class="key"><span class="ico sec">§</span><div><b style="color:var(--rule)">rules</b><p>Sentences the step\'s agent follows. Checked rules run a command when the step completes; judged rules go to a separate verifier.</p></div></div>';
+  const handlers = (lib.handlers || []).map(h => `<div class="entry"><div class="entry-name">${esc(h.name)}${h.kind !== "agent" ? `<span class="mini">${esc(h.kind)}</span>` : ""}${h.model ? `<span class="mini">${esc(h.model)}${h.reasoning ? " · " + esc(h.reasoning) : ""}</span>` : ""}</div>
+    ${h.description ? `<div class="entry-desc clamp">${prose(h.description)}</div>` : ""}${h.command ? `<div class="entry-desc mono">$ ${esc(h.command)}</div>` : ""}${h.members && h.members.length ? `<div class="entry-desc">runs ${esc(h.members.join(" → "))}</div>` : ""}${h.extension ? `<div class="entry-desc mono">${esc(h.extension)}</div>` : ""}
+    ${h.used_by.length ? `<div class="used">used by ${esc(h.used_by.join(", "))}</div>` : '<div class="used">not used by any workflow</div>'}</div>`).join("");
+  const rulesListing = lib.rules || { groups: [] };
+  const filter = f => f === "*" || f == null ? "all" : f.length ? f.join(", ") : "only where a step names it";
+  const rules = rulesListing.groups.map(g => `<div class="entry"><div class="entry-name">${esc(g.name)}<span class="mini">${g.rules.length}</span>${g.origin !== "configuration" ? `<span class="mini">${esc(g.origin)}</span>` : ""}</div>
+    <div class="entry-desc">${g.rules.map(r => `${r.has_check ? "▸ " : ""}${esc(r.summary)}${r.stats && r.stats.applied ? ` <span class="used">· applied ${r.stats.applied}, failed ${r.stats.check_failures + r.stats.judged_failures}</span>` : ""}`).join("<br>")}</div>
+    <div class="used">workflows ${esc(filter(g.workflows))} · steps ${esc(filter(g.steps))}</div></div>`).join("") || '<div class="note">No rule groups are declared.</div>';
+  const named = list => (list || []).map(d => `<div class="entry"><div class="entry-name">${esc(d.name)}${d.scope && d.scope !== "task" ? `<span class="mini">${esc(d.scope)}</span>` : ""}${d.automatic ? '<span class="mini">automatic</span>' : ""}</div><div class="entry-desc">${prose(d.description || "")}</div>${d.path ? `<div class="used mono">${esc(d.path)}</div>` : ""}</div>`).join("") || '<div class="note">None.</div>';
+  const st = lib.settings || {};
+  const rows = [["runtime", st.runtime], ["task_format", st.task_format], ["config_ref", st.config_ref == null ? "ww/git base branch" : String(st.config_ref)]];
+  if (st.limits) Object.entries(st.limits).forEach(([k, v]) => rows.push(["limits." + k, v]));
+  const flat = (o, p) => Object.entries(o || {}).flatMap(([k, v]) => v && typeof v === "object" && !Array.isArray(v) ? flat(v, p + k + ".") : [[p + k, Array.isArray(v) ? v.join(", ") : String(v)]]);
+  Object.entries(st.extensions || {}).forEach(([name, v]) => flat(v, name + " ").forEach(r => rows.push(r)));
+  const settings = `<div class="settings-scroll"><table class="settings">${rows.filter(r => r[1] != null).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${prose(v)}</td></tr>`).join("")}</table></div>`;
+  const nRules = rulesListing.groups.reduce((n, g) => n + g.rules.length, 0);
+  $("#library").innerHTML = '<p class="section-label"><span>Library</span></p>' +
+    shelf("key", "How to read this", "key", key, openShelves.includes("key")) +
+    shelf("handlers", "Handlers", (lib.handlers || []).length, handlers || '<div class="note">None.</div>', openShelves.includes("handlers")) +
+    shelf("rules", "Rules", `${nRules} in ${rulesListing.groups.length} groups`, rules, openShelves.includes("rules")) +
+    shelf("documents", "Documents", (lib.documents || []).length, named(lib.documents), openShelves.includes("documents")) +
+    shelf("modes", "Modes and profiles", (lib.modes || []).length + (lib.profiles || []).length, named(lib.modes) + named(lib.profiles), openShelves.includes("modes")) +
+    shelf("settings", "Settings", "ww.json", settings, openShelves.includes("settings"));
+}
+
+const ro = "ResizeObserver" in window ? new ResizeObserver(es => es.forEach(e => { const c = e.target.closest(".wf"); if (c) drawArcs(c); })) : null;
+function setOpen(card, open) {
+  const head = $(".wf-head", card), body = $(".wf-body", card);
+  if (!body) return;
+  card.classList.toggle("open", open);
+  head.setAttribute("aria-expanded", open);
+  body.hidden = !open;
+  if (open) { drawArcs(card); if (ro) ro.observe(body); }
+}
+const openCards = () => $$(".wf.open").map(c => c.dataset.name);
+function saveOpen() { store.set("open", openCards()); }
+function goTo(name) {
+  const card = document.getElementById("wf-" + name);
+  if (!card) return;
+  if (card.hasAttribute("data-builtin") && !showBuiltin) toggleBuiltin(true);
+  card.hidden = false;
+  setOpen(card, true); saveOpen();
+  card.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+}
+function applyFilters() {
+  const q = $("#q").value.trim().toLowerCase();
+  let shown = 0;
+  $$(".wf").forEach(c => {
+    const hit = (showBuiltin || !c.hasAttribute("data-builtin")) && (!q || c.textContent.toLowerCase().includes(q));
+    c.hidden = !hit; if (hit) shown++;
+    if (q && hit) setOpen(c, true);
+  });
+  const none = $("#noMatch"); if (none) none.hidden = shown > 0;
+}
+function toggleBuiltin(on) {
+  showBuiltin = on; store.set("builtin", on);
+  const b = $("#toggleBuiltin");
+  b.setAttribute("aria-pressed", on);
+  b.textContent = on ? "ww's own workflows shown" : "ww's own workflows hidden";
+  applyFilters();
+}
+
+function renderAtlas() {
+  const open = new Set(atlas.__open || store.get("open", null) || []);
+  const scroll = window.scrollY;
+  const banner = $("#atlasError");
+  banner.hidden = !atlas.error;
+  banner.textContent = atlas.error ? "ww cannot read the configuration: " + atlas.error : "";
+  wfByName = Object.fromEntries(atlas.workflows.map(w => [w.name, w]));
+  const own = atlas.workflows.filter(w => !w.builtin), builtin = atlas.workflows.filter(w => w.builtin);
+  $("#catalog").innerHTML = own.map(renderWorkflow).join("") +
+    (builtin.length ? `<p class="section-label builtin-label" id="builtinLabel"><span>ww's own workflows</span><span>${builtin.length}</span></p>` + builtin.map(renderWorkflow).join("") : "") +
+    '<div class="empty" id="noMatch" hidden>No workflow matches that search.</div>';
+  if (!atlas.__open && !store.get("open", null) && own.length) open.add(own[0].name);
+  $$(".wf").forEach(c => { if (open.has(c.dataset.name)) setOpen(c, true); });
+  $("#countLabel").textContent = `${own.length} defined${builtin.length ? ` · ${builtin.length} built in` : ""}`;
+  const lbl = $("#builtinLabel"); if (lbl) lbl.hidden = !showBuiltin;
+  renderLibrary();
+  renderCensus();
+  applyFilters();
+  window.scrollTo(0, scroll);
+}
+
+/* ================================================================
+   Tasks
+================================================================ */
+const STATUS_LABEL = { completed: "completed", in_progress: "in progress", awaiting_operator: "waiting for you", awaiting_input: "waiting for input", interrupted: "interrupted", failed: "failed", pending: "pending", abandoned: "abandoned", direct: "direct work", unreadable: "unreadable" };
+const PHASE_LABEL = { before_start_workflow: "Before start", step: "Steps", before_start: "Before start", before_complete: "Before complete", after_complete: "After complete", before_complete_workflow: "Before complete" };
+const RULE_CLASS = { "passed": "ok", "verified pass": "ok", "failed": "bad", "check unavailable": "warn", "not applicable": "muted", "left out": "muted", "self-declared": "muted" };
+const pill = s => `<span class="status st-${esc(s)}">${esc(STATUS_LABEL[s] || s)}</span>`;
+let tasks = [];
+let taskFilter = store.get("taskFilter", "all");
+let currentTask = null;
+let detail = null;
+let artifactIndex = [];
+
+const ms = (a, b) => new Date(b) - new Date(a);
+function fmtDur(n) {
+  if (n == null || isNaN(n) || n < 0) return "";
+  const s = Math.round(n / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return `${m}m ${String(r).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+function ago(iso) {
+  if (!iso) return "";
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d < 14 ? `${d} d ago` : new Date(iso).toISOString().slice(0, 10);
+}
+const fmtTime = iso => iso ? new Date(iso).toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+const isActive = s => ["in_progress", "awaiting_operator", "awaiting_input", "interrupted", "failed", "pending"].includes(s);
+
+function renderChips() {
+  const counts = {};
+  tasks.forEach(t => { const k = isActive(t.status) && t.status !== "awaiting_operator" ? "in_progress" : t.status; counts[k] = (counts[k] || 0) + 1; });
+  const order = [["all", "All", tasks.length], ["in_progress", "In progress"], ["awaiting_operator", "Waiting for you"], ["completed", "Completed"], ["direct", "Direct work"], ["abandoned", "Abandoned"], ["unreadable", "Unreadable"]];
+  $("#statusChips").innerHTML = order.map(([k, l, n]) => {
+    const c = n != null ? n : counts[k] || 0;
+    return c || k === taskFilter ? `<button class="chip" type="button" data-filter="${k}" aria-pressed="${taskFilter === k}">${l}<span class="n">${c}</span></button>` : "";
+  }).join("");
+}
+function taskMatches(t) {
+  const group = isActive(t.status) && t.status !== "awaiting_operator" ? "in_progress" : t.status;
+  if (taskFilter !== "all" && group !== taskFilter) return false;
+  const q = $("#tq").value.trim().toLowerCase();
+  return !q || [t.id, ...(t.workflows || []), t.summary, t.current_step].join(" ").toLowerCase().includes(q);
+}
+function renderTaskList() {
+  const rows = tasks.filter(taskMatches).slice().reverse();
+  const active = rows.filter(t => isActive(t.status)), rest = rows.filter(t => !isActive(t.status));
+  const row = t => {
+    const wf = (t.workflows || []).join(" → ") || (t.status === "unreadable" ? "" : "direct work");
+    const child = t.id.includes("/");
+    return `<button class="trow${t.status === "unreadable" ? " unreadable" : ""}${child ? " child" : ""}" type="button" data-task="${esc(t.id)}" aria-current="${currentTask === t.id}">
+      <span class="trow-top"><span class="trow-id">${esc(child ? t.id.split("/").pop() : t.id)}</span>${pill(t.status)}<span class="trow-wf">${esc(wf)}</span><span class="trow-when">${esc(ago(t.updated_at))}</span></span>
+      ${t.current_step ? `<span class="trow-wf">at ${esc(t.current_step)}</span>` : ""}
+      <span class="trow-sum">${esc(t.summary)}</span></button>`;
+  };
+  $("#tlist").innerHTML = (active.length ? `<div class="group-label">Active</div>${active.map(row).join("")}` : "") +
+    (rest.length ? `<div class="group-label">${active.length ? "History" : "Tasks"}</div>${rest.map(row).join("")}` : "") +
+    (!rows.length ? `<div class="empty">${tasks.length ? "No task matches." : "No tasks yet. Start one with ww start."}</div>` : "");
+}
+
+const STATUS_ICON = {
+  completed: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--ok-soft)"/><path d="M5 8.2l2 2 4-4.4" fill="none" stroke="var(--ok)" stroke-width="1.7"/></svg>',
+  in_progress: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--accent-soft)" stroke-width="2"/><path d="M8 1.5a6.5 6.5 0 0 1 6.5 6.5" fill="none" stroke="var(--accent)" stroke-width="2"><animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1.4s" repeatCount="indefinite"/></path></svg>',
+  awaiting_input: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--accent-soft)"/><circle cx="5" cy="8" r="1" fill="var(--accent)"/><circle cx="8" cy="8" r="1" fill="var(--accent)"/><circle cx="11" cy="8" r="1" fill="var(--accent)"/></svg>',
+  interrupted: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--warn-soft)"/><path d="M8 4.5v4.2M8 10.8v.6" stroke="var(--warn)" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  failed: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--bad-soft)"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="var(--bad)" stroke-width="1.7"/></svg>',
+  pending: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--line)" stroke-width="1.6" stroke-dasharray="2.5 2"/></svg>'
+};
+
+function ruleSummaryPill(r, key) {
+  const counts = {};
+  r.outcomes.forEach(o => { const c = RULE_CLASS[o.status] || "muted"; counts[c] = (counts[c] || 0) + 1; });
+  const parts = [];
+  if (!r.outcomes.length) parts.push(`${r.applied.length} applied`);
+  if (counts.ok) parts.push(`<span class="rs-ok">${counts.ok} passed</span>`);
+  if (counts.bad) parts.push(`<span class="rs-bad">${counts.bad} failed</span>`);
+  if (counts.warn) parts.push(`<span class="rs-warn">${counts.warn} unavailable</span>`);
+  if (counts.muted) parts.push(`${counts.muted} other`);
+  if (r.fix_attempts) parts.push(`<span class="rs-warn">${r.fix_attempts} rejected</span>`);
+  return `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>${parts.join(" · ")}</button>`;
+}
+function renderItemRules(r, key, task, run) {
+  if (r.verifies) {
+    let results = [];
+    try { results = r.results.map(x => JSON.parse(x)); } catch (e) { results = []; }
+    const byId = Object.fromEntries(results.map(x => [x.id, x]));
+    const rows = r.verifies.map(v => {
+      const res = byId[v.id];
+      const verdict = res ? res.verdict : null;
+      return `<div class="rule"><span class="rule-glyph">${ICON.judged}</span><div style="min-width:0">
+        <div class="rule-sum">${prose(firstSentence(v.text))}<span class="rule-id">${esc(v.id)}</span>${verdict ? ` <span class="rstat ${verdict === "pass" ? "ok" : "bad"}">${esc(verdict)}</span>` : ' <span class="rstat muted">waiting</span>'}</div>
+        ${v.files && v.files.length ? `<div class="rule-scope">${v.files.map(f => `<span class="scope">${esc(f)}</span>`).join("")}</div>` : ""}
+        ${res && res.failures && res.failures.length ? `<ul class="fails">${res.failures.map(f => `<li>${esc(f.file)}${f.line ? ":" + esc(f.line) : ""} — ${esc(f.what)}</li>`).join("")}</ul>` : ""}
+        ${res && res.checked ? `<div class="quiet" style="padding:2px 0">checked: ${esc(res.checked)}</div>` : ""}
+        ${v.previous_failures && v.previous_failures.length ? `<div class="quiet" style="padding:2px 0">failed last round: ${esc(v.previous_failures.join("; "))}</div>` : ""}
+      </div></div>`;
+    }).join("");
+    return { pill: `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>verifies ${r.verifies.length} rule${r.verifies.length > 1 ? "s" : ""}</button>`, panel: `<div class="rules-panel" id="${key}" hidden>${rows}</div>` };
+  }
+  const outcome = Object.fromEntries(r.outcomes.map(o => [o.id, o]));
+  const rows = r.applied.map((a, i) => {
+    const o = outcome[a.id];
+    const status = o ? o.status : (r.not_applicable.includes(a.id) ? "not applicable" : r.left_out.includes(a.id) ? "left out" : null);
+    return `<div class="rule"><span class="rule-glyph">${a.checked ? ICON.checked : ICON.judged}</span><div style="min-width:0">
+      <div class="rule-sum">${prose(a.summary)}<span class="rule-id">${esc(a.id)}${a.hook ? " · hook" : ""}</span>${status ? ` <span class="rstat ${RULE_CLASS[status] || "muted"}">${esc(status)}</span>` : ' <span class="rstat muted">not checked yet</span>'}</div>
+      ${o && o.detail ? `<div class="quiet" style="padding:2px 0">${prose(o.detail)}</div>` : ""}
+    </div></div>`;
+  }).join("");
+  const attempts = r.reports.map(rep => `<details class="attempt"><summary>Completion ${esc(rep.attempt)} · ${esc(fmtTime(rep.checked_at))} · ${rep.results.filter(x => x.status === "failed").length ? `<span class="rs-bad">${rep.results.filter(x => x.status === "failed").length} failed</span>` : '<span class="rs-ok">all passed</span>'}</summary>
+    ${rep.results.map(x => `<div class="check"><span class="rstat ${x.status === "passed" ? "ok" : x.status === "failed" ? "bad" : x.status === "unavailable" ? "warn" : "muted"}">${esc(x.status.replace("_", " "))}</span> <span class="mono">${esc(x.id)}</span>${x.exit_code != null ? ` <span class="quiet">exit ${esc(x.exit_code)}</span>` : ""}
+      ${x.command ? `<pre>$ ${esc(x.command)}${x.output ? "\n" + esc(x.output) : ""}</pre>` : x.output ? `<pre>${esc(x.output)}</pre>` : ""}</div>`).join("")}</details>`).join("");
+  const extra = [
+    r.waived.length ? `<div class="quiet">Waived by the operator: ${r.waived.map(w => `<span class="mono">${esc(w.id)}</span> (${esc(w.reason)})`).join(", ")}</div>` : "",
+    r.disputes.length ? `<div class="quiet">Disputed: ${r.disputes.map(d => `<span class="mono">${esc(d.check)}</span> — ${esc(d.reason)}`).join("; ")}</div>` : "",
+    r.resolutions.filter(x => x.status === "converted").length ? `<div class="quiet">Checked by derived checks: ${r.resolutions.filter(x => x.status === "converted").map(x => `<span class="mono">${esc(x.id)}</span> → <span class="mono">${esc(x.check)}</span>`).join(", ")}</div>` : ""
+  ].join("");
+  return { pill: ruleSummaryPill(r, key), panel: `<div class="rules-panel" id="${key}" hidden>${rows}${extra}${attempts ? `<div class="attempts">${attempts}</div>` : ""}</div>` };
+}
+
+function artifactButton(task, run, ref, title, label) {
+  artifactIndex.push({ task, run, ref, title });
+  return `<button type="button" data-art="${artifactIndex.length - 1}">${esc(label || "Read artifact")}</button>`;
+}
+function renderRun(t, r, n) {
+  const live = r.status === "in_progress" || r.status === "awaiting_input";
+  const t0 = r.created_at, total = ms(t0, live ? new Date().toISOString() : r.updated_at) || 1;
+  const phases = [];
+  r.items.forEach(i => {
+    const p = i.kind === "verification" ? "step" : i.phase;
+    const label = PHASE_LABEL[p] || p;
+    let g = phases[phases.length - 1];
+    if (!g || g.label !== label) phases.push(g = { label, items: [] });
+    g.items.push(i);
+  });
+  const colorOf = i => i.owner === "ww" ? "var(--k-auto)" : i.kind === "verification" ? "var(--rule)" : "var(--k-worker)";
+  const ruleTally = {};
+  let ruleRows = "";
+  const rows = phases.map(g => `<div class="phase-lbl">${esc(g.label)}</div>` + g.items.map(i => {
+    const end = i.completed_at || (i.status === "in_progress" ? new Date().toISOString() : null);
+    const d = i.started_at && end ? ms(i.started_at, end) : null;
+    const left = i.started_at ? Math.max(0, ms(t0, i.started_at) / total * 100) : 0;
+    const width = d != null ? Math.max(.6, d / total * 100) : 0;
+    const key = `t${++uid}`;
+    const rules = i.rules ? renderItemRules(i.rules, key, t.id, r.id) : { pill: "", panel: "" };
+    if (i.rules && i.rules.outcomes) i.rules.outcomes.forEach(o => { ruleTally[o.status] = (ruleTally[o.status] || 0) + 1; });
+    const actions = [];
+    if (i.artifact) actions.push(artifactButton(t.id, r.id, i.artifact, `${t.id} · ${i.name}${i.round ? ` · round ${i.round + 1}` : ""}`));
+    if (rules.pill) actions.push(rules.pill);
+    const hook = i.phase !== "step" && i.kind !== "verification";
+    return `<div class="irow${i.current ? " current" : ""}${i.builtin ? " builtin" : ""}">
+      <span class="ist" title="${esc(STATUS_LABEL[i.status] || i.status)}">${STATUS_ICON[i.status] || STATUS_ICON.pending}</span>
+      <div class="iname${hook ? " hook" : ""}"><b>${esc(i.kind === "verification" ? `verify ${i.verifies || ""}` : i.name)}</b><span class="owner">${i.owner === "ww" ? "ww" : i.kind === "verification" ? "verifier" : "agent"}${i.model && i.model !== "auto" ? ` · ${esc(i.model)}` : ""}</span>${i.path && i.path !== i.name && !hook ? `<span class="owner">${esc(i.path)}</span>` : ""}${i.round ? `<span class="round">round ${i.round + 1}</span>` : ""}${i.attempts > 1 ? `<span class="owner" style="color:var(--warn)">${i.attempts} attempts</span>` : ""}${i.outcome ? `<span class="round">answered ${esc(i.outcome)}</span>` : ""}${i.chosen ? `<span class="badge you">chose ${esc(i.chosen)}</span>` : ""}</div>
+      <div class="timing">${d != null ? `<span class="dur">${fmtDur(d)}</span><span class="bar"><i style="left:${left}%;width:${Math.min(width, 100 - left)}%;--c:${colorOf(i)}"></i></span>` : `<span class="dur">${i.status === "pending" ? "not started" : ""}</span>`}</div>
+      ${i.result ? `<div class="ires">${esc(i.result)}</div>` : ""}
+      ${i.error ? `<div class="ires" style="color:var(--bad)">${esc(i.error)}</div>` : ""}
+      ${i.summary ? `<div class="isum clamp">${prose(i.summary)}</div>` : ""}
+      ${actions.length ? `<div class="iact">${actions.join("")}</div>` : ""}
+      ${rules.panel ? `<div class="ipanel">${rules.panel}</div>` : ""}
+    </div>`;
+  }).join("")).join("");
+  const tally = Object.entries(ruleTally);
+  if (tally.length) ruleRows = `<span>rules ${tally.map(([s, c]) => `<span class="rstat ${RULE_CLASS[s] || "muted"}">${c} ${esc(s)}</span>`).join(" ")}</span>`;
+  const history = (r.history || []).filter(h => h.round || h.status === "failed");
+  const extra = r.extra_artifacts || [];
+  return `<article class="run">
+    <div class="run-head">
+      <div class="run-title"><span class="rid">run ${n}</span><b>${esc(r.workflow)}</b>${pill(r.status)}${wfByName[r.workflow] ? `<button class="linkbtn" type="button" data-wfopen="${esc(r.workflow)}">See the workflow ${ICON.arrow}</button>` : ""}</div>
+      <div class="run-meta">
+        <span>${esc(fmtTime(r.created_at))} → ${live ? "now" : esc(fmtTime(r.updated_at))}</span>
+        <span>${fmtDur(total)}</span>
+        <span>agent <span class="mono">${esc(r.agent)}</span></span>
+        <span>runtime <span class="mono">${esc(r.runtime)}</span></span>
+        ${r.config_ref || r.config_commit ? `<span>config <span class="mono">${esc(r.config_ref || "")}${r.config_commit ? " @ " + esc(r.config_commit.slice(0, 7)) : ""}</span></span>` : ""}
+        ${r.modes.length ? `<span>mode <span class="mono">${esc(r.modes.join(", "))}</span></span>` : ""}
+        ${r.gotos.length ? `<span style="color:var(--k-assess)">${r.gotos.length} goto${r.gotos.length > 1 ? "s" : ""} taken</span>` : ""}
+        ${ruleRows}
+      </div>
+      ${r.operator_reason ? `<div class="stopnote">Waiting for you: <span class="mono">${esc(r.operator_reason)}</span>${r.last_error ? ` — ${esc(r.last_error)}` : ""}</div>` : ""}
+      ${r.summary && !(n === t.runs.length) ? `<p class="run-sum">${prose(r.summary)}</p>` : ""}
+    </div>
+    <div class="run-body">${rows}
+      ${history.length ? `<details class="attempt"><summary>Earlier rounds and retries · ${history.length}</summary>${history.map(h => `<div class="check"><span class="rstat ${h.status === "completed" ? "ok" : "bad"}">${esc(h.status)}</span> <b>${esc(h.name)}</b>${h.round ? ` <span class="round">round ${h.round + 1}</span>` : ""} <span class="quiet">${esc(fmtTime(h.completed_at))}</span>${h.summary ? `<div class="isum">${prose(h.summary)}</div>` : ""}${h.artifact ? `<div class="iact">${artifactButton(t.id, r.id, h.artifact, `${t.id} · ${h.name} · earlier round`)}</div>` : ""}</div>`).join("")}</details>` : ""}
+      ${extra.length ? `<details class="attempt"><summary>Command output and repairs · ${extra.length}</summary>${extra.map(e => { const ref = e.repair_artifact || e.command_output; return `<div class="check"><span class="mono">${esc(e.step)}</span> <span class="quiet">${esc(e.repair_artifact ? "repair" : `${e.check ? "check " + e.check : "command"} ${e.stream || ""} · attempt ${e.attempt || ""}`)}</span> <span class="iact" style="display:inline-flex">${artifactButton(t.id, r.id, ref, `${t.id} · ${e.step}`, "Open")}</span></div>`; }).join("")}</details>` : ""}
+    </div>
+  </article>`;
+}
+
+function kvRows(obj, prefix = "") {
+  return Object.entries(obj || {}).flatMap(([k, v]) => v && typeof v === "object" && !Array.isArray(v) ? kvRows(v, prefix + k + ".") : [[prefix + k, Array.isArray(v) ? v.join(", ") : String(v)]]);
+}
+function renderTaskDetail() {
+  artifactIndex = [];
+  const el = $("#tdetail");
+  if (!currentTask) { el.innerHTML = '<div class="empty">Choose a task to see its runs, rules and artifacts.</div>'; return; }
+  if (!detail || detail.id !== currentTask) { el.innerHTML = '<div class="empty">Loading…</div>'; return; }
+  const t = detail;
+  if (t.unreadable) {
+    el.innerHTML = `<div class="td-head"><div class="td-title"><h2>${esc(t.id)}</h2>${pill("unreadable")}</div>
+      <p class="outcome">This version of ww cannot read the task: ${esc(t.unreadable)}. Repairing, resetting or deleting the task directory is your choice; the page only reads it.</p></div>`;
+    return;
+  }
+  const runs = t.runs || [], last = runs[runs.length - 1];
+  const meta = kvRows(t.metadata);
+  const values = Object.entries(t.values || {});
+  const recorded = runs.flatMap(r => r.items.filter(i => i.owner === "ww" && i.result && i.phase !== "step").map(i => ({ name: i.name, result: i.result })));
+  el.innerHTML = `
+    <div class="td-head">
+      <div class="td-title"><h2>${esc(t.id)}</h2>${pill(t.status)}</div>
+      <div class="td-sub">
+        ${runs.length ? `<span>${runs.length} run${runs.length > 1 ? "s" : ""}: <span class="mono">${esc(runs.map(x => x.workflow).join(" → "))}</span></span>` : "<span>direct work only</span>"}
+        ${values.map(([k, v]) => `<span>${esc(k.replace(/^ww\./, ""))} <span class="mono">${esc(v)}</span></span>`).join("")}
+        ${t.handoff ? `<span>hands off to <span class="mono">${esc(t.handoff)}</span></span>` : ""}
+      </div>
+    </div>
+    ${last && last.summary ? `<div><div class="outcome-lbl">Outcome</div><p class="outcome">${prose(last.summary)}</p></div>` : ""}
+    ${t.children.length ? `<details class="panel" open><summary><h3>Child tasks</h3><span class="n">${t.children.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.children.map(c => `<button class="linkbtn" type="button" data-task="${esc(c)}">${esc(c)}</button>`).join(" · ")}</div></details>` : ""}
+    ${recorded.length ? `<details class="panel"${store.get("panel-recorded", true) ? " open" : ""} data-panel="recorded"><summary><h3>Recorded by ww</h3><span class="n">${recorded.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${recorded.map(x => `<div class="commit"><span class="h">${esc(x.name)}</span><span class="mono" style="font-size:12px">${esc(x.result)}</span></div>`).join("")}</div></details>` : ""}
+    <details class="panel"${meta.length ? " open" : ""}><summary><h3>Metadata</h3><span class="n">${meta.length || "none"}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${meta.length ? `<table class="settings">${meta.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : '<div class="quiet">No step saved task metadata.</div>'}</div></details>
+    ${t.direct_work.length ? `<details class="panel"${runs.length ? "" : " open"}><summary><h3>Direct work</h3><span class="n">${t.direct_work.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.direct_work.map(d => `<div class="dw"><time>${esc(fmtTime(d.recorded_at))} · ${esc(d.source || "")}</time>${prose(d.summary)}${(d.commits || []).length ? `<div class="quiet mono">${esc(d.commits.map(c => typeof c === "string" ? c : (c.sha || "").slice(0, 7) + " " + (c.subject || "")).join(" · "))}</div>` : ""}</div>`).join("")}</div></details>` : ""}
+    ${runs.slice().reverse().map((x, i) => renderRun(t, x, runs.length - i)).join("")}`;
+}
+
+async function loadTasks() {
+  try {
+    const data = await getJSON("/api/tasks");
+    tasks = data.tasks;
+  } catch (e) {
+    $("#tlist").innerHTML = `<div class="empty">ww cannot read the task store: ${esc(e.message)}</div>`;
+    return;
+  }
+  $("#tabTasksN").textContent = tasks.length;
+  if (!currentTask || !tasks.some(t => t.id === currentTask)) {
+    const fromHash = decodeURIComponent(location.hash.slice(1));
+    const active = tasks.slice().reverse().find(t => isActive(t.status));
+    currentTask = tasks.some(t => t.id === fromHash) ? fromHash : (active || tasks[tasks.length - 1] || {}).id || null;
+  }
+  renderChips(); renderTaskList(); renderCensus();
+  await loadDetail();
+}
+async function loadDetail() {
+  if (!currentTask) { detail = null; renderTaskDetail(); return; }
+  const id = currentTask;
+  const openPanels = $$("#tdetail .rules-panel:not([hidden]), #tdetail details[open]").map(n => n.id || null);
+  const scroll = window.scrollY;
+  try {
+    const data = await getJSON("/api/task?id=" + encodeURIComponent(id));
+    if (id !== currentTask) return;
+    detail = data;
+  } catch (e) {
+    $("#tdetail").innerHTML = `<div class="empty">ww cannot read ${esc(id)}: ${esc(e.message)}</div>`;
+    return;
+  }
+  renderTaskDetail();
+  openPanels.forEach(pid => { const p = pid && document.getElementById(pid); if (p) p.hidden = false; });
+  window.scrollTo(0, scroll);
+}
+function selectTask(id) {
+  currentTask = id; detail = null;
+  try { history.replaceState(null, "", "#" + encodeURIComponent(id)); } catch (e) {}
+  showView("tasks");
+  renderTaskList(); renderTaskDetail(); loadDetail();
+  if (matchMedia("(max-width: 980px)").matches) $("#tdetail").scrollIntoView({ block: "start" });
+}
+
+/* ---------- artifact drawer ---------- */
+function md(src) {
+  const lines = src.replace(/\r/g, "").split("\n"); let html = "", list = null, code = null, para = [];
+  const inline = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  const flushP = () => { if (para.length) { html += `<p>${inline(para.join(" "))}</p>`; para = []; } };
+  const flushL = () => { if (list) { html += `</${list}>`; list = null; } };
+  for (const l of lines) {
+    if (code !== null) { if (/^\s*```/.test(l)) { html += `<pre><code>${esc(code)}</code></pre>`; code = null; } else code += l + "\n"; continue; }
+    if (/^\s*```/.test(l)) { flushP(); flushL(); code = ""; continue; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h) { flushP(); flushL(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; continue; }
+    const li = l.match(/^\s*([-*]|\d+\.)\s+(.*)/);
+    if (li) { flushP(); const k = /\d/.test(li[1]) ? "ol" : "ul"; if (list !== k) { flushL(); html += `<${k}>`; list = k; } html += `<li>${inline(li[2])}</li>`; continue; }
+    if (!l.trim()) { flushP(); flushL(); continue; }
+    if (list && /^\s{2,}/.test(l)) { html = html.replace(/<\/li>$/, " " + inline(l.trim()) + "</li>"); continue; }
+    flushL(); para.push(l.trim());
+  }
+  if (code !== null) html += `<pre><code>${esc(code)}</code></pre>`;
+  flushP(); flushL();
+  return html;
+}
+async function openArtifact(i) {
+  const a = artifactIndex[i];
+  const drawer = $("#drawer");
+  drawer.innerHTML = `<div class="drawer-head"><div style="min-width:0"><b>${esc(a.title)}</b><span class="path">${esc(a.ref)}</span></div><button class="x" type="button" data-close aria-label="Close">✕</button></div><div class="md"><p class="quiet">Loading…</p></div>`;
+  drawer.hidden = false; $("#scrim").hidden = false;
+  $(".x", drawer).focus();
+  try {
+    const response = await fetch(`/api/artifact?task=${encodeURIComponent(a.task)}&run=${encodeURIComponent(a.run)}&ref=${encodeURIComponent(a.ref)}`, { cache: "no-store" });
+    const text = await response.text();
+    if (!response.ok) throw new Error(JSON.parse(text).error);
+    $(".md", drawer).innerHTML = /\.md$/.test(a.ref) ? md(text) : `<pre>${esc(text)}</pre>`;
+  } catch (e) {
+    $(".md", drawer).innerHTML = `<p class="quiet">ww cannot read the artifact: ${esc(e.message)}</p>`;
+  }
+}
+function closeArtifact() { $("#drawer").hidden = true; $("#scrim").hidden = true; }
+
+/* ================================================================
+   Shell: census, views, live updates
+================================================================ */
+function renderCensus() {
+  if (!atlas) return;
+  const own = atlas.workflows.filter(w => !w.builtin);
+  const steps = own.reduce((n, w) => n + countSteps(w), 0);
+  const rules = (atlas.library.rules || { groups: [] }).groups.reduce((n, g) => n + g.rules.length, 0);
+  const active = tasks.filter(t => isActive(t.status)).length;
+  $("#census").innerHTML = [[own.length, "workflows"], [steps, "steps"], [(atlas.library.handlers || []).length, "handlers"], [rules, "rules"], [tasks.length, "tasks"], [active, "active"]]
+    .map(([n, l]) => `<span><b>${n}</b>${l}</span>`).join("");
+}
+function showView(v) {
+  $$(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.view === v));
+  $("#view-workflows").hidden = v !== "workflows";
+  $("#view-tasks").hidden = v !== "tasks";
+  store.set("view", v);
+  if (v === "workflows") $$(".wf.open").forEach(drawArcs);
+}
+async function loadAtlas() {
+  try {
+    const data = await getJSON("/api/atlas");
+    if (atlas) data.__open = openCards();
+    atlas = data;
+  } catch (e) {
+    $("#catalog").innerHTML = `<div class="empty">ww cannot build the workflows: ${esc(e.message)}</div>`;
+    return;
+  }
+  const name = atlas.root.split("/").filter(Boolean).pop() || "ww";
+  document.title = `${name} · ww`;
+  $("#title").textContent = name;
+  $("#eyebrow").innerHTML = `<span>ww · visualize</span><span class="dot"></span><span>${esc(atlas.root)}</span>${atlas.files.length ? `<span class="dot"></span><span>${esc(atlas.files.join(", "))}</span>` : ""}`;
+  renderAtlas();
+  if (currentTask && detail) renderTaskDetail();
+  if (loadAtlas.after) { const after = loadAtlas.after; loadAtlas.after = null; after(); }
+}
+function connect() {
+  const live = $("#live"), text = $("#liveText");
+  const source = new EventSource("/api/events");
+  source.addEventListener("hello", () => { live.classList.remove("off"); text.textContent = "Live · following the configuration and .ww/tasks"; });
+  source.addEventListener("change", e => {
+    const change = JSON.parse(e.data);
+    if (change.config) loadAtlas();
+    if (change.tasks) loadTasks();
+  });
+  source.onerror = () => { live.classList.add("off"); text.textContent = "Not connected · is ww visualize still running?"; };
+}
+
+document.addEventListener("click", e => {
+  const tab = e.target.closest(".tab"); if (tab) { showView(tab.dataset.view); return; }
+  const head = e.target.closest(".wf-head"); if (head && head.tagName === "BUTTON") { const c = head.closest(".wf"); setOpen(c, !c.classList.contains("open")); saveOpen(); return; }
+  const g = e.target.closest("[data-goto]"); if (g) { goTo(g.dataset.goto); return; }
+  const wo = e.target.closest("[data-wfopen]"); if (wo) { showView("workflows"); goTo(wo.dataset.wfopen); return; }
+  const tr = e.target.closest("[data-task]"); if (tr) { selectTask(tr.dataset.task); return; }
+  const ch = e.target.closest("[data-filter]"); if (ch) { taskFilter = ch.dataset.filter; store.set("taskFilter", taskFilter); renderChips(); renderTaskList(); return; }
+  const ar = e.target.closest("[data-art]"); if (ar) { openArtifact(+ar.dataset.art); return; }
+  if (e.target.closest("[data-close]") || e.target.id === "scrim") { closeArtifact(); return; }
+  const t = e.target.closest("[data-toggle]"); if (t) { const p = document.getElementById(t.dataset.toggle); if (p) { p.hidden = !p.hidden; t.setAttribute("aria-expanded", !p.hidden); } return; }
+  const m = e.target.closest("[data-clamp]"); if (m) { const d = document.getElementById(m.dataset.clamp); const c = d.classList.toggle("clamp"); m.textContent = c ? "Read all" : "Show less"; }
+});
+document.addEventListener("toggle", e => {
+  const shelf = e.target.closest && e.target.closest("details.shelf");
+  if (shelf) store.set("shelves", $$("details.shelf[open]").map(d => d.dataset.shelf));
+}, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#drawer").hidden) closeArtifact(); });
+$("#expandAll").onclick = () => { $$(".wf:not([hidden])").forEach(c => setOpen(c, true)); saveOpen(); };
+$("#collapseAll").onclick = () => { $$(".wf").forEach(c => setOpen(c, false)); saveOpen(); };
+$("#toggleRules").onclick = e => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", on);
+  e.currentTarget.textContent = on ? "Rules shown" : "Rules hidden";
+  $("#catalog").classList.toggle("hide-rules", !on);
+};
+$("#toggleBuiltin").onclick = () => toggleBuiltin(!showBuiltin);
+$("#q").addEventListener("input", applyFilters);
+$("#tq").addEventListener("input", renderTaskList);
+toggleBuiltin(showBuiltin);
+
+const hash = decodeURIComponent(location.hash.slice(1));
+showView(hash.startsWith("wf-") ? "workflows" : hash ? "tasks" : store.get("view", "workflows"));
+if (hash.startsWith("wf-")) loadAtlas.after = () => goTo(hash.slice(3));
+loadAtlas().then(loadTasks).then(connect);
+</script>
+
+</body>
+</html>

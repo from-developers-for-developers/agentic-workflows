@@ -7,7 +7,7 @@ import pytest
 
 from ww.actions import Commands
 from ww.config import load_configuration
-from ww.config.composition import compose_configuration
+from ww.config.composition import compose_configuration, configuration_files
 from ww.config_files import user_directory
 from ww.errors import ConfigurationError
 from ww.project_config import Limits, compose_settings, load_project_config
@@ -313,6 +313,23 @@ workflows:
     assert configuration.workflow_provenance["task"].level == "project"
     assert configuration.workflow_provenance["task"].source == "ww.yaml"
     assert set(configuration.workflow_provenance) == {"user-only", "task"}
+
+
+def test_the_files_read_are_listed_as_paths_in_folding_order(
+    user: Path, repo: Path
+) -> None:
+    _write(user / "ww.yaml", _WORKFLOW.replace("task", "user-task"))
+    root = _write(repo / "ww.yaml", "imports: [lib/one.yaml]\n" + _WORKFLOW)
+    _write(repo / "lib" / "one.yaml", "modes:\n  - economy: Economy.\n")
+    _write(repo / "ww.local.yaml", "extends: false\n")
+
+    assert configuration_files(root) == (repo / "ww.local.yaml",)
+    (repo / "ww.local.yaml").unlink()
+    assert configuration_files(root) == (
+        user / "ww.yaml",
+        repo / "lib" / "one.yaml",
+        root,
+    )
 
 
 def test_import_provenance_uses_importing_level_and_physical_source(

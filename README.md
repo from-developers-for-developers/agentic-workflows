@@ -325,6 +325,7 @@ the commands worth knowing:
 ./ww status TASK-123        # compact: workflow, current step and state, runtime, agent
 ./ww artifacts TASK-123     # what each step produced
 ./ww instruction TASK-123 --role manager   # the full current instructions
+./ww visualize              # a live, read-only browser page of workflows and tasks
 ```
 
 `instruction` is also how work resumes: a new session, or a different agent,

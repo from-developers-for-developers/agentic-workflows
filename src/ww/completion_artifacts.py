@@ -6,7 +6,13 @@ from __future__ import annotations
 from ww.actions import PlannedAction, actions
 from ww.artifacts import RuleOutcome, RulesSummary, RuleStatus, render_step_artifact
 from ww.contracts import CheckStatus
-from ww.execution_models import CheckReport, ExecutionState, PlanSnapshot
+from ww.execution_models import (
+    CheckReport,
+    ExecutionState,
+    HeldCompletion,
+    PlanSnapshot,
+    RuleVerdict,
+)
 from ww.plan import PlanItem, step_label
 from ww.rule_checks import item_reports
 from ww.storage_adapters.base import ArtifactAddress, TaskArtifactStorage
@@ -20,7 +26,12 @@ _REPORTED: dict[CheckStatus, RuleStatus] = {
 
 
 def rule_outcomes(
-    state: ExecutionState, item: PlanItem, report: CheckReport | None
+    state: ExecutionState,
+    item: PlanItem,
+    report: CheckReport | None,
+    *,
+    index: int | None = None,
+    verdicts: tuple[RuleVerdict, ...] = (),
 ) -> RulesSummary | None:
     """What the completing step's artifact says about its rules and checks.
 
@@ -33,8 +44,13 @@ def rule_outcomes(
     result in ``report``, or, when the operator waived it, in the last
     report that ran it; one that could not run says why. Rejections an
     operator retry moved into the history still count.
+
+    The item is the current one unless ``index`` names another, as for a
+    look back at a finished run; ``verdicts`` then stand in for a held
+    completion that is no longer there, as ``recorded_verdicts`` reads them.
     """
-    record = state.item_executions[state.cursor]
+    at = state.cursor if index is None else index
+    record = state.item_executions[at]
     if not item.rules and not item.checks:
         return None
     results = {
@@ -49,6 +65,8 @@ def rule_outcomes(
         for rule_id in check.covers
     }
     held = record.held_completion
+    if held is None and verdicts:
+        held = HeldCompletion(verdicts=verdicts)
 
     def reported(check_id: str, hook: bool = False) -> RuleOutcome:
         """A check's own line: its result, or the verdict that stood in."""
@@ -131,7 +149,7 @@ def rule_outcomes(
     outcomes.sort(key=lambda outcome: order.get(outcome.id, len(order)))
     return RulesSummary(
         tuple(outcomes),
-        fix_attempts=sum(1 for earlier in item_reports(state) if earlier.failed),
+        fix_attempts=sum(1 for earlier in item_reports(state, at) if earlier.failed),
         waived=record.checks_waived,
     )
 

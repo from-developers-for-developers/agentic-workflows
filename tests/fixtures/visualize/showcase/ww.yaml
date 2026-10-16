@@ -1,0 +1,166 @@
+modes:
+  - economy: Use as few tokens as possible.
+
+profiles:
+  code-reviewer: Read critically; report findings as file:line.
+
+documents:
+  - spec: The agreed specification of a triaged request.
+
+rules:
+  python-architecture:
+    rules: [rules/python/]
+    workflows: [build, review-loop]
+    steps: [develop]
+  review-standards:
+    rules: [rules/review/]
+    steps: [review, code-review]
+
+handlers:
+  - check-code-quality: Run the linters and fix every finding.
+    model: cheapest
+    reasoning: lowest
+  - build-frontend: ~
+    shell: npm run build
+  - build-all: ~
+    handlers:
+      - build-frontend: ~
+      - argv: [test, -d, dist]
+  - create-github-pr: ~
+    argv: [gh, pr, create, --fill]
+    saves:
+      - metadata.github.pr_url: The pull request URL.
+
+hooks:
+  before_start_workflow:
+    - workflows: [build]
+      handlers:
+        - check-environment: ~
+          argv: ["true"]
+  before_complete_workflow:
+    - workflows: [build]
+      handlers:
+        - commit: Commit the change with a short message.
+
+workflows:
+  - build: Implement a change and check it.
+    steps:
+      - develop: Implement the change.
+        role: manager
+        rules:
+          - Keep the public CLI unchanged.
+        hooks:
+          before_complete:
+            - argv: ["true"]
+              on_failure: fix
+      - check-code-quality: ~
+
+  - bugfix: The same steps as build, for a bug.
+    inherit: build
+    recommended_next_workflow: build
+
+  - review-loop: Plan, develop and review until the review finds nothing.
+    runtime: auto
+    modes: [economy]
+    steps:
+      - plan: Plan the change.
+        model: claude-opus-5-5
+        reasoning: high
+        select_rules_for: [develop]
+      - develop: Implement the plan.
+        explicit: true
+        artifact_from: plan
+      - review: Review the change thoroughly.
+        profile: code-reviewer
+        subagents: false
+        assess:
+          assess: Are there issues that require development work?
+          positive:
+            goto: [develop, "Fix what {{ww.goto.from}} found."]
+      - release-notes: Write two lines of release notes.
+        saves:
+          - metadata.release_notes: The release notes.
+
+  - polish: Review and fix until a review finds nothing.
+    hooks_from: build
+    steps:
+      - code-review: Review the changes thoroughly.
+        assess:
+          assess: Are there issues?
+          repeat_until: negative
+          positive:
+            steps:
+              - fix: Fix the exact findings.
+          mixed:
+            steps:
+              - investigate: Gather the missing evidence.
+
+  - address-feedback: Work through review comments as tracked items.
+    steps:
+      - feedback: Register one item per source comment.
+        items:
+          description: Keep related comments as separate obligations.
+          steps:
+            - bootstrap: Record each source comment ID.
+              saves:
+                - item.field.comment_id: Original comment ID.
+            - confirm: Confirm each fix.
+              interactive: page
+              choices:
+                - accept: The fix answers the comment.
+                - rework: Send it back.
+            - send-replies: Reply on {{ww.item.field.comment_id}}.
+      - finish: Summarize the change.
+
+  - triage: Talk a request through and hand it on.
+    restartable: true
+    steps:
+      - discuss: Talk the request through with the operator.
+        interactive: true
+        choices:
+          - build: A change.
+          - bugfix: A bug.
+        variables:
+          - next_workflow: The workflow to run next.
+      - name: classify
+        assess:
+          assess: Is this request a duplicate or trivial?
+          outcomes:
+            duplicate:
+              stop_workflow: true
+            trivial:
+              goto: route
+      - write-spec: Write the specification.
+        saves:
+          - documents.spec: The specification.
+      - route: Start the chosen workflow.
+        handoff_to: "{{next_workflow}}"
+
+  - release: Build and open the release pull request.
+    manual: true
+    steps:
+      - build-all: ~
+        on_failure: fix
+      - bump-version: ~
+        shell: echo 1.0.0
+        saves:
+          - metadata.version: The new version.
+      - create-github-pr: ~
+      - announce: Write the announcement for {{ww.metadata.version}}.
+        hooks:
+          after_complete:
+            - argv: ["true"]
+
+  - epic: Split a plan into child tasks.
+    steps:
+      - split: Add one child per slice.
+        children:
+          description: One child per slice.
+          steps:
+            - refine: Refine the child's text.
+              role: manager
+            - implement:
+                workflow: build
+            - land: Merge the child's branch.
+      - assess: Should the epic continue?
+      - close: Close the epic.

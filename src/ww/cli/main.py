@@ -33,8 +33,7 @@ from ww.config_writes import FileWrite
 from ww.defaults import PROJECT_LAUNCHER
 from ww.design_docs import read_design_document
 from ww.direct_work import SHORT_SHA
-from ww.discovery import AGENT_DIRECTORIES
-from ww.errors import ConfigurationError, StateError, WwError
+from ww.errors import StateError, WwError
 from ww.executable import printed_executable, project_command, ww_command
 from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
@@ -79,7 +78,12 @@ from ww.output_adapters.rule_pages import (
     render_rule_view,
     render_rules_listing,
 )
-from ww.plan import PlanCompilationOptions, WorkflowPlan, compile_workflow_plan
+from ww.plan import (
+    PlanCompilationOptions,
+    WorkflowPlan,
+    compile_for_any_agent,
+    compile_workflow_plan,
+)
 from ww.project_config import ProjectConfig, compose_settings, load_project_config
 from ww.rule_disputes import DisputeLog
 from ww.rule_stats import RuleStatsStore, never_applied_rules
@@ -103,6 +107,7 @@ from ww.storage import Storage
 from ww.storage_adapters import FileTaskStorageAdapter
 from ww.task_ids import bare_request_id
 from ww.upgrade import upgrade
+from ww.visualize import serve_visualizer
 from ww.workflow_config import (
     ALL,
     ALL_NAMES,
@@ -158,6 +163,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "requirements",
         "handoff",
         "workflow-feedback",
+        "visualize",
     }
 )
 # Commands that edit ww's configuration, or read none of it, read the
@@ -174,6 +180,8 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
         "agents",
         "updates",
         "upgrade",
+        # It follows the configuration as it is edited.
+        "visualize",
     }
 )
 # Commands after which a run may have ended or moved to another commit, so a
@@ -349,27 +357,14 @@ def _compile_for_lint(
 ) -> WorkflowPlan:
     """Compile ``workflow``'s plan as ``start`` would, so that what only
     compiling finds, such as ``select_rules_for`` targets, fails lint too.
-
-    The project's agents are not known here, and a skill may exist for one
-    agent only: the workflow passes when it compiles for any supported agent,
-    and otherwise fails with the first agent's error.
     """
-    errors: list[ConfigurationError] = []
-    for agent in AGENT_DIRECTORIES:
-        try:
-            return compile_workflow_plan(
-                configuration,
-                context.storage.root,
-                workflow,
-                agent,
-                None,
-                context.extensions,
-                PlanCompilationOptions(),
-                context.extensions.config,
-            )
-        except ConfigurationError as error:
-            errors.append(error)
-    raise errors[0]
+    return compile_for_any_agent(
+        configuration,
+        context.storage.root,
+        workflow,
+        context.extensions,
+        context.extensions.config,
+    )
 
 
 def _unrecorded_namespace_warning(
@@ -603,6 +598,25 @@ def _configuration_files(storage: Storage, extensions: ExtensionRegistry) -> str
                 + "\n"
             )
     return rendered
+
+
+def _visualize(context: _Context) -> _Outcome:
+    """Serve the project's page until the operator stops it with Ctrl+C."""
+    args = context.args
+
+    def ready(url: str) -> None:
+        print(f"ww visualize: {url} (Ctrl+C to stop)", flush=True)
+
+    try:
+        serve_visualizer(
+            context.storage,
+            port=args.port,
+            open_browser=webbrowser.open if args.open_browser else None,
+            ready=ready,
+        )
+    except KeyboardInterrupt:
+        return _Outcome("ww visualize stopped.\n")
+    return _Outcome("")
 
 
 def _start(context: _Context) -> _Outcome:
@@ -1867,6 +1881,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     ),
     "docs": lambda c: _Outcome(read_design_document(c.args.document)),
     "inspect": _inspect,
+    "visualize": _visualize,
     "lookup": lambda c: _Outcome(
         render_lookup(
             c.storage,
