@@ -7,7 +7,12 @@ import pytest
 
 from ww.actions import Commands
 from ww.config import load_configuration
-from ww.config.composition import compose_configuration, configuration_files
+from ww.config.composition import (
+    compose_configuration,
+    configuration_files,
+    entry_text,
+    workflow_text,
+)
 from ww.config_files import user_directory
 from ww.errors import ConfigurationError
 from ww.project_config import Limits, compose_settings, load_project_config
@@ -588,3 +593,53 @@ def test_a_null_global_workflows_value_leaves_project_provenance(
 
     assert set(provenance) == {"task"}
     assert provenance["task"].level == "project"
+
+
+_COMMENTED = """modes:
+  - economy: Fewer tokens.
+
+workflows:
+  # The first one.
+  - first: One.
+    steps:
+      # A note inside.
+      - work: Do it.
+
+  # Above the second.
+  - name: second
+    description: Two.
+    steps: []
+  - third: Three.
+"""
+
+
+def test_an_entry_keeps_its_comments_and_ends_at_the_next() -> None:
+    assert entry_text(_COMMENTED, "workflows", "first") == (
+        "# The first one.\n"
+        "- first: One.\n"
+        "  steps:\n"
+        "    # A note inside.\n"
+        "    - work: Do it.\n"
+    )
+    assert entry_text(_COMMENTED, "workflows", "second") == (
+        "# Above the second.\n- name: second\n  description: Two.\n  steps: []\n"
+    )
+    assert entry_text(_COMMENTED, "workflows", "third") == "- third: Three.\n"
+    assert entry_text(_COMMENTED, "modes", "economy") == "- economy: Fewer tokens.\n"
+    assert entry_text(_COMMENTED, "workflows", "missing") is None
+    assert entry_text("not: [valid", "workflows", "first") is None
+
+
+def test_the_winning_definition_is_shown_from_its_file(user: Path, repo: Path) -> None:
+    root = _write(repo / "ww.yaml", _WORKFLOW)
+    _write(
+        repo / "ww.local.yaml",
+        "workflows:\n  # Mine.\n  - task: Local task.\n    steps: []\n",
+    )
+
+    found = workflow_text(root, "task")
+
+    assert found is not None
+    assert (found.file, found.label) == (repo / "ww.local.yaml", "ww.local.yaml")
+    assert found.text == "# Mine.\n- task: Local task.\n  steps: []\n"
+    assert workflow_text(root, "nowhere") is None

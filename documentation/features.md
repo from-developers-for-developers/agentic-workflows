@@ -22,7 +22,8 @@ An installation carries the same-version copies of all three: read them with
 - A read-only profile of the checkout (`inspect`): branches, activity, fix
   signals, hot paths, manifests and verify commands, and conventions.
 - A live, read-only page of the project's workflows and tasks (`visualize`),
-  served on 127.0.0.1 for the operator.
+  served on 127.0.0.1 for the operator, with each workflow's YAML and a
+  replayable demo run.
 - Onboarding state, and setup fragments that ww validates and places in the
   shared or local configuration after asking.
 - Built-in learning and setup workflows, started by the `ww-setup` skills:
@@ -674,8 +675,8 @@ The page has two tabs:
 
 | Tab | Shows |
 | --- | --- |
-| Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. A configuration that does not load is shown with ww's error; the Tasks tab still works. |
-| Tasks | Every task in the store, active ones first, with status filters and search; a task that cannot be read is listed with the reason. A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
+| Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A switch on each card shows its YAML instead: the entry exactly as the file that defines it has it, comments included, syntax-highlighted, with the file named and a copy button. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. The demo workflow comes first, marked as the demo (see below). A configuration that does not load is shown with ww's error; the Tasks tab still works. |
+| Tasks | Every task in the store, active ones first, with status filters and search; a task that cannot be read is listed with the reason. A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
 
 The page is live. ww watches the configuration as the checkout has it — every
 YAML level and import, the JSON settings levels, the rule files and the
@@ -685,6 +686,36 @@ keeps the open cards, panels and scroll position. Only artifacts a run
 records are served, and only to a request addressed to `127.0.0.1` or
 `localhost` on the page's port, so another site cannot read the page by
 pointing its own domain at this machine.
+
+### The demo
+
+Every project's Workflows tab starts with a `demo` workflow, for presenting
+ww to a team or recording it. It is a small project shipped inside the
+`ww.visualize` package, never part of the project's configuration, `discover`
+or `lint`: five steps (a plan that keeps a document, an implement step under a
+step rule, an automatic `run-checks` handler with `on_failure: fix`, a review
+with an attached assessment whose positive outcome is a goto back to
+`implement`, and release notes saved as metadata), and a rule group with one
+rule checked by a command and one judged.
+
+```yaml
+      - review: Review the change against the plan and the rules.
+        assess:
+          assess: Did the review find issues that need more work?
+          positive:
+            goto: [implement, "Fix what {{ww.goto.from}} found."]
+```
+
+Its card has a "Run the demo" button. The player replays a run ww really made:
+when the page starts, ww copies the demo project into a temporary directory
+(no Git, no extensions) and plays an agent through it with its own CLI —
+`start`, `next`, `complete`, a completion the changelog check refuses and its
+fix, the verifier's rule verdicts, both assessment outcomes and the goto —
+keeping each command and the exact Markdown page ww printed. The player shows
+what the agent does and why, the files it writes, the command typed out, then
+ww's page, with the steps on a rail (rounds counted) and what ww ran by itself.
+Play, pause, previous, next, restart and speed are buttons; Space, the arrow
+keys, Home and Escape do the same from the keyboard.
 
 ## Setting ww up: learning and suggestions
 

@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ww.actions.contracts import Commands, Extension, PlannedAction, Prompt
-from ww.builtin_workflows import builtin_workflow_names
-from ww.config.composition import configuration_files
+from ww.builtin_workflows import builtin_workflow_names, builtin_workflow_text
+from ww.config.composition import configuration_files, workflow_text
 from ww.config.rules import rule_source
 from ww.config_files import display_path
 from ww.errors import WwError
@@ -83,11 +83,20 @@ def build_atlas(project: Project) -> JSON:
             )
         except (WwError, ValueError) as error:
             workflows.append(
-                {**_workflow_header(configuration, workflow), "error": str(error)}
+                {
+                    **_workflow_header(configuration, workflow),
+                    "error": str(error),
+                    "yaml": _source(project, workflow),
+                }
             )
             continue
         plans[workflow.name] = plan
-        workflows.append(_Workflow(project, workflow, plan, group_of).build())
+        workflows.append(
+            {
+                **_Workflow(project, workflow, plan, group_of).build(),
+                "yaml": _source(project, workflow),
+            }
+        )
     return {
         "error": None,
         "files": files,
@@ -125,6 +134,20 @@ def _workflow_header(
         # ww's own: shipped with ww, and no configuration file defines it.
         "builtin": provenance is None and workflow.name in builtin_workflow_names(),
     }
+
+
+def _source(project: Project, workflow: WorkflowDefinition) -> JSON | None:
+    """The workflow's definition as its file has it, for the YAML view."""
+    try:
+        found = workflow_text(project.storage.config_path, workflow.name)
+        if found is not None:
+            return {"label": found.label, "text": found.text}
+        shipped = builtin_workflow_text(workflow.name)
+    except (WwError, OSError, ValueError):
+        return None
+    if shipped is None:
+        return None
+    return {"label": f"ww built-in: {shipped[0]}", "text": shipped[1]}
 
 
 @dataclass

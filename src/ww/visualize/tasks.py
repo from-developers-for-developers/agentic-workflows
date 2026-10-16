@@ -205,7 +205,16 @@ def _run(
         for item, record in zip(plan.items, state.item_executions, strict=True)
         if item.assessment_question
     }
+    # The containers an item sits in that the page shows as rows: steps and
+    # plain groups, not an assessment's outcome or a child's stage slot.
+    outcomes = {
+        f"{item.step}/{label}"
+        for item in plan.items
+        for label in (*item.assessment_outcomes, "positive", "negative", "mixed")
+        if item.assessment_question
+    }
     items = []
+    previous: PlanItem | None = None
     for index, (item, record) in enumerate(
         zip(plan.items, state.item_executions, strict=True)
     ):
@@ -217,7 +226,29 @@ def _run(
             and _never_ran(record)
         ):
             continue
-        items.append(_item(state, plan, index, item, record, references))
+        depth = sum(
+            1
+            for ancestor in item.ancestors
+            if not ancestor.endswith(("/{child}", "/{item}"))
+            and ancestor not in outcomes
+        )
+        # A step's own hooks and verifiers sit under it, and so does every
+        # member of a handler group after its first.
+        if (
+            item.phase in {"before_start", "before_complete", "after_complete"}
+            or item.verifies is not None
+            or (
+                previous is not None
+                and previous.phase == "step"
+                and item.phase == "step"
+                and previous.step == item.step
+            )
+        ):
+            depth += 1
+        previous = item
+        items.append(
+            {**_item(state, plan, index, item, record, references), "depth": depth}
+        )
     reason = operator_reason(state, plan)
     return {
         "id": run.run_id,

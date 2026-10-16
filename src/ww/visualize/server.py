@@ -10,6 +10,7 @@ kind. It runs until the operator stops it.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import hashlib
 import json
@@ -23,6 +24,7 @@ from urllib.parse import parse_qs, urlsplit
 from ww.errors import StateError, WwError
 from ww.storage import Storage
 
+from . import demo
 from .atlas import build_atlas
 from .project import Project
 from .tasks import artifact_text, document_text, task_detail, task_list
@@ -64,6 +66,15 @@ class VisualizerServer(ThreadingHTTPServer):
         self.html = page_html()
         self._cache: dict[tuple[str, int], Any] = {}
         self._lock = threading.Lock()
+        self._demo: dict[str, Any] | None = None
+        self._demo_lock = threading.Lock()
+
+    def demo(self) -> dict[str, Any]:
+        """The demo and its recording, built once: it never changes."""
+        with self._demo_lock:
+            if self._demo is None:
+                self._demo = demo.demo()
+            return self._demo
 
     def project(self) -> Project:
         return Project.load(self.storage)
@@ -125,6 +136,8 @@ class _Handler(BaseHTTPRequestHandler):
                 )
             elif url.path == "/api/task":
                 self._json(task_detail(self.server.project(), _required(query, "id")))
+            elif url.path == "/api/demo":
+                self._json(self.server.demo())
             elif url.path == "/api/document":
                 text = document_text(
                     self.server.project(), query.get("task"), _required(query, "name")
@@ -216,6 +229,11 @@ def bind_visualizer(storage: Storage, port: int, watcher: Watcher) -> Visualizer
         ) from error
 
 
+def _warm(server: VisualizerServer) -> None:
+    with contextlib.suppress(Exception):
+        server.demo()
+
+
 def serve_visualizer(
     storage: Storage,
     *,
@@ -231,6 +249,8 @@ def serve_visualizer(
     )
     url = visualizer_url(server.server_address[1])
     watcher.start()
+    # The recording takes a moment; have it ready before the page asks.
+    threading.Thread(target=_warm, args=(server,), daemon=True).start()
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

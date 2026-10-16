@@ -38,6 +38,7 @@
   --f-body: "Instrument Sans", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
+  --term-bg: #10172A; --term-fg: #E3E8F2; --term-dim: #7E89A3; --y-key: #8FB3FF; --y-lit: #F0B357; --y-var: #6FD3C7;
   --r: 12px;
   --shadow: 0 1px 2px rgb(19 26 44 / .05), 0 10px 32px -16px rgb(19 26 44 / .16);
 }
@@ -443,6 +444,7 @@ details.panel[open] > summary { border-bottom: 1px solid var(--line); }
 .md code { background: var(--sunken); border-radius: 4px; padding: 0 4px; }
 .md pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; }
 .md pre code { background: none; padding: 0; }
+.md blockquote { margin: .6em 0; padding: 2px 12px; border-left: 3px solid var(--line); color: var(--muted); }
 .md .trunc { color: var(--faint); font-size: 12.5px; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 18px; }
 
 /* ---------- Live page additions ---------- */
@@ -480,6 +482,78 @@ details.attempt[open] > summary { margin-bottom: 6px; }
 .run-sum { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); max-width: 76ch; }
 .md pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .doc-row { display: flex; gap: 10px; align-items: baseline; }
+/* ---------- Steps / YAML switch ---------- */
+.wf-switch { display: flex; gap: 4px; align-items: center; padding: 14px 0 6px; flex-wrap: wrap; }
+.seg { font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 7px; color: var(--muted); border: 1px solid transparent; }
+.seg:hover:not(:disabled) { color: var(--ink); }
+.seg[aria-selected="true"] { background: var(--sunken); color: var(--ink); border-color: var(--line); }
+.seg:disabled { opacity: .45; cursor: not-allowed; }
+.yaml-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); padding: 8px 2px 6px; }
+pre.yaml { margin: 0 0 6px; font-family: var(--f-mono); font-size: 12.5px; line-height: 1.6; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 16px 18px; overflow-x: auto; tab-size: 2; }
+.y-key { color: var(--y-key); } .y-s { color: var(--term-fg); } .y-c { color: var(--term-dim); font-style: italic; }
+.y-d, .y-p { color: var(--term-dim); } .y-k, .y-n { color: var(--y-lit); } .y-v { color: var(--y-var); }
+.wf-demo { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 55%, var(--surface)), var(--surface) 140px); }
+.tag.demo { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.play-demo { margin-left: auto; display: inline-flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; color: var(--surface); background: var(--accent); border-radius: 8px; padding: 7px 14px; }
+.play-demo:hover { filter: brightness(1.08); }
+
+/* ---------- Tasks: items nested under their step ---------- */
+.irow.nested { margin-left: calc(var(--depth) * 26px); padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--line) 80%, var(--faint)); border-top-color: transparent; }
+.irow.nested + .irow:not(.nested) { border-top-color: color-mix(in srgb, var(--line) 55%, transparent); }
+
+/* ---------- Demo player ---------- */
+body.no-scroll { overflow: hidden; }
+.player { position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; place-items: center; }
+.p-shell { width: min(1280px, 100%); height: min(860px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+.p-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+.p-top h2 { margin: 4px 0 0; font-family: var(--f-display); font-weight: 750; font-size: 24px; letter-spacing: -.015em; }
+.p-top .x { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+.p-grid { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 0; }
+@media (max-width: 820px) { .p-grid { grid-template-columns: minmax(0, 1fr); } .p-side { display: none; } }
+.p-side { border-right: 1px solid var(--line); padding: 18px 20px; overflow-y: auto; }
+.p-rail { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; position: relative; }
+.p-step { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 10px; border-radius: 9px; color: var(--muted); transition: background .25s, color .25s; }
+.p-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--c); background: var(--surface); grid-row: span 2; }
+.p-name { font-family: var(--f-display); font-weight: 650; font-size: 15px; }
+.p-kind { grid-column: 2; font-family: var(--f-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.p-step .round { grid-column: 3; grid-row: 1; }
+.p-step.done .p-dot, .p-step.seen .p-dot { background: var(--c); }
+.p-step.done { color: var(--ink); }
+.p-step.now { background: var(--accent-soft); color: var(--ink); }
+.p-step.now .p-dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 25%, transparent); animation: pulse 2s infinite; }
+.p-note { font-size: 12px; color: var(--faint); margin-top: 18px; }
+.p-main { padding: 22px 26px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.p-main > * { flex: none; }
+.p-say { margin: 0; font-family: var(--f-display); font-weight: 500; font-size: 19px; line-height: 1.45; max-width: 64ch; text-wrap: pretty; }
+.p-file { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.p-file-head { font-size: 12.5px; color: var(--muted); padding: 6px 12px; background: var(--sunken); display: flex; gap: 6px; align-items: center; }
+.p-file pre { margin: 0; padding: 10px 12px; font-family: var(--f-mono); font-size: 12.5px; overflow-x: auto; }
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 12px; overflow: hidden; font-family: var(--f-mono); font-size: 13.5px; }
+.term-bar { display: flex; gap: 6px; align-items: center; padding: 9px 12px; background: color-mix(in srgb, var(--term-bg) 80%, var(--term-fg) 8%); }
+.term-bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--term-dim); opacity: .55; }
+.term-bar span { margin-left: 8px; font-size: 11.5px; color: var(--term-dim); }
+.term-line { padding: 12px 16px 14px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.term-prompt { color: var(--y-key); }
+.caret { display: inline-block; width: .55em; height: 1.1em; background: var(--term-fg); vertical-align: -.2em; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.p-refused { font-size: 13.5px; color: var(--bad); background: var(--bad-soft); border-radius: 9px; padding: 8px 12px; }
+.p-auto { font-size: 13px; color: var(--k-auto); display: flex; gap: 8px; align-items: center; }
+.p-page { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.p-page-head { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 10px 16px 0; }
+.p-page .md { padding: 4px 18px 16px; overflow: visible; font-size: 14px; }
+.p-page.rise { animation: rise .35s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.p-controls { display: flex; gap: 8px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
+.pbtn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); border: 1px solid var(--line); flex: none; }
+.pbtn.main { width: 44px; height: 44px; background: var(--accent); color: var(--surface); border-color: transparent; }
+.pbtn.speed { width: auto; padding: 0 12px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.p-ticks { flex: 1; display: flex; gap: 4px; align-items: center; min-width: 0; padding: 0 8px; }
+.p-tick { flex: 1; height: 6px; border-radius: 3px; background: var(--sunken); min-width: 6px; }
+.p-tick.past { background: color-mix(in srgb, var(--accent) 45%, var(--sunken)); }
+.p-tick.now { background: var(--accent); }
+.p-tick.refused { box-shadow: inset 0 -2px 0 var(--bad); }
+
 .page-error { position: sticky; top: 0; z-index: 30; margin: 0; border-radius: 0; }
 </style>
 </head>
@@ -537,6 +611,7 @@ details.attempt[open] > summary { margin-bottom: 6px; }
   </div>
 </div>
 <div class="scrim" id="scrim" hidden></div>
+<div class="player" id="player" hidden role="dialog" aria-modal="true" aria-label="ww demo"></div>
 <aside class="drawer" id="drawer" hidden aria-label="Artifact"></aside>
 
 <script>
@@ -572,6 +647,11 @@ async function getJSON(url) {
 }
 
 const ICON = {
+  play: '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor"/></svg>',
+  pause: '<svg width="12" height="12" viewBox="0 0 12 12"><rect x="2.5" y="1.5" width="2.5" height="9" rx=".5" fill="currentColor"/><rect x="7" y="1.5" width="2.5" height="9" rx=".5" fill="currentColor"/></svg>',
+  prev: '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M9.5 1.5v9L3 6z" fill="currentColor"/><rect x="1.5" y="1.5" width="1.6" height="9" fill="currentColor"/></svg>',
+  next: '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 1.5v9L9 6z" fill="currentColor"/><rect x="8.9" y="1.5" width="1.6" height="9" fill="currentColor"/></svg>',
+  restart: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 6a4 4 0 1 0 1.2-2.8"/><path d="M2.5 1v2.5H5"/></svg>',
   chev: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg>',
   from: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 6H2M5 3L2 6l3 3"/></svg>',
   save: '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h6l2 2v6H2z"/><path d="M4 2v3h4V2"/></svg>',
@@ -604,6 +684,7 @@ const STD = ["positive", "negative", "mixed"];
 let atlas = null;
 let wfByName = {};
 let showBuiltin = store.get("builtin", false);
+let demoData = null;
 let uid = 0;
 
 function walkSteps(steps, fn) {
@@ -779,7 +860,9 @@ function renderStep(wf, s, i) {
 }
 
 function renderWorkflow(wf) {
+  const key = wf.__key || wf.name;
   const tags = [];
+  if (wf.__demo) tags.push('<span class="tag demo">demo · a real recorded run</span>');
   if (wf.inherits) tags.push(`<span class="tag inherit">inherits ${esc(wf.inherits)}</span>`);
   if (wf.builtin) tags.push('<span class="tag builtin">ww</span>');
   if (wf.manual) tags.push('<span class="tag">manual</span>');
@@ -799,7 +882,8 @@ function renderWorkflow(wf) {
   if (hasLoop(wf)) meta.push(`<span class="flow" style="color:var(--k-assess)">${ICON.loop} loops</span>`);
   if (nRules) meta.push(`<span class="rules-pill"><span class="sec">§</span>${nRules}</span>`);
   if (wf.source && wf.level !== "project") meta.push(`<span class="flow">${esc(wf.source)}</span>`);
-  return `<article class="wf" id="wf-${esc(wf.name)}" data-name="${esc(wf.name)}"${wf.builtin ? " data-builtin" : ""}>
+  const yamlOpen = store.get("yaml", []).includes(key);
+  return `<article class="wf${wf.__demo ? " wf-demo" : ""}" id="wf-${esc(key)}" data-name="${esc(key)}"${wf.builtin ? " data-builtin" : ""}>
     <button class="wf-head" type="button" aria-expanded="false">
       <span class="wf-name">${esc(wf.name)}${tags.join("")}</span>
       <span class="chev">${ICON.chev}</span>
@@ -807,17 +891,48 @@ function renderWorkflow(wf) {
       <span class="wf-meta">${meta.join("")}</span>
     </button>
     <div class="wf-body" hidden>
+      <div class="wf-switch" role="tablist" aria-label="View">
+        <button type="button" class="seg" data-pane="steps" aria-selected="${!yamlOpen}">Steps</button>
+        <button type="button" class="seg" data-pane="yaml" aria-selected="${yamlOpen}"${wf.yaml ? "" : " disabled title=\"ww cannot find this workflow's file\""}>YAML</button>
+        ${wf.__demo ? `<button type="button" class="play-demo" data-play-demo>${ICON.play} Run the demo</button>` : ""}
+      </div>
+      <div class="wf-pane" data-pane="yaml"${yamlOpen ? "" : " hidden"}>${wf.yaml ? `<div class="yaml-head"><span class="mono">${esc(wf.yaml.label)}</span><button type="button" class="linkbtn" data-copy-yaml>Copy</button></div><pre class="yaml"><code>${hlYaml(wf.yaml.text)}</code></pre>` : ""}</div>
+      <div class="wf-pane" data-pane="steps"${yamlOpen ? " hidden" : ""}>
       ${renderLane(wf, "before_start", "Before start")}
       ${wf.inherits ? `<div class="inherited-note">${ICON.from} Steps inherited from <button class="linkbtn" type="button" data-goto="${esc(wf.inherits)}">${esc(wf.inherits)}</button></div>` : ""}
       <div class="rail-wrap">${renderSteps(wf, wf.steps || [], true).replace('class="rail main"', `class="rail main${gotos.length ? " has-arcs" : ""}"`)}</div>
       ${renderLane(wf, "before_complete", "Before complete")}
+      </div>
     </div>
   </article>`;
 }
 
+/* ---------- YAML, as its file has it, highlighted ---------- */
+function hlYaml(text) {
+  const value = v => {
+    if (!v) return "";
+    const comment = v.match(/^(.*?)(\s+#.*)$/);
+    if (comment && !/["']/.test(comment[1])) return value(comment[1]) + `<span class="y-c">${esc(comment[2])}</span>`;
+    if (/^[>|][-+]?\s*$/.test(v)) return `<span class="y-p">${esc(v)}</span>`;
+    if (/^(~|null|true|false)$/.test(v.trim())) return `<span class="y-k">${esc(v)}</span>`;
+    if (/^-?\d+(\.\d+)?$/.test(v.trim())) return `<span class="y-n">${esc(v)}</span>`;
+    if (/^\[.*\]$/.test(v.trim())) return `<span class="y-p">[</span>${esc(v.trim().slice(1, -1)).replace(/("[^"]*"|'[^']*')/g, '<span class="y-s">$1</span>')}<span class="y-p">]</span>`;
+    return `<span class="y-s">${esc(v).replace(/\{\{([\w.]+)\}\}/g, '<span class="y-v">{{$1}}</span>')}</span>`;
+  };
+  return text.replace(/\n$/, "").split("\n").map(line => {
+    if (/^\s*#/.test(line)) return `<span class="y-c">${esc(line)}</span>`;
+    const m = line.match(/^(\s*)(-\s+)?([^\s:#"'][^:#]*?|"[^"]*"|'[^']*'):(\s+(.*))?$/);
+    if (m) return `${m[1]}${m[2] ? `<span class="y-d">${esc(m[2])}</span>` : ""}<span class="y-key">${esc(m[3])}</span><span class="y-p">:</span>${m[4] ? " " + value(m[5]) : ""}`;
+    const d = line.match(/^(\s*)(-\s+)(.*)$/);
+    if (d) return `${d[1]}<span class="y-d">${esc(d[2])}</span>${value(d[3])}`;
+    const t = line.match(/^(\s*)(.*)$/);
+    return `${t[1]}<span class="y-s">${esc(t[2]).replace(/\{\{([\w.]+)\}\}/g, '<span class="y-v">{{$1}}</span>')}</span>`;
+  }).join("\n");
+}
+
 function drawArcs(card) {
   const rail = $(".rail.main", card);
-  if (!rail || !rail.classList.contains("has-arcs") || $(".wf-body", card).hidden) return;
+  if (!rail || !rail.classList.contains("has-arcs") || $(".wf-body", card).hidden || rail.closest(".wf-pane").hidden) return;
   const wf = wfByName[card.dataset.name];
   const items = [...rail.children].filter(n => n.tagName === "LI");
   let svg = $("svg.arcs", rail);
@@ -900,17 +1015,20 @@ function toggleBuiltin(on) {
 }
 
 function renderAtlas() {
-  const open = new Set(atlas.__open || store.get("open", null) || []);
+  // A re-render keeps the cards open on screen; the first render, the stored ones.
+  const shown = $$(".wf").length ? openCards() : null;
+  const open = new Set(shown || atlas.__open || store.get("open", null) || []);
   const scroll = window.scrollY;
   const banner = $("#atlasError");
   banner.hidden = !atlas.error;
   banner.textContent = atlas.error ? "ww cannot read the configuration: " + atlas.error : "";
   wfByName = Object.fromEntries(atlas.workflows.map(w => [w.name, w]));
   const own = atlas.workflows.filter(w => !w.builtin), builtin = atlas.workflows.filter(w => w.builtin);
-  $("#catalog").innerHTML = own.map(renderWorkflow).join("") +
+  const demoCard = demoData ? (wfByName["ww-demo"] = demoData.workflow, renderWorkflow(demoData.workflow)) : "";
+  $("#catalog").innerHTML = demoCard + own.map(renderWorkflow).join("") +
     (builtin.length ? `<p class="section-label builtin-label" id="builtinLabel"><span>ww's own workflows</span><span>${builtin.length}</span></p>` + builtin.map(renderWorkflow).join("") : "") +
     '<div class="empty" id="noMatch" hidden>No workflow matches that search.</div>';
-  if (!atlas.__open && !store.get("open", null) && own.length) open.add(own[0].name);
+  if (!shown && !atlas.__open && !store.get("open", null) && own.length) open.add(own[0].name);
   $$(".wf").forEach(c => { if (open.has(c.dataset.name)) setOpen(c, true); });
   $("#countLabel").textContent = `${own.length} defined${builtin.length ? ` · ${builtin.length} built in` : ""}`;
   const lbl = $("#builtinLabel"); if (lbl) lbl.hidden = !showBuiltin;
@@ -1082,7 +1200,7 @@ function renderRun(t, r, n) {
     if (i.artifact) actions.push(artifactButton(t.id, r.id, i.artifact, `${t.id} · ${i.name}${i.round ? ` · round ${i.round + 1}` : ""}`));
     if (rules.pill) actions.push(rules.pill);
     const hook = i.phase !== "step" && i.kind !== "verification";
-    return `<div class="irow${i.current ? " current" : ""}${i.builtin ? " builtin" : ""}">
+    return `<div class="irow${i.current ? " current" : ""}${i.builtin ? " builtin" : ""}${i.depth ? " nested" : ""}" style="--depth:${i.depth || 0}">
       <span class="ist" title="${esc(STATUS_LABEL[i.status] || i.status)}">${STATUS_ICON[i.status] || STATUS_ICON.pending}</span>
       <div class="iname${hook ? " hook" : ""}"><b>${esc(i.kind === "verification" ? `verify ${i.verifies || ""}` : i.name)}</b><span class="owner">${i.owner === "ww" ? "ww" : i.kind === "verification" ? "verifier" : "agent"}${i.model && i.model !== "auto" ? ` · ${esc(i.model)}` : ""}</span>${i.path && i.path !== i.name && !hook ? `<span class="owner">${esc(i.path)}</span>` : ""}${i.round ? `<span class="round">round ${i.round + 1}</span>` : ""}${i.attempts > 1 ? `<span class="owner" style="color:var(--warn)">${i.attempts} attempts</span>` : ""}${i.outcome ? `<span class="round">answered ${esc(i.outcome)}</span>` : ""}${i.chosen ? `<span class="badge you">chose ${esc(i.chosen)}</span>` : ""}</div>
       <div class="timing">${d != null ? `<span class="dur">${fmtDur(d)}</span><span class="bar"><i style="left:${left}%;width:${Math.min(width, 100 - left)}%;--c:${colorOf(i)}"></i></span>` : `<span class="dur">${i.status === "pending" ? "not started" : ""}</span>`}</div>
@@ -1200,16 +1318,19 @@ function selectTask(id) {
 }
 
 /* ---------- artifact drawer ---------- */
-function md(src) {
+function md(src, options = {}) {
   const lines = src.replace(/\r/g, "").split("\n"); let html = "", list = null, code = null, para = [];
   const inline = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-  const flushP = () => { if (para.length) { html += `<p>${inline(para.join(" "))}</p>`; para = []; } };
+  // ww's pages break lines on purpose; an artifact's paragraphs may wrap.
+  const flushP = () => { if (para.length) { html += `<p>${para.map(inline).join(options.breaks ? "<br>" : " ")}</p>`; para = []; } };
   const flushL = () => { if (list) { html += `</${list}>`; list = null; } };
   for (const l of lines) {
     if (code !== null) { if (/^\s*```/.test(l)) { html += `<pre><code>${esc(code)}</code></pre>`; code = null; } else code += l + "\n"; continue; }
     if (/^\s*```/.test(l)) { flushP(); flushL(); code = ""; continue; }
     const h = l.match(/^(#{1,4})\s+(.*)/);
     if (h) { flushP(); flushL(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; continue; }
+    const quote = l.match(/^>\s?(.*)/);
+    if (quote) { flushP(); flushL(); html += `<blockquote>${inline(quote[1])}</blockquote>`; continue; }
     const li = l.match(/^\s*([-*]|\d+\.)\s+(.*)/);
     if (li) { flushP(); const k = /\d/.test(li[1]) ? "ol" : "ul"; if (list !== k) { flushL(); html += `<${k}>`; list = k; } html += `<li>${inline(li[2])}</li>`; continue; }
     if (!l.trim()) { flushP(); flushL(); continue; }
@@ -1239,6 +1360,120 @@ async function openDrawer(a) {
   }
 }
 function closeArtifact() { $("#drawer").hidden = true; $("#scrim").hidden = true; }
+
+/* ================================================================
+   Demo player: replays a run ww really made, command by command
+================================================================ */
+const player = { frame: 0, playing: false, speed: 1, timer: null, typed: 0 };
+const ROLE_LABEL = { manager: "the agent, as manager", agent: "the agent, as worker" };
+function demoSteps() { return (demoData.workflow.steps || []).map(st => st.path); }
+function stepRounds(upTo) {
+  const rounds = {};
+  let last = null;
+  demoData.frames.slice(0, upTo + 1).forEach(f => { if (f.step && f.step !== last) { rounds[f.step] = (rounds[f.step] || 0) + 1; } last = f.step; });
+  return rounds;
+}
+function openPlayer() {
+  if (!demoData) return;
+  $("#player").hidden = false;
+  document.body.classList.add("no-scroll");
+  player.frame = 0; renderPlayer(true); play(true);
+}
+function closePlayer() {
+  pause(); $("#player").hidden = true; document.body.classList.remove("no-scroll");
+}
+function renderPlayer(fresh) {
+  const frames = demoData.frames, f = frames[player.frame];
+  const steps = demoSteps(), rounds = stepRounds(player.frame);
+  const reached = new Set(frames.slice(0, player.frame + 1).map(x => x.step));
+  const done = f.status === "completed";
+  const rail = steps.map(st => {
+    const node = (demoData.workflow.steps || []).find(x => x.path === st);
+    const K = KINDS[node.kind] || KINDS.worker;
+    const state = f.step === st ? "now" : done || (reached.has(st) && steps.indexOf(st) < steps.indexOf(f.step)) ? "done" : reached.has(st) ? "seen" : "";
+    return `<li class="p-step ${state}" style="--c:${K.color}"><span class="p-dot"></span><span class="p-name">${esc(st)}</span>${rounds[st] > 1 ? `<span class="round">round ${rounds[st]}</span>` : ""}<span class="p-kind">${esc(K.label)}</span></li>`;
+  }).join("");
+  const dots = frames.map((x, i) => `<button type="button" class="p-tick${i === player.frame ? " now" : i < player.frame ? " past" : ""}${x.refused ? " refused" : ""}" data-frame="${i}" aria-label="Step ${i + 1}"></button>`).join("");
+  const filesHtml = f.files.map(file => `<div class="p-file"><div class="p-file-head">${ICON.save} writes <span class="mono">${esc(file.path)}</span></div><pre>${esc(file.content)}</pre></div>`).join("");
+  const automatic = f.automatic.map(a => `<div class="p-auto">${ICON.gear} ww ran <b class="mono">${esc(a.name)}</b> by itself${a.result ? `: <span class="mono">${esc(a.result)}</span>` : ""}</div>`).join("");
+  $("#player").innerHTML = `<div class="p-shell">
+    <header class="p-top">
+      <div><div class="eyebrow"><span>ww · demo</span><span class="dot"></span><span>${esc(demoData.root)}</span></div><h2>What an agent sees</h2></div>
+      <button class="x" type="button" data-close-player aria-label="Close">✕</button>
+    </header>
+    <div class="p-grid">
+      <aside class="p-side">
+        <p class="section-label"><span>demo workflow</span><span>${player.frame + 1} / ${frames.length}</span></p>
+        <ol class="p-rail">${rail}</ol>
+        <p class="p-note">Every command and page here is ww's real output, recorded by running this workflow in a throwaway copy of the project.</p>
+      </aside>
+      <section class="p-main">
+        <p class="p-say">${esc(f.say)}</p>
+        ${filesHtml}
+        <div class="term">
+          <div class="term-bar"><i></i><i></i><i></i><span>${esc(ROLE_LABEL[f.role] || f.role)}</span></div>
+          <div class="term-line"><span class="term-prompt">$</span> <span class="term-cmd" id="termCmd"></span><span class="caret"></span></div>
+        </div>
+        ${f.refused ? '<div class="p-refused">ww refused the completion: the step stays open until the check passes.</div>' : ""}
+        ${automatic}
+        <div class="p-page" id="pPage"${fresh ? " hidden" : ""}><div class="p-page-head">ww prints</div><div class="md">${md(f.output, { breaks: true })}</div></div>
+      </section>
+    </div>
+    <footer class="p-controls">
+      <button type="button" class="pbtn" data-player="restart" title="Restart (Home)">${ICON.restart}</button>
+      <button type="button" class="pbtn" data-player="prev" title="Previous (←)">${ICON.prev}</button>
+      <button type="button" class="pbtn main" data-player="toggle" title="Play or pause (space)">${player.playing ? ICON.pause : ICON.play}</button>
+      <button type="button" class="pbtn" data-player="next" title="Next (→)">${ICON.next}</button>
+      <div class="p-ticks">${dots}</div>
+      <button type="button" class="pbtn speed" data-player="speed" title="Speed">${player.speed}×</button>
+    </footer>
+  </div>`;
+  typeCommand(f.command, fresh);
+}
+function typeCommand(text, animate) {
+  const el = $("#termCmd"), page = $("#pPage");
+  clearTimeout(player.typing);
+  if (!animate || matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = text; if (page) page.hidden = false; return; }
+  let i = 0;
+  const step = () => {
+    i = Math.min(text.length, i + Math.max(1, Math.round(2 * player.speed)));
+    el.textContent = text.slice(0, i);
+    if (i < text.length) player.typing = setTimeout(step, 18);
+    else player.typing = setTimeout(() => { if (page) { page.hidden = false; page.classList.add("rise"); } }, 350 / player.speed);
+  };
+  el.textContent = ""; step();
+}
+function dwell(f) {
+  const base = 2200 + f.command.length * 18 + Math.min(f.output.length, 2400) * 2.2 + f.files.length * 1500;
+  return Math.min(base, 12000) / player.speed;
+}
+function schedule() {
+  clearTimeout(player.timer);
+  if (!player.playing) return;
+  const f = demoData.frames[player.frame];
+  player.timer = setTimeout(() => {
+    if (player.frame >= demoData.frames.length - 1) { pause(); return; }
+    player.frame++; renderPlayer(true); schedule();
+  }, dwell(f));
+}
+function play(fromStart) { player.playing = true; if (!fromStart) renderPlayer(false); schedule(); }
+function pause() { player.playing = false; clearTimeout(player.timer); const b = $('[data-player="toggle"]'); if (b) b.innerHTML = ICON.play; }
+function goFrame(i, animate) {
+  player.frame = Math.max(0, Math.min(demoData.frames.length - 1, i));
+  renderPlayer(animate); schedule();
+}
+function playerAction(action) {
+  if (action === "toggle") { if (player.playing) pause(); else { if (player.frame >= demoData.frames.length - 1) player.frame = 0; player.playing = true; renderPlayer(true); schedule(); } return; }
+  if (action === "prev") return goFrame(player.frame - 1, false);
+  if (action === "next") return goFrame(player.frame + 1, true);
+  if (action === "restart") { player.playing = true; return goFrame(0, true); }
+  if (action === "speed") { player.speed = player.speed === 1 ? 1.5 : player.speed === 1.5 ? 2 : player.speed === 2 ? 0.75 : 1; const b = $('[data-player="speed"]'); if (b) b.textContent = player.speed + "×"; schedule(); }
+}
+async function loadDemo() {
+  try { demoData = await getJSON("/api/demo"); } catch (e) { demoData = null; return; }
+  Object.assign(demoData.workflow, { __key: "ww-demo", __demo: true });
+  if (atlas) renderAtlas();
+}
 
 /* ================================================================
    Shell: census, views, live updates
@@ -1290,6 +1525,24 @@ function connect() {
 
 document.addEventListener("click", e => {
   const tab = e.target.closest(".tab"); if (tab) { showView(tab.dataset.view); return; }
+  if (e.target.closest("[data-play-demo]")) { openPlayer(); return; }
+  if (e.target.closest("[data-close-player]") || e.target.id === "player") { closePlayer(); return; }
+  const pb = e.target.closest("[data-player]"); if (pb) { playerAction(pb.dataset.player); return; }
+  const tick = e.target.closest("[data-frame]"); if (tick) { pause(); goFrame(+tick.dataset.frame, false); return; }
+  const seg = e.target.closest(".wf-switch .seg"); if (seg && !seg.disabled) {
+    const card = seg.closest(".wf"), pane = seg.dataset.pane;
+    $$(".wf-switch .seg", card).forEach(b => b.setAttribute("aria-selected", b === seg));
+    $$(".wf-pane", card).forEach(p => { p.hidden = p.dataset.pane !== pane; });
+    const keep = new Set(store.get("yaml", [])); if (pane === "yaml") keep.add(card.dataset.name); else keep.delete(card.dataset.name);
+    store.set("yaml", [...keep]);
+    drawArcs(card);
+    return;
+  }
+  const cp = e.target.closest("[data-copy-yaml]"); if (cp) {
+    const text = (wfByName[cp.closest(".wf").dataset.name] || {}).yaml;
+    if (text && navigator.clipboard) navigator.clipboard.writeText(text.text).then(() => { cp.textContent = "Copied"; setTimeout(() => { cp.textContent = "Copy"; }, 1500); }, () => {});
+    return;
+  }
   const head = e.target.closest(".wf-head"); if (head && head.tagName === "BUTTON") { const c = head.closest(".wf"); setOpen(c, !c.classList.contains("open")); saveOpen(); return; }
   const g = e.target.closest("[data-goto]"); if (g) { goTo(g.dataset.goto); return; }
   const wo = e.target.closest("[data-wfopen]"); if (wo) { showView("workflows"); goTo(wo.dataset.wfopen); return; }
@@ -1305,7 +1558,17 @@ document.addEventListener("toggle", e => {
   const shelf = e.target.closest && e.target.closest("details.shelf");
   if (shelf) store.set("shelves", $$("details.shelf[open]").map(d => d.dataset.shelf));
 }, true);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#drawer").hidden) closeArtifact(); });
+document.addEventListener("keydown", e => {
+  if (!$("#player").hidden) {
+    if (e.key === "Escape") closePlayer();
+    else if (e.key === " ") { e.preventDefault(); playerAction("toggle"); }
+    else if (e.key === "ArrowRight") playerAction("next");
+    else if (e.key === "ArrowLeft") playerAction("prev");
+    else if (e.key === "Home") playerAction("restart");
+    return;
+  }
+  if (e.key === "Escape" && !$("#drawer").hidden) closeArtifact();
+});
 $("#expandAll").onclick = () => { $$(".wf:not([hidden])").forEach(c => setOpen(c, true)); saveOpen(); };
 $("#collapseAll").onclick = () => { $$(".wf").forEach(c => setOpen(c, false)); saveOpen(); };
 $("#toggleRules").onclick = e => {
@@ -1323,6 +1586,7 @@ const hash = decodeURIComponent(location.hash.slice(1));
 showView(hash.startsWith("wf-") ? "workflows" : hash ? "tasks" : store.get("view", "workflows"));
 if (hash.startsWith("wf-")) loadAtlas.after = () => goTo(hash.slice(3));
 loadAtlas().then(loadTasks).then(connect);
+loadDemo();
 </script>
 
 </body>

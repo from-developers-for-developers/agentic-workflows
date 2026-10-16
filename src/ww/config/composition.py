@@ -217,6 +217,76 @@ def workflow_sites(path: Path, name: str) -> tuple[WorkflowSite, ...]:
     return tuple(sites)
 
 
+@dataclass(frozen=True)
+class WorkflowText:
+    """A workflow's definition as its file has it, comments included."""
+
+    file: Path
+    label: str
+    text: str
+
+
+def workflow_text(path: Path, name: str) -> WorkflowText | None:
+    """The definition of workflow ``name`` that wins, as written in its file.
+
+    Only that file's entry is shown: a workflow that inherits another says so
+    there, and an override in a lower level replaces the whole entry.
+    """
+    sites = workflow_sites(path, name)
+    if not sites:
+        return None
+    site = sites[-1]
+    text = entry_text(site.file.read_text(encoding="utf-8"), "workflows", name)
+    return WorkflowText(site.file, site.label, text) if text is not None else None
+
+
+def entry_text(text: str, key: str, name: str) -> str | None:
+    """The lines of root catalog ``key``'s entry ``name`` in YAML ``text``.
+
+    The entry keeps its comments, those just above it included, and loses
+    the indentation of its list: it starts at its ``-``. ``None`` when the
+    file has no such entry.
+    """
+    try:
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(root, yaml.MappingNode):
+        return None
+    lines = text.splitlines()
+    for key_node, value_node in root.value:
+        if key_node.value != key or not isinstance(value_node, yaml.SequenceNode):
+            continue
+        for item in value_node.value:
+            block = _entry_lines(lines, item)
+            try:
+                parsed = yaml.safe_load("\n".join(block))
+            except yaml.YAMLError:
+                continue
+            if isinstance(parsed, list) and parsed and entry_name(parsed[0]) == name:
+                return "\n".join(block) + "\n"
+    return None
+
+
+def _entry_lines(lines: list[str], item: yaml.Node) -> list[str]:
+    """One sequence entry's lines, from its comments above to its last line."""
+    start = item.start_mark.line
+    dash = lines[start].rfind("-", 0, item.start_mark.column + 1)
+    indent = max(dash, 0)
+    end_line = item.end_mark.line
+    # The node ends where the next token starts; a line holding only
+    # indentation before that point belongs to whatever comes next.
+    reached = lines[end_line][: item.end_mark.column] if end_line < len(lines) else ""
+    end = end_line + (1 if reached.strip() else 0)
+    while start > 0 and lines[start - 1].strip().startswith("#"):
+        start -= 1
+    block = lines[start:end]
+    # A comment above the next entry ends this one's node too.
+    while block and (not block[-1].strip() or block[-1].lstrip().startswith("#")):
+        block.pop()
+    return [line[indent:] if line[:indent].strip() == "" else line for line in block]
+
+
 def configuration_files(path: Path) -> tuple[Path, ...]:
     """Every YAML file folded for the repo file ``path``, from user to local.
 

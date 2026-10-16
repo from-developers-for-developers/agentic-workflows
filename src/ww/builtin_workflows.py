@@ -81,6 +81,21 @@ def builtin_workflow_names() -> frozenset[str]:
     return frozenset(workflow.name for workflow in builtin_workflows())
 
 
+def builtin_workflow_text(name: str) -> tuple[str, str] | None:
+    """The built-in workflow ``name`` as its shipped file has it: the file's
+    name and the entry's text, comments included."""
+    # ww.config imports this module; read the entry with it only when asked.
+    from ww.config.composition import entry_text
+
+    for entry in sorted(BUILTIN_DIRECTORY.iterdir(), key=lambda item: item.name):
+        if not (entry.name.endswith(".yaml") and entry.is_file()):
+            continue
+        text = entry_text(entry.read_text(encoding="utf-8"), "workflows", name)
+        if text is not None:
+            return entry.name, text
+    return None
+
+
 def builtin_workflow(name: str) -> WorkflowDefinition:
     """The built-in workflow ``name``, as ww ships it."""
     for workflow in builtin_workflows():

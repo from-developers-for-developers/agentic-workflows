@@ -1,0 +1,46 @@
+# The demo ww visualize shows on every project's page and plays back: a small
+# change planned, implemented under two rules, checked by a command, and
+# reviewed, with a review that finds issues sending the work back.
+
+documents:
+  - notes: What the change is, why, and how it was verified.
+
+rules:
+  conventions:
+    rules: [rules/]
+    steps: [implement]
+
+handlers:
+  - run-checks: Run the project's checks.
+    argv: [sh, -c, "test -s CHANGES.md"]
+
+workflows:
+  - name: demo
+    description: >-
+      Plan a small change, implement it under the project's rules, check it,
+      and review it; a review with findings sends the work back.
+    steps:
+      - plan: >-
+          Plan the change and write it down in {{ww.documents.notes}}:
+          the goal, the files it touches and how you will verify it.
+        saves:
+          - documents.notes: The plan, kept current as the work goes on.
+
+      - implement: Implement the plan.
+        artifact_from: plan
+        rules:
+          - Keep the public interface unchanged.
+
+      # ww runs this one itself; an agent is called in only to repair it.
+      - run-checks: ~
+        on_failure: fix
+
+      - review: Review the change against the plan and the rules.
+        assess:
+          assess: Did the review find issues that need more work?
+          positive:
+            goto: [implement, "Fix what {{ww.goto.from}} found."]
+
+      - release-notes: Write two lines of release notes for the change.
+        saves:
+          - metadata.release_notes: The release notes.

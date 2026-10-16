@@ -361,3 +361,53 @@ def test_only_the_chosen_outcome_and_the_task_s_documents_are_shown(
     assert document_text(project, "TASK-1", "notes") == "# Notes\n"
     with pytest.raises(StateError, match="no document"):
         document_text(project, None, "notes")
+
+
+def test_the_demo_is_a_real_run_with_neutral_paths() -> None:
+    from ww.visualize.demo import SHOWN_ROOT, demo
+
+    payload = demo()
+
+    frames = payload["frames"]
+    assert payload["workflow"]["name"] == "demo"
+    assert [step["path"] for step in payload["workflow"]["steps"]] == [
+        "plan",
+        "implement",
+        "run-checks",
+        "review",
+        "release-notes",
+    ]
+    assert payload["workflow"]["yaml"]["text"].startswith("- name: demo\n")
+    assert all(frame["command"].startswith("ww ") for frame in frames)
+    refused = [frame for frame in frames if frame["refused"]]
+    assert len(refused) == 1
+    assert "Fix required" in refused[0]["output"]
+    assert any("Sent back by a goto" in frame["output"] for frame in frames)
+    assert [a["name"] for frame in frames for a in frame["automatic"]] == [
+        "run-checks",
+        "run-checks",
+    ]
+    waiting = [f for f in frames if "choose the outcome of `review`" in f["output"]]
+    assert [frame["step"] for frame in waiting] == ["review", "review"]
+    assert frames[-1]["status"] == "completed"
+    blob = json.dumps(payload)
+    assert SHOWN_ROOT in blob
+    for leak in ("/private/", "/var/folders/", "ww-demo-", "./ww "):
+        assert leak not in blob
+
+
+def test_every_workflow_carries_its_yaml(server: VisualizerServer) -> None:
+    body = json.loads(_get(server, "/api/atlas")[1])
+    task = next(entry for entry in body["workflows"] if entry["name"] == "task")
+    assert task["yaml"]["label"] == "ww.yaml"
+    assert task["yaml"]["text"].startswith("- name: task\n")
+
+
+def test_nested_items_carry_their_depth(root: Path) -> None:
+    _developed_once_rejected(root)
+
+    items = task_detail(Project.load(Storage(root)), "TASK-1")["runs"][0]["items"]
+
+    depth = {(item["name"], item["kind"]): item["depth"] for item in items}
+    assert depth[("develop", "agent")] == 0
+    assert depth[("develop-verify-1", "verification")] == 1

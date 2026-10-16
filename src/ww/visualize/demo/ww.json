@@ -1,0 +1,4 @@
+{
+  "executable": "ww",
+  "task_format": "TASK-{{digit}}"
+}

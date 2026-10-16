@@ -1741,7 +1741,11 @@ configuration, not a snapshot, so edits show while it runs.
   checks, gotos, items, children and hand-offs are what ww would run; the
   definitions add only whether an assessment is standalone and its outcome
   labels. The library comes from `rules_listing`, the rule statistics, the
-  handlers, documents, modes, profiles and composed settings.
+  handlers, documents, modes, profiles and composed settings. Each workflow
+  also carries its YAML: `config.composition.workflow_text` takes the winning
+  definition from `workflow_sites` and `entry_text` cuts that entry out of its
+  file with its comments (the YAML node's marks, never a re-serialisation);
+  `builtin_workflow_text` does the same for ww's shipped files.
 - `tasks.py` builds the Tasks tab through the task storage adapter,
   `unreadable_tasks`, `operator_reason`, extension namespace values, the
   service's artifact and document listings, and
@@ -1754,7 +1758,21 @@ configuration, not a snapshot, so edits show while it runs.
   `item_reports` and `rule_verification.recorded_verdicts` for a look back at
   any item: `rule_outcomes` and `item_reports` take an item `index` (the
   cursor by default), and `recorded_verdicts` reads what each verification
-  item submitted once the held completion is gone.
+  item submitted once the held completion is gone. Each item carries a `depth`
+  for indenting it under its step: its plan ancestors that the page shows as
+  rows (steps and groups, not an outcome or a `{child}`/`{item}` slot), plus
+  one for a step's hooks, a rule verifier and a handler group's later members.
+- `demo/` is a whole ww project (`ww.yaml`, `ww.json`, `rules/`) shipped as
+  package data and read only by the visualizer. `demo.demo()` builds its
+  workflow card with `build_atlas` and records a run: it copies the project to
+  a temporary directory (no Git and no extensions), plays a fixed script of
+  acts through `ww.cli.main.main` with `--root`, and keeps per act the command,
+  the captured output (the Markdown adapter's page, with the directory
+  renamed), the files written, the step and status from the run's state and
+  the automatic items ww completed. An act whose exit status is not the
+  expected one (one completion is meant to be refused by a check) stops the
+  recording with an error, so a change to ww that breaks the demo fails its
+  test instead of shipping a wrong recording.
 - `watch.py` polls modification times and sizes of the files the core names
   (`config.composition.configuration_files` for the YAML levels and their
   imports, the settings levels, the declared rule files and the
@@ -1764,7 +1782,8 @@ configuration, not a snapshot, so edits show while it runs.
   `127.0.0.1` on a port hashed from the project (30000–39999; the operator
   page uses 40000 and up). It serves `/`, `/api/atlas`, `/api/tasks`,
   `/api/task?id=`, `/api/artifact?task=&run=&ref=` (only references the run
-  records) and `/api/events`, a server-sent event stream whose `change`
+  records), `/api/demo` (the demo, recorded once per server, warmed in a
+  background thread at start) and `/api/events`, a server-sent event stream whose `change`
   event says whether the configuration, the tasks or both changed. Built data
   is cached per watcher version. A request whose `Host` is not `127.0.0.1` or
   `localhost` on the server's port is refused with 403, against DNS

@@ -50,6 +50,17 @@ def test_every_workflow_is_listed_and_the_page_data_is_json(
     assert atlas["files"] == ["ww.yaml"]
     assert all(entry["error"] is None for entry in atlas["workflows"])
     assert any(entry["builtin"] for entry in atlas["workflows"])
+    shipped = next(entry for entry in atlas["workflows"] if entry["builtin"])
+    assert shipped["yaml"]["label"].startswith("ww built-in: ")
+    assert shipped["name"] in shipped["yaml"]["text"]
+    build = _workflow(atlas, "build")
+    assert build["yaml"] == {
+        "label": "ww.yaml",
+        "text": build["yaml"]["text"],
+    }
+    assert build["yaml"]["text"].startswith(
+        "- build: Implement a change and check it.\n"
+    )
     json.dumps(atlas)
 
 
