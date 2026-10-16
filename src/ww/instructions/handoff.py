@@ -212,6 +212,23 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def repeat_brief(message: dict[str, object]) -> list[str]:
+    """The protocol in one line, for a session continuing in the single runtime.
+
+    The relay below is for separate sessions; one session that keeps going
+    needs only the round and when the repetition ends.
+    """
+    if message.get("kind") == "rule_verification":
+        return [
+            f"Rule verification, round {message['round']}: judge only the rules "
+            "below; the step's completion stays held until they all pass."
+        ]
+    return [
+        f"Repeating assessment, round {message['round']}: it repeats until the "
+        f"outcome is `{message['until']}`."
+    ]
+
+
 def repeat_markdown(message: dict[str, object]) -> list[str]:
     """The same protocol on dispatch pages and the worker's durable handoff."""
     lines = [

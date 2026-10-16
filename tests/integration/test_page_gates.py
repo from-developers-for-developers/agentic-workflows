@@ -25,6 +25,10 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
         "no subagents": ("**No subagents.**", "`subagents: false`"),
         "single session": ("act as the worker", "not through a subagent"),
     },
+    "step-single-continues": {
+        "completion command": (COMPLETE, ARTIFACT, SUMMARY),
+        "single session": ("act as the worker", "not through a subagent"),
+    },
     "manager-dispatch": {
         "manager command": ("./ww next TASK-1 --role manager",),
         "worker flags": ("`--selected-agent`", "`--model`", "`--reasoning`"),
@@ -100,6 +104,11 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
     "verification": {
         "completion command": (COMPLETE, ARTIFACT, "--rule-result="),
         "rules": ("`develop/1`", "#### What to report"),
+    },
+    "verification-resumed": {
+        "completion command": (COMPLETE, ARTIFACT, "--rule-result="),
+        "rules": ("`develop/1`", "#### What to report"),
+        "single session": ("act as the worker", "not through a subagent"),
     },
     "fix-required": {
         "completion command": (COMPLETE, ARTIFACT, SUMMARY),

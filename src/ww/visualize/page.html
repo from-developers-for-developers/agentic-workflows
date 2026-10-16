@@ -540,9 +540,13 @@ body.no-scroll { overflow: hidden; }
 .p-refused { font-size: 13.5px; color: var(--bad); background: var(--bad-soft); border-radius: 9px; padding: 8px 12px; }
 .p-auto { font-size: 13px; color: var(--k-auto); display: flex; gap: 8px; align-items: center; }
 .p-page { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.p-after { display: flex; flex-direction: column; gap: 14px; }
+.p-after > * { flex: none; }
+.p-flow { display: flex; align-items: center; gap: 10px; margin: -4px 0; padding-left: 14px; font-family: var(--f-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.p-arrow { font-family: var(--f-body); font-size: 18px; line-height: 1; color: var(--accent); }
 .p-page-head { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 10px 16px 0; }
 .p-page .md { padding: 4px 18px 16px; overflow: visible; font-size: 14px; }
-.p-page.rise { animation: rise .35s ease-out; }
+.p-after.rise { animation: rise .35s ease-out; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .p-controls { display: flex; gap: 8px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
 .pbtn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); border: 1px solid var(--line); flex: none; }
@@ -1409,14 +1413,19 @@ function renderPlayer(fresh) {
       </aside>
       <section class="p-main">
         <p class="p-say">${esc(f.say)}</p>
-        ${filesHtml}
+        ${filesHtml ? flow("the agent changes the project") + filesHtml : ""}
+        ${flow("the agent runs ww")}
         <div class="term">
           <div class="term-bar"><i></i><i></i><i></i><span>${esc(ROLE_LABEL[f.role] || f.role)}</span></div>
           <div class="term-line"><span class="term-prompt">$</span> <span class="term-cmd" id="termCmd"></span><span class="caret"></span></div>
         </div>
-        ${f.refused ? '<div class="p-refused">ww refused the completion: the step stays open until the check passes.</div>' : ""}
-        ${automatic}
-        <div class="p-page" id="pPage"${fresh ? " hidden" : ""}><div class="p-page-head">ww prints</div><div class="md">${md(f.output, { breaks: true })}</div></div>
+        <div class="p-after"${fresh ? " hidden" : ""}>
+          ${f.refused || automatic ? flow("ww checks and acts") : ""}
+          ${f.refused ? '<div class="p-refused">ww refused the completion: the step stays open until the check passes.</div>' : ""}
+          ${automatic}
+          ${flow("ww answers with the next page")}
+          <div class="p-page" id="pPage"><div class="p-page-head">ww prints</div><div class="md">${md(f.output, { breaks: true })}</div></div>
+        </div>
       </section>
     </div>
     <footer class="p-controls">
@@ -1430,8 +1439,11 @@ function renderPlayer(fresh) {
   </div>`;
   typeCommand(f.command, fresh);
 }
+function flow(label) {
+  return `<div class="p-flow" aria-hidden="true"><span class="p-arrow">↓</span><span>${esc(label)}</span></div>`;
+}
 function typeCommand(text, animate) {
-  const el = $("#termCmd"), page = $("#pPage");
+  const el = $("#termCmd"), page = $(".p-after");
   clearTimeout(player.typing);
   if (!animate || matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = text; if (page) page.hidden = false; return; }
   let i = 0;

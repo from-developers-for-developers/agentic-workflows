@@ -1001,7 +1001,18 @@ progress without loading role-specific work instructions. `instruction` owns
 the full normalized instruction rendering for work resumption and delegation.
 `start` and explicit `instruction` service paths mark their instructions for a short
 manager introduction; internally generated responses do not, so worker continuations
-do not repeatedly pay that token cost. Caller role disambiguates an
+do not repeatedly pay that token cost. In `single`, `WorkflowService` also sets
+`Instruction.session_continues` on the page it returns from `complete` and from
+`next --outcome`: the same session read the page before it a moment ago. The
+Markdown adapter's `_continues` accepts the flag only for a `single` run that
+is not stopped for the operator, failed or interrupted, and every trim (the
+generated-by line, manager introduction, rules notice, requirements pointer,
+next steps, previous artifacts, the guidance before the completion command, the
+`fail` block, a fix page's draft) checks it, so pages from `start`, `next`
+without an outcome and `instruction`, and all of `auto`, are untouched. A
+repeating-assessment or verification page then renders `handoff.repeat_brief`,
+one line with the round and when it ends, instead of `repeat_markdown`'s relay
+protocol and JSON. The JSON adapter is unaffected beyond reporting the flag. Caller role disambiguates an
 `auto` handoff from a manager inspecting the same pending state.
 
 ## Extensions

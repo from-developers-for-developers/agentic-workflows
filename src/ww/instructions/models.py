@@ -625,6 +625,10 @@ class Instruction:
     completion_registered: bool = False
     # The completion was accepted but held: verifiers judge its rules first.
     completion_held: bool = False
+    # In the single runtime, the page is the direct reply to the session's own
+    # ``complete`` or ``next --outcome``: the session has just read the full
+    # page before it, so the Markdown page leaves out what it would repeat.
+    session_continues: bool = False
     caller_role: CallerRole | None = None
     next_role: NextRole | None = None
     control: Control | None = None
@@ -783,6 +787,7 @@ class Instruction:
             "notices": list(self.notices),
             "completion_registered": self.completion_registered,
             "completion_held": self.completion_held,
+            "session_continues": self.session_continues,
             "caller_role": self.caller_role,
             "next_role": self.next_role,
             "control": self.control,

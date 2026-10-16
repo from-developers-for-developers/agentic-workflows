@@ -158,6 +158,19 @@ def step_single(root: Path) -> Instruction:
     return service.next(TASK)
 
 
+def step_single_continues(root: Path) -> Instruction:
+    """The next step's page as the reply to the session's own completion.
+
+    The session read the full page a moment ago, so this one leaves out what
+    that page already said.
+    """
+    service, _ = _start(root, STEPS)
+    service.next(TASK)
+    return service.complete(
+        TASK, artifact="Implemented.", summary_for_next="Added the flag."
+    )
+
+
 def manager_dispatch(root: Path) -> Instruction:
     """The manager's page in ``auto`` before the next assignment is dispatched."""
     _, started = _start(root, STEPS, "auto")
@@ -284,6 +297,12 @@ def verification(root: Path) -> Instruction:
     return page
 
 
+def verification_resumed(root: Path) -> Instruction:
+    """The verifier's page as a resumed session reads it: in full."""
+    verification(root)
+    return WorkflowService(Storage(root)).instruction(TASK)
+
+
 def fix_required(root: Path) -> Instruction:
     """ww rejected a completion: the checks that failed and how to go on."""
     _git_project(root)
@@ -295,6 +314,7 @@ def fix_required(root: Path) -> Instruction:
 
 SCENARIOS: dict[str, Callable[[Path], Instruction]] = {
     "step-single": step_single,
+    "step-single-continues": step_single_continues,
     "manager-dispatch": manager_dispatch,
     "worker-bootstrap": worker_bootstrap,
     "step-auto-worker": step_auto_worker,
@@ -304,6 +324,7 @@ SCENARIOS: dict[str, Callable[[Path], Instruction]] = {
     "interactive": interactive,
     "step-rules": step_rules,
     "verification": verification,
+    "verification-resumed": verification_resumed,
     "fix-required": fix_required,
     "goto-target": goto_target,
     "operator-stop": operator_stop,

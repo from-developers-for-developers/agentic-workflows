@@ -207,11 +207,16 @@ def test_a_violation_rejects_the_completion_and_keeps_the_step(
     assert rendered.count("Failures: 1 of 3 allowed.") == 2
     assert 'Include "foo" in every Markdown file you change.' in rendered
     assert "    notes.md" in rendered
-    assert "it replaces the draft below entirely" in rendered
-    assert "### Draft artifact\n\n```markdown\nFirst try.\n```" in rendered
+    # The session submitted the draft a moment ago; a resumed one sees it.
+    assert "it replaces the draft you submitted entirely" in rendered
+    assert "### Draft artifact" not in rendered
     assert "./ww complete TASK-1" in rendered
     assert "Completion recorded successfully" not in rendered
-    assert service.instruction("TASK-1").fix_required is not None
+    resumed = service.instruction("TASK-1")
+    assert resumed.fix_required is not None
+    shown = MarkdownOutputAdapter().render_instruction(resumed)
+    assert "it replaces the draft below entirely" in shown
+    assert "### Draft artifact\n\n```markdown\nFirst try.\n```" in shown
 
 
 def test_fixing_the_causes_completes_the_step_with_a_rules_section(

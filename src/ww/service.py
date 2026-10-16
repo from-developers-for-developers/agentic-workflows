@@ -1127,7 +1127,11 @@ class WorkflowService:
             self._observe(task_id, f"Operator forced next: {forced}", force_reason)
         self.children.reconcile_after_child(task_id)
         instruction = self._start_declared_child(task_id, instruction)
-        return self._tag_caller(instruction, caller_role)
+        # Choosing an outcome answers the page this session just read.
+        continues = outcome is not None and instruction.workflow_runtime == "single"
+        return replace(
+            self._tag_caller(instruction, caller_role), session_continues=continues
+        )
 
     def _start_declared_child(
         self, task_id: str, instruction: Instruction
@@ -1868,6 +1872,7 @@ class WorkflowService:
         return replace(
             self._tag_caller(instruction, caller_role),
             completion_registered=True,
+            session_continues=instruction.workflow_runtime == "single",
         )
 
     def _open_next_in_single(
