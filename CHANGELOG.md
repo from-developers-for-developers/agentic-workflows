@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-16
 
+- Changed: in the `single` runtime, the page that answers the session's own `complete` or `next --outcome` leaves out what the session just read, such as the relay JSON and the `fail` block; the demo player marks each hand-off with an arrow. `900856a`
 - Added: `ww visualize` shows each workflow's YAML as its file has it, indents nested items under their step in the Tasks view, and includes a demo workflow with a player that replays a run ww really recorded. `06a4cc9`
 - Added: `ww visualize` opens a live, read-only browser page of the project's workflows and tasks, including how each step's rules and checks worked. `0c93976`
 - Fixed: `{{ww.git.*}}` resolve without a branch record; extension updates and settings edits no longer stop a run with `plan_changed`, and `--replan` reruns only changed steps. `start` refuses a `--root` at a worktree without `--separate-store`; handoff, failure, model and repair-worker wording on manager pages is clearer. `c048dca`
