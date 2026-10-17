@@ -59,6 +59,21 @@ GATES: dict[str, dict[str, tuple[str, ...]]] = {
             "Manager: continue with `./ww next TASK-1 --role manager`",
         ),
     },
+    "manager-continues": {
+        "completion command": (
+            "./ww complete TASK-1 --role manager",
+            ARTIFACT,
+            SUMMARY,
+        ),
+        "manager": ("You are the manager. This step is yours (`role: manager`)",),
+    },
+    "worker-continues": {
+        "completion command": (f"{COMPLETE} --assignment {TOKEN}", ARTIFACT),
+        "same assignment": (
+            "Same assignment continues: next item `update-workflow-summary`",
+            "Do not return to the manager yet",
+        ),
+    },
     "items-substep": {
         "completion command": (COMPLETE, ARTIFACT, SUMMARY),
         "items context": (

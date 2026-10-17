@@ -108,7 +108,7 @@ from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.instructions.handoff import handoff_block
 from ww.instructions.models import CheckPreview, HandoffBlock
-from ww.instructions.policy import operator_reason
+from ww.instructions.policy import manager_continues_itself, operator_reason
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
 from ww.item_collections import (
@@ -1128,9 +1128,34 @@ class WorkflowService:
         self.children.reconcile_after_child(task_id)
         instruction = self._start_declared_child(task_id, instruction)
         # Choosing an outcome answers the page this session just read.
-        continues = outcome is not None and instruction.workflow_runtime == "single"
+        continues = outcome is not None and (
+            instruction.workflow_runtime == "single" or caller_role == "manager"
+        )
         return replace(
             self._tag_caller(instruction, caller_role), session_continues=continues
+        )
+
+    def dispatch_own_step(
+        self, task_id: str, handed_back: Instruction
+    ) -> Instruction | None:
+        """The manager's own next step after its completion, or ``None``.
+
+        In ``auto`` the manager that completed a step goes on with its next
+        one as ``next`` would show it, so that call is unnecessary. The page
+        answers the manager's completion, so it continues that session.
+        """
+        if not manager_continues_itself(handed_back):
+            return None
+        dispatched = self.next(task_id, caller_role="manager")
+        return replace(
+            dispatched,
+            session_continues=handed_back.session_continues,
+            notices=(
+                *dispatched.notices,
+                f"Completion recorded; ww dispatched your next step, "
+                f"`{dispatched.item_name}`, as `next` would. Pass `--no-dispatch` "
+                "to `complete` to receive the pending page instead.",
+            ),
         )
 
     def _start_declared_child(
@@ -1872,7 +1897,7 @@ class WorkflowService:
         return replace(
             self._tag_caller(instruction, caller_role),
             completion_registered=True,
-            session_continues=instruction.workflow_runtime == "single",
+            session_continues=_continues_session(instruction, caller_role),
         )
 
     def _open_next_in_single(
@@ -5476,6 +5501,23 @@ def _interactive_item(
             f"the interaction of {item.name!r} has ended; complete the step"
         )
     return item, record
+
+
+def _continues_session(
+    instruction: Instruction, caller_role: CallerRole | None
+) -> bool:
+    """Whether a completion's reply goes to the session that read the page before.
+
+    In ``single`` one session reads every page. In ``auto`` the manager does
+    when it completes its own step, and a worker does while its assignment
+    continues with the next item; a worker's last reply hands back to the
+    manager instead.
+    """
+    if instruction.workflow_runtime == "single":
+        return True
+    if caller_role == "manager":
+        return True
+    return caller_role == "worker" and instruction.assignment_continues
 
 
 def _run_windows(runs: tuple[TaskRunAggregate, ...]) -> list[RunWindow]:

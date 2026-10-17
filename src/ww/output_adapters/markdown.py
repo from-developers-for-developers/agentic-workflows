@@ -107,7 +107,9 @@ class MarkdownOutputAdapter(OutputAdapter):
             return _document(lines)
         _heading(lines, instruction)
         if instruction.repeat_communication is not None:
-            relay = repeat_brief if _continues(instruction) else repeat_markdown
+            # In auto the manager relays the protocol between sessions.
+            brief = _continues(instruction) and instruction.workflow_runtime == "single"
+            relay = repeat_brief if brief else repeat_markdown
             if lines[-1]:
                 lines.append("")
             lines.extend(relay(instruction.repeat_communication))
@@ -433,15 +435,17 @@ def _task_summary(instruction: Instruction) -> Lines:
 def _continues(instruction: Instruction) -> bool:
     """Whether the page continues the session that just read the page before.
 
-    In the single runtime the reply to the session's own ``complete`` or
-    ``next --outcome`` goes to the agent that read the full page a moment ago:
+    The reply to a session's own ``complete`` or ``next --outcome`` goes to
+    the agent that read the full page a moment ago (in ``single`` the one
+    session; in ``auto`` the manager, or a worker whose assignment goes on):
     it leaves out what that page already said and keeps what is new. A stop
-    for the operator, a failure or an interruption is shown in full.
+    for the operator, a failure, an interruption and a worker's handback are
+    shown in full.
     """
     return (
         instruction.session_continues
-        and instruction.workflow_runtime == "single"
         and instruction.operator_reason is None
+        and instruction.handoff_block is None
         and instruction.status not in {"failed", "interrupted"}
     )
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,11 @@ def _worker_pages(service: WorkflowService) -> tuple[Instruction, Instruction]:
     return first, second
 
 
+def _resumed(page: Instruction) -> Instruction:
+    """The same page as a session reads it afresh, not as a reply."""
+    return replace(page, session_continues=False)
+
+
 def test_a_worker_assignment_prints_the_requirements_on_its_first_page_only(
     tmp_path: Path,
 ) -> None:
@@ -106,7 +112,13 @@ def test_a_worker_assignment_prints_the_requirements_on_its_first_page_only(
     assert not _in_full(second)
     rendered = md.render_instruction(second)
     assert ASK not in rendered
-    assert f"`./ww requirements {TASK}`" in rendered
+    # The reply continues the worker's session, which has the requirements;
+    # the same page read afresh points to them.
+    assert second.session_continues
+    assert "./ww requirements" not in rendered
+    resumed = _resumed(second)
+    assert not _in_full(resumed)
+    assert f"`./ww requirements {TASK}`" in md.render_instruction(resumed)
 
 
 def test_every_worker_assignment_starts_with_the_full_requirements(
@@ -132,9 +144,8 @@ def test_pointer_setting_keeps_the_text_off_worker_first_pages(
 
     for page in (first, second):
         assert not _in_full(page)
-        rendered = md.render_instruction(page)
-        assert ASK not in rendered
-        assert f"`./ww requirements {TASK}`" in rendered
+        assert ASK not in md.render_instruction(page)
+    assert f"`./ww requirements {TASK}`" in md.render_instruction(first)
 
 
 def test_full_setting_is_the_default(tmp_path: Path) -> None:

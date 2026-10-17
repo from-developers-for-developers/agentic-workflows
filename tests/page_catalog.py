@@ -47,6 +47,19 @@ STEPS = """workflows:
         subagents: false
 """
 
+MANAGER_STEPS = """workflows:
+  - name: task
+    steps:
+      - name: plan
+        description: Plan the change.
+        role: manager
+      - name: develop
+        description: Implement the plan.
+        role: manager
+      - name: review
+        description: Review the change.
+"""
+
 VALUES = """workflows:
   - name: task
     steps:
@@ -203,6 +216,40 @@ def worker_handoff(root: Path) -> Instruction:
     )
 
 
+def manager_continues(root: Path) -> Instruction:
+    """In ``auto``, the manager's next own step as the reply to its completion."""
+    service, _ = _start(root, MANAGER_STEPS, "auto")
+    service.next(TASK, caller_role="manager")
+    completed = service.complete(
+        TASK, artifact="Planned.", summary_for_next="The plan.", caller_role="manager"
+    )
+    # As ``complete`` on the command line does: on to the manager's next step.
+    followed = service.dispatch_own_step(TASK, completed)
+    assert followed is not None
+    return followed
+
+
+def worker_continues(root: Path) -> Instruction:
+    """In ``auto``, a worker's next item of the same assignment, as its reply."""
+    service, _ = _start(root, STEPS, "auto")
+    service.next(TASK, caller_role="manager")
+    service.complete(
+        TASK,
+        artifact="Implemented.",
+        summary_for_next="Added the flag.",
+        caller_role="worker",
+        assignment=TOKEN,
+    )
+    service.next(TASK, caller_role="manager")
+    return service.complete(
+        TASK,
+        artifact="Reviewed.",
+        summary_for_next="The change is fine.",
+        caller_role="worker",
+        assignment=TOKEN,
+    )
+
+
 def items_substep(root: Path) -> Instruction:
     """An ordinary substep inside an items context after collection."""
     service, _ = _start(root, ITEMS)
@@ -319,6 +366,8 @@ SCENARIOS: dict[str, Callable[[Path], Instruction]] = {
     "worker-bootstrap": worker_bootstrap,
     "step-auto-worker": step_auto_worker,
     "worker-handoff": worker_handoff,
+    "manager-continues": manager_continues,
+    "worker-continues": worker_continues,
     "items-substep": items_substep,
     "values-and-metadata": values_and_metadata,
     "interactive": interactive,

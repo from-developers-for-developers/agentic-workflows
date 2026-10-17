@@ -1745,9 +1745,15 @@ unavailable checks apart from the failed ones, as `check unavailable:
 
 ### Verifying rules without a command
 
-A rule without a check of its own is never judged by the worker who did the
-step. When that worker completes and the step's checks pass, ww first
-narrows the step's judged rules by its change set as it narrows checks: a
+A rule without a check of its own is not judged in the step's own
+completion: a verification item judges it once the step's work is done. Who
+performs that item depends on the runtime. In `auto` the manager hands it to
+a new worker, so the rule is judged by someone other than the step's author.
+In `single` the same session performs it, as a separate assignment whose
+page tells it to read the change as a reviewer would; that is a structured
+self-check, not an independent review, and a rule that needs an independent
+judge needs `auto` or a check of its own. When the step's worker completes
+and the step's checks pass, ww first narrows the step's judged rules by its change set as it narrows checks: a
 rule whose `paths`, `contains_in_file` or `contains_in_diff` select none of
 the changed files is not applicable, is recorded on the step as such (`not
 applicable (no changed file in scope)` in the artifact's `## Rules` section),

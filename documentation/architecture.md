@@ -1001,18 +1001,24 @@ progress without loading role-specific work instructions. `instruction` owns
 the full normalized instruction rendering for work resumption and delegation.
 `start` and explicit `instruction` service paths mark their instructions for a short
 manager introduction; internally generated responses do not, so worker continuations
-do not repeatedly pay that token cost. In `single`, `WorkflowService` also sets
-`Instruction.session_continues` on the page it returns from `complete` and from
-`next --outcome`: the same session read the page before it a moment ago. The
-Markdown adapter's `_continues` accepts the flag only for a `single` run that
-is not stopped for the operator, failed or interrupted, and every trim (the
-generated-by line, manager introduction, rules notice, requirements pointer,
-next steps, previous artifacts, the guidance before the completion command, the
-`fail` block, a fix page's draft) checks it, so pages from `start`, `next`
-without an outcome and `instruction`, and all of `auto`, are untouched. A
-repeating-assessment or verification page then renders `handoff.repeat_brief`,
-one line with the round and when it ends, instead of `repeat_markdown`'s relay
-protocol and JSON. The JSON adapter is unaffected beyond reporting the flag. Caller role disambiguates an
+do not repeatedly pay that token cost. `WorkflowService` also sets
+`Instruction.session_continues` on a page that answers the command of a
+session which read the page before it a moment ago: `complete` (through
+`_continues_session`) in `single`, for the manager in `auto`, and for an `auto`
+worker while `assignment_continues`; and `next --outcome` in `single` or for
+the manager. `dispatch_own_step` carries the flag onto the manager's own next
+step that `complete --role manager` dispatches. The Markdown adapter's
+`_continues` accepts the flag for a page that is not stopped for the operator,
+failed or interrupted and carries no `handoff_block` (a worker's last reply,
+which the manager reads), and every trim (the generated-by line, manager
+introduction, rules notice, requirements pointer, next steps, previous
+artifacts, the guidance before the completion command, the `fail` block, a fix
+page's draft) checks it, so pages from `start`, `next` without an outcome and
+`instruction` are untouched. A repeating-assessment or verification page
+renders `handoff.repeat_brief`, one line with the round and when it ends,
+instead of `repeat_markdown`'s relay protocol and JSON, only in `single`: in
+`auto` the manager relays that protocol between sessions, so it stays in full.
+The JSON adapter is unaffected beyond reporting the flag. Caller role disambiguates an
 `auto` handoff from a manager inspecting the same pending state.
 
 ## Extensions
@@ -1520,10 +1526,12 @@ renders the launch from the fresh child record and calls the same
 coordinator item, and a parent already failed is no longer refreshed back to
 waiting while the child it could not launch has no run.
 
-`complete --role manager` is composed in the CLI: the policy (`manager_continues_itself`)
-reads the page the completion returned and, when the next step is the manager's own,
-the command calls `next` as the manager would; the service's `complete` never
-dispatches, so every other caller keeps its single-step contract. `init`'s opt-in Claude Code
+`complete --role manager` is composed in the CLI: after the service's `complete`, the
+command calls `WorkflowService.dispatch_own_step`, whose policy
+(`manager_continues_itself`) reads the page the completion returned and, when the next
+step is the manager's own, calls `next` as the manager would and keeps the completion's
+`session_continues`; the service's `complete` never dispatches, so every other caller
+keeps its single-step contract. `init`'s opt-in Claude Code
 permission rules live in `ww.claude_permissions` (merge, never clobber, keep ignored).
 
 Amendments to a task's requirements live behind their own storage port
