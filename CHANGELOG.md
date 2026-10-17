@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-17
+
+- Changed: in `auto`, pages that answer the manager's own `complete` or `next --outcome`, and a worker's `complete` when its assignment continues, leave out what that session just read; the specification now states what rule verification guarantees in each runtime. `c797522`
+
 ## 2026-10-16
 
 - Changed: in the `single` runtime, the page that answers the session's own `complete` or `next --outcome` leaves out what the session just read, such as the relay JSON and the `fail` block; the demo player marks each hand-off with an arrow. `900856a`
