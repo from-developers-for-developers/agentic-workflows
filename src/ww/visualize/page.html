@@ -155,7 +155,7 @@ main.wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40p
 /* lifecycle lanes */
 .lane { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 16px 0; font-size: 13px; color: var(--muted); }
 .lane + .rail-wrap, .rail-wrap + .lane { border-top: 1px dashed var(--line); }
-.lane-label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); min-width: 130px; }
+.lane-label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); min-width: 200px; }
 .hookchip { font-family: var(--f-mono); font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--sunken); color: var(--ink); white-space: nowrap; }
 .hookchip.ext::before { content: "ext · "; color: var(--faint); }
 .lane .arrow { color: var(--faint); }
@@ -482,6 +482,7 @@ details.attempt[open] > summary { margin-bottom: 6px; }
 .run-sum { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); max-width: 76ch; }
 .md pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .doc-row { display: flex; gap: 10px; align-items: baseline; }
+.round.hooktag { color: var(--k-hook); background: var(--sunken); }
 .verifier { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--sunken) 40%, var(--surface)); }
 .verifier-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .verifier-head b { font-family: var(--f-display); font-weight: 650; }
@@ -828,7 +829,7 @@ function renderStep(wf, s, i) {
   (s.variables || []).forEach(v => facts.push(`<span class="fact">sets <span class="var">${esc(v)}</span></span>`));
   (s.saves || []).forEach(t => facts.push(`<span class="fact">${ICON.save} saves <span class="mono">${esc(t)}</span></span>`));
   if (s.on_failure === "fix") facts.push(`<span class="fact">${ICON.hook} on failure an agent repairs it${s.max_fixes ? `, up to ${esc(s.max_fixes)} times` : ""}</span>`);
-  (s.hooks || []).forEach(h => facts.push(`<span class="fact" title="${esc(h.description || "")}">${ICON.hook} ${esc(h.phase)} <span class="mono">${esc(h.command || h.extension || h.name)}</span>${h.on_failure === "fix" ? " · failures go back to the worker" : ""}</span>`));
+  (s.hooks || []).forEach(h => facts.push(`<span class="fact" title="${esc(h.description || "")}">${ICON.hook} step hook · ${esc(h.phase)} <span class="mono">${esc(h.command || h.extension || h.name)}</span>${h.on_failure === "fix" ? " · failures go back to the worker" : ""}</span>`));
   if (s.selects_rules_for) facts.push(`<span class="fact rulesel"><span style="color:var(--rule)">§</span> chooses the rules of <span class="mono">${esc(s.selects_rules_for.join(", "))}</span></span>`);
   if (s.rules_chosen_by) facts.push(`<span class="fact rulesel"><span style="color:var(--rule)">§</span> rules chosen by <span class="mono">${esc(s.rules_chosen_by)}</span></span>`);
   const rr = renderRules(s.rules, key);
@@ -905,10 +906,10 @@ function renderWorkflow(wf) {
       </div>
       <div class="wf-pane" data-pane="yaml"${yamlOpen ? "" : " hidden"}>${wf.yaml ? `<div class="yaml-head"><span class="mono">${esc(wf.yaml.label)}</span><button type="button" class="linkbtn" data-copy-yaml>Copy</button></div><pre class="yaml"><code>${hlYaml(wf.yaml.text)}</code></pre>` : ""}</div>
       <div class="wf-pane" data-pane="steps"${yamlOpen ? " hidden" : ""}>
-      ${renderLane(wf, "before_start", "Before start")}
+      ${renderLane(wf, "before_start", "Workflow · before start")}
       ${wf.inherits ? `<div class="inherited-note">${ICON.from} Steps inherited from <button class="linkbtn" type="button" data-goto="${esc(wf.inherits)}">${esc(wf.inherits)}</button></div>` : ""}
       <div class="rail-wrap">${renderSteps(wf, wf.steps || [], true).replace('class="rail main"', `class="rail main${gotos.length ? " has-arcs" : ""}"`)}</div>
-      ${renderLane(wf, "before_complete", "Before complete")}
+      ${renderLane(wf, "before_complete", "Workflow · before complete")}
       </div>
     </div>
   </article>`;
@@ -1049,7 +1050,9 @@ function renderAtlas() {
    Tasks
 ================================================================ */
 const STATUS_LABEL = { completed: "completed", in_progress: "in progress", awaiting_operator: "waiting for you", awaiting_input: "waiting for input", interrupted: "interrupted", failed: "failed", pending: "pending", abandoned: "abandoned", direct: "direct work", unreadable: "unreadable" };
-const PHASE_LABEL = { before_start_workflow: "Before start", step: "Steps", before_start: "Before start", before_complete: "Before complete", after_complete: "After complete", before_complete_workflow: "Before complete" };
+const PHASE_LABEL = { before_start_workflow: "Workflow · before start", step: "Steps", before_complete_workflow: "Workflow · before complete" };
+// A step's own hooks are listed with the step, tagged instead of grouped.
+const STEP_HOOK_LABEL = { before_start: "before start", before_complete: "before complete", after_complete: "after complete" };
 const SILENT_RULES = new Set(["not applicable", "left out"]);
 const RULE_CLASS = { "passed": "ok", "verified pass": "ok", "failed": "bad", "check unavailable": "warn", "not applicable": "muted", "left out": "muted", "self-declared": "muted" };
 const pill = s => `<span class="status st-${esc(s)}">${esc(STATUS_LABEL[s] || s)}</span>`;
@@ -1197,7 +1200,7 @@ function renderRun(t, r, n) {
   const t0 = r.created_at, total = ms(t0, live ? new Date().toISOString() : r.updated_at) || 1;
   const phases = [];
   r.items.forEach(i => {
-    const p = i.phase;
+    const p = STEP_HOOK_LABEL[i.phase] ? "step" : i.phase;
     const label = PHASE_LABEL[p] || p;
     let g = phases[phases.length - 1];
     if (!g || g.label !== label) phases.push(g = { label, items: [] });
@@ -1222,7 +1225,7 @@ function renderRun(t, r, n) {
     const hook = i.phase !== "step";
     return `<div class="irow${i.current ? " current" : ""}${i.builtin ? " builtin" : ""}${i.depth ? " nested" : ""}" style="--depth:${i.depth || 0}">
       <span class="ist" title="${esc(STATUS_LABEL[i.status] || i.status)}">${STATUS_ICON[i.status] || STATUS_ICON.pending}</span>
-      <div class="iname${hook ? " hook" : ""}"><b>${esc(i.name)}</b><span class="owner">${i.owner === "ww" ? "ww" : "agent"}${i.model && i.model !== "auto" ? ` · ${esc(i.model)}` : ""}</span>${i.path && i.path !== i.name && !hook ? `<span class="owner">${esc(i.path)}</span>` : ""}${i.round ? `<span class="round">round ${i.round + 1}</span>` : ""}${i.attempts > 1 ? `<span class="owner" style="color:var(--warn)">${i.attempts} attempts</span>` : ""}${i.outcome ? `<span class="round">answered ${esc(i.outcome)}</span>` : ""}${i.chosen ? `<span class="badge you">chose ${esc(i.chosen)}</span>` : ""}${verifying ? '<span class="round">being verified</span>' : ""}</div>
+      <div class="iname${hook ? " hook" : ""}"><b>${esc(i.name)}</b>${STEP_HOOK_LABEL[i.phase] ? `<span class="round hooktag">step hook · ${STEP_HOOK_LABEL[i.phase]}</span>` : ""}<span class="owner">${i.owner === "ww" ? "ww" : "agent"}${i.model && i.model !== "auto" ? ` · ${esc(i.model)}` : ""}</span>${i.path && i.path !== i.name && !hook ? `<span class="owner">${esc(i.path)}</span>` : ""}${i.round ? `<span class="round">round ${i.round + 1}</span>` : ""}${i.attempts > 1 ? `<span class="owner" style="color:var(--warn)">${i.attempts} attempts</span>` : ""}${i.outcome ? `<span class="round">answered ${esc(i.outcome)}</span>` : ""}${i.chosen ? `<span class="badge you">chose ${esc(i.chosen)}</span>` : ""}${verifying ? '<span class="round">being verified</span>' : ""}</div>
       <div class="timing">${d != null ? `<span class="dur">${fmtDur(d)}</span><span class="bar"><i style="left:${left}%;width:${Math.min(width, 100 - left)}%;--c:${colorOf(i)}"></i></span>` : `<span class="dur">${i.status === "pending" ? "not started" : ""}</span>`}</div>
       ${i.result ? `<div class="ires">${esc(i.result)}</div>` : ""}
       ${i.error ? `<div class="ires" style="color:var(--bad)">${esc(i.error)}</div>` : ""}
