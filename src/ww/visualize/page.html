@@ -482,6 +482,9 @@ details.attempt[open] > summary { margin-bottom: 6px; }
 .run-sum { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); max-width: 76ch; }
 .md pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .doc-row { display: flex; gap: 10px; align-items: baseline; }
+.verifier { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--sunken) 40%, var(--surface)); }
+.verifier-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.verifier-head b { font-family: var(--f-display); font-weight: 650; }
 /* ---------- Steps / YAML switch ---------- */
 .wf-switch { display: flex; gap: 4px; align-items: center; padding: 14px 0 6px; flex-wrap: wrap; }
 .seg { font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 7px; color: var(--muted); border: 1px solid transparent; }
@@ -1130,12 +1133,11 @@ function ruleSummaryPill(r, key) {
   if (r.fix_attempts) parts.push(`<span class="rs-warn">${r.fix_attempts} rejected</span>`);
   return `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>${parts.join(" · ")}</button>`;
 }
-function renderItemRules(r, key, task, run) {
-  if (r.verifies) {
-    let results = [];
-    try { results = r.results.map(x => JSON.parse(x)); } catch (e) { results = []; }
-    const byId = Object.fromEntries(results.map(x => [x.id, x]));
-    const rows = r.verifies.map(v => {
+function verdictRows(r) {
+  let results = [];
+  try { results = r.results.map(x => JSON.parse(x)); } catch (e) { results = []; }
+  const byId = Object.fromEntries(results.map(x => [x.id, x]));
+  return r.verifies.map(v => {
       const res = byId[v.id];
       const verdict = res ? res.verdict : null;
       return `<div class="rule"><span class="rule-glyph">${ICON.judged}</span><div style="min-width:0">
@@ -1145,9 +1147,20 @@ function renderItemRules(r, key, task, run) {
         ${res && res.checked ? `<div class="quiet" style="padding:2px 0">checked: ${esc(res.checked)}</div>` : ""}
         ${v.previous_failures && v.previous_failures.length ? `<div class="quiet" style="padding:2px 0">failed last round: ${esc(v.previous_failures.join("; "))}</div>` : ""}
       </div></div>`;
-    }).join("");
-    return { pill: `<button class="rules-pill" type="button" data-toggle="${key}" aria-expanded="false"><span class="sec">§</span>verifies ${r.verifies.length} rule${r.verifies.length > 1 ? "s" : ""}</button>`, panel: `<div class="rules-panel" id="${key}" hidden>${rows}</div>` };
-  }
+  }).join("");
+}
+/* A step's verifier: a separate assignment ww runs before it records the step. */
+function verifierSection(v, task, run) {
+  const end = v.completed_at || (v.status === "in_progress" ? new Date().toISOString() : null);
+  const took = v.started_at && end ? fmtDur(ms(v.started_at, end)) : "";
+  const who = [v.model && v.model !== "auto" ? v.model : null, v.agent].filter(Boolean).join(" · ");
+  const head = v.status === "in_progress" ? "Being verified" : v.status === "completed" ? "Verified" : `Verification ${STATUS_LABEL[v.status] || v.status}`;
+  return `<div class="verifier">
+    <div class="verifier-head">${STATUS_ICON[v.status] || STATUS_ICON.pending}<b>${head}</b>${who ? `<span class="owner">by ${esc(who)}</span>` : ""}${took ? `<span class="dur">${took}</span>` : ""}${v.round ? `<span class="round">round ${v.round + 1}</span>` : ""}${v.artifact ? `<span class="iact" style="display:inline-flex">${artifactButton(task, run, v.artifact, `${task} · ${v.verifies} · verification`, "Read findings")}</span>` : ""}</div>
+    ${v.rules && v.rules.verifies ? verdictRows(v.rules) : ""}
+  </div>`;
+}
+function renderItemRules(r, key, task, run, verifiers = []) {
   const outcome = Object.fromEntries(r.outcomes.map(o => [o.id, o]));
   const silent = a => { const o = outcome[a.id]; return o ? SILENT_RULES.has(o.status) : r.not_applicable.includes(a.id) || r.left_out.includes(a.id); };
   const shown = r.applied.filter(a => !silent(a));
@@ -1156,7 +1169,7 @@ function renderItemRules(r, key, task, run) {
     const status = o ? o.status : null;
     return `<div class="rule"><span class="rule-glyph">${a.checked ? ICON.checked : ICON.judged}</span><div style="min-width:0">
       <div class="rule-sum">${prose(a.summary)}<span class="rule-id">${esc(a.id)}${a.hook ? " · hook" : ""}</span>${status ? ` <span class="rstat ${RULE_CLASS[status] || "muted"}">${esc(status)}</span>` : ' <span class="rstat muted">not checked yet</span>'}</div>
-      ${o && o.detail ? `<div class="quiet" style="padding:2px 0">${prose(o.detail)}</div>` : ""}
+      ${o && o.detail ? `<div class="quiet" style="padding:2px 0">${prose(o.detail.replace(/^by `[^`]+:verify:\d+`/, "by the verifier below"))}</div>` : ""}
     </div></div>`;
   }).join("");
   const attempts = r.reports.map(rep => `<details class="attempt"><summary>Completion ${esc(rep.attempt)} · ${esc(fmtTime(rep.checked_at))} · ${rep.results.filter(x => x.status === "failed").length ? `<span class="rs-bad">${rep.results.filter(x => x.status === "failed").length} failed</span>` : '<span class="rs-ok">all passed</span>'}</summary>
@@ -1167,8 +1180,9 @@ function renderItemRules(r, key, task, run) {
     r.disputes.length ? `<div class="quiet">Disputed: ${r.disputes.map(d => `<span class="mono">${esc(d.check)}</span> — ${esc(d.reason)}`).join("; ")}</div>` : "",
     r.resolutions.filter(x => x.status === "converted").length ? `<div class="quiet">Checked by derived checks: ${r.resolutions.filter(x => x.status === "converted").map(x => `<span class="mono">${esc(x.id)}</span> → <span class="mono">${esc(x.check)}</span>`).join(", ")}</div>` : ""
   ].join("");
-  if (!shown.length && !r.reports.length && !r.waived.length && !r.disputes.length) return { pill: "", panel: "" };
-  return { pill: ruleSummaryPill(r, key), panel: `<div class="rules-panel" id="${key}" hidden>${rows}${extra}${attempts ? `<div class="attempts">${attempts}</div>` : ""}</div>` };
+  if (!shown.length && !r.reports.length && !r.waived.length && !r.disputes.length && !verifiers.length) return { pill: "", panel: "" };
+  const verified = verifiers.map(v => verifierSection(v, task, run)).join("");
+  return { pill: ruleSummaryPill(r, key), panel: `<div class="rules-panel" id="${key}" hidden>${rows}${extra}${attempts ? `<div class="attempts">${attempts}</div>` : ""}${verified}</div>` };
 }
 
 function documentButton(task, name, title) {
@@ -1183,13 +1197,13 @@ function renderRun(t, r, n) {
   const t0 = r.created_at, total = ms(t0, live ? new Date().toISOString() : r.updated_at) || 1;
   const phases = [];
   r.items.forEach(i => {
-    const p = i.kind === "verification" ? "step" : i.phase;
+    const p = i.phase;
     const label = PHASE_LABEL[p] || p;
     let g = phases[phases.length - 1];
     if (!g || g.label !== label) phases.push(g = { label, items: [] });
     g.items.push(i);
   });
-  const colorOf = i => i.owner === "ww" ? "var(--k-auto)" : i.kind === "verification" ? "var(--rule)" : "var(--k-worker)";
+  const colorOf = i => i.owner === "ww" ? "var(--k-auto)" : "var(--k-worker)";
   const ruleTally = {};
   let ruleRows = "";
   const rows = phases.map(g => `<div class="phase-lbl">${esc(g.label)}</div>` + g.items.map(i => {
@@ -1198,15 +1212,17 @@ function renderRun(t, r, n) {
     const left = i.started_at ? Math.max(0, ms(t0, i.started_at) / total * 100) : 0;
     const width = d != null ? Math.max(.6, d / total * 100) : 0;
     const key = `t${++uid}`;
-    const rules = i.rules ? renderItemRules(i.rules, key, t.id, r.id) : { pill: "", panel: "" };
+    const verifiers = i.verifiers || [];
+    const rules = i.rules ? renderItemRules(i.rules, key, t.id, r.id, verifiers) : { pill: "", panel: "" };
+    const verifying = verifiers.some(v => v.status === "in_progress");
     if (i.rules && i.rules.outcomes) i.rules.outcomes.filter(o => !SILENT_RULES.has(o.status)).forEach(o => { ruleTally[o.status] = (ruleTally[o.status] || 0) + 1; });
     const actions = [];
     if (i.artifact) actions.push(artifactButton(t.id, r.id, i.artifact, `${t.id} · ${i.name}${i.round ? ` · round ${i.round + 1}` : ""}`));
     if (rules.pill) actions.push(rules.pill);
-    const hook = i.phase !== "step" && i.kind !== "verification";
+    const hook = i.phase !== "step";
     return `<div class="irow${i.current ? " current" : ""}${i.builtin ? " builtin" : ""}${i.depth ? " nested" : ""}" style="--depth:${i.depth || 0}">
       <span class="ist" title="${esc(STATUS_LABEL[i.status] || i.status)}">${STATUS_ICON[i.status] || STATUS_ICON.pending}</span>
-      <div class="iname${hook ? " hook" : ""}"><b>${esc(i.kind === "verification" ? `verify ${i.verifies || ""}` : i.name)}</b><span class="owner">${i.owner === "ww" ? "ww" : i.kind === "verification" ? "verifier" : "agent"}${i.model && i.model !== "auto" ? ` · ${esc(i.model)}` : ""}</span>${i.path && i.path !== i.name && !hook ? `<span class="owner">${esc(i.path)}</span>` : ""}${i.round ? `<span class="round">round ${i.round + 1}</span>` : ""}${i.attempts > 1 ? `<span class="owner" style="color:var(--warn)">${i.attempts} attempts</span>` : ""}${i.outcome ? `<span class="round">answered ${esc(i.outcome)}</span>` : ""}${i.chosen ? `<span class="badge you">chose ${esc(i.chosen)}</span>` : ""}</div>
+      <div class="iname${hook ? " hook" : ""}"><b>${esc(i.name)}</b><span class="owner">${i.owner === "ww" ? "ww" : "agent"}${i.model && i.model !== "auto" ? ` · ${esc(i.model)}` : ""}</span>${i.path && i.path !== i.name && !hook ? `<span class="owner">${esc(i.path)}</span>` : ""}${i.round ? `<span class="round">round ${i.round + 1}</span>` : ""}${i.attempts > 1 ? `<span class="owner" style="color:var(--warn)">${i.attempts} attempts</span>` : ""}${i.outcome ? `<span class="round">answered ${esc(i.outcome)}</span>` : ""}${i.chosen ? `<span class="badge you">chose ${esc(i.chosen)}</span>` : ""}${verifying ? '<span class="round">being verified</span>' : ""}</div>
       <div class="timing">${d != null ? `<span class="dur">${fmtDur(d)}</span><span class="bar"><i style="left:${left}%;width:${Math.min(width, 100 - left)}%;--c:${colorOf(i)}"></i></span>` : `<span class="dur">${i.status === "pending" ? "not started" : ""}</span>`}</div>
       ${i.result ? `<div class="ires">${esc(i.result)}</div>` : ""}
       ${i.error ? `<div class="ires" style="color:var(--bad)">${esc(i.error)}</div>` : ""}

@@ -131,11 +131,12 @@ def test_a_finished_step_shows_how_each_rule_worked(root: Path) -> None:
         if result["status"] == "failed"
     ]
     assert failed == ["docs/header", "develop/sh"]
-    verifier = next(
-        item for item in detail["runs"][0]["items"] if item["kind"] == "verification"
-    )
-    assert verifier["verifies"] == "develop"
+    # The verifier is part of the step it verifies, not a row of its own.
+    assert all(item["kind"] != "verification" for item in detail["runs"][0]["items"])
+    (verifier,) = _develop(detail)["verifiers"]
+    assert (verifier["verifies"], verifier["status"]) == ("develop", "completed")
     assert [rule["id"] for rule in verifier["rules"]["verifies"]] == ["develop/1"]
+    assert verifier["artifact"]
     json.dumps(detail)
 
 
@@ -410,4 +411,4 @@ def test_nested_items_carry_their_depth(root: Path) -> None:
 
     depth = {(item["name"], item["kind"]): item["depth"] for item in items}
     assert depth[("develop", "agent")] == 0
-    assert depth[("develop-verify-1", "verification")] == 1
+    assert ("develop-verify-1", "verification") not in depth

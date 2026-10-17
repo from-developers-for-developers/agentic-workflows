@@ -214,11 +214,19 @@ def _run(
         if item.assessment_question
     }
     items = []
+    # A verification item is part of the step it verifies, not a row of its
+    # own: ww runs it as a separate assignment before recording that step.
+    rows: dict[str, JSON] = {}
+    verifiers: dict[str, list[JSON]] = {}
     previous: PlanItem | None = None
     for index, (item, record) in enumerate(
         zip(plan.items, state.item_executions, strict=True)
     ):
-        if item.verifies is not None and record.status == "pending":
+        if item.verifies is not None:
+            if record.status != "pending":
+                verifiers.setdefault(item.verifies.item_id, []).append(
+                    _item(state, plan, index, item, record, references)
+                )
             continue
         if (
             item.assessment_parent is not None
@@ -232,23 +240,22 @@ def _run(
             if not ancestor.endswith(("/{child}", "/{item}"))
             and ancestor not in outcomes
         )
-        # A step's own hooks and verifiers sit under it, and so does every
-        # member of a handler group after its first.
-        if (
-            item.phase in {"before_start", "before_complete", "after_complete"}
-            or item.verifies is not None
-            or (
-                previous is not None
-                and previous.phase == "step"
-                and item.phase == "step"
-                and previous.step == item.step
-            )
+        # A step's own hooks sit under it, and so does every member of a
+        # handler group after its first.
+        if item.phase in {"before_start", "before_complete", "after_complete"} or (
+            previous is not None
+            and previous.phase == "step"
+            and item.phase == "step"
+            and previous.step == item.step
         ):
             depth += 1
         previous = item
-        items.append(
-            {**_item(state, plan, index, item, record, references), "depth": depth}
-        )
+        row = {**_item(state, plan, index, item, record, references), "depth": depth}
+        rows[item.id] = row
+        items.append(row)
+    for target, found in verifiers.items():
+        if target in rows:
+            rows[target]["verifiers"] = found
     reason = operator_reason(state, plan)
     return {
         "id": run.run_id,
