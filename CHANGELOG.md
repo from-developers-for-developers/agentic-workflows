@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-10-19
 
-- Fixed: rule groups, hooks and modes can filter by steps inside an assessment's outcomes, by name or by path (`review/positive/fix`); `lint` accepted only names that existed elsewhere, while the plan applied them anyway. `ww rules --json` lists these steps, and a handler group that assesses as agent-owned. `select_rules_for` naming a step with an attached assessment no longer reports that it names several steps.
+- Fixed: rule groups, hooks and modes can filter by steps inside an assessment's outcomes, by name or by path (`review/positive/fix`); `lint` accepted only names that existed elsewhere, while the plan applied them anyway. `ww rules --json` lists these steps, and a handler group that assesses as agent-owned. `select_rules_for` naming a step with an attached assessment no longer reports that it names several steps. `3cceb6b`
 
 ## 2026-10-17
 
