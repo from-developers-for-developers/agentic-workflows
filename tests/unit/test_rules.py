@@ -963,6 +963,53 @@ workflows:
     assert _item(plan, "check").rules == ()
 
 
+def test_groups_reach_assessment_outcome_steps_by_leaf_name_or_precise_path(
+    tmp_path: Path,
+) -> None:
+    _rule(tmp_path, "rules/fixes/small.md", "Keep fixes small.")
+    _rule(tmp_path, "rules/design/sound.md", "Design soundly.")
+    _config(
+        tmp_path,
+        """rules:
+  fixes:
+    rules: [rules/fixes/]
+    steps: [fix]
+  design:
+    rules: [rules/design/]
+    steps: [gate/large/architect]
+workflows:
+  - name: task
+    steps:
+      - develop: Develop.
+      - review: Review.
+        assess:
+          assess: Are there issues?
+          repeat_until: negative
+          positive:
+            steps:
+              - fix: Fix the findings.
+      - name: gate
+        assess: How large?
+        outcomes:
+          large:
+            steps:
+              - architect: Design it.
+          small:
+            stop_workflow: true
+""",
+    )
+
+    plan = _compile(tmp_path)
+
+    assert _item(plan, "review").rules == ()
+    assert [rule.id for rule in _item(plan, "review/positive/fix").rules] == [
+        "fixes/small"
+    ]
+    assert [rule.id for rule in _item(plan, "gate/large/architect").rules] == [
+        "design/sound"
+    ]
+
+
 def test_init_hooks_and_the_workflow_summary_get_no_rules(tmp_path: Path) -> None:
     _rule(tmp_path, "rules/one.md", '---\ncheck:\n  argv: ["true"]\n---\nOne.')
     _config(

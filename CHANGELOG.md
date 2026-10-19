@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-10-19
+
+- Fixed: rule groups, hooks and modes can filter by steps inside an assessment's outcomes, by name or by path (`review/positive/fix`); `lint` accepted only names that existed elsewhere, while the plan applied them anyway. `ww rules --json` lists these steps, and a handler group that assesses as agent-owned. `select_rules_for` naming a step with an attached assessment no longer reports that it names several steps.
+
 ## 2026-10-17
 
 - Changed: in `auto`, pages that answer the manager's own `complete` or `next --outcome`, and a worker's `complete` when its assignment continues, leave out what that session just read; the specification now states what rule verification guarantees in each runtime. `c797522`

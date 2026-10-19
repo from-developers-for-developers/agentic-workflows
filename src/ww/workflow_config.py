@@ -836,14 +836,23 @@ def step_paths(
 ) -> Iterator[tuple[StepDefinition, str]]:
     """Every step of a tree with its logical path, as the plan compiler names it.
 
-    Nested steps and per-child stages take their
+    Nested steps, assessment outcomes and per-child stages take their
     parent's path as a prefix; a step filter that names such a path matches
-    exactly that step.
+    exactly that step. An outcome that stops the workflow or goes elsewhere
+    runs no step, so it has no path.
     """
     for step in steps:
         path = f"{parent}/{step.name}" if parent else step.name
         yield step, path
         yield from step_paths(step.child_steps, path)
+        yield from step_paths(
+            (
+                outcome
+                for outcome in step.assessment_outcomes
+                if not outcome.runs_nothing
+            ),
+            path,
+        )
         if step.items is not None:
             yield from step_paths(step.items.steps, path)
         if step.children is not None:

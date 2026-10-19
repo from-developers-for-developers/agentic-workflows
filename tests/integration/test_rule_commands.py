@@ -977,6 +977,55 @@ def test_rules_lists_every_step_a_filter_can_name(
     assert "`init`" not in out
 
 
+ASSESSED = """rules:
+  docs:
+    rules: [rules/docs/]
+    steps: [fix, checks]
+handlers:
+  - name: lint
+    argv: [make, lint]
+  - name: checks
+    handlers:
+      - lint: ~
+workflows:
+  - name: task
+    steps:
+      - review: Review.
+        assess:
+          assess: Are there issues?
+          positive:
+            steps:
+              - fix: Fix.
+          negative:
+            stop_workflow: true
+      - name: checks
+        assess:
+          assess: Did the checks find anything?
+"""
+
+
+def test_rules_lists_the_steps_inside_assessment_outcomes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An outcome that runs nothing has no step; a handler group that assesses
+    # has the agent's decision, so it takes rules.
+    root = _project(tmp_path, ASSESSED)
+
+    assert main(["--root", str(root), "rules", "--json"]) == 0
+
+    data = json.loads(capsys.readouterr().out)
+    assert [
+        (target["path"], target["agent_owned"], target["groups"])
+        for target in data["targets"]
+        if target["workflow"] == "task"
+    ] == [
+        ("review", True, []),
+        ("review/positive", False, []),
+        ("review/positive/fix", True, ["docs"]),
+        ("checks", True, ["docs"]),
+    ]
+
+
 def test_rules_json_carries_the_rules_settings(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

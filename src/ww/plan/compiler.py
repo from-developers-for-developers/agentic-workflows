@@ -1802,12 +1802,14 @@ def rule_selection_targets(
         and entry.step != item.step
     ]
     found = [entry for entry in later if name in _names_of(entry.step)]
+    # A step with an attached assessment also holds its outcomes' steps;
+    # its name stands for the step itself, not for them as well.
     parents = {
         path
         for entry in later
         for path in _container_paths(entry.step)
         if name in _names_of(path)
-    }
+    } - {entry.step for entry in found}
     if len(found) + len(parents) > 1:
         raise ConfigurationError(
             f"{label}: {name!r} names several steps ("

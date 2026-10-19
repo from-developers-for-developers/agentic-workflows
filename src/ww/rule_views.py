@@ -536,8 +536,11 @@ def _agent_owned(configuration: WorkflowConfiguration, step: StepDefinition) -> 
     A nested sequence only holds its steps, and a handler group
     runs automated members. Any other step performs its action, the root
     handler it names, or an implicit skill, slash command or prompt, which
-    is always the agent's.
+    is always the agent's. A step that assesses always has the agent's
+    decision.
     """
+    if step.assessment_question is not None:
+        return True
     if step.child_steps:
         return False
     handler: HandlerDefinition = step

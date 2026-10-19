@@ -323,6 +323,33 @@ def test_a_target_in_an_assessment_outcome_is_found_by_its_name(
     assert page.item_name == "assess"
 
 
+def test_a_target_with_an_attached_assessment_names_the_step_itself(
+    tmp_path: Path,
+) -> None:
+    # ``develop`` also holds its outcome's ``fix``; its name is one step.
+    workflows = WORKFLOWS.replace(
+        """          - Log every retry.
+""",
+        """          - Log every retry.
+        assess:
+          assess: Are there issues?
+          positive:
+            steps:
+              - name: fix
+                description: Fix them.
+                rules:
+                  - Keep fixes small.
+""",
+    )
+    service, _ = _selecting(_project(tmp_path, workflows))
+
+    page = _select(service, "develop=")
+
+    assert page.item_name == "develop"
+    assert [rule.id for rule in page.rules] == ["docs/header"]
+    assert page.rules_left_out == 3
+
+
 def test_without_select_rules_for_the_step_gets_every_rule(tmp_path: Path) -> None:
     root = _project(
         tmp_path, WORKFLOWS.replace("        select_rules_for: [develop]\n", "")
