@@ -8,9 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-02
 
-- Changed: ww supports Claude Code (`claudecode`), Codex (`codex`) and Cursor (`cursor`); `gemini`, `antigravity`, `deepseek`, `kimi` and `grok` are gone, including Antigravity's hooks, and work as `custom:<name>`. `custom:claudecode` is now a custom agent, not Claude Code.
-- Added: agents are pluggable. A project can declare a simple agent under `agents` in `ww.json` (directory, instruction file, skill prefix, question tool), and an extension can ship an `Agent` adapter, addressed as `ext/<vendor>/<name>/agents:<key>`. Everything agent-specific now lives in `ww.agents`.
-- Changed: `init`'s closing examples name the first agent set up in the project, such as `$ww-setup` for Codex; init and the summary agree on which instruction files to link, a declared agent's included. `ww agents` lists each agent's title.
+- Changed: ww supports Claude Code (`claudecode`), Codex (`codex`) and Cursor (`cursor`); `gemini`, `antigravity`, `deepseek`, `kimi` and `grok`, Antigravity's hooks included, are gone and work as `custom:<name>`, and `custom:claudecode` is no longer Claude Code. Any other agent can be declared under `agents` in `ww.json` or added by an extension as `ext/<vendor>/<name>/agents:<key>`; init's closing examples name the agent set up in the project, and init's summary reports the same instruction files it links. `d479570`
 
 ## 2026-10-19
 
