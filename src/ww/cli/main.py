@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import uuid
@@ -20,6 +21,7 @@ from typing import cast
 
 from ww import rule_conversion, rule_writes, run_reports, setup_apply, workflow_update
 from ww.actions import PlannedAction, actions
+from ww.agents import HOOK_EVENTS, Agent, AgentRegistry
 from ww.config import load_configuration
 from ww.config.composition import compose_configuration
 from ww.config_files import (
@@ -38,10 +40,7 @@ from ww.executable import printed_executable, project_command, ww_command
 from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
 from ww.hooks import (
-    HOOK_EVENTS,
-    HookAgent,
     answer_hook,
-    hook_agent,
     hook_snippet,
     hooks_file,
     install_hooks,
@@ -131,7 +130,7 @@ from .initialization import (
     _initialization_options,
     _link_agent_instructions,
     install_agent_hooks,
-    install_claude_permissions,
+    install_agent_permissions,
 )
 from .lookup import render_lookup
 from .parser import _metadata_values, _named_values, _variables, build_parser
@@ -295,7 +294,7 @@ def _init(context: _Context) -> _Outcome:
     if context.args.link_instructions:
         result = _link_agent_instructions(context.storage, result)
     result = install_agent_hooks(context.storage, context.args, result)
-    result = install_claude_permissions(context.storage, context.args, result)
+    result = install_agent_permissions(context.storage, context.args, result)
     result = _finish_initialization(
         context.storage,
         result,
@@ -1463,7 +1462,7 @@ def _instruction_page(context: _Context) -> _Outcome:
 def _hook(context: _Context) -> _Outcome:
     """Install, remove, or show ww's hooks for one agent."""
     args = context.args
-    agent = hook_agent(args.agent)
+    agent = AgentRegistry.of(context.extensions).resolve(args.agent)
     local = bool(args.local)
     target = hooks_file(agent, local)
     if args.hook_action == "show":
@@ -1489,7 +1488,7 @@ def _hook(context: _Context) -> _Outcome:
     return _Outcome(f"{verb} {agent.name} in {installation.path}.\n{notice}")
 
 
-def _duplicate_notice(context: _Context, agent: HookAgent, local: bool) -> str:
+def _duplicate_notice(context: _Context, agent: Agent, local: bool) -> str:
     """Warn that ww's hooks also sit in the agent's other project file."""
     other = registered_elsewhere(context.storage, agent, local=local)
     if other is None:
@@ -1498,7 +1497,7 @@ def _duplicate_notice(context: _Context, agent: HookAgent, local: bool) -> str:
     return (
         f"Notice: {other} also registers ww's hooks, so every hook runs twice. "
         f"Remove one copy with `{ww_command()} hook uninstall --agent "
-        f"{agent.name}{flag}`.\n"
+        f"{shlex.quote(agent.name)}{flag}`.\n"
     )
 
 
@@ -1877,7 +1876,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "modes": lambda c: _Outcome(_catalog_modes(c.storage, c.extensions) + "\n"),
     "workflows": lambda c: _Outcome(_catalog_workflows(c.storage, c.extensions) + "\n"),
     "runtimes": lambda c: _Outcome(_catalog_runtimes() + "\n"),
-    "agents": lambda c: _Outcome(_catalog_agents() + "\n"),
+    "agents": lambda c: _Outcome(_catalog_agents(c.extensions) + "\n"),
     "projects": lambda c: _Outcome(_catalog_projects(c.extensions) + "\n"),
     "extensions": lambda c: _Outcome(_catalog_extensions(c.extensions) + "\n"),
     "extension": _extension,
@@ -2152,11 +2151,12 @@ def _answer_hook(arguments: list[str]) -> int:
             return 0
         storage = Storage(root)
         payload = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
-        config = load_project_config(root / SETTINGS_FILE)
+        extensions = ExtensionRegistry.discover(root, root / SETTINGS_FILE)
+        config = extensions.config
         with printed_executable(project_command(config.executable, root)):
             answer = answer_hook(
                 storage,
-                hook_agent(args.agent),
+                AgentRegistry.of(extensions).resolve(args.agent),
                 args.hook_action,
                 payload,
                 on_request=config.on_request,

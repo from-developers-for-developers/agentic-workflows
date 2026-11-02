@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ww.agents import Agent
 from ww.amendments import Amendment
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
@@ -585,8 +586,10 @@ class Instruction:
     operation_id: str | None = None
     recovery_commands: tuple[RecoveryCommand, ...] = ()
     workflow_runtime: str = "single"
-    # The agent the task was started for, as ``start --agent`` named it.
+    # The agent the task was started for, as ``start --agent`` named it, and
+    # its adapter, which says how this agent offers choices and waits.
     agent: str = ""
+    host: Agent | None = field(default=None, compare=False, repr=False)
     workflow_runtime_instruction: tuple[str, ...] = ()
     model: str = "auto"
     reasoning: str = "auto"

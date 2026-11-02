@@ -16,8 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from ww.agents import choice_mechanism
-from ww.discovery import normalize_agent
+from ww.agents import AgentRegistry
 from ww.errors import StateError
 from ww.extensions import ExtensionRegistry
 from ww.instructions.commands import (
@@ -70,7 +69,7 @@ def lookup(
     agent: str,
 ) -> dict[str, object]:
     """Resolve ``reference`` for a direct change and choose the next step."""
-    normalize_agent(agent)
+    host = AgentRegistry.of(extensions).resolve(agent)
     del storage
     task_format = extensions.task_format()
     known = tasks.task_ids()
@@ -101,7 +100,7 @@ def lookup(
             )
             for task_id in resolution.matches
         ]
-        mechanism = choice_mechanism(agent)
+        mechanism = host.choices
         return {
             **report,
             "outcome": "choose",

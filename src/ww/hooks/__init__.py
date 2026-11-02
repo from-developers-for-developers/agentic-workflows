@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Native agent hooks: the session-start context line, translated per agent
-by small adapters."""
+by the agent's hook protocol (:mod:`ww.agents.hooks`)."""
 
-from .agents import HOOK_AGENTS, HOOK_EVENTS, HookAgent, HookEvent, hook_agent
 from .install import (
     HookInstallation,
     HookInstallError,
+    hook_protocol,
     hook_snippet,
     hooks_file,
     hooks_installed,
@@ -17,15 +17,11 @@ from .install import (
 from .runtime import HookAnswer, answer_hook, is_project_root
 
 __all__ = [
-    "HOOK_AGENTS",
-    "HOOK_EVENTS",
-    "HookAgent",
     "HookAnswer",
-    "HookEvent",
     "HookInstallError",
     "HookInstallation",
     "answer_hook",
-    "hook_agent",
+    "hook_protocol",
     "hook_snippet",
     "hooks_file",
     "hooks_installed",

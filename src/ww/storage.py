@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
+from ww.agents import SHARED_INSTRUCTION_FILE, AgentRegistry, instruction_files
 from ww.config.composition import compose_configuration
 from ww.config_files import (
     LOCAL_IGNORE_PATTERNS,
@@ -24,6 +25,7 @@ from ww.config_files import (
 from ww.config_snapshots import ConfigSource
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
+from ww.project_config import load_project_config
 from ww.results import NO_WORKFLOWS_ACTION, InitializationResult
 from ww.storage_adapters import (
     FileProjectMetadataStorageAdapter,
@@ -330,10 +332,15 @@ class Storage:
     def _initialization_actions(self) -> list[str]:
         actions: list[str] = []
         reference = "@WW_AGENT_INSTRUCTIONS.md"
-        for name in ("AGENTS.md", "CLAUDE.md"):
+        try:
+            declared = load_project_config(self.project_config_path).agents
+        except ConfigurationError:
+            declared = ()
+        layouts = (agent.layout for agent in AgentRegistry(declared).known())
+        for name in instruction_files(self.root, layouts):
             path = self.root / name
             if not path.exists():
-                if name == "AGENTS.md":
+                if name == SHARED_INSTRUCTION_FILE:
                     actions.append(f"Create {name} and add {reference}.")
             elif reference not in path.read_text(encoding="utf-8"):
                 actions.append(f"Add {reference} to {name}.")

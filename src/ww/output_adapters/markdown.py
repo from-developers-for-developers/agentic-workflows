@@ -12,7 +12,7 @@ import textwrap
 from collections.abc import Collection, Iterable
 from pathlib import Path
 
-from ww.agents import WAIT_VARIABLE, choice_mechanism, wait_mechanism
+from ww.agents import FOREGROUND, PLAIN_TEXT, WAIT_VARIABLE
 from ww.assessments import AssessmentOutcome
 from ww.changes import Scope, is_scoped
 from ww.children import ChildTask
@@ -227,7 +227,7 @@ class MarkdownOutputAdapter(OutputAdapter):
                     "  " + terminal_accent("2. Start developing with your agent"),
                     "     For example, type:",
                     "",
-                    "     /ww implement a user sign-in page",
+                    f"     {result.start_example}",
                     "",
                     "  " + terminal_accent("Run commands manually"),
                     "     Use the project launcher for any ww command:",
@@ -256,7 +256,8 @@ class MarkdownOutputAdapter(OutputAdapter):
                 terminal_accent("Next steps"),
                 "",
                 f"  {INITIALIZATION_NEXT_STEP}",
-                "  In Claude Code, for example, type /ww-setup.",
+                f"  In {result.example_agent}, for example, type "
+                f"{result.setup_command}.",
             ]
         )
         return _document(lines)
@@ -536,7 +537,7 @@ def _recommendation(lines: Lines, instruction: Instruction) -> None:
             f"This workflow recommends `{workflow}` next, on the same task. Do "
             "not start it on your own: after your final report, ask the operator.",
             "",
-            choice_mechanism(instruction.agent).instruction,
+            (instruction.host.choices if instruction.host else PLAIN_TEXT).instruction,
             "",
             f"1. **{start}** — Start the `{workflow}` workflow on "
             f"`{instruction.task_id}`.",
@@ -1428,7 +1429,7 @@ def _operator_page(
         )
     else:
         situation = "Wait for the operator's answers:"
-    mechanism = wait_mechanism(instruction.agent)
+    mechanism = instruction.host.waiting if instruction.host else FOREGROUND
     command = commands.wait
     if mechanism.wait_seconds is not None:
         command = f"{WAIT_VARIABLE}={mechanism.wait_seconds} {command}"

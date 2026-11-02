@@ -10,10 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from ww.claude_permissions import ROLE_COMMANDS, SETTINGS_FILE
+from ww.agents import ClaudeCode
+from ww.agents.permissions import ROLE_COMMANDS
 from ww.cli import main
 
-LOCAL = SETTINGS_FILE
+LOCAL = ".claude/settings.local.json"
+assert ClaudeCode.permissions is not None
+assert ClaudeCode.permissions.local_file == LOCAL
 
 
 def _init(root: Path, *flags: str) -> int:

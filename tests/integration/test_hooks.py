@@ -136,29 +136,11 @@ def test_session_start_after_compaction_says_state_is_authoritative(
     assert len(context.splitlines()) == 2
 
 
-def test_antigravity_gets_context_on_the_first_invocation_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    root = _root(tmp_path)
-
-    first = _hook(
-        root, monkeypatch, capsys, "session-start", "antigravity", {"invocationNum": 0}
-    )
-    later = _hook(
-        root, monkeypatch, capsys, "session-start", "antigravity", {"invocationNum": 2}
-    )
-
-    assert json.loads(first)["injectSteps"][0]["ephemeralMessage"].startswith(
-        "This project coordinates file changes through ww"
-    )
-    assert later == ""
-
-
 # stop and interrupt
 
 
 @pytest.mark.parametrize("event", ["stop", "interrupt"])
-@pytest.mark.parametrize("agent", ["claudecode", "codex", "cursor", "antigravity"])
+@pytest.mark.parametrize("agent", ["claudecode", "codex", "cursor"])
 def test_stop_and_interrupt_from_an_older_installation_print_nothing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

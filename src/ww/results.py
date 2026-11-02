@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ww.agents import ClaudeCode
 from ww.direct_work import DirectWork
 from ww.executable import DEFAULT_EXECUTABLE, PROJECT_LAUNCHER_COMMAND
 from ww.items import WorkItem
@@ -45,6 +46,13 @@ class InitializationResult:
     permissions: tuple[tuple[str, str, str], ...] = ()
     # The set-up agents whose permission format ww does not know.
     other_agents: tuple[str, ...] = ()
+    # The agent the summary's examples name, the first set up in the project,
+    # and how the operator runs ww's skills there.
+    example_agent: str = ClaudeCode.title
+    setup_command: str = ClaudeCode().skill_command("ww-setup")
+    start_example: str = ClaudeCode().skill_command(
+        "ww", "implement a user sign-in page"
+    )
 
 
 @dataclass(frozen=True)

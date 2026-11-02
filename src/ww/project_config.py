@@ -66,6 +66,11 @@ defaults to the ww/git ``base_branches.default``, and ``false`` reads the
 configuration from the checkout instead. It is read from the checkout's own
 settings files, never from a snapshot, since it says where snapshots come from.
 
+``agents`` declares simple agents ww has no adapter for, by name, with data
+only: their title, project directory, instruction file, skill prefix, and
+question tool (see :mod:`ww.agents.generic`). A declared agent is then
+addressed by its bare name in ``--agent`` and in a step's ``agent:``.
+
 ``task_format`` is the generated task ID format: a template over the
 ``{{timestamp}}``, ``{{digit}}``, and ``{{uuid}}`` placeholders, or ``explicit`` to
 require an ID for every task. It is a setting of the checkout and of the
@@ -88,6 +93,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from ww.agents.generic import DeclaredAgent, parse_declarations
+from ww.agents.registry import BUILTIN_NAMES as BUILTIN_AGENT_NAMES
 from ww.builtin_workflows import builtin_workflow_names
 from ww.config_files import (
     SETTINGS_FILE,
@@ -359,6 +366,8 @@ class ProjectConfig:
     # The Git ref whose committed configuration tasks read: ``None`` falls
     # back to the ww/git default base branch, ``False`` reads the checkout.
     config_ref: str | Literal[False] | None = None
+    # Agents the project describes with data, addressed by their bare names.
+    agents: tuple[DeclaredAgent, ...] = ()
 
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
@@ -571,6 +580,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "task_format",
         "rules",
         "config_ref",
+        "agents",
     }
     if unknown:
         raise ConfigurationError(
@@ -634,6 +644,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
         config_ref=_parse_config_ref(raw.get("config_ref"), path),
+        agents=parse_declarations(raw.get("agents"), path, BUILTIN_AGENT_NAMES),
         **_parse_rules(raw.get("rules"), path),
     )
 

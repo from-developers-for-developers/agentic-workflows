@@ -6,6 +6,12 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-02
+
+- Changed: ww supports Claude Code (`claudecode`), Codex (`codex`) and Cursor (`cursor`); `gemini`, `antigravity`, `deepseek`, `kimi` and `grok` are gone, including Antigravity's hooks, and work as `custom:<name>`. `custom:claudecode` is now a custom agent, not Claude Code.
+- Added: agents are pluggable. A project can declare a simple agent under `agents` in `ww.json` (directory, instruction file, skill prefix, question tool), and an extension can ship an `Agent` adapter, addressed as `ext/<vendor>/<name>/agents:<key>`. Everything agent-specific now lives in `ww.agents`.
+- Changed: `init`'s closing examples name the first agent set up in the project, such as `$ww-setup` for Codex; init and the summary agree on which instruction files to link, a declared agent's included. `ww agents` lists each agent's title.
+
 ## 2026-10-19
 
 - Fixed: rule groups, hooks and modes can filter by steps inside an assessment's outcomes, by name or by path (`review/positive/fix`); `lint` accepted only names that existed elsewhere, while the plan applied them anyway. `ww rules --json` lists these steps, and a handler group that assesses as agent-owned. `select_rules_for` naming a step with an attached assessment no longer reports that it names several steps. `3cceb6b`

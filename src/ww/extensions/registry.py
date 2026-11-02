@@ -21,6 +21,7 @@ from importlib.metadata import EntryPoint, entry_points
 from importlib.resources import as_file, files
 from pathlib import Path
 
+from ww.agents.base import Agent
 from ww.errors import ConfigurationError
 from ww.extensions.api import (
     EXTENSION_API_VERSION,
@@ -46,7 +47,7 @@ ENTRY_POINT_GROUP = "ww.extensions"
 EXTENSION_DIRECTORY = "ext"
 # The vendor of the extensions ww bundles; a project may not provide them.
 BUNDLED_VENDOR = "ww"
-SECTIONS = ("handlers", "modes")
+SECTIONS = ("handlers", "modes", "agents")
 
 # One lower-case vendor or extension name, e.g. "ww" or "pull_request".
 _SEGMENT = r"[a-z0-9][a-z0-9_-]*"
@@ -303,6 +304,33 @@ class ExtensionRegistry:
                 + (", ".join(sorted(extension.modes_by_name)) or "none")
             )
         return ModeDefinition(str(reference), mode.description)
+
+    def agent(self, value: str) -> type[Agent]:
+        """The adapter class ``ext/<vendor>/<name>/agents:<key>`` addresses."""
+        reference = self._resolve(value, "agents")
+        self._require_reference_provider(value, reference.identifier)
+        extension = self.get(reference.identifier)
+        agent = extension.agents_by_key.get(reference.item)
+        if agent is None:
+            raise ConfigurationError(
+                f"extension {reference.identifier!r} has no agent "
+                f"{reference.item!r}; available: "
+                + (", ".join(sorted(extension.agents_by_key)) or "none")
+            )
+        return agent
+
+    def configured_agents(self) -> tuple[tuple[str, type[Agent]], ...]:
+        """The agents of the extensions the root settings list, by reference.
+
+        Like rule groups, an agent comes with listing its extension in the root
+        settings, even with an empty section.
+        """
+        return tuple(
+            (f"ext/{identifier}/agents:{key}", agent)
+            for identifier in self.identifiers
+            if self.config.sections.lists(identifier)
+            for key, agent in self.get(identifier).agents_by_key.items()
+        )
 
     def command(self, identifier: str, name: str) -> ExtensionCommand:
         extension = self.get(identifier)

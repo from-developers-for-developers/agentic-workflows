@@ -282,8 +282,10 @@ one:
 - `TASK-123` is the task ID. When your request names a ticket, the agent uses
   that key, so ww's task matches the issue. Otherwise ww assigns one in the
   format chosen during `init`.
-- `--agent` is the agent integration in use: `codex`, `claudecode`, `gemini`,
-  `antigravity`, `deepseek`, `kimi`, `cursor`, `grok`, or `custom:<name>`.
+- `--agent` is the agent integration in use: `codex`, `claudecode`, `cursor`,
+  or `custom:<name>` for any other agent. A project can also describe an agent
+  in `ww.json`, or install an extension that adds one (see
+  [Agents](documentation/features.md#agents)).
 - `--requirements` is your request, normalized into the task's requirements.
 - `--role manager` is the role driving the task; a worker performing a single
   assignment uses `--role worker`.

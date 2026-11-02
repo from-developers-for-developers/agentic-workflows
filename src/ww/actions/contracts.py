@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Generic, Literal, Protocol, TypeVar
 
+from ww.agents.layout import AvailableActions
 from ww.contracts import AssertionKind, ExecutionKind, PlanItemOwner
-from ww.discovery import AvailableActions
 from ww.errors import ConfigurationError
 from ww.extensions import (
     ExtensionCheckResult,

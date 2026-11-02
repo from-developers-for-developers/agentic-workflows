@@ -16,8 +16,8 @@ from ww.actions import (
     SlashCommand,
     actions,
 )
+from ww.agents.layout import AvailableActions
 from ww.contracts import PlanItemKind, PlanItemOwner
-from ww.discovery import AvailableActions
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.workflow_config import (

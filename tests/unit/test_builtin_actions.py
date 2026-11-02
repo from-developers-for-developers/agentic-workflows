@@ -26,7 +26,7 @@ from ww.actions import (
 )
 from ww.actions.command import CommandAction
 from ww.actions.contracts import CommandOutcome, CommandRequest
-from ww.discovery import AvailableActions
+from ww.agents.layout import AvailableActions
 from ww.errors import ConfigurationError, StateError
 from ww.extensions import ExtensionCheckResult, ExtensionHandler, ExtensionResult
 from ww.workflow_config import ProvidedVariable

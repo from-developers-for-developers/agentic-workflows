@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from ww.agents import choice_mechanism
+from ww.agents import AgentRegistry
 from ww.amendments import Amendment
 from ww.assessment_repeats import communication as repeat_communication
 from ww.assessment_repeats import instruction_plan as assessment_instruction_plan
@@ -165,8 +165,11 @@ class InstructionBuilder:
         config: ConfigSource | None = None,
         child_values: StepValues = no_step_values,
         worker_requirements: Callable[[], str] = lambda: "full",
+        agents: AgentRegistry | None = None,
     ) -> None:
         self.tasks = tasks
+        # Resolves the agent a task was started for into its adapter.
+        self.agents = agents or AgentRegistry()
         # ``pages.worker_requirements``, read per page so an edit applies at once.
         self.worker_requirements = worker_requirements
         self.child_values = child_values
@@ -295,6 +298,7 @@ class InstructionBuilder:
             notices=(*built.notices, *self._configuration_notices(state)),
             workflow_runtime=state.workflow_runtime,
             agent=state.agent,
+            host=self.agents.resolve(state.agent),
             model=(record.model if record and record.model else None)
             or (requested_setting(item.model) if item else None)
             or state.model,
@@ -1176,7 +1180,9 @@ class InstructionBuilder:
             ),
             choices=item.choices,
             choice_mechanism=(
-                choice_mechanism(state.agent).instruction if item.choices else None
+                self.agents.resolve(state.agent).choices.instruction
+                if item.choices
+                else None
             ),
             chosen=record.chosen,
             operator_paused=state.operator_paused,

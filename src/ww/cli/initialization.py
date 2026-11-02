@@ -11,19 +11,28 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from ww import claude_permissions
+from ww.agents import (
+    SHARED_DIRECTORY,
+    SHARED_INSTRUCTION_FILE,
+    Agent,
+    AgentRegistry,
+    Permissions,
+    builtin_agents,
+    hook_agents,
+    instruction_files,
+)
+from ww.agents.permissions import ensure_ignored, install_rules
 from ww.config.composition import compose_configuration
 from ww.config_files import runtime_ignored, settings_levels
 from ww.defaults import SKILLS, WW_SKILL_NAME, default_settings, skill_location
-from ww.discovery import AGENT_DIRECTORIES
 from ww.errors import ConfigurationError, StateError
 from ww.executable import (
     DEFAULT_EXECUTABLE,
     PROJECT_LAUNCHER_COMMAND,
     project_command,
 )
+from ww.extensions import ExtensionRegistry
 from ww.hooks import (
-    HOOK_AGENTS,
     HookInstallError,
     hooks_installed,
     install_hooks,
@@ -58,6 +67,30 @@ def _init_choices(storage: Storage) -> dict[str, object]:
     return value
 
 
+# The instruction files built-in agents read besides AGENTS.md, for the prompt.
+_OWN_INSTRUCTION_FILES = " or ".join(
+    dict.fromkeys(
+        agent.layout.instruction_file
+        for agent in builtin_agents()
+        if agent.layout
+        and agent.layout.instruction_file
+        and agent.layout.instruction_file != SHARED_INSTRUCTION_FILE
+    )
+)
+
+
+def _known_agents(storage: Storage) -> tuple[Agent, ...]:
+    """The agents this project names: ww's own, its declared and extension ones."""
+    return AgentRegistry.of(
+        ExtensionRegistry.discover(storage.root, storage.project_config_path)
+    ).known()
+
+
+def _set_up(storage: Storage, agent: Agent) -> bool:
+    """Whether ``agent`` is set up here: its project directory exists."""
+    return agent.layout is not None and (storage.root / agent.layout.directory).is_dir()
+
+
 def _save_init_choice(storage: Storage, key: str, value: object) -> None:
     choices = _init_choices(storage)
     choices[key] = value
@@ -90,12 +123,13 @@ def install_agent_hooks(
         list(result.actions),
     )
     explained = False
-    for name, agent in HOOK_AGENTS.items():
-        if not (storage.root / AGENT_DIRECTORIES[name]).is_dir():
+    for agent in hook_agents(_known_agents(storage)):
+        if agent.hooks is None or not _set_up(storage, agent):
             continue
+        name = agent.name
         if hooks_installed(storage, agent) and args.hooks is not False:
             choices[name] = True
-            preserved.append(f"{agent.settings_file} (ww hooks)")
+            preserved.append(f"{agent.hooks.settings_file} (ww hooks)")
             continue
         wanted = args.hooks if args.hooks is not None else remembered.get(name)
         if wanted is None and interactive:
@@ -124,7 +158,7 @@ def install_agent_hooks(
             actions.append(f"Add ww's hooks for {name} by hand: {error}")
             continue
         if installation.changed:
-            created.append(f"{agent.settings_file} (added ww hooks)")
+            created.append(f"{agent.hooks.settings_file} (added ww hooks)")
     if choices:
         _save_init_choice(storage, "hooks", choices)
     return replace(
@@ -135,32 +169,41 @@ def install_agent_hooks(
     )
 
 
-def install_claude_permissions(
+def install_agent_permissions(
     storage: Storage, args: argparse.Namespace, result: InitializationResult
 ) -> InitializationResult:
-    """Offer Bash allow rules for ww's role commands in Claude Code's local file.
+    """Offer allow rules for ww's role commands in each agent's local settings.
 
-    Opt-in: the question's default is no, a terminal is needed to be asked,
-    and ``--permissions``/``--no-permissions`` answer without one.  The answer
-    is remembered, so a later init refreshes the rules it was given for.  The
-    rules name the project wrapper by absolute path; the file is merged, never
-    overwritten, and kept out of Git.  A settings file that cannot be merged
-    never fails init: the summary says how to add the rules by hand.
+    Only agents set up here whose permission format ww writes are offered
+    them.  Opt-in: the question's default is no, a terminal is needed to be
+    asked, and ``--permissions``/``--no-permissions`` answer without one.
+    The one answer covers every such agent and is remembered, so a later init
+    refreshes the rules it was given for.  The rules name the project wrapper
+    by absolute path; each file is merged, never overwritten, and kept out of
+    Git.  A settings file that cannot be merged never fails init: the summary
+    says how to add the rules by hand.
     """
-    if not (storage.root / AGENT_DIRECTORIES["claudecode"]).is_dir():
+    agents = [
+        (agent, agent.permissions)
+        for agent in _known_agents(storage)
+        if agent.permissions is not None
+        and agent.permissions.local_file is not None
+        and _set_up(storage, agent)
+    ]
+    if not agents:
         return result
     interactive = not args.no_input and not args.json_output and sys.stdin.isatty()
     choices = _init_choices(storage)
     remembered = None if args.force and interactive else choices.get("permissions")
     wanted = args.permissions if args.permissions is not None else remembered
     if wanted is None and interactive:
+        where = " and ".join(
+            f"for {agent.title} in {permissions.local_file}"
+            for agent, permissions in agents
+        )
         try:
             wanted = _ask_yes_no(
-                _init_prompt(
-                    65,
-                    "Allow ww's role commands for Claude Code in "
-                    f"{claude_permissions.SETTINGS_FILE}? [y/N]: ",
-                ),
+                _init_prompt(65, f"Allow ww's role commands {where}? [y/N]: "),
                 False,
             )
         except EOFError:
@@ -170,22 +213,31 @@ def install_claude_permissions(
     _save_init_choice(storage, "permissions", wanted)
     if not wanted:
         return result
+    for _, permissions in agents:
+        result = _install_permissions(storage, permissions, result)
+    return result
+
+
+def _install_permissions(
+    storage: Storage, permissions: Permissions, result: InitializationResult
+) -> InitializationResult:
     created, preserved, actions = (
         list(result.created),
         list(result.preserved),
         list(result.actions),
     )
-    rules = claude_permissions.role_rules(storage.root.resolve() / "ww")
+    local_file = permissions.local_file
+    rules = permissions.role_rules(storage.root.resolve() / "ww")
     try:
-        if claude_permissions.install_rules(storage.root, rules):
-            created.append(f"{claude_permissions.SETTINGS_FILE} (added ww permissions)")
+        if install_rules(storage.root, permissions, rules):
+            created.append(f"{local_file} (added ww permissions)")
         else:
-            preserved.append(f"{claude_permissions.SETTINGS_FILE} (ww permissions)")
-        if claude_permissions.ensure_ignored(storage.root):
-            created.append(f".gitignore (added {claude_permissions.SETTINGS_FILE})")
+            preserved.append(f"{local_file} (ww permissions)")
+        if ensure_ignored(storage.root, permissions):
+            created.append(f".gitignore (added {local_file})")
     except (StateError, OSError) as error:
         actions.append(
-            f"Add these to permissions.allow in {claude_permissions.SETTINGS_FILE} "
+            f"Add these to permissions.allow in {local_file} "
             f"by hand ({error}): " + ", ".join(rules)
         )
     return replace(
@@ -196,11 +248,15 @@ def install_claude_permissions(
     )
 
 
+def _instruction_files(storage: Storage) -> tuple[str, ...]:
+    """The instruction files of the agents set up here, ``AGENTS.md`` always."""
+    return instruction_files(
+        storage.root, (agent.layout for agent in _known_agents(storage))
+    )
+
+
 def _instructions_linked(storage: Storage) -> bool:
-    names = {"AGENTS.md"}
-    for directory, name in ((".claude", "CLAUDE.md"), (".gemini", "GEMINI.md")):
-        if (storage.root / directory).is_dir() or (storage.root / name).exists():
-            names.add(name)
+    names = _instruction_files(storage)
     return all(
         (storage.root / name).is_file()
         and "@WW_AGENT_INSTRUCTIONS.md"
@@ -218,13 +274,7 @@ def _link_agent_instructions(
     storage: Storage, result: InitializationResult
 ) -> InitializationResult:
     """Append the approved reference while preserving existing instructions."""
-    names = {"AGENTS.md"}
-    for directory, filename in ((".claude", "CLAUDE.md"), (".gemini", "GEMINI.md")):
-        if (storage.root / directory).is_dir():
-            names.add(filename)
-    names.update(
-        name for name in ("CLAUDE.md", "GEMINI.md") if (storage.root / name).is_file()
-    )
+    names = _instruction_files(storage)
     created = list(result.created)
     for name in sorted(names):
         path = storage.root / name
@@ -376,7 +426,7 @@ def _initialization_options(
             "\nWW_AGENT_INSTRUCTIONS.md tells your agents how to work through ww:\n"
             "to start from `./ww discover`, follow each response, and keep going\n"
             "until the workflow is done. Referencing it from the instruction files\n"
-            "your agents already read (AGENTS.md, and CLAUDE.md or GEMINI.md where\n"
+            f"your agents already read (AGENTS.md, and {_OWN_INSTRUCTION_FILES} where\n"
             "those agents are set up) means they pick it up on their own, so you\n"
             "can just ask for the work instead of explaining ww every session.\n"
             "\n"
@@ -477,14 +527,19 @@ def _agent_directories(storage: Storage) -> tuple[str, ...]:
     """Agent directories from discovery that exist in this project."""
     return tuple(
         directory
-        for directory in _known_agent_directories()
+        for directory in _known_agent_directories(storage)
         if (storage.root / directory).is_dir()
     )
 
 
-def _known_agent_directories() -> tuple[str, ...]:
-    """Shared agent skills plus each integration-specific settings directory."""
-    return (".agents", *dict.fromkeys(AGENT_DIRECTORIES.values()))
+def _known_agent_directories(storage: Storage) -> tuple[str, ...]:
+    """Shared agent skills plus each agent's own project directory."""
+    return (
+        SHARED_DIRECTORY,
+        *dict.fromkeys(
+            agent.layout.directory for agent in _known_agents(storage) if agent.layout
+        ),
+    )
 
 
 def _skill_installs(
@@ -506,7 +561,7 @@ def _skill_installs(
     saved = _init_choices(storage).get("agents", {})
     fresh = not any(
         isinstance(saved, dict) and isinstance(saved.get(directory), bool)
-        for directory in _known_agent_directories()
+        for directory in _known_agent_directories(storage)
     )
     directories = _skill_directories(
         storage, requested, interactive, progress=progress, force=force
@@ -604,7 +659,7 @@ def _skill_directories(
     saved = _init_choices(storage).get("agents", {})
     choices = dict(saved) if isinstance(saved, dict) else {}
     chosen_directories: list[str] = []
-    directories = _known_agent_directories()
+    directories = _known_agent_directories(storage)
     undecided: list[tuple[str, bool]] = []
     for directory in directories:
         location = _skill_location(directory)
@@ -866,6 +921,16 @@ def _finish_initialization(
         _save_init_choice(storage, "permission_notice_shown", True)
     commands = tuple(dict.fromkeys((command, PROJECT_LAUNCHER_COMMAND, "ww")))
     permissions, others = _agent_permissions(storage, commands)
+    example = next(
+        (agent for agent in _known_agents(storage) if _set_up(storage, agent)), None
+    )
+    if example is not None:
+        result = replace(
+            result,
+            example_agent=example.title,
+            setup_command=example.skill_command("ww-setup"),
+            start_example=example.skill_command("ww", "implement a user sign-in page"),
+        )
     return replace(
         result,
         created=tuple(created),
@@ -890,13 +955,12 @@ def _agent_permissions(
     """
     known: list[tuple[str, str, str]] = []
     others: list[str] = []
-    for name, directory in AGENT_DIRECTORIES.items():
-        if not (storage.root / directory).is_dir():
+    for agent in _known_agents(storage):
+        if not _set_up(storage, agent):
             continue
-        agent = HOOK_AGENTS.get(name)
-        entries = agent.permissions(commands) if agent else None
-        if agent and agent.permissions_file and entries is not None:
-            known.append((name, agent.permissions_file, json.dumps(entries, indent=2)))
-        else:
-            others.append(name)
+        if agent.permissions is None:
+            others.append(agent.name)
+            continue
+        entries = json.dumps(agent.permissions.allow(commands), indent=2)
+        known.append((agent.name, agent.permissions.shared_file, entries))
     return tuple(known), tuple(others)

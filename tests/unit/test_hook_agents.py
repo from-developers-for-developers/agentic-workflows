@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Agent hook adapters and the hooks-file installer."""
+"""Agent hook protocols and the hooks-file installer."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from ww.agents import Agent, AgentRegistry, builtin_agents
 from ww.hooks import (
-    HOOK_AGENTS,
     HookInstallError,
-    hook_agent,
+    hook_protocol,
     hook_snippet,
     hooks_installed,
     install_hooks,
@@ -20,11 +20,18 @@ from ww.hooks import (
 )
 from ww.storage import Storage
 
+HOOK_AGENTS = sorted(agent.name for agent in builtin_agents() if agent.hooks)
+
+
+def hook_agent(name: str) -> Agent:
+    return AgentRegistry().resolve(name)
+
+
 # Payload parsing
 
 
 def test_claude_code_reads_its_payload() -> None:
-    agent = hook_agent("claudecode")
+    agent = hook_protocol(hook_agent("claudecode"))
 
     start = agent.parse("session-start", {"cwd": "/w", "source": "compact"})
 
@@ -32,27 +39,18 @@ def test_claude_code_reads_its_payload() -> None:
 
 
 def test_codex_reads_its_payload() -> None:
-    agent = hook_agent("codex")
+    agent = hook_protocol(hook_agent("codex"))
 
     assert agent.parse("session-start", {"source": "compact"}).source == "compact"
-
-
-def test_antigravity_wants_context_only_on_the_first_invocation() -> None:
-    agent = hook_agent("antigravity")
-
-    first = agent.parse("session-start", {"invocationNum": 0, "workspacePaths": ["/w"]})
-    later = agent.parse("session-start", {"invocationNum": 3})
-
-    assert (first.wants_context, first.directory) == (True, Path("/w"))
-    assert later.wants_context is False
 
 
 # Reply shapes
 
 
 def test_each_agent_answers_in_its_own_shape() -> None:
-    claude, codex = hook_agent("claudecode"), hook_agent("codex")
-    cursor, antigravity = hook_agent("cursor"), hook_agent("antigravity")
+    claude, codex, cursor = (
+        hook_protocol(hook_agent(name)) for name in ("claudecode", "codex", "cursor")
+    )
 
     for agent in (claude, codex):
         assert json.loads(agent.context_reply("ctx")) == {
@@ -62,20 +60,14 @@ def test_each_agent_answers_in_its_own_shape() -> None:
             }
         }
     assert json.loads(cursor.context_reply("ctx")) == {"additional_context": "ctx"}
-    assert json.loads(antigravity.context_reply("ctx")) == {
-        "injectSteps": [{"ephemeralMessage": "ctx"}]
-    }
 
 
 # Registration
 
 
-def _commands(document: dict, agent: str) -> dict[str, list[str]]:
-    hooks = document["ww"] if agent == "antigravity" else document["hooks"]
+def _commands(document: dict) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
-    for native, entries in hooks.items():
-        if native == "enabled":
-            continue
+    for native, entries in document["hooks"].items():
         for entry in entries:
             handlers = entry.get("hooks", [entry])
             result.setdefault(native, []).extend(h["command"] for h in handlers)
@@ -83,7 +75,7 @@ def _commands(document: dict, agent: str) -> dict[str, list[str]]:
 
 
 def test_the_session_start_hook_is_registered_without_a_subagent_start() -> None:
-    claude = _commands(json.loads(hook_snippet(hook_agent("claudecode"))), "claudecode")
+    claude = _commands(json.loads(hook_snippet(hook_agent("claudecode"))))
 
     assert set(claude) == {"SessionStart"}
     assert "SubagentStart" not in claude
@@ -99,11 +91,10 @@ def test_the_session_start_hook_is_registered_without_a_subagent_start() -> None
     [
         ("codex", {"SessionStart"}),
         ("cursor", {"sessionStart"}),
-        ("antigravity", {"PreInvocation"}),
     ],
 )
 def test_each_agent_registers_its_native_events(agent: str, events: set[str]) -> None:
-    assert set(_commands(json.loads(hook_snippet(hook_agent(agent))), agent)) == events
+    assert set(_commands(json.loads(hook_snippet(hook_agent(agent))))) == events
 
 
 def test_cursor_commands_run_from_the_project_root() -> None:
@@ -120,18 +111,16 @@ def test_cursor_commands_run_from_the_project_root() -> None:
 # Installing
 
 
-@pytest.mark.parametrize("name", sorted(HOOK_AGENTS))
+@pytest.mark.parametrize("name", HOOK_AGENTS)
 def test_install_is_idempotent_and_uninstall_removes_only_ww(
     tmp_path: Path, name: str
 ) -> None:
     agent = hook_agent(name)
     storage = Storage(tmp_path)
-    path = tmp_path / agent.settings_file
+    path = tmp_path / hook_protocol(agent).settings_file
     path.parent.mkdir(parents=True)
     own = (
-        {"mine": {"enabled": True, "Stop": [{"hooks": [{"command": "echo x"}]}]}}
-        if name == "antigravity"
-        else {"version": 1, "hooks": {"Stop": [{"command": "echo x"}]}}
+        {"version": 1, "hooks": {"Stop": [{"command": "echo x"}]}}
         if name == "cursor"
         else {
             "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo x"}]}]}
@@ -213,7 +202,6 @@ def test_claude_code_installs_into_its_local_file(tmp_path: Path) -> None:
     [
         ("codex", "~/.codex/hooks.json"),
         ("cursor", "~/.cursor/hooks.json"),
-        ("antigravity", "~/.gemini/config/hooks.json"),
     ],
 )
 def test_agents_without_a_local_file_refuse_the_local_scope(
@@ -240,14 +228,24 @@ def test_a_second_copy_in_the_other_file_is_reported(tmp_path: Path) -> None:
     assert registered_elsewhere(storage, hook_agent("codex")) is None
 
 
+# Agents without hooks
+
+
+def test_an_agent_without_hooks_cannot_take_them(tmp_path: Path) -> None:
+    with pytest.raises(HookInstallError, match="ww has no hooks for custom:kimi"):
+        install_hooks(Storage(tmp_path), hook_agent("custom:kimi"))
+
+
 # Permissions
 
 
 def test_only_claude_code_says_how_to_allow_commands() -> None:
     commands = ("ww-agentic-workflows", "./ww", "ww")
+    permissions = hook_agent("claudecode").permissions
 
-    assert HOOK_AGENTS["claudecode"].permissions_file == ".claude/settings.json"
-    assert HOOK_AGENTS["claudecode"].permissions(commands) == {
+    assert permissions is not None
+    assert permissions.shared_file == ".claude/settings.json"
+    assert permissions.allow(commands) == {
         "permissions": {
             "allow": [
                 "Bash(ww-agentic-workflows *)",
@@ -256,5 +254,5 @@ def test_only_claude_code_says_how_to_allow_commands() -> None:
             ]
         }
     }
-    for name in ("codex", "cursor", "antigravity"):
-        assert HOOK_AGENTS[name].permissions(commands) is None
+    for name in ("codex", "cursor"):
+        assert hook_agent(name).permissions is None

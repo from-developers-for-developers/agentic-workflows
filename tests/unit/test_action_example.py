@@ -17,7 +17,7 @@ from ww.actions import (
     ResolutionContext,
     actions,
 )
-from ww.discovery import AvailableActions
+from ww.agents.layout import AvailableActions
 from ww.errors import ConfigurationError
 from ww.interpolation import interpolate
 from ww.service import WorkflowService

@@ -1259,3 +1259,35 @@ def test_the_flags_parse() -> None:
     )
     assert (child.parent_task_id, child.child_id) == ("T-1", "a")
     assert forced.force_reason == "Skip."
+
+
+def test_init_links_and_reports_the_instruction_files_of_declared_agents(
+    tmp_path: Path, capsys
+) -> None:
+    (tmp_path / "ww.json").write_text(
+        json.dumps({"agents": {"aider": {"instruction_file": "CONVENTIONS.md"}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "CONVENTIONS.md").write_text("Be kind.\n", encoding="utf-8")
+    init = ["--root", str(tmp_path), "init", "--no-input", "--no-skills"]
+
+    assert main([*init, "--no-link-instructions"]) == 0
+    assert "Add @WW_AGENT_INSTRUCTIONS.md to CONVENTIONS.md." in capsys.readouterr().out
+
+    assert main([*init, "--link-instructions"]) == 0
+    capsys.readouterr()
+    assert (tmp_path / "CONVENTIONS.md").read_text() == (
+        "Be kind.\n\n@WW_AGENT_INSTRUCTIONS.md\n"
+    )
+
+
+def test_init_examples_name_the_agent_set_up_in_the_project(
+    tmp_path: Path, capsys
+) -> None:
+    (tmp_path / ".codex").mkdir()
+
+    assert main(["--root", str(tmp_path), "init", "--no-input", "--no-skills"]) == 0
+    output = capsys.readouterr().out
+
+    assert "In Codex, for example, type $ww-setup." in output
+    assert "$ww implement a user sign-in page" in output

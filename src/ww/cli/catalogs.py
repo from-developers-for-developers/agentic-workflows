@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import json
 
+from ww.agents import CUSTOM_PREFIX, AgentRegistry
 from ww.config import load_configuration, load_modes
-from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
 from ww.runtimes import RUNTIME_INSTRUCTIONS
@@ -115,16 +115,20 @@ def _catalog_projects(extensions: ExtensionRegistry) -> str:
     )
 
 
-def _catalog_agents() -> str:
-    """Render supported agent integrations and the custom-agent escape hatch."""
+def _catalog_agents(extensions: ExtensionRegistry) -> str:
+    """Render the agents the project names and the custom-agent escape hatch."""
     return json.dumps(
         {
             "agents": [
-                {"name": name, "directory": directory}
-                for name, directory in AGENT_DIRECTORIES.items()
+                {
+                    "name": agent.name,
+                    "title": agent.title,
+                    "directory": agent.layout.directory if agent.layout else None,
+                }
+                for agent in AgentRegistry.of(extensions).known()
             ],
             "custom": {
-                "prefix": CUSTOM_AGENT_PREFIX,
+                "prefix": CUSTOM_PREFIX,
                 "description": "Use custom:<name> for an arbitrary agent name.",
             },
         },

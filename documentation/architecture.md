@@ -52,7 +52,7 @@ worktree settings; built-in composition needs no project lane setting.
 `../src/ww/task_references.py` maps what the operator called a task onto the
 task format and the IDs the storage port lists, and the command answers with
 one next step, continuing an open run or naming the `record` command, and
-asking the operator through the agent's choice menu (`../src/ww/agents.py`)
+asking the operator through the agent's choice menu (`../src/ww/agents/`)
 only when the reference matches several tasks. `../src/ww/direct_work.py` holds
 the direct-work entries kept in each task's `direct-work.json` (a
 `TaskDirectWorkStorage` port of the storage adapters) and finds the commits for
@@ -170,11 +170,12 @@ run asks nothing already decided; `init --force` reads none of them back (it
 still writes the new answers), which is safe because every step of init only
 adds — skills, instruction references, hooks, `.gitignore` lines and settings
 keys are never removed or rewritten. The closing permission notice is built
-from the agent adapters in `../src/ww/hooks/agents.py`: an adapter that knows
-its agent's permission format sets `permissions_file` and returns the entries
-from `permissions()` (only Claude Code today), and every other set-up agent is
-named with the plain command prefixes, so ww never prints a format it cannot
-vouch for.
+from the agent adapters in `../src/ww/agents/`: an agent whose permission
+format ww knows has a `Permissions` part, whose `shared_file` and `allow()`
+entries the notice prints (only Claude Code today), and every other set-up
+agent is named with the plain command prefixes, so ww never prints a format it
+cannot vouch for. The same part's `local_file` is where init's opt-in role
+rules go (merge, never clobber, keep ignored).
 
 Both configuration files share the `ww` stem, and their names
 are defined once in `../src/ww/config_files.py`, together with the local
@@ -443,9 +444,9 @@ The YAML frontend mirrors this model: `argv`, `shell`, skill, slash-command,
 MCP, and prompt action keys live directly on global handlers, steps, and
 singular hooks. Only an ordered group uses the `handlers` container.
 
-`AgentDiscovery` resolves actions from `.agents/` plus the selected agent’s
-directory. For an action without an explicit kind, automatic resolution is
-one-way and singular: skill, then slash command, then prompt fallback. CLI
+`AgentDiscovery` resolves actions from `.agents/` plus the directory of the
+run's agent's `Layout`; an agent without a layout finds none. For an action
+without an explicit kind, automatic resolution is one-way and singular: skill, then slash command, then prompt fallback. CLI
 actions are already typed before discovery begins. This removes the prior
 possibility of returning both a skill and a command for one configured action.
 
@@ -1531,8 +1532,8 @@ command calls `WorkflowService.dispatch_own_step`, whose policy
 (`manager_continues_itself`) reads the page the completion returned and, when the next
 step is the manager's own, calls `next` as the manager would and keeps the completion's
 `session_continues`; the service's `complete` never dispatches, so every other caller
-keeps its single-step contract. `init`'s opt-in Claude Code
-permission rules live in `ww.claude_permissions` (merge, never clobber, keep ignored).
+keeps its single-step contract. `init`'s opt-in permission rules come from
+each agent's `Permissions` part in `ww.agents`.
 
 Amendments to a task's requirements live behind their own storage port
 (`TaskAmendmentStorage`: `read_amendments`, append-only `append_amendment`), per
@@ -1726,8 +1727,9 @@ per task (`interactions.py`, which also parses the transcript), the step
 record counts entries and
 remembers whether the operator ended or paused the conversation, and
 completion is refused until it was ended. How the operator is asked is the
-agent's business; the choice mechanisms table in `agents.py` is core knowledge
-of what each integration offers, not an extension point.
+agent's business: each agent adapter in `ww.agents` carries its choice
+mechanism, which the instruction builder resolves from the run's agent and
+puts on the page.
 
 A session that ends mid-conversation loses what was not yet recorded; ww does
 not recover it from the agent's transcript, and the next session asks the
@@ -1820,10 +1822,12 @@ sessions, and recovered conversations from transcripts. The result confused
 sessions that had nothing to do with the task, so only the one line a session
 needs to find ww remains. `ww.hooks.runtime` answers it: `session-start`
 prints `session_context` from `ww.hooks.notices`, and every other event
-answers nothing. The adapters in `ww.hooks.agents` only translate: each reads
-its agent's payload into one neutral record and renders ww's answer in the
-agent's reply shape. A new agent is one more adapter. The three events, the
-payload fields (including the ones nothing reads now) stay accepted, so a
+answers nothing. The hook protocols in `ww.agents.hooks`, one per agent
+adapter, only translate: each reads its agent's payload into one neutral
+record and renders ww's answer in the agent's reply shape. A protocol holds no
+agent name; ww passes the name the agent is addressed by, so an extension's
+agent registers `--agent ext/<vendor>/<name>/agents:<key>`. The three events,
+the payload fields (including the ones nothing reads now) stay accepted, so a
 hooks file written by an older ww keeps working; `stop` and `interrupt` calls from an older installation exit 0 with no
 output and write no state. ww keeps no hook record per task: `reset` only
 removes the `interrupted.json` and `stop-reminders.json` an older version
@@ -2217,3 +2221,49 @@ the terminal prompts (`confirm_operator`, `--yes`) and `webbrowser.open`
 while tests pass stubs. `gh` is used when it is installed and `gh auth
 status` succeeds; otherwise the prefilled new-issue URL is opened and the
 operator submits it. ww never holds a credential of its own.
+
+## Agents
+
+Everything ww says or writes differently for one coding agent lives in
+`../src/ww/agents/`; no other module keys a table by an agent's name. An
+`Agent` (`base.py`) is an adapter whose parts each have a neutral default and
+may be absent, since an agent behind an API has no directory, hooks, or shell:
+
+- `layout` (`layout.py`): the project directory holding its skills,
+  commands, and profiles, its own instruction file besides the shared
+  `AGENTS.md`, and the markers `inspect` reports. `AgentDiscovery` reads
+  skills and commands from `.agents/` and that directory; `instruction_files`
+  is the one rule `init` links and storage reports instruction files by.
+- `hooks` (`hooks.py`): a `HookProtocol`, the agent's hooks file shape,
+  payload parsing, and reply shape. `ww.hooks` keeps every decision.
+- `permissions` (`permissions.py`): how the agent allows ww's commands.
+- `choices` and `waiting` (`interaction.py`): how pages offer operator
+  choices and run the operator-page wait.
+- `skill_prefix`: what the operator types before a skill's name.
+- `launcher` (`launch.py`): reserved for ww starting an agent itself,
+  headless or through an API; unused today.
+
+`ClaudeCode`, `Codex`, and `Cursor` are the built-in adapters. The
+`AgentRegistry` (`registry.py`) resolves a name, in order, to a built-in, an
+agent declared with data under `agents` in `ww.json` (`DeclaredAgent`,
+parsed by `ww.project_config`), an extension's `Agent` subclass addressed as
+`ext/<vendor>/<name>/agents:<key>`, or `custom:<name>` (`CustomAgent`, every
+default). Built-in and extension agents are both classes the registry creates
+with the name they were addressed by, so hook commands and pages carry that
+name. `known()` lists the built-ins, the declared agents, and the agents of
+the extensions the root settings list, even with an empty section;
+`discover`, `ww agents`, `init`, and lint's any-agent compile iterate it.
+Places that read no settings (`inspect`, the parser's help) use
+`builtin_agents()`. That order (Codex, Claude Code, Cursor) is the one
+`discover` and the catalogs print; `hook_agents()` picks the hook-capable
+agents in the order init offers hooks and the help names them (Claude Code,
+Codex, Cursor, then extension agents).
+
+An agent plays two roles. The host is the run's agent (`start --agent`): the
+compiler resolves it to find skills and profiles, the instruction builder puts
+it on each `Instruction` (`host`) so the Markdown adapter renders its choice
+and wait mechanisms, and `init` and `ww hook` use its layout, hooks, and
+permissions. A step's `agent:` is the requested agent, advice for the manager;
+its `launcher` is the seam for ww launching that agent with the ordinary worker
+bootstrap later.
+

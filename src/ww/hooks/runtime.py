@@ -19,10 +19,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from ww.agents import Agent, HookEvent
 from ww.config_files import WORKFLOWS_FILE
 from ww.storage import Storage
 
-from .agents import HookAgent, HookEvent
+from .install import hook_protocol
 from .notices import session_context
 
 
@@ -39,7 +40,7 @@ ALLOW = HookAnswer("", "allowed")
 
 def answer_hook(
     storage: Storage,
-    agent: HookAgent,
+    agent: Agent,
     event: HookEvent,
     raw_payload: str,
     *,
@@ -50,13 +51,14 @@ def answer_hook(
     ``on_request`` is the project's ``"enabled": "on_request"``: the session
     is told that ww is used only when the user asks for it.
     """
-    payload = agent.parse(event, _payload(raw_payload))
+    hooks = hook_protocol(agent)
+    payload = hooks.parse(event, _payload(raw_payload))
     if event != "session-start":
         return HookAnswer("", "nothing to answer: stop and interrupt are retired")
     if not payload.wants_context:
         return HookAnswer("", "no context needed")
     text = session_context(compacted=payload.source == "compact", on_request=on_request)
-    return HookAnswer(agent.context_reply(text.rstrip("\n")) + "\n", "context")
+    return HookAnswer(hooks.context_reply(text.rstrip("\n")) + "\n", "context")
 
 
 def _payload(raw: str) -> dict[str, object]:

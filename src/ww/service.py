@@ -19,6 +19,7 @@ from ww.actions import (
     PlannedAction,
     actions,
 )
+from ww.agents import AgentRegistry
 from ww.amendments import MAX_AMENDMENT_LENGTH, Amendment, TaskRequirements
 from ww.assessment_repeats import (
     communication as repeat_communication,
@@ -385,6 +386,7 @@ class WorkflowService:
             config=self.storage.config,
             documents=self.documents,
             interactions=self.interactions,
+            agents=AgentRegistry.of(self.extensions),
         )
         self.runs = RunCoordinator(self.tasks)
         self.metadata_publisher = MetadataPublisher(

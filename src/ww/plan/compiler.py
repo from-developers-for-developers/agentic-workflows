@@ -16,6 +16,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
+from ww.agents import AgentDiscovery, AgentRegistry
 from ww.config.rules import rule_source
 from ww.contracts import (
     ExecutionKind,
@@ -26,7 +27,6 @@ from ww.contracts import (
     StepRole,
 )
 from ww.control import child_workflow, workflow_transition
-from ww.discovery import AGENT_DIRECTORIES, AgentDiscovery
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry, is_extension_reference
 from ww.interpolation import dependencies, interpolate
@@ -237,8 +237,9 @@ class WorkflowPlanCompiler:
         self.task_id = self.options.task_id
         self.extensions = extensions
         self.project_config = project_config or ProjectConfig()
-        self.discovery = AgentDiscovery(root)
-        self.available = self.discovery.available(agent)
+        host = AgentRegistry(self.project_config.agents, extensions).resolve(agent)
+        self.discovery = AgentDiscovery(root, host.layout)
+        self.available = self.discovery.available()
         self.builtins = compile_variable_values(
             tuple(item.name for item in self.configuration.workflows), self.task_id
         )
@@ -1669,7 +1670,7 @@ class WorkflowPlanCompiler:
         so a plan compiled on one filesystem prints the right path on another.
         """
         if name is not None:
-            profile_path = self.discovery.profile(self.agent, name)
+            profile_path = self.discovery.profile(name)
             if profile_path is not None:
                 return name, None, relative_workspace(self.root, profile_path)
         configured = self.configuration.profiles_by_name.get(name) if name else None
@@ -1706,11 +1707,14 @@ def compile_for_any_agent(
     """Compile ``workflow``'s plan as ``start`` would, for no agent in particular.
 
     A skill may exist for one agent only: the workflow compiles when it
-    compiles for any supported agent, and otherwise fails with the first
-    agent's error.
+    compiles for any agent the project names, and otherwise fails with the
+    first agent's error.
     """
     errors: list[ConfigurationError] = []
-    for agent in AGENT_DIRECTORIES:
+    agents = AgentRegistry(
+        (project_config or ProjectConfig()).agents, extensions
+    ).known()
+    for agent in (agent.name for agent in agents):
         try:
             return compile_workflow_plan(
                 configuration,

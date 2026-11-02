@@ -53,15 +53,18 @@ removes every ww entry, whichever events it registered.
 | Claude Code | `.claude/settings.json` | `SessionStart` | `.claude/settings.local.json` |
 | Codex | `.codex/hooks.json` | `SessionStart` | none; user file `~/.codex/hooks.json` |
 | Cursor | `.cursor/hooks.json` | `sessionStart` | none; user file `~/.cursor/hooks.json` |
-| Antigravity | `.agents/hooks.json`, group `ww` | `PreInvocation` | none; user file `~/.gemini/config/hooks.json` |
 
 Claude Code's `SessionStart` has no matcher, so it fires for every source,
-compaction included. Antigravity has no session-start event, so ww answers
-only its first pre-invocation of a conversation, as an ephemeral message that
-never accumulates. Codex loads project hooks only once the project's `.codex/`
-layer is trusted: review them with `/hooks` in Codex.
+compaction included. Codex loads project hooks only once the project's
+`.codex/` layer is trusted: review them with `/hooks` in Codex.
 
-These per-agent gaps (no session-start event, a trust gate) are permanent
+Each agent's hook protocol lives on its adapter in `src/ww/agents/`. An
+extension's agent may bring a protocol of its own; its hooks call ww with the
+agent's reference (`--agent ext/<vendor>/<name>/agents:<key>`), so they work
+only while that extension is installed. Agents declared in `ww.json` and
+`custom:<name>` agents have no hooks.
+
+These per-agent gaps (a trust gate, no local file) are permanent
 differences between agents, not bugs; see
 [Agent limitations](limitations.md#agent-limitations) for the summary.
 
@@ -94,9 +97,8 @@ notice with the command that removes one copy.
 
 The registered command calls the project's tracked `./ww` launcher: through
 `"$CLAUDE_PROJECT_DIR"` for Claude Code, from the project root for Cursor, and
-from the repository's top level (`git rev-parse --show-toplevel`) for Codex and
-Antigravity. The launcher resolves the durable root through the shared Git
-directory, so a session in a task worktree reaches the same state; the launcher
+from the repository's top level (`git rev-parse --show-toplevel`) for Codex.
+The launcher resolves the durable root through the shared Git directory, so a session in a task worktree reaches the same state; the launcher
 must therefore be tracked for worktree sessions.
 
 The runtime form, `ww hook session-start|stop|interrupt --agent <agent>`, is
@@ -111,9 +113,7 @@ lost hint. When the command cannot start at all, for example a missing
 launcher or an untrusted Codex hook, the agent shows its own non-blocking hook
 error. A hook that times out is killed by the agent, which carries on.
 
-Running more often than needed is harmless. Antigravity calls its
-pre-invocation hook before every model call; only the first one returns
-context.
+Running more often than needed is harmless.
 
 Every hook call is written to the audit log, `.ww/executions.jsonl`, with the
 event, the agent, and ww's decision, so a session can be followed there:

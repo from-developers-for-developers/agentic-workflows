@@ -28,6 +28,8 @@ from typing import Any, NamedTuple
 
 import yaml
 
+from ww.agents import SHARED_INSTRUCTION_FILE, builtin_agents
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # pyproject.toml is read from Python 3.11, which ships tomllib.
@@ -80,14 +82,26 @@ MONOREPO_DIRECTORIES = ("apps", "packages", "services")
 SKIPPED_DIRECTORIES = frozenset(
     {"node_modules", "vendor", "dist", "build", "target", "venv", "__pycache__"}
 )
-AGENT_FILES: tuple[str, ...] = (
-    "AGENTS.md",
-    "CLAUDE.md",
-    "GEMINI.md",
-    ".codex",
-    ".claude",
+# The files that show which agents a checkout is set up for: the shared and
+# the agents' own instruction files, then each agent's markers.
+AGENT_FILES: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        (
+            SHARED_INSTRUCTION_FILE,
+            *(
+                agent.layout.instruction_file
+                for agent in builtin_agents()
+                if agent.layout and agent.layout.instruction_file
+            ),
+            *(
+                marker
+                for agent in builtin_agents()
+                if agent.layout
+                for marker in agent.layout.evidence
+            ),
+        )
+    )
 )
-AGENT_FILES += (".cursor/rules*", ".cursorrules")
 PR_FILES = [
     f"{directory}{name}"
     for directory in (".github/", "", "docs/")

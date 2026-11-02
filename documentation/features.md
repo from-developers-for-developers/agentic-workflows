@@ -46,6 +46,9 @@ An installation carries the same-version copies of all three: read them with
 - Explicit manager/worker assignment handoff with durable continuation state.
 - Qualified extensions, including bundled Git branch, worktree, and commit
   automation.
+- Built-in support for Claude Code, Codex, and Cursor; any other agent through
+  `custom:<name>`, a data-only declaration in `ww.json`, or an extension's
+  adapter.
 - Atomic persistence, task-level concurrency control, interruption recovery,
   execution logs, and lock cleanup.
 - Optional local run reports, off by default: ww's own assessment of each run
@@ -288,7 +291,9 @@ asking, since [local configuration](#user-repo-and-local-configuration) belongs
 to one checkout:
 they are appended to an existing `.gitignore` once, never duplicated, and a
 missing `.gitignore` is created for them only inside a Git repository. It also reports missing `@WW_AGENT_INSTRUCTIONS.md`
-references in `AGENTS.md` and an existing `CLAUDE.md`, and reminds the user to
+references in `AGENTS.md` and in the existing instruction file of every agent
+set up here, such as `CLAUDE.md` or the `instruction_file` of an agent declared
+in `ww.json` (the same files `--link-instructions` links), and reminds the user to
 define workflows when the initialized `ww.yaml` is empty. Equivalent
 non-interactive choices are available through `--task-format`, `--worktrees`,
 `--worktree-dir`, repeated `--branch-format WORKFLOW=FORMAT`,
@@ -308,8 +313,8 @@ own, as described in [Installing the ww skills during
 init](#installing-the-ww-skills-during-init).
 
 For every hook-capable agent whose directory exists (Claude Code, Codex,
-Cursor, Antigravity), init also offers ww's [agent hooks](#agent-hooks), once
-per agent, and remembers the answer in `.ww/init-choices.json`. `--hooks`
+Cursor, then any extension's agent with hooks), init also offers ww's
+[agent hooks](#agent-hooks), once per agent, in that order, and remembers the answer in `.ww/init-choices.json`. `--hooks`
 installs them for all of those agents without asking and `--no-hooks` skips
 them; without either flag or a saved answer, a non-interactive init leaves
 hooks alone. A hook installation that fails, for example because the agent's
@@ -3212,13 +3217,12 @@ numbered list in chat. For Codex, inspect the available question-tool schema
 and use its supported structured options when offered; use a text-only
 question only when required by that tool. Keep the pick pending until the
 operator explicitly answers. A timeout, dismissal, or preselected value is not
-an answer. The named tools for other
-integrations include `AskUserQuestion` in Claude Code, `ask_user` in Gemini
-CLI, `AskQuestion` in Cursor, `ask_question` in Antigravity, and
-`ask_user_question` in Grok CLI. Kimi, DeepSeek, and custom agents get the
-numbered list. The tool names come from the
+an answer. The named tools for the other
+integrations are `AskUserQuestion` in Claude Code and `AskQuestion` in Cursor;
+an agent declared in `ww.json` names its own with `question_tool`, and custom
+agents get the numbered list. Cursor's tool name comes from the
 [askmux](https://github.com/iShaldam/askmux) question-tool matrix (MIT,
-Copyright (c) 2026 iShaldam) and the Gemini CLI documentation. The pick goes in the
+Copyright (c) 2026 iShaldam). The pick goes in the
 same recording call, `interact --transcript - --choice "<label or number>"
 --end`, a comment the operator adds is part of the transcript, and ending the
 interaction is refused until a choice was recorded. The chosen label is kept on the step record and in the interactions
@@ -4184,6 +4188,23 @@ namespace = (
 )
 ```
 
+An extension may also ship agent adapters in `agents`, each an `Agent`
+subclass from `ww.agents`; see [Agents](#agents).
+
+```python
+from ww.agents import Agent, Layout, question_tool
+
+
+class Aider(Agent):
+    key = "aider"
+    title = "Aider"
+    layout = Layout(".aider", instruction_file="CONVENTIONS.md")
+    choices = question_tool("ask", "A free-form answer is a comment, not a choice.")
+
+
+EXTENSION = Extension(vendor="acme", name="aider", agents=(Aider,))
+```
+
 `ww/git` is bundled with the installed `ww-agentic-workflows` package, so it is
 available in every project, including a `pipx --editable` installation whose
 source checkout lives elsewhere. A third-party extension remains project-local.
@@ -4657,7 +4678,7 @@ Install the ww skills (ww, noww, ww-rule, ww-setup, ww-learn-project, …) into 
  > [ ] .agents
    [ ] .codex
    [x] .claude       already present
-   [ ] .gemini
+   [ ] .cursor
 ```
 
 Directories that already exist start ticked, because having one is good
@@ -4689,6 +4710,55 @@ in your agents' permissions is shown the first time only (and again under
 `--force`), and the steps for getting started only while
 `ww.yaml` defines no workflow. The documentation links and
 the closing next step, the `ww-setup` skill, are always shown.
+
+## Agents
+
+The agent a task is started for (`--agent`) decides how ww talks to it: where
+its skills, slash commands, and profiles are found, which instruction file
+`init` links, how its pages offer operator choices and wait for the operator
+page, how it runs a skill, how its hooks are registered, and how it is allowed
+to run ww's commands. ww ships adapters for three agents:
+
+| Agent | `--agent` | Directory | Own instruction file | Question tool | Skills run as | Hooks | Permissions |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | `claudecode` | `.claude` | `CLAUDE.md` | `AskUserQuestion` | `/ww-setup` | yes | `.claude/settings.json`, `.claude/settings.local.json` |
+| Codex | `codex` | `.codex` | `AGENTS.md` | the host's question tool | `$ww-setup` | yes | — |
+| Cursor | `cursor` | `.cursor` | `AGENTS.md` | `AskQuestion` | `/ww-setup` | yes | — |
+
+`AGENTS.md` and the shared `.agents` directory serve every agent. Any other
+agent is one of three kinds:
+
+- `custom:<name>`, with every neutral default: skills and commands in
+  `.agents` and `.<name>`, choices as a numbered list, a blocking wait, and no
+  hooks. `custom:claudecode` is a custom agent of that name, never Claude Code.
+- An agent the project declares under `agents` in `ww.json`, addressed by its
+  bare name. The user, repository, and local `ww.json` levels merge key by key,
+  like other settings. Every key is optional; a name ww ships cannot be
+  declared:
+
+  ```json
+  {
+    "agents": {
+      "aider": {
+        "title": "Aider",
+        "directory": ".aider",
+        "instruction_file": "CONVENTIONS.md",
+        "skill_prefix": "/",
+        "question_tool": "ask_user"
+      }
+    }
+  }
+  ```
+
+- An extension's agent, addressed as `ext/<vendor>/<name>/agents:<key>`: an
+  `Agent` subclass that may also bring a hook protocol and a permission format
+  (see [Writing one](#writing-one)). Hooks installed for it call ww with that
+  reference, so they work only while the extension is installed. The agents of
+  the extensions the root settings list, even with an empty section, are
+  listed by `discover` and `ww agents`, and `init` treats them like ww's own.
+
+A step's `agent:` names the agent the step prefers in the same way; it is
+advice for the manager today.
 
 ## Agent hooks
 

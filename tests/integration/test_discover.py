@@ -331,7 +331,7 @@ def test_init_installs_the_skill_into_existing_agent_directories(
         WW_SKILL
     )
     assert kept.read_text(encoding="utf-8") == "custom"
-    assert not (tmp_path / ".gemini").exists()
+    assert not (tmp_path / ".cursor").exists()
     assert (tmp_path / ".claude/skills/noww/SKILL.md").read_text(
         encoding="utf-8"
     ) == SKILLS["noww"]
@@ -447,7 +447,7 @@ def test_init_offers_the_absent_agent_directories_in_one_question(
 
     # One question, not one per agent ww knows about.
     assert len(prompts) == 1
-    assert len(_known_agent_directories()) > 1
+    assert len(_known_agent_directories(Storage(tmp_path))) > 1
     assert paths == tuple(
         (directory, name) for directory in (".codex", ".claude") for name in SKILLS
     )
@@ -520,7 +520,9 @@ def test_a_project_set_up_before_skills_were_remembered_is_asked_once(
     (tmp_path / ".claude/skills/ww/SKILL.md").write_text("ww", encoding="utf-8")
     choices = tmp_path / ".ww/init-choices.json"
     choices.parent.mkdir()
-    agents = {name: name == ".claude" for name in _known_agent_directories()}
+    agents = {
+        name: name == ".claude" for name in _known_agent_directories(Storage(tmp_path))
+    }
     choices.write_text(json.dumps({"agents": agents}), encoding="utf-8")
     monkeypatch.setitem(SKILLS, "extra", "---\nname: extra\n---\n")
 
@@ -838,7 +840,9 @@ def test_init_offers_the_ww_rule_skill_once_to_a_project_set_up_before_it(
     (tmp_path / ".claude/skills/ww/SKILL.md").write_text("ww", encoding="utf-8")
     choices = tmp_path / ".ww/init-choices.json"
     choices.parent.mkdir()
-    agents = {name: name == ".claude" for name in _known_agent_directories()}
+    agents = {
+        name: name == ".claude" for name in _known_agent_directories(Storage(tmp_path))
+    }
     choices.write_text(
         json.dumps(
             {

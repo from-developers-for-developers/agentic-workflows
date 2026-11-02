@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ww.agents import CUSTOM_PREFIX, AgentRegistry
 from ww.builtin_workflows import is_builtin
 from ww.config import load_configuration, load_modes
 from ww.contracts import CALLER_ROLES
-from ww.discovery import AGENT_DIRECTORIES, CUSTOM_AGENT_PREFIX
 from ww.errors import StateError
 from ww.executable import ww_command
 from ww.extensions import ExtensionRegistry
@@ -235,7 +235,10 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             {"name": role, "description": ROLE_DESCRIPTIONS[role]}
             for role in CALLER_ROLES
         ],
-        "agents": [*AGENT_DIRECTORIES, f"{CUSTOM_AGENT_PREFIX}<name>"],
+        "agents": [
+            *(agent.name for agent in AgentRegistry.of(extensions).known()),
+            f"{CUSTOM_PREFIX}<name>",
+        ],
         "branch_strategies": list(extensions.branch_strategies()),
         "model_and_reasoning": MODEL_GUIDANCE,
         "runtime_guidance": RUNTIME_GUIDANCE.format(default=default_runtime),

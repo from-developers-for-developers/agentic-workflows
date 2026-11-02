@@ -508,7 +508,7 @@ def test_lookup_lets_the_operator_pick_between_matching_tasks(
     _record(project, capsys, "OPS-7", "One.")
     _start(project, capsys, "WEB-7")
 
-    report = _lookup(project, capsys, "7", "--agent", "kimi")
+    report = _lookup(project, capsys, "7", "--agent", "custom:kimi")
 
     assert report["outcome"] == "choose"
     assert report["choice_mechanism"] == "plain text"
@@ -520,14 +520,14 @@ def test_lookup_lets_the_operator_pick_between_matching_tasks(
         './ww record OPS-7 --summary "<what was done>"',
         "./ww instruction WEB-7 --role manager",
     ]
-    page = _run(project, capsys, "lookup", "7", "--agent", "kimi")
+    page = _run(project, capsys, "lookup", "7", "--agent", "custom:kimi")
     assert "A `record` command comes after the work it registers." in page
 
 
 def test_lookup_without_a_task_assigns_an_id_or_asks_for_the_key(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    generated = _lookup(project, capsys, "--agent", "gemini")
+    generated = _lookup(project, capsys, "--agent", "codex")
 
     assert generated["outcome"] == "direct"
     assert generated["task_id"] == "TASK-1"
@@ -536,7 +536,7 @@ def test_lookup_without_a_task_assigns_an_id_or_asks_for_the_key(
     (project / "ww.json").write_text(
         json.dumps({"task_format": "explicit"}), encoding="utf-8"
     )
-    explicit = _lookup(project, capsys, "--agent", "gemini")
+    explicit = _lookup(project, capsys, "--agent", "codex")
 
     assert explicit["outcome"] == "direct"
     assert explicit["task_id"] == "<task-id>"
@@ -548,7 +548,7 @@ def test_lookup_without_a_task_assigns_an_id_or_asks_for_the_key(
 def test_lookup_says_when_the_reference_is_not_a_task_id(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    report = _lookup(project, capsys, "foo bar!", "--agent", "gemini")
+    report = _lookup(project, capsys, "foo bar!", "--agent", "codex")
 
     assert report["outcome"] == "direct"
     assert str(report["message"]).startswith(

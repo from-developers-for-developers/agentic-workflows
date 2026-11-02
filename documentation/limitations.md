@@ -137,8 +137,8 @@ collects the limitations, so it is not repeated there.
   agent's own documentation before relying on nested delegation.
   `subagents: false` is likewise only an instruction on the step's page
   today, not a hard block: ww has no pre-spawn hook yet.
-- Per-agent hook gaps: Antigravity has no session-start event; Codex only
-  loads project hooks once `.codex/` is trusted; only Claude Code keeps a hooks file out of version control. See
+- Per-agent hook gaps: Codex only loads project hooks once `.codex/` is
+  trusted; only Claude Code keeps a hooks file out of version control. See
   the per-agent table in
   [agent-hooks.md](agent-hooks.md#agents-and-their-files).
 - Recovering a conversation: an interactive step is recorded once, when the

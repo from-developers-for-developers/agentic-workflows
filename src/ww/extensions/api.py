@@ -108,6 +108,34 @@ An extension that names branches from ``start --branch-strategy`` may declare
 ``branch_strategies``. It receives the extension's settings and returns the
 strategy names it accepts, which ``discover`` lists for agents.
 
+Agents
+------
+
+An extension may ship adapters for coding agents ww has none for, in
+``agents``: each an :class:`ww.agents.Agent` subclass (the class, not an
+instance) with a ``key`` unique within the extension and a ``title``. It
+overrides only the parts in which its agent differs from the neutral
+defaults: ``layout``, ``hooks``, ``permissions``, ``choices``, ``waiting``,
+and ``skill_prefix``. The agent is addressed as
+``ext/<vendor>/<name>/agents:<key>`` in ``--agent`` and in a step's
+``agent:``, and ww creates it with that name:
+
+```python
+from ww.agents import Agent, Layout, question_tool
+
+class Aider(Agent):
+    key = "aider"
+    title = "Aider"
+    layout = Layout(".aider", instruction_file="CONVENTIONS.md")
+    choices = question_tool("ask", "A free-form answer is a comment, not a choice.")
+
+EXTENSION = Extension(vendor="acme", name="aider", agents=(Aider,))
+```
+
+An agent whose data is all it needs can be declared under ``agents`` in
+``ww.json`` instead. Hooks installed for an extension's agent call ww with
+that agent's reference, so they work only while the extension is installed.
+
 Retries
 -------
 
@@ -131,6 +159,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
+from ww.agents.base import Agent
 from ww.extensions.store import ExtensionStore
 from ww.validation import NAME_PATTERN as _GROUP_NAME
 from ww.validation import is_strict_int
@@ -513,6 +542,8 @@ class Extension:
     rules: tuple[RuleGroupContribution, ...] = ()
     # Template values under ``{{ww.<namespace>.*}}``; ``None`` for none.
     namespace: ExtensionNamespace | None = None
+    # Agent adapters, addressed as ``ext/<vendor>/<name>/agents:<key>``.
+    agents: tuple[type[Agent], ...] = ()
 
     def __post_init__(self) -> None:
         if self.namespace is not None and not isinstance(
@@ -553,6 +584,16 @@ class Extension:
             names = [value.name for value in values]
             if len(names) != len(set(names)):
                 raise ValueError(f"extension {label} names must be unique")
+        if not isinstance(self.agents, tuple) or not all(
+            isinstance(agent, type) and issubclass(agent, Agent)
+            for agent in self.agents
+        ):
+            raise TypeError("extension agents must be a tuple of Agent subclasses")
+        keys = [getattr(agent, "key", None) for agent in self.agents]
+        if not all(isinstance(key, str) and _VALUE_NAME.fullmatch(key) for key in keys):
+            raise ValueError("extension agent keys must be normalized names")
+        if len(keys) != len(set(keys)):
+            raise ValueError("extension agents keys must be unique")
         for mode in self.modes:
             if not isinstance(mode.name, str) or not _VALUE_NAME.fullmatch(mode.name):
                 raise ValueError("extension mode name must be normalized")
@@ -583,3 +624,7 @@ class Extension:
     @property
     def commands_by_name(self) -> dict[str, ExtensionCommand]:
         return {command.name: command for command in self.commands}
+
+    @property
+    def agents_by_key(self) -> dict[str, type[Agent]]:
+        return {agent.key: agent for agent in self.agents}

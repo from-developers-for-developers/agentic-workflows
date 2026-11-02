@@ -68,7 +68,7 @@ workflows:
           CI files enforce; the workflows and conventions already in use,
           including an existing ww setup (`ww.yaml`, `ww-setup.yaml`); and a verify command a document names that no
           manifest does. Then, briefly, the agent tooling (MCP servers and
-          agent settings in .mcp.json, .claude/, .codex/, .cursor/, .gemini/,
+          agent settings in .mcp.json, .claude/, .codex/, .cursor/, .agents/,
           skills and commands) and the stack (languages, frameworks, package
           managers, containers, deployment). If {{ww.documents.project}}
           exists, note what it says that no longer matches. The artifact is

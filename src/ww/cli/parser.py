@@ -10,13 +10,25 @@ from pathlib import Path
 from typing import Any
 
 from ww import STAGE, __version__
+from ww.agents import HOOK_EVENTS, builtin_agents, hook_agents
 from ww.contracts import CALLER_ROLES
 from ww.errors import StateError
-from ww.hooks import HOOK_AGENTS, HOOK_EVENTS
 from ww.inspect import DEFAULT_COMMITS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 
 HOOK_SETUP_ACTIONS = ("install", "uninstall", "show")
+# What the agent options' help names, from the built-in adapters.
+_HOOK_AGENTS = tuple(agent.title for agent in hook_agents(builtin_agents()))
+_PERMISSION_FILES = " or ".join(
+    f"{agent.permissions.local_file} when {agent.title}"
+    for agent in builtin_agents()
+    if agent.permissions and agent.permissions.local_file
+)
+_LOCAL_HOOK_FILES = "; ".join(
+    f"{agent.title}: {agent.hooks.local_settings_file}"
+    for agent in builtin_agents()
+    if agent.hooks and agent.hooks.local_settings_file
+)
 
 
 CHECK_ARGV = "--check-argv"
@@ -174,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Install ww's hooks for every hook-capable agent set up in the "
-            "project (Claude Code, Codex, Cursor, Antigravity)."
+            f"project ({', '.join(_HOOK_AGENTS)})."
         ),
     )
 
@@ -184,8 +196,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Allow ww's role commands, through the project's wrapper, in "
-            ".claude/settings.local.json when Claude Code is set up in the "
-            "project (default: ask, answering no)."
+            f"{_PERMISSION_FILES} is set up in the project (default: ask, "
+            "answering no)."
         ),
     )
 
@@ -953,13 +965,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     hook.add_argument("hook_action", choices=(*HOOK_EVENTS, *HOOK_SETUP_ACTIONS))
-    hook.add_argument("--agent", required=True, choices=tuple(HOOK_AGENTS))
+    hook.add_argument(
+        "--agent",
+        required=True,
+        help="The agent, as --agent names it for start: "
+        + ", ".join(agent.name for agent in hook_agents(builtin_agents()))
+        + ", or an extension's agent.",
+    )
     hook.add_argument(
         "--local",
         action="store_true",
         help=(
             "Use the agent's project file kept out of version control "
-            "(Claude Code: .claude/settings.local.json)."
+            f"({_LOCAL_HOOK_FILES})."
         ),
     )
     return parser
