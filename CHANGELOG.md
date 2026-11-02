@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-02
 
+- Added: `readonly: true` workflows check the branch, or files named with `complete --select-files`, against the rules and report failures without changing anything or creating a branch, worktree or commit; the built-in `ww-check-rules` does this on request, `rules: ["*"]` names every group, and `select_rules_for` can also leave out checked rules. `b36f3f6`
 - Changed: ww supports Claude Code (`claudecode`), Codex (`codex`) and Cursor (`cursor`); `gemini`, `antigravity`, `deepseek`, `kimi` and `grok`, Antigravity's hooks included, are gone and work as `custom:<name>`, and `custom:claudecode` is no longer Claude Code. Any other agent can be declared under `agents` in `ww.json` or added by an extension as `ext/<vendor>/<name>/agents:<key>`; init's closing examples name the agent set up in the project, and init's summary reports the same instruction files it links. `d479570`
 
 ## 2026-10-19
