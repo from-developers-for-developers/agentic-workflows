@@ -1115,6 +1115,7 @@ def _complete(context: _Context) -> _Outcome:
         caller_role=args.role,
         rule_results=tuple(args.rule_result),
         rule_selection=tuple(args.select_rules),
+        rule_files=tuple(args.select_files),
         assignment=args.assignment,
         goto=args.goto,
     )

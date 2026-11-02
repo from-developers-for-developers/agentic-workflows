@@ -12,6 +12,7 @@ from pathlib import Path
 from ww.actions import (
     Commands,
     DefinedAction,
+    Extension,
     PlannedAction,
     Prompt,
     actions,
@@ -451,6 +452,7 @@ class WorkflowPlanCompiler:
             documents=self.configuration.documents,
             recommended_next_workflow=workflow.recommended_next_workflow,
             hooks_from=workflow.hooks_from,
+            readonly=workflow.readonly,
         )
         plan = replace(plan, gotos=planned_gotos(workflow, plan.items))
         from ww.assessment_repeats import validate_repeats
@@ -980,7 +982,8 @@ class WorkflowPlanCompiler:
         annotations: ItemAnnotations,
     ) -> None:
         """The item in which the step's worker, its own work done, chooses the
-        judged rules of the steps its ``select_rules_for`` names.
+        rules of the steps its ``select_rules_for`` names, and in a readonly
+        run the files they check.
 
         It follows the step's ``before_complete`` hooks with the step's own
         worker settings, so the same assignment carries on into it. Its
@@ -992,17 +995,32 @@ class WorkflowPlanCompiler:
             raise ConfigurationError(
                 f"{label}: the step has no agent work of its own to choose with"
             )
-        text = (
-            f"Choose the judged rules that {_step_names(step.select_rules_for)} "
-            "will get: each is given, and "
-            "verified against, only the rules you select, so keep every rule its "
-            "work could touch. Rules with a check always run, and a left-out "
-            "rule whose files the change still reaches is judged anyway. List "
-            "the candidates with `{{ww.executable}} rules candidates "
-            "{{ww.task.id}}`; read one in full with `{{ww.executable}} rule "
-            "{{ww.task.id}} <id>`. Complete with one `--select-rules` per step "
-            "and, as the artifact, a line on why."
-        )
+        if workflow.readonly:
+            text = (
+                f"Choose the rules that {_step_names(step.select_rules_for)} "
+                "will check: this run is readonly, so each checks only the "
+                "rules you select, checked ones included, and reports what "
+                "breaks them. They apply to the branch's changes, committed "
+                "and uncommitted; to check existing files instead, each "
+                "whole, add one `--select-files <step>=<glob>,<glob>` per step "
+                "naming them. List the candidates with `{{ww.executable}} "
+                "rules candidates {{ww.task.id}}`; read one in full with "
+                "`{{ww.executable}} rule {{ww.task.id}} <id>`. Complete with "
+                "one `--select-rules` per step and, as the artifact, a line "
+                "on why."
+            )
+        else:
+            text = (
+                f"Choose the rules that {_step_names(step.select_rules_for)} "
+                "will get: each is given, and verified against, only the rules "
+                "you select, checked ones included, so keep every rule its "
+                "work could touch. A left-out rule without a check whose files "
+                "the change still reaches is judged anyway. List the "
+                "candidates with `{{ww.executable}} rules candidates "
+                "{{ww.task.id}}`; read one in full with `{{ww.executable}} rule "
+                "{{ww.task.id}} <id>`. Complete with one `--select-rules` per "
+                "step and, as the artifact, a line on why."
+            )
         self._append_handler(
             items,
             workflow,
@@ -1107,6 +1125,15 @@ class WorkflowPlanCompiler:
                 phase != "step" or is_extension_reference(reference.name)
             ),
         )
+        if workflow.readonly and self._writes(handler):
+            if phase == "step":
+                raise ConfigurationError(
+                    f"workflow {workflow.name!r} is readonly, but its step "
+                    f"{step_path!r} runs {reference.name!r}, which writes"
+                )
+            # A readonly run changes nothing: a hook that would create a
+            # branch or a worktree, or commit, is left out of its plan.
+            return ()
         if handler.handlers:
             produced: list[str] = []
             for member in self.actions.automatic_members(handler):
@@ -1513,20 +1540,26 @@ class WorkflowPlanCompiler:
 
         Root groups whose filters admit the step come first, in declaration
         order, then the step's own entries; a group the step names applies
-        regardless of its filters. The first occurrence of a rule ID wins.
-        Rule checks come in rule order, followed by the step's ``fix`` hooks.
+        regardless of its filters. In a readonly workflow, whose rules are
+        what it is asked to check, filters admit no group: a step gets only
+        the rules it names. The first occurrence of a rule ID wins. Rule
+        checks come in rule order, followed by the step's ``fix`` hooks.
         """
         precise = _logical_step_paths(workflow.steps)
-        groups = self.configuration.rule_groups_by_name
         collected: list[RuleDefinition] = [
             rule
             for group in self.configuration.rule_groups
-            if group.applies_to(workflow.name, step.name, step_path, precise)
+            if not workflow.readonly
+            and group.applies_to(workflow.name, step.name, step_path, precise)
             for rule in group.rules
         ]
         for entry in step.rules:
             if isinstance(entry, RuleGroupRef):
-                collected.extend(groups[entry.name].rules)
+                collected.extend(
+                    rule
+                    for group in self.configuration.referenced_groups(entry)
+                    for rule in group.rules
+                )
             elif isinstance(entry, RuleDefinition):
                 collected.append(entry)
             else:  # pragma: no cover - the parser resolves every entry
@@ -1626,6 +1659,17 @@ class WorkflowPlanCompiler:
                 for member in self.actions.automatic_members(handler)
             )
         return tuple(result)
+
+    def _writes(self, handler: HandlerDefinition) -> bool:
+        """Whether ``handler`` runs an extension handler declared to write."""
+        action = handler.action
+        if (
+            self.extensions is None
+            or action is None
+            or not isinstance(action.payload, Extension)
+        ):
+            return False
+        return self.extensions.handler(action.payload.reference).writes
 
     def _fix_hooks(
         self,
@@ -1792,7 +1836,7 @@ def rule_selection_targets(
     """The steps one ``select_rules_for`` name of ``items[index]`` stands for.
 
     A later agent step matched by its path or its own name, or else the agent
-    steps with a judged rule inside the one later step with substeps so named.
+    steps with a rule inside the one later step with substeps so named.
     """
     item = items[index]
     label = f"{item.workflow}/{item.step}.select_rules_for"
@@ -1825,12 +1869,11 @@ def rule_selection_targets(
         found = [
             entry
             for entry in later
-            if entry.step.startswith(f"{parent}/")
-            and any(not rule.has_command for rule in entry.rules)
+            if entry.step.startswith(f"{parent}/") and entry.rules
         ]
         if not found:
             raise ConfigurationError(
-                f"{label}: no step inside {name!r} has a judged rule to choose"
+                f"{label}: no step inside {name!r} has a rule to choose"
             )
     if not found:
         raise ConfigurationError(

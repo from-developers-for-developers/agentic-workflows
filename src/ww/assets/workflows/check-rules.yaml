@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ww-check-rules checks code against the project's rules when the operator
+# asks, and changes nothing. It is readonly: it works in the current checkout,
+# creates no branch, worktree or commit, and refuses a completion that changed
+# a file. Its `check` step names every rule group; the `scope` step keeps the
+# rules the request is about and, for existing code rather than the branch's
+# changes, names the files. ww then runs the selected rules' checks and has
+# verifiers judge the rest, and the step's artifact reports every failure
+# instead of sending the work back for repair.
+workflows:
+  - name: ww-check-rules
+    description: >-
+      Checks the branch's changes, or the files the request names, against the
+      project's rules and reports what breaks them, changing nothing.
+    readonly: true
+    restartable: true
+    steps:
+      - name: scope
+        description: >-
+          Work out from the requirements what to check: the files, by globs
+          relative to the project root, when the request names existing code,
+          or else the branch's changes, committed and uncommitted; and the
+          rules or rule groups the request is about, or all of them when it
+          names none. The artifact states both in a few lines. ww then asks
+          you to choose the rules and files for the `check` step.
+        select_rules_for: [check]
+      - name: check
+        description: >-
+          Read what is to be checked, as the previous step's result names it,
+          and summarise it in the artifact: the files, and what they do as far
+          as the selected rules are concerned. Change nothing. ww runs the
+          rules' checks and has a verifier judge the other rules once you
+          complete; every failure is reported in this step's artifact.
+        rules: ["*"]

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""``select_rules_for``: an earlier step chooses the judged rules a later one gets."""
+"""``select_rules_for``: an earlier step chooses the rules a later one gets."""
 
 from __future__ import annotations
 
@@ -115,18 +115,19 @@ def test_the_selecting_worker_gets_a_short_selection_page(tmp_path: Path) -> Non
 
     assert page.item_name == "select-rules"
     rendered = _markdown(page)
-    assert "Choose the judged rules that `develop` will get" in rendered
+    assert "Choose the rules that `develop` will get" in rendered
     assert "rules candidates TASK-1" in rendered
     assert "--select-rules develop='<rule IDs, comma-separated; none: empty>'" in (
         rendered
     )
     candidates = service.rule_candidates("TASK-1")
     assert [step for step, _ in candidates.steps] == ["develop"]
-    # The checked rule always runs, so it is no candidate.
-    assert [rule.id for rule in candidates.steps[0][1]] == [
-        "docs/api",
-        "develop/1",
-        "develop/2",
+    # The checked rule is a candidate too, marked so.
+    assert [(rule.id, rule.has_command) for rule in candidates.steps[0][1]] == [
+        ("docs/api", False),
+        ("docs/header", True),
+        ("develop/1", False),
+        ("develop/2", False),
     ]
 
 
@@ -170,7 +171,7 @@ def test_a_selection_is_required_explicit_and_among_the_candidates(
     with pytest.raises(StateError, match="--select-rules is missing for 'develop'"):
         _select(service)
     with pytest.raises(StateError, match="not among its candidates"):
-        _select(service, "develop=docs/header")
+        _select(service, "develop=docs/missing")
     with pytest.raises(StateError, match="write <step>=<id>"):
         _select(service, "review=develop/1")
     with pytest.raises(StateError, match="needs --artifact"):
@@ -179,7 +180,7 @@ def test_a_selection_is_required_explicit_and_among_the_candidates(
     page = _select(service, "develop=")
 
     assert page.item_name == "develop"
-    assert page.rules_left_out == 3
+    assert page.rules_left_out == 4
 
 
 def test_the_target_gets_and_is_verified_against_only_the_selection(
@@ -188,7 +189,7 @@ def test_the_target_gets_and_is_verified_against_only_the_selection(
     root = _project(tmp_path)
     service, _ = _selecting(root)
 
-    page = _select(service, "develop=develop/1")
+    page = _select(service, "develop=docs/header,develop/1")
 
     assert page.item_name == "develop"
     assert [rule.id for rule in page.rules] == ["docs/header", "develop/1"]
@@ -343,7 +344,7 @@ def test_a_target_with_an_attached_assessment_names_the_step_itself(
     )
     service, _ = _selecting(_project(tmp_path, workflows))
 
-    page = _select(service, "develop=")
+    page = _select(service, "develop=docs/header")
 
     assert page.item_name == "develop"
     assert [rule.id for rule in page.rules] == ["docs/header"]
@@ -404,9 +405,7 @@ def test_a_parent_target_expands_to_its_substeps_with_judged_rules(
     candidates = service.rule_candidates("TASK-1")
     assert [step for step, _ in candidates.steps] == ["implement", "write-tests"]
     rendered = _markdown(page)
-    assert "Choose the judged rules that `implement`, `write-tests` will get" in (
-        rendered
-    )
+    assert "Choose the rules that `implement`, `write-tests` will get" in rendered
     assert "--select-rules implement=" in rendered
     assert "--select-rules write-tests=" in rendered
 
@@ -526,7 +525,7 @@ def test_a_step_inside_items_chooses_for_a_later_step_of_the_same_body(
     page = service.complete("TASK-1", artifact="Read.", summary_for_next="Read.")
     assert page.item_name == "select-rules"
 
-    fix = _select(service, "fix=fix/1")
+    fix = _select(service, "fix=docs/header,fix/1")
 
     assert fix.item_name == "fix"
     assert [rule.id for rule in fix.rules] == ["docs/header", "fix/1"]
@@ -550,7 +549,7 @@ def test_a_step_before_items_chooses_for_a_step_inside_them(
     assert main(["--root", str(root), "lint"]) == 0
     service, page = _selecting(root)
     assert page.item_name == "select-rules"
-    assert _select(service, "fix=fix/2").item_name == "comments"
+    assert _select(service, "fix=docs/header,fix/2").item_name == "comments"
     service.complete("TASK-1", artifact="None.", summary_for_next="None.")
     fix = service.complete("TASK-1", artifact="Read.", summary_for_next="Read.")
     assert fix.item_name == "fix"
@@ -584,3 +583,22 @@ def test_a_step_inside_children_still_cannot_select_rules(tmp_path: Path) -> Non
         WorkflowService(Storage(root)).start(
             "task", "TASK-1", agent="codex", init_artifact="Do."
         )
+
+
+def test_a_left_out_checked_rule_does_not_run(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    service, _ = _selecting(root)
+
+    page = _select(service, "develop=develop/1")
+
+    assert [rule.id for rule in page.rules] == ["develop/1"]
+    (root / "notes.md").write_text("no marker\n", encoding="utf-8")
+    assert service.check("TASK-1").failures == ()
+    held = service.complete("TASK-1", artifact="Done.", summary_for_next="Done.")
+    _verify(service, "develop/1")
+
+    artifact = (root / ".ww/tasks/TASK-1/runs/01-task/steps/03-develop.md").read_text(
+        encoding="utf-8"
+    )
+    assert held.verification is not None
+    assert "- `docs/header`: left out (by `architect`)" in artifact

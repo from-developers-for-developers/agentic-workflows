@@ -45,10 +45,12 @@ def render_rule_candidates(candidates: RuleCandidates) -> str:
     for step, rules in candidates.steps:
         lines.extend([f"## `{step}`", ""])
         lines.extend(
-            f"- `{rule.id}`{rule_scope(rule)} — {rule.summary}" for rule in rules
+            f"- `{rule.id}`{rule_scope(rule)}{' (checked)' if rule.has_command else ''}"
+            f" — {rule.summary}"
+            for rule in rules
         )
         if not rules:
-            lines.append("No judged rules: select none.")
+            lines.append("No rules: select none.")
         lines.append("")
     return _document(lines)
 

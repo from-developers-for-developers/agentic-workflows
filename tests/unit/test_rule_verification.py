@@ -98,6 +98,8 @@ def test_resolution_covers_every_store_status(develop: PlanItem) -> None:
         ("develop/1", "converted", "lint"),
         ("develop/2", "judged", None),
         ("develop/3", "judged", None),
+        # A rule with a command of its own runs it.
+        ("develop/4", "checked", "develop/4"),
     ]
     assert resolutions[2].interpretation == "Log."
     assert [(check.id, check.source, check.covers) for check in checks] == [

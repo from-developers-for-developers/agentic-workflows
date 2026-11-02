@@ -524,9 +524,14 @@ class RuleDefinition:
     source: str | None = None
 
 
+# A step's ``rules`` entry naming every rule group, whichever the
+# configuration that runs the step declares.
+ALL_GROUPS = "*"
+
+
 @dataclass(frozen=True)
 class RuleGroupRef:
-    """A step's reference to a root rule group by name."""
+    """A step's reference to a root rule group by name, or to every group."""
 
     name: str
 
@@ -728,6 +733,12 @@ class WorkflowDefinition:
     # A new start while this workflow's previous run is unfinished abandons
     # that run instead of being refused.
     restartable: bool = False
+    # A run changes nothing: its agents only read and execute, ww refuses a
+    # completion that changed a file, its rules apply to the branch's change
+    # set and report their failures instead of sending work back, and
+    # extension handlers that write (a branch, a worktree, a commit) do not
+    # run.
+    readonly: bool = False
     # Started only when the operator names it: ``discover`` leaves it out.
     # Never inherited.
     manual: bool = False
@@ -885,6 +896,12 @@ class WorkflowConfiguration:
     @property
     def rule_groups_by_name(self) -> dict[str, RuleGroup]:
         return {group.name: group for group in self.rule_groups}
+
+    def referenced_groups(self, reference: RuleGroupRef) -> tuple[RuleGroup, ...]:
+        """The groups a step's reference names: one, or all for ``*``."""
+        if reference.name == ALL_GROUPS:
+            return self.rule_groups
+        return (self.rule_groups_by_name[reference.name],)
 
     @property
     def documents_by_name(self) -> dict[str, DocumentDefinition]:

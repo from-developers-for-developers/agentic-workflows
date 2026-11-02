@@ -1791,6 +1791,7 @@ EXTENSION = Extension(
             check=_check_commit,
             validate=_commit_message_error,
             needs_input=_needs_commit_message,
+            writes=True,
         ),
         ExtensionHandler(
             "merge-branch",
@@ -1800,6 +1801,7 @@ EXTENSION = Extension(
             check=_check_merge,
             outputs=("merge_commit",),
             arguments=MERGE_ARGUMENTS,
+            writes=True,
         ),
         ExtensionHandler(
             "is-git-clean",
@@ -1810,21 +1812,25 @@ EXTENSION = Extension(
             "start-task-branch",
             _start_branch,
             "Create or select this task's branch from the base branch.",
+            writes=True,
         ),
         ExtensionHandler(
             "create-worktree",
             _create_worktree,
             "Create or select this task's worktree after its branch exists.",
+            writes=True,
         ),
         ExtensionHandler(
             "remove-task-worktree",
             _remove_worktree,
             "Remove this task's worktree, refusing while it holds changes.",
+            writes=True,
         ),
         ExtensionHandler(
             "return-to-base-branch",
             _return_to_base,
             "Switch the main checkout back to the base branch.",
+            writes=True,
         ),
     ),
     modes=(

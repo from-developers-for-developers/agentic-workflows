@@ -506,6 +506,16 @@ def build_parser() -> argparse.ArgumentParser:
             "<step>= selects none. One per step."
         ),
     )
+    complete.add_argument(
+        "--select-files",
+        action="append",
+        default=[],
+        metavar="STEP=GLOBS",
+        help=(
+            "In a readonly run, the existing files one step's rules apply to, "
+            "each whole: <step>=<glob>,<glob>. At most one per step."
+        ),
+    )
     feedback = subparsers.add_parser(
         "feedback",
         parents=[_shared("json", "role", "run")],

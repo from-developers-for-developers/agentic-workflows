@@ -48,6 +48,8 @@ def check_preview(
     files: tuple[str, ...],
     directory: Path,
     marks: tuple[str, str] | None,
+    *,
+    readonly: bool = False,
 ) -> CheckPreview:
     """What ``ww check`` shows for a report it ran and did not record.
 
@@ -58,7 +60,7 @@ def check_preview(
     """
     record = state.item_executions[state.cursor]
     needs, out_of_scope, left_out = verification_needs(
-        item, record, files, directory, report, marks
+        item, record, files, directory, report, marks, readonly=readonly
     )
     judged = {rule.id for rule in needs}
     return CheckPreview(
@@ -103,9 +105,9 @@ def rule_candidates(
     plan: WorkflowPlan,
     item: PlanItem,
     automation: RuleAutomation,
-    root: Path | None,
 ) -> RuleCandidates:
-    """Each step ``item`` chooses for, with the judged rules it chooses among."""
+    """Each step ``item`` chooses for, with the rules it chooses among,
+    those a command checks marked so."""
     if not item.selects_rules_for:
         raise StateError(f"{item.name!r} is not a rule selection")
     return RuleCandidates(
@@ -120,8 +122,10 @@ def rule_candidates(
                         rule.paths,
                         rule.contains_in_file,
                         rule.contains_in_diff,
+                        rule.has_command
+                        or automation.converted_check(rule.text_hash) is not None,
                     )
-                    for rule in selection_candidates(target, automation, root)
+                    for rule in selection_candidates(target)
                 ),
             )
             for target in plan.items
@@ -510,12 +514,14 @@ def _targets(configuration: WorkflowConfiguration) -> tuple[ListedTarget, ...]:
                 *(
                     group.name
                     for group in configuration.rule_groups
-                    if group.applies_to(workflow.name, step.name, path, precise)
+                    if not workflow.readonly
+                    and group.applies_to(workflow.name, step.name, path, precise)
                 ),
                 *(
-                    entry.name
+                    group.name
                     for entry in step.rules
                     if isinstance(entry, RuleGroupRef)
+                    for group in configuration.referenced_groups(entry)
                 ),
             )
             targets.append(

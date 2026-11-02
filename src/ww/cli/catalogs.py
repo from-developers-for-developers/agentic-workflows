@@ -86,6 +86,7 @@ def _catalog_workflows(storage: Storage, extensions: ExtensionRegistry) -> str:
                     "modes": list(workflow.modes),
                     "runtime": workflow.runtime,
                     "manual": workflow.manual,
+                    "readonly": workflow.readonly,
                 }
                 for workflow in configuration.workflows
             ]

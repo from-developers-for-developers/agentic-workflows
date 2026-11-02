@@ -20,6 +20,13 @@ NO_SUBAGENTS = (
     "research, tests, or review."
 )
 
+READONLY = (
+    "This run is readonly (`readonly: true`): read files and run commands, "
+    "such as tests, but create, change, delete, or commit nothing, and do "
+    "not switch branches. ww refuses a completion that changed a file git "
+    "does not ignore; findings go into the artifact, not into the code."
+)
+
 
 @dataclass(frozen=True)
 class ContainerArtifact:

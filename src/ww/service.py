@@ -42,7 +42,7 @@ from ww.assignments import (
 )
 from ww.bootstrap import BootstrapCoordinator
 from ww.builtin_workflows import missing_lane, require_lane
-from ww.changes import can_diff, take_mark
+from ww.changes import branch_base, can_diff, empty_tree, take_mark, touched_files
 from ww.child_coordination import ChildCoordinator
 from ww.children import ChildTask
 from ww.completion_artifacts import rule_outcomes, write_completion_artifacts
@@ -52,7 +52,7 @@ from ww.completion_inputs import (
     validate_values,
 )
 from ww.config import YamlConfigurationLoader
-from ww.config_snapshots import ConfigSnapshots
+from ww.config_snapshots import GIT_EXTENSION, ConfigSnapshots
 from ww.contracts import (
     CALLER_ROLES,
     CLOSED_RUN_STATUSES,
@@ -142,7 +142,13 @@ from ww.results import (
     ResetResult,
     TaskStatus,
 )
-from ww.rule_checks import CheckScope, RuleChecker, change_set, item_reports
+from ww.rule_checks import (
+    CheckScope,
+    RuleChecker,
+    RuleSubject,
+    change_set,
+    item_reports,
+)
 from ww.rule_conversion import SCRIPTIZE_WORKFLOW, scriptize_notice
 from ww.rule_disputes import DisputeEntry, DisputeLog
 from ww.rule_stats import RuleStatsStore, evaluations
@@ -153,7 +159,6 @@ from ww.rule_verification import (
     index_of,
     judged_now,
     judged_report,
-    judged_rules,
     open_verification_round,
     parse_rule_results,
     record_not_applicable,
@@ -340,6 +345,40 @@ class OpenAssignment:
 
 FORCE_NOT_APPLICABLE = "cannot force a task that is not failed or interrupted"
 # Forcing would skip the step after the pass, not the pass's missing records.
+
+
+def _selection_entries(
+    targets: dict[str, PlanItem], entries: tuple[str, ...], flag: str, value: str
+) -> dict[str, tuple[str, ...]]:
+    """Parse ``<step>=<value>,...`` entries, one per step a selection names,
+    by the step's plan item ID."""
+    chosen: dict[str, tuple[str, ...]] = {}
+    for entry in entries:
+        name, separator, listed = entry.partition("=")
+        name = name.strip()
+        found = [
+            target
+            for target in targets.values()
+            if name in {target.step, target.step.rsplit("/", 1)[-1]}
+        ]
+        if not separator or len(found) != 1:
+            raise StateError(
+                f"{flag} {entry!r}: write <step>=<{value}>,... for one of "
+                + ", ".join(
+                    target.step.rsplit("/", 1)[-1] for target in targets.values()
+                )
+            )
+        target = found[0]
+        if target.id in chosen:
+            raise StateError(f"{flag} for {name!r} is given twice")
+        chosen[target.id] = tuple(
+            dict.fromkeys(part for part in map(str.strip, listed.split(",")) if part)
+        )
+    return chosen
+
+
+# Appended to a failed command's error in a readonly run, which goes on.
+READONLY_FAILURE = "Reported, not repaired: this run is readonly."
 
 
 class WorkflowService:
@@ -1817,6 +1856,7 @@ class WorkflowService:
         caller_role: CallerRole | None = None,
         rule_results: tuple[str, ...] = (),
         rule_selection: tuple[str, ...] = (),
+        rule_files: tuple[str, ...] = (),
         assignment: str | None = None,
         goto: str | None = None,
     ) -> Instruction:
@@ -1824,7 +1864,10 @@ class WorkflowService:
 
         A verification item reports one ``rule_results`` JSON object, a
         verdict, per rule it covers; a rule-selection item one
-        ``rule_selection`` entry, ``<step>=<id>,...``, per step it chooses for.
+        ``rule_selection`` entry, ``<step>=<id>,...``, per step it chooses for,
+        and in a readonly run optionally one ``rule_files`` entry,
+        ``<step>=<glob>,...``, naming the existing files that step's rules
+        apply to.
         ``goto`` names the step the flow goes to once this one is done, as
         a declared assessment branch permits.
         """
@@ -1845,7 +1888,7 @@ class WorkflowService:
         if request is not None:
             if metadata_values:
                 raise StateError("bootstrap completion cannot save task metadata")
-            if rule_results or rule_selection:
+            if rule_results or rule_selection or rule_files:
                 raise StateError("a bootstrap completion verifies no rules")
             if adjustments:
                 raise StateError("a bootstrap completion records no adjustments")
@@ -1884,6 +1927,7 @@ class WorkflowService:
                 caller_role=caller_role,
                 rule_results=rule_results,
                 rule_selection=rule_selection,
+                rule_files=rule_files,
                 goto=goto,
             )
             held = instruction.completion_held
@@ -1948,6 +1992,7 @@ class WorkflowService:
         drain_stop: int | None = None,
         rule_results: tuple[str, ...] = (),
         rule_selection: tuple[str, ...] = (),
+        rule_files: tuple[str, ...] = (),
         goto: str | None = None,
         replayed: bool = False,
     ) -> Instruction:
@@ -1968,6 +2013,7 @@ class WorkflowService:
                 or metadata_values
                 or rule_results
                 or rule_selection
+                or rule_files
                 or adjustments
                 or goto
             ):
@@ -2038,6 +2084,7 @@ class WorkflowService:
         if item.update_item or item.item_operation == "complete_collection":
             self._require_item_fields(state, snapshot.plan, item)
         active_record = state.item_executions[state.cursor]
+        self._refuse_readonly_changes(state, snapshot.plan, item)
         if item.interactive and not active_record.interaction_ended:
             raise StateError(
                 f"{item.name!r} is interactive: once the operator says the "
@@ -2089,11 +2136,12 @@ class WorkflowService:
             )
         if item.selects_rules_for:
             state = self._record_rule_selection(
-                state, snapshot.plan, item, rule_selection, artifact
+                state, snapshot.plan, item, rule_selection, rule_files, artifact
             )
-        elif rule_selection:
+        elif rule_selection or rule_files:
             raise StateError(
-                f"--select-rules reports a rule selection; {item.name!r} is not one"
+                f"--select-rules and --select-files report a rule selection; "
+                f"{item.name!r} is not one"
             )
         held = active_record.held_completion
         waived = {key for key, _ in active_record.checks_waived}
@@ -2105,10 +2153,11 @@ class WorkflowService:
             check_report = self.rule_checker.run(
                 state,
                 item,
-                self._check_scope(state, snapshot.plan, item),
+                self._rules_scope(state, snapshot.plan, item),
                 reuse=held.report if held is not None else None,
             )
-            if check_report.failed:
+            if check_report.failed and not snapshot.plan.readonly:
+                # A readonly run reports failed checks with the completion.
                 # Rejected: nothing of the completion is recorded, and the
                 # step goes back to its worker, or to the operator at the limit.
                 # A held completion failing a newly approved check waits to be
@@ -2403,17 +2452,11 @@ class WorkflowService:
         return replace(self._tag_caller(instruction, caller_role), manager_intro=True)
 
     def rule_candidates(self, task_id: str) -> RuleCandidates:
-        """The judged rules the rule selection in progress chooses among."""
+        """The rules the rule selection in progress chooses among."""
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         item, _ = self._active_step(state, snapshot, "no rule selection is in progress")
-        return rule_candidates(
-            state,
-            snapshot.plan,
-            item,
-            self.rule_store.load(),
-            self.storage.config_root,
-        )
+        return rule_candidates(state, snapshot.plan, item, self.rule_store.load())
 
     def check(self, task_id: str) -> CheckPreview:
         """Run the active step's checks now, as its completion would.
@@ -2426,10 +2469,18 @@ class WorkflowService:
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
         item, record = self._active_step(state, snapshot, "nothing to check")
-        scope = self._check_scope(state, snapshot.plan, item)
+        scope = self._rules_scope(state, snapshot.plan, item)
         report = RuleChecker(None, _now).run(state, item, scope)
-        files, marks = change_set(scope.directory, record.change_mark, report.mark)
-        return check_preview(state, item, report, files, scope.directory, marks)
+        files, marks = scope.change_set(record.change_mark, report.mark)
+        return check_preview(
+            state,
+            item,
+            report,
+            files,
+            scope.directory,
+            marks,
+            readonly=scope.nothing_to_check,
+        )
 
     def dispute(
         self,
@@ -3941,6 +3992,12 @@ class WorkflowService:
                 self.commit(state, snapshot)
                 return state, snapshot
             state = self.actions.run(state, snapshot, item)
+            if state.status == "failed" and plan.readonly and item.on_failure == "fix":
+                # A readonly run repairs nothing: the failure stays on the
+                # item's record, reported, and the run goes on.
+                state = skip_failed_item(state, plan, _now, note=READONLY_FAILURE)
+                self.commit(state, snapshot)
+                continue
             if state.status == "failed":
                 if item.on_failure == "fix":
                     state = request_repair(state, plan, item, _now)
@@ -4310,14 +4367,21 @@ class WorkflowService:
         opens for the rules that need one.
         """
         record = state.item_executions[state.cursor]
-        directory = self._check_scope(state, snapshot.plan, item).directory
+        scope = self._rules_scope(state, snapshot.plan, item)
+        directory = scope.directory
         if check_report is not None:
             mark = check_report.mark
         else:
-            mark = take_mark(directory) if record.change_mark else None
-        files, marks = change_set(directory, record.change_mark, mark)
+            mark = take_mark(directory) if scope.base(record.change_mark) else None
+        files, marks = scope.change_set(record.change_mark, mark)
         needs, not_applicable, left_out = verification_needs(
-            item, record, files, directory, check_report, marks
+            item,
+            record,
+            files,
+            directory,
+            check_report,
+            marks,
+            readonly=scope.nothing_to_check,
         )
         state = record_not_applicable(state, not_applicable, left_out, _now)
         if not needs:
@@ -4329,6 +4393,8 @@ class WorkflowService:
             all_files=marks is None,
             draft_ref=self._write_draft(state, item, record, artifact),
             report=check_report,
+            subject=scope.subject.kind if scope.subject is not None else None,
+            base=marks[0] if marks is not None else None,
         )
         state = hold_completion(state, snapshot.plan, held, artifact, _now)
         state, snapshot = open_verification_round(state, snapshot, item, needs, _now)
@@ -4542,7 +4608,9 @@ class WorkflowService:
         held = step_record.held_completion
         assert held is not None
         verdicts = tuple(entry for entry in held.verdicts if entry.by == item.id)
-        if any(verdict.verdict == "fail" for verdict in verdicts):
+        # A readonly run records failing verdicts with the completion, as
+        # its findings, instead of sending the step back for repair.
+        if not plan.readonly and any(verdict.verdict == "fail" for verdict in verdicts):
             at_step = replace(close_round(state, plan, step.id, _now), cursor=index)
             held = step_record.held_completion
             assert held is not None
@@ -4692,6 +4760,7 @@ class WorkflowService:
         plan: WorkflowPlan,
         item: PlanItem,
         entries: tuple[str, ...],
+        file_entries: tuple[str, ...],
         artifact: str | None,
     ) -> ExecutionState:
         """Check a rule-selection item's ``--select-rules`` and keep them.
@@ -4699,41 +4768,27 @@ class WorkflowService:
         Each step it chooses for takes exactly one entry, ``<step>=<id>,...``,
         named as ``select_rules_for`` names it or by its path; nothing after
         ``=`` selects no rule. Every ID must be one of that step's candidates.
+        In a readonly run a step may also take one ``--select-files`` entry,
+        ``<step>=<glob>,...``: its rules then apply to the existing files the
+        globs match, each whole, instead of the branch's change set.
         """
         if artifact is None or not artifact.strip():
             raise StateError(
                 f"{item.name!r} needs --artifact: a line on why these rules"
             )
-        store = self.rule_store.load()
+        if file_entries and not plan.readonly:
+            raise StateError(
+                "--select-files names the files a readonly run checks; this "
+                "run is not readonly, so its steps' rules apply to what they "
+                "change"
+            )
         targets = {
             target.id: target
             for target in plan.items
             if target.id in item.selects_rules_for
         }
-        chosen: dict[str, tuple[str, ...]] = {}
-        for entry in entries:
-            name, separator, listed = entry.partition("=")
-            name = name.strip()
-            found = [
-                target
-                for target in targets.values()
-                if name in {target.step, target.step.rsplit("/", 1)[-1]}
-            ]
-            if not separator or len(found) != 1:
-                raise StateError(
-                    f"--select-rules {entry!r}: write <step>=<id>,... for one of "
-                    + ", ".join(
-                        target.step.rsplit("/", 1)[-1] for target in targets.values()
-                    )
-                )
-            target = found[0]
-            if target.id in chosen:
-                raise StateError(f"--select-rules for {name!r} is given twice")
-            chosen[target.id] = tuple(
-                dict.fromkeys(
-                    rule for rule in map(str.strip, listed.split(",")) if rule
-                )
-            )
+        chosen = _selection_entries(targets, entries, "--select-rules", "id")
+        globs = _selection_entries(targets, file_entries, "--select-files", "glob")
         selections = []
         for target in targets.values():
             name = target.step.rsplit("/", 1)[-1]
@@ -4742,12 +4797,7 @@ class WorkflowService:
                     f"--select-rules is missing for {name!r}; "
                     f"`--select-rules {name}=` selects none of its rules"
                 )
-            allowed = tuple(
-                rule.id
-                for rule in selection_candidates(
-                    target, store, self.storage.config_root
-                )
-            )
+            allowed = tuple(rule.id for rule in selection_candidates(target))
             unknown = [rule for rule in chosen[target.id] if rule not in allowed]
             if unknown:
                 raise StateError(
@@ -4756,7 +4806,11 @@ class WorkflowService:
                     + ", not among its candidates: "
                     + (", ".join(allowed) or "none")
                 )
-            selections.append(RuleSelection(target.id, chosen[target.id], allowed))
+            selections.append(
+                RuleSelection(
+                    target.id, chosen[target.id], allowed, globs.get(target.id, ())
+                )
+            )
         records = list(state.item_executions)
         records[state.cursor] = replace(
             records[state.cursor], rule_selection=tuple(selections)
@@ -4773,10 +4827,7 @@ class WorkflowService:
         where its configuration files exist in the configuration the run reads.
         The rules an earlier step's rule selection left out are marked so.
         """
-        if (
-            not judged_rules(item)
-            or state.item_executions[state.cursor].rule_resolutions
-        ):
+        if not item.rules or state.item_executions[state.cursor].rule_resolutions:
             return None
         return resolve_rules(
             item,
@@ -4794,6 +4845,66 @@ class WorkflowService:
             workspace or self.storage.root, self.storage.config_root, values
         )
 
+    def _rules_scope(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> CheckScope:
+        """Where an item's rules apply: its check scope, with the readonly
+        run's subject.
+
+        A readonly step changes nothing, so its rules apply to the files a
+        rule selection named for it, each whole, else to the branch's change
+        set since it forked from its base branch: the ww/git
+        ``base_branches`` entry of the run's lane, else the default one.
+        """
+        scope = self._check_scope(state, plan, item)
+        if not plan.readonly:
+            return scope
+        chosen = selection_of(state, plan, item)
+        if chosen is not None and chosen.selection.files:
+            return replace(
+                scope,
+                subject=RuleSubject(
+                    "files", empty_tree(scope.directory), chosen.selection.files
+                ),
+            )
+        settings = load_project_config(self.storage.project_config_path).settings_for(
+            GIT_EXTENSION
+        )
+        bases = settings.get("base_branches")
+        base = next(
+            (
+                value
+                for key in (plan.lane, "default")
+                if isinstance(bases, dict)
+                and isinstance(value := bases.get(key), str)
+                and value
+            ),
+            None,
+        )
+        return replace(
+            scope, subject=RuleSubject("branch", branch_base(scope.directory, base))
+        )
+
+    def _refuse_readonly_changes(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> None:
+        """Refuse the completion of a readonly run's item that changed files."""
+        start = state.item_executions[state.cursor].change_mark
+        if not plan.readonly or start is None:
+            return
+        directory = self._check_scope(state, plan, item).directory
+        end = take_mark(directory)
+        if end is None or end == start:
+            return
+        touched = touched_files(directory, start, end)
+        raise StateError(
+            "this run is readonly, but the files changed since "
+            f"{item.name!r} began: "
+            + ", ".join(touched or ("the working tree",))
+            + "; restore them, put findings in the artifact instead, and "
+            "complete again"
+        )
+
     def _change_mark(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> str | None:
@@ -4801,10 +4912,12 @@ class WorkflowService:
 
         A step that already has one keeps it; a step without rules or checks,
         or a directory without git, has none. A step with rules needs it even
-        without checks: its verifiers look at what it changed.
+        without checks: its verifiers look at what it changed. In a readonly
+        run every agent item takes one: its completion must have changed
+        nothing.
         """
         if (
-            not (item.checks or item.rules)
+            not (item.checks or item.rules or plan.readonly)
             or state.item_executions[state.cursor].change_mark
         ):
             return None

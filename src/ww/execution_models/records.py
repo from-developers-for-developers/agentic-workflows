@@ -152,15 +152,16 @@ class CheckReport:
 
 @dataclass(frozen=True)
 class RuleResolution:
-    """How one rule without a command of its own is enforced in this step.
+    """How one rule is enforced in this step.
 
     Decided from the rule-automation store when the step begins, so a run
-    never re-reads the store to decide it again: ``converted`` rules are
-    checked by the derived check ``check``; ``judged`` ones get a verifier's
-    verdict. ``interpretation`` is the store's one-sentence reading, shown
-    under the rule on the page. ``missing`` is set on a judged rule whose
-    converted ``check`` does not apply: the first of its configuration files
-    the configuration read lacks.
+    never re-reads the store to decide it again: ``checked`` rules run their
+    own command; ``converted`` rules are checked by the derived check
+    ``check``; ``judged`` ones get a verifier's verdict. ``interpretation``
+    is the store's one-sentence reading, shown under the rule on the page.
+    ``missing`` is set on a judged rule whose converted ``check`` does not
+    apply: the first of its configuration files the configuration read
+    lacks.
     """
 
     id: str
@@ -168,9 +169,10 @@ class RuleResolution:
     check: str | None = None
     interpretation: str | None = None
     missing: str | None = None
-    # A judged rule an earlier step's rule selection left out: the step it
-    # names neither lists it on the page nor has it judged, unless the
-    # change set reaches the rule's scope.
+    # A rule an earlier step's rule selection left out: the step it names
+    # does not list it on the page. A checked or converted one is not
+    # checked; a judged one is not judged, unless the change set reaches the
+    # rule's scope outside a readonly run.
     left_out_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -219,34 +221,44 @@ class RuleResolution:
 
 @dataclass(frozen=True)
 class RuleSelection:
-    """The judged rules a rule-selection item chose for one later step.
+    """The rules a rule-selection item chose for one later step.
 
     ``step`` is that step's plan item ID; ``candidates`` are the rules it
     chose among and ``rules`` those it kept, so a rule that only became
-    judged later is never counted as left out.
+    a candidate later is never counted as left out. In a readonly run,
+    ``files`` are the globs of the existing files the step's rules are
+    applied to, each whole, instead of the branch's change set.
     """
 
     step: str
     rules: tuple[str, ...]
     candidates: tuple[str, ...]
+    files: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step,
             "rules": list(self.rules),
             "candidates": list(self.candidates),
+            **({"files": list(self.files)} if self.files else {}),
         }
 
     @classmethod
     def from_dict(cls, data: Any) -> RuleSelection:
-        if not isinstance(data, dict) or set(data) != {"step", "rules", "candidates"}:
+        if (
+            not isinstance(data, dict)
+            or not {"step", "rules", "candidates"} <= set(data)
+            or not set(data) <= {"step", "rules", "candidates", "files"}
+        ):
             raise ValueError(
-                "rule selection must be an object of step, rules, candidates"
+                "rule selection must be an object of step, rules, candidates "
+                "and optional files"
             )
         return cls(
             step=expect_string(data["step"], "rule selection.step"),
             rules=_strings(data["rules"], "rule selection.rules"),
             candidates=_strings(data["candidates"], "rule selection.candidates"),
+            files=_strings(data.get("files", []), "rule selection.files"),
         )
 
 
@@ -321,6 +333,10 @@ class HeldCompletion:
     previous_artifact: str | None = None
     # The step ``complete --goto`` named, taken once the completion is recorded.
     goto: str | None = None
+    # A readonly run's subject: ``branch`` or ``files``, with ``base`` the
+    # tree its change set was measured from; ``None`` for the step's change.
+    subject: str | None = None
+    base: str | None = None
 
     def verdict(self, rule_id: str) -> RuleVerdict | None:
         return next((entry for entry in self.verdicts if entry.id == rule_id), None)
@@ -342,6 +358,8 @@ class HeldCompletion:
             "report": self.report.to_dict() if self.report else None,
             "previous_artifact": self.previous_artifact,
             **({"goto": self.goto} if self.goto is not None else {}),
+            **({"subject": self.subject} if self.subject is not None else {}),
+            **({"base": self.base} if self.base is not None else {}),
         }
 
     @classmethod
@@ -406,6 +424,10 @@ class HeldCompletion:
                 data["previous_artifact"], "held completion.previous_artifact"
             ),
             goto=expect_optional_string(data.get("goto"), "held completion.goto"),
+            subject=expect_optional_string(
+                data.get("subject"), "held completion.subject"
+            ),
+            base=expect_optional_string(data.get("base"), "held completion.base"),
         )
 
 

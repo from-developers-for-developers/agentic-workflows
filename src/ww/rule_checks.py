@@ -28,6 +28,11 @@ a snapshot holds only committed configuration files.
 Checks read the working tree and report; they change no workflow state, so
 running them again after an interruption is harmless and they keep no
 command ledger. Their full output is stored as command-output artifacts.
+
+In a ``readonly`` run the step changes nothing, so its rules are applied to
+a :class:`RuleSubject` instead: the branch's change set, measured from the
+commit it forked from its base branch, or the existing files a rule
+selection named, each whole. An empty subject leaves nothing to check.
 """
 
 from __future__ import annotations
@@ -38,6 +43,7 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 from ww.action_execution import STATE_OUTPUT_PREVIEW_LIMIT, bounded
 from ww.actions.command import CommandAction
@@ -66,15 +72,56 @@ WriteOutput = Callable[[CommandOutputAddress, str], str]
 
 
 @dataclass(frozen=True)
+class RuleSubject:
+    """What a readonly run's rules are applied to, instead of a step's changes.
+
+    ``branch``: the change set from ``base``, the tree of the commit the
+    branch forked from its base branch, to the working tree. ``files``: the
+    existing files matching ``globs``, each whole, measured from the empty
+    tree ``base``. ``base`` is ``None`` without git: every file then counts.
+    """
+
+    kind: Literal["branch", "files"]
+    base: str | None
+    globs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class CheckScope:
     """Where the checks of one completing item run, and with which values.
 
     ``root`` is where ww's configuration is read, their declared files with it.
+    ``subject`` is what a readonly run's rules apply to; ``None`` applies
+    them to the files the step changed.
     """
 
     directory: Path
     root: Path
     values: dict[str, str]
+    subject: RuleSubject | None = None
+
+    def base(self, change_mark: str | None) -> str | None:
+        """The tree the rules' change set is measured from."""
+        return self.subject.base if self.subject is not None else change_mark
+
+    def change_set(
+        self, change_mark: str | None, mark_b: str | None
+    ) -> tuple[tuple[str, ...], tuple[str, str] | None]:
+        """The files the rules apply to, and the marks they were measured
+        between: the step's change set, or the readonly run's subject."""
+        files, marks = change_set(self.directory, self.base(change_mark), mark_b)
+        if self.subject is not None and self.subject.globs:
+            files = select_files(files, self.subject.globs)
+        return files, marks
+
+    @property
+    def nothing_to_check(self) -> bool:
+        """Whether an empty change set leaves the rules nothing to apply to.
+
+        Only for a readonly subject: a step's own empty change still gets its
+        unscoped rules, which apply to every change, even none.
+        """
+        return self.subject is not None
 
 
 class RuleChecker:
@@ -103,14 +150,17 @@ class RuleChecker:
         ``reuse`` is an earlier passing report of the same completion: while
         the working tree is still at the tree that report was measured to,
         the checks it passed are not run again; one that failed or was
-        unavailable is. A check the operator waived for this step does not
-        run and is not in the report.
+        unavailable is. A check the operator waived for this step, or whose
+        rule a rule selection left out, does not run and is not in the
+        report; neither does any in a readonly run with nothing to check.
         """
         record = state.item_executions[state.cursor]
         waived = dict(record.checks_waived)
+        # A rule selection may leave out a rule with a check of its own.
+        left_out = {entry.id for entry in record.rule_resolutions if entry.left_out_by}
         attempt = max((report.attempt for report in item_reports(state)), default=0) + 1
-        mark_b = take_mark(scope.directory) if record.change_mark else None
-        files, marks = change_set(scope.directory, record.change_mark, mark_b)
+        mark_b = take_mark(scope.directory) if scope.base(record.change_mark) else None
+        files, marks = scope.change_set(record.change_mark, mark_b)
         kept = (
             {
                 result.id: result
@@ -125,6 +175,8 @@ class RuleChecker:
             or self._run_check(state, item, check, index, attempt, files, scope, marks)
             for index, check in enumerate((*item.checks, *record.resolved_checks), 1)
             if check.id not in waived
+            and check.id not in left_out
+            and (files or not scope.nothing_to_check)
         )
         return CheckReport(
             attempt=attempt,

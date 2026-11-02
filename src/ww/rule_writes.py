@@ -604,7 +604,6 @@ def _placement(
     configuration: WorkflowConfiguration, write: RuleWrite
 ) -> tuple[str, ...]:
     """``workflow: step, step`` for each workflow the rule or group reaches."""
-    groups = configuration.rule_groups_by_name
 
     def reaches(group: RuleGroup) -> bool:
         return write.group == group.name or any(
@@ -619,13 +618,16 @@ def _placement(
         for step, path in walked:
             if step.name == INIT_STEP_NAME:
                 continue
-            admitted = any(
+            admitted = not workflow.readonly and any(
                 reaches(group)
                 and group.applies_to(workflow.name, step.name, path, precise)
                 for group in configuration.rule_groups
             )
             named = any(
-                (isinstance(entry, RuleGroupRef) and reaches(groups[entry.name]))
+                (
+                    isinstance(entry, RuleGroupRef)
+                    and any(map(reaches, configuration.referenced_groups(entry)))
+                )
                 or (isinstance(entry, RuleDefinition) and entry.id == write.rule)
                 for entry in step.rules
             )

@@ -80,6 +80,8 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         raise ValueError("plan modes must be strings")
     if not isinstance(data["handoff"], bool):
         raise ValueError("plan handoff must be a boolean")
+    if not isinstance(data.get("readonly", False), bool):
+        raise ValueError("plan readonly must be a boolean")
     items = _checked_item_contexts(items)
     return WorkflowPlan(
         workflow=expect_string(data["workflow"], "workflow"),
@@ -97,6 +99,7 @@ def _plan_from_dict(data: Any) -> WorkflowPlan:
         ),
         hooks_from=expect_optional_string(data.get("hooks_from"), "hooks_from"),
         gotos=_gotos_from_list(data.get("gotos", [])),
+        readonly=data.get("readonly", False),
     )
 
 

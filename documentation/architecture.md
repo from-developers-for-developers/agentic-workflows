@@ -1958,14 +1958,19 @@ verifier must still judge, each with its scope and the changed files in it,
 and the IDs the change set left out, which `record_not_applicable` keeps on
 the item record (`rules_not_applicable`) so the artifact reports them and
 the statistics count them; `reject_completion` clears that set. A step
-named by an earlier step's `select_rules_for` begins with the judged rules
-that selection did not keep resolved as left out (`RuleResolution.left_out_by`,
+named by an earlier step's `select_rules_for` begins with the rules that
+selection did not keep resolved as left out (`RuleResolution.left_out_by`,
 from `selection_of`, which reads the latest completed `select-rules` item's
-`rule_selection`); `verification_needs` judges such a rule only when it is
-scoped and the change set reaches it, and returns the rest as a third set,
-kept as `rules_left_out`. `_resolve_rule_selections` turns the names into
-plan item IDs once the plan is compiled, expanding a step with substeps to
-the agent steps inside it that carry a judged rule. The `select-rules` item is compiled after the
+`rule_selection`). `selection_candidates` is every rule of the step, so a
+selection covers checked rules too: `resolve_rules` records a rule with its
+own command as `checked` and a left-out one stays so, `RuleChecker` skips
+the own checks of left-out rules, a left-out converted rule joins no derived
+check, and `judged_now` hands it to no verifier. `verification_needs` judges
+a left-out judged rule only when it is scoped and the change set reaches it,
+and returns the rest as a third set, kept as `rules_left_out`.
+`_resolve_rule_selections` turns the names into plan item IDs once the plan
+is compiled, expanding a step with substeps to the agent steps inside it
+that carry a rule. The `select-rules` item is compiled after the
 step's `before_complete` hooks with the step's worker settings, so
 `assignment_at` keeps it in the step's assignment. When no
 rule remains, the completion is recorded as usual. Otherwise ww holds the
@@ -2004,6 +2009,36 @@ Repair items remain in the frozen plan for evidence and reuse, but a later
 goto or enclosing repeat skips them until another source rejection asks
 for repair. A repair worker's source-rule dispute stops on the held source
 record so retry and waiver retain their existing meaning and counters.
+
+A `readonly` workflow reuses this machinery with a different subject and no
+repair, rather than a separate engine. The compiler freezes the flag as
+`WorkflowPlan.readonly`, drops every hook whose extension handler declares
+`ExtensionHandler.writes` (refusing such a handler as a step), and admits no
+root group by its filters, so a step gets only the rules it names;
+`rules: ["*"]` (`ALL_GROUPS`) expands through
+`WorkflowConfiguration.referenced_groups` at compile time, so a built-in
+workflow gets the project's groups. The builder prepends the `READONLY`
+notice to every page. Every agent item of such a run takes a change mark,
+and `_refuse_readonly_changes` compares it with a fresh mark before
+`complete` records anything, listing `changes.touched_files` (deletions
+included); marks come from `git add -A` on a temporary index, so ignored
+files never count. `service._rules_scope` gives the `CheckScope` a
+`RuleSubject`: `files` when the selection that chose the step's rules
+carries `RuleSelection.files` (from `complete --select-files`), measured from
+`changes.empty_tree` and narrowed by those globs, else `branch`, measured
+from `changes.branch_base`, the tree of `git merge-base HEAD <base>` with the
+base from the ww/git `base_branches` entry of the run's lane or `default`, or
+`HEAD`'s tree without one. `CheckScope.change_set` is then what checks,
+`ww check` and `verification_needs` see, an empty subject runs no check and
+leaves every judged rule not applicable (`nothing_to_check`), and
+`HeldCompletion` records the subject and base so the verifier page
+(`VerificationPage.subject`) can name the diff or the whole files. Failures
+are settled as findings: `_complete` does not reject on failed checks and
+`_settle_verification` replays the held completion despite failing verdicts,
+so `completion_artifacts.rule_outcomes` reports `failed` and `verified fail`
+with `RuleOutcome.findings`; `drain` advances past a failed `on_failure: fix`
+command with `skip_failed_item(note=READONLY_FAILURE)` instead of
+`request_repair`. No fix counter, waiver or dispute is ever reached.
 
 Turning rules into checks is a project task of its own,
 `ww-scriptize-rules`, whose checks the operator records with `rules

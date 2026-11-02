@@ -344,6 +344,9 @@ class VerificationPage:
     ``files`` is the verified step's change set, or every file when
     ``all_files`` (no git); ``diff_command`` shows the change itself;
     ``draft_artifact`` is the path of the step worker's held artifact.
+    ``subject`` is a readonly run's: ``branch`` when ``files`` are the
+    branch's change set, ``files`` when they are existing files judged
+    whole; ``None`` when they are what the step changed.
     """
 
     step: str
@@ -353,6 +356,7 @@ class VerificationPage:
     diff_command: str | None = None
     draft_artifact: str | None = None
     adjustments: str | None = None
+    subject: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -363,6 +367,7 @@ class VerificationPage:
             "diff_command": self.diff_command,
             "draft_artifact": self.draft_artifact,
             "adjustments": self.adjustments,
+            "subject": self.subject,
         }
 
 

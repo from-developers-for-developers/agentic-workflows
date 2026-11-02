@@ -216,6 +216,7 @@ def evaluations(
         for rule_id in check.covers
     }
     waived = {key for key, _ in record.checks_waived}
+    left_out = {entry.id for entry in record.rule_resolutions if entry.left_out_by}
     held = record.held_completion
     found = []
     for rule in item.rules:
@@ -230,7 +231,7 @@ def evaluations(
             outcome = "verdict pass" if verdict.verdict == "pass" else "verdict fail"
         elif rule.id in record.rules_not_applicable:
             outcome = "not applicable"
-        elif rule.id in record.rules_left_out:
+        elif rule.id in record.rules_left_out or rule.id in left_out:
             outcome = "left out"
         else:
             continue

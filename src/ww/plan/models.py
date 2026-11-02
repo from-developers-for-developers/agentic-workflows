@@ -686,6 +686,9 @@ class WorkflowPlan:
     hooks_from: str | None = None
     # The gotos the run may take, frozen with the plan.
     gotos: tuple[PlannedGoto, ...] = ()
+    # The workflow's ``readonly``: the run changes nothing, and its rules
+    # report failures instead of sending work back.
+    readonly: bool = False
 
     @property
     def lane(self) -> str:
@@ -710,4 +713,6 @@ class WorkflowPlan:
             data["hooks_from"] = self.hooks_from
         if self.gotos:
             data["gotos"] = [goto.to_dict() for goto in self.gotos]
+        if self.readonly:
+            data["readonly"] = True
         return data

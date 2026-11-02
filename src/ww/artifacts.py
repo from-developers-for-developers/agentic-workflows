@@ -14,6 +14,7 @@ RuleStatus = Literal[
     "check unavailable",
     "self-declared",
     "verified pass",
+    "verified fail",
 ]
 
 
@@ -29,6 +30,9 @@ class RuleOutcome:
     status: RuleStatus
     hook: bool = False
     detail: str | None = None
+    # What a failure found: a failed check's output, or a failing verdict's
+    # ``file:line — what`` evidence, which a readonly run reports here.
+    findings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -84,11 +88,15 @@ def render_step_artifact(
 
 def _rules_section(rules: RulesSummary) -> str:
     lines = ["", "## Rules", ""]
-    lines.extend(
-        f"- `{outcome.id}`{' (hook)' if outcome.hook else ''}: {outcome.status}"
-        + (f" ({outcome.detail})" if outcome.detail else "")
-        for outcome in rules.outcomes
-    )
+    for outcome in rules.outcomes:
+        lines.append(
+            f"- `{outcome.id}`{' (hook)' if outcome.hook else ''}: {outcome.status}"
+            + (f" ({outcome.detail})" if outcome.detail else "")
+        )
+        for finding in outcome.findings:
+            first, *rest = finding.rstrip().splitlines() or [""]
+            lines.append(f"  - {first}")
+            lines.extend(f"    {line}" if line else "" for line in rest)
     lines.append("")
     reasons: dict[str, list[str]] = {}
     for check_id, reason in rules.waived:

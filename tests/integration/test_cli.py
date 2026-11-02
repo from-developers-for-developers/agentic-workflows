@@ -280,6 +280,7 @@ workflows:
             "modes": ["economy"],
             "runtime": None,
             "manual": False,
+            "readonly": False,
         },
     ]
 

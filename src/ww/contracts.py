@@ -61,7 +61,7 @@ RuleAutomationStatus = Literal[
 CheckAutomationStatus = Literal["proposed", "converted", "rejected"]
 # How a step's rule without a command of its own is enforced, decided when
 # the step begins: by a converted derived check, or by a verifier's verdict.
-RuleResolutionStatus = Literal["converted", "judged"]
+RuleResolutionStatus = Literal["checked", "converted", "judged"]
 Verdict = Literal["pass", "fail"]
 ItemOperation = Literal["collect", "complete_collection", "save_fields"]
 ChildOperation = Literal["collect"]

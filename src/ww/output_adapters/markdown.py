@@ -1241,7 +1241,13 @@ def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
             "There is no git change set here: every file in the directory is in scope."
         )
     elif page.files:
-        lines.append(f"Files the step changed ({len(page.files)}):")
+        lines.append(
+            f"Files to judge, each whole ({len(page.files)}):"
+            if page.subject == "files"
+            else f"Files the branch changed ({len(page.files)}):"
+            if page.subject == "branch"
+            else f"Files the step changed ({len(page.files)}):"
+        )
         lines.append("")
         lines.extend(f"- `{path}`" for path in page.files)
     else:
@@ -1260,6 +1266,25 @@ def _verification_evidence(lines: Lines, page: VerificationPage) -> None:
         )
 
 
+# What a verifier judges: the step's change, or a readonly run's subject.
+_VERIFICATION_SUBJECTS: dict[str | None, str] = {
+    None: "Judge what this step changed. Start from the diff, and read the "
+    "code around it only as far as a rule needs to judge the changed "
+    "lines, such as the loop a new query sits in. A violation in code "
+    "the step did not change is not this step's: leave it out of your "
+    "verdicts, unless the change brings it about, for example a new "
+    "call placed inside an existing loop.",
+    "branch": "This run is readonly: judge what the branch changed, committed "
+    "and uncommitted, not the step's own work, which changed nothing. Start "
+    "from the diff, and read the code around it only as far as a rule needs "
+    "to judge the changed lines. A violation in code the branch did not "
+    "change is left out of your verdicts, unless the change brings it about.",
+    "files": "This run is readonly: judge the listed files as they are, each "
+    "whole; every line of them is in scope, whoever wrote it. Report every "
+    "violation you find in them.",
+}
+
+
 def _verification_results(lines: Lines, page: VerificationPage) -> None:
     lines.extend(["", "#### What to report", ""])
     if any(rule.previous_failures for rule in page.rules):
@@ -1274,12 +1299,7 @@ def _verification_results(lines: Lines, page: VerificationPage) -> None:
         )
     lines.extend(
         [
-            "Judge what this step changed. Start from the diff, and read the "
-            "code around it only as far as a rule needs to judge the changed "
-            "lines, such as the loop a new query sits in. A violation in code "
-            "the step did not change is not this step's: leave it out of your "
-            "verdicts, unless the change brings it about, for example a new "
-            "call placed inside an existing loop.",
+            _VERIFICATION_SUBJECTS.get(page.subject, _VERIFICATION_SUBJECTS[None]),
             "",
             "Judge each rule on its own against the change set: a verdict "
             "`pass` or `fail`, with evidence `file:line — what` for each "

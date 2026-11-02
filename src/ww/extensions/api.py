@@ -322,6 +322,10 @@ class ExtensionHandler:
     ``args``, in order; ww renders their templates when the handler runs and
     hands them over as ``ExtensionContext.arguments``.  A reference passing
     a different number is a configuration error.
+
+    ``writes`` declares that the handler changes the project: it creates a
+    branch or a worktree, commits, or writes files.  A ``readonly`` workflow
+    leaves such a handler out of its hooks and refuses it as a step.
     """
 
     name: str
@@ -333,10 +337,13 @@ class ExtensionHandler:
     validate: Callable[[Mapping[str, str]], str | None] | None = None
     needs_input: Callable[[ExtensionContext], bool] | None = None
     arguments: tuple[str, ...] = ()
+    writes: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not _VALUE_NAME.fullmatch(self.name):
             raise ValueError("extension handler name must be normalized")
+        if not isinstance(self.writes, bool):
+            raise TypeError("extension handler writes must be a boolean")
         if not isinstance(self.description, str):
             raise TypeError("extension handler description must be a string")
         if not callable(self.run):

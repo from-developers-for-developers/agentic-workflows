@@ -127,6 +127,7 @@ def _workflow_header(
         "runtime": workflow.runtime,
         "manual": workflow.manual,
         "restartable": workflow.restartable,
+        "readonly": workflow.readonly,
         "modes": list(workflow.modes),
         "recommended_next": workflow.recommended_next_workflow,
         "source": provenance.source if provenance else None,

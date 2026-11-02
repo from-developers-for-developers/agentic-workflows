@@ -269,6 +269,7 @@ _OVERRIDES = {
     "explicit": ("explicit",),
     "runtime": ("runtime",),
     "restartable": ("restartable",),
+    "readonly": ("readonly",),
     "recommended_next_workflow": ("recommended_next_workflow",),
     "hooks_from": ("hooks_from",),
     "needs_hooks_from": ("needs_hooks_from",),
@@ -301,6 +302,7 @@ def _parse_workflow(
         "explicit",
         "runtime",
         "restartable",
+        "readonly",
         "manual",
         "inherit",
         "recommended_next_workflow",
@@ -330,6 +332,9 @@ def _parse_workflow(
     manual = mapping.get("manual", False)
     if not isinstance(manual, bool):
         raise ConfigurationError(f"{path}.manual must be true or false")
+    readonly = mapping.get("readonly", False)
+    if not isinstance(readonly, bool):
+        raise ConfigurationError(f"{path}.readonly must be true or false")
     inherits = mapping.get("inherit")
     if inherits is not None and (not isinstance(inherits, str) or not inherits):
         raise ConfigurationError(f"{path}.inherit must name a workflow")
@@ -381,6 +386,7 @@ def _parse_workflow(
         explicit=_optional_bool(mapping, "explicit", f"workflow {name!r}"),
         runtime=runtime,
         restartable=restartable,
+        readonly=readonly,
         manual=manual,
         inherits=inherits,
         recommended_next_workflow=recommended,

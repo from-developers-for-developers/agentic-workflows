@@ -99,7 +99,7 @@ from .policy import (
     _result_saved,
     operator_reason,
 )
-from .text import NO_SUBAGENTS, ContainerArtifact, _stage, action_text
+from .text import NO_SUBAGENTS, READONLY, ContainerArtifact, _stage, action_text
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
 
@@ -295,7 +295,11 @@ class InstructionBuilder:
                 else built.continuation_command
             ),
             run_id=state.run_id,
-            notices=(*built.notices, *self._configuration_notices(state)),
+            notices=(
+                *((READONLY,) if plan.readonly else ()),
+                *built.notices,
+                *self._configuration_notices(state),
+            ),
             workflow_runtime=state.workflow_runtime,
             agent=state.agent,
             host=self.agents.resolve(state.agent),
@@ -970,8 +974,11 @@ class InstructionBuilder:
             files=held.files if held else (),
             all_files=held.all_files if held else False,
             diff_command=(
-                f"git diff {step_record.change_mark} {held.mark}"
-                if held is not None and step_record.change_mark and held.mark
+                f"git diff {held.base or step_record.change_mark} {held.mark}"
+                if held is not None
+                and held.subject != "files"
+                and (held.base or step_record.change_mark)
+                and held.mark
                 else None
             ),
             draft_artifact=(
@@ -980,6 +987,7 @@ class InstructionBuilder:
                 else None
             ),
             adjustments=held.adjustments if held is not None else None,
+            subject=held.subject if held is not None else None,
         )
 
     def _child_control(

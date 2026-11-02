@@ -32,6 +32,7 @@ from ww.validation import is_positive_int
 from ww.variables import ROOT, ROOT_ENVIRONMENT
 from ww.workflow_config import (
     ALL,
+    ALL_GROUPS,
     ALL_NAMES,
     NO_NAMES,
     HandlerDefinition,
@@ -568,10 +569,13 @@ def resolve_step_rules(
 ) -> tuple[tuple[WorkflowDefinition, ...], tuple[HandlerDefinition, ...]]:
     """Resolve every bare string in every step's ``rules`` list.
 
-    A string names a group, else a rule file or directory relative to
-    ``base``, else it is the rule's text. A string shaped like a reference
-    that names neither a group nor a file is an error, so a mistyped group
-    name is not silently delivered as a rule.
+    A string names a group, ``*`` every group of the configuration that runs
+    the step (resolved when a plan is compiled, so a built-in workflow gets
+    the project's), else a rule file or directory relative to ``base``, else
+    it is the rule's text.
+    A string shaped like a reference that names neither a group nor a file
+    is an error, so a mistyped group name is not silently delivered as a
+    rule.
     """
     names = {group.name for group in groups}
 
@@ -624,7 +628,7 @@ def _resolve_entry(
     if not isinstance(entry, UnresolvedStepRule):
         return (entry,)
     value = entry.value
-    if value in group_names:
+    if value == ALL_GROUPS or value in group_names:
         return (RuleGroupRef(value),)
     candidate = base / value
     if candidate.exists():

@@ -9,7 +9,10 @@ ww is for development: requests that change files. A review, question,
 explanation, investigation, status check or other read-only request never
 goes through ww; answer it directly, without these steps and without a task,
 even where ww is used by default. When a read-only conversation turns into a
-change, start from step 1 then.
+change, start from step 1 then. The exception is a `readonly` workflow, such
+as `ww-check-rules`, run only when the user asks ww to check code against its
+rules: in that run change, commit and switch nothing, and report every
+failure as a finding; ww repairs nothing there.
 
 1. Run `./ww discover` and read all of it. If it says ww is disabled, stop:
    do not use ww, and tell the user. If it says ww is used only on request

@@ -299,6 +299,7 @@ Each item in `workflows` accepts:
 | `hooks_from` | string | no | The workflow whose global hooks this one runs with: a global hook filtered with `workflows` applies here when its filter admits this workflow's own name or the named workflow, so this workflow takes that lane's branch, worktree and commit handling. Extensions receive the lane as `ExtensionContext.lane` and key per-workflow settings by it: `ww/git` takes the lane's `branch_name_formats` and `base_branches` entries, while its records and `{{ww.task.workflow}}` keep the workflow's own name and `{{ww.task.lane}}` gives its formats and argv base-branch commands the lane. Rule groups and modes filtered with `workflows` keep matching the workflow's own name only: they are the lane's conventions, not its handling. Must name another workflow that has no `hooks_from` of its own. Set it in the workflow definition in `ww.yaml`. The plan freezes it, so a run keeps its lane. |
 | `needs_hooks_from` | boolean | no | The workflow refuses to run until `hooks_from` is set: `start` (before a bootstrap request is opened), a handoff to it, and a replan of a run whose recompiled workflow lacks it (a `plan_changed` refusal). The message names `hooks_from` in the workflow definition in `ww.yaml`. Defaults to `false`. |
 | `restartable` | boolean | no | A new `start` of this workflow while its previous run is unfinished abandons that run and opens a new one; the abandoned run stays in the task's history. Without it, a task with an unfinished run refuses another start. An unfinished run of a different workflow is never abandoned this way. Defaults to `false`. |
+| `readonly` | boolean | no | The run changes nothing: it checks code against rules and reports what breaks them. Every page tells the manager and workers to read and run commands only; `complete` refuses a step whose tree changed; rules apply to the branch's change set or to files a rule selection names; failures are reported instead of repaired; hooks that write, such as `ww/git`'s branch, worktree and commit hooks, are left out. Inherited through `inherit` like any setting; the plan freezes it. See [Readonly workflows](#readonly-workflows). Defaults to `false`. |
 | `manual` | boolean | no | The workflow is started only when the operator names it; `discover` leaves it out (the `workflows` catalog still lists it, with `manual: true`), and `start` accepts it unchanged. Never inherited through `inherit`: a copy is listed unless it sets `manual` itself. Defaults to `false`. |
 | `inherit` | workflow name | no | Copy that workflow completely: steps, workflow hooks, and every setting. The workflow's own keys other than `steps` and `hooks`, which it may not declare, replace the copied values. A global hook filtered to the inherited workflow also runs for this one. Chains are allowed; a cycle or unknown name is an error. |
 | `recommended_next_workflow` | workflow name or null | no | Offered to the operator when a run completes: the page asks through the agent's choice menu and shows the `start` command for the same task, to run only on confirmation. Inherited like any setting; `null` clears an inherited one. Invalid in a handoff workflow (one with a `handoff_to` transition). |
@@ -390,6 +391,7 @@ The built-in workflows:
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 | `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own from the required `ww/git` default base, following its worktree settings; automatic Git hooks, `restartable`. |
+| `ww-check-rules` | `check-rules.yaml` | Checks the branch's changes, or the files the request names, against the project's rules and reports what breaks them; `readonly`, `restartable`. A `scope` step (`select_rules_for: [check]`) chooses the rules and, for existing code, the files; a `check` step carries `rules: ["*"]`. See [Readonly workflows](#readonly-workflows). |
 
 `onboarding.yaml` also declares the documents `project` (`scope: project`,
 `path: .ww/project.md`) and
@@ -409,6 +411,92 @@ profile:
 Workflows accept the [named-entry shorthand](#named-entry-shorthand). For
 example, `- task: Run the standard development workflow.` supplies both the
 name and description; `steps` and other workflow keys remain siblings.
+
+### Readonly workflows
+
+`readonly: true` makes a workflow that checks code and changes nothing, such
+as a review with rule verification, a code-review agent step and a test
+command:
+
+```yaml
+workflows:
+  - name: review
+    readonly: true
+    steps:
+      - name: scope
+        description: Decide what to check.
+        select_rules_for: [review]
+      - name: review
+        description: Review the code against the rules.
+        rules: ["*"]
+      - name: tests
+        argv: [scripts/test]
+        on_failure: fix
+```
+
+In a readonly run:
+
+- **Instructions.** Every page, the manager's and each worker's, says the run
+  is readonly: read files and run commands, such as tests, but create,
+  change, delete or commit nothing and switch no branch; findings go into
+  the artifact.
+- **Enforcement.** Every agent item takes a tree mark when it begins, as a
+  step with rules does (see [Running checks](#running-checks)). `complete`
+  compares it with the working tree and refuses a completion whose tree
+  changed, listing the paths added, changed or deleted. Files git ignores,
+  such as caches and coverage output, and ww's own `.ww` state do not
+  count. A commit made during the step leaves the tree unchanged and is not
+  detected; the page forbids it.
+- **Rule subject.** Rules, checks and judged rules alike, apply to a subject
+  instead of the step's own change set:
+  - the **branch**, by default: the working tree compared with the tree of
+    `git merge-base HEAD <base>`, so committed and uncommitted work count
+    together. `<base>` is the `ww/git` `base_branches` entry of the run's
+    lane, else its `default` entry; only a literal string entry counts.
+    Without one, or on the base branch itself, the subject is measured from
+    `HEAD`, the uncommitted work alone.
+  - **files**, when a rule selection named globs for the step with
+    `--select-files` (see
+    [Choosing the rules of later steps](#choosing-the-rules-of-later-steps)):
+    the existing files matching them, tracked or untracked and not ignored,
+    each whole, measured from the empty tree. The globs are relative to the
+    step's directory and match as a rule's `paths` do.
+
+  `WW_STEP_CHANGED_FILES`, rule scopes and `contains_in_diff` read that
+  subject. An empty subject leaves nothing to check: no check runs, and
+  every judged rule, scoped or not, is not applicable. `ww check` reports
+  the same subject. A verifier's page names it, "Files the branch changed"
+  with a `git diff` from the base, or "Files to judge, each whole" with
+  none, and says what to judge: the branch's changes, leaving out
+  violations in code the branch did not change, or every line of the listed
+  files.
+- **Reported failures.** A failed check does not reject the completion and a
+  failing verdict does not open a repair: the step completes, and its
+  artifact's `## Rules` section shows `failed` with the check's output and
+  `verified fail (by <verification item>)` with each failure as `file:line —
+  what`, nested under the rule. No fix limit, waiver or dispute arises, and
+  `verification.on_failure` is not used. A command item with
+  `on_failure: fix` that fails is not repaired either: it keeps its failed
+  record with "Reported, not repaired: this run is readonly." added to its
+  error, and the run goes on. A failing command without `on_failure: fix`
+  stops the run as usual.
+- **Rules a step gets.** Root groups' `workflows` and `steps` filters admit
+  nothing: a step gets only the rules it names, so a step that decides what
+  to check is not checked itself. `rules: ["*"]` names every group (see
+  [Step rules](#step-rules)). A rule a selection left out stays out, even
+  when the subject reaches its scope.
+- **Current checkout.** Extension handlers declared to write
+  (`ExtensionHandler.writes`; in `ww/git` `start-task-branch`,
+  `create-worktree`, `git-commit`, `merge-branch`, `remove-task-worktree`
+  and `return-to-base-branch`) are left out of the run's hooks, global ones
+  included, so the run creates no branch, worktree or commit and works in
+  the current checkout. A step whose own action is such a handler is a
+  configuration error. Other handlers, such as `is-git-clean`, run as
+  configured. A YAML command handler is not inspected: a readonly workflow
+  should not run one that writes.
+
+`workflows --json` lists `readonly` for each workflow, and so does the
+visualizer's workflow data.
 
 ## Direct work
 
@@ -1609,7 +1697,8 @@ not a list, write `[task]`.
 
 A rule is a sentence a step's agent follows while working. It may carry a
 command ww runs when the step completes, a **check**; a failed check rejects
-the completion and sends the step back to its worker, up to `max_fixes` times.
+the completion and sends the step back to its worker, up to `max_fixes` times,
+except in a [readonly run](#readonly-workflows), which reports it.
 Rules are delivered on the page of every agent step they apply to: not `init`,
 hooks, or the built-in workflow summary.
 
@@ -1681,7 +1770,9 @@ and a name declared in both is an error.
 ### Step rules
 
 A step's `rules` is a list. A string names a group, which then applies to the
-step whatever its filters say; else a rule file or directory that exists
+step whatever its filters say; `"*"` names every group of the configuration
+that runs the step, resolved when the plan is compiled, so a built-in
+workflow gets the project's groups; else a rule file or directory that exists
 relative to the declaring file; else it is the literal text of a rule. A string
 shaped like a reference, letters, digits, `_`, `.`, `-` with at most one `/`
 and no trailing punctuation, that names neither a group nor a file is an error.
@@ -1711,8 +1802,8 @@ steps:
       - php-architecture
 ```
 
-A step receives, in order, the root groups whose filters admit it, then its
-own entries; a rule ID reached twice counts once. Its checks are its rules'
+A step receives, in order, the root groups whose filters admit it (none in a
+[readonly workflow](#readonly-workflows)), then its own entries; a rule ID reached twice counts once. Its checks are its rules'
 commands in that order, then its `before_complete` hooks with
 `on_failure: fix`, named `<step>/<handler name>`, or `<step>/<program>` for an
 inline command. Such a hook must run a command that asks the agent for no
@@ -1884,7 +1975,7 @@ and asks the verifier to confirm those are fixed before judging the rest.
 #### Choosing the rules of later steps
 
 A step that already understands the change, such as an `architect` step
-before `develop`, can choose which judged rules later steps get:
+before `develop`, can choose which rules later steps get:
 
 ```yaml
 - name: architect
@@ -1902,9 +1993,9 @@ does. A step
 with agent work of its own is chosen for itself; one with an attached
 assessment stands for itself, not for its outcomes' steps, which are named
 by their own name or path. A step with `steps` stands
-for the agent steps inside it, at any depth, that carry at least one judged
-rule: a substep without any, such as a `plan` substep, is no target and needs
-no selection, and a parent with no such substep is refused. Each step chosen
+for the agent steps inside it, at any depth, that carry at least one rule: a
+substep without any, such as a `plan` substep, is no target and needs no
+selection, and a parent with no such substep is refused. Each step chosen
 for keeps its own candidates and takes its own `--select-rules` entry, named
 by its own name (`implement=...`, `write-tests=...`), so two steps chosen for
 may not share one. Compiling the plan refuses a name that is no later step,
@@ -1916,21 +2007,29 @@ hooks, with the step's own worker settings, so its assignment carries on
 into it: in `auto` the same worker gets its short page, and the manager can
 still dispatch it to a fresh worker if that session is gone; the page names
 the step's result. It cannot be skipped. Its candidates for each named step
-are that step's judged rules as they would resolve now: not those a
-converted check checks, nor those whose converted check does not apply here,
-which are judged whatever is selected. `rules candidates <task>` lists them.
+are all that step's rules, those with a check of their own or a converted
+check included, but not its `fix` hooks, which are no rules.
+`rules candidates <task>` lists them, marking the checked ones `(checked)`.
 The worker completes with its reason as `--artifact` and one
 `--select-rules <step>=<id>,<id>` per named step; `<step>=` selects none.
-`complete` refuses a missing, repeated or unknown step, an ID that is no
-candidate, a missing artifact, and the option on any other item.
+In a [readonly run](#readonly-workflows) it may add one
+`--select-files <step>=<glob>,<glob>` per named step: the step's rules then
+apply to the existing files matching the globs, each whole, instead of the
+branch's change set; the selection page says so. `complete` refuses a
+missing, repeated or unknown step, an ID that is no candidate, a missing
+artifact, `--select-files` outside a readonly run, and either option on any
+other item.
 
 When a named step begins, each candidate the selection did not keep is
 resolved as left out by the selecting step. The step's page lists only the
-judged rules kept, its checked rules as always, and says how many were left
-out. At completion a left-out rule is judged only when it is scoped and the
+rules kept and says how many were left out. A left-out rule with a check of
+its own, or with a converted check, is checked by nothing: its check does not
+run, and a converted check whose rules are all left out does not run either.
+At completion a left-out judged rule is judged only when it is scoped and the
 change set reaches its scope, so a change the selection did not foresee is
-still verified; otherwise it is recorded on the step as left out, the
-artifact's Rules section reports it as `left out` by the selecting step, and
+still verified; in a readonly run, where the selection names what to check,
+it is not. Otherwise it is recorded on the step as left out, the artifact's
+Rules section reports it as `left out` by the selecting step, and
 `rules stats` counts it as `left_out`. `check` names the left-out rules apart.
 The latest completed selection for a step counts: when the selecting step
 runs again, its new selection replaces the old for a named step that has not
@@ -2031,7 +2130,7 @@ or `schema_version` is an error.
 | `rules revoke <check> [--reason "<why>"] [--yes] [--json]` | Shows a `converted` or `proposed` store check, asks, and rejects it, recording the reason, together with the rules whose entries name it, which a verifier judges from then on. Never touches YAML, rule files, or the check's config files; the output says they stay for the operator. `--yes` skips the question; without it and without a terminal, it refuses. |
 | `rules stats [--json]` | Every declared rule with the checkout's local counters from `.ww/rules/stats.json`, counted once per settled completion of a step that carried the rule: `applied` (checked or judged), `checked`, `check_failures`, `judged`, `judged_failures`, `waived`, `not_applicable`, `left_out` (by a [rule selection](#choosing-the-rules-of-later-steps)), `last_applied_at`, `last_failed_at` and `last_failure` (`task`, `step`, `kind`: `check` or `verdict`), with `text_hash` the wording last evaluated. The most failing rule first (check plus verdict failures), then the most applied, then by ID; a rule never applied is marked (`never_applied` in JSON). Read-only: not in the audit log. |
 | `rules convert <check> --covers <rule-id>... [--assert empty\|equals:<value>]... [--config <path>...] [--proven] [--dry-run] [--yes] [--json] (--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...)` | `--check-argv -- <arg>...` goes last and takes every argument after `--` as the argv, options starting with `-` included. Shows the check, its command in full, its config files, the rules it covers with each one's current store state, and every other change, asks, and records it in the store as `converted`, approved by the operator. A new name creates the check; an existing one has its command, config, proof and coverage replaced and any pending revision dropped. A covered rule another check covered moves to this one, and that check loses any pending revision and is removed once it covers nothing more. A rule this check covered before and no longer does returns to unscriptized (its entry is removed); a rejection or decline naming the check stays. `--config` paths are relative to the project root and refused when absolute, with a `..` part, or ignored by Git; a check with `--config` paths must reach them as `{{ww.root}}/<path>` in its argv or `"$WW_ROOT/<path>"` in its shell source, or it is refused, since it runs in the step's directory, which may be a worktree of a branch without them. Refuses an unknown or repeated rule ID and a rule with a command of its own. `--dry-run` prints the preview and records nothing. `--json` gives the check, its rules, and the `unscriptized`, `moved`, `dropped_checks` and `dropped_revisions` changes. |
-| `rules candidates <task> [--json]` | While a `select-rules` item is in progress: each step it chooses for, with the judged rules it chooses among (ID, scope, summary). Read-only: not in the audit log. |
+| `rules candidates <task> [--json]` | While a `select-rules` item is in progress: each step it chooses for, with the rules it chooses among (ID, scope, summary), a rule checked by its own command or a converted check marked `(checked)` (`has_command` in `--json`). Read-only: not in the audit log. |
 | `rules decline <rule-id>... --reason "<why>" [--dry-run] [--yes] [--json]` | Shows the rules with each one's current store state and every other change, asks, and records them as `not_convertible` with the reason, removing them from any check's coverage (a check left covering nothing is removed): a verifier judges them, and `ww-scriptize-rules` leaves them out. `--json` gives the rules and the same changes as `rules convert`. |
 | `rules prune [--yes] [--json]` | Lists the store's orphans, rule entries whose wording no declared rule has and checks that cover only such rules and that no remaining rule names, asks, and deletes them. `--yes` skips the question. |
 | `rules add <group> --text "<text>" [--paths <glob>...] [--contains-in-file <text>...] [--contains-in-diff <text>...] [--assert empty\|equals:<value>]... [--id <stem>] [--check-shell "<sh>" \| --check-argv <arg>... \| --check-argv -- <arg>...]` | `--check-argv -- <arg>...` goes last, as for `rules convert`. Creates `<stem>.md` in `--dir <path>`, else in the group's first directory item, else beside the group's last file item; the stem is the first five words of the first sentence in kebab-case unless `--id` gives one. A file no listed directory holds is appended to the group's `rules` list, relative to the declaring file as its other entries are: in `ww-rules.yaml` by rewriting the file whole, in any other file as one added line, checked to change nothing else and refused, naming the line to add by hand, when the list cannot be extended that way (a flow list, an anchor, a tag). Refuses an existing file, a group that lists neither a directory nor a file when `--dir` is absent, and a group an extension ships. Reports each glob's match count and the number of project files containing each string, and warns about a `--contains-in-file` string found nowhere (a `--contains-in-diff` string may arrive with a change, so it only gets the count). `--assert` is repeatable, one condition each. |

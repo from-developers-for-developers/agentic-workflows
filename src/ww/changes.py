@@ -107,6 +107,50 @@ def changed_files(workdir: Path, mark_a: str, mark_b: str) -> tuple[str, ...]:
     )
 
 
+def touched_files(workdir: Path, mark_a: str, mark_b: str) -> tuple[str, ...]:
+    """Every path added, changed, or deleted between two marks, sorted.
+
+    Unlike :func:`changed_files`, deletions count: it says what a step that
+    was to change nothing touched. ww's own state under ``.ww`` does not.
+    """
+    output = _git(
+        workdir, "diff-tree", "-r", "--name-only", "--no-renames", mark_a, mark_b
+    )
+    if output is None:
+        return ()
+    return tuple(
+        sorted(
+            line
+            for line in output.splitlines()
+            if line and line.split("/", 1)[0] not in _EXCLUDED
+        )
+    )
+
+
+def empty_tree(workdir: Path) -> str | None:
+    """The id of the empty tree: measured from it, every file is new."""
+    output = _git(workdir, "hash-object", "-t", "tree", os.devnull)
+    return output.strip() if output else None
+
+
+def branch_base(workdir: Path, base: str | None) -> str | None:
+    """The tree a branch's change set is measured from.
+
+    The tree of the commit ``HEAD`` forked from ``base``, so the change set
+    holds every commit of the branch and the uncommitted work on top; on
+    ``base`` itself, or without one, the tree of ``HEAD``, so it holds the
+    uncommitted work alone. ``None`` without a commit to measure from.
+    """
+    commit = None
+    if base:
+        found = _git(workdir, "merge-base", "HEAD", base)
+        commit = found.strip() if found else None
+    output = _git(
+        workdir, "rev-parse", "--verify", "--quiet", f"{commit or 'HEAD'}^{{tree}}"
+    )
+    return output.strip() if output and output.strip() else None
+
+
 def all_files(workdir: Path) -> tuple[str, ...]:
     """Every file under ``workdir``, relative and sorted, for a run without git.
 

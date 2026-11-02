@@ -68,10 +68,20 @@ def rule_outcomes(
     if held is None and verdicts:
         held = HeldCompletion(verdicts=verdicts)
 
+    left_out_by = {
+        entry.id: entry.left_out_by
+        for entry in record.rule_resolutions
+        if entry.left_out_by is not None
+    }
+
     def reported(check_id: str, hook: bool = False) -> RuleOutcome:
         """A check's own line: its result, or the verdict that stood in."""
         result = results.get(check_id)
         verdict = held.verdict(check_id) if held is not None else None
+        if result is None and check_id in left_out_by:
+            return RuleOutcome(
+                check_id, "left out", detail=f"by `{left_out_by[check_id]}`"
+            )
         if result is None:
             return RuleOutcome(check_id, "not applicable", hook=hook)
         if result.status == "unavailable" and verdict and verdict.verdict == "pass":
@@ -81,14 +91,42 @@ def rule_outcomes(
                 hook=hook,
                 detail=f"by `{verdict.by}`; check unavailable: {result.output}",
             )
+        if result.status == "unavailable" and verdict and verdict.verdict == "fail":
+            return failing(verdict, hook=hook, unavailable=result.output)
         detail = result.output if result.status == "unavailable" else None
-        return RuleOutcome(check_id, _REPORTED[result.status], hook=hook, detail=detail)
+        return RuleOutcome(
+            check_id,
+            _REPORTED[result.status],
+            hook=hook,
+            detail=detail,
+            findings=(result.output,)
+            if result.status == "failed" and result.output
+            else (),
+        )
 
-    left_out_by = {
-        entry.id: entry.left_out_by
-        for entry in record.rule_resolutions
-        if entry.left_out_by is not None
-    }
+    def failing(
+        verdict: RuleVerdict,
+        *,
+        hook: bool = False,
+        unavailable: str | None = None,
+        check: str | None = None,
+    ) -> RuleOutcome:
+        """A failing verdict a readonly run recorded, with its evidence."""
+        return RuleOutcome(
+            verdict.id,
+            "verified fail",
+            hook=hook,
+            detail=f"by `{verdict.by}`"
+            + (
+                f"; check `{check}` unavailable: {unavailable}"
+                if check is not None
+                else f"; check unavailable: {unavailable}"
+                if unavailable is not None
+                else ""
+            ),
+            findings=verdict.failures,
+        )
+
     outcomes = []
     for rule in item.rules:
         if rule.id in checked:
@@ -116,6 +154,8 @@ def rule_outcomes(
                         f"{result.output}",
                     )
                 )
+            elif verdict is not None:
+                outcomes.append(failing(verdict, check=name, unavailable=result.output))
             else:
                 outcomes.append(
                     RuleOutcome(
@@ -128,13 +168,15 @@ def rule_outcomes(
             outcomes.append(
                 RuleOutcome(rule.id, "verified pass", detail=f"by `{verdict.by}`")
             )
+        elif verdict is not None:
+            outcomes.append(failing(verdict))
         elif rule.id in record.rules_not_applicable:
             outcomes.append(
                 RuleOutcome(
                     rule.id, "not applicable", detail="no changed file in scope"
                 )
             )
-        elif rule.id in record.rules_left_out:
+        elif rule.id in record.rules_left_out or rule.id in left_out_by:
             outcomes.append(
                 RuleOutcome(
                     rule.id, "left out", detail=f"by `{left_out_by.get(rule.id)}`"

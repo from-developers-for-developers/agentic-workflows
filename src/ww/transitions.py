@@ -305,15 +305,29 @@ def stop_for_values(
 
 
 def skip_failed_item(
-    state: ExecutionState, plan: WorkflowPlan, now: Clock, reason: str | None = None
+    state: ExecutionState,
+    plan: WorkflowPlan,
+    now: Clock,
+    reason: str | None = None,
+    *,
+    note: str | None = None,
 ) -> ExecutionState:
-    """Advance past the current failed item after an explicit force request."""
+    """Advance past the current failed item after an explicit force request,
+    or, with ``note``, past a failure a readonly run reports and goes on from.
+
+    The item keeps its failed record and its error, followed by the force
+    reason or the note.
+    """
     records = list(state.item_executions)
-    if state.cursor < len(records) and reason:
+    if state.cursor < len(records) and (reason or note):
         prior_error = records[state.cursor].error
         records[state.cursor] = replace(
             records[state.cursor],
-            error=f"{prior_error or 'operator force-skipped'}\nForce reason: {reason}",
+            error=f"{prior_error or 'operator force-skipped'}\nForce reason: {reason}"
+            if reason
+            else f"{prior_error}\n{note}"
+            if prior_error
+            else note,
         )
     return project_steps(
         replace(
