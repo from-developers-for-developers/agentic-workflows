@@ -33,6 +33,7 @@ from ww.storage_adapters.task_document import (
     TASK_STATE_FORMAT,
     TASK_STATE_SCHEMA_VERSION,
 )
+from ww.task_descriptions import task_description
 from ww.task_envelope import (
     RUNS_DIRECTORY,
     STEPS_DIRECTORY,
@@ -43,6 +44,7 @@ from ww.task_envelope import (
     step_artifacts,
 )
 from ww.task_ids import validate_task_id
+from ww.task_list import run_status
 
 from .project import Project
 
@@ -72,7 +74,7 @@ def _summary(tasks: TaskStorageAdapter, task_id: str) -> JSON:
     ledger = {run.run_id: run for run in tasks.summarize_runs(runs)}
     direct = tasks.read_direct_work(task_id)
     last = runs[-1] if runs else None
-    status = _run_status(last) if last else "direct"
+    status = run_status(last) if last else "direct"
     summary = ledger[last.run_id].summary if last else None
     if last and not summary:
         summary = next(
@@ -90,6 +92,7 @@ def _summary(tasks: TaskStorageAdapter, task_id: str) -> JSON:
     ]
     return {
         "id": task_id,
+        "description": task_description(run.state.description for run in runs) or "",
         "status": status,
         "workflows": [run.workflow for run in runs],
         "summary": summary or "",
@@ -97,13 +100,6 @@ def _summary(tasks: TaskStorageAdapter, task_id: str) -> JSON:
         "current_step": _current_step(last) if last and status != "completed" else None,
         "direct_work": len(direct),
     }
-
-
-def _run_status(run: TaskRunAggregate) -> str:
-    """The run's status, with a stop for the operator called that."""
-    if operator_reason(run.state, run.snapshot.plan) is not None:
-        return "awaiting_operator"
-    return run.state.status
 
 
 def _current_step(run: TaskRunAggregate) -> str | None:
@@ -134,7 +130,8 @@ def task_detail(project: Project, task_id: str) -> JSON:
     last = runs[-1] if runs else None
     return {
         "id": task_id,
-        "status": _run_status(last) if last else "direct",
+        "description": task_description(run.state.description for run in runs) or "",
+        "status": run_status(last) if last else "direct",
         "handoff": handoff,
         "metadata": dict(metadata.values) if metadata else {},
         "direct_work": [entry.to_dict() for entry in direct],
@@ -280,7 +277,7 @@ def _run(
     return {
         "id": run.run_id,
         "workflow": run.workflow,
-        "status": _run_status(run),
+        "status": run_status(run),
         "operator_reason": reason,
         "last_error": state.last_error if reason else None,
         "agent": state.agent,
@@ -463,6 +460,7 @@ def _reduced_summary(project: Project, task_id: str, reason: str) -> JSON:
     ]
     return {
         "id": task_id,
+        "description": _envelope_description(envelope),
         "status": _envelope_status(envelope),
         "workflows": [run.workflow or UNKNOWN for run in envelope.runs],
         # A format the page can name says enough; any other reason is shown.
@@ -491,6 +489,7 @@ def _reduced_detail(project: Project, task_id: str, reason: str) -> JSON:
     direct = _direct_work(project, task_id)
     return {
         "id": task_id,
+        "description": _envelope_description(envelope),
         "status": _envelope_status(envelope),
         "reduced": _reduced(envelope, reason),
         "handoff": None,
@@ -556,6 +555,10 @@ def _envelope_status(envelope: TaskEnvelope) -> str:
     if not envelope.runs:
         return "unreadable"
     return envelope.runs[-1].status or UNKNOWN
+
+
+def _envelope_description(envelope: TaskEnvelope) -> str:
+    return task_description(run.description for run in envelope.runs) or ""
 
 
 def _task_directory(project: Project, task_id: str) -> Path:

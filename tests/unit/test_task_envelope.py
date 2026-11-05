@@ -83,7 +83,11 @@ def test_runs_the_index_names_are_read_from_their_run_documents(
             "run": {
                 "run_id": "01-task",
                 "workflow": "task",
-                "state": {"status": "completed", "updated_at": "2026-11-01T09:00:00Z"},
+                "state": {
+                    "status": "completed",
+                    "updated_at": "2026-11-01T09:00:00Z",
+                    "description": "Add a --quiet flag to greet",
+                },
             },
         },
     )
@@ -100,6 +104,7 @@ def test_runs_the_index_names_are_read_from_their_run_documents(
             None,
             "2026-11-01T09:00:00Z",
             "1.0.0b17",
+            "Add a --quiet flag to greet",
         ),
         RunEnvelope("02-merge"),
     )

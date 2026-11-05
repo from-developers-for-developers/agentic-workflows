@@ -105,6 +105,7 @@ from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.storage_adapters import FileTaskStorageAdapter
 from ww.task_ids import bare_request_id
+from ww.task_list import render_task_rows, task_rows
 from ww.upgrade import upgrade
 from ww.visualize import serve_visualizer
 from ww.workflow_config import (
@@ -164,6 +165,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "handoff",
         "workflow-feedback",
         "visualize",
+        "tasks",
     }
 )
 # Commands that edit ww's configuration, or read none of it, read the
@@ -184,6 +186,8 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
         "migrate",
         # It follows the configuration as it is edited.
         "visualize",
+        # It reads only the task store.
+        "tasks",
     }
 )
 # Commands after which a run may have ended or moved to another commit, so a
@@ -662,6 +666,13 @@ def _visualize(context: _Context) -> _Outcome:
     return _Outcome("")
 
 
+def _tasks(context: _Context) -> _Outcome:
+    rows = task_rows(context.storage)
+    if context.args.json_output:
+        return _Outcome(_json({"tasks": [row.to_dict() for row in rows]}))
+    return _Outcome(render_task_rows(rows) + "\n")
+
+
 def _start(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
@@ -678,6 +689,7 @@ def _start(context: _Context) -> _Outcome:
             branch_naming_strategy=args.branch_naming_strategy,
             project=args.project,
             fresh_items=args.fresh_items,
+            description=args.description,
         ),
         args.json_output,
     )
@@ -1908,6 +1920,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "docs": lambda c: _Outcome(read_design_document(c.args.document)),
     "inspect": _inspect,
     "visualize": _visualize,
+    "tasks": _tasks,
     "lookup": lambda c: _Outcome(
         render_lookup(
             c.storage,

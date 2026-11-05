@@ -117,6 +117,8 @@ def test_upgrade_runs_while_a_task_is_open(
                 "codex",
                 "--requirements",
                 "work",
+                "--description",
+                "Test task.",
                 "--role",
                 "manager",
             ]

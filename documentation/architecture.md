@@ -844,8 +844,15 @@ There is no migration or fallback read of the earlier single-file layout; a
 child task cannot be named `runs`. `ww.task_envelope` is the one tolerant
 reader of both layouts: it takes from the index, inline runs or the run files
 the index names only the envelope that no schema renames (task ID,
-`written_by`, and each run's ID, workflow, status and times), for the
-visualizer's reduced view.
+`written_by`, and each run's ID, workflow, status, times and description),
+for the visualizer's reduced view and `ww tasks`.
+
+A task's one-line description lives on each run's state (`description`, set by
+`start` and omitted when absent); `ww.task_descriptions` validates it at start,
+derives a child's from its parent's text, and picks the task's: the first one
+its runs recorded. `ww.task_list` builds the rows `ww tasks` prints, one per
+task and child, from the full record or, when that does not read, from the
+envelope; it also owns `run_status`, the status the visualizer shows.
 
 The disk codec is separate from expanded domain serializers and public output.
 It omits only versioned record defaults, deduplicates immutable extension

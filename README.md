@@ -31,7 +31,8 @@ one with the next:
 
 ```console
 $ ./ww start TASK-1 --workflow task --agent claudecode \
-    --requirements "Add retry handling to the upload client." --role manager
+    --requirements "Add retry handling to the upload client." \
+    --description "Retry uploads after a timeout" --role manager
 
 # TASK-1 · task
 ## Manager and worker: dispatch the `develop` assignment
@@ -273,7 +274,8 @@ task:
 
 ```console
 ./ww start TASK-123 --workflow task --agent claudecode \
-  --requirements "Add retry handling to the upload client." --role manager
+  --requirements "Add retry handling to the upload client." \
+  --description "Retry uploads after a timeout" --role manager
 ```
 
 That command is the agent's, not yours — but it is worth being able to read
@@ -287,6 +289,8 @@ one:
   in `ww.json`, or install an extension that adds one (see
   [Agents](documentation/features.md#agents)).
 - `--requirements` is your request, normalized into the task's requirements.
+- `--description` is the task in one short line; `./ww tasks` lists every
+  task with its description, status and last change.
 - `--role manager` is the role driving the task; a worker performing a single
   assignment uses `--role worker`.
 
@@ -607,7 +611,8 @@ Running it end to end looks like this:
 ww-agentic-workflows lint
 ww-agentic-workflows plan --workflow jira-task --agent codex
 ww-agentic-workflows start TASK-123 --workflow jira-task --agent codex \
-  --requirements="Implement and verify the requested Jira-backed change." --role manager
+  --requirements="Implement and verify the requested Jira-backed change." \
+  --description="Implement the Jira-backed change" --role manager
 ww-agentic-workflows next TASK-123 --role manager
 ww-agentic-workflows complete TASK-123 --role worker --variable jira_key=PROJ-456 \
   --artifact="Created Jira issue PROJ-456."

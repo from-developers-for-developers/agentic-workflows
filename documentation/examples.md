@@ -16,7 +16,7 @@ Run any of them with:
 
 ```console
 ./ww discover
-./ww start TASK-1 --workflow <name> --agent codex --requirements "<requirements>" --role manager
+./ww start TASK-1 --workflow <name> --agent codex --requirements "<requirements>" --description "<one line>" --role manager
 ```
 
 ## 1. A linear workflow with an automatic check
@@ -619,7 +619,7 @@ workflows:
 ```
 
 ```console
-./ww start CHANGE-1 --workflow change --agent codex --requirements "..." --role manager
+./ww start CHANGE-1 --workflow change --agent codex --requirements "..." --description "Split the change" --role manager
 ./ww add-child CHANGE-1 --id api --text "API part" --project backend
 ./ww add-child CHANGE-1 --id web --text "Web part" --project frontend
 ```

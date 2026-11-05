@@ -65,6 +65,8 @@ SCRIPT: tuple[Act, ...] = (
             "claudecode",
             "--requirements",
             "Add a --quiet flag to the greet command.",
+            "--description",
+            "Add a --quiet flag to greet",
             "--role",
             "manager",
         ),

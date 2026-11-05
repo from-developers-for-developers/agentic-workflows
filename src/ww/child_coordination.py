@@ -26,6 +26,7 @@ from ww.plan import PlanItem
 from ww.run_coordination import RunLifecycle
 from ww.runtimes import runtime_instruction
 from ww.storage_adapters import TaskStorageAdapter
+from ww.task_descriptions import description_from
 from ww.task_ids import is_bootstrap_request, validate_child_id, validate_task_id
 from ww.transitions import (
     Clock,
@@ -54,6 +55,7 @@ class StartChildRun(Protocol):
         workflow_runtime: str,
         init_artifact: str,
         project: str | None,
+        description: str | None,
     ) -> Instruction: ...
 
 
@@ -183,6 +185,7 @@ class ChildCoordinator:
                     f"Requirements for child task {child_id}: {child.description}"
                 ),
                 project=child.project,
+                description=description_from(child.description),
             )
         self._publish_child(parent_task_id, child_id, child_task_id, workflow)
         return child_instruction

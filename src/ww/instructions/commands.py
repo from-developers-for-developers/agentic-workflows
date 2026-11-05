@@ -117,6 +117,8 @@ def start_command(task_id: str | None, workflow: str, agent: str) -> str:
         _arg(agent),
         "--requirements",
         '"<the request, normalized>"',
+        "--description",
+        '"<the task in one short line>"',
         "--role",
         "manager",
     )

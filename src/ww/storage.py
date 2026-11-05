@@ -203,7 +203,7 @@ class Storage:
         ):
             actions.append(
                 "WW_AGENT_INSTRUCTIONS.md was preserved; review it before use. "
-                "Current start commands require --requirements."
+                "Current start commands require --requirements and --description."
             )
         return InitializationResult(
             str(self.root), tuple(created), tuple(preserved), tuple(actions)

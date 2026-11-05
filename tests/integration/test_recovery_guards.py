@@ -221,6 +221,8 @@ workflows:
                 "claudecode",
                 "--requirements",
                 "Add retries.",
+                "--description",
+                "Test task.",
                 "--role",
                 "manager",
             ]

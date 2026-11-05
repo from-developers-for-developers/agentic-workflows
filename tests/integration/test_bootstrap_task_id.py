@@ -107,6 +107,24 @@ def test_bootstrap_preserves_the_explicit_branch_naming_strategy(
     assert dict(state.workflow_values)[BRANCH_NAMING_STRATEGY] == "experiment"
 
 
+def test_bootstrap_keeps_the_description_for_the_bound_task(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    pending = service.start(
+        "jira-task", None, agent="codex", description="Add a --quiet flag to greet"
+    )
+    service.next(pending.task_id)
+
+    service.complete(
+        pending.task_id,
+        (("task_id", "PROJ-DESCRIBED"),),
+        summary_for_next="Done.",
+    )
+
+    state = service.tasks.read_execution_state("PROJ-DESCRIBED", "01-jira-task")
+    assert state is not None
+    assert state.description == "Add a --quiet flag to greet"
+
+
 def test_explicit_task_id_is_authoritative_for_bootstrap_step(tmp_path: Path) -> None:
     service = _service(tmp_path)
     service.start("jira-task", "PROJ-123", agent="codex")

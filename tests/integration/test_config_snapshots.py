@@ -75,7 +75,14 @@ def _project(root: Path, settings: dict[str, object] | None = None) -> str:
 
 def _start(root: Path, capsys: pytest.CaptureFixture[str]) -> None:
     arguments = ["--root", str(root), "start", TASK, "--workflow", "task"]
-    arguments += ["--agent", "codex", "--requirements", "Do it."]
+    arguments += [
+        "--agent",
+        "codex",
+        "--requirements",
+        "Do it.",
+        "--description",
+        "Do it",
+    ]
     assert main(arguments) == 0
     capsys.readouterr()
 

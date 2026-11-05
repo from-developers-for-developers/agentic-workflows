@@ -12,10 +12,12 @@ edit ww state, or read `ww.yaml` or ww's source to work out the next step.
 
 Otherwise, run `./ww discover` only at the moment you are about to change
 files for a request, before the first change, once per session. It says
-whether ww is used here and how to start or record the work. Do not run it
+whether ww is used here and how to start or record the work; a start always
+passes the task in one short line as `--description`. Do not run it
 for questions, reviews, explanations or investigations, which never use ww;
 not to look around or check status; and not again once you know the answer.
-To continue a task, run `./ww instruction <task-id> --role manager` instead.
+To continue a task, run `./ww instruction <task-id> --role manager` instead;
+`./ww tasks` lists every task with its description.
 
 For `repeat_until` assessments, follow the page's session and exact-message
 protocol. In auto, keep the assessor alive; delegate outcome agent work to a

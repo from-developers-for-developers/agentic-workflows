@@ -439,7 +439,18 @@ def test_root_at_a_worktree_of_a_ww_project_warns_of_a_separate_store(
     assert "ww warning" not in primary
 
 
-_START = ("start", "TASK-1", "-w", "task", "-a", "codex", "--requirements", "Do it.")
+_START = (
+    "start",
+    "TASK-1",
+    "-w",
+    "task",
+    "-a",
+    "codex",
+    "--requirements",
+    "Do it.",
+    "--description",
+    "Test task.",
+)
 
 
 def test_start_refuses_root_at_a_worktree_of_a_ww_project(

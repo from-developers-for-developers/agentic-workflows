@@ -16,7 +16,7 @@ confirms; this skill starts it.
    ID unless discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-automate --agent <agent> --requirements "<the step to look at, if the operator named one>" --role manager
+   ./ww start --workflow ww-automate --agent <agent> --requirements "<the step to look at, if the operator named one>" --description "Look for steps to automate" --role manager
    ```
 
 3. Follow every page until the run completes. Never edit ww's configuration

@@ -158,6 +158,23 @@ def test_the_list_names_the_task_its_status_and_current_step(root: Path) -> None
     ] == [("TASK-1", "in_progress", ["task"], "check")]
 
 
+def test_the_list_and_the_task_show_its_description(root: Path) -> None:
+    service = WorkflowService(Storage(root))
+    service.start(
+        "task",
+        "TASK-1",
+        agent="codex",
+        init_artifact="Do it, in detail.",
+        description="Add a --quiet flag to greet",
+    )
+    project = Project.load(Storage(root))
+
+    (listed,) = task_list(project)["tasks"]
+
+    assert listed["description"] == "Add a --quiet flag to greet"
+    assert task_detail(project, "TASK-1")["description"] == listed["description"]
+
+
 def test_an_unreadable_task_is_listed_with_its_reason(root: Path) -> None:
     _developed_once_rejected(root)
     broken = root / ".ww/tasks/TASK-2"
@@ -207,6 +224,7 @@ def test_an_older_task_is_listed_from_its_envelope(root: Path) -> None:
     assert older["reduced"]["kind"] == "older"
     assert older["reduced"]["reason"]
     assert older["summary"] == ""
+    assert older["description"] == ""
     # The task this ww reads is listed in full beside it.
     assert "reduced" not in listed["TASK-1"]
     json.dumps(older)

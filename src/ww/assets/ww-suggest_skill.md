@@ -21,7 +21,7 @@ with `./ww setup apply`; this skill starts it. Running it again later can share 
    ID unless discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-suggest --agent <agent> --requirements "Design and propose a ww setup for this project." --role manager
+   ./ww start --workflow ww-suggest --agent <agent> --requirements "Design and propose a ww setup for this project." --description "Propose a ww setup for this project" --role manager
    ```
 
    For an express setup, start the requirements with "Express setup." so

@@ -20,7 +20,7 @@ worktree settings; this skill starts it.
    ID unless discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-scriptize-rules --agent <agent> --requirements "<which rules to scriptize, if the operator named some; else all that need it>" --role manager
+   ./ww start --workflow ww-scriptize-rules --agent <agent> --requirements "<which rules to scriptize, if the operator named some; else all that need it>" --description "Scriptize rules into checks" --role manager
    ```
 
    The ww/git default base branch must be configured; its absence is an

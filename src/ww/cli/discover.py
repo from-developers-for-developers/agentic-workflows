@@ -29,6 +29,7 @@ from ww.rule_conversion import scriptize_notice
 from ww.rule_store import RuleStore
 from ww.runtimes import RUNTIME_DESCRIPTIONS
 from ww.storage import Storage
+from ww.task_descriptions import DESCRIPTION_LIMIT
 from ww.task_ids import EXPLICIT_TASK_FORMAT
 from ww.workflow_config import (
     ALL_NAMES,
@@ -38,7 +39,8 @@ from ww.workflow_config import (
 
 START_ARGUMENTS = (
     "start <TASK-ID> --workflow <workflow> --agent <agent> "
-    '--requirements "<the user\'s requirements, normalized>" --role manager'
+    '--requirements "<the user\'s requirements, normalized>" '
+    '--description "<the task in one short line>" --role manager'
 )
 DISABLED_MESSAGE = (
     "Do not use ww for this work: do not start, continue, or complete ww "
@@ -250,6 +252,7 @@ def discover(storage: Storage, extensions: ExtensionRegistry) -> dict[str, objec
             "start": f"{ww_command()} {START_ARGUMENTS}",
             "instruction": instruction_command(TASK_PLACEHOLDER, role="manager"),
             "status": f"{ww_command()} status {TASK_PLACEHOLDER}",
+            "tasks": f"{ww_command()} tasks",
             "plan": f"{ww_command()} plan --workflow <workflow> --agent <agent>",
         },
     }
@@ -375,10 +378,11 @@ def _markdown(report: dict[str, object]) -> list[str]:
             "",
             *_start_notes(report, runtimes),
             "",
-            "To continue a task, or to check one, and optionally to preview a "
-            "workflow's plan:",
+            "To list the tasks with their descriptions, to continue a task, or "
+            "to check one, and optionally to preview a workflow's plan:",
             "",
             "```console",
+            str(commands["tasks"]),
             str(commands["instruction"]),
             str(commands["status"]),
             str(commands["plan"]),
@@ -485,6 +489,7 @@ def _start_synopsis(
     return [
         f"{ww_command()} start {task_id} --workflow <workflow> --agent <agent> \\",
         f'{indent}--requirements "<the user\'s requirements, normalized>" \\',
+        f'{indent}--description "<the task in one short line>" \\',
         *(f"{indent}{option} \\" for option in optional),
         f"{indent}--role manager",
     ]
@@ -496,6 +501,8 @@ def _start_notes(
     *named, custom = (f"`{agent}`" for agent in _strings(report["agents"]))
     return [
         f"- Agent: {', '.join(named)}, or {custom}.",
+        "- Description: the task in one short line, at most "
+        f"{DESCRIPTION_LIMIT} characters; `ww tasks` lists it.",
         f"- {report['modes_guidance']}",
         "- Runtimes: "
         + "; ".join(

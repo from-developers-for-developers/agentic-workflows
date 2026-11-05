@@ -118,6 +118,8 @@ def _start(root: Path, capsys: pytest.CaptureFixture[str], task_id: str) -> None
         "claudecode",
         "--requirements",
         "Build it.",
+        "--description",
+        "Test task.",
         "--role",
         "manager",
     )

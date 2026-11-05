@@ -1295,6 +1295,9 @@ class ExecutionState:
     # ``ww.config_snapshots``).
     config_commit: str | None = None
     config_ref: str | None = None
+    # The one-line description of the task the agent gave at start; ``ww
+    # tasks`` lists it.
+    description: str | None = None
     # Every goto the run took, oldest first, and the one asked for that waits
     # for its step to finish.
     gotos: tuple[Goto, ...] = ()
@@ -1353,6 +1356,7 @@ class ExecutionState:
             "failure_kind": self.failure_kind,
             "config_commit": self.config_commit,
             "config_ref": self.config_ref,
+            "description": self.description,
             **(
                 {"gotos": [entry.to_dict() for entry in self.gotos]}
                 if self.gotos
@@ -1506,6 +1510,9 @@ class ExecutionState:
             ),
             config_ref=expect_optional_string(
                 data.get("config_ref"), "execution state.config_ref"
+            ),
+            description=expect_optional_string(
+                data.get("description"), "execution state.description"
             ),
             gotos=tuple(
                 Goto.from_dict(entry) for entry in _list(data.get("gotos", []), "gotos")

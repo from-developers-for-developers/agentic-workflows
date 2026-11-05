@@ -133,6 +133,8 @@ def test_negative_retries_are_rejected(
                 "codex",
                 "--requirements",
                 "x",
+                "--description",
+                "Test task.",
             ]
         )
         != 0

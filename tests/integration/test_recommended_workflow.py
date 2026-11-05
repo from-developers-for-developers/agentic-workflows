@@ -48,7 +48,8 @@ def test_a_completed_run_offers_its_recommendation(tmp_path: Path) -> None:
     assert "2. **Stop here**" in page
     assert (
         "./ww start TASK-1 --workflow merge-to-dev --agent codex "
-        '--requirements "<the request, normalized>" --role manager'
+        '--requirements "<the request, normalized>" '
+        '--description "<the task in one short line>" --role manager'
     ) in page
     # Showing the finished run again offers the same choice.
     again = service.instruction("TASK-1", caller_role="manager")

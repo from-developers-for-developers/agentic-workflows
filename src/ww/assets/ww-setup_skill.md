@@ -76,7 +76,7 @@ configuration files yourself: ww's workflows place changes with
    `discover` shows:
 
    ```console
-   ./ww start --workflow <name> --agent <agent> --requirements "<what the operator wants from it, in one line>" --role manager
+   ./ww start --workflow <name> --agent <agent> --requirements "<what the operator wants from it, in one line>" --description "<what the workflow is for, in one short line>" --role manager
    ```
 
    For the express path, the `ww-suggest` requirements start with "Express

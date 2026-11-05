@@ -19,7 +19,8 @@ failure as a finding; ww repairs nothing there.
    and the user did not explicitly ask for ww (invoking this skill counts),
    carry out the request without ww and do not ask.
 2. To continue an existing task, run
-   `./ww instruction <task-id> --role manager` instead of starting a new one.
+   `./ww instruction <task-id> --role manager` instead of starting a new one;
+   `./ww tasks` lists every task with its description.
 3. Otherwise decide how the request is carried out, in this order:
    a. It names a ticket or clearly matches a configured workflow's
       description, and is more than a small change: propose that workflow, and
@@ -28,9 +29,10 @@ failure as a finding; ww repairs nothing there.
       asking. When one is chosen, keep its default
       modes unless the user's wording matches another mode, and start the task
       with the start command `discover` shows. Pass the user's requirements,
-      normalized, as `--requirements`. When the request names an external
-      ticket, such as a Jira key, use that key as the task ID; omit the ID
-      only when there is none or the workflow obtains its own.
+      normalized, as `--requirements`, and the task in one short line (at
+      most 120 characters) as `--description`. When the request names an
+      external ticket, such as a Jira key, use that key as the task ID; omit
+      the ID only when there is none or the workflow obtains its own.
    b. Otherwise it is direct work: do it as you would in a plain conversation,
       with no question asked, then run
       `./ww record <task> --summary "..."`. `./ww lookup [<task>] --agent

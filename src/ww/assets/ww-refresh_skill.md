@@ -18,7 +18,7 @@ are left alone and ignored.
    discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-learn-project --agent <agent> --requirements "Refresh what ww knows about the project; keep what still holds." --role manager
+   ./ww start --workflow ww-learn-project --agent <agent> --requirements "Refresh what ww knows about the project; keep what still holds." --description "Refresh what ww knows about the project" --role manager
    ```
 
 3. Follow every page until the run completes. It reruns `./ww inspect`,

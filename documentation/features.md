@@ -30,6 +30,8 @@ An installation carries the same-version copies of all three: read them with
   ww learns about the operator, team, company and project, designs a setup
   with the operator, and proposes it in full.
 - An implicit, reserved `init` step that preserves task requirements.
+- A one-line description for every task, given at `start`, and `ww tasks`,
+  which lists every task with its description, status and last change.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
 - ww-owned CLI handlers, output assertions, and lifecycle transitions.
@@ -432,13 +434,14 @@ when projects or branch strategies are configured, with their values. A few
 lines explain what is not obvious: explicit modes replace the defaults,
 automatic modes apply themselves, `auto` honours per-step worker requests while
 `single` records them, and `--model` and `--reasoning` describe your own
-session. It ends with the resume and status commands and one optional plan
-preview. ww's own workflows are not listed there: it points at `ww workflows`,
-the catalog of every workflow. It lists no task: the operator names the task
-to continue. Only a task whose state ww cannot read is named, under
-"Unreadable tasks" (`unreadable_tasks` in the JSON), so the operator sees
-state ww cannot work with. The Rules
-suggestion is not part of the Markdown; `rules_notice` in the JSON and the
+session, and `--description` takes the task in one short line. It ends with
+`ww tasks`, the resume and status commands and one optional plan preview.
+ww's own workflows are not listed there: it points at `ww workflows`, the
+catalog of every workflow. It lists no task itself: the operator names the
+task to continue, and `ww tasks` lists them (see [List tasks](#list-tasks)).
+Only a task whose state ww cannot read is named, under "Unreadable tasks"
+(`unreadable_tasks` in the JSON), so the operator sees state ww cannot work
+with. The Rules suggestion is not part of the Markdown; `rules_notice` in the JSON and the
 first page of `start` carry it, see
 [How a rule becomes a check](#how-a-rule-becomes-a-check). The JSON keeps every
 field, including the built-in catalogs, the roles and the guidance texts, which
@@ -494,6 +497,40 @@ values to write, explaining each; without a terminal it writes `true`.
 ```json
 {"enabled": false, "extensions": {}}
 ```
+
+## List tasks
+
+Every task carries a one-line description of what it is for. The agent gives
+it at `start` with `--description`, required beside `--requirements`: one
+line of at most 120 characters, such as `Add a --quiet flag to greet`, while
+the detail stays in the requirements. ww stores it with the run the start
+creates. A task's description is the first one its runs recorded, so a later
+run on the same task, such as a merge, does not rename it; a run a handoff
+starts carries its source run's. A child task's description is the first line
+of the description its parent gave it, shortened to 120 characters when
+longer. A start that obtains its task ID in its first step keeps the
+description until the ID is bound.
+
+`ww tasks` lists every task in the store, children after their parent, in
+natural ID order (`TASK-2` before `TASK-10`): its ID, the status of its latest
+run, when it last changed and its description.
+
+```console
+$ ./ww tasks
+TASK-2   completed          2026-11-04 16:12  Add a --quiet flag to greet
+TASK-3   direct             2026-11-05 09:30
+TASK-10  awaiting_operator  2026-11-05 11:02  Retry uploads after a timeout
+```
+
+The status is the latest run's (`pending`, `in_progress`, `awaiting_operator`,
+`completed` or `failed`), `direct` for a task registered only through
+direct work, or `unreadable` for a task whose state names no run ww can read. A task started before descriptions existed, or registered only
+through direct work, is listed with an empty description. A task this ww
+cannot read in full is listed from its envelope, as `ww visualize` shows it,
+and named once more under the list; `ww tasks --json` gives each row as
+`task_id`, `description`, `status`, `workflows`, `updated_at` and
+`unreadable`, the reason the task could not be read in full or `null`.
+`ww tasks` is read-only and reads only the task store, not the configuration.
 
 ## Onboarding state
 
@@ -687,7 +724,7 @@ The page has two tabs:
 | Tab | Shows |
 | --- | --- |
 | Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A switch on each card shows its YAML instead: the entry exactly as the file that defines it has it, comments included, syntax-highlighted, with the file named and a copy button. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. The demo workflow comes first, marked as the demo (see below). A configuration that does not load is shown with ww's error; the Tasks tab still works. |
-| Tasks | Every task in the store, active ones first, with status filters and search; a task this ww cannot read in full is shown in a reduced view (below). A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
+| Tasks | Every task in the store with its description, active ones first, with status filters and search; a task this ww cannot read in full is shown in a reduced view (below). A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
 
 The page is live. ww watches the configuration as the checkout has it — every
 YAML level and import, the JSON settings levels, the rule files and the
@@ -1427,8 +1464,9 @@ workflows:
 
 Each workflow run gets its own `init`, including handoff targets and child-task
 workflows. `ww plan` includes it in the exact execution order. `start` requires
-`--requirements` and stores that normalized requirements text immediately in
-the built-in artifact before returning the first declared step; it never assigns
+`--requirements` and `--description` (see [List tasks](#list-tasks)), and
+stores the normalized requirements text immediately in the built-in artifact
+before returning the first declared step; it never assigns
 `init` to a worker or requires a subsequent `next`/`complete` cycle.
 
 ### Commands
@@ -1713,6 +1751,7 @@ workflows:
 ```console
 ww-agentic-workflows start TASK-123 --workflow task --agent codex --role manager \
   --requirements="Implement the requested change." \
+  --description="Implement the change" \
   --mode economy --runtime auto --model gpt-5 --reasoning high
 ```
 
@@ -2751,7 +2790,8 @@ workflow, with the request as the requirements:
 
 ```bash
 ww start TASK-7 --workflow ww-check-rules --agent claudecode \
-  --requirements "Check src/billing against the architecture rules."
+  --requirements "Check src/billing against the architecture rules." \
+  --description "Check src/billing against the rules"
 ```
 
 ### How a rule becomes a check
@@ -4053,7 +4093,8 @@ single run by name:
 
 ```console
 ww-agentic-workflows start TASK-123 --workflow task --agent codex \
-  --requirements="Fix the requested bug." --branch-strategy bugfix
+  --requirements="Fix the requested bug." --description="Fix the bug" \
+  --branch-strategy bugfix
 ```
 
 The selection is persisted with the run, so later or retried branch and
@@ -4427,6 +4468,7 @@ handlers that tolerate that.
 ```console
 ww-agentic-workflows start TASK-123 --workflow task --agent codex --runtime single \
   --requirements="Implement the requested change." \
+  --description="Implement the change" \
   --model gpt-5 --reasoning high --role manager
 ww-agentic-workflows next TASK-123 --model gpt-5 --reasoning high --role manager
 # perform the displayed prompt, skill, or slash command

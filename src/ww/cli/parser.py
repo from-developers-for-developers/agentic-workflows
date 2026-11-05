@@ -253,6 +253,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help=f"How many recent commits to read (default {DEFAULT_COMMITS}).",
     )
+    subparsers.add_parser(
+        "tasks",
+        parents=[json_output],
+        help=(
+            "List every task with its one-line description, status and last "
+            "change, children after their parent."
+        ),
+    )
     visualize = subparsers.add_parser(
         "visualize",
         help=(
@@ -333,6 +341,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "What the user asked, restated and normalized for grammar and style. "
             "Saved immediately as the built-in init artifact."
+        ),
+    )
+    start.add_argument(
+        "--description",
+        required=True,
+        help=(
+            "The task in one short line, at most 120 characters, such as "
+            "'Add a --quiet flag to the greet command'; ww tasks lists it."
         ),
     )
     start.add_argument("--mode", action="append", default=[], dest="modes")

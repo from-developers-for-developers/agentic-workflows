@@ -16,7 +16,7 @@ starts it.
    operator put it:
 
    ```console
-   ./ww start --workflow ww-solve --agent <agent> --requirements "<the problem, in the operator's words>" --role manager
+   ./ww start --workflow ww-solve --agent <agent> --requirements "<the problem, in the operator's words>" --description "<the problem in one short line>" --role manager
    ```
 
 3. Follow every page until the run completes. Never edit ww's configuration

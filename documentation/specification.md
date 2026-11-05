@@ -649,6 +649,21 @@ task. Amendments are shown on every page, newest last. The instruction JSON keep
 `task_requirements` and adds `requirements_in_full`, `requirements_command`, and
 `task_amendments`.
 
+`start` also requires `--description TEXT`: the task in one line, trimmed, at
+most 120 characters; an empty, multi-line or longer value is refused before
+anything is written. It is stored as the optional `description` of the run state
+the start creates (omitted when absent, so older runs read unchanged) and kept
+on an identity request until the task ID is bound. A run a handoff starts
+carries its source run's description, and a child's run takes the first line of
+the child's description, shortened to 120 characters. A task's description is
+the first non-empty one among its runs, oldest first. `tasks [--json]` is
+read-only and lists every task in natural ID order, each child after its parent,
+as `task_id`, `description` (empty when none), `status` (the latest run's, with
+`awaiting_operator` for a run waiting for the operator, `direct` for direct work
+only), `workflows`, `updated_at` (the latest run update or direct-work entry)
+and `unreadable` (why the task state could not be read, in which case the row
+comes from the task envelope, or `null`). The JSON is `{"tasks": [...]}`.
+
 `complete <task> --role manager [--no-dispatch]` in the `auto` runtime also
 dispatches the manager's own next step (as `next --role manager` would, with a
 one-line `notices` entry) when that step is `role: manager`, nothing waits for the

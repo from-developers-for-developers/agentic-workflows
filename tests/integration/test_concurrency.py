@@ -70,6 +70,8 @@ def test_parallel_next_hands_the_step_to_exactly_one_process(tmp_path: Path) -> 
         "codex",
         "--requirements",
         "requirements",
+        "--description",
+        "Test task.",
     )
     assert started.returncode == 0, started.stderr
 
@@ -100,6 +102,8 @@ def test_parallel_starts_reserve_distinct_generated_task_ids(tmp_path: Path) -> 
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             )
         ]
         * 3,
@@ -130,6 +134,8 @@ def test_parallel_completes_record_one_artifact_per_step(tmp_path: Path) -> None
             "codex",
             "--requirements",
             "requirements",
+            "--description",
+            "Test task.",
         )
     ).returncode == 0
     assert (_run(tmp_path, "next", "TASK-2")).returncode == 0
@@ -163,6 +169,8 @@ def test_status_never_observes_a_half_written_task(tmp_path: Path) -> None:
             "codex",
             "--requirements",
             "requirements",
+            "--description",
+            "Test task.",
         )
     ).returncode == 0
     assert (_run(tmp_path, "next", "TASK-3")).returncode == 0
@@ -204,6 +212,8 @@ workflows:
             "codex",
             "--requirements",
             "requirements",
+            "--description",
+            "Test task.",
         )
     ).returncode == 0
     assert (_run(tmp_path, "next", "TASK-5")).returncode == 0

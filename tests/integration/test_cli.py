@@ -112,6 +112,8 @@ def test_start_cli_persists_an_explicit_branch_naming_strategy(
                 "codex",
                 "--requirements",
                 "Record the task requirements.",
+                "--description",
+                "Test task.",
                 "--branch-strategy",
                 "experiment",
             ]
@@ -196,6 +198,8 @@ def test_artifacts_cli_lists_steps_and_hooks_as_json(tmp_path: Path, capsys) -> 
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -245,6 +249,8 @@ def test_workflow_agent_and_runtime_short_options(tmp_path: Path, capsys) -> Non
                 "auto",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -301,6 +307,8 @@ def test_cli_roles_are_parsed_rendered_and_enforced(tmp_path: Path, capsys) -> N
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
                 "--role=manager",
                 "--json",
             ]
@@ -346,6 +354,8 @@ def test_lifecycle_commands_start_from_the_compiled_plan(
                 "high",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -388,6 +398,8 @@ def test_metadata_command_prints_nested_task_metadata_json(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -458,6 +470,8 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -504,6 +518,8 @@ def test_project_metadata_is_saved_and_shared_across_tasks(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -550,10 +566,14 @@ def test_start_cli_delivers_runtime_guidance(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
                 "--runtime",
                 runtime,
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -869,6 +889,8 @@ def test_fail_cli_records_agent_functional_error(tmp_path: Path, capsys) -> None
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
                 "--json",
             ]
         )
@@ -936,6 +958,8 @@ workflows:
             "codex",
             "--requirements",
             "requirements",
+            "--description",
+            "Test task.",
         ]
     )
     output = capsys.readouterr().out
@@ -970,6 +994,8 @@ def test_complete_on_a_failed_task_returns_the_saved_failure_instruction(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -1017,6 +1043,8 @@ def test_force_next_requires_explicit_operator_confirmation(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -1081,7 +1109,10 @@ def test_an_agent_confirms_a_force_with_yes_and_the_audit_says_so(
     )
     common = ["--root", str(tmp_path)]
     start = ["start", "TASK-YES", "-w", "task", "-a", "codex"]
-    assert main([*common, *start, "--requirements", "requirements"]) == 0
+    assert (
+        main([*common, *start, "--requirements", "requirements", "--description", "d"])
+        == 0
+    )
     assert main([*common, "next", "TASK-YES"]) == 0
     assert main([*common, "fail", "TASK-YES", "--error", "outside issue"]) == 1
     capsys.readouterr()
@@ -1176,6 +1207,8 @@ def test_cli_discovers_the_primary_project_from_a_linked_worktree(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0
@@ -1242,6 +1275,8 @@ def test_the_flags_parse() -> None:
             "codex",
             "--requirements",
             "Do it.",
+            "--description",
+            "Test task.",
             "--branch-strategy",
             "hotfix",
         ]

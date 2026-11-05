@@ -196,6 +196,7 @@ from ww.storage_adapters import (
     ProjectMetadataStorage,
     TaskStorageAdapter,
 )
+from ww.task_descriptions import description_from, validate_description
 from ww.task_ids import (
     bare_request_id,
     candidate_task_ids,
@@ -480,6 +481,7 @@ class WorkflowService:
         branch_naming_strategy: str | None = None,
         project: str | None = None,
         fresh_items: bool = False,
+        description: str | None = None,
     ) -> Instruction:
         self._require_manager("start", caller_role)
         # ``"on_request"`` allows it: an agent starts a task only when asked.
@@ -492,6 +494,8 @@ class WorkflowService:
             raise StateError("start requires --agent")
         if init_artifact is None or not init_artifact.strip():
             raise StateError("start requires a non-empty --requirements")
+        if description is not None:
+            description = validate_description(description)
         self._validate_execution_metadata(model, reasoning)
         if workflow_runtime is None:
             # The flag outranks the workflow's own runtime, which outranks the
@@ -528,6 +532,7 @@ class WorkflowService:
                             branch_naming_strategy,
                             init_artifact,
                             project,
+                            description=description,
                         ),
                         caller_role,
                     ),
@@ -546,6 +551,7 @@ class WorkflowService:
                         branch_naming_strategy,
                         init_artifact,
                         project,
+                        description,
                     ),
                     caller_role,
                 ),
@@ -568,6 +574,7 @@ class WorkflowService:
                         branch_naming_strategy=branch_naming_strategy,
                         project=project,
                         fresh_items=fresh_items,
+                        description=description,
                     ),
                     caller_role,
                 ),
@@ -642,6 +649,7 @@ class WorkflowService:
         branch_naming_strategy: str | None,
         init_artifact: str,
         project: str | None = None,
+        description: str | None = None,
     ) -> Instruction:
         """Start under the first generated ID that is free.
 
@@ -664,6 +672,7 @@ class WorkflowService:
                         init_artifact=init_artifact,
                         branch_naming_strategy=branch_naming_strategy,
                         project=project,
+                        description=description,
                     )
         raise StateError(
             f"cannot generate an unused task ID from task format {task_format!r}"
@@ -687,6 +696,7 @@ class WorkflowService:
         init_artifact: str = "",
         project: str | None = None,
         fresh_items: bool = False,
+        description: str | None = None,
     ) -> Instruction:
         configuration = self._load_configuration()
         working_directory = self._project_directory(project)
@@ -750,6 +760,7 @@ class WorkflowService:
             pending_init_artifact=init_artifact,
             config_commit=self.storage.config.commit,
             config_ref=self.storage.config.ref,
+            description=description,
         )
         if fresh_items:
             self.tasks.write_shared_items(task_id, ())
@@ -3670,6 +3681,7 @@ class WorkflowService:
             request_id=child.id,
             parent_task_id=parent.task_id,
             start_operation_id=child.start_operation_id,
+            description=description_from(child.description),
         )
 
     def update_item(
@@ -4139,6 +4151,7 @@ class WorkflowService:
             working_directory=self._project_directory(carried.get(PROJECT)),
             config_commit=state.config_commit,
             config_ref=state.config_ref,
+            description=state.description,
             pending_init_artifact=(
                 "Continue task requirements after handoff from "
                 f"{state.workflow} to {target}."

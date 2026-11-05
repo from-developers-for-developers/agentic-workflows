@@ -15,7 +15,7 @@ accepted ones with `./ww rules add`; this skill starts it.
    ID unless discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-rules-from-artifacts --agent <agent> --requirements "Propose rules from what past steps produced." --role manager
+   ./ww start --workflow ww-rules-from-artifacts --agent <agent> --requirements "Propose rules from what past steps produced." --description "Propose rules from past step artifacts" --role manager
    ```
 
 3. Follow every page until the run completes. Never edit a rule file or

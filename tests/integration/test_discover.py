@@ -107,7 +107,11 @@ def test_discover_lists_choices_options_and_commands(
         "[--branch-strategy <default|bugfix>]",
         "./ww start [<task-id>] --workflow <workflow> --agent <agent> \\",
         '--requirements "<the user\'s requirements, normalized>" \\',
+        '--description "<the task in one short line>" \\',
+        "- Description: the task in one short line, at most 120 characters; "
+        "`ww tasks` lists it.",
         "Square brackets denote optional arguments.",
+        "./ww tasks",
         "./ww instruction <task-id> --role manager",
         "./ww status <task-id>",
         "./ww plan --workflow <workflow> --agent <agent>",
@@ -149,7 +153,13 @@ def test_discover_json_carries_the_same_choices(
     assert [runtime["default"] for runtime in report["runtimes"]] == [True, False]
     assert [role["name"] for role in report["roles"]] == ["manager", "worker"]
     assert report["branch_strategies"] == []
-    assert set(report["commands"]) == {"start", "instruction", "status", "plan"}
+    assert set(report["commands"]) == {
+        "start",
+        "tasks",
+        "instruction",
+        "status",
+        "plan",
+    }
 
 
 def test_discover_without_branch_strategies_says_to_omit_the_flag(
@@ -682,6 +692,8 @@ def test_the_project_may_choose_the_default_runtime(
                 "codex",
                 "--requirements",
                 "x",
+                "--description",
+                "Test task.",
                 "--role",
                 "manager",
                 "--json",

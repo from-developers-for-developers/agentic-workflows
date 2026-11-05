@@ -8,8 +8,9 @@ envelope does not. These names are a promise, never renamed in any schema:
   ``written_by`` (the ww version that wrote it), ``task_id`` and ``runs``;
 - each run, either inline in ``runs`` or in the run document an entry names
   (``runs/<id>/state.<revision>.json``, under ``run``): ``run_id``,
-  ``workflow``, and in its ``state`` ``status``, ``created_at`` and
-  ``updated_at``; a run document records its own ``written_by``;
+  ``workflow``, and in its ``state`` ``status``, ``created_at``,
+  ``updated_at`` and the optional ``description``; a run document records
+  its own ``written_by``;
 - each step's artifact, a Markdown file under ``runs/<run_id>/steps/``.
 
 This module reads only that, with plain JSON and none of the schema-specific
@@ -38,6 +39,7 @@ class RunEnvelope:
     created_at: str | None = None
     updated_at: str | None = None
     written_by: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +150,7 @@ def _run(task_directory: Path, entry: object) -> RunEnvelope | None:
         _text(state.get("created_at")),
         _text(state.get("updated_at")),
         written_by,
+        _text(state.get("description")),
     )
 
 

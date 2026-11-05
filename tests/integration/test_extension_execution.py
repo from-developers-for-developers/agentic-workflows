@@ -678,6 +678,8 @@ def test_cli_state_commands_ignore_an_unused_broken_extension(
                 "codex",
                 "--requirements",
                 "requirements",
+                "--description",
+                "Test task.",
             ]
         )
         == 0

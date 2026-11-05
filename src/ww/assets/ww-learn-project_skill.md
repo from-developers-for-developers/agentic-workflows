@@ -15,7 +15,7 @@ operator what it found, and writes `.ww/project.md`; this skill starts it.
    ID unless discover says this project needs one:
 
    ```console
-   ./ww start --workflow ww-learn-project --agent <agent> --requirements "Learn how this project's work is organised." --role manager
+   ./ww start --workflow ww-learn-project --agent <agent> --requirements "Learn how this project's work is organised." --description "Learn how this project's work is organised" --role manager
    ```
 
 3. Follow every page until the run completes. The scan only reads; it

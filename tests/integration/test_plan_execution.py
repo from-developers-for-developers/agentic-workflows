@@ -1138,6 +1138,8 @@ def test_process_creation_failure_is_a_retryable_cli_error(
             "codex",
             "--requirements",
             "requirements",
+            "--description",
+            "Test task.",
         ]
     )
 

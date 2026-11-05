@@ -72,6 +72,8 @@ def test_printed_commands_use_the_configured_executable(
         "codex",
         "--requirements",
         "Do it.",
+        "--description",
+        "Test task.",
         "--role",
         "manager",
     )
@@ -100,6 +102,8 @@ def test_without_an_executable_commands_keep_the_project_launcher(
         "codex",
         "--requirements",
         "Do it.",
+        "--description",
+        "Test task.",
         "--role",
         "manager",
     )

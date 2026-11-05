@@ -520,6 +520,8 @@ def _first_page(root: Path, workflow: str, capsys: pytest.CaptureFixture[str]) -
                 "single",
                 "--requirements",
                 "Do.",
+                "--description",
+                "Test task.",
                 "--role",
                 "manager",
             ]
@@ -600,6 +602,8 @@ def test_discover_and_start_ignore_a_store_that_cannot_be_read(
                 "single",
                 "--requirements",
                 "Do.",
+                "--description",
+                "Test task.",
                 "--role",
                 "manager",
                 "--json",
