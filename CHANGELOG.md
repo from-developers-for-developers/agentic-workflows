@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-05
 
-- Added: `start` requires `--description`, the task in one line of at most 120 characters, stored with the run; `ww tasks` (and `--json`) lists every task, children after their parent, with its description, status and last change, and `ww visualize` shows the description in the task list and on the task. Child tasks take the first line of their own description; tasks started earlier are listed without one.
+- Added: `start` requires `--description`, the task in one line of at most 120 characters; `ww tasks` (and `--json`) lists every task and child with its description, status and last change, and `ww visualize` shows the description. `e652e73`
 - Added: `ww migrate` (dry run, `--apply`, `--check`, `--tasks`) and the bundled `ww-migrate` workflow fix deprecated configuration, which `lint` lists; older task state migrates on load, a minor or patch extension upgrade no longer strands open runs, `upgrade` refuses a major version the project is not ready for, and `ww visualize` opens tasks it cannot fully read in a reduced view. Breaking: older builds refuse the rule store this version writes. `71c8b73`
 
 ## 2026-11-02
