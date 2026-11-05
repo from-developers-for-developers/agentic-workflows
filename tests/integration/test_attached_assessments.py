@@ -270,7 +270,7 @@ def test_deprecated_question_is_accepted_and_reported_by_cli(
     assert main(["--root", str(tmp_path), "lint"]) == 0
     output = capsys.readouterr()
     assert "Deprecated:" in output.out + output.err
-    assert "deprecations.md" in output.out + output.err
+    assert "ww docs upgrade#" in output.out + output.err
 
 
 def test_conflicting_prompt_spellings_are_rejected() -> None:

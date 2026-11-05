@@ -277,17 +277,59 @@ def test_state_without_omitted_required_fields_decodes() -> None:
     assert decoded[0][0].state.active_item_id is None
 
 
-@pytest.mark.parametrize("version", [0, 2, 3, True, 1.0, "1", None])
-@pytest.mark.parametrize("document", ["index", "run"])
-def test_schema_version_must_be_the_current_strict_integer(
+@pytest.mark.parametrize("version", [True, 1.0, "1", None])
+@pytest.mark.parametrize("document", ["task", "run"])
+def test_schema_version_must_be_a_strict_integer(
     version: object, document: str
 ) -> None:
     index, documents = _encode((_run(),))
-    target = index if document == "index" else documents["01-task"]
+    target = index if document == "task" else documents["01-task"]
     target["schema_version"] = version
 
-    with pytest.raises(ValueError, match="unsupported task state schema"):
+    with pytest.raises(ValueError, match=f"unsupported {document} state schema"):
         _decode(index, documents)
+
+
+@pytest.mark.parametrize("document", ["task", "run"])
+def test_a_document_a_newer_ww_wrote_names_the_upgrade(document: str) -> None:
+    index, documents = _encode((_run(),))
+    target = index if document == "task" else documents["01-task"]
+    target["schema_version"] = TASK_STATE_SCHEMA_VERSION + 1
+    target["written_by"] = "9.0.0"
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            rf"{document} state written by ww 9\.0\.0 \(schema 2\); this ww "
+            r"reads up to schema 1: upgrade ww"
+        ),
+    ):
+        _decode(index, documents)
+
+
+@pytest.mark.parametrize("document", ["task", "run"])
+def test_a_document_older_than_any_this_ww_reads_names_its_writer(
+    document: str,
+) -> None:
+    index, documents = _encode((_run(),))
+    target = index if document == "task" else documents["01-task"]
+    target["schema_version"] = 0
+    target.pop("written_by")
+
+    with pytest.raises(ValueError, match="finish or reset it with the older ww"):
+        _decode(index, documents)
+
+
+def test_documents_record_their_writer_and_read_without_it() -> None:
+    from ww import __version__
+
+    index, documents = _encode((_run(),))
+
+    assert index["written_by"] == documents["01-task"]["written_by"] == __version__
+    expected = _decode(index, documents)
+    index.pop("written_by")
+    documents["01-task"].pop("written_by")
+    assert _decode(index, documents) == expected
 
 
 def test_a_run_written_at_another_revision_than_the_index_names_is_detected() -> None:

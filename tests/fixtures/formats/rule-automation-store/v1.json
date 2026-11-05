@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "written_by": "1.0.0b18",
+  "rules": {
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "text": "Source files pass ruff.",
+      "status": "converted",
+      "interpretation": "ruff reports nothing under src.",
+      "check": "ruff-src",
+      "proposed_in": "task:develop:verify",
+      "proposed_run": "TASK-1/01-task",
+      "approved_by": "operator",
+      "approved_in": "TASK-1/01-task"
+    }
+  },
+  "checks": {
+    "ruff-src": {
+      "argv": [
+        "ruff",
+        "check",
+        "src"
+      ],
+      "assert": null,
+      "config": [
+        "pyproject.toml"
+      ],
+      "covers": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "proven": true,
+      "status": "converted",
+      "proposed_at": "2026-11-01T10:00:00Z",
+      "approved_at": "2026-11-01T10:05:00Z",
+      "approved_by": "operator"
+    }
+  }
+}

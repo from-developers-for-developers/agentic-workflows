@@ -1,0 +1,26 @@
+{
+  "format": "ww.task-state",
+  "schema_version": 1,
+  "written_by": "1.0.0b18",
+  "task_id": "TASK-1",
+  "revision": 9,
+  "active_run": "01-task",
+  "runs": [
+    {
+      "id": "01-task",
+      "revision": 9
+    }
+  ],
+  "ledger": {
+    "01-task": [
+      {
+        "workflow": "task",
+        "status": "pending"
+      },
+      {
+        "workflow": "task",
+        "status": "in_progress"
+      }
+    ]
+  }
+}

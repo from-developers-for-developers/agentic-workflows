@@ -131,7 +131,7 @@ from ww.plan import (
 from ww.plan.gotos import step_span
 from ww.project_config import load_project_config
 from ww.recovery import RecoveryCoordinator
-from ww.replanning import PlanChange, plan_change
+from ww.replanning import PlanChange, plan_change, planned_extensions
 from ww.replanning import keep_plan as keep_plan_
 from ww.replanning import replan as replan_
 from ww.results import (
@@ -715,7 +715,7 @@ class WorkflowService:
         snapshot = PlanSnapshot(
             schema_version=PLAN_SCHEMA_VERSION,
             compiler_version=PLAN_COMPILER_VERSION,
-            configuration_digest=self._configuration_digest(configuration),
+            configuration_digest=self._configuration_digest(configuration, plan),
             compiled_at=_now(),
             plan=plan,
             bootstrap_step=bootstrap_step,
@@ -4065,25 +4065,26 @@ class WorkflowService:
         if target not in configuration.workflows_by_name:
             raise StateError(f"handoff target workflow not found: {target}")
         require_lane(configuration.workflows_by_name[target])
+        target_plan = compile_workflow_plan(
+            configuration,
+            self.storage.root,
+            target,
+            state.agent,
+            state.task_id,
+            self.extensions,
+            PlanCompilationOptions(
+                task_id=state.task_id,
+                project=dict(state.workflow_values).get(PROJECT) or None,
+                modes=state.modes,
+            ),
+            self.extensions.config,
+        )
         new_snapshot = PlanSnapshot(
             schema_version=PLAN_SCHEMA_VERSION,
             compiler_version=PLAN_COMPILER_VERSION,
-            configuration_digest=self._configuration_digest(configuration),
+            configuration_digest=self._configuration_digest(configuration, target_plan),
             compiled_at=_now(),
-            plan=compile_workflow_plan(
-                configuration,
-                self.storage.root,
-                target,
-                state.agent,
-                state.task_id,
-                self.extensions,
-                PlanCompilationOptions(
-                    task_id=state.task_id,
-                    project=dict(state.workflow_values).get(PROJECT) or None,
-                    modes=state.modes,
-                ),
-                self.extensions.config,
-            ),
+            plan=target_plan,
         )
         # The selection workflow is a run in its own right: finish it, and give
         # the target its own numbered run rather than overwriting the plan and
@@ -5394,13 +5395,21 @@ class WorkflowService:
         Nothing is compiled while the digest matches the one the plan was
         saved under. A configuration that no longer loads, or no longer
         defines the run's workflow, changes nothing here: the run goes on
-        with its saved plan, and ``lint`` reports the configuration.
+        with its saved plan, and ``lint`` reports the configuration; so does
+        an extension the plan uses that no longer loads, which the item that
+        runs it reports.
+
+        The returned digest is the one keeping the saved plan records, taken
+        over the extensions the saved plan uses; the change carries the one a
+        replan records, taken over those the new plan uses. Either way the
+        next comparison finds the digest it recorded, so neither choice is
+        offered again for the same configuration and extensions.
         """
         if not run_is_open(state.status):
             return None, None, None
         try:
             configuration = self._load_configuration()
-            digest = self._configuration_digest(configuration)
+            digest = self._configuration_digest(configuration, snapshot.plan)
             if digest == snapshot.configuration_digest:
                 return digest, None, None
             if state.workflow not in configuration.workflows_by_name:
@@ -5420,9 +5429,10 @@ class WorkflowService:
                 ),
                 self.extensions.config,
             )
+            replanned = self._configuration_digest(configuration, template)
         except ConfigurationError:
             return None, None, None
-        change = plan_change(state, snapshot, template, digest)
+        change = plan_change(state, snapshot, template, replanned)
         lane_missing = missing_lane(configuration.workflows_by_name[state.workflow])
         if change is not None and change.refusal is None and lane_missing:
             change = replace(change, refusal=lane_missing)
@@ -5437,7 +5447,9 @@ class WorkflowService:
         A configuration whose change leaves the run's plan as it is is
         adopted silently, so it is not compiled again; so are the current
         extensions' identity and settings, which no item's definition
-        includes.
+        includes, except an extension's major version: an extension the plan
+        uses that changed major version stops the run here like an edited
+        step, so a dispatch never meets an extension the run has not taken.
         """
         validate_task_id(task_id)
         with self.tasks.lock_task(task_id):
@@ -5470,16 +5482,29 @@ class WorkflowService:
         """Load any notation through the shared normalized-model contract."""
         return validate_configuration(self.configuration_loader(), self.extensions)
 
-    def _configuration_digest(self, configuration: WorkflowConfiguration) -> str:
+    def _configuration_digest(
+        self, configuration: WorkflowConfiguration, plan: WorkflowPlan
+    ) -> str:
         """Fingerprint semantics rather than one frontend's source bytes.
 
         The root's extension settings count too: a run adopts edited
         settings at its next ``next``, without stopping for the operator.
+        So do the current identities (version, API version, source) of the
+        extensions ``plan`` runs, and of no other: a new version of one is
+        noticed by the next ``next``, which adopts it or, for a new major
+        version, stops for the operator, while the extensions the plan does
+        not use are not even loaded. The source fingerprint is left out, as
+        dispatch leaves it out: a fix in place needs no new plan.
         """
+        identities = tuple(
+            (identifier, *self.extensions.identity(identifier).compatibility)
+            for identifier in planned_extensions(plan)
+        )
         value = (
             configuration,
             self.extensions.config.builtins,
             self.extensions.config.extensions,
+            identities,
         )
         return hashlib.sha256(repr(value).encode("utf-8")).hexdigest()
 

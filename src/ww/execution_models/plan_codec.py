@@ -291,23 +291,23 @@ def _verification_plan(value: Any, agent: str) -> VerificationPlan | None:
         return None
     if not isinstance(value, dict):
         raise ValueError("verification plan must be a mapping")
-    require_keys(
-        value, {"verifier", "on_failure", "goto", "detail"}, "verification plan"
-    )
-    for name in ("verifier", "on_failure"):
-        if not isinstance(value[name], list):
-            raise ValueError(f"verification plan {name} must be a list")
+    verifier = value.get("verifier", [])
+    on_failure = value.get("on_failure", [])
+    if not isinstance(verifier, list):
+        raise ValueError("verification plan verifier must be a list")
+    if not isinstance(on_failure, list):
+        raise ValueError("verification plan on_failure must be a list")
     return VerificationPlan(
         verifier=tuple(
             _plan_item_from_dict(item, index, agent)
-            for index, item in enumerate(value["verifier"])
+            for index, item in enumerate(verifier)
         ),
         on_failure=tuple(
             _plan_item_from_dict(item, index, agent)
-            for index, item in enumerate(value["on_failure"])
+            for index, item in enumerate(on_failure)
         ),
-        goto=expect_optional_string(value["goto"], "verification goto"),
-        detail=expect_optional_string(value["detail"], "verification goto detail"),
+        goto=expect_optional_string(value.get("goto"), "verification goto"),
+        detail=expect_optional_string(value.get("detail"), "verification goto detail"),
     )
 
 
@@ -346,22 +346,22 @@ def _planned_rules_from_list(value: Any, item_path: str) -> tuple[PlannedRule, .
         path = f"{item_path}.rules[{index}]"
         if not isinstance(raw, dict):
             raise ValueError(f"{path} must be an object")
-        require_keys(
-            raw,
-            {"id", "summary", "text", "text_hash", "paths", "has_command", "max_fixes"},
-            path,
-        )
+        require_keys(raw, {"id", "summary", "text", "text_hash"}, path)
         result.append(
             PlannedRule(
                 id=expect_string(raw["id"], f"{path}.id"),
                 summary=expect_string(raw["summary"], f"{path}.summary"),
                 text=expect_string(raw["text"], f"{path}.text"),
                 text_hash=expect_string(raw["text_hash"], f"{path}.text_hash"),
-                paths=_string_list(raw["paths"], f"{path}.paths"),
+                paths=_string_list(raw.get("paths", []), f"{path}.paths"),
                 contains_in_file=_contains(raw, "contains_in_file", path),
                 contains_in_diff=_contains(raw, "contains_in_diff", path),
-                has_command=expect_bool(raw["has_command"], f"{path}.has_command"),
-                max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
+                has_command=expect_bool(
+                    raw.get("has_command", False), f"{path}.has_command"
+                ),
+                max_fixes=expect_positive_int(
+                    raw.get("max_fixes", 1), f"{path}.max_fixes"
+                ),
                 hints=_rule_hints(raw.get("hints", {}), f"{path}.hints"),
                 source=expect_optional_string(raw.get("source"), f"{path}.source"),
             )
@@ -396,9 +396,7 @@ def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck,
         path = f"{item_path}.checks[{index}]"
         if not isinstance(raw, dict):
             raise ValueError(f"{path} must be an object")
-        require_keys(
-            raw, {"id", "source", "summary", "command", "paths", "max_fixes"}, path
-        )
+        require_keys(raw, {"id", "source", "summary", "command"}, path)
         command = raw["command"]
         if not isinstance(command, dict):
             raise ValueError(f"{path}.command must be an object")
@@ -414,13 +412,15 @@ def _planned_checks_from_list(value: Any, item_path: str) -> tuple[PlannedCheck,
                 ),
                 summary=expect_string(raw["summary"], f"{path}.summary"),
                 command=decoded,
-                paths=_string_list(raw["paths"], f"{path}.paths"),
+                paths=_string_list(raw.get("paths", []), f"{path}.paths"),
                 contains_in_file=_contains(raw, "contains_in_file", path),
                 contains_in_diff=_contains(raw, "contains_in_diff", path),
                 on_failure_instruction=expect_optional_string(
                     raw.get("on_failure_instruction"), "check failure instruction"
                 ),
-                max_fixes=expect_positive_int(raw["max_fixes"], f"{path}.max_fixes"),
+                max_fixes=expect_positive_int(
+                    raw.get("max_fixes", 1), f"{path}.max_fixes"
+                ),
                 covers=_string_list(raw.get("covers", []), f"{path}.covers"),
                 files=_string_list(raw.get("files", []), f"{path}.files"),
             )

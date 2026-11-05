@@ -74,7 +74,6 @@ STEP_ONLY_KEYS: set[str] = {
     "artifact",
     "children",
     "handler",
-    "question",
     "assess",
     "outcomes",
     "repeat_until",
@@ -161,7 +160,6 @@ _STEP_CONTENT_KEYS = frozenset(
         "children",
         "explicit",
         "handoff_to",
-        "question",
         "assess",
         "outcomes",
         "positive",
@@ -366,8 +364,6 @@ def _step_mapping(
             )
     else:
         mapping = _named_entry(raw, path)
-        if "question" in mapping and mapping.get("name") != "assess":
-            raise ConfigurationError(f"{path}.question belongs inside an assess block")
     work_mapping = (
         {
             key: value
@@ -375,7 +371,6 @@ def _step_mapping(
             if key
             not in {
                 "assess",
-                "question",
                 "repeat_until",
                 "outcomes",
                 "positive",
@@ -415,12 +410,9 @@ def _parse_assessment(
     handlers_by_name: dict[str, HandlerDefinition],
 ) -> tuple[str | None, tuple[StepDefinition, ...], HandlerDefinition]:
     """Parse an assess step's question and outcomes, and its prompt handler."""
-    if "assess" in mapping and "question" in mapping:
-        raise ConfigurationError(
-            f"{path} cannot combine assess and deprecated question"
-        )
-    key = "assess" if "assess" in mapping else "question"
-    question = _nonempty_string(mapping, key, path) if key in mapping else None
+    question = (
+        _nonempty_string(mapping, "assess", path) if "assess" in mapping else None
+    )
     direct = {
         label: mapping[label]
         for label in ("positive", "negative", "mixed")

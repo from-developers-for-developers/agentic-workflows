@@ -6,6 +6,10 @@ which tasks cannot be read, from ``unreadable_tasks``; why a run waits for
 the operator, from the instruction policy; a step's rules, from the same
 ``rule_outcomes`` its artifact's ``## Rules`` section is written from; and
 artifacts, from the service's listing, the only files the page will serve.
+
+A task this build cannot read in full, such as one an older ww wrote, is
+shown reduced: its runs as ``ww.task_envelope`` reads them, the step
+artifacts found under its runs, and its commits.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ww.completion_artifacts import rule_outcomes
-from ww.direct_work import task_commits
+from ww.direct_work import DirectWork, task_commits
 from ww.errors import StateError, WwError
 from ww.execution_models import ExecutionState, PlanItemExecution, TaskRunAggregate
 from ww.instructions.policy import operator_reason
@@ -25,14 +29,30 @@ from ww.rule_checks import item_reports
 from ww.rule_verification import recorded_verdicts
 from ww.service import WorkflowService
 from ww.storage_adapters.base import TaskStorageAdapter
+from ww.storage_adapters.task_document import (
+    TASK_STATE_FORMAT,
+    TASK_STATE_SCHEMA_VERSION,
+)
+from ww.task_envelope import (
+    RUNS_DIRECTORY,
+    STEPS_DIRECTORY,
+    RunEnvelope,
+    TaskEnvelope,
+    read_task_envelope,
+    run_directories,
+    step_artifacts,
+)
+from ww.task_ids import validate_task_id
 
 from .project import Project
 
 JSON = dict[str, Any]
+# What the page says for an envelope value a task's files do not have.
+UNKNOWN = "unknown"
 
 
 def task_list(project: Project) -> JSON:
-    """Every task, children after their parent, unreadable ones with the reason."""
+    """Every task, children after their parent, unreadable ones reduced."""
     tasks = project.storage.task_persistence
     unreadable = {entry.task_id: entry.reason for entry in unreadable_tasks(tasks)}
     listed: list[JSON] = []
@@ -40,11 +60,7 @@ def task_list(project: Project) -> JSON:
         for candidate in (task_id, *tasks.child_task_ids(task_id)):
             if candidate in unreadable:
                 listed.append(
-                    {
-                        "id": candidate,
-                        "status": "unreadable",
-                        "summary": unreadable[candidate],
-                    }
+                    _reduced_summary(project, candidate, unreadable[candidate])
                 )
             else:
                 listed.append(_summary(tasks, candidate))
@@ -103,10 +119,9 @@ def task_detail(project: Project, task_id: str) -> JSON:
     try:
         runs, handoff, _ = tasks.read_task_record(task_id)
     except StateError as error:
-        return {"id": task_id, "status": "unreadable", "unreadable": str(error)}
+        return _reduced_detail(project, task_id, str(error))
     metadata = tasks.read_task_metadata(task_id)
     direct = tasks.read_direct_work(task_id)
-    config = project.extensions.config if project.extensions else None
     ledger = {run.run_id: run for run in tasks.summarize_runs(runs)}
     service = project.service()
     detail_runs = []
@@ -124,18 +139,23 @@ def task_detail(project: Project, task_id: str) -> JSON:
         "metadata": dict(metadata.values) if metadata else {},
         "direct_work": [entry.to_dict() for entry in direct],
         "values": _namespace_values(project, last) if last else {},
-        "commits": [
-            commit.to_dict()
-            for commit in (
-                task_commits(project.storage.root, config, task_id, direct)
-                if config is not None
-                else ()
-            )
-        ],
+        "commits": _commits(project, task_id, direct),
         "documents": _documents(service, task_id),
         "children": list(tasks.child_task_ids(task_id)),
         "runs": detail_runs,
     }
+
+
+def _commits(
+    project: Project, task_id: str, direct: tuple[DirectWork, ...]
+) -> list[JSON]:
+    config = project.extensions.config if project.extensions else None
+    if config is None:
+        return []
+    return [
+        commit.to_dict()
+        for commit in task_commits(project.storage.root, config, task_id, direct)
+    ]
 
 
 def _documents(service: WorkflowService, task_id: str) -> list[JSON]:
@@ -432,13 +452,158 @@ def _history(plan: WorkflowPlan, record: PlanItemExecution) -> JSON:
     }
 
 
+def _reduced_summary(project: Project, task_id: str, reason: str) -> JSON:
+    """A list row for a task read only through its envelope."""
+    envelope = _envelope(project, task_id)
+    reduced = _reduced(envelope, reason)
+    times = [
+        moment
+        for run in envelope.runs
+        if (moment := run.updated_at or run.created_at) is not None
+    ]
+    return {
+        "id": task_id,
+        "status": _envelope_status(envelope),
+        "workflows": [run.workflow or UNKNOWN for run in envelope.runs],
+        # A format the page can name says enough; any other reason is shown.
+        "summary": reason if reduced["kind"] == "other" else "",
+        "updated_at": max(times, default=None),
+        "current_step": None,
+        "direct_work": len(_direct_work(project, task_id)),
+        "reduced": reduced,
+    }
+
+
+def _reduced_detail(project: Project, task_id: str, reason: str) -> JSON:
+    """What the page can still show of a task this build cannot read in full.
+
+    The runs as their envelope has them, with any run directory the index
+    does not name, each with the step artifacts found under it; the task's
+    commits, metadata and direct work, where those files read. The plan, the
+    steps' statuses, rules and the extension values need the full record.
+    """
+    validate_task_id(task_id)
+    directory = _task_directory(project, task_id)
+    envelope = read_task_envelope(directory, task_id)
+    named = {run.run_id for run in envelope.runs}
+    unnamed = (name for name in run_directories(directory) if name not in named)
+    runs = (*envelope.runs, *(RunEnvelope(name) for name in unnamed))
+    direct = _direct_work(project, task_id)
+    return {
+        "id": task_id,
+        "status": _envelope_status(envelope),
+        "reduced": _reduced(envelope, reason),
+        "handoff": None,
+        "metadata": _metadata(project, task_id),
+        "direct_work": [entry.to_dict() for entry in direct],
+        "values": {},
+        "commits": _commits(project, task_id, direct),
+        "documents": [],
+        "children": list(project.storage.task_persistence.child_task_ids(task_id)),
+        "runs": [_reduced_run(project, directory, run) for run in runs],
+    }
+
+
+def _reduced(envelope: TaskEnvelope, reason: str) -> JSON:
+    """Why the task is shown reduced, and the badge that says so.
+
+    A task index in another schema than this build reads comes from an older
+    ww, or from a newer one that recorded itself in ``written_by``: a file
+    without that field predates it, so whatever its number it is older.
+    """
+    version = envelope.schema_version
+    kind = "other"
+    if (
+        envelope.format == TASK_STATE_FORMAT
+        and version is not None
+        and version != TASK_STATE_SCHEMA_VERSION
+    ):
+        newer = version > TASK_STATE_SCHEMA_VERSION and envelope.written_by
+        kind = "newer" if newer else "older"
+    badge = "reduced view"
+    if kind != "other":
+        badge = f"{kind} format (schema {version}): {badge}"
+    return {
+        "kind": kind,
+        "badge": badge,
+        "reason": reason,
+        "schema_version": version,
+        "written_by": envelope.written_by,
+    }
+
+
+def _reduced_run(project: Project, directory: Path, run: RunEnvelope) -> JSON:
+    return {
+        "id": run.run_id,
+        "workflow": run.workflow or UNKNOWN,
+        "status": run.status or UNKNOWN,
+        "created_at": run.created_at,
+        "updated_at": run.updated_at,
+        "written_by": run.written_by,
+        "artifacts": [
+            {"ref": reference, "path": path}
+            for path, reference in _step_artifacts(project, directory, run.run_id)
+        ],
+    }
+
+
+def _envelope(project: Project, task_id: str) -> TaskEnvelope:
+    return read_task_envelope(_task_directory(project, task_id), task_id)
+
+
+def _envelope_status(envelope: TaskEnvelope) -> str:
+    """The last run's status, as the envelope has it."""
+    if not envelope.runs:
+        return "unreadable"
+    return envelope.runs[-1].status or UNKNOWN
+
+
+def _task_directory(project: Project, task_id: str) -> Path:
+    return project.storage.runtime_path / "tasks" / task_id
+
+
+def _step_artifacts(
+    project: Project, directory: Path, run_id: str
+) -> list[tuple[str, str]]:
+    """Each step artifact of a run, by its path under ``steps`` and its reference.
+
+    The reference is project-relative, as a readable run's artifacts are.
+    """
+    steps = directory / RUNS_DIRECTORY / run_id / STEPS_DIRECTORY
+    return [
+        (path.as_posix(), (steps / path).relative_to(project.storage.root).as_posix())
+        for path in step_artifacts(directory, run_id)
+    ]
+
+
+def _direct_work(project: Project, task_id: str) -> tuple[DirectWork, ...]:
+    try:
+        return project.storage.task_persistence.read_direct_work(task_id)
+    except StateError:
+        return ()
+
+
+def _metadata(project: Project, task_id: str) -> dict[str, Any]:
+    try:
+        metadata = project.storage.task_persistence.read_task_metadata(task_id)
+    except StateError:
+        return {}
+    return dict(metadata.values) if metadata else {}
+
+
 def artifact_text(project: Project, task_id: str, run_id: str, reference: str) -> str:
     """An artifact's text, when the run records it.
 
     The page may ask only for what the service lists for the run, or for an
     earlier round's artifact a goto or retry kept in the run's history, so it
-    cannot be asked for any other file.
+    cannot be asked for any other file. Of a task shown reduced, only the
+    step artifacts found under that run's ``steps`` directory are served.
     """
+    validate_task_id(task_id)
+    try:
+        project.storage.task_persistence.read_task_record(task_id)
+    except StateError:
+        return _reduced_artifact_text(project, task_id, run_id, reference)
     service = project.service()
     listed = {
         entry[key]: entry["path"]
@@ -460,3 +625,14 @@ def artifact_text(project: Project, task_id: str, run_id: str, reference: str) -
             )
         listed[reference] = str(project.storage.root / reference)
     return Path(listed[reference]).read_text(encoding="utf-8", errors="replace")
+
+
+def _reduced_artifact_text(
+    project: Project, task_id: str, run_id: str, reference: str
+) -> str:
+    directory = _task_directory(project, task_id)
+    listed = {ref: path for path, ref in _step_artifacts(project, directory, run_id)}
+    if reference not in listed:
+        raise StateError(f"{reference!r} is not an artifact of {task_id} run {run_id}")
+    steps = directory / RUNS_DIRECTORY / run_id / STEPS_DIRECTORY
+    return (steps / listed[reference]).read_text(encoding="utf-8", errors="replace")

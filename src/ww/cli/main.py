@@ -52,6 +52,7 @@ from ww.inspect import inspect_checkout, render_markdown
 from ww.instructions import Instruction
 from ww.instructions.handoff import handoff_markdown
 from ww.items import WorkItem
+from ww.migrations.config.project import project_findings
 from ww.onboarding import Onboarding, render_onboarding
 from ww.operator_ui import run_operator_page
 from ww.operator_ui.server import operator_wait_seconds
@@ -133,6 +134,7 @@ from .initialization import (
     install_agent_permissions,
 )
 from .lookup import render_lookup
+from .migrate import migrate_command
 from .parser import _metadata_values, _named_values, _variables, build_parser
 from .prompts import (
     _confirm_force_next,
@@ -178,6 +180,8 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
         "agents",
         "updates",
         "upgrade",
+        # It edits the checkout's files, never a commit's snapshot.
+        "migrate",
         # It follows the configuration as it is edited.
         "visualize",
     }
@@ -330,14 +334,23 @@ def _lint(context: _Context) -> _Outcome:
         _compile_for_lint(context, configuration, workflow.name)
         for workflow in configuration.workflows
     )
+    # Deprecated configuration is listed from the files themselves, with
+    # what ``ww migrate`` can fix, rather than from loading's notices.
+    deprecations = _deprecations(context, configuration)
     notices = "".join(
         f"Notice: {notice}\n"
-        for notice in compose_configuration(context.storage.config_path).notices
+        for notice in (
+            *compose_configuration(context.storage.config_path).notices,
+            # Deprecated API use of the extensions the workflows loaded.
+            *context.extensions.notices,
+        )
+        if not notice.startswith(_DEPRECATED)
     )
     return _Outcome(
         f"{WORKFLOWS_FILE} is valid.\n"
         f"{_configuration_files(context.storage, context.extensions)}"
         f"{notices}"
+        f"{deprecations}"
         f"{_launcher_warning(context.storage.root)}"
         f"{_retired_workflow_warning(context.extensions.config)}"
         f"{_unrecorded_namespace_warning(plans, context.extensions)}"
@@ -551,6 +564,38 @@ def _never_applied_hint(
         + ", ".join(rule.id for rule in rules)
         + f"); review whether to keep {'them' if many else 'it'}: "
         f"`{ww_command()} rules stats`.\n"
+    )
+
+
+_DEPRECATED = "Deprecated:"
+
+
+def _deprecations(context: _Context, configuration: WorkflowConfiguration) -> str:
+    """One line per deprecated construct the configuration files still hold.
+
+    Each says whether ``ww migrate`` fixes it or the operator must; a
+    removed construct never gets here, since loading refuses it.
+    """
+    found = [
+        finding
+        for migration in project_findings(
+            context.storage.config_path,
+            context.storage.project_config_path,
+            configuration,
+            context.extensions,
+        )
+        for finding in migration.findings
+    ]
+    return "".join(
+        f"{_DEPRECATED} {finding.render()}"
+        + (
+            " [auto-fixable by ww migrate]\n"
+            if finding.fixed
+            else " [choose with ww migrate]\n"
+            if finding.kind == "choice"
+            else " [manual]\n"
+        )
+        for finding in found
     )
 
 
@@ -1979,7 +2024,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.command == "upgrade":
         try:
-            sys.stdout.write(upgrade(pre=args.pre))
+            sys.stdout.write(upgrade(pre=args.pre, force=args.force, storage=storage))
         except WwError as error:
             print(f"ww error: {error}", file=sys.stderr)
             return 1
@@ -1999,6 +2044,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         or (args.command == "onboarding" and not args.assignments)
         or (args.command == "debug" and args.debug_action not in {"report", "note"})
+        or (args.command == "migrate" and not args.apply)
     )
 
     def log(outcome: str, error: str | None, *scope: str | None) -> None:
@@ -2009,16 +2055,25 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
+    # ``migrate`` runs before anything loads the configuration or the
+    # extensions' settings: a removed construct it fixes stops them loading.
+    if args.command == "migrate":
+        if logged:
+            log("started", None)
+        code = migrate_command(storage, args)
+        if logged:
+            log("ok" if code == 0 else "error", None if code == 0 else "migrate failed")
+        return code
+
+    extensions: ExtensionRegistry | None = None
     try:
         extensions = ExtensionRegistry.discover(
             storage.root, storage.project_config_path
         )
         service = WorkflowService(storage, extensions=extensions)
         if args.command != "lint":
-            with contextlib.suppress(OSError, WwError):
-                for notice in compose_configuration(storage.config_path).notices:
-                    if notice.startswith("Deprecated:"):
-                        print(f"ww warning: {notice}", file=sys.stderr)
+            for notice in _configuration_deprecations(storage, extensions):
+                print(f"ww warning: {notice}", file=sys.stderr)
         # Check what the force would do before asking the operator to approve
         # it, so a refused force is reported instead of confirmed and refused.
         if args.command == "next" and args.force:
@@ -2054,8 +2109,10 @@ def main(argv: list[str] | None = None) -> int:
         if logged:
             with contextlib.suppress(OSError, WwError):
                 log("error", str(error))
+        _warn_extension_notices(args, extensions)
         print(f"ww error: {error}{_worktree_root_hint(args, root)}", file=sys.stderr)
         return 1
+    _warn_extension_notices(args, extensions)
     if logged:
         log(
             "error" if result.error is not None else "ok",
@@ -2067,6 +2124,42 @@ def main(argv: list[str] | None = None) -> int:
         _prune_snapshots(service)
     sys.stdout.write(result.text)
     return result.exit_code
+
+
+def _configuration_deprecations(
+    storage: Storage, extensions: ExtensionRegistry
+) -> tuple[str, ...]:
+    """The deprecated constructs the configuration files hold.
+
+    Loading migrates them in memory; these are its notices for the workflow
+    files and the settings files, the root's and each configured project's.
+    A file that does not load is left for the command to report.
+    """
+    notices: list[str] = []
+    with contextlib.suppress(OSError, WwError):
+        notices.extend(
+            notice
+            for notice in compose_configuration(storage.config_path).notices
+            if notice.startswith(_DEPRECATED)
+        )
+    with contextlib.suppress(OSError, WwError):
+        notices.extend(extensions.config.notices)
+        for project in extensions.config.projects:
+            notices.extend(extensions.project_settings(project.name).notices)
+    return tuple(notices)
+
+
+def _warn_extension_notices(
+    args: argparse.Namespace, extensions: ExtensionRegistry | None
+) -> None:
+    """Warn about the extensions this command loaded, as for the configuration.
+
+    ``lint`` lists them with its own notices instead.
+    """
+    if extensions is None or args.command == "lint":
+        return
+    for notice in extensions.notices:
+        print(f"ww warning: {notice}", file=sys.stderr)
 
 
 def _config_source(args: argparse.Namespace, root: Path) -> ConfigSource:

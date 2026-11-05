@@ -43,16 +43,16 @@ from ww.config_files import RULE_AUTOMATION_FILE
 from ww.contracts import CheckAutomationStatus, RuleAutomationStatus
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
+from ww.migrations.data import WRITTEN_BY, current_version, header, upgrade
 from ww.validation import (
     expect_bool,
     expect_literal,
     expect_optional_string,
     expect_string,
-    is_strict_int,
 )
 
 STORE_FILE = RULE_AUTOMATION_FILE
-STORE_SCHEMA_VERSION = 1
+STORE_SCHEMA_VERSION = current_version("rule automation store")
 # Who approved a proposal. ww asks the operator for every approval; ``auto``
 # is what a store written by an earlier ww may record for its own approvals.
 RuleApprover = Literal["operator", "auto"]
@@ -356,7 +356,7 @@ class RuleAutomation:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "schema_version": STORE_SCHEMA_VERSION,
+            **header("rule automation store"),
             "rules": {key: entry.to_dict() for key, entry in self.rules.items()},
             "checks": {key: entry.to_dict() for key, entry in self.checks.items()},
         }
@@ -365,10 +365,8 @@ class RuleAutomation:
     def from_dict(cls, data: Any) -> RuleAutomation:
         if not isinstance(data, dict):
             raise ValueError("the rule automation store must be an object")
-        version = data.get("schema_version")
-        if not is_strict_int(version) or version != STORE_SCHEMA_VERSION:
-            raise ValueError(f"unsupported rule automation schema: {version!r}")
-        unknown = set(data) - {"schema_version", "rules", "checks"}
+        data = upgrade("rule automation store", data)
+        unknown = set(data) - {"schema_version", WRITTEN_BY, "rules", "checks"}
         if unknown:
             raise ValueError(
                 "unknown rule automation keys: " + ", ".join(sorted(unknown))

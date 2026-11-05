@@ -236,8 +236,12 @@ def test_step_modes_round_trip_through_the_saved_plan(tmp_path: Path) -> None:
 
 
 def test_a_saved_mode_of_another_shape_is_rejected() -> None:
+    # Description and automatic are defaulted, so only a missing name or an
+    # unknown key is another shape.
     with pytest.raises(ValueError, match="name, description, automatic"):
-        PlannedMode.from_dict({"name": "economy"}, "modes[0]")
+        PlannedMode.from_dict({"description": ["short"]}, "modes[0]")
+    with pytest.raises(ValueError, match="name, description, automatic"):
+        PlannedMode.from_dict({"name": "economy", "cost": 1}, "modes[0]")
     with pytest.raises(ValueError, match="invalid"):
         PlannedMode.from_dict(
             {"name": "economy", "description": "short", "automatic": False},

@@ -39,6 +39,9 @@ An installation carries the same-version copies of all three: read them with
 - Readonly workflows that check the branch, or chosen files, against the
   rules and report what breaks them without changing anything, such as the
   bundled `ww-check-rules`.
+- A bundled `ww-migrate` workflow that brings deprecated configuration up to
+  date with the operator, and an upgrade that refuses a new major version
+  while the project holds what that version removes.
 - Variables, durable task and project metadata, artifacts, and artifact
   dependencies.
 - Nested steps, bounded item collections, and parent/child task workflows.
@@ -449,8 +452,8 @@ that imported them. `null` for both fields means a contribution without a
 configured definition, such as a built-in that no configuration file defines;
 one that a file does define reports that file.
 
-A task whose state ww cannot read, such as one written by a build with another
-state schema, does not break `discover`. It is listed
+A task whose state ww cannot read, such as one a newer ww wrote at a schema
+this build does not read yet, does not break `discover`. It is listed
 under "Unreadable tasks" with the error, and `unreadable_tasks` in the JSON
 carries each `task_id` and `reason`. Other tasks and new work are unaffected;
 commands addressing that task keep failing with the same error, and whether to
@@ -459,7 +462,7 @@ repair, reset, or delete its directory is the operator's decision.
 ```markdown
 ## Unreadable tasks
 
-- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: unsupported plan snapshot schema: 7
+- `TASK-20` — invalid task state .ww/tasks/TASK-20/state.json: task state written by ww 1.2.0 (schema 2); this ww reads up to schema 1: upgrade ww
 
 Other tasks and new work are unaffected. Commands addressing these tasks fail with the error shown; ask the operator, whose choice it is to repair, reset, or delete each task directory.
 ```
@@ -684,7 +687,7 @@ The page has two tabs:
 | Tab | Shows |
 | --- | --- |
 | Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A switch on each card shows its YAML instead: the entry exactly as the file that defines it has it, comments included, syntax-highlighted, with the file named and a copy button. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. The demo workflow comes first, marked as the demo (see below). A configuration that does not load is shown with ww's error; the Tasks tab still works. |
-| Tasks | Every task in the store, active ones first, with status filters and search; a task that cannot be read is listed with the reason. A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
+| Tasks | Every task in the store, active ones first, with status filters and search; a task this ww cannot read in full is shown in a reduced view (below). A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
 
 The page is live. ww watches the configuration as the checkout has it — every
 YAML level and import, the JSON settings levels, the rule files and the
@@ -694,6 +697,38 @@ keeps the open cards, panels and scroll position. Only artifacts a run
 records are served, and only to a request addressed to `127.0.0.1` or
 `localhost` on the page's port, so another site cannot read the page by
 pointing its own domain at this machine.
+
+### Reduced view
+
+A task this ww cannot read in full still opens, showing less. This is how a
+closed task an older ww wrote stays visible after an upgrade, as are a task
+from a newer ww and one whose state file is damaged. The page reads the
+task's envelope, the part of its state that no schema version renames: the
+task ID, the ww version that wrote the file (`written_by`, absent from files
+written before ww recorded it) and, for each run, its ID, workflow, status
+and the times it was created and last updated. It reads these with plain
+JSON and no schema-specific decoding, and shows any missing value as
+unknown.
+
+The list shows such a task with its last run's status, its workflows and
+when it was last updated, marked with a badge. The badge says
+`older format (schema N): reduced view` when the task's schema is one this
+ww does not read and an older ww wrote it, and
+`newer format (schema N): reduced view` when a newer ww that recorded its
+version wrote it. Any other reason, such as a damaged file, gets a plain
+`reduced view` badge, with ww's reason beside it. The task's detail shows:
+
+- each run with its workflow, status and times;
+- each Markdown artifact found under the run's `runs/<run_id>/steps/`
+  directory, listed by its path in sorted order and opened in the side panel
+  like any artifact;
+- its commits, metadata and direct work, where those files read;
+- its child tasks.
+
+The plan, step statuses, rules and extension values need the full record and
+are left out. Only Markdown files found under that run's `steps` directory
+are served for such a task; a path elsewhere, or a link pointing out of the
+directory, is refused.
 
 ### The demo
 
@@ -988,6 +1023,52 @@ returns a stable representation for tools. `--agent` is required because
 automatic resolution depends on the agent’s project-local skills and slash
 commands. `--task-id` is optional; when
 omitted, `{{ww.task.id}}` remains visible as an unresolved plan dependency.
+
+### Deprecated configuration
+
+When a configuration construct is deprecated, ww keeps reading it: it migrates
+each file in memory as it loads it, so the workflow behaves as before, and
+warns on stderr with the file, the path to the construct and its line. The
+file is never changed by that, nor is a run's configuration snapshot. `lint`
+lists every deprecated construct left in the project's files, its rule files
+and its settings files, configured extensions' settings included, and marks
+each with what fixes it:
+
+```console
+$ ww-agentic-workflows lint
+ww.yaml is valid.
+Configuration files: ww.yaml
+Deprecated: ww.yaml:workflows[0].steps[0].assess.question (line 6): an assessment's prompt key question is now assess (deprecated in ww 1.0.0b12); run ww migrate to fix. See ww docs upgrade#assessment-prompt-key-question. [auto-fixable by ww migrate]
+```
+
+`[manual]` marks one ww cannot change in the file by itself, such as a key
+inside a flow mapping (`{...}`) or reached through an anchor, with what to
+change by hand. Once a construct is removed, a file still holding it fails to
+load with an error that names the removal and its section of the upgrade
+guide, rather than an unknown key. `ww docs upgrade` prints that guide, which
+is generated from ww's migrations, and `ww docs upgrade#<section>` one
+section; [deprecations](deprecations.md) is the same text.
+
+`ww migrate` fixes them in the files themselves:
+
+```console
+$ ww-agentic-workflows migrate            # dry run: findings and a diff
+$ ww-agentic-workflows migrate --apply    # write them; list what is left
+$ ww-agentic-workflows migrate --apply --choose <migration>=<option>
+$ ww-agentic-workflows migrate --check [--deprecations]
+$ ww-agentic-workflows migrate --tasks [--apply]
+```
+
+A dry run changes nothing. `--apply` edits YAML in place, keeping comments
+and formatting, and writes every file or none; where several options exist
+it asks at a terminal, or takes `--choose`, and never picks one itself.
+What it cannot change is listed with the file and line, why, the options
+and their consequences, and the guide section. `--check` exits 1 while a
+removed construct is left, and with `--deprecations` while anything is.
+`--json` gives the same report to tools. It works when a removed construct
+stops the configuration from loading. `--tasks` rewrites stored task state
+in the current format, after copying it to `.ww/backups/`. See
+[compatibility](compatibility.md#the-ww-migrate-command).
 
 ## Split ww.yaml into several files
 
@@ -1449,7 +1530,8 @@ be fully automatic.
 An ordinary step can attach an `assess` block. Its agent first receives the
 step's description or handler instructions, then the assessment prompt and
 outcomes, in the same assignment. Use `assess.assess` for the prompt;
-`assess.question` remains a deprecated alias that produces a warning.
+`assess.question` is deprecated: ww still reads it, renaming it to `assess`
+as the configuration loads, and warns with the file, path and line.
 With `repeat_until`, the original action runs once and the same assessor
 stays alive across focused outcome work and reassessment. Start hooks run
 once and completion hooks wait for the terminal outcome. Commands and groups
@@ -1976,7 +2058,7 @@ prose: `control` is `awaiting_operator`, `next_role` is `operator`, and
 | `fix_limit` | A step's check failed as many times as its rule's `max_fixes`, else `limits.fixes`, allows; see [Rules and checks](#rules-and-checks). |
 | `check_disputed` | A step's worker disputed a check that rejected its completion; see [Checking early and disputing a check](#checking-early-and-disputing-a-check). |
 | `value_unavailable` | An agent step reads a `{{ww.<namespace>.<name>}}` value its extension cannot give for the task yet, such as `{{ww.git.branch}}` before the task has a branch; the step has not started. `next --retry` checks again, `next --force` skips it. |
-| `plan_changed` | The workflow's definition changed since the run's plan was saved; see [When the workflow changes mid-run](#when-the-workflow-changes-mid-run). |
+| `plan_changed` | The workflow's definition, or the major version of an extension the run uses, changed since the run's plan was saved; see [When the workflow changes mid-run](#when-the-workflow-changes-mid-run). |
 
 An interrupted handler declared `idempotent: true` is not a reason: `next`
 replays it without asking anyone, so the task stays `blocked` for the manager.
@@ -2043,12 +2125,22 @@ answers:
   the same configuration.
 
 A change that leaves the run's own workflow as it is, such as a new workflow
-beside it, is taken silently. So is a change to an extension: its version,
-source and fingerprint, and its settings in the root `ww.json`, are not part
-of any step's definition, since an extension may be fixed or reconfigured
-while a task is in flight. The run's extension items adopt the current
-extension and settings at the manager's next `next`, without stopping and
-without rerunning anything, and so do they under `--keep-plan`. A configuration that does not load stops
+beside it, is taken silently. So is a change to an extension the run uses:
+its minor or patch version, API version, source and fingerprint, and its
+settings in the root `ww.json`, are not part of any step's definition, since
+an extension may be fixed, upgraded or reconfigured while a task is in
+flight. The run's extension items adopt the current extension and settings at
+the manager's next `next`, without stopping and without rerunning anything,
+and so do they under `--keep-plan`. A new major version of an extension the
+run's plan uses (its version's leading number: `1.4.2` to `2.0.0`, but not
+`0.1` to `0.2`; a version that does not start with a number, such as `dev`,
+counts every change as major) may break what the run expects of it, so it
+stops the run like an edited hook: the page lists each step or hook that runs
+the extension, with its `extension_major_version` before and after.
+`--keep-plan` takes the new version for the saved plan as it is, and
+`--replan` runs those steps and hooks again, with the rest of their step,
+under the new version. A new version of an extension the plan does not use
+changes nothing, and that extension is not loaded. A configuration that does not load stops
 nothing: the run goes on with its saved plan, and `ww lint` shows the error.
 Two changes cannot be applied to a running task, and the page says why,
 offering only `--keep-plan`: a change to per-child stages that the run has
@@ -2885,7 +2977,8 @@ The counts live in `.ww/rules/stats.json`, keyed by rule ID with the hash
 of the wording last evaluated alongside, so they follow a rule through
 rewordings. The file is ww-owned, local to the checkout, and never
 committed: `.ww` is ignored. ww writes it under its own lock, and a count it
-cannot write is dropped; it never fails the completion.
+cannot write is dropped; it never fails the completion. A file a newer ww
+wrote is left alone: its counts wait for that ww.
 
 `ww rules` shows each rule's counters and last failure under its line, and
 `--json` carries them as `stats`. `ww rules stats [--json]` lists every
@@ -4235,10 +4328,39 @@ EXTENSION = Extension(
 
 The compiled plan also records the extension API/version, provider source,
 source fingerprint, and resolved settings. A resumed run uses those saved
-settings and refuses to dispatch if the extension's version, API version, or
-provider source has changed, preventing an upgrade from silently changing an
-in-flight run. Fixing an extension in place under the same version is allowed,
-as it is for ww itself; the fingerprint is recorded for audit only.
+settings. When the extension's version, API version, or provider source has
+changed, the manager's next `next` notices it: a new minor or patch version
+is taken silently, and a new major version stops for the operator, who keeps
+the plan or replans (see
+[When the workflow changes mid-run](#when-the-workflow-changes-mid-run)).
+Dispatch refuses an extension whose identity differs from the plan's only when
+it changed after that `next`, for example between `next` and the `complete`
+that runs its hook; the next `next` then takes it the same way. Fixing an
+extension in place under the same version is allowed, as it is for ww itself;
+the fingerprint is recorded for audit only.
+
+An extension declares the extension API it is written against as
+`api_version` (default: the current `EXTENSION_API_VERSION`). ww loads any
+API version from `MIN_SUPPORTED_EXTENSION_API_VERSION` to
+`EXTENSION_API_VERSION` (both 1 today), both exported by `ww.extensions`; the
+API version moves only with a breaking change to the extension API. An
+extension needing a newer API fails to load with a request to upgrade ww, and
+one written for an API ww no longer supports with a request to upgrade the
+extension. A part of the API that is deprecated keeps working until the API
+version that removes it; an extension that uses one loads with a warning
+naming the extension, the feature, when it goes and what replaces it
+(`ww warning: Deprecated: extension 'acme/tickets' (...) uses ...; use ...
+instead.` on any command that loads it, and a `Notice:` line in `ww lint`).
+Nothing in the API is deprecated today.
+
+An extension that renames or reshapes one of its settings declares
+`settings_migrations` on its `Extension`, so projects keep working: ww
+migrates the extension's section of each settings file in memory before
+handing it over, warning about each old setting once the extension loads,
+and migrates the settings a saved plan froze whenever it uses them. `ww lint`
+lists the old settings left in `ww.json` and `ww.local.json`. From the
+extension version that removes an old setting, a file still holding it is an
+error naming the removal.
 
 An extension may declare `ExtensionVariable` entries to override variables
 owned by ww core. It cannot introduce arbitrary global variables or replace
@@ -4983,6 +5105,7 @@ ww-agentic-workflows updates --now    # force a fresh check
 ww-agentic-workflows updates --json   # machine-readable version information
 ww-agentic-workflows upgrade          # preserve the installed release preference
 ww-agentic-workflows upgrade --pre    # allow prereleases from a stable installation
+ww-agentic-workflows upgrade --force  # install a new major version the project is not ready for
 ```
 
 `upgrade` uses pip in the running Python environment or pipx for the owning
@@ -4991,15 +5114,52 @@ installation requires pipx on PATH. An installation injected into another
 pipx environment must be upgraded through pipx directly. Installer errors are
 reported without overriding environment protections.
 
-For editable Git installs, `upgrade` performs `git pull --ff-only` on the
-checkout's actual tracking branch. It refuses local changes, detached HEAD,
+For editable Git installs, `upgrade` fetches the checkout's actual tracking
+branch and fast-forwards to it. It refuses local changes, detached HEAD,
 missing upstream and divergent history; local work is not stashed or reset.
 An editable installation without a Git checkout cannot use this command.
 
-`upgrade` does not check for open tasks. A release that changes the task state
-format can leave tasks an older build started unreadable, in this project and in
-every other project that uses the same installation, so read the changelog and
-finish such tasks first when it says so.
+Run in a ww project, `upgrade` checks the project before it installs a new
+major version, one whose leading number is higher than the installed one's.
+It refuses while the project's configuration still holds a construct that
+version removes, or a task in progress has a run whose saved plan holds a
+plan construct it removes, and lists each, with what to do:
+
+```text
+ww error: ww 2.0.0 is a new major version, and this project holds what it no longer reads; nothing was upgraded.
+Configuration ww 2.0.0 no longer reads:
+- ww.yaml:workflows[0].steps[0].assess.question (line 6): an assessment's prompt key question is now assess (deprecated in ww 1.0.0b12); run ww migrate to fix. See …
+Fix it with `./ww migrate` (or the ww-migrate workflow).
+Tasks in progress whose saved plan ww 2.0.0 refuses:
+- TASK-5 (open run 01-task): the `legacy` action (plan.items[3] (review)), removed in ww 2.0.0
+Finish them first, or discard them with `./ww reset <task>`.
+Then run `./ww upgrade` again, or upgrade anyway with `./ww upgrade --force`.
+```
+
+`--force` installs it anyway and prints the same list after the upgrade. A
+minor or patch release is never held back: it removes nothing. The installed
+ww judges with its own list of removals, which knows every removal of the next
+major version because each is first deprecated with its removal version; so
+upgrade to the last release of your major version first. The version to
+install is the newest compatible release on PyPI, or for a Git checkout the
+release series `pyproject.toml` names on the fetched tracking branch; when ww
+cannot tell, such as offline, the upgrade goes ahead and says the check did
+not run. Only this project is checked, not every project that uses the same
+installation. See
+[compatibility](compatibility.md#upgrading-across-a-major-version).
+
+After a successful upgrade in a ww project, the upgraded ww checks the
+project's configuration in a new process, as `ww migrate --check
+--deprecations` does, and reports what it found. When there is something to
+change it offers `ww migrate`, and the bundled `ww-migrate` workflow, which
+goes through it with an agent: detect, apply the automatic fixes, decide
+the choices and the manual changes with the operator, then check again and
+lint. Nothing is migrated without the operator.
+
+A release that changes the task state format migrates the task state it
+still reads; finishing tasks before a major upgrade is still the safest
+course, in this project and in every other project that uses the same
+installation.
 
 The per-user cache is under `~/.config/ww`, or `$XDG_CONFIG_HOME/ww`; package
 checks have separate cache files for each Python environment and installed

@@ -22,11 +22,18 @@ and a change to per-child stages already expanded, or a replan that reruns
 or moves back past a children step whose child tasks exist, is refused with
 the reason.
 
-An extension's identity (version, source, fingerprint) and its settings are
-not part of an item's definition: like ww's own code, an extension may be
-fixed or reconfigured while a task is in flight. Whenever the run takes the
-current configuration, with or without a plan change, its planned extension
-items adopt them silently.
+An extension's identity (version, API version, source, fingerprint) and its
+settings are not part of an item's definition: like ww's own code, an
+extension may be fixed, upgraded or reconfigured while a task is in flight.
+The identities of the extensions a run's plan uses count towards the digest
+the plan was saved under, so ``next`` notices a new version as it notices an
+edited ``ww.yaml``. Whenever the run takes the current configuration, with or
+without a plan change, its planned extension items adopt them silently. The
+one exception is the extension's major version (see
+:func:`ww.extensions.registry.major_version`), which may break what the run
+expects of it: an item whose extension changed major version is defined anew,
+so ww stops for the operator, who keeps the plan (adopting the new version)
+or replans (running that item, and the rest of its step, again).
 """
 
 from __future__ import annotations
@@ -44,6 +51,7 @@ from ww.execution_models.construction import (
     new_item_execution,
     operation_scope_for,
 )
+from ww.extensions.registry import major_version, parse_reference
 from ww.plan import PlanItem, WorkflowPlan
 from ww.plan.models import number_step_paths
 from ww.transitions import Clock, project_steps
@@ -54,6 +62,7 @@ ChangeKind = Literal["added", "removed", "moved", "changed"]
 _PLACEMENT_FIELDS = ("id", "position", "step_ordinals")
 # Extension payload fields the run adopts from the current extensions rather
 # than comparing: what the extension is and how the project configures it.
+# Only the version's major part is compared, as ``extension_major_version``.
 _EXTENSION_ADOPTED = ("version", "api_version", "source", "fingerprint", "settings")
 # A field's value is shown up to this many characters on each side.
 _VALUE_LIMIT = 160
@@ -113,6 +122,25 @@ class PlanChange:
             "reruns": list(self.reruns),
             "refusal": self.refusal,
         }
+
+
+def planned_extensions(plan: WorkflowPlan) -> tuple[str, ...]:
+    """The extensions ``plan``'s items run, by identifier, each once.
+
+    An item planned without an identity, as an alternative extension action
+    may plan it, holds no extension to a version and is left out.
+    """
+    identifiers: set[str] = set()
+    for item in plan.items:
+        extension = _extension(item)
+        if extension is None or (
+            extension.version is None
+            and extension.api_version is None
+            and extension.source is None
+        ):
+            continue
+        identifiers.add(parse_reference(extension.reference).identifier)
+    return tuple(sorted(identifiers))
 
 
 def plan_change(
@@ -337,7 +365,8 @@ def _definition(item: PlanItem) -> dict[str, object]:
     for name in _PLACEMENT_FIELDS:
         data.pop(name, None)
     operation = data["operation"]
-    if _extension(item) is not None and isinstance(operation, dict):
+    extension = _extension(item)
+    if extension is not None and isinstance(operation, dict):
         payload = operation["payload"]
         assert isinstance(payload, dict)
         data["operation"] = {
@@ -348,6 +377,8 @@ def _definition(item: PlanItem) -> dict[str, object]:
                 if name not in _EXTENSION_ADOPTED
             },
         }
+        if extension.version is not None:
+            data["extension_major_version"] = major_version(extension.version)
     return data
 
 

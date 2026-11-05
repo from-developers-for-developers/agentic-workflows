@@ -59,12 +59,14 @@ class ChildTask:
     def from_dict(cls, data: object) -> ChildTask:
         if not isinstance(data, dict):
             raise ValueError("child task must be a mapping")
-        required = ("id", "description", "task_id", "status")
+        required = ("id", "description", "task_id")
         if not all(isinstance(data.get(key), str) and data[key] for key in required):
             raise ValueError("child task fields must be non-empty strings")
         if not isinstance(data.get("workflow"), str):
             raise ValueError("child task workflow must be a string")
-        status = expect_literal(data["status"], ChildStatus, "child task status")
+        status = expect_literal(
+            data.get("status", "pending"), ChildStatus, "child task status"
+        )
         run_id, summary = data.get("run_id"), data.get("summary")
         if run_id is not None and not isinstance(run_id, str):
             raise ValueError("child task run ID must be a string or null")

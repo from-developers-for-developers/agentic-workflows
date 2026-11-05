@@ -101,12 +101,22 @@ def test_an_unreadable_file_counts_as_empty_and_is_replaced(tmp_path: Path) -> N
     store.path.parent.mkdir(parents=True)
     store.path.write_text("{not json", encoding="utf-8")
     assert store.load() == {}
-    store.path.write_text(json.dumps({"schema": 99, "rules": {}}), encoding="utf-8")
-    assert store.load() == {}
 
     _record(store, HEADER, now="t1")
 
     assert store.load()["docs/header"].check_failures == 1
+
+
+def test_a_newer_ww_s_counts_read_as_empty_and_are_kept(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.path.parent.mkdir(parents=True)
+    newer = json.dumps({"schema": 99, "written_by": "9.0.0", "rules": {}})
+    store.path.write_text(newer, encoding="utf-8")
+    assert store.load() == {}
+
+    _record(store, HEADER, now="t1")
+
+    assert store.path.read_text(encoding="utf-8") == newer
 
 
 def test_a_write_error_is_dropped(tmp_path: Path) -> None:

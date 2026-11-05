@@ -56,15 +56,18 @@ class PlannedMode:
     @classmethod
     def from_dict(cls, value: object, path: str) -> PlannedMode:
         """Read a mode written by :meth:`to_dict`, rejecting any other shape."""
-        keys = {"name", "description", "automatic"}
-        if not isinstance(value, dict) or set(value) != keys:
+        if (
+            not isinstance(value, dict)
+            or "name" not in value
+            or not set(value) <= {"name", "description", "automatic"}
+        ):
             raise ValueError(
                 f"{path} must be an object of name, description, automatic"
             )
         name, description, automatic = (
             value["name"],
-            value["description"],
-            value["automatic"],
+            value.get("description", []),
+            value.get("automatic", False),
         )
         if (
             not isinstance(name, str)

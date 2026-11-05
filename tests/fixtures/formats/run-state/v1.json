@@ -1,0 +1,296 @@
+{
+  "format": "ww.run-state",
+  "schema_version": 1,
+  "written_by": "1.0.0b18",
+  "task_id": "TASK-1",
+  "revision": 9,
+  "run": {
+    "run_id": "01-task",
+    "workflow": "task",
+    "snapshot": {
+      "schema_version": 1,
+      "compiler_version": "plan-v1",
+      "configuration_digest": "5f6e0efb8b0f79bb66a9fed75d329ba6aca8af103a05116cc84305200b7e0400",
+      "compiled_at": "2026-11-05T14:05:26Z",
+      "plan": {
+        "workflow": "task",
+        "workflow_description": "",
+        "agent": "codex",
+        "task_id": "TASK-1",
+        "modes": [],
+        "handoff": false,
+        "items": [
+          {
+            "id": "task:init:step:step:1",
+            "position": 1,
+            "name": "init",
+            "description": "Record the passed requirements for this task. Correct their grammar and style while preserving their meaning. Do not analyze, reason about, or plan the work; only save the requirements.",
+            "operation": {
+              "type": "action",
+              "identifier": "prompt",
+              "payload": {
+                "text": "Record the passed requirements for this task. Correct their grammar and style while preserving their meaning. Do not analyze, reason about, or plan the work; only save the requirements."
+              }
+            },
+            "owner": "agent",
+            "execution": "agent_instruction",
+            "requires_agent_input": false,
+            "workflow": "task",
+            "step": "init",
+            "parent": null,
+            "phase": "step",
+            "source": "step",
+            "registered_handler": null,
+            "requested_agent": "codex",
+            "requested_model": "cheapest",
+            "requested_reasoning": "low",
+            "model": "cheapest",
+            "reasoning": "low",
+            "step_ordinals": [
+              1
+            ]
+          },
+          {
+            "id": "task:research:step:step:1",
+            "position": 2,
+            "name": "research",
+            "description": "Research the change.",
+            "operation": {
+              "type": "action",
+              "identifier": "prompt",
+              "payload": {
+                "text": "Research the change."
+              }
+            },
+            "owner": "agent",
+            "execution": "agent_instruction",
+            "requires_agent_input": false,
+            "workflow": "task",
+            "step": "research",
+            "parent": null,
+            "phase": "step",
+            "source": "step",
+            "registered_handler": null,
+            "requested_agent": "codex",
+            "requested_model": "auto",
+            "requested_reasoning": "auto",
+            "model": "auto",
+            "reasoning": "auto",
+            "step_ordinals": [
+              2
+            ]
+          },
+          {
+            "id": "task:implement:step:step:1",
+            "position": 3,
+            "name": "implement",
+            "description": "Implement the change.",
+            "operation": {
+              "type": "action",
+              "identifier": "prompt",
+              "payload": {
+                "text": "Implement the change."
+              }
+            },
+            "owner": "agent",
+            "execution": "agent_instruction",
+            "requires_agent_input": false,
+            "workflow": "task",
+            "step": "implement",
+            "parent": null,
+            "phase": "step",
+            "source": "step",
+            "registered_handler": null,
+            "requested_agent": "codex",
+            "requested_model": "auto",
+            "requested_reasoning": "auto",
+            "model": "auto",
+            "reasoning": "auto",
+            "step_ordinals": [
+              3
+            ],
+            "artifact_dependency": "research"
+          },
+          {
+            "id": "task:review:step:step:1",
+            "position": 4,
+            "name": "review",
+            "description": "Review the change.",
+            "operation": {
+              "type": "action",
+              "identifier": "prompt",
+              "payload": {
+                "text": "Review the change."
+              }
+            },
+            "owner": "agent",
+            "execution": "agent_instruction",
+            "requires_agent_input": false,
+            "workflow": "task",
+            "step": "review",
+            "parent": null,
+            "phase": "step",
+            "source": "step",
+            "registered_handler": null,
+            "requested_agent": "codex",
+            "requested_model": "auto",
+            "requested_reasoning": "auto",
+            "model": "auto",
+            "reasoning": "auto",
+            "step_ordinals": [
+              4
+            ]
+          },
+          {
+            "id": "task:review:before_complete_workflow:internal:1",
+            "position": 5,
+            "name": "update-workflow-summary",
+            "description": "Provide a concise summary of this workflow run's goal and result.",
+            "operation": {
+              "type": "action",
+              "identifier": "prompt",
+              "payload": {
+                "text": "Provide a concise summary of this workflow run's goal and result."
+              }
+            },
+            "owner": "agent",
+            "execution": "agent_instruction",
+            "requires_agent_input": false,
+            "workflow": "task",
+            "step": "review",
+            "parent": null,
+            "phase": "before_complete_workflow",
+            "source": "internal",
+            "registered_handler": null,
+            "provide": [
+              {
+                "name": "summary",
+                "description": "A short goal/result summary for the task workflow ledger."
+              }
+            ],
+            "requested_agent": "codex",
+            "requested_model": "auto",
+            "requested_reasoning": "auto",
+            "model": "auto",
+            "reasoning": "auto",
+            "summary": true,
+            "step_ordinals": [
+              4
+            ]
+          }
+        ],
+        "documents": [
+          {
+            "name": "project",
+            "description": "How this project's work is organised: tooling, trackers, infrastructure, stack, conventions and recurring pitfalls. Shared with the team.",
+            "scope": "project",
+            "path": ".ww/project.md"
+          },
+          {
+            "name": "setup_proposal",
+            "description": "The configuration fragment a ww setup workflow proposes, which ww places with `setup apply`.",
+            "scope": "task",
+            "path": ".ww/tasks/{{ww.task.id}}/setup-proposal.yaml"
+          }
+        ]
+      },
+      "plan_revision": 1
+    },
+    "state": {
+      "schema_version": 1,
+      "task_id": "TASK-1",
+      "workflow": "task",
+      "agent": "codex",
+      "status": "in_progress",
+      "created_at": "2026-11-05T14:05:26Z",
+      "updated_at": "2026-11-05T14:05:26Z",
+      "snapshot_digest": "5f6e0efb8b0f79bb66a9fed75d329ba6aca8af103a05116cc84305200b7e0400",
+      "cursor": 2,
+      "active_item_id": "task:implement:step:step:1",
+      "item_executions": [
+        {
+          "plan_item_id": "task:init:step:step:1",
+          "position": 1,
+          "status": "completed",
+          "started_at": "2026-11-05T14:05:26Z",
+          "completed_at": "2026-11-05T14:05:26Z",
+          "attempts": 1,
+          "artifact": ".ww/tasks/TASK-1/runs/01-task/steps/01-init.md",
+          "operation_id": "TASK-1:01-task:c08b4a56a0b743e8bab16ef8b6d33465:task:init:step:step:1",
+          "model": "cheapest",
+          "reasoning": "low",
+          "checks_waived": {}
+        },
+        {
+          "plan_item_id": "task:research:step:step:1",
+          "position": 2,
+          "status": "completed",
+          "started_at": "2026-11-05T14:05:26Z",
+          "completed_at": "2026-11-05T14:05:26Z",
+          "attempts": 1,
+          "artifact": ".ww/tasks/TASK-1/runs/01-task/steps/02-research.md",
+          "summary_for_next": "Researched.",
+          "operation_id": "TASK-1:01-task:c08b4a56a0b743e8bab16ef8b6d33465:task:research:step:step:1",
+          "model": "auto",
+          "reasoning": "auto",
+          "checks_waived": {}
+        },
+        {
+          "plan_item_id": "task:implement:step:step:1",
+          "position": 3,
+          "status": "in_progress",
+          "started_at": "2026-11-05T14:05:26Z",
+          "attempts": 1,
+          "operation_id": "TASK-1:01-task:c08b4a56a0b743e8bab16ef8b6d33465:task:implement:step:step:1",
+          "model": "auto",
+          "reasoning": "auto",
+          "checks_waived": {}
+        },
+        {
+          "plan_item_id": "task:review:step:step:1",
+          "position": 4,
+          "operation_id": "TASK-1:01-task:c08b4a56a0b743e8bab16ef8b6d33465:task:review:step:step:1",
+          "checks_waived": {}
+        },
+        {
+          "plan_item_id": "task:review:before_complete_workflow:internal:1",
+          "position": 5,
+          "operation_id": "TASK-1:01-task:c08b4a56a0b743e8bab16ef8b6d33465:task:review:before_complete_workflow:internal:1",
+          "checks_waived": {}
+        }
+      ],
+      "steps": [
+        {
+          "name": "init",
+          "path": "init",
+          "status": "completed",
+          "started_at": "2026-11-05T14:05:26Z",
+          "completed_at": "2026-11-05T14:05:26Z"
+        },
+        {
+          "name": "research",
+          "path": "research",
+          "status": "completed",
+          "started_at": "2026-11-05T14:05:26Z",
+          "completed_at": "2026-11-05T14:05:26Z"
+        },
+        {
+          "name": "implement",
+          "path": "implement",
+          "status": "in_progress",
+          "started_at": "2026-11-05T14:05:26Z"
+        },
+        {
+          "name": "review",
+          "path": "review"
+        }
+      ],
+      "workflow_values": {
+        "task_id": "TASK-1"
+      },
+      "run_id": "01-task",
+      "execution_instance_id": "c08b4a56a0b743e8bab16ef8b6d33465",
+      "plan_digest": "852b5591f522ff69f7a4140d7fe5bc556f33076925ee75db1800562dc79863a0"
+    }
+  }
+}

@@ -3,6 +3,7 @@
 
 from ww.extensions.api import (
     EXTENSION_API_VERSION,
+    MIN_SUPPORTED_EXTENSION_API_VERSION,
     Extension,
     ExtensionCheckResult,
     ExtensionCommand,
@@ -23,6 +24,7 @@ from ww.extensions.store import ExtensionStore
 
 __all__ = [
     "EXTENSION_API_VERSION",
+    "MIN_SUPPORTED_EXTENSION_API_VERSION",
     "Extension",
     "ExtensionCommand",
     "ExtensionContext",

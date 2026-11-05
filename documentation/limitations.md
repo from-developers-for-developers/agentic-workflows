@@ -22,8 +22,8 @@ install section of [README.md](../README.md) and
 
 **There is no formal compatibility guarantee yet**, because there are no
 stable releases to define one against: nothing is contractually promised to
-survive an upgrade to the next release or a pull of `dev`, and there is no
-deprecation period before a change lands.
+survive an upgrade to the next release or a pull of `dev`, and no
+deprecation period is promised before a change lands.
 
 In practice the surfaces have settled. `ww.yaml` and the command line
 have been stable for a while, and most work is internal refactoring, new
@@ -31,10 +31,23 @@ capabilities, and fixes. Incompatible changes are possible but uncommon; when
 one lands it is deliberate and marked "Breaking:" in the changelog.
 
 Every persisted format — task state, saved plans, execution records, the rule
-stores — carries a schema version, and this build reads only its own version,
-rejecting every other one rather than guessing or migrating it. When the
-changelog says a schema changed, finish or reset in-flight tasks before
-upgrading.
+stores, feedback and run reports — carries a schema version and the ww
+version that wrote it. A schema version changes only on a
+backward-incompatible change, and each change ships with a migration: this
+build reads every version of a format from the oldest it still migrates up
+to its own, upgrading an older file when it loads it. It refuses a file a
+newer ww wrote, naming that ww and asking you to upgrade, and it refuses a
+file older than any it still migrates, naming the ww to finish or reset that
+task with. A downgrade is not supported: an older ww may refuse a file a
+newer one wrote even at the same schema version. See
+[compatibility.md](compatibility.md).
+
+Configuration that changes shape ships with a configuration migration where
+ww can describe the change: ww keeps reading the old shape, migrating it in
+memory as each file loads, warns with the file and line, and `ww lint` lists
+what is left; once the old shape is removed, it is an error naming the
+removal. A configuration snapshot a run pinned is migrated the same way and
+never rewritten. See [deprecations.md](deprecations.md).
 
 Once releases exist, the policy becomes the usual one. The package version
 will identify a release rather than promising that every internal

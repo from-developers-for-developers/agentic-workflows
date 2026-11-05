@@ -337,7 +337,7 @@ def test_incompatible_snapshot_is_not_rewritten(tmp_path: Path) -> None:
     _, snapshot = svc.load(TASK)
     before = snapshot.to_dict()
     old = replace(snapshot, schema_version=2).to_dict()
-    with pytest.raises(ValueError, match="unsupported plan snapshot schema"):
+    with pytest.raises(ValueError, match="plan snapshot written by a newer ww"):
         PlanSnapshot.from_dict(old)
     assert snapshot.to_dict() == before
 

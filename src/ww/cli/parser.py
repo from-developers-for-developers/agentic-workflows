@@ -12,6 +12,7 @@ from typing import Any
 from ww import STAGE, __version__
 from ww.agents import HOOK_EVENTS, builtin_agents, hook_agents
 from ww.contracts import CALLER_ROLES
+from ww.design_docs import DOCUMENTS
 from ww.errors import StateError
 from ww.inspect import DEFAULT_COMMITS
 from ww.runtimes import RUNTIME_INSTRUCTIONS
@@ -224,14 +225,18 @@ def build_parser() -> argparse.ArgumentParser:
         "docs",
         help=(
             "Print one of ww's design documents, the same version as this "
-            "installation: specification, features or examples."
+            "installation: specification, features, examples, deprecations "
+            "or upgrade."
         ),
     )
     docs.add_argument(
         "document",
-        choices=("specification", "features", "examples", "deprecations"),
+        type=_document,
+        metavar="{" + ",".join(DOCUMENTS) + "}[#section]",
         help="specification: exact syntax; features: design guidance; "
-        "examples: runnable examples.",
+        "examples: runnable examples; upgrade (or deprecations): the upgrade "
+        "guide, generated from ww's migrations. Add #<section> to print one "
+        "section, such as the one a deprecation message names.",
     )
     inspect = subparsers.add_parser(
         "inspect",
@@ -959,6 +964,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Look again now instead of waiting for the next scheduled check.",
     )
+    _migrate_parser(subparsers, json_output)
     upgrade = subparsers.add_parser(
         "upgrade", help="Upgrade ww through its installer or editable Git checkout."
     )
@@ -966,6 +972,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--pre",
         action="store_true",
         help="Allow prereleases; automatic for installed prerelease versions.",
+    )
+    upgrade.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Install a new major version even while this project holds "
+            "configuration or open runs it no longer reads."
+        ),
     )
     hook = subparsers.add_parser(
         "hook",
@@ -991,6 +1005,69 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def _document(value: str) -> str:
+    """A document name, with an optional ``#section``."""
+    name = value.partition("#")[0]
+    if name not in DOCUMENTS:
+        raise argparse.ArgumentTypeError(
+            f"invalid choice: {name!r} (choose from {', '.join(DOCUMENTS)})"
+        )
+    return value
+
+
+def _migrate_parser(
+    subparsers: argparse._SubParsersAction[_Parser],
+    json_output: _Parser,
+) -> None:
+    """``migrate``: bring configuration files, or stored tasks, up to date."""
+    migrate = subparsers.add_parser(
+        "migrate",
+        parents=[json_output],
+        help=(
+            "Bring the configuration files up to date with ww's deprecations "
+            "and removals, or with --tasks the stored task state. A dry run "
+            "unless --apply."
+        ),
+    )
+    mode = migrate.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write the changes, then list what is left to change by hand.",
+    )
+    mode.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Change nothing; exit 1 while a removed construct is left (with "
+            "--deprecations, while any construct is)."
+        ),
+    )
+    migrate.add_argument(
+        "--deprecations",
+        action="store_true",
+        help="With --check, fail on deprecated constructs too.",
+    )
+    migrate.add_argument(
+        "--choose",
+        action="append",
+        default=[],
+        metavar="MIGRATION=OPTION",
+        help=(
+            "The option to apply for a migration that has several; repeat for "
+            "more. At a terminal, --apply asks for the ones not given."
+        ),
+    )
+    migrate.add_argument(
+        "--tasks",
+        action="store_true",
+        help=(
+            "Rewrite every stored task's state in the current format instead, "
+            "after copying it to .ww/backups/ (with --apply)."
+        ),
+    )
 
 
 def _config_parser(

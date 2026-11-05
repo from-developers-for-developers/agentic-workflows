@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import shutil
 import subprocess
 import threading
 import urllib.error
@@ -15,13 +16,19 @@ from typing import Any
 
 import pytest
 
+from ww.direct_work import COMMITS_FILE, GIT_EXTENSION
 from ww.errors import StateError
+from ww.extensions.store import ExtensionStore
 from ww.service import WorkflowService
 from ww.storage import Storage
+from ww.task_envelope import read_task_envelope
 from ww.visualize.project import Project
 from ww.visualize.server import VisualizerServer
 from ww.visualize.tasks import artifact_text, document_text, task_detail, task_list
 from ww.visualize.watch import Watcher
+
+# A task as an older ww stored it: schema 2, every run inline in the index.
+OLDER_TASKS = Path(__file__).parents[1] / "fixtures/visualize/older-task"
 
 # A judged rule, a checked rule scoped to Markdown, and a ``fix`` hook.
 WORKFLOWS = """rules:
@@ -162,7 +169,142 @@ def test_an_unreadable_task_is_listed_with_its_reason(root: Path) -> None:
 
     assert listed["TASK-2"]["status"] == "unreadable"
     assert listed["TASK-2"]["summary"]
-    assert task_detail(project, "TASK-2")["status"] == "unreadable"
+    assert listed["TASK-2"]["reduced"]["badge"] == "reduced view"
+    detail = task_detail(project, "TASK-2")
+    assert detail["status"] == "unreadable"
+    assert detail["reduced"]["reason"] == listed["TASK-2"]["summary"]
+    assert detail["runs"] == []
+
+
+def _older_task(root: Path) -> Project:
+    """The project with a task an older ww wrote and a commit ww made for it."""
+    shutil.copytree(OLDER_TASKS, root / ".ww/tasks", dirs_exist_ok=True)
+    ExtensionStore(root, GIT_EXTENSION).append_line(
+        COMMITS_FILE,
+        json.dumps(
+            {
+                "task_id": "TASK-9",
+                "sha": "a" * 40,
+                "message": "TASK-9: Write readable YAML\n\nBlock style.",
+                "committed_at": "2026-10-02T10:28:00Z",
+            }
+        ),
+    )
+    return Project.load(Storage(root))
+
+
+def test_an_older_task_is_listed_from_its_envelope(root: Path) -> None:
+    _developed_once_rejected(root)
+    project = _older_task(root)
+
+    listed = {entry["id"]: entry for entry in task_list(project)["tasks"]}
+
+    older = listed["TASK-9"]
+    assert older["status"] == "completed"
+    assert older["workflows"] == ["bugfix", "merge-to-dev"]
+    assert older["updated_at"] == "2026-10-02T10:33:10Z"
+    assert older["reduced"]["badge"] == "older format (schema 2): reduced view"
+    assert older["reduced"]["kind"] == "older"
+    assert older["reduced"]["reason"]
+    assert older["summary"] == ""
+    # The task this ww reads is listed in full beside it.
+    assert "reduced" not in listed["TASK-1"]
+    json.dumps(older)
+
+
+def test_an_older_task_opens_with_its_runs_artifacts_and_commits(root: Path) -> None:
+    project = _older_task(root)
+
+    detail = task_detail(project, "TASK-9")
+
+    assert detail["status"] == "completed"
+    assert detail["reduced"]["schema_version"] == 2
+    assert [
+        (run["id"], run["workflow"], run["status"], run["created_at"])
+        for run in detail["runs"]
+    ] == [
+        ("01-bugfix", "bugfix", "completed", "2026-10-02T10:20:55Z"),
+        ("02-merge-to-dev", "merge-to-dev", "completed", "2026-10-02T10:30:53Z"),
+    ]
+    assert [artifact["path"] for artifact in detail["runs"][0]["artifacts"]] == [
+        "01-init.md",
+        "02-investigate.md",
+        "03-check.md",
+        "03-check/iteration-01/01-run.md",
+        "04-test.md",
+        "04-test/.hooks/before_complete_workflow/05-update-changelog.md",
+    ]
+    assert detail["runs"][1]["artifacts"][0] == {
+        "path": "01-init.md",
+        "ref": ".ww/tasks/TASK-9/runs/02-merge-to-dev/steps/01-init.md",
+    }
+    assert [commit["subject"] for commit in detail["commits"]] == [
+        "TASK-9: Write readable YAML"
+    ]
+    # What needs the full record is left out, not guessed.
+    assert detail["values"] == {}
+    assert all("items" not in run for run in detail["runs"])
+    json.dumps(detail)
+
+
+def test_an_older_task_s_step_artifacts_and_nothing_else_are_served(
+    root: Path,
+) -> None:
+    project = _older_task(root)
+    task = root / ".ww/tasks/TASK-9"
+    # A link inside the steps directory to a file outside it is no artifact.
+    (task / "runs/01-bugfix/steps/99-elsewhere.md").symlink_to(root / "README.md")
+    run = task_detail(project, "TASK-9")["runs"][0]
+    reference = run["artifacts"][-1]["ref"]
+
+    text = artifact_text(project, "TASK-9", "01-bugfix", reference)
+
+    assert "Added the entry." in text
+    assert "99-elsewhere.md" not in [entry["path"] for entry in run["artifacts"]]
+    for other in (
+        ".ww/tasks/TASK-9/state.json",
+        ".ww/tasks/TASK-9/runs/01-bugfix/steps/../../../state.json",
+        ".ww/tasks/TASK-9/runs/01-bugfix/steps/99-elsewhere.md",
+        ".ww/tasks/TASK-9/runs/02-merge-to-dev/steps/02-merge.md",
+        "README.md",
+        "../README.md",
+        str(task / "runs/01-bugfix/steps/01-init.md"),
+    ):
+        with pytest.raises(StateError, match="is not an artifact"):
+            artifact_text(project, "TASK-9", "01-bugfix", other)
+    with pytest.raises(StateError, match="is not an artifact"):
+        artifact_text(project, "TASK-9", "../TASK-9/runs/01-bugfix", reference)
+    with pytest.raises(StateError, match="invalid task ID"):
+        artifact_text(project, "../TASK-9", "01-bugfix", reference)
+
+
+def test_the_server_serves_an_older_task_s_artifact(server: VisualizerServer) -> None:
+    _older_task(server.storage.root)
+    reference = ".ww/tasks/TASK-9/runs/02-merge-to-dev/steps/02-merge.md"
+
+    status, body = _get(
+        server, f"/api/artifact?task=TASK-9&run=02-merge-to-dev&ref={reference}"
+    )
+    assert (status, b"Merged cleanly." in body) == (200, True)
+    status, _ = _get(
+        server, "/api/artifact?task=TASK-9&run=02-merge-to-dev&ref=README.md"
+    )
+    assert status == 400
+
+
+def test_the_envelope_reads_a_task_this_ww_wrote(root: Path) -> None:
+    _developed_once_rejected(root)
+
+    envelope = read_task_envelope(root / ".ww/tasks/TASK-1", "TASK-1")
+
+    assert (envelope.task_id, envelope.format, envelope.problem) == (
+        "TASK-1",
+        "ww.task-state",
+        None,
+    )
+    (run,) = envelope.runs
+    assert (run.run_id, run.workflow, run.status) == ("01-task", "task", "in_progress")
+    assert run.created_at and run.updated_at
 
 
 def test_only_a_run_s_own_artifacts_are_served(root: Path) -> None:

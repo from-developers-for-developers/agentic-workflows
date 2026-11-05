@@ -133,10 +133,11 @@ def test_setting_defaults_true_and_rejects_non_booleans(tmp_path: Path) -> None:
 def test_corrupt_store_is_reported_without_overwriting(tmp_path: Path) -> None:
     store = FeedbackStore(Storage(tmp_path))
     store.path.parent.mkdir(parents=True, exist_ok=True)
-    store.path.write_text('{"schema": 999}')
-    with pytest.raises(StateError, match="unsupported"):
+    newer = '{"schema": 999, "written_by": "9.0.0"}'
+    store.path.write_text(newer)
+    with pytest.raises(StateError, match=r"ww 9\.0\.0 \(schema 999\).*: upgrade ww"):
         store.complete_task("TASK-1")
-    assert store.path.read_text() == '{"schema": 999}'
+    assert store.path.read_text() == newer
 
 
 def test_multiple_quotes_do_not_inflate_distinct_task_frequency(tmp_path: Path) -> None:

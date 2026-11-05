@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ww-migrate brings the project's ww configuration up to date with the
+# installed ww, with the operator. `ww migrate` makes the automatic fixes;
+# the choices and the changes ww cannot make itself are gone through in
+# conversation, the operator deciding each one. It works in the current
+# checkout, on the configuration files themselves, and creates no branch,
+# worktree or commit: like the setup workflows, it leaves the changed files
+# uncommitted for the operator to review and commit.
+workflows:
+  - name: ww-migrate
+    description: >-
+      Brings the project's ww configuration up to date with this ww: applies
+      the automatic fixes and goes through the choices and manual changes with
+      you.
+    runtime: single
+    restartable: true
+    role: manager
+    steps:
+      - name: detect
+        description: >-
+          Run `{{ww.executable}} migrate --json` and `{{ww.executable}} migrate
+          --check --deprecations`, and change nothing. The artifact lists every
+          finding, grouped by kind (automatic, choice, manual, removed): its
+          file and line, the migration ID, what it says, and for a choice its
+          options with their consequences. Add the diff `{{ww.executable}}
+          migrate` shows for the automatic fixes. When ww finds nothing, say
+          so; that is a fine result, and the later steps then only confirm it.
+      - name: apply
+        artifact_from: detect
+        description: >-
+          Run `{{ww.executable}} migrate --apply`, which makes only the
+          automatic fixes the detect step listed, and nothing else: never edit
+          a file for an automatic finding yourself. If it refuses, report its
+          message and stop. The artifact lists the files it changed and the
+          findings that remain, from `{{ww.executable}} migrate --json` run
+          again, each with its kind. When there was nothing automatic, say so.
+      - name: resolve
+        interactive: true
+        artifact_from: apply
+        description: >-
+          Go through every remaining choice, manual and removed finding with
+          the operator in one message, numbered: for each its file and line,
+          why ww changed it, its options with their consequences, and the
+          change you propose, from the finding's own instructions and the
+          upgrade guide section it names (`{{ww.executable}} docs
+          deprecations`). The operator decides each one; propose, never
+          decide for them, and leave a finding alone when they say so. Apply
+          a chosen option with `{{ww.executable}} migrate --apply --choose
+          <migration-id>=<option>`, one `--choose` per choice. Make an agreed
+          manual change yourself, in the file and at the place the finding
+          names, changing nothing else in that file, and show the operator
+          the diff. Discuss and revise until the operator's intent to finish
+          is clear; ask naturally if it is ambiguous, then record the
+          conversation once. The artifact lists every finding with what was
+          decided and done, or that it was left. When nothing remains, say so
+          and record the conversation without asking anything.
+      - name: verify
+        artifact_from: resolve
+        description: >-
+          Run `{{ww.executable}} migrate --check --deprecations` and
+          `{{ww.executable}} lint` and report both results in full. A finding
+          the operator chose to leave is expected; any other is reported as
+          not done, with what is still to change. Change nothing in this step.
+          Run `git status --short` where the project is a Git repository and
+          list the files this run changed: they are left uncommitted for the
+          operator to review and commit with the project.

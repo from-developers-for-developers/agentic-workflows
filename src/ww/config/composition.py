@@ -30,6 +30,10 @@ machine.
 A level extends the ones above unless one of its files says ``extends: false``;
 then folding starts again at that level.
 
+Each file is brought to the current shape as it is read, before anything
+folds it: a deprecated construct is migrated in memory with a notice, and a
+removed one is an error naming its removal (see :mod:`ww.migrations.config`).
+
 The composed document is ordinary ``ww.yaml`` notation:
 the parser reads it exactly as it would a single file, and nothing is
 written to disk.
@@ -53,8 +57,8 @@ from ww.config_files import (
     read_configuration_file,
     workflow_levels,
 )
-from ww.deprecations import assessment_deprecations
 from ww.errors import ConfigurationError
+from ww.migrations.config import Migrated, migrate_loaded, ww_migrations
 from ww.workflow_config import WorkflowConfigLevel, WorkflowProvenance
 
 IMPORTS_KEY = "imports"
@@ -99,8 +103,9 @@ class ComposedConfiguration:
     overrides: tuple[Override, ...] = ()
     sources: tuple[str, ...] = ()
     ignored: tuple[str, ...] = ()
-    # One notice per absolute rule path, and per manager step that also asks
-    # for worker settings, in the files folded in.
+    # One notice per deprecated construct migrated in memory, per absolute
+    # rule path, and per manager step that also asks for worker settings, in
+    # the files folded in.
     rule_notices: tuple[str, ...] = ()
     workflow_provenance: Mapping[str, WorkflowProvenance] = field(
         default_factory=lambda: MappingProxyType({})
@@ -119,10 +124,20 @@ class ComposedConfiguration:
 
 
 @dataclass(frozen=True)
+class _File:
+    """One file read for a level, in the current shape, with its notices."""
+
+    label: str
+    raw: dict[str, Any]
+    path: Path
+    notices: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class _Level:
     """One level's files, imports first, and whether it extends the ones above."""
 
-    files: tuple[tuple[str, dict[str, Any], Path], ...]
+    files: tuple[_File, ...]
     extends: bool
     name: str
 
@@ -143,14 +158,20 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
         except yaml.YAMLError:
             return ComposedConfiguration(text, {}, sources=(label,))
         if not isinstance(root, dict) or not {IMPORTS_KEY, EXTENDS_KEY} & set(root):
-            raw = root if isinstance(root, dict) else {}
+            raw: dict[str, Any] = {}
+            deprecations: tuple[str, ...] = ()
+            if isinstance(root, dict):
+                migrated = _migrated(root, label, text)
+                raw, deprecations = migrated.data, migrated.notices
+                if raw is not root:
+                    text = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
             return ComposedConfiguration(
                 text,
                 raw,
                 sources=(label,),
                 workflow_provenance=_workflow_provenance(raw, label, "project"),
                 rule_notices=(
-                    *assessment_deprecations(raw, label),
+                    *deprecations,
                     *_absolute_rule_notices(raw, label),
                     *_manager_setting_notices(raw, label),
                 ),
@@ -158,29 +179,27 @@ def compose_configuration(path: Path) -> ComposedConfiguration:
     base, levels, start, applied = _fold_order(path, present)
     group_names = {
         name
-        for _, raw, _, _ in applied
-        if isinstance(raw.get("rules"), dict)
-        for name in raw["rules"]
+        for file, _ in applied
+        if isinstance(file.raw.get("rules"), dict)
+        for name in file.raw["rules"]
     }
     composer = _Composer()
     notices: list[str] = []
-    for file_label, raw, file, level_name in applied:
-        notices.extend(assessment_deprecations(raw, file_label))
-        notices.extend(_absolute_rule_notices(raw, file_label))
-        notices.extend(_manager_setting_notices(raw, file_label))
+    for file, level_name in applied:
+        notices.extend(file.notices)
+        notices.extend(_absolute_rule_notices(file.raw, file.label))
+        notices.extend(_manager_setting_notices(file.raw, file.label))
         composer.apply(
-            _rebase_rule_paths(raw, file.parent, base, group_names),
-            file_label,
+            _rebase_rule_paths(file.raw, file.path.parent, base, group_names),
+            file.label,
             _public_level(level_name),
         )
     return ComposedConfiguration(
         yaml.safe_dump(composer.raw, sort_keys=False, allow_unicode=True),
         composer.raw,
         tuple(composer.overrides),
-        tuple(file_label for file_label, _, _, _ in applied),
-        tuple(
-            file_label for level in levels[:start] for file_label, _, _ in level.files
-        ),
+        tuple(file.label for file, _ in applied),
+        tuple(file.label for level in levels[:start] for file in level.files),
         tuple(notices),
         MappingProxyType(dict(composer.workflow_provenance)),
     )
@@ -201,16 +220,16 @@ def workflow_sites(path: Path, name: str) -> tuple[WorkflowSite, ...]:
 
     The last site is the definition that wins; the ones before it are hidden by
     it. Files a lower level's ``extends: false`` leaves out are not applied and
-    not listed.
+    not listed. Each entry is as its file has it, not migrated.
     """
-    _, _, _, applied = _fold_order(path, _present_levels(path))
+    _, _, _, applied = _fold_order(path, _present_levels(path), migrate=False)
     sites: list[WorkflowSite] = []
-    for label, raw, file, level_name in applied:
-        workflows = raw.get("workflows")
+    for file, level_name in applied:
+        workflows = file.raw.get("workflows")
         if not isinstance(workflows, list):
             continue
         sites.extend(
-            WorkflowSite(file, label, _public_level(level_name), entry)
+            WorkflowSite(file.path, file.label, _public_level(level_name), entry)
             for entry in workflows
             if entry_name(entry) == name
         )
@@ -292,9 +311,11 @@ def configuration_files(path: Path) -> tuple[Path, ...]:
 
     A level's imports come before the file that lists them. Files a lower
     level's ``extends: false`` leaves out are not applied and not listed.
+    The files are not migrated to find them, so a file holding a construct
+    ww no longer reads is still listed, for ``ww migrate`` to fix.
     """
-    _, _, _, applied = _fold_order(path, _present_levels(path))
-    return tuple(file for _, _, file, _ in applied)
+    _, _, _, applied = _fold_order(path, _present_levels(path), migrate=False)
+    return tuple(file.path for file, _ in applied)
 
 
 def _present_levels(path: Path) -> tuple[ConfigurationLevel, ...]:
@@ -307,41 +328,42 @@ def _present_levels(path: Path) -> tuple[ConfigurationLevel, ...]:
 
 
 def _fold_order(
-    path: Path, present: tuple[ConfigurationLevel, ...]
-) -> tuple[
-    Path,
-    list[_Level],
-    int,
-    list[tuple[str, dict[str, Any], Path, str]],
-]:
-    """The files folded for ``path`` in order, after any ``extends: false``."""
+    path: Path, present: tuple[ConfigurationLevel, ...], *, migrate: bool = True
+) -> tuple[Path, list[_Level], int, list[tuple[_File, str]]]:
+    """The files folded for ``path`` in order, after any ``extends: false``.
+
+    Each comes with the name of its level, migrated unless ``migrate`` is
+    false.
+    """
     base = path.parent
     seen = {level.path.resolve() for level in present}
-    levels = [_read_level(level, base, seen) for level in present]
+    levels = [_read_level(level, base, seen, migrate) for level in present]
     start = max(
         (index for index, level in enumerate(levels) if not level.extends),
         default=0,
     )
-    applied = [(*file, level.name) for level in levels[start:] for file in level.files]
+    applied = [(file, level.name) for level in levels[start:] for file in level.files]
     return base, levels, start, applied
 
 
-def _read_level(level: ConfigurationLevel, base: Path, seen: set[Path]) -> _Level:
+def _read_level(
+    level: ConfigurationLevel, base: Path, seen: set[Path], migrate: bool
+) -> _Level:
     root_label = display_path(level.path, base)
-    root = _read_file(level.path, root_label)
-    keys = [key for key in root if key != EXTENDS_KEY]
+    root = _read_file(level.path, root_label, migrate)
+    keys = [key for key in root.raw if key != EXTENDS_KEY]
     if IMPORTS_KEY in keys and keys[0] != IMPORTS_KEY:
         raise ConfigurationError(
             f"{IMPORTS_KEY} must come before every key but {EXTENDS_KEY} "
             f"in {root_label}"
         )
-    imports = root.pop(IMPORTS_KEY, [])
+    imports = root.raw.pop(IMPORTS_KEY, [])
     files = [
-        (file_label, _read_import(file, file_label), file)
+        _read_import(file, file_label, migrate)
         for file_label, file in _import_files(imports, level.path, base, seen)
     ]
-    files.append((root_label, root, level.path))
-    extends = [_extends(raw, file_label) for file_label, raw, _ in files]
+    files.append(root)
+    extends = [_extends(file.raw, file.label) for file in files]
     return _Level(tuple(files), False not in extends, level.name)
 
 
@@ -378,16 +400,26 @@ def _extends(raw: dict[str, Any], label: str) -> bool | None:
     return value
 
 
-def _read_file(file: Path, label: str) -> dict[str, Any]:
+def _read_file(file: Path, label: str, migrate: bool = True) -> _File:
+    """One file's mapping, migrated to the current shape unless not ``migrate``."""
     try:
-        raw = yaml.safe_load(read_configuration_file(file))
+        text = read_configuration_file(file)
+        raw = yaml.safe_load(text)
     except OSError as error:
         raise ConfigurationError(f"cannot read {label}: {error}") from error
     except yaml.YAMLError as error:
         raise ConfigurationError(f"invalid YAML in {label}: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{label} must contain a mapping")
-    return raw
+    if not migrate:
+        return _File(label, raw, file)
+    migrated = _migrated(raw, label, text)
+    return _File(label, migrated.data, file, migrated.notices)
+
+
+def _migrated(raw: dict[str, Any], label: str, text: str) -> Migrated:
+    """``raw``, read from ``label``, with every deprecated construct migrated."""
+    return migrate_loaded(raw, label, (ww_migrations("workflows"),), text=text)
 
 
 def _import_files(
@@ -420,13 +452,13 @@ def _import_files(
     return result
 
 
-def _read_import(file: Path, label: str) -> dict[str, Any]:
-    raw = _read_file(file, label)
-    if IMPORTS_KEY in raw:
+def _read_import(file: Path, label: str, migrate: bool) -> _File:
+    read = _read_file(file, label, migrate)
+    if IMPORTS_KEY in read.raw:
         raise ConfigurationError(
             f"{label} cannot import other files; list every import in the root file"
         )
-    return raw
+    return read
 
 
 class _Composer:

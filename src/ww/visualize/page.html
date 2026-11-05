@@ -353,6 +353,8 @@ table.settings td:last-child { font-family: var(--f-mono); font-size: 12px; over
 .trow-sum { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .trow.unreadable { background: transparent; border-style: dashed; }
 .trow.unreadable .trow-id { color: var(--faint); }
+.trow.reduced { border-style: dashed; }
+.badge.reduced { color: var(--warn); background: var(--warn-soft); }
 .group-label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 10px 2px 2px; }
 
 .status { font-size: 11.5px; font-weight: 500; border-radius: 999px; padding: 1px 9px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
@@ -362,7 +364,7 @@ table.settings td:last-child { font-family: var(--f-mono); font-size: 12px; over
 .st-in_progress::before { animation: pulse 2.4s infinite; }
 .st-awaiting_operator { color: var(--warn); background: var(--warn-soft); }
 .st-failed { color: var(--bad); background: var(--bad-soft); }
-.st-pending, .st-skipped, .st-direct, .st-unreadable { color: var(--muted); background: var(--sunken); }
+.st-pending, .st-skipped, .st-direct, .st-unreadable, .st-unknown { color: var(--muted); background: var(--sunken); }
 
 /* detail */
 .tdetail { min-width: 0; display: grid; gap: 22px; }
@@ -486,6 +488,14 @@ details.attempt[open] > summary { margin-bottom: 6px; }
 .verifier { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--sunken) 40%, var(--surface)); }
 .verifier-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .verifier-head b { font-family: var(--f-display); font-weight: 650; }
+/* a task shown reduced: what its envelope and its files still say */
+.reduced-note { margin: 0; max-width: 76ch; font-size: 13.5px; color: var(--muted); background: var(--sunken); border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; overflow-wrap: anywhere; }
+.arow { display: flex; gap: 12px; align-items: baseline; padding: 7px 0 7px calc(var(--depth, 0) * 16px); border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); min-width: 0; }
+.phase-lbl + .arow { border-top: 0; }
+.arow .apath { flex: 1; min-width: 0; font-family: var(--f-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.arow .apath i { font-style: normal; color: var(--faint); }
+.arow button { flex: none; font-size: 12.5px; color: var(--accent); }
+.arow button:hover { text-decoration: underline; }
 /* ---------- Steps / YAML switch ---------- */
 .wf-switch { display: flex; gap: 4px; align-items: center; padding: 14px 0 6px; flex-wrap: wrap; }
 .seg { font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 7px; color: var(--muted); border: 1px solid transparent; }
@@ -1049,7 +1059,7 @@ function renderAtlas() {
 /* ================================================================
    Tasks
 ================================================================ */
-const STATUS_LABEL = { completed: "completed", in_progress: "in progress", awaiting_operator: "waiting for you", awaiting_input: "waiting for input", interrupted: "interrupted", failed: "failed", pending: "pending", abandoned: "abandoned", direct: "direct work", unreadable: "unreadable" };
+const STATUS_LABEL = { completed: "completed", in_progress: "in progress", awaiting_operator: "waiting for you", awaiting_input: "waiting for input", interrupted: "interrupted", failed: "failed", pending: "pending", abandoned: "abandoned", direct: "direct work", unreadable: "unreadable", unknown: "unknown" };
 const PHASE_LABEL = { before_start_workflow: "Workflow · before start", step: "Steps", before_complete_workflow: "Workflow · before complete" };
 // A step's own hooks are listed with the step, tagged instead of grouped.
 const STEP_HOOK_LABEL = { before_start: "before start", before_complete: "before complete", after_complete: "after complete" };
@@ -1087,7 +1097,7 @@ const isActive = s => ["in_progress", "awaiting_operator", "awaiting_input", "in
 function renderChips() {
   const counts = {};
   tasks.forEach(t => { const k = isActive(t.status) && t.status !== "awaiting_operator" ? "in_progress" : t.status; counts[k] = (counts[k] || 0) + 1; });
-  const order = [["all", "All", tasks.length], ["in_progress", "In progress"], ["awaiting_operator", "Waiting for you"], ["completed", "Completed"], ["direct", "Direct work"], ["abandoned", "Abandoned"], ["unreadable", "Unreadable"]];
+  const order = [["all", "All", tasks.length], ["in_progress", "In progress"], ["awaiting_operator", "Waiting for you"], ["completed", "Completed"], ["direct", "Direct work"], ["abandoned", "Abandoned"], ["unknown", "Unknown"], ["unreadable", "Unreadable"]];
   $("#statusChips").innerHTML = order.map(([k, l, n]) => {
     const c = n != null ? n : counts[k] || 0;
     return c || k === taskFilter ? `<button class="chip" type="button" data-filter="${k}" aria-pressed="${taskFilter === k}">${l}<span class="n">${c}</span></button>` : "";
@@ -1097,17 +1107,18 @@ function taskMatches(t) {
   const group = isActive(t.status) && t.status !== "awaiting_operator" ? "in_progress" : t.status;
   if (taskFilter !== "all" && group !== taskFilter) return false;
   const q = $("#tq").value.trim().toLowerCase();
-  return !q || [t.id, ...(t.workflows || []), t.summary, t.current_step].join(" ").toLowerCase().includes(q);
+  return !q || [t.id, ...(t.workflows || []), t.summary, t.current_step, t.reduced && t.reduced.badge].join(" ").toLowerCase().includes(q);
 }
 function renderTaskList() {
   const rows = tasks.filter(taskMatches).slice().reverse();
   const active = rows.filter(t => isActive(t.status)), rest = rows.filter(t => !isActive(t.status));
   const row = t => {
-    const wf = (t.workflows || []).join(" → ") || (t.status === "unreadable" ? "" : "direct work");
+    const wf = (t.workflows || []).join(" → ") || (t.reduced ? "" : "direct work");
     const child = t.id.includes("/");
-    return `<button class="trow${t.status === "unreadable" ? " unreadable" : ""}${child ? " child" : ""}" type="button" data-task="${esc(t.id)}" aria-current="${currentTask === t.id}">
+    return `<button class="trow${t.status === "unreadable" ? " unreadable" : ""}${t.reduced ? " reduced" : ""}${child ? " child" : ""}" type="button" data-task="${esc(t.id)}" aria-current="${currentTask === t.id}">
       <span class="trow-top"><span class="trow-id">${esc(child ? t.id.split("/").pop() : t.id)}</span>${pill(t.status)}<span class="trow-wf">${esc(wf)}</span><span class="trow-when">${esc(ago(t.updated_at))}</span></span>
       ${t.current_step ? `<span class="trow-wf">at ${esc(t.current_step)}</span>` : ""}
+      ${t.reduced ? `<span><span class="badge reduced" title="${esc(t.reduced.reason)}">${esc(t.reduced.badge)}</span></span>` : ""}
       <span class="trow-sum">${esc(t.summary)}</span></button>`;
   };
   $("#tlist").innerHTML = (active.length ? `<div class="group-label">Active</div>${active.map(row).join("")}` : "") +
@@ -1270,11 +1281,7 @@ function renderTaskDetail() {
   if (!currentTask) { el.innerHTML = '<div class="empty">Choose a task to see its runs, rules and artifacts.</div>'; return; }
   if (!detail || detail.id !== currentTask) { el.innerHTML = '<div class="empty">Loading…</div>'; return; }
   const t = detail;
-  if (t.unreadable) {
-    el.innerHTML = `<div class="td-head"><div class="td-title"><h2>${esc(t.id)}</h2>${pill("unreadable")}</div>
-      <p class="outcome">This version of ww cannot read the task: ${esc(t.unreadable)}. Repairing, resetting or deleting the task directory is your choice; the page only reads it.</p></div>`;
-    return;
-  }
+  if (t.reduced) { el.innerHTML = renderReducedDetail(t); return; }
   const runs = t.runs || [], last = runs[runs.length - 1];
   const meta = kvRows(t.metadata);
   const values = Object.entries(t.values || {});
@@ -1290,12 +1297,59 @@ function renderTaskDetail() {
     </div>
     ${last && last.summary ? `<div><div class="outcome-lbl">Outcome</div><p class="outcome">${prose(last.summary)}</p></div>` : ""}
     ${t.children.length ? `<details class="panel" open><summary><h3>Child tasks</h3><span class="n">${t.children.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.children.map(c => `<button class="linkbtn" type="button" data-task="${esc(c)}">${esc(c)}</button>`).join(" · ")}</div></details>` : ""}
-    ${t.commits.length ? `<details class="panel" open><summary><h3>Commits</h3><span class="n">${t.commits.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${t.commits.map(c => `<div class="commit"><span class="h" title="${esc(c.sha)}">${esc(c.sha.slice(0, 7))}</span><span>${esc(c.subject)} <span class="quiet">${esc(fmtTime(c.committed_at))}</span></span></div>`).join("")}</div></details>` : ""}
+    ${commitsPanel(t)}
     ${t.documents.length ? `<details class="panel" open><summary><h3>Documents</h3><span class="n">${t.documents.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.documents.map(d => `<div class="dw"><div class="doc-row"><b class="mono">${esc(d.name)}</b><span class="iact" style="display:inline-flex">${documentButton(t.id, d.name, `${t.id} · ${d.name}`)}</span></div>${d.description ? `<div>${prose(d.description)}</div>` : ""}${d.last_update ? `<time>updated by ${esc(d.last_update.step)} · ${esc(fmtTime(d.last_update.updated_at))}</time>` : ""}</div>`).join("")}</div></details>` : ""}
     ${recorded.length ? `<details class="panel" data-panel="recorded"><summary><h3>Recorded by ww</h3><span class="n">${recorded.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${recorded.map(x => `<div class="commit"><span class="h">${esc(x.name)}</span><span class="mono" style="font-size:12px">${esc(x.result)}</span></div>`).join("")}</div></details>` : ""}
     <details class="panel"${meta.length ? " open" : ""}><summary><h3>Metadata</h3><span class="n">${meta.length || "none"}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${meta.length ? `<table class="settings">${meta.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : '<div class="quiet">No step saved task metadata.</div>'}</div></details>
-    ${t.direct_work.length ? `<details class="panel"${runs.length ? "" : " open"}><summary><h3>Direct work</h3><span class="n">${t.direct_work.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.direct_work.map(d => `<div class="dw"><time>${esc(fmtTime(d.recorded_at))} · ${esc(d.source || "")}</time>${prose(d.summary)}${(d.commits || []).length ? `<div class="quiet mono">${esc(d.commits.map(c => typeof c === "string" ? c : (c.sha || "").slice(0, 7) + " " + (c.subject || "")).join(" · "))}</div>` : ""}</div>`).join("")}</div></details>` : ""}
+    ${directWorkPanel(t, !runs.length)}
     ${runs.slice().reverse().map((x, i) => renderRun(t, x, runs.length - i)).join("")}`;
+}
+function commitsPanel(t) {
+  return t.commits.length ? `<details class="panel" open><summary><h3>Commits</h3><span class="n">${t.commits.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body commits">${t.commits.map(c => `<div class="commit"><span class="h" title="${esc(c.sha)}">${esc(c.sha.slice(0, 7))}</span><span>${esc(c.subject)} <span class="quiet">${esc(fmtTime(c.committed_at))}</span></span></div>`).join("")}</div></details>` : "";
+}
+function directWorkPanel(t, open) {
+  return t.direct_work.length ? `<details class="panel"${open ? " open" : ""}><summary><h3>Direct work</h3><span class="n">${t.direct_work.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.direct_work.map(d => `<div class="dw"><time>${esc(fmtTime(d.recorded_at))} · ${esc(d.source || "")}</time>${prose(d.summary)}${(d.commits || []).length ? `<div class="quiet mono">${esc(d.commits.map(c => typeof c === "string" ? c : (c.sha || "").slice(0, 7) + " " + (c.subject || "")).join(" · "))}</div>` : ""}</div>`).join("")}</div></details>` : "";
+}
+/* A task this ww cannot read in full, such as one an older ww wrote: its runs
+   as their envelope has them, the artifacts found under each run's steps
+   directory, and its commits. Plan, statuses, rules and values need the rest. */
+function renderReducedDetail(t) {
+  const x = t.reduced, runs = t.runs || [];
+  const shown = "Shown is what every ww can read of it: its runs, the artifacts its steps wrote and its commits.";
+  const why = x.kind === "older" ? `An older ww${x.written_by ? ` (${esc(x.written_by)})` : ""} wrote this task in schema ${esc(x.schema_version)}, which this ww no longer reads in full. ${shown}`
+    : x.kind === "newer" ? `ww ${esc(x.written_by)} wrote this task in schema ${esc(x.schema_version)}, newer than this ww reads; upgrade ww to see all of it. ${shown}`
+    : `This ww cannot read the task in full: ${esc(x.reason)}. ${shown}`;
+  const meta = kvRows(t.metadata);
+  const run = (r, n) => {
+    const took = r.created_at && r.updated_at ? fmtDur(ms(r.created_at, r.updated_at)) : "";
+    const rows = r.artifacts.map(a => {
+      const cut = a.path.lastIndexOf("/") + 1;
+      return `<div class="arow" style="--depth:${a.path.split("/").length - 1}"><span class="apath"><i>${esc(a.path.slice(0, cut))}</i>${esc(a.path.slice(cut))}</span>${artifactButton(t.id, r.id, a.ref, `${t.id} · ${a.path}`)}</div>`;
+    }).join("");
+    return `<article class="run">
+      <div class="run-head">
+        <div class="run-title"><span class="rid">run ${n}</span><b>${esc(r.workflow)}</b>${pill(r.status)}${wfByName[r.workflow] ? `<button class="linkbtn" type="button" data-wfopen="${esc(r.workflow)}">See the workflow ${ICON.arrow}</button>` : ""}</div>
+        <div class="run-meta">
+          <span>${r.created_at ? esc(fmtTime(r.created_at)) : "started unknown"} → ${r.updated_at ? esc(fmtTime(r.updated_at)) : "unknown"}</span>
+          ${took ? `<span>${took}</span>` : ""}
+          <span>run <span class="mono">${esc(r.id)}</span></span>
+          ${r.written_by ? `<span>written by ww <span class="mono">${esc(r.written_by)}</span></span>` : ""}
+        </div>
+      </div>
+      <div class="run-body"><div class="phase-lbl">Step artifacts · ${r.artifacts.length}</div>${rows || `<div class="quiet">No step artifacts under <span class="mono">runs/${esc(r.id)}/steps</span>.</div>`}</div>
+    </article>`;
+  };
+  return `
+    <div class="td-head">
+      <div class="td-title"><h2>${esc(t.id)}</h2>${pill(t.status)}<span class="badge reduced" title="${esc(x.reason)}">${esc(x.badge)}</span></div>
+      <div class="td-sub">${runs.length ? `<span>${runs.length} run${runs.length > 1 ? "s" : ""}: <span class="mono">${esc(runs.map(r => r.workflow).join(" → "))}</span></span>` : "<span>no runs found</span>"}</div>
+      <p class="reduced-note">${why}</p>
+    </div>
+    ${t.children.length ? `<details class="panel" open><summary><h3>Child tasks</h3><span class="n">${t.children.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body">${t.children.map(c => `<button class="linkbtn" type="button" data-task="${esc(c)}">${esc(c)}</button>`).join(" · ")}</div></details>` : ""}
+    ${commitsPanel(t)}
+    ${meta.length ? `<details class="panel" open><summary><h3>Metadata</h3><span class="n">${meta.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body"><table class="settings">${meta.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></div></details>` : ""}
+    ${directWorkPanel(t, !runs.length)}
+    ${runs.slice().reverse().map((r, i) => run(r, runs.length - i)).join("")}`;
 }
 
 async function loadTasks() {

@@ -438,9 +438,11 @@ installation into prereleases.
 
 WW checks for updates at most once a day and shows a short notice above normal
 command output. Source installations compare Git commits; package installations
-compare PyPI versions. Checks remain silent when offline. `upgrade` does not
-wait for open tasks; skim [CHANGELOG.md](CHANGELOG.md) first, because a release
-that changes the task state format can leave tasks in progress unreadable.
+compare PyPI versions. Checks remain silent when offline. `upgrade` refuses a
+new major version while the project still holds configuration or an open run
+that version removes (`--force` overrides it), and afterwards offers
+`ww migrate` when the new version finds deprecated configuration; skim
+[CHANGELOG.md](CHANGELOG.md) first all the same.
 
 ```console
 ww-agentic-workflows updates            # show the cached notice
@@ -463,15 +465,15 @@ Releases can be pinned, but there is not yet a formal deprecation
 cycle or a promise that an incompatible change could not land.
 When one does, it is deliberate and rare, and
 [CHANGELOG.md](CHANGELOG.md) marks it "Breaking:". A changed name is then an
-unknown key that `lint` reports, and saved task state in another schema
-version is refused rather than guessed at: finish or reset in-flight tasks
-first.
+unknown key that `lint` reports. Saved task state in an older schema
+version is migrated when it loads; one a newer ww wrote is refused, asking
+you to upgrade. See [compatibility](documentation/compatibility.md).
 
 | Surface | Where it stands |
 | --- | --- |
 | `ww.yaml` | Settled. Keys are added far more often than they change, and `lint` tells you immediately if something no longer parses. |
 | The CLI | Settled for interactive use. Commands, flags, and printed text are still not a machine interface — use `--json` if a script depends on output. |
-| Task state under `.ww/` | The volatile one. The on-disk format is versioned and the reader rejects any other version, so an unfinished task may not load after an upgrade. |
+| Task state under `.ww/` | The volatile one, though versioned: a schema version changes only on an incompatible change, and ww migrates the versions it still supports when it loads them, so an unfinished task keeps loading after an upgrade. A downgrade is not supported. |
 | The extension API | Documented and the most deliberate of these; changes are announced. |
 
 Two habits cover almost everything:
@@ -622,8 +624,10 @@ ww-agentic-workflows complete TASK-123 --role worker \
 
 - [specification.md](documentation/specification.md) is the exact `ww.yaml`
   specification: keys, value types, defaults, scopes and failure semantics.
-- [deprecations.md](documentation/deprecations.md) lists supported syntax being
-  retired and its replacements; print it with `ww docs deprecations`.
+- [deprecations.md](documentation/deprecations.md) is the upgrade guide,
+  generated from ww's migrations: supported syntax being retired, its
+  replacements, and how `ww migrate` changes it. Print it with
+  `ww docs upgrade`, or one section with `ww docs upgrade#<section>`.
 - [features.md](documentation/features.md) is the design guide and feature
   reference: when to use what, with configuration and command examples.
 - Both, with the examples below, are the authorities for designing workflows.
@@ -637,6 +641,8 @@ ww-agentic-workflows complete TASK-123 --role worker \
   `ww.yaml` examples, one per control or behaviour.
 - [limitations.md](documentation/limitations.md) lists what ww does not do yet, and
   the compatibility and platform boundaries to expect before 1.0.
+- [compatibility.md](documentation/compatibility.md) is the version policy:
+  when a schema version changes, and how ww migrates what an older ww wrote.
 
 ## Development
 

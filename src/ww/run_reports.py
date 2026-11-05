@@ -32,6 +32,7 @@ from urllib.parse import urlencode
 from ww import __version__
 from ww.actions import DefinedAction, Prompt
 from ww.errors import StateError
+from ww.migrations.data import current_version, header, upgrade
 from ww.project_config import ProjectConfig, load_project_config
 from ww.variables import task_slug
 from ww.workflow_config import HandlerDefinition, ProvidedVariable
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
     from ww.plan.models import PlanItem, WorkflowPlan
     from ww.storage import Storage
 
-RECORD_SCHEMA = 1
+RECORD_SCHEMA = current_version("run report")
 GITHUB_REPOSITORY = "from-developers-for-developers/agentic-workflows"
 NEW_ISSUE_URL = f"https://github.com/{GITHUB_REPOSITORY}/issues/new"
 # GitHub refuses a longer request line; the prefilled body shrinks to fit.
@@ -530,7 +531,7 @@ class RunReportStore:
         from ww.storage_adapters.task_document import TASK_STATE_SCHEMA_VERSION
 
         return {
-            "schema": RECORD_SCHEMA,
+            **header("run report"),
             "id": record_id(task_id, run_id),
             "kind": self.kind.name,
             "workflow": workflow or "unknown",
@@ -749,8 +750,9 @@ class RunReportStore:
     def _read(self, path: Path) -> dict[str, Any]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or data.get("schema") != RECORD_SCHEMA:
-                raise ValueError(f"unsupported {self.kind.name} record schema")
+            if not isinstance(data, dict):
+                raise ValueError(f"a {self.kind.name} record must be an object")
+            data = upgrade("run report", data)
             for array in self.kind.arrays:
                 if not isinstance(data.get(array.field), list):
                     raise ValueError(f"{array.field} must be a list")
@@ -764,6 +766,9 @@ class RunReportStore:
             ) from error
 
     def _save(self, record: dict[str, Any]) -> None:
+        # ``ww_version`` is the ww that ran the run; ``written_by`` the one
+        # that last wrote the file, which also writes the current version.
+        record.update(header("run report"))
         self.storage.locks.atomic_write(
             self.directory / f"{record['id']}.json",
             json.dumps(record, indent=2) + "\n",

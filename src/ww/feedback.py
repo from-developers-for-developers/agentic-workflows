@@ -13,10 +13,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ww.errors import StateError
+from ww.migrations.data import current_version, header, upgrade
 from ww.storage import Storage
 from ww.task_ids import validate_task_id
 
-STORE_SCHEMA = 1
+STORE_SCHEMA = current_version("feedback store")
 # Rule review may prune after five subsequently completed unmatched tasks.
 STALE_TASKS = 5
 
@@ -36,8 +37,9 @@ class FeedbackStore:
             return {"schema": STORE_SCHEMA, "tasks": [], "completed": [], "points": {}}
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or data.get("schema") != STORE_SCHEMA:
-                raise ValueError("unsupported feedback store schema")
+            if not isinstance(data, dict):
+                raise ValueError("the feedback store must be an object")
+            data = upgrade("feedback store", data)
             for key in ("tasks", "completed"):
                 if not isinstance(data.get(key), list) or any(
                     not isinstance(task, str) for task in data[key]
@@ -70,7 +72,11 @@ class FeedbackStore:
             raise StateError(f"invalid feedback store {self.path}: {error}") from error
 
     def _save(self, data: dict[str, Any]) -> None:
-        self.storage.locks.atomic_write(self.path, json.dumps(data, indent=2) + "\n")
+        # Written at the current version, by this ww, whatever was read.
+        document = {**data, **header("feedback store")}
+        self.storage.locks.atomic_write(
+            self.path, json.dumps(document, indent=2) + "\n"
+        )
 
     def get(self, identifier: str) -> dict[str, object]:
         points = self.listing()["points"]

@@ -21,6 +21,12 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from ww.errors import LockError
 from ww.execution_models import CheckReport, PlanItemExecution
+from ww.migrations.data import (
+    UnsupportedSchemaError,
+    current_version,
+    header,
+    upgrade,
+)
 from ww.plan import PlanItem
 from ww.rule_conversion import every_rule
 from ww.workflow_config import RuleDefinition, WorkflowConfiguration
@@ -29,7 +35,7 @@ if TYPE_CHECKING:
     from ww.storage import Storage
 
 STATS_FILE = ".ww/rules/stats.json"
-STATS_SCHEMA = 1
+STATS_SCHEMA = current_version("rule stats")
 # A rule left out or waived this often without ever applying is worth a
 # second look: ``lint`` hints at it.
 NEVER_APPLIED_THRESHOLD = 5
@@ -249,18 +255,22 @@ class RuleStatsStore:
     def load(self) -> dict[str, RuleStats]:
         """Every rule's counters; a file that cannot be read counts as empty."""
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or data.get("schema") != STATS_SCHEMA:
-                raise ValueError("unsupported rule stats schema")
-            rules = data.get("rules")
-            if not isinstance(rules, dict):
-                raise ValueError("rules must be a mapping")
-            return {
-                _string(rule_id): RuleStats.from_dict(entry)
-                for rule_id, entry in rules.items()
-            }
+            return self._read()
         except (OSError, ValueError):
             return {}
+
+    def _read(self) -> dict[str, RuleStats]:
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("rule stats must be a mapping")
+        data = upgrade("rule stats", data)
+        rules = data.get("rules")
+        if not isinstance(rules, dict):
+            raise ValueError("rules must be a mapping")
+        return {
+            _string(rule_id): RuleStats.from_dict(entry)
+            for rule_id, entry in rules.items()
+        }
 
     def record_outcomes(
         self, task_id: str, step: str, outcomes: Iterable[RuleEvaluation], now: str
@@ -271,7 +281,15 @@ class RuleStatsStore:
             return
         try:
             with self.storage.locks.lock(self.path, purpose="rule statistics"):
-                stats = self.load()
+                try:
+                    stats = self._read()
+                except UnsupportedSchemaError as error:
+                    # A later ww's counts are kept for it, never replaced.
+                    if error.newer:
+                        return
+                    stats = {}
+                except (OSError, ValueError):
+                    stats = {}
                 for evaluation in outcomes:
                     stats[evaluation.id] = stats.get(
                         evaluation.id, RuleStats()
@@ -280,7 +298,7 @@ class RuleStatsStore:
                     self.path,
                     json.dumps(
                         {
-                            "schema": STATS_SCHEMA,
+                            **header("rule stats"),
                             "rules": {
                                 rule_id: entry.to_dict()
                                 for rule_id, entry in sorted(stats.items())

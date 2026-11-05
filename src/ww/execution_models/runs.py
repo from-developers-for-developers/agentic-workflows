@@ -13,12 +13,12 @@ from ww.children import ChildTask
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX, RunStatus, run_is_open
 from ww.errors import StateError
 from ww.items import WorkItem
+from ww.migrations.data import current_version, upgrade
 from ww.plan import PlanItem, WorkflowPlan
 from ww.validation import (
     expect_optional_string,
     expect_positive_int,
     expect_string,
-    is_strict_int,
     require_keys,
 )
 
@@ -26,7 +26,7 @@ from .decoding import _from_path
 from .plan_codec import _plan_from_dict
 from .records import ExecutionState
 
-PLAN_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = current_version("plan snapshot")
 # Recorded on every snapshot; informational until a reader needs to branch on it.
 PLAN_COMPILER_VERSION = "plan-v1"
 
@@ -160,23 +160,20 @@ class PlanSnapshot:
     def from_dict(cls, data: Any) -> PlanSnapshot:
         if not isinstance(data, dict):
             raise ValueError("plan snapshot must be a mapping")
+        data = upgrade("plan snapshot", data)
         required = {
-            "schema_version",
             "compiler_version",
             "configuration_digest",
             "compiled_at",
             "plan",
         }
         require_keys(data, required, "plan snapshot")
-        schema_version = data["schema_version"]
-        if not is_strict_int(schema_version) or schema_version != PLAN_SCHEMA_VERSION:
-            raise ValueError(f"unsupported plan snapshot schema: {schema_version!r}")
         template = (
             _plan_from_dict(data["template_plan"]) if "template_plan" in data else None
         )
         plan = _plan_from_dict(data["plan"])
         return cls(
-            schema_version=schema_version,
+            schema_version=data["schema_version"],
             compiler_version=expect_string(
                 data["compiler_version"], "compiler_version"
             ),

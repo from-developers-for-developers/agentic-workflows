@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "tasks": [
+    "TASK-1",
+    "TASK-2"
+  ],
+  "completed": [
+    "TASK-1"
+  ],
+  "points": {
+    "feedback-0123456789ab": {
+      "events": [
+        {
+          "task": "TASK-1",
+          "run_id": "01-task",
+          "source": "artifact-1",
+          "artifact": "runs/01-task/steps/02-implement.md",
+          "step": "implement",
+          "quote": "use the existing logger",
+          "at": "2026-11-01T09:00:00Z"
+        }
+      ],
+      "summary": "Use the project's logger",
+      "reason": "The operator asked for it twice.",
+      "enforcement": "reasoning",
+      "approach": "Mention the logger in the develop step.",
+      "last_seen": 1,
+      "last_encountered_at": "2026-11-01T09:00:00Z"
+    }
+  },
+  "written_by": "1.0.0b18"
+}

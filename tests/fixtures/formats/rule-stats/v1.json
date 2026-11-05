@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "written_by": "1.0.0b18",
+  "rules": {
+    "develop/1": {
+      "applied": 1,
+      "checked": 0,
+      "check_failures": 0,
+      "judged": 1,
+      "judged_failures": 0,
+      "waived": 0,
+      "not_applicable": 0,
+      "left_out": 0,
+      "last_applied_at": "2026-11-01T12:00:00Z",
+      "last_failed_at": null,
+      "last_failure": null,
+      "text_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "develop/2": {
+      "applied": 0,
+      "checked": 0,
+      "check_failures": 0,
+      "judged": 0,
+      "judged_failures": 0,
+      "waived": 0,
+      "not_applicable": 1,
+      "left_out": 0,
+      "last_applied_at": null,
+      "last_failed_at": null,
+      "last_failure": null,
+      "text_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "docs/header": {
+      "applied": 1,
+      "checked": 1,
+      "check_failures": 1,
+      "judged": 0,
+      "judged_failures": 0,
+      "waived": 0,
+      "not_applicable": 0,
+      "left_out": 0,
+      "last_applied_at": "2026-11-01T12:00:00Z",
+      "last_failed_at": "2026-11-01T12:00:00Z",
+      "last_failure": {
+        "task": "TASK-1",
+        "step": "task:develop",
+        "kind": "check"
+      },
+      "text_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }
+}

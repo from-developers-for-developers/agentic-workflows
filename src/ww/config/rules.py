@@ -28,6 +28,7 @@ from ww.config_files import snapshot_of
 from ww.errors import ConfigurationError
 from ww.extensions.api import RuleGroupContribution
 from ww.interpolation import dependencies
+from ww.migrations.config import migrate_loaded, ww_migrations
 from ww.validation import is_positive_int
 from ww.variables import ROOT, ROOT_ENVIRONMENT
 from ww.workflow_config import (
@@ -242,7 +243,12 @@ def _split_frontmatter(content: str, label: str) -> tuple[dict[str, Any], str]:
                 raise ConfigurationError(
                     f"frontmatter of rule file {label} must be a mapping"
                 )
-            return data, "".join(lines[index + 1 :])
+            # Deprecated keys are migrated in memory; ``ww lint`` and
+            # ``ww migrate`` list them.
+            migrated = migrate_loaded(
+                data, label, (ww_migrations("rules"),), text=raw, offset=1
+            )
+            return migrated.data, "".join(lines[index + 1 :])
     raise ConfigurationError(f"rule file {label} does not close its frontmatter")
 
 

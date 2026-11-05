@@ -24,10 +24,11 @@ from typing import Any
 
 from ww.errors import StateError
 from ww.locking import FileLocks
+from ww.migrations.data import WRITTEN_BY, current_version, header, upgrade
 from ww.validation import expect_optional_string, expect_positive_int, expect_string
 
 DISPUTES_FILE = ".ww/rule-disputes.json"
-DISPUTES_SCHEMA_VERSION = 1
+DISPUTES_SCHEMA_VERSION = current_version("rule dispute log")
 _ENTRY_KEYS = {
     "check",
     "text_hash",
@@ -120,7 +121,7 @@ class DisputeLog:
                 self.path,
                 json.dumps(
                     {
-                        "schema_version": DISPUTES_SCHEMA_VERSION,
+                        **header("rule dispute log"),
                         "disputes": [item.to_dict() for item in entries],
                     },
                     indent=2,
@@ -132,11 +133,8 @@ class DisputeLog:
 def _entries(raw: Any) -> tuple[DisputeEntry, ...]:
     if not isinstance(raw, dict):
         raise ValueError("the dispute log must be an object")
-    if raw.get("schema_version") != DISPUTES_SCHEMA_VERSION:
-        raise ValueError(
-            f"unsupported dispute log schema: {raw.get('schema_version')!r}"
-        )
-    unknown = set(raw) - {"schema_version", "disputes"}
+    raw = upgrade("rule dispute log", raw)
+    unknown = set(raw) - {"schema_version", WRITTEN_BY, "disputes"}
     if unknown:
         raise ValueError("unknown dispute log keys: " + ", ".join(sorted(unknown)))
     disputes = raw.get("disputes", [])

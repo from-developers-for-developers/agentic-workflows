@@ -94,8 +94,9 @@ user level. Composition keeps a record of each override and each file an
 `extends: false` left out, which `lint` prints as notices, and the list of files
 it folded, which `lint` and `plan` print; it leaves a name repeated within one
 file untouched so validation still reports it. A lone repo file without
-`imports` or `extends` passes through unchanged. Composition runs on every read
-and writes nothing to disk. The other
+`imports` or `extends` passes through unchanged, unless a configuration
+migration changed it, when its migrated mapping is dumped back to YAML.
+Composition runs on every read and writes nothing to disk. The other
 readers of the raw file, `init`'s checks in `../src/ww/cli/initialization.py`
 and the storage's missing-key and setup checks in `../src/ww/storage.py`, read
 the composed mapping too, so a definition in an imported file counts as
@@ -139,7 +140,10 @@ tasks keep working so in-flight work can still be inspected or finished.
 `../src/ww/project_config.py` reads it through the same three levels, but
 always deep-merges them — objects key by key, every other value replaced — and
 has no `extends`: settings are per-user and per-checkout values to adjust, not
-definitions to replace. The `./ww` launcher written by `init` repeats that
+definitions to replace. Each file is migrated as it is read (`_read_level`),
+and `ProjectConfig` keeps each file's own extension sections (`levels`) and
+the deprecation `notices` reading earned; neither takes part in comparing
+two configurations. The `./ww` launcher written by `init` repeats that
 lookup for its one key, `executable`, in a few lines of Python, because it must
 choose the binary before any ww code runs. `init` writes no `executable`
 key: the default binary is ww's knowledge, not the project's. What pages
@@ -309,11 +313,11 @@ reassessment judges the same work, so it cannot restart the rule repair budget.
 Synthetic assessors inherit the step's execution settings, including profiles;
 attached prompts use normal validation and value interpolation.
 
-The parser accepts canonical inner `assess` and deprecated `question`, rejects
-conflicting spellings, and composition records source-located notices for
-applied legacy declarations. CLI commands print these to stderr, keeping JSON
-clean; lint includes them in its normal notice output. The registry in
-`documentation/deprecations.md` ships with `ww docs deprecations`. Goto edges
+The parser reads only `assess`: the deprecated inner `question` is renamed
+before it parses anything, by the `assess-question` configuration migration
+(see "Configuration migrations" below), which also refuses a mapping holding
+both spellings. The upgrade guide is generated from the migrations (`ww docs
+upgrade`; `documentation/deprecations.md` holds the same text). Goto edges
 are derived only from assessment outcome and verification failure declarations;
 there is no separate workflow permission list.
 The compact assessment has the same boundary without a subtree: a positive
@@ -363,6 +367,71 @@ round's; going ahead it marks the items between skipped. The run's `gotos`
 log, the records' `goto` number and `goto_round`, and the artifact address's
 round suffix are what the pages and the history read; nothing about the
 plan's items changes.
+
+## Configuration migrations
+
+`../src/ww/migrations/config/` holds every configuration construct ww has
+deprecated or removed, as `ConfigMigration` values in release order
+(`catalog.CONFIG_MIGRATIONS`). Each is declared once, with key paths
+(`paths.KeyPath`: dotted keys, `[*]`, `*`, `**` and `[key=value]`) and
+changes (`changes.py`: `RenameKey`, `DeleteKey`, `SetValue`, `MoveKey`, or a
+`Change` subclass), each of which gives both an in-memory `apply` and the
+YAML text `edit` for the same change. `loading.migrate_loaded` is the
+in-memory form: every loader passes it the mapping it parsed from one file,
+before validation — composition's `_read_file` and its single-file path,
+`parse_yaml_text` for text parsed directly, the rule-file frontmatter reader
+in `config/rules.py`, and `project_config._read_level` for each settings
+file. A migration in its window returns the mapping in the current shape
+with a notice; one past `removed_in`, judged against ww's own version with
+`packaging`, raises a `ConfigurationError` naming the removal; one a major
+version past that is skipped. So the parser, the validator, the compiler and
+the engine only know the current shape. The CLI prints the workflow and
+settings files' notices to stderr before a command (`_configuration_deprecations`),
+keeping JSON clean.
+
+`files.migrate_file` is the file form: it edits YAML through
+`yaml_text.YamlText`, which composes the file and locates each key and value
+by its node marks, so an edit replaces only those characters or whole lines.
+It refuses a place it cannot edit safely (`EditRefusedError`), re-parses the result
+and keeps a migration's edits only if they read as its in-memory
+transform; JSON is rewritten from the migrated mapping.
+`project.project_files` names a project's files (composition's
+`configuration_files`, read without migrating so a removed construct is
+still found, the rule files of the project's own groups and steps, and the
+settings files), and `project.project_findings` runs every migration over
+them for `lint`, which prints each finding as a `Deprecated:` line marked
+by what fixes it. The package imports nothing of the configuration, so the
+loaders can use it; `project.py` is the one module that reads the
+configuration and is imported on its own.
+
+`ww migrate` (`cli/migrate.py`) is dispatched from `main` before the
+extension registry reads any settings, since a removed construct stops them
+loading, and reads the checkout's files (`_CHECKOUT_CONFIG_COMMANDS`).
+`project.migrate_project` loads the configuration and the settings when it
+can, for the rule files, the configured projects and the extensions'
+settings migrations (`ExtensionRegistry.settings_migrations`); when either
+does not load it finds them from the raw files instead (imports, rule paths
+that exist, `projects` entries, and `ExtensionRegistry.section_migrations`
+for the extensions the `extensions` sections name). The command shows the
+findings and `FileMigration.diff()`, writes with `write_files`, resolves
+choice migrations from `--choose` or a terminal prompt, and fails `--check`
+on `removed` findings (all findings with `--deprecations`).
+`migrations/guide.py` renders the upgrade guide from `CONFIG_MIGRATIONS`
+(each migration's `title`, `notes` and `example` feed only the guide);
+`design_docs` serves it as the generated document `upgrade`, and as one
+section for `<document>#<anchor>`, which is the reference
+(`ConfigMigration.reference`, `ww docs upgrade#<anchor>`) every message
+names. `scripts/generate_upgrade_guide.py` writes it to
+`documentation/deprecations.md`; a test keeps the two equal.
+
+`ww migrate --tasks` (`migrations/tasks.py`) rewrites stored task state in
+the current format: for each task and child task, under `lock_task`, the
+filesystem adapter's `outdated_task_files` compares the index's schema
+version and each run document with what `encode_run_document` makes of it
+now (`_same_run`), the files `task_state_files` names are copied to
+`.ww/backups/tasks-<UTC time>/`, and `read_task_record` plus
+`commit_task_aggregate` write the task again. A task that does not read is
+reported and left alone.
 
 ## Handlers and discovery
 
@@ -772,7 +841,11 @@ The adapter validates the active-run pointer and holds a task lock across read,
 modification, and commit, using the index revision as the compare-and-swap
 guard. Stale writers are rejected without changing the authoritative record.
 There is no migration or fallback read of the earlier single-file layout; a
-child task cannot be named `runs`.
+child task cannot be named `runs`. `ww.task_envelope` is the one tolerant
+reader of both layouts: it takes from the index, inline runs or the run files
+the index names only the envelope that no schema renames (task ID,
+`written_by`, and each run's ID, workflow, status and times), for the
+visualizer's reduced view.
 
 The disk codec is separate from expanded domain serializers and public output.
 It omits only versioned record defaults, deduplicates immutable extension
@@ -782,10 +855,34 @@ digest validation. The stored plan digest is re-derived on load because plan
 serialization and defaults vary by ww version. Run directories hold artifacts
 and command output next to the run's own state file.
 
-The task document has its own format discriminator and schema version; plan
-snapshots and execution states carry theirs. Readers reject unsupported
-versions rather than guessing. Task documents, plan snapshots and execution
-states and the task index and run documents use schema 1. The separate CLI
+The task index and the run documents each have a format discriminator, a
+schema version and `written_by`, the ww version that wrote the file; plan
+snapshots and execution states nested in a run carry their own schema
+versions. Each is a separate format in `ww.migrations.data`, which declares
+every persisted format's current and oldest readable version and its chain of
+pure `dict -> dict` migrations, one per version step. Every loader hands the
+raw mapping to `upgrade` before decoding, so decoders and the engine see only
+the current shape: an older file is migrated in memory, and written back at
+the current version on the next commit that rewrites it (an unchanged run
+keeps its document, `written_by` included, since `_same_run` ignores both
+revision and writer). A newer version is refused naming the writer and
+asking for an upgrade, except that a file at a higher version without
+`written_by` is refused as a beta from before the versions were renumbered;
+nested formats, which never carry `written_by` (`records_writer=False`), are
+always read as newer, since their run document was checked first. A version
+below the oldest is refused naming the ww to finish the task with. A document format migrates the compact mapping
+before defaults are restored; a nested format migrates its expanded mapping
+when it is decoded. `written_by` is in no digest or comparison. Decoders
+read every field that has a dataclass default as optional, so an additive
+field never needs a version. All of these formats use schema 1, and their
+chains are empty. A plan construct ww removed from its runtime is a
+`RemovedConstruct` in `ww.migrations.removals`, with a detector over the raw
+plan snapshot mapping: `decode_run_document` runs the detectors on the
+expanded run before decoding it, and a match raises `RemovedConstructError`
+(a `StateError` the filesystem adapter passes on unwrapped), naming the task,
+the run, the construct and the ww to finish it with. Only that task is
+refused; scans across tasks skip it, as for any unreadable task. The list
+is empty today. The separate CLI
 audit log uses one invocation ID for each started/terminal pair, redacts
 user-supplied completion values and failure text from command lines, and
 rotates by size. Workflow recovery never depends on audit files.
@@ -802,8 +899,9 @@ are rejected.
 
 The supported model layers are normalized authored definitions
 (`workflow_config.py`), compiled plans (`plan.py`), and persisted execution
-records (`execution_models`). Persisted state uses one current format; every
-other task layout or record schema is rejected.
+records (`execution_models`). Persisted state is decoded in one current
+format: every older record schema a format still migrates is upgraded to it
+first, and every other task layout or record schema is rejected.
 
 ## Installation updates
 
@@ -817,12 +915,20 @@ per-environment/version daily cache. The PyPI request has a two-second timeout
 and a response-size limit. Failures do not affect normal command execution.
 
 `upgrade` is an explicit installation operation and does not initialise a
-workflow, load project extensions or create task state. It reads open-work
-records before invoking the owning installer (pip or pipx), or performing an
-editable checkout's fast-forward pull. Prerelease selection follows the
+workflow or create task state. Before invoking the owning installer (pip or
+pipx), or fast-forwarding an editable checkout to its fetched tracking branch,
+it works out the version it installs (the newest compatible PyPI release, or
+the release series in the fetched `pyproject.toml`). When that is a new major
+version, `ww.upgrade_checks` judges the current project against it with this
+build's own lists: the configuration findings of ww's migrations whose
+`removed_in` the target reaches, and the runs of tasks in progress whose plan
+holds a `ww.migrations.removals` construct the target removes
+(`ww.open_work.runs_refused_by`). It refuses unless `--force`. Afterwards it
+runs the new version's `migrate --check --deprecations` in a new process and
+offers `ww migrate`; it never migrates. Prerelease selection follows the
 installed version, with an explicit `--pre` override. The guard checks the
-current project and an editable source checkout, not all projects sharing the
-installation. See [features.md](features.md#update-notices-and-upgrading-ww).
+current project, not all projects sharing the installation. See
+[features.md](features.md#update-notices-and-upgrading-ww).
 
 ## Release guarantees and intentional limits
 
@@ -835,8 +941,10 @@ not intentionally change documented command-line, persisted-record, or public
 extension API contracts. Release notes must call out an incompatible change and
 the affected boundary.
 
-Persisted plans and execution records carry their current format versions. The
-reader rejects every other version rather than guessing.
+Persisted plans and execution records carry their format versions, which
+change only on a backward-incompatible change. The reader migrates a version
+it still supports to the current one and rejects every other version rather
+than guessing; see [compatibility.md](compatibility.md).
 A plan stores each item's operation with an explicit type: registered
 actions keep their identifier and type-specific plain payload, and resumed work
 uses those saved payloads without resolving workflow configuration again. An unavailable action stays inspectable as saved data; instruction or
@@ -1123,18 +1231,57 @@ or item fails at compile time — before a task exists.
 The item also records the public API version, extension version, provider
 source, source fingerprint, and that extension's settings. Dispatch uses the
 recorded settings and rejects a different version, API version, or provider
-source; the extension receives a detached copy of the recorded settings. The
-fingerprint is recorded for audit only: like ww's own code, an
-extension may be fixed in place while a task is in flight, so a change in
-behaviour is signalled by a version bump rather than by the bytes of the file.
-For the same reason none of these fields is part of an item's definition when
-a run compares plans (`replanning._EXTENSION_ADOPTED`): the configuration
-digest covers the root's extension settings, and whenever a run takes a new
-digest, by replan, `keep_plan` or a change that leaves its template as it is,
-its planned extension items adopt the current identity and settings without
-a `plan_changed` stop. The digest does not cover the extension's code, so a
-new version or source with the configuration unchanged adopts nothing and is
-still rejected at dispatch.
+source (`ExtensionRegistry.validate_identity`, comparing
+`ExtensionIdentity.compatibility`); the extension receives a detached copy of
+the recorded settings. The fingerprint is recorded for audit only: like ww's
+own code, an extension may be fixed in place while a task is in flight, so a
+change in behaviour is signalled by a version bump rather than by the bytes of
+the file. For the same reason none of these fields is part of an item's
+definition when a run compares plans (`replanning._EXTENSION_ADOPTED`), except
+the version's major part (`registry.major_version`: the leading number, or the
+whole version when it does not start with one), which `_definition` adds as
+`extension_major_version`. The configuration digest
+(`WorkflowService._configuration_digest`) covers the root's extension settings
+and the current `compatibility` of the extensions the given plan runs
+(`replanning.planned_extensions`, which skips items planned without an
+identity): the saved plan's when `_compare_plan` checks a run, the compiled
+plan's at `start` and handoff, and the new template's for the digest a replan
+records. Only those extensions are loaded; one that no longer loads leaves the
+run on its saved plan, like a configuration that no longer loads. So a new
+version, API version or source of an extension the run uses makes the next
+`next` compile again: a minor or patch change leaves every definition equal
+and `keep_plan` adopts the current identity and settings without a
+`plan_changed` stop, while a new major version changes the definition of
+every item running the extension and stops for the operator, whose
+`--keep-plan` adopts it into the saved items and whose `--replan` reruns those
+items with the rest of their step. Either choice records a digest the next
+comparison reproduces. Dispatch therefore rejects an identity only when the
+extension changed after the last `next`, such as between `next` and the
+`complete` that runs its hook.
+
+`_load` accepts an extension whose `api_version` lies between
+`MIN_SUPPORTED_EXTENSION_API_VERSION` and `EXTENSION_API_VERSION`
+(`extensions/api.py`), with separate errors for an API newer than ww knows and
+one it no longer supports. It then asks `extensions/deprecations.py` for a
+notice per `DeprecatedApiFeature` in `DEPRECATED_API` (feature, `deprecated_in`,
+`removed_in`, replacement and a `used_by` detector over the loaded
+`Extension`) that the extension uses; the registry keeps them as `notices`,
+which the CLI prints after the command as `ww warning: Deprecated: ...` and
+`ww lint` lists as `Notice:` lines. `DEPRECATED_API` is empty today.
+
+An `Extension` may declare `settings_migrations`, configuration migrations
+of its own section judged against its own version. The registry applies
+them in `settings`, file by file: `_section` migrates each settings level's
+section (`ProjectConfig.levels`, or `ProjectSettings.levels` for a project's
+own files) before merging them, and adds the notices to `notices`; an
+extension without migrations takes the merged section as before.
+`frozen_settings` applies them to the copy a saved plan froze
+(`action_execution.item_settings` and frozen variable-override bindings)
+each time it is used. The stored copy is not migrated when the run document
+is decoded: decoding is a pure function of the file, the copy is
+content-addressed by its hash, and the extension's code is loaded only when
+something runs. `settings_migrations()` loads every configured extension for
+`lint`; nothing else loads an extension for its migrations.
 Project-extension fingerprints cover `extension.py`; installed-provider
 fingerprints cover distribution name, version, and entry-point metadata. The
 plan schema requires identity metadata.
@@ -1458,7 +1605,8 @@ lives: task state, locks, executions, logs, rule statistics, disputes and the
 configuration edits ww makes. `config_files._levels` reads the local level
 (`ww.local.*`), which no commit holds, from the checkout that
 `checkout_directory` derives from a snapshot path, so it still applies on top
-of the copy.
+of the copy. A snapshot is read through the same loaders as the checkout, so
+configuration migrations apply to it in memory; nothing rewrites it.
 
 The CLI chooses the source once per invocation (`_config_source`). Commands
 that edit the configuration or read none of it (`init`, `lint`, `setup`,
@@ -1783,6 +1931,14 @@ configuration, not a snapshot, so edits show while it runs.
   for indenting it under its step: its plan ancestors that the page shows as
   rows (steps and groups, not an outcome or a `{child}`/`{item}` slot), plus
   one for a step's hooks, a rule verifier and a handler group's later members.
+  A task whose record does not read (`read_task_record` raises `StateError`)
+  is shown reduced: `ww.task_envelope` reads its envelope from the index and
+  the run documents with plain JSON, never the schema decoders, and lists the
+  Markdown files under each run's `steps` directory; `tasks.py` adds the
+  task's commits, metadata and direct work, and names the reason in a badge
+  (an older or newer `ww.task-state` schema, judged by the schema number and
+  `written_by`, or any other reason). `artifact_text` serves such a task only
+  the files that listing names.
 - `demo/` is a whole ww project (`ww.yaml`, `ww.json`, `rules/`) shipped as
   package data and read only by the visualizer. `demo.demo()` builds its
   workflow card with `build_atlas` and records a run: it copies the project to
@@ -2090,7 +2246,8 @@ each rule counts once per settlement (applied and checked or judged, failed,
 waived, or not applicable), and `reject_completion` clears the record's
 not-applicable rules so a later settlement never counts a stale set. The
 store writes under its own lock and drops a write it cannot make: statistics
-never fail a completion. `rules` and `rules stats` read it through
+never fail a completion. An unreadable file counts as empty and is replaced,
+except one a newer ww wrote, which is kept for it. `rules` and `rules stats` read it through
 `rule_views`, and `lint` hints at rules never applied (`never_applied_rules`).
 
 Rules are written by the operator, through the `ww-rule` skill, never by a

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from ww.cli import main
 from ww.errors import ConfigurationError
 from ww.extensions import (
     Extension,
@@ -24,7 +25,10 @@ from ww.extensions import (
     is_extension_reference,
     parse_reference,
 )
+from ww.extensions import deprecations as deprecations_module
 from ww.extensions import registry as registry_module
+from ww.extensions.deprecations import DeprecatedApiFeature
+from ww.extensions.registry import major_version
 from ww.project_config import ProjectConfig, ProjectDefinition
 from ww.workflow_config import ModeDefinition
 
@@ -383,8 +387,132 @@ def test_an_incompatible_api_version_is_rejected_when_loaded(tmp_path: Path) -> 
     )
     path.write_text(source, encoding="utf-8")
 
-    with pytest.raises(ConfigurationError, match="requires API version 999"):
+    with pytest.raises(ConfigurationError, match="requires API version 999") as error:
         ExtensionRegistry.discover(tmp_path).get("acme/demo")
+
+    assert "newer than ww knows" in str(error.value)
+    assert "this ww supports extension API version 1: upgrade ww" in str(error.value)
+
+
+def _declaring_api(path: Path, api_version: int) -> None:
+    source = EXTENSION_SOURCE.format(vendor="acme", name="demo").replace(
+        'version="1.2.3",', f'version="1.2.3",\n    api_version={api_version},'
+    )
+    path.write_text(source, encoding="utf-8")
+
+
+def test_an_api_version_older_than_ww_supports_is_rejected_when_loaded(
+    tmp_path: Path,
+) -> None:
+    _declaring_api(write_extension(tmp_path), 0)
+
+    with pytest.raises(ConfigurationError, match="requires API version 0") as error:
+        ExtensionRegistry.discover(tmp_path).get("acme/demo")
+
+    assert "which ww no longer supports" in str(error.value)
+    assert "upgrade the extension" in str(error.value)
+
+
+@pytest.mark.parametrize("api_version", [2, 3])
+def test_any_api_version_in_the_supported_range_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, api_version: int
+) -> None:
+    monkeypatch.setattr(registry_module, "MIN_SUPPORTED_EXTENSION_API_VERSION", 2)
+    monkeypatch.setattr(registry_module, "EXTENSION_API_VERSION", 3)
+    _declaring_api(write_extension(tmp_path), api_version)
+
+    extension = ExtensionRegistry.discover(tmp_path).get("acme/demo")
+
+    assert extension.api_version == api_version
+
+
+def test_an_api_version_below_a_raised_minimum_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(registry_module, "MIN_SUPPORTED_EXTENSION_API_VERSION", 2)
+    monkeypatch.setattr(registry_module, "EXTENSION_API_VERSION", 3)
+    _declaring_api(write_extension(tmp_path), 1)
+
+    with pytest.raises(
+        ConfigurationError, match="supports extension API versions 2 to 3"
+    ):
+        ExtensionRegistry.discover(tmp_path).get("acme/demo")
+
+
+@pytest.mark.parametrize(
+    ("version", "major"),
+    [
+        ("1.4.2", "1"),
+        ("1.5", "1"),
+        ("v2", "2"),
+        ("0.9.1", "0"),
+        ("10.0.0b1", "10"),
+        ("2024.10.1", "2024"),
+        ("dev", "dev"),
+    ],
+)
+def test_an_extension_major_version_is_its_leading_number(
+    version: str, major: str
+) -> None:
+    assert major_version(version) == major
+
+
+# A test-only deprecation: no part of the extension API is deprecated yet.
+_COMMANDS_DEPRECATED = DeprecatedApiFeature(
+    feature="Extension.commands",
+    deprecated_in="1.0.0b20",
+    removed_in="2.0.0",
+    replacement="Extension.handlers",
+    used_by=lambda extension: bool(extension.commands),
+)
+
+
+def test_an_extension_using_a_deprecated_api_warns_once_when_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        deprecations_module,
+        "DEPRECATED_API",
+        (
+            _COMMANDS_DEPRECATED,
+            DeprecatedApiFeature(
+                "Extension.unused", "1.0.0b20", "2.0.0", "nothing", lambda _: False
+            ),
+        ),
+    )
+    write_extension(tmp_path)
+    registry = ExtensionRegistry.discover(tmp_path)
+
+    assert registry.notices == ()
+    registry.get("acme/demo")
+    registry.get("acme/demo")
+
+    assert registry.notices == (
+        "Deprecated: extension 'acme/demo' (project:ext/acme/demo/extension.py) "
+        "uses Extension.commands, deprecated in ww 1.0.0b20 and removed in ww "
+        "2.0.0; use Extension.handlers instead.",
+    )
+
+
+def test_the_cli_prints_a_deprecated_api_warning_for_a_loaded_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(deprecations_module, "DEPRECATED_API", (_COMMANDS_DEPRECATED,))
+    write_extension(tmp_path)
+    (tmp_path / "ww.yaml").write_text(
+        "workflows:\n  - name: task\n    steps:\n      - name: work\n"
+        "        kind: prompt\n",
+        encoding="utf-8",
+    )
+
+    assert main(["--root", str(tmp_path), "extension", "acme/demo", "show"]) == 0
+
+    captured = capsys.readouterr()
+    assert "shown" in captured.out
+    assert (
+        "ww warning: Deprecated: extension 'acme/demo' "
+        "(project:ext/acme/demo/extension.py) uses Extension.commands"
+    ) in captured.err
 
 
 def test_a_project_extension_does_not_hide_bundled_extensions(tmp_path: Path) -> None:

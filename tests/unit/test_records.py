@@ -12,15 +12,22 @@ from ww.actions import CommandDefinition, Commands, PlannedAction
 from ww.children import ChildTask
 from ww.execution_models import (
     PLAN_SCHEMA_VERSION,
+    CheckReport,
     CommandExecution,
+    Dispute,
+    GotoRequest,
+    HeldCompletion,
     InputRequest,
     PlanItemExecution,
     PlanSnapshot,
+    RuleResolution,
+    RuleVerdict,
+    StepProgress,
 )
 from ww.execution_models.decoding import _from_path, _variables
 from ww.execution_models.records import VerificationRule
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem
-from ww.plan import WorkflowPlan
+from ww.plan import PlannedMode, WorkflowPlan
 from ww.workflow_config import ProvidedVariable, SavedMetadata
 
 
@@ -298,11 +305,21 @@ def test_project_metadata_scope_round_trips_through_persisted_plan() -> None:
     assert loaded.plan.items[0].save_metadata[0].scope == "project"
 
 
-@pytest.mark.parametrize("version", [2, 0, True, "1"])
-def test_a_plan_at_another_schema_version_is_not_loaded(version: object) -> None:
+@pytest.mark.parametrize(
+    ("version", "message"),
+    [
+        (2, r"plan snapshot written by a newer ww \(schema 2\); .*: upgrade ww"),
+        (0, r"plan snapshot written by an older ww \(schema 0\)"),
+        (True, "unsupported plan snapshot schema"),
+        ("1", "unsupported plan snapshot schema"),
+    ],
+)
+def test_a_plan_at_another_schema_version_is_not_loaded(
+    version: object, message: str
+) -> None:
     snapshot = _command_snapshot(PLAN_SCHEMA_VERSION)
     snapshot["schema_version"] = version
-    with pytest.raises(ValueError, match="unsupported plan snapshot schema"):
+    with pytest.raises(ValueError, match=message):
         PlanSnapshot.from_dict(snapshot)
 
 
@@ -374,3 +391,72 @@ def test_malformed_rule_scope_is_rejected(field: str, value: Any, message: str) 
 
     with pytest.raises(ValueError, match=message):
         PlanItemExecution.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("decode", "data", "expected"),
+    [
+        (CommandExecution.from_dict, {"index": 1}, CommandExecution(1)),
+        (
+            PlanItemExecution.from_dict,
+            {"plan_item_id": "task:work", "position": 1},
+            PlanItemExecution("task:work", 1),
+        ),
+        (
+            StepProgress.from_dict,
+            {"name": "work", "path": "work"},
+            StepProgress("work", "work"),
+        ),
+        (HeldCompletion.from_dict, {}, HeldCompletion()),
+        (
+            CheckReport.from_dict,
+            {"attempt": 1, "checked_at": "t"},
+            CheckReport(1, "t"),
+        ),
+        (
+            RuleResolution.from_dict,
+            {"id": "develop/1", "status": "judged"},
+            RuleResolution("develop/1", "judged"),
+        ),
+        (
+            RuleVerdict.from_dict,
+            {"id": "develop/1", "verdict": "fail", "by": "verify"},
+            RuleVerdict("develop/1", "fail", "verify"),
+        ),
+        (
+            VerificationRule.from_dict,
+            {"id": "develop/1", "text": "Rule.", "text_hash": "h"},
+            VerificationRule("develop/1", "Rule.", "h"),
+        ),
+        (
+            Dispute.from_dict,
+            {"check": "lint", "reason": "r", "attempt": 1, "disputed_at": "t"},
+            Dispute("lint", "r", 1, "t"),
+        ),
+        (
+            GotoRequest.from_dict,
+            {"source": "review", "target": "develop"},
+            GotoRequest("review", "develop"),
+        ),
+        (
+            InputRequest.from_dict,
+            {"item_id": "item", "values": []},
+            InputRequest("item", ()),
+        ),
+        (
+            ChildTask.from_dict,
+            {"id": "A", "description": "Slice", "workflow": "", "task_id": "T/A"},
+            ChildTask("A", "Slice", "", "T/A"),
+        ),
+        (
+            lambda data: PlannedMode.from_dict(data, "mode"),
+            {"name": "economy"},
+            PlannedMode("economy"),
+        ),
+    ],
+)
+def test_a_record_without_its_defaulted_fields_loads_with_the_defaults(
+    decode: Any, data: dict[str, object], expected: object
+) -> None:
+    """A field added with a default is absent from files written before it."""
+    assert decode(data) == expected

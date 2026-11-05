@@ -2,7 +2,10 @@
 """Compact on-disk codec for the authoritative task state documents.
 
 A task is stored as one index document and one document per run, so a commit
-rewrites only the runs it changed.
+rewrites only the runs it changed. The index and the run documents are
+separate formats, each migrated to its current version on read before it is
+decoded (:mod:`ww.migrations.data`), and each records the ww version that
+wrote it as ``written_by``.
 """
 
 from __future__ import annotations
@@ -25,12 +28,21 @@ from ww.execution_models import (
 )
 from ww.extensions import parse_reference
 from ww.items import WorkItem
+from ww.migrations.data import (
+    WRITTEN_BY,
+    FormatName,
+    current_version,
+    header,
+    upgrade,
+)
+from ww.migrations.removals import refuse_removed
 from ww.plan import PlanItem
 from ww.validation import is_strict_int
 
 TASK_STATE_FORMAT = "ww.task-state"
 RUN_STATE_FORMAT = "ww.run-state"
-TASK_STATE_SCHEMA_VERSION = 1
+TASK_STATE_SCHEMA_VERSION = current_version("task state")
+RUN_STATE_SCHEMA_VERSION = current_version("run state")
 
 
 def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
@@ -113,7 +125,7 @@ def encode_task_index(
         raise ValueError("task state has multiple active runs")
     result: dict[str, object] = {
         "format": TASK_STATE_FORMAT,
-        "schema_version": TASK_STATE_SCHEMA_VERSION,
+        **header("task state"),
         "task_id": task_id,
         "revision": revision,
         "active_run": active[0] if active else None,
@@ -136,7 +148,7 @@ def encode_run_document(
     encoded = _compact_run(copy.deepcopy(run.to_dict()), snapshots)
     result: dict[str, object] = {
         "format": RUN_STATE_FORMAT,
-        "schema_version": TASK_STATE_SCHEMA_VERSION,
+        **header("run state"),
         "task_id": task_id,
         "revision": revision,
         "run": encoded,
@@ -150,7 +162,7 @@ def decode_task_index(data: object, task_id: str) -> TaskIndex:
     """Validate a task index document."""
     if not isinstance(data, dict):
         raise ValueError("task state must be a mapping")
-    _check_header(data, TASK_STATE_FORMAT, task_id)
+    data = _check_header(data, TASK_STATE_FORMAT, "task state", task_id)
     revision = data.get("revision")
     if not is_strict_int(revision) or revision < 0:
         raise ValueError("task state revision must be non-negative")
@@ -193,7 +205,7 @@ def decode_run_document(
     """Expand one run document the index names at ``revision``."""
     if not isinstance(data, dict):
         raise ValueError("run state must be a mapping")
-    _check_header(data, RUN_STATE_FORMAT, task_id)
+    data = _check_header(data, RUN_STATE_FORMAT, "run state", task_id)
     written = data.get("revision")
     if not is_strict_int(written) or written < 1:
         raise ValueError("run state revision must be positive")
@@ -203,9 +215,11 @@ def decode_run_document(
             f"index names revision {revision}"
         )
     snapshots = _validate_extension_snapshots(data.get("extension_snapshots", {}))
-    run = TaskRunAggregate.from_dict(
-        _expand_run(copy.deepcopy(data.get("run")), snapshots)
-    )
+    expanded = _expand_run(copy.deepcopy(data.get("run")), snapshots)
+    # A plan holding a construct this ww no longer runs cannot be decoded;
+    # only this run is refused, naming the construct and how to finish it.
+    refuse_removed(expanded, task_id=task_id, run_id=run_id)
+    run = TaskRunAggregate.from_dict(expanded)
     if run.run_id != run_id:
         raise ValueError("run state run ID does not match its path")
     return run
@@ -221,14 +235,22 @@ def check_active_run(index: TaskIndex, runs: tuple[TaskRunAggregate, ...]) -> No
         raise ValueError("task state active_run does not match the non-completed run")
 
 
-def _check_header(data: dict[str, Any], format_name: str, task_id: str) -> None:
+def _check_header(
+    data: dict[str, Any], format_name: str, schema: FormatName, task_id: str
+) -> dict[str, Any]:
+    """Check a document's identity and return it upgraded to its current version.
+
+    ``written_by`` is informational: a document without it, written before
+    ww recorded it, reads the same.
+    """
     if data.get("format") != format_name:
         raise ValueError(f"unsupported task state format: {data.get('format')!r}")
-    version = data.get("schema_version")
-    if not is_strict_int(version) or version != TASK_STATE_SCHEMA_VERSION:
-        raise ValueError(f"unsupported task state schema: {version!r}")
+    written_by = data.get(WRITTEN_BY)
+    if written_by is not None and not isinstance(written_by, str):
+        raise ValueError(f"{WRITTEN_BY} must be a string")
     if data.get("task_id") != task_id:
         raise ValueError("task state task ID does not match its path")
+    return upgrade(schema, data)
 
 
 def _compact_run(

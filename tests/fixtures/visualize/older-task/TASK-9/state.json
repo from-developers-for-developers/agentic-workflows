@@ -1,0 +1,47 @@
+{
+  "format": "ww.task-state",
+  "schema_version": 2,
+  "task_id": "TASK-9",
+  "revision": 41,
+  "active_run": null,
+  "runs": [
+    {
+      "run_id": "01-bugfix",
+      "workflow": "bugfix",
+      "snapshot": {
+        "schema_version": 1,
+        "compiler_version": "1",
+        "configuration_digest": "c0ffee",
+        "compiled_at": "2026-10-02T10:20:55Z",
+        "plan": {"workflow": "bugfix", "items": [{"id": "init", "step": "init"}]},
+        "plan_revision": 1
+      },
+      "state": {
+        "schema_version": 1,
+        "task_id": "TASK-9",
+        "workflow": "bugfix",
+        "agent": "claudecode",
+        "status": "completed",
+        "created_at": "2026-10-02T10:20:55Z",
+        "updated_at": "2026-10-02T10:29:22Z",
+        "cursor": 4,
+        "item_executions": [{"plan_item_id": "init", "status": "completed"}],
+        "run_id": "01-bugfix",
+        "loop_iterations": {}
+      }
+    },
+    {
+      "run_id": "02-merge-to-dev",
+      "workflow": "merge-to-dev",
+      "snapshot": {},
+      "state": {
+        "workflow": "merge-to-dev",
+        "status": "completed",
+        "created_at": "2026-10-02T10:30:53Z",
+        "updated_at": "2026-10-02T10:33:10Z"
+      }
+    }
+  ],
+  "extension_snapshots": {},
+  "ledger": {}
+}

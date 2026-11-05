@@ -19,6 +19,8 @@ from ww.errors import StateError
 from ww.execution_models import TaskRunAggregate, validate_task_runs
 from ww.items import WorkItem
 from ww.locking import FileLocks
+from ww.migrations.data import FORMATS, WRITTEN_BY
+from ww.migrations.removals import RemovedConstructError
 from ww.storage_adapters.base import (
     ArtifactAddress,
     CommandOutputAddress,
@@ -47,10 +49,13 @@ class _StoredTask:
 
 
 def _same_run(stored: dict[str, object], encoded: dict[str, object]) -> bool:
-    """Whether two run documents differ only in the revision they carry."""
-    return _canonical({**stored, "revision": None}) == _canonical(
-        {**encoded, "revision": None}
-    )
+    """Whether two run documents differ only in the revision they carry.
+
+    The ww version that wrote them is not compared either: a run nothing
+    changed keeps its document and the ``written_by`` it was written with.
+    """
+    ignored = {"revision": None, WRITTEN_BY: None}
+    return _canonical({**stored, **ignored}) == _canonical({**encoded, **ignored})
 
 
 def _revision_number(text: str) -> int | None:
@@ -127,6 +132,9 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
                 if not isinstance(document, dict):
                     raise ValueError("run state must be a mapping")
                 runs.append(decode_run_document(document, task_id, run_id, revision))
+            except RemovedConstructError:
+                # Its message names the task, the run and how to finish it.
+                raise
             except (OSError, json.JSONDecodeError, StateError, ValueError) as error:
                 raise StateError(f"invalid task state {run_path}: {error}") from error
             documents[run_id] = document
@@ -143,6 +151,52 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
     @staticmethod
     def _load_json(path: Path) -> object:
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def task_state_files(self, task_id: str) -> tuple[Path, ...]:
+        """The task's index and the run documents it names; none without state."""
+        path = self._state_path(task_id)
+        if not path.exists():
+            return ()
+        try:
+            index = decode_task_index(self._load_json(path), task_id)
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            raise StateError(f"invalid task state {path}: {error}") from error
+        return (
+            path,
+            *(
+                self._run_state_path(task_id, run_id, revision)
+                for run_id, revision in index.run_revisions
+            ),
+        )
+
+    def outdated_task_files(self, task_id: str) -> tuple[Path, ...]:
+        """The task's state documents a commit would now write differently.
+
+        The index is outdated when it records an older schema version; a run
+        document when the current writer encodes its run differently, as it
+        does when the document, its plan snapshot or its execution state is
+        at an older version. ``written_by`` alone never makes one outdated.
+        Raises :class:`StateError` when the task does not read.
+        """
+        path = self._state_path(task_id)
+        if not path.exists():
+            return ()
+        stored = self._read_task_document(task_id)
+        index = self._load_json(path)
+        data_format = FORMATS["task state"]
+        outdated: list[Path] = []
+        if (
+            not isinstance(index, dict)
+            or index.get(data_format.version_key) != data_format.current
+        ):
+            outdated.append(path)
+        for run in stored.runs:
+            document = stored.documents[run.run_id]
+            revision = document["revision"]
+            assert isinstance(revision, int)
+            if not _same_run(document, encode_run_document(task_id, run, revision)):
+                outdated.append(self._run_state_path(task_id, run.run_id, revision))
+        return tuple(outdated)
 
     def commit_task_aggregate(
         self,

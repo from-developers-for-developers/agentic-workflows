@@ -24,9 +24,13 @@ itself.
 Packaged extensions use a ``vendor.name`` entry-point name. Discovery reads
 that metadata without importing the package; loading occurs only when the
 extension is referenced. Extensions are trusted in-process Python once loaded.
-``api_version`` declares compatibility with this module's
-``EXTENSION_API_VERSION``; ``version`` identifies extension behavior in saved
-plans.
+``api_version`` declares the version of this contract the extension is
+written against; ww loads it when it lies between
+``MIN_SUPPORTED_EXTENSION_API_VERSION`` and ``EXTENSION_API_VERSION``. The API
+version changes only with a breaking change to this contract. ``version``
+identifies extension behavior in saved plans: an open run takes a new minor or
+patch version silently, and stops for the operator at a new major version (its
+leading number).
 
 Writing one
 -----------
@@ -136,6 +140,46 @@ An agent whose data is all it needs can be declared under ``agents`` in
 ``ww.json`` instead. Hooks installed for an extension's agent call ww with
 that agent's reference, so they work only while the extension is installed.
 
+Settings migrations
+-------------------
+
+An extension that renames or reshapes one of its settings declares the change
+in ``settings_migrations``: :class:`ww.migrations.config.ConfigMigration`
+values with ``files=("settings",)``, whose key paths start inside the
+extension's own section, whose ``deprecated_in`` and ``removed_in`` are
+versions of the extension, and whose ``guide`` is the extension's own upgrade
+notes:
+
+```python
+from ww.migrations.config import ConfigMigration, rename_key
+
+EXTENSION = Extension(
+    vendor="acme",
+    name="tickets",
+    version="2.1.0",
+    settings_migrations=(
+        ConfigMigration(
+            id="project-key",
+            deprecated_in="2.1.0",
+            removed_in="3.0.0",
+            why="the setting project is now project_key",
+            guide="https://acme.example/tickets/upgrading",
+            anchor="project-key",
+            files=("settings",),
+            changes=(rename_key("project", "project_key"),),
+        ),
+    ),
+)
+```
+
+Until ``removed_in`` the extension receives its settings in the new shape:
+ww migrates each settings file's section in memory with a warning, and the
+copy a saved plan froze. ``ww lint`` lists what is left to change, and
+``ww migrate`` changes the files. From ``removed_in`` the old setting is an
+error naming the removal. The migrations are read only once ww loads the
+extension, so an installed extension the project does not configure is never
+imported for them.
+
 Retries
 -------
 
@@ -161,6 +205,7 @@ from typing import Literal
 
 from ww.agents.base import Agent
 from ww.extensions.store import ExtensionStore
+from ww.migrations.config import ConfigMigration
 from ww.validation import NAME_PATTERN as _GROUP_NAME
 from ww.validation import is_strict_int
 from ww.variables import RESERVED_NAMESPACES, WW_NAMESPACE, is_reserved_name
@@ -168,6 +213,7 @@ from ww.workflow_config import ModeDefinition, ProvidedVariable, RuleHints
 
 __all__ = [
     "EXTENSION_API_VERSION",
+    "MIN_SUPPORTED_EXTENSION_API_VERSION",
     "Extension",
     "ExtensionCommand",
     "ExtensionContext",
@@ -182,7 +228,12 @@ __all__ = [
     "RuleHints",
 ]
 
+# The extension API this ww implements, and the oldest one it still loads; an
+# extension declaring any version in between loads. The current version moves
+# only with a breaking change to this contract, and the oldest one moves when
+# ww drops what an older API needed.
 EXTENSION_API_VERSION = 1
+MIN_SUPPORTED_EXTENSION_API_VERSION = 1
 # A lower-case name segment, e.g. "github" or "pull_request"; "GitHub" does not
 # match.
 _SEGMENT = re.compile(r"[a-z0-9][a-z0-9_-]*$")
@@ -551,6 +602,9 @@ class Extension:
     namespace: ExtensionNamespace | None = None
     # Agent adapters, addressed as ``ext/<vendor>/<name>/agents:<key>``.
     agents: tuple[type[Agent], ...] = ()
+    # Deprecated or removed settings of this extension's section, in the
+    # order its releases added them.
+    settings_migrations: tuple[ConfigMigration, ...] = ()
 
     def __post_init__(self) -> None:
         if self.namespace is not None and not isinstance(
@@ -591,6 +645,17 @@ class Extension:
             names = [value.name for value in values]
             if len(names) != len(set(names)):
                 raise ValueError(f"extension {label} names must be unique")
+        if not isinstance(self.settings_migrations, tuple) or not all(
+            isinstance(migration, ConfigMigration) and migration.files == ("settings",)
+            for migration in self.settings_migrations
+        ):
+            raise TypeError(
+                "extension settings_migrations must be a tuple of ConfigMigration "
+                'values with files=("settings",)'
+            )
+        migration_ids = [migration.id for migration in self.settings_migrations]
+        if len(migration_ids) != len(set(migration_ids)):
+            raise ValueError("extension settings_migrations ids must be unique")
         if not isinstance(self.agents, tuple) or not all(
             isinstance(agent, type) and issubclass(agent, Agent)
             for agent in self.agents

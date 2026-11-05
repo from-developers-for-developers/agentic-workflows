@@ -14,9 +14,9 @@ import importlib.util
 import json
 import re
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.metadata import EntryPoint, entry_points
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -25,6 +25,7 @@ from ww.agents.base import Agent
 from ww.errors import ConfigurationError
 from ww.extensions.api import (
     EXTENSION_API_VERSION,
+    MIN_SUPPORTED_EXTENSION_API_VERSION,
     Extension,
     ExtensionCommand,
     ExtensionContext,
@@ -32,9 +33,12 @@ from ww.extensions.api import (
     ExtensionNamespace,
     RuleGroupContribution,
 )
+from ww.extensions.deprecations import deprecation_notices
 from ww.extensions.store import ExtensionStore
+from ww.migrations.config import MigrationSet, migrate_loaded
 from ww.project_config import (
     FILE_NAME,
+    ExtensionSections,
     ProjectConfig,
     ProjectSettings,
     load_project_config,
@@ -60,6 +64,8 @@ _REFERENCE = re.compile(
     rf"^ext/(?P<vendor>{_SEGMENT})/(?P<name>{_SEGMENT})"
     r"/(?P<section>[a-z]+):(?P<item>[A-Za-z0-9][A-Za-z0-9_.-]*)$"
 )
+# The major part of a version: its leading number, after an optional "v".
+_MAJOR = re.compile(r"v?(?P<major>[0-9]+)")
 
 
 @dataclass(frozen=True)
@@ -88,6 +94,25 @@ class ExtensionIdentity:
     api_version: int
     source: str
     fingerprint: str
+
+    @property
+    def compatibility(self) -> tuple[str, int, str]:
+        """What a saved plan holds the extension to: version, API, source."""
+        return (self.version, self.api_version, self.source)
+
+
+def major_version(version: str) -> str:
+    """The part of an extension's version whose change may break a run.
+
+    Versions follow semantic versioning, so this is the leading number:
+    ``1.4.2``, ``1.5`` and ``v1`` share major version ``1``. A ``0.x``
+    version is read the same way, so ``0.1`` to ``0.2`` is not a major change;
+    an extension that breaks its users before 1.0 moves to ``1.0``. A version
+    that does not start with a number, such as ``dev``, is its own major
+    version, so any change of it counts as major.
+    """
+    match = _MAJOR.match(version.strip())
+    return str(int(match["major"])) if match else version
 
 
 @dataclass
@@ -137,6 +162,7 @@ class ExtensionRegistry:
         self._config = config
         self._project_settings: dict[str, ProjectSettings] = {}
         self._providers: dict[str, _ExtensionProvider] = {}
+        self._notices: list[str] = []
         for extension in extensions:
             self._add_provider(
                 _ExtensionProvider(
@@ -168,6 +194,11 @@ class ExtensionRegistry:
     def identifiers(self) -> tuple[str, ...]:
         """Return discovered identifiers without importing extension code."""
         return tuple(sorted(self._providers))
+
+    @property
+    def notices(self) -> tuple[str, ...]:
+        """Warnings about the extensions loaded so far, such as deprecated API use."""
+        return tuple(self._notices)
 
     def validate_configuration(self, project: str | None = None) -> None:
         """Check the root's sections, and a project's own when one is named."""
@@ -207,13 +238,13 @@ class ExtensionRegistry:
         project's conventions while the root stays the only place that
         decides which extensions are configured at all.
         """
-        self.get(identifier)
+        extension = self.get(identifier)
         self.validate_configuration(project)
-        settings = self.config.settings_for(identifier)
+        settings = self._section(extension, self.config.sections, self.config.levels)
         if project is not None:
+            own = self.project_settings(project)
             settings = overlay_settings(
-                settings,
-                self.project_settings(project).sections.settings_for(identifier),
+                settings, self._section(extension, own.sections, own.levels)
             )
         try:
             json.dumps(settings, sort_keys=True)
@@ -222,6 +253,114 @@ class ExtensionRegistry:
                 f"settings for extension {identifier!r} must be JSON serializable"
             ) from error
         return settings
+
+    def _section(
+        self,
+        extension: Extension,
+        merged: ExtensionSections,
+        levels: tuple[ExtensionSections, ...],
+    ) -> dict[str, object]:
+        """The extension's section of one settings source, in the current shape.
+
+        An extension with settings migrations has each file's section
+        migrated before they are merged, as ww's own settings are, so a file
+        already migrated and one not yet both say what they mean. A
+        configuration made in memory has no files; its sections are one.
+        """
+        if not extension.settings_migrations:
+            return merged.settings_for(extension.identifier)
+        migrations = (self._migration_set(extension),)
+        settings: dict[str, object] = {}
+        for level in levels or (merged,):
+            key = level.key_for(extension.identifier)
+            if key is None:
+                continue
+            migrated = migrate_loaded(
+                level.settings_for(extension.identifier),
+                level.source,
+                migrations,
+                prefix=("extensions", key),
+            )
+            self._notices.extend(
+                notice for notice in migrated.notices if notice not in self._notices
+            )
+            settings = overlay_settings(settings, migrated.data)
+        return settings
+
+    @staticmethod
+    def _migration_set(extension: Extension) -> MigrationSet:
+        """The extension's settings migrations, judged against its version."""
+        return MigrationSet(
+            tuple(
+                replace(migration, id=f"{extension.identifier}:{migration.id}")
+                for migration in extension.settings_migrations
+            ),
+            extension.version,
+            extension.identifier,
+        )
+
+    def settings_migrations(
+        self, project: str | None = None
+    ) -> dict[str, MigrationSet]:
+        """The settings migrations of every configured extension that has some.
+
+        This loads the configured extensions, as ``ww lint`` and
+        ``ww migrate`` do; the IDs are qualified with the extension's. One
+        that fails to load has none here: whatever uses it reports the
+        failure.
+        """
+        return self._settings_migrations(self.configured(project))
+
+    def section_migrations(self, keys: Iterable[str]) -> dict[str, MigrationSet]:
+        """The settings migrations of the extensions sections named ``keys`` configure.
+
+        ``keys`` are the keys of a settings file's ``extensions`` section, read
+        without loading the settings: ``ww migrate`` finds them this way when
+        a settings file no longer loads.
+        """
+        sections = ExtensionSections(dict.fromkeys(keys, {}))
+        return self._settings_migrations(
+            tuple(
+                identifier
+                for identifier in self.identifiers
+                if sections.lists(identifier)
+            )
+        )
+
+    def _settings_migrations(
+        self, identifiers: tuple[str, ...]
+    ) -> dict[str, MigrationSet]:
+        found: dict[str, MigrationSet] = {}
+        for identifier in identifiers:
+            try:
+                extension = self.get(identifier)
+            except ConfigurationError:
+                continue
+            if extension.settings_migrations:
+                found[identifier] = self._migration_set(extension)
+        return found
+
+    def frozen_settings(
+        self, identifier: str, settings: Mapping[str, object]
+    ) -> dict[str, object]:
+        """A copy of settings a saved plan froze, in the current shape.
+
+        The run's saved copy is never rewritten; the extension's settings
+        migrations apply to it whenever it is used, without a notice, since
+        no file holds it. A setting the extension has since removed stops
+        the run with an error naming the removal.
+        """
+        frozen = deepcopy(dict(settings))
+        extension = self.get(identifier)
+        if not extension.settings_migrations:
+            return frozen
+        return dict(
+            migrate_loaded(
+                frozen,
+                f"the saved plan's settings of extension {identifier!r}",
+                (self._migration_set(extension),),
+            ).data
+        )
 
     @property
     def extensions(self) -> tuple[Extension, ...]:
@@ -264,19 +403,25 @@ class ExtensionRegistry:
         The source fingerprint is recorded for audit but not enforced: like
         ww's own code, an extension may be fixed in place while a task is in
         flight, and a change in behaviour is signalled by a version bump.
+
+        A changed identity does not normally reach this check: the manager's
+        ``next`` notices it first, adopts a new minor or patch version into
+        the saved plan, and stops for the operator at a new major version. It
+        fails only when the extension changed after that, for example between
+        ``next`` and the ``complete`` that runs its hook; ``next`` then takes
+        the change in the same way.
         """
         del fingerprint
         if all(value is None for value in (version, api_version, source)):
             return
         current = self.identity(identifier)
-        expected = (version, api_version, source)
-        actual = (current.version, current.api_version, current.source)
-        if expected != actual:
+        if (version, api_version, source) != current.compatibility:
             raise ConfigurationError(
                 f"extension {identifier!r} no longer matches the saved plan; "
                 f"expected version {version!r} (API {api_version}) from "
                 f"{source!r}, found version {current.version!r} "
-                f"(API {current.api_version}) from {current.source!r}"
+                f"(API {current.api_version}) from {current.source!r}; run "
+                "`next` for the run to take the extension as it is now"
             )
 
     def handler(self, value: str) -> ExtensionHandler:
@@ -373,7 +518,7 @@ class ExtensionRegistry:
                 root=self.root,
                 store=self.store(identifier),
                 config=(
-                    deepcopy(dict(frozen_settings))
+                    self.frozen_settings(identifier, frozen_settings)
                     if frozen_settings is not None
                     else self.settings(identifier)
                 ),
@@ -724,11 +869,27 @@ class ExtensionRegistry:
                 f"extension at {provider.source} declares {extension.identifier!r} "
                 f"but discovery metadata says {provider.identifier!r}"
             )
-        if extension.api_version != EXTENSION_API_VERSION:
+        supported = (
+            f"this ww supports extension API version {EXTENSION_API_VERSION}"
+            if MIN_SUPPORTED_EXTENSION_API_VERSION == EXTENSION_API_VERSION
+            else "this ww supports extension API versions "
+            f"{MIN_SUPPORTED_EXTENSION_API_VERSION} to {EXTENSION_API_VERSION}"
+        )
+        if extension.api_version > EXTENSION_API_VERSION:
             raise ConfigurationError(
                 f"extension {extension.identifier!r} requires API version "
-                f"{extension.api_version}; ww supports {EXTENSION_API_VERSION}"
+                f"{extension.api_version}, newer than ww knows; {supported}: "
+                "upgrade ww, or install a version of the extension written "
+                f"for API {EXTENSION_API_VERSION}"
             )
+        if extension.api_version < MIN_SUPPORTED_EXTENSION_API_VERSION:
+            raise ConfigurationError(
+                f"extension {extension.identifier!r} requires API version "
+                f"{extension.api_version}, which ww no longer supports; "
+                f"{supported}: upgrade the extension, or finish its tasks with "
+                "the ww version it was written for"
+            )
+        self._notices.extend(deprecation_notices(extension, provider.source))
         return extension
 
     def _available(self) -> str:

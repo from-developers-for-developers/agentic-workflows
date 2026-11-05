@@ -12,6 +12,7 @@ import yaml
 from ww.config_files import configuration_file_exists
 from ww.errors import ConfigurationError
 from ww.extensions import ExtensionRegistry
+from ww.migrations.config import migrate_loaded, ww_migrations
 from ww.runtimes import RUNTIME_INSTRUCTIONS
 from ww.workflow_config import (
     ALL,
@@ -107,7 +108,8 @@ def parse_yaml_text(
     """Parse ``ww.yaml`` notation held in memory, named ``source``.
 
     ``base`` is the directory rule paths resolve against; it defaults to the
-    current directory.
+    current directory. Deprecated constructs are migrated first, as for a
+    file (composition already did for the files it read, and reports them).
     """
     raw = _raw_from_text(text, source)
     base = base if base is not None else Path.cwd()
@@ -158,6 +160,9 @@ def _raw_from_text(text: str, source: str) -> dict[str, Any]:
         raise ConfigurationError(f"invalid YAML in {source}: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError("workflow configuration must be a mapping")
+    migrated: dict[str, Any] = migrate_loaded(
+        raw, source, (ww_migrations("workflows"),)
+    ).data
     allowed = {
         "modes",
         "profiles",
@@ -167,12 +172,12 @@ def _raw_from_text(text: str, source: str) -> dict[str, Any]:
         "workflows",
         "rules",
     }
-    unknown = set(raw) - allowed
+    unknown = set(migrated) - allowed
     if unknown:
         raise ConfigurationError(
             f"configuration has unknown key(s): {', '.join(sorted(unknown))}"
         )
-    return raw
+    return migrated
 
 
 def _parse_modes(data: Any) -> tuple[ModeDefinition, ...]:

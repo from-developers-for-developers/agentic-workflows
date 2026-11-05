@@ -23,6 +23,7 @@ from ww.contracts import (
     StepStatus,
     Verdict,
 )
+from ww.migrations.data import current_version, upgrade
 from ww.plan import PlannedCheck
 from ww.validation import (
     expect_bool,
@@ -32,7 +33,6 @@ from ww.validation import (
     expect_optional_string,
     expect_positive_int,
     expect_string,
-    is_strict_int,
     require_keys,
 )
 from ww.workflow_config import ProvidedVariable
@@ -40,7 +40,7 @@ from ww.workflow_config import ProvidedVariable
 from .decoding import _assignment_log, _variables
 from .plan_codec import _planned_checks_from_list
 
-EXECUTION_SCHEMA_VERSION = 1
+EXECUTION_SCHEMA_VERSION = current_version("execution state")
 
 PAIR_SIZE = 2
 
@@ -135,8 +135,8 @@ class CheckReport:
     def from_dict(cls, data: Any) -> CheckReport:
         if not isinstance(data, dict):
             raise ValueError("check report must be a mapping")
-        require_keys(data, {"attempt", "checked_at", "results"}, "check report")
-        results = data["results"]
+        require_keys(data, {"attempt", "checked_at"}, "check report")
+        results = data.get("results", [])
         if not isinstance(results, list):
             raise ValueError("check report results must be a list")
         return cls(
@@ -192,9 +192,7 @@ class RuleResolution:
     def from_dict(cls, data: Any) -> RuleResolution:
         if not isinstance(data, dict):
             raise ValueError("rule resolution must be a mapping")
-        require_keys(
-            data, {"id", "status", "check", "interpretation"}, "rule resolution"
-        )
+        require_keys(data, {"id", "status"}, "rule resolution")
         status = data["status"]
         # The previous format also recorded rules a verifier would propose a
         # check for (``unresolved``) or waiting on the operator
@@ -206,9 +204,9 @@ class RuleResolution:
             status=expect_literal(
                 status, RuleResolutionStatus, "rule resolution.status"
             ),
-            check=expect_optional_string(data["check"], "rule resolution.check"),
+            check=expect_optional_string(data.get("check"), "rule resolution.check"),
             interpretation=expect_optional_string(
-                data["interpretation"], "rule resolution.interpretation"
+                data.get("interpretation"), "rule resolution.interpretation"
             ),
             missing=expect_optional_string(
                 data.get("missing"), "rule resolution.missing"
@@ -292,12 +290,12 @@ class RuleVerdict:
     def from_dict(cls, data: Any) -> RuleVerdict:
         if not isinstance(data, dict):
             raise ValueError("rule verdict must be a mapping")
-        require_keys(data, {"id", "verdict", "by", "failures"}, "rule verdict")
+        require_keys(data, {"id", "verdict", "by"}, "rule verdict")
         return cls(
             id=expect_string(data["id"], "rule verdict.id"),
             verdict=expect_literal(data["verdict"], Verdict, "rule verdict.verdict"),
             by=expect_string(data["by"], "rule verdict.by"),
-            failures=_strings(data["failures"], "rule verdict.failures"),
+            failures=_strings(data.get("failures", []), "rule verdict.failures"),
             checked=expect_optional_string(data.get("checked"), "rule verdict.checked"),
         )
 
@@ -366,62 +364,45 @@ class HeldCompletion:
     def from_dict(cls, data: Any) -> HeldCompletion:
         if not isinstance(data, dict):
             raise ValueError("held completion must be a mapping")
-        require_keys(
-            data,
-            {
-                "variables",
-                "metadata_values",
-                "selected_agent",
-                "selected_model",
-                "selected_reasoning",
-                "summary_for_next",
-                "mark",
-                "files",
-                "all_files",
-                "draft_ref",
-                "verdicts",
-                "report",
-                "previous_artifact",
-            },
-            "held completion",
-        )
-        verdicts = data["verdicts"]
+        verdicts = data.get("verdicts", [])
         if not isinstance(verdicts, list):
             raise ValueError("held completion verdicts must be a list")
         return cls(
-            variables=_pairs(data["variables"], "held completion.variables"),
+            variables=_pairs(data.get("variables", []), "held completion.variables"),
             metadata_values=_pairs(
-                data["metadata_values"], "held completion.metadata_values"
+                data.get("metadata_values", []), "held completion.metadata_values"
             ),
             selected_agent=expect_optional_string(
-                data["selected_agent"], "held completion.selected_agent"
+                data.get("selected_agent"), "held completion.selected_agent"
             ),
             selected_model=expect_optional_string(
-                data["selected_model"], "held completion.selected_model"
+                data.get("selected_model"), "held completion.selected_model"
             ),
             selected_reasoning=expect_optional_string(
-                data["selected_reasoning"], "held completion.selected_reasoning"
+                data.get("selected_reasoning"), "held completion.selected_reasoning"
             ),
             summary_for_next=expect_optional_string(
-                data["summary_for_next"], "held completion.summary_for_next"
+                data.get("summary_for_next"), "held completion.summary_for_next"
             ),
             adjustments=expect_optional_string(
                 data.get("adjustments"), "held completion.adjustments"
             ),
-            mark=expect_optional_string(data["mark"], "held completion.mark"),
-            files=_strings(data["files"], "held completion.files"),
-            all_files=expect_bool(data["all_files"], "held completion.all_files"),
+            mark=expect_optional_string(data.get("mark"), "held completion.mark"),
+            files=_strings(data.get("files", []), "held completion.files"),
+            all_files=expect_bool(
+                data.get("all_files", False), "held completion.all_files"
+            ),
             draft_ref=expect_optional_string(
-                data["draft_ref"], "held completion.draft_ref"
+                data.get("draft_ref"), "held completion.draft_ref"
             ),
             verdicts=tuple(RuleVerdict.from_dict(item) for item in verdicts),
             report=(
                 CheckReport.from_dict(data["report"])
-                if data["report"] is not None
+                if data.get("report") is not None
                 else None
             ),
             previous_artifact=expect_optional_string(
-                data["previous_artifact"], "held completion.previous_artifact"
+                data.get("previous_artifact"), "held completion.previous_artifact"
             ),
             goto=expect_optional_string(data.get("goto"), "held completion.goto"),
             subject=expect_optional_string(
@@ -462,9 +443,9 @@ class Dispute:
     def from_dict(cls, data: Any) -> Dispute:
         if not isinstance(data, dict):
             raise ValueError("dispute must be a mapping")
-        keys = {"check", "reason", "attempt", "disputed_at", "command", "output"}
-        require_keys(data, keys, "dispute")
-        unknown = set(data) - keys
+        required = {"check", "reason", "attempt", "disputed_at"}
+        require_keys(data, required, "dispute")
+        unknown = set(data) - required - {"command", "output"}
         if unknown:
             raise ValueError("dispute has unknown keys: " + ", ".join(sorted(unknown)))
         return cls(
@@ -472,8 +453,8 @@ class Dispute:
             reason=expect_string(data["reason"], "dispute.reason"),
             attempt=expect_positive_int(data["attempt"], "dispute.attempt"),
             disputed_at=expect_string(data["disputed_at"], "dispute.disputed_at"),
-            command=expect_string(data["command"], "dispute.command"),
-            output=expect_string(data["output"], "dispute.output"),
+            command=expect_string(data.get("command", ""), "dispute.command"),
+            output=expect_string(data.get("output", ""), "dispute.output"),
         )
 
 
@@ -533,19 +514,15 @@ class VerificationRule:
         # The previous format also stored what was asked (``state``: an
         # approach, a prepared check or a verdict) with ``approach`` and
         # ``pending_operator``; a verifier now only judges, so they are ignored.
-        require_keys(
-            data,
-            {"id", "text", "text_hash", "interpretation", "check"},
-            "verification rule",
-        )
+        require_keys(data, {"id", "text", "text_hash"}, "verification rule")
         return cls(
             id=expect_string(data["id"], "verification rule.id"),
             text=expect_string(data["text"], "verification rule.text"),
             text_hash=expect_string(data["text_hash"], "verification rule.text_hash"),
             interpretation=expect_optional_string(
-                data["interpretation"], "verification rule.interpretation"
+                data.get("interpretation"), "verification rule.interpretation"
             ),
-            check=expect_optional_string(data["check"], "verification rule.check"),
+            check=expect_optional_string(data.get("check"), "verification rule.check"),
             missing=expect_optional_string(
                 data.get("missing"), "verification rule.missing"
             ),
@@ -604,11 +581,11 @@ class GotoRequest:
     def from_dict(cls, data: Any) -> GotoRequest:
         if not isinstance(data, dict):
             raise ValueError("goto request must be a mapping")
-        require_keys(data, {"source", "target", "detail"}, "goto request")
+        require_keys(data, {"source", "target"}, "goto request")
         return cls(
             source=expect_string(data["source"], "goto request.source"),
             target=expect_string(data["target"], "goto request.target"),
-            detail=expect_optional_string(data["detail"], "goto request.detail"),
+            detail=expect_optional_string(data.get("detail"), "goto request.detail"),
         )
 
 
@@ -684,35 +661,25 @@ class CommandExecution:
     def from_dict(cls, data: Any) -> CommandExecution:
         if not isinstance(data, dict):
             raise ValueError("command execution must be a mapping")
-        require_keys(
-            data,
-            {
-                "index",
-                "status",
-                "started_at",
-                "completed_at",
-                "exit_code",
-                "stdout",
-                "stderr",
-            },
-            "command execution",
-        )
+        require_keys(data, {"index"}, "command execution")
         return cls(
             index=expect_positive_int(data["index"], "command execution.index"),
             status=expect_literal(
-                data["status"], CommandStatus, "command execution.status"
+                data.get("status", "pending"),
+                CommandStatus,
+                "command execution.status",
             ),
             started_at=expect_optional_string(
-                data["started_at"], "command execution.started_at"
+                data.get("started_at"), "command execution.started_at"
             ),
             completed_at=expect_optional_string(
-                data["completed_at"], "command execution.completed_at"
+                data.get("completed_at"), "command execution.completed_at"
             ),
             exit_code=expect_optional_int(
-                data["exit_code"], "command execution.exit_code"
+                data.get("exit_code"), "command execution.exit_code"
             ),
-            stdout=expect_string(data["stdout"], "command execution.stdout"),
-            stderr=expect_string(data["stderr"], "command execution.stderr"),
+            stdout=expect_string(data.get("stdout", ""), "command execution.stdout"),
+            stderr=expect_string(data.get("stderr", ""), "command execution.stderr"),
             stdout_ref=expect_optional_string(
                 data.get("stdout_ref"), "command execution.stdout_ref"
             ),
@@ -927,39 +894,30 @@ class PlanItemExecution:
     def from_dict(cls, data: Any) -> PlanItemExecution:
         if not isinstance(data, dict):
             raise ValueError("plan item execution must be a mapping")
-        required = {
-            "plan_item_id",
-            "position",
-            "status",
-            "started_at",
-            "completed_at",
-            "attempts",
-            "supplied_values",
-            "result",
-            "error",
-            "commands",
-            "artifact",
-        }
-        require_keys(data, required, "plan item execution")
-        values = _variables(data["supplied_values"], "supplied values")
-        commands = data["commands"]
+        require_keys(data, {"plan_item_id", "position"}, "plan item execution")
+        values = _variables(data.get("supplied_values", {}), "supplied values")
+        commands = data.get("commands", [])
         if not isinstance(commands, list):
             raise ValueError("command executions must be a list")
         return cls(
             plan_item_id=expect_string(data["plan_item_id"], "plan item ID"),
             position=expect_positive_int(data["position"], "plan item position"),
             status=expect_literal(
-                data["status"], ItemStatus, "plan item execution.status"
+                data.get("status", "pending"),
+                ItemStatus,
+                "plan item execution.status",
             ),
-            started_at=expect_optional_string(data["started_at"], "started_at"),
-            completed_at=expect_optional_string(data["completed_at"], "completed_at"),
-            attempts=expect_nonnegative_int(data["attempts"], "attempts"),
+            started_at=expect_optional_string(data.get("started_at"), "started_at"),
+            completed_at=expect_optional_string(
+                data.get("completed_at"), "completed_at"
+            ),
+            attempts=expect_nonnegative_int(data.get("attempts", 0), "attempts"),
             supplied_values=values,
             output_values=_variables(data.get("output_values", {}), "output values"),
-            result=expect_optional_string(data["result"], "result"),
-            error=expect_optional_string(data["error"], "error"),
+            result=expect_optional_string(data.get("result"), "result"),
+            error=expect_optional_string(data.get("error"), "error"),
             commands=tuple(CommandExecution.from_dict(item) for item in commands),
-            artifact=expect_optional_string(data["artifact"], "artifact"),
+            artifact=expect_optional_string(data.get("artifact"), "artifact"),
             repair_pending=expect_bool(
                 data.get("repair_pending", False), "repair pending"
             ),
@@ -1130,20 +1088,21 @@ class StepProgress:
     def from_dict(cls, data: Any) -> StepProgress:
         if not isinstance(data, dict):
             raise ValueError("step progress must be a mapping")
-        require_keys(
-            data,
-            {"name", "path", "status", "started_at", "completed_at", "children"},
-            "step progress",
-        )
-        if not isinstance(data["children"], list):
+        require_keys(data, {"name", "path"}, "step progress")
+        children = data.get("children", [])
+        if not isinstance(children, list):
             raise ValueError("step progress children must be a list")
         return cls(
             name=expect_string(data["name"], "step name"),
             path=expect_string(data["path"], "step path"),
-            status=expect_literal(data["status"], StepStatus, "step progress.status"),
-            started_at=expect_optional_string(data["started_at"], "started_at"),
-            completed_at=expect_optional_string(data["completed_at"], "completed_at"),
-            children=tuple(cls.from_dict(item) for item in data["children"]),
+            status=expect_literal(
+                data.get("status", "pending"), StepStatus, "step progress.status"
+            ),
+            started_at=expect_optional_string(data.get("started_at"), "started_at"),
+            completed_at=expect_optional_string(
+                data.get("completed_at"), "completed_at"
+            ),
+            children=tuple(cls.from_dict(item) for item in children),
         )
 
 
@@ -1164,7 +1123,7 @@ class InputRequest:
     def from_dict(cls, data: Any) -> InputRequest:
         if not isinstance(data, dict):
             raise ValueError("input request must be a mapping")
-        require_keys(data, {"item_id", "values", "continuation"}, "input request")
+        require_keys(data, {"item_id", "values"}, "input request")
         values = data["values"]
         if not isinstance(values, list):
             raise ValueError("input request values must be a list")
@@ -1183,7 +1142,9 @@ class InputRequest:
                 )
                 for item in values
             ),
-            continuation=expect_string(data["continuation"], "input continuation"),
+            continuation=expect_string(
+                data.get("continuation", "complete"), "input continuation"
+            ),
         )
 
 
@@ -1408,11 +1369,8 @@ class ExecutionState:
     def from_dict(cls, data: Any) -> ExecutionState:
         if not isinstance(data, dict):
             raise ValueError("execution state must be a mapping")
-        version = data.get("schema_version")
-        if not is_strict_int(version) or version != EXECUTION_SCHEMA_VERSION:
-            raise ValueError(f"unsupported execution state schema: {version!r}")
+        data = upgrade("execution state", data)
         required = {
-            "schema_version",
             "task_id",
             "run_id",
             "workflow",
@@ -1426,9 +1384,6 @@ class ExecutionState:
             "active_item_id",
             "item_executions",
             "steps",
-            "workflow_values",
-            "pending_input_request",
-            "last_error",
         }
         require_keys(data, required, "execution state")
         if not isinstance(data["modes"], list) or not all(
@@ -1467,11 +1422,13 @@ class ExecutionState:
             item_executions=item_executions,
             execution_history=execution_history,
             steps=tuple(StepProgress.from_dict(item) for item in data["steps"]),
-            workflow_values=_variables(data["workflow_values"], "workflow values"),
+            workflow_values=_variables(
+                data.get("workflow_values", {}), "workflow values"
+            ),
             pending_input_request=InputRequest.from_dict(data["pending_input_request"])
-            if data["pending_input_request"] is not None
+            if data.get("pending_input_request") is not None
             else None,
-            last_error=expect_optional_string(data["last_error"], "last error"),
+            last_error=expect_optional_string(data.get("last_error"), "last error"),
             run_id=run_id,
             execution_instance_id=expect_optional_string(
                 data.get("execution_instance_id"), "execution instance ID"

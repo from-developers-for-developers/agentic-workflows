@@ -79,10 +79,22 @@ update notices compare the checkout with its remote. A PyPI install upgrades
 to the newest release instead, betas included while the installed version is
 a beta.
 
-`upgrade` does not wait for open tasks. A version that changes the task state
-format can leave tasks started by an older one unreadable, so read
-[CHANGELOG.md](../CHANGELOG.md) before upgrading a project with work in
-progress.
+`upgrade` fetches the tracking branch before it fast-forwards and reads the
+release series in its `pyproject.toml`. When that series is a new major
+version, it checks the project it runs in first and refuses while the
+configuration or an open run holds a construct that version removes, unless
+`--force`; a minor version is never held back. It does not wait for open
+tasks otherwise, and it checks only that project, not every project the
+installation serves, so read [CHANGELOG.md](../CHANGELOG.md) before upgrading
+a project with work in progress. See
+[compatibility](compatibility.md#upgrading-across-a-major-version).
+
+A removal lands only in a major version, and only after a release of the
+major version before it has deprecated the construct with its `removed_in`
+set: a `ConfigMigration` in `ww.migrations.config.catalog` for configuration,
+a `RemovedConstruct` in `ww.migrations.removals` for a plan construct. That is
+what lets the last release of a major version refuse an upgrade the next one
+would break.
 
 ## One-time publishing setup
 

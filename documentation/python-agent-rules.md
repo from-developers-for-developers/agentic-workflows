@@ -93,11 +93,24 @@ Purpose: keep ww understandable, resumable, extensible, and conventional Python.
 - Remove superseded paths within the authorized scope once consumers are accounted for. Keep necessary migrations explicit and isolated.
 - Report what changed, why, what was verified, and any remaining limitation. Distinguish observed results from assumptions and proposed future work.
 
+## 13. Keep persisted data and extension APIs compatible
+
+See [compatibility.md](compatibility.md) for the whole policy.
+
+- Never bump a persisted format's schema version, `EXTENSION_API_VERSION`, or an extension's major version for an additive change: a new field, key, or option whose default keeps the old behaviour.
+- A break is what does need a version: a removed or renamed field, a changed type or meaning, a removed value of a closed set (`Literal`, enum), or a changed default. Defaults are omitted on disk, so a new default silently changes every file written before it.
+- Give a new persisted field a dataclass default and read it with `data.get(name, default)`; never list a defaulted field as required, so older files keep loading. Keep genuine identity fields required.
+- Raise a schema version only in `ww.migrations.data`, together with the pure `dict -> dict` migration from the previous version and a new `tests/fixtures/formats/<format>/v<N>.json` sample. Never edit or delete an existing sample while its version is readable.
+- Keep old shapes in `ww.migrations` only. Decoders and the engine handle the current shape; they never branch on a version.
+- Change a configuration key's shape (`ww.yaml`, rule frontmatter, `ww.json`) by appending a `ConfigMigration` to `ww.migrations.config.catalog.CONFIG_MIGRATIONS`, with its guide `title`, `notes` and `example`, then run `scripts/generate_upgrade_guide.py` to regenerate `deprecations.md` (never edit that file by hand); the parser and models accept only the new shape. An extension declares its own in `Extension.settings_migrations`.
+- Keep `written_by` out of every digest and comparison.
+
 ## Quick review before handing off
 
 - Is this the simplest design that satisfies the current requirement?
 - Does each rule have one clear owner, and are layer boundaries intact?
 - Are configuration, persisted data, and public interfaces truthful and validated?
+- Does every file an earlier ww wrote still load, and does every version change come with its migration and sample?
 - Can an interrupted operation resume without skipping or duplicating unaccounted work?
 - Do tests protect the changed behavior through the relevant public boundary?
 - Have obsolete code and misleading documentation been addressed within scope?

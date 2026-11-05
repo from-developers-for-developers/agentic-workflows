@@ -392,6 +392,7 @@ The built-in workflows:
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 | `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own from the required `ww/git` default base, following its worktree settings; automatic Git hooks, `restartable`. |
 | `ww-check-rules` | `check-rules.yaml` | Checks the branch's changes, or the files the request names, against the project's rules and reports what breaks them; `readonly`, `restartable`. A `scope` step (`select_rules_for: [check]`) chooses the rules and, for existing code, the files; a `check` step carries `rules: ["*"]`. See [Readonly workflows](#readonly-workflows). |
+| `ww-migrate` | `migrate.yaml` | Brings deprecated configuration up to date with the operator: `detect` (`ww migrate --json`, `ww migrate --check --deprecations`), `apply` (`ww migrate --apply`), the interactive `resolve`, where the operator decides each choice (`--choose <id>=<option>`) and manual change, and `verify` (`ww migrate --check --deprecations`, `ww lint`); `runtime: single`, `restartable`, no branch or commit. See [compatibility](compatibility.md#the-ww-migrate-workflow). |
 
 `onboarding.yaml` also declares the documents `project` (`scope: project`,
 `path: .ww/project.md`) and

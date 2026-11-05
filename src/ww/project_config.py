@@ -89,7 +89,7 @@ from __future__ import annotations
 import json
 import re
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -106,6 +106,7 @@ from ww.config_files import (
     settings_levels,
 )
 from ww.errors import ConfigurationError
+from ww.migrations.config import migrate_loaded, ww_migrations
 from ww.runtimes import DEFAULT_RUNTIME, RUNTIME_INSTRUCTIONS
 from ww.validation import expect_normalized_name, is_positive_int, is_strict_int
 
@@ -177,13 +178,17 @@ class ExtensionSections:
         extension called ``git``. A bare ``"git"`` also resolves, as long as it
         is unambiguous for the extension being asked about.
         """
+        key = self.key_for(identifier)
+        return deepcopy(self.sections[key]) if key is not None else {}
+
+    def key_for(self, identifier: str) -> str | None:
+        """The key whose section is the extension's: its id, else its bare name."""
         if identifier in self.sections:
-            return deepcopy(self.sections[identifier])
+            return identifier
         _, _, name = identifier.partition("/")
-        bare = [key for key in self.sections if "/" not in key and key == name]
-        if bare:
-            return deepcopy(self.sections[bare[0]])
-        return {}
+        return next(
+            (key for key in self.sections if "/" not in key and key == name), None
+        )
 
     def lists(self, identifier: str) -> bool:
         """Whether a section names the extension, even an empty one."""
@@ -238,6 +243,8 @@ class ProjectSettings:
     # Each file's own section, in the same order, so a section that applies
     # to nothing is reported in the file that holds it.
     levels: tuple[ExtensionSections, ...] = ()
+    # Deprecated settings those files hold, migrated in memory.
+    notices: tuple[str, ...] = ()
 
     def validate_against(self, identifiers: tuple[str, ...]) -> None:
         """Reject sections that name no installed extension, file by file."""
@@ -368,6 +375,12 @@ class ProjectConfig:
     config_ref: str | Literal[False] | None = None
     # Agents the project describes with data, addressed by their bare names.
     agents: tuple[DeclaredAgent, ...] = ()
+    # Each settings file's own extension sections, user to local, so an
+    # extension's settings migrations run file by file. Empty for a
+    # configuration made in memory, whose ``extensions`` is then the one level.
+    levels: tuple[ExtensionSections, ...] = field(default=(), compare=False)
+    # Deprecated settings the files hold, migrated in memory as they were read.
+    notices: tuple[str, ...] = field(default=(), compare=False)
 
     @property
     def projects_by_name(self) -> dict[str, ProjectDefinition]:
@@ -424,12 +437,22 @@ def load_project_config(path: Path) -> ProjectConfig:
     """Load the settings levels around the repo file ``path``, deep-merged.
 
     The user, repo, and local files apply in that order, each optional;
-    without any of them the defaults apply.
+    without any of them the defaults apply. Each file is migrated to the
+    current shape as it is read (see :mod:`ww.migrations.config`).
     """
-    raw, sources = compose_settings(path)
-    if not sources:
+    files = _read_levels(settings_levels(path))
+    if not files:
         return ProjectConfig()
-    return _parse_settings(raw, " + ".join(str(source) for source in sources))
+    config = _parse_settings(
+        _merged(files), " + ".join(str(file.path) for file in files)
+    )
+    return replace(
+        config,
+        levels=tuple(
+            ExtensionSections(_sections(file.raw), file.label) for file in files
+        ),
+        notices=tuple(notice for file in files for notice in file.notices),
+    )
 
 
 def compose_settings(path: Path) -> tuple[dict[str, Any], tuple[Path, ...]]:
@@ -438,7 +461,8 @@ def compose_settings(path: Path) -> tuple[dict[str, Any], tuple[Path, ...]]:
     Nested objects merge key by key; any other value, lists included, replaces
     the one above it.
     """
-    return _compose_levels(settings_levels(path))
+    files = _read_levels(settings_levels(path))
+    return _merged(files), tuple(file.path for file in files)
 
 
 def load_project_settings(root: Path, project: ProjectDefinition) -> ProjectSettings:
@@ -452,19 +476,21 @@ def load_project_settings(root: Path, project: ProjectDefinition) -> ProjectSett
     """
     sources: list[Path] = []
     levels: list[ExtensionSections] = []
+    notices: list[str] = []
     merged: dict[str, dict[str, Any]] = {}
     task_format: str | None = None
     for level in project_settings_levels(project.directory(root)):
-        raw = _read_level(level)
-        if raw is None:
-            continue
         label = f"{display_path(level.path, root)} (project {project.name!r})"
-        sections = ExtensionSections(_parse_extensions(raw, label), label)
+        file = _read_level(level, label)
+        if file is None:
+            continue
+        sections = ExtensionSections(_parse_extensions(file.raw, label), label)
         _deep_merge(merged, sections.sections)
-        if "task_format" in raw:
-            task_format = _parse_task_format(raw["task_format"], label)
+        if "task_format" in file.raw:
+            task_format = _parse_task_format(file.raw["task_format"], label)
         sources.append(level.path)
         levels.append(sections)
+        notices.extend(file.notices)
     source = " + ".join(display_path(path, root) for path in sources)
     return ProjectSettings(
         project.name,
@@ -472,6 +498,7 @@ def load_project_settings(root: Path, project: ProjectDefinition) -> ProjectSett
         task_format,
         tuple(sources),
         tuple(levels),
+        tuple(notices),
     )
 
 
@@ -487,31 +514,61 @@ def overlay_settings(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str,
     return merged
 
 
-def _compose_levels(
-    levels: tuple[ConfigurationLevel, ...],
-) -> tuple[dict[str, Any], tuple[Path, ...]]:
+@dataclass(frozen=True)
+class _SettingsFile:
+    """One settings file read, in the current shape, with its notices."""
+
+    path: Path
+    label: str
+    raw: dict[str, Any]
+    notices: tuple[str, ...] = ()
+
+
+def _read_levels(levels: tuple[ConfigurationLevel, ...]) -> tuple[_SettingsFile, ...]:
+    """The settings files of ``levels`` that exist, named from the repo level's."""
+    base = next(level.path.parent for level in levels if level.name == "repo")
+    return tuple(
+        file
+        for level in levels
+        if (file := _read_level(level, display_path(level.path, base))) is not None
+    )
+
+
+def _merged(files: tuple[_SettingsFile, ...]) -> dict[str, Any]:
     merged: dict[str, Any] = {}
-    sources: list[Path] = []
-    for level in levels:
-        raw = _read_level(level)
-        if raw is None:
-            continue
-        _deep_merge(merged, raw)
-        sources.append(level.path)
-    return merged, tuple(sources)
+    for file in files:
+        _deep_merge(merged, file.raw)
+    return merged
 
 
-def _read_level(level: ConfigurationLevel) -> dict[str, Any] | None:
-    """The JSON object one settings file holds, or ``None`` when it is absent."""
+def _read_level(level: ConfigurationLevel, label: str) -> _SettingsFile | None:
+    """The JSON object one settings file holds, or ``None`` when it is absent.
+
+    It is migrated to the current shape; ``label`` names it in notices.
+    """
     if not configuration_file_exists(level.path):
         return None
     try:
-        raw = json.loads(read_configuration_file(level.path))
+        text = read_configuration_file(level.path)
+        raw = json.loads(text)
     except (OSError, json.JSONDecodeError) as error:
         raise ConfigurationError(f"invalid {level.path}: {error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{level.path} must contain a JSON object")
-    return raw
+    migrated = migrate_loaded(raw, label, (ww_migrations("settings"),), text=text)
+    return _SettingsFile(level.path, label, migrated.data, migrated.notices)
+
+
+def _sections(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """One file's extension sections, those that are mappings.
+
+    The merged file is validated as a whole; a level is only read for where
+    each extension's section came from.
+    """
+    extensions = raw.get("extensions")
+    if not isinstance(extensions, dict):
+        return {}
+    return {key: value for key, value in extensions.items() if isinstance(value, dict)}
 
 
 def _deep_merge(target: dict[str, Any], overlay: dict[str, Any]) -> None:

@@ -445,24 +445,65 @@ def test_dispatch_accepts_an_in_place_fix_of_the_same_extension_version(
     assert (tmp_path / ".ww/ext/acme/notes/log.jsonl").is_file()
 
 
-def test_dispatch_rejects_extension_version_drift_from_the_saved_plan(
-    tmp_path: Path,
-) -> None:
-    _project(tmp_path)
-    service = _service(tmp_path)
-    start_after_init(service, "task", "TASK-DRIFT", agent="codex")
-    extension_path = tmp_path / "ext/acme/notes/extension.py"
-    extension_path.write_text(
-        extension_path.read_text(encoding="utf-8").replace(
-            'name="notes",', 'name="notes",\n    version="2",'
+def _versioned(root: Path, version: str) -> None:
+    """The recording extension at ``version``, as an upgrade would leave it."""
+    (root / "ext/acme/notes/extension.py").write_text(
+        RECORDING_EXTENSION.replace(
+            'name="notes",', f'name="notes",\n    version="{version}",'
         ),
         encoding="utf-8",
     )
 
+
+def _planned_versions(service: WorkflowService, task_id: str) -> list[str | None]:
+    _, snapshot = service.load(task_id)
+    return [
+        item.payload_as(Extension).version
+        for item in snapshot.plan.items
+        if item.kind == "extension"
+    ]
+
+
+def test_a_minor_extension_version_bump_is_adopted_without_stopping(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    _versioned(tmp_path, "1.2.0")
+    start_after_init(_service(tmp_path), "task", "TASK-MINOR", agent="codex")
+    _versioned(tmp_path, "1.3.0")
+
     resumed = _service(tmp_path)
-    resumed.next("TASK-DRIFT")
+    page = resumed.next("TASK-MINOR")
+
+    assert page.plan_change is None
+    assert page.item_name == "work"
+    assert _planned_versions(resumed, "TASK-MINOR") == ["1.3.0"]
+    finished = resumed.complete(
+        "TASK-MINOR",
+        (("note", "hello"),),
+        "# work\n",
+        summary_for_next="Done.",
+    )
+    assert finished.error is None
+    assert (tmp_path / ".ww/ext/acme/notes/log.jsonl").is_file()
+    assert resumed.plan_change("TASK-MINOR") is None
+
+
+def test_dispatch_rejects_an_extension_changed_after_next_until_next_takes_it(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    _versioned(tmp_path, "1.2.0")
+    service = _service(tmp_path)
+    start_after_init(service, "task", "TASK-DRIFT", agent="codex")
+    service.next("TASK-DRIFT")
+    # Upgraded between the page that started the step and its completion,
+    # which runs the hook: nothing took the new version yet.
+    _versioned(tmp_path, "1.3.0")
+
+    resumed = _service(tmp_path)
     with pytest.raises(
-        ConfigurationError, match="expected version '0' .* found version '2'"
+        ConfigurationError, match="expected version '1.2.0' .* found version '1.3.0'"
     ):
         resumed.complete(
             "TASK-DRIFT",
@@ -482,9 +523,89 @@ def test_dispatch_rejects_extension_version_drift_from_the_saved_plan(
     )
     assert state.item_executions[extension_index].status == "pending"
 
-    extension_path.write_text(RECORDING_EXTENSION, encoding="utf-8")
     recovered = _service(tmp_path).next("TASK-DRIFT")
+    assert recovered.plan_change is None
     assert recovered.item_name == "update-workflow-summary"
+    assert _planned_versions(resumed, "TASK-DRIFT") == ["1.3.0"]
+
+
+@pytest.mark.parametrize("choice", ["keep_plan", "replan"])
+def test_a_major_extension_version_bump_stops_for_the_operator(
+    tmp_path: Path, choice: str
+) -> None:
+    _project(tmp_path)
+    _versioned(tmp_path, "1.2.0")
+    start_after_init(_service(tmp_path), "task", "TASK-MAJOR", agent="codex")
+    _versioned(tmp_path, "2.0.0")
+
+    resumed = _service(tmp_path)
+    stop = resumed.next("TASK-MAJOR", caller_role="manager")
+
+    assert (stop.operator_reason, stop.control, stop.next_role) == (
+        "plan_changed",
+        "awaiting_operator",
+        "operator",
+    )
+    assert stop.plan_change is not None
+    (change,) = stop.plan_change.changes
+    assert (change.kind, change.label) == (
+        "changed",
+        "`record` (after complete of `work`)",
+    )
+    assert [(field.name, field.before, field.after) for field in change.fields] == [
+        ("extension_major_version", '"1"', '"2"')
+    ]
+    assert stop.plan_change.reruns == ()
+    assert stop.plan_change.refusal is None
+    assert _planned_versions(resumed, "TASK-MAJOR") == ["1.2.0"]
+
+    page = resumed.next(
+        "TASK-MAJOR",
+        caller_role="manager",
+        replan=choice == "replan",
+        keep_plan=choice == "keep_plan",
+    )
+
+    assert page.plan_change is None
+    assert page.item_name == "work"
+    assert _planned_versions(resumed, "TASK-MAJOR") == ["2.0.0"]
+    finished = resumed.complete(
+        "TASK-MAJOR",
+        (("note", "hello"),),
+        "# work\n",
+        summary_for_next="Done.",
+    )
+    assert finished.error is None
+    assert (tmp_path / ".ww/ext/acme/notes/log.jsonl").is_file()
+    # Either choice settles this version: it is not offered again.
+    assert resumed.plan_change("TASK-MAJOR") is None
+
+
+def test_a_version_bump_of_an_extension_the_plan_does_not_use_changes_nothing(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    other = tmp_path / "ext/acme/other/extension.py"
+    other.parent.mkdir(parents=True)
+    other.write_text(
+        "from ww.extensions.api import Extension\n"
+        'EXTENSION = Extension(vendor="acme", name="other", version="1.0.0")\n',
+        encoding="utf-8",
+    )
+    service = _service(tmp_path)
+    start_after_init(service, "task", "TASK-OTHER", agent="codex")
+    _, before = service.load("TASK-OTHER")
+    # An extension the plan does not use is not even loaded: a new version of
+    # it, or one that no longer loads, does not reach the run.
+    other.write_text("raise RuntimeError('not loaded')\n", encoding="utf-8")
+
+    resumed = _service(tmp_path)
+    page = resumed.next("TASK-OTHER")
+
+    assert page.plan_change is None
+    assert page.item_name == "work"
+    _, after = resumed.load("TASK-OTHER")
+    assert after.configuration_digest == before.configuration_digest
 
 
 def test_alternate_extension_action_applies_frozen_variable_bindings(

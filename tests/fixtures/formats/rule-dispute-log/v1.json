@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "written_by": "1.0.0b18",
+  "disputes": [
+    {
+      "check": "ruff-src",
+      "text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "task_id": "TASK-1",
+      "run_id": "01-task",
+      "step": "task:develop",
+      "reason": "The flagged file is generated.",
+      "attempt": 2,
+      "disputed_at": "2026-11-01T11:00:00Z"
+    }
+  ]
+}

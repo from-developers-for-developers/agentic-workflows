@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "written_by": "1.0.0b18",
+  "id": "05d1ca4b1083--01-task",
+  "kind": "debug",
+  "workflow": "task",
+  "recorded_at": "2026-11-01T13:00:00Z",
+  "run_id": "01-task",
+  "agent": "codex",
+  "runtime": "single",
+  "modes": [],
+  "ww_version": "1.0.0b18",
+  "plan_schema_version": 1,
+  "task_state_schema_version": 1,
+  "workflow_shape": {
+    "steps": [
+      "research",
+      "implement",
+      "review"
+    ]
+  },
+  "errors": [
+    {
+      "summary": "complete refused a valid artifact",
+      "detail": "ww error: artifact is required",
+      "step": "implement"
+    }
+  ],
+  "inconveniences": [
+    {
+      "summary": "The page repeats the requirements"
+    }
+  ],
+  "reported": null,
+  "events": []
+}
