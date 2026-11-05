@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-05
+
+- Added: `ww migrate` (dry run, `--apply`, `--check`, `--tasks`) and the bundled `ww-migrate` workflow fix deprecated configuration, which `lint` lists; older task state migrates on load, a minor or patch extension upgrade no longer strands open runs, `upgrade` refuses a major version the project is not ready for, and `ww visualize` opens tasks it cannot fully read in a reduced view. Breaking: older builds refuse the rule store this version writes. `71c8b73`
+
 ## 2026-11-02
 
 - Added: `readonly: true` workflows check the branch, or files named with `complete --select-files`, against the rules and report failures without changing anything or creating a branch, worktree or commit; the built-in `ww-check-rules` does this on request, `rules: ["*"]` names every group, and `select_rules_for` can also leave out checked rules. `b36f3f6`
