@@ -465,6 +465,26 @@ class TaskDirectWorkStorage(ABC):
         """Append one entry, creating the task's storage; the caller holds the lock."""
 
 
+class TaskCodenameStorage(ABC):
+    """Storage for a task's codename, the operator's alias for its ID.
+
+    It belongs to the task, not to a run, and may change at any time; the
+    codename's rules and its uniqueness are ``ww.task_codenames``'.
+    """
+
+    def lock_codenames(self) -> AbstractContextManager[None]:
+        """Serialize a uniqueness check and the write that follows it."""
+        return nullcontext()
+
+    @abstractmethod
+    def read_codename(self, task_id: str) -> str | None:
+        """The task's codename, or ``None`` when it has none."""
+
+    @abstractmethod
+    def write_codename(self, task_id: str, codename: str | None) -> None:
+        """Set the task's codename, or clear it with ``None``."""
+
+
 class TaskMetadataStorage(ABC):
     """Storage for durable metadata shared by every run of one task."""
 
@@ -500,6 +520,7 @@ class TaskStorageAdapter(
     TaskItemStorage,
     TaskAmendmentStorage,
     TaskDirectWorkStorage,
+    TaskCodenameStorage,
     ABC,
 ):
     """Complete storage-adapter boundary required by ``WorkflowService``.
@@ -552,6 +573,7 @@ __all__ = [
     "ProjectMetadata",
     "ProjectMetadataStorage",
     "TaskArtifactStorage",
+    "TaskCodenameStorage",
     "TaskDirectWorkStorage",
     "TaskMetadata",
     "TaskMetadataStorage",

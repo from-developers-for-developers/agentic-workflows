@@ -32,6 +32,8 @@ An installation carries the same-version copies of all three: read them with
 - An implicit, reserved `init` step that preserves task requirements.
 - A one-line description for every task, given at `start`, and `ww tasks`,
   which lists every task with its description, status and last change.
+- Optional task codenames, such as `Atlas`, that every command addressing a
+  task accepts in place of its ID.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
 - ww-owned CLI handlers, output assertions, and lifecycle transitions.
@@ -434,7 +436,8 @@ when projects or branch strategies are configured, with their values. A few
 lines explain what is not obvious: explicit modes replace the defaults,
 automatic modes apply themselves, `auto` honours per-step worker requests while
 `single` records them, and `--model` and `--reasoning` describe your own
-session, and `--description` takes the task in one short line. It ends with
+session, `--description` takes the task in one short line, and the optional
+`--codename` an alias the operator gives the task. It ends with
 `ww tasks`, the resume and status commands and one optional plan preview.
 ww's own workflows are not listed there: it points at `ww workflows`, the
 catalog of every workflow. It lists no task itself: the operator names the
@@ -512,14 +515,15 @@ longer. A start that obtains its task ID in its first step keeps the
 description until the ID is bound.
 
 `ww tasks` lists every task in the store, children after their parent, in
-natural ID order (`TASK-2` before `TASK-10`): its ID, the status of its latest
-run, when it last changed and its description.
+natural ID order (`TASK-2` before `TASK-10`): its ID, its codename when any
+task has one (see [Task codenames](#task-codenames)), the status of its
+latest run, when it last changed and its description.
 
 ```console
 $ ./ww tasks
-TASK-2   completed          2026-11-04 16:12  Add a --quiet flag to greet
-TASK-3   direct             2026-11-05 09:30
-TASK-10  awaiting_operator  2026-11-05 11:02  Retry uploads after a timeout
+TASK-2   Atlas  completed          2026-11-04 16:12  Add a --quiet flag to greet
+TASK-3          direct             2026-11-05 09:30
+TASK-10         awaiting_operator  2026-11-05 11:02  Retry uploads after a timeout
 ```
 
 The status is the latest run's (`pending`, `in_progress`, `awaiting_operator`,
@@ -528,9 +532,44 @@ direct work, or `unreadable` for a task whose state names no run ww can read. A 
 through direct work, is listed with an empty description. A task this ww
 cannot read in full is listed from its envelope, as `ww visualize` shows it,
 and named once more under the list; `ww tasks --json` gives each row as
-`task_id`, `description`, `status`, `workflows`, `updated_at` and
-`unreadable`, the reason the task could not be read in full or `null`.
-`ww tasks` is read-only and reads only the task store, not the configuration.
+`task_id`, `codename` (or `null`), `description`, `status`, `workflows`,
+`updated_at` and `unreadable`, the reason the task could not be read in full
+or `null`. `ww tasks` is read-only and reads only the task store, not the
+configuration.
+
+### Task codenames
+
+A task may also carry a codename: an alias the operator gives it, such as
+`Atlas` for `TASK-64`, to name it the way they think of it. It suits a
+long-lived parent, such as an epic, that the operator refers to for weeks. The
+codename never replaces the task ID: the branch, the worktree and the task's
+files keep the ID, and so does every page and record.
+
+```console
+$ ./ww start TASK-64 --workflow roadmap --agent claudecode \
+    --requirements "..." --description "Billing rework" --codename Atlas --role manager
+$ ./ww codename TASK-64            # TASK-64 is also called Atlas.
+$ ./ww codename TASK-64 Orion      # give, or change, the codename
+$ ./ww codename Orion --clear      # remove it
+```
+
+`--codename` on `start` is optional, and an agent passes it only when the
+operator gives one; `ww codename <task> [<name> | --clear] [--json]` shows,
+sets, changes or removes it at any time, for example to name an epic that is
+already running. Every command that addresses an existing task takes the
+codename in place of the ID, in any letter case (`ww status atlas`, `ww
+instruction Atlas --role manager`), and a child through its parent's
+codename (`Atlas/api`); `start` and `plan` take task IDs only. `lookup`
+matches a codename like an ID, so an agent finds the task the operator names
+by it. Pages show it beside the ID (`# TASK-64 (Atlas) · roadmap`), and so do
+`ww tasks` and `ww visualize`.
+
+A codename starts with a letter, holds letters, digits, `.`, `_` and `-`, and
+is at most 40 characters long. It is unique in the project regardless of
+letter case, and it must not read as a task ID: not an existing task's, not
+one the task format builds from it, and not a tracker key such as
+`PROJ-123`. A new task ID that is already another task's codename is refused
+too. Resetting a task removes its codename.
 
 ## Onboarding state
 
@@ -724,7 +763,7 @@ The page has two tabs:
 | Tab | Shows |
 | --- | --- |
 | Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A switch on each card shows its YAML instead: the entry exactly as the file that defines it has it, comments included, syntax-highlighted, with the file named and a copy button. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. The demo workflow comes first, marked as the demo (see below). A configuration that does not load is shown with ww's error; the Tasks tab still works. |
-| Tasks | Every task in the store with its description, active ones first, with status filters and search; a task this ww cannot read in full is shown in a reduced view (below). A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
+| Tasks | Every task in the store with its codename, if it has one, and its description, active ones first, with status filters and search (which matches codenames too); a task this ww cannot read in full is shown in a reduced view (below). A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
 
 The page is live. ww watches the configuration as the checkout has it — every
 YAML level and import, the JSON settings levels, the rule files and the

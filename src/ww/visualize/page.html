@@ -350,6 +350,8 @@ table.settings td:last-child { font-family: var(--f-mono); font-size: 12px; over
 .trow-id { font-family: var(--f-display); font-weight: 650; font-size: 15.5px; }
 .trow-wf { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); }
 .trow-when { margin-left: auto; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.trow-codename { font-family: var(--f-display); font-weight: 600; font-size: 13.5px; color: var(--muted); }
+.td-codename { font-family: var(--f-display); font-weight: 600; font-size: 20px; color: var(--muted); }
 .trow-desc { font-size: 13.5px; color: var(--ink); }
 .td-desc { margin: 4px 0 0; font-size: 14.5px; color: var(--ink); }
 .trow-sum { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1109,7 +1111,7 @@ function taskMatches(t) {
   const group = isActive(t.status) && t.status !== "awaiting_operator" ? "in_progress" : t.status;
   if (taskFilter !== "all" && group !== taskFilter) return false;
   const q = $("#tq").value.trim().toLowerCase();
-  return !q || [t.id, t.description, ...(t.workflows || []), t.summary, t.current_step, t.reduced && t.reduced.badge].join(" ").toLowerCase().includes(q);
+  return !q || [t.id, t.codename, t.description, ...(t.workflows || []), t.summary, t.current_step, t.reduced && t.reduced.badge].join(" ").toLowerCase().includes(q);
 }
 function renderTaskList() {
   const rows = tasks.filter(taskMatches).slice().reverse();
@@ -1118,7 +1120,7 @@ function renderTaskList() {
     const wf = (t.workflows || []).join(" → ") || (t.reduced ? "" : "direct work");
     const child = t.id.includes("/");
     return `<button class="trow${t.status === "unreadable" ? " unreadable" : ""}${t.reduced ? " reduced" : ""}${child ? " child" : ""}" type="button" data-task="${esc(t.id)}" aria-current="${currentTask === t.id}">
-      <span class="trow-top"><span class="trow-id">${esc(child ? t.id.split("/").pop() : t.id)}</span>${pill(t.status)}<span class="trow-wf">${esc(wf)}</span><span class="trow-when">${esc(ago(t.updated_at))}</span></span>
+      <span class="trow-top"><span class="trow-id">${esc(child ? t.id.split("/").pop() : t.id)}</span>${t.codename ? `<span class="trow-codename">${esc(t.codename)}</span>` : ""}${pill(t.status)}<span class="trow-wf">${esc(wf)}</span><span class="trow-when">${esc(ago(t.updated_at))}</span></span>
       ${t.current_step ? `<span class="trow-wf">at ${esc(t.current_step)}</span>` : ""}
       ${t.reduced ? `<span><span class="badge reduced" title="${esc(t.reduced.reason)}">${esc(t.reduced.badge)}</span></span>` : ""}
       ${t.description ? `<span class="trow-desc">${esc(t.description)}</span>` : ""}
@@ -1291,7 +1293,7 @@ function renderTaskDetail() {
   const recorded = runs.flatMap(r => r.items.filter(i => i.owner === "ww" && i.result && i.phase !== "step").map(i => ({ name: i.name, result: i.result })));
   el.innerHTML = `
     <div class="td-head">
-      <div class="td-title"><h2>${esc(t.id)}</h2>${pill(t.status)}</div>
+      <div class="td-title"><h2>${esc(t.id)}</h2>${t.codename ? `<span class="td-codename">${esc(t.codename)}</span>` : ""}${pill(t.status)}</div>
       ${t.description ? `<p class="td-desc">${esc(t.description)}</p>` : ""}
       <div class="td-sub">
         ${runs.length ? `<span>${runs.length} run${runs.length > 1 ? "s" : ""}: <span class="mono">${esc(runs.map(x => x.workflow).join(" → "))}</span></span>` : "<span>direct work only</span>"}
@@ -1345,7 +1347,7 @@ function renderReducedDetail(t) {
   };
   return `
     <div class="td-head">
-      <div class="td-title"><h2>${esc(t.id)}</h2>${pill(t.status)}<span class="badge reduced" title="${esc(x.reason)}">${esc(x.badge)}</span></div>
+      <div class="td-title"><h2>${esc(t.id)}</h2>${t.codename ? `<span class="td-codename">${esc(t.codename)}</span>` : ""}${pill(t.status)}<span class="badge reduced" title="${esc(x.reason)}">${esc(x.badge)}</span></div>
       ${t.description ? `<p class="td-desc">${esc(t.description)}</p>` : ""}
       <div class="td-sub">${runs.length ? `<span>${runs.length} run${runs.length > 1 ? "s" : ""}: <span class="mono">${esc(runs.map(r => r.workflow).join(" → "))}</span></span>` : "<span>no runs found</span>"}</div>
       <p class="reduced-note">${why}</p>

@@ -479,6 +479,7 @@ def _start_synopsis(
         f"[--runtime <{runtime_names}>]",
         "[--model <model>]",
         "[--reasoning <level>]",
+        "[--codename <name>]",
     ]
     if projects:
         names = "|".join(str(project["name"]) for project in projects)
@@ -503,6 +504,10 @@ def _start_notes(
         f"- Agent: {', '.join(named)}, or {custom}.",
         "- Description: the task in one short line, at most "
         f"{DESCRIPTION_LIMIT} characters; `ww tasks` lists it.",
+        "- Codename: an optional alias the operator gives the task, such as "
+        "`Atlas`; pass it only when they give one. The operator may name any "
+        "task by its codename, and every command that addresses a task takes "
+        "it in place of the ID.",
         f"- {report['modes_guidance']}",
         "- Runtimes: "
         + "; ".join(

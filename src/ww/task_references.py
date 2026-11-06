@@ -11,7 +11,7 @@ it proposes, and the caller decides what to do with the answer.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from ww.errors import StateError
@@ -59,12 +59,17 @@ class TaskResolution:
 
 
 def resolve_task_reference(
-    reference: str, task_format: str | None, known: Iterable[str]
+    reference: str,
+    task_format: str | None,
+    known: Iterable[str],
+    codenames: Mapping[str, str] | None = None,
 ) -> TaskResolution:
     """Resolve ``reference`` against ``task_format`` and the ``known`` task IDs.
 
-    An exact ID, the same ID in other letter case, and the ID the task format
-    builds from the reference are strong matches, and the first found wins.
+    An exact ID, the same ID in other letter case, a task's codename
+    (``codenames`` maps each codename to its task ID) in any letter case, and
+    the ID the task format builds from the reference are strong matches, and
+    the first found wins.
     Only without one do existing IDs ending in the reference after a
     separator count, so "12345" finds ``FOOBAR-12345`` but not ``FOOBAR-112345``.
     """
@@ -80,6 +85,13 @@ def resolve_task_reference(
         if candidate is not None
         and (found := by_folded.get(candidate.casefold())) is not None
     ]
+    if not strong:
+        named = {
+            codename.casefold(): task_id
+            for codename, task_id in (codenames or {}).items()
+        }
+        if (owner := named.get(text.casefold())) is not None:
+            strong.append(owner)
     if strong:
         return TaskResolution(text, (strong[0],), None)
     folded = text.casefold()
@@ -91,6 +103,11 @@ def resolve_task_reference(
         )
     )
     return TaskResolution(text, weak, _valid(formatted or text))
+
+
+def formatted_task_id(text: str, task_format: str | None) -> str | None:
+    """The ID ``task_format`` builds from ``text``, when it builds one."""
+    return _formatted(text.strip(), task_format)
 
 
 def _formatted(text: str, task_format: str | None) -> str | None:

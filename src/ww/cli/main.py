@@ -104,6 +104,7 @@ from ww.run_reports import DEBUG, FEEDBACK, listing, render_listing, render_reco
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.storage_adapters import FileTaskStorageAdapter
+from ww.task_codenames import resolve_task
 from ww.task_ids import bare_request_id
 from ww.task_list import render_task_rows, task_rows
 from ww.upgrade import upgrade
@@ -666,6 +667,30 @@ def _visualize(context: _Context) -> _Outcome:
     return _Outcome("")
 
 
+def _codename(context: _Context) -> _Outcome:
+    """Show the task's codename, or set, change or clear it."""
+    args = context.args
+    if args.clear or args.name is not None:
+        codename = context.service.set_task_codename(
+            context.task_id, None if args.clear else args.name
+        )
+        text = (
+            f"{context.task_id} is now also called {codename}."
+            if codename is not None
+            else f"{context.task_id} has no codename now."
+        )
+    else:
+        codename = context.service.task_codename(context.task_id)
+        text = (
+            f"{context.task_id} is also called {codename}."
+            if codename is not None
+            else f"{context.task_id} has no codename."
+        )
+    if args.json_output:
+        return _Outcome(_json({"task_id": context.task_id, "codename": codename}))
+    return _Outcome(text + "\n")
+
+
 def _tasks(context: _Context) -> _Outcome:
     rows = task_rows(context.storage)
     if context.args.json_output:
@@ -690,6 +715,7 @@ def _start(context: _Context) -> _Outcome:
             project=args.project,
             fresh_items=args.fresh_items,
             description=args.description,
+            codename=args.codename,
         ),
         args.json_output,
     )
@@ -1921,6 +1947,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "inspect": _inspect,
     "visualize": _visualize,
     "tasks": _tasks,
+    "codename": _codename,
     "lookup": lambda c: _Outcome(
         render_lookup(
             c.storage,
@@ -2047,6 +2074,10 @@ def main(argv: list[str] | None = None) -> int:
     # is exempt: it is the command that reports one.
     if args.command != "updates":
         announce(storage, to_stderr=_machine_readable(args))
+    # A codename stands for its task's ID in every command that addresses an
+    # existing task; ``start`` and ``plan`` name the ID itself.
+    if args.command not in {"start", "plan"} and getattr(args, "task_id", None):
+        args.task_id = resolve_task(storage.task_persistence, args.task_id)
     workflow = cast(str | None, getattr(args, "workflow", None))
     task_id = cast(str | None, getattr(args, "task_id", None))
     logged = args.command not in _READ_ONLY_COMMANDS and not (

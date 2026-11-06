@@ -662,7 +662,25 @@ as `task_id`, `description` (empty when none), `status` (the latest run's, with
 `awaiting_operator` for a run waiting for the operator, `direct` for direct work
 only), `workflows`, `updated_at` (the latest run update or direct-work entry)
 and `unreadable` (why the task state could not be read, in which case the row
-comes from the task envelope, or `null`). The JSON is `{"tasks": [...]}`.
+comes from the task envelope, or `null`), with `codename` after `task_id`.
+The JSON is `{"tasks": [...]}`.
+
+`start --codename NAME` and `codename <task> [NAME | --clear] [--json]` give a
+task a codename, an alias stored at task level in
+`.ww/tasks/<task-id>/codename.json` (`{"task_id": ..., "codename": ...}`),
+removed with the task. A codename matches `[A-Za-z][A-Za-z0-9._-]*`, is at
+most 40 characters, is not a tracker key (`[A-Za-z]+[-_][0-9]+`), is unique
+in the project compared case-insensitively, and must not resolve as a task
+reference: equal to another task's ID in any case, built from it by the task
+format, or ending another task's ID after a separator. The check and the
+write hold one project-wide lock; a start checks the codename before writing
+anything, keeps it on an identity request until the ID is bound, and refuses
+a task ID that is another task's codename. Every command with a `task_id`
+argument except `start` and `plan` resolves it first: an existing task ID is
+kept, otherwise a codename, compared case-insensitively, stands for its task,
+and `codename/child` for that task's child. `lookup` treats a codename as a
+strong match. Pages add `task_codename` to the instruction JSON when the task
+has one and print it after the ID in the heading.
 
 `complete <task> --role manager [--no-dispatch]` in the `auto` runtime also
 dispatches the manager's own next step (as `next --role manager` would, with a

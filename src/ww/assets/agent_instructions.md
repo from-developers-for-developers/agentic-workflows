@@ -17,7 +17,8 @@ passes the task in one short line as `--description`. Do not run it
 for questions, reviews, explanations or investigations, which never use ww;
 not to look around or check status; and not again once you know the answer.
 To continue a task, run `./ww instruction <task-id> --role manager` instead;
-`./ww tasks` lists every task with its description.
+`./ww tasks` lists every task with its codename and description, and a
+task's codename, such as `Atlas`, works wherever its ID does.
 
 For `repeat_until` assessments, follow the page's session and exact-message
 protocol. In auto, keep the assessor alive; delegate outcome agent work to a

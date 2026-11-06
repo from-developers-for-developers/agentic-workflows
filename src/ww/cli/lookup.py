@@ -26,6 +26,7 @@ from ww.instructions.commands import (
 )
 from ww.storage import Storage
 from ww.storage_adapters import TaskStorageAdapter
+from ww.task_codenames import codenames, resolve_task
 from ww.task_ids import (
     EXPLICIT_TASK_FORMAT,
     candidate_task_ids,
@@ -73,12 +74,21 @@ def lookup(
     del storage
     task_format = extensions.task_format()
     known = tasks.task_ids()
-    if reference is not None and "/" in reference and tasks.task_exists(reference):
-        # A child task is named by its full ID; top-level listing leaves it out.
-        known = (*known, reference)
+    named = reference
+    if reference is not None and "/" in reference:
+        # A child task is named by its full ID, its parent perhaps by its
+        # codename; top-level listing leaves children out.
+        child = resolve_task(tasks, reference)
+        if tasks.task_exists(child):
+            known, named = (*known, child), child
     resolution = (
-        resolve_task_reference(reference, task_format, known)
-        if reference is not None
+        resolve_task_reference(
+            named,
+            task_format,
+            known,
+            {codename: task_id for task_id, codename in codenames(tasks).items()},
+        )
+        if named is not None
         else None
     )
     report: dict[str, object] = {
@@ -185,6 +195,7 @@ def _task(tasks: TaskStorageAdapter, task_id: str) -> dict[str, object]:
     runs = tasks.execution_runs(task_id)
     return {
         "task_id": task_id,
+        "codename": tasks.read_codename(task_id),
         "runs": len(runs),
         "last_workflow": runs[-1].workflow if runs else None,
         "open_run": _open_run(tasks, task_id),

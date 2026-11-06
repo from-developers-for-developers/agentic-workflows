@@ -57,6 +57,8 @@ def test_public_storage_adapter_requires_every_executor_write_capability() -> No
         "append_amendment",
         "read_direct_work",
         "append_direct_work",
+        "read_codename",
+        "write_codename",
         "write_task_metadata",
         "remove_task",
         "task_ids",

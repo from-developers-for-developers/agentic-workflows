@@ -7,7 +7,7 @@ import contextlib
 import json
 import shutil
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +35,9 @@ from ww.storage_adapters.task_document import (
     encode_run_document,
     encode_task_index,
 )
+
+# What the lock serializing codename changes is named after; never a file.
+CODENAMES_LOCK = ".codenames"
 
 
 @dataclass(frozen=True)
@@ -444,6 +447,33 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             json.dumps([item.to_dict() for item in entries], indent=2) + "\n",
         )
 
+    def lock_codenames(self) -> AbstractContextManager[None]:
+        return self.locks.lock(self.tasks_path / CODENAMES_LOCK, purpose="codenames")
+
+    def read_codename(self, task_id: str) -> str | None:
+        path = self._codename_path(task_id)
+        if not path.exists():
+            return None
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            codename = raw.get("codename") if isinstance(raw, dict) else None
+            if not isinstance(codename, str) or not codename:
+                raise ValueError("codename must be a non-empty string")
+        except (OSError, ValueError) as error:
+            raise StateError(f"cannot read codename of {task_id!r}: {error}") from error
+        return codename
+
+    def write_codename(self, task_id: str, codename: str | None) -> None:
+        path = self._codename_path(task_id)
+        if codename is None:
+            with contextlib.suppress(FileNotFoundError):
+                path.unlink()
+            return
+        self.locks.atomic_write(
+            path,
+            json.dumps({"task_id": task_id, "codename": codename}, indent=2) + "\n",
+        )
+
     def _write_task_metadata_payload(self, metadata: TaskMetadata) -> None:
         payload: dict[str, object] = {"task_id": metadata.task_id}
         if metadata.values:
@@ -467,6 +497,7 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
             self._shared_items_path(task_id),
             self._amendments_path(task_id),
             self._direct_work_path(task_id),
+            self._codename_path(task_id),
         )
         for owned in owned_paths:
             if owned.exists() and not owned.is_symlink() and owned.is_file():
@@ -526,6 +557,9 @@ class FileTaskStorageAdapter(TaskStorageAdapter):
 
     def _direct_work_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "direct-work.json"
+
+    def _codename_path(self, task_id: str) -> Path:
+        return self.tasks_path / task_id / "codename.json"
 
     def _shared_items_path(self, task_id: str) -> Path:
         return self.tasks_path / task_id / "items.json"

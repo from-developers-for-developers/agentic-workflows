@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-06
+
+- Added: optional task codenames, such as `Atlas`: give one with `start --codename` or `ww codename <task> <name>` (also to change or `--clear` it), and every command that addresses a task, `lookup` included, accepts it in place of the ID; `ww tasks`, `ww visualize` and page headings show it beside the ID, which still names the branch and files.
+
 ## 2026-11-05
 
 - Added: `start` requires `--description`, the task in one line of at most 120 characters; `ww tasks` (and `--json`) lists every task and child with its description, status and last change, and `ww visualize` shows the description. `e652e73`

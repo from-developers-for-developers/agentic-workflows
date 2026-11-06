@@ -853,6 +853,11 @@ derives a child's from its parent's text, and picks the task's: the first one
 its runs recorded. `ww.task_list` builds the rows `ww tasks` prints, one per
 task and child, from the full record or, when that does not read, from the
 envelope; it also owns `run_status`, the status the visualizer shows.
+`ww.task_codenames` owns codenames, the operator's aliases stored per task by
+the storage adapter (`read_codename`, `write_codename`, `lock_codenames`):
+their rules, their uniqueness under the codename lock, and `resolve_task`,
+which the CLI applies to every `task_id` argument but `start`'s and `plan`'s
+before dispatch; `lookup` passes the codenames to `resolve_task_reference`.
 
 The disk codec is separate from expanded domain serializers and public output.
 It omits only versioned record defaults, deduplicates immutable extension

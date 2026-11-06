@@ -683,10 +683,17 @@ class Instruction:
     # Internal capability markers let presentation and service refresh paths
     # avoid rediscovering a saved plan or matching built-in action names.
     is_child_workflow_control: bool = False
+    # The operator's alias for the task, shown beside its ID.
+    task_codename: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "task_id": self.task_id,
+            **(
+                {"task_codename": self.task_codename}
+                if self.task_codename is not None
+                else {}
+            ),
             "workflow": self.workflow,
             **(
                 {"repeat_communication": self.repeat_communication}

@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Every task in the store, one row each, as ``ww tasks`` lists them.
 
-A row names the task, its one-line description, the status of its latest
-run and when it last changed. Children follow their parent. A task this
-build cannot read in full, such as one an older ww wrote, is listed from its
-envelope (``ww.task_envelope``), with why it could not be read.
+A row names the task, its codename when it has one, its one-line
+description, the status of its latest run and when it last changed. Children
+follow their parent. A task this build cannot read in full, such as one an
+older ww wrote, is listed from its envelope (``ww.task_envelope``), with why
+it could not be read.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ww.direct_work import DirectWork
 from ww.errors import StateError
@@ -35,10 +36,12 @@ class TaskRow:
     updated_at: str | None
     # Why only the task's envelope could be read; ``None`` when it was read.
     unreadable: str | None = None
+    codename: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "task_id": self.task_id,
+            "codename": self.codename,
             "description": self.description or "",
             "status": self.status,
             "workflows": list(self.workflows),
@@ -58,6 +61,10 @@ def task_rows(storage: Storage) -> tuple[TaskRow, ...]:
 
 
 def task_row(storage: Storage, task_id: str) -> TaskRow:
+    return replace(_row(storage, task_id), codename=_codename(storage, task_id))
+
+
+def _row(storage: Storage, task_id: str) -> TaskRow:
     tasks = storage.task_persistence
     direct = _direct_work(storage, task_id)
     try:
@@ -106,6 +113,13 @@ def _envelope_row(
     )
 
 
+def _codename(storage: Storage, task_id: str) -> str | None:
+    try:
+        return storage.task_persistence.read_codename(task_id)
+    except StateError:
+        return None
+
+
 def _direct_work(storage: Storage, task_id: str) -> tuple[DirectWork, ...]:
     try:
         return storage.task_persistence.read_direct_work(task_id)
@@ -123,22 +137,28 @@ def _natural(task_id: str) -> tuple[tuple[int, int | str], ...]:
 
 
 def render_task_rows(rows: tuple[TaskRow, ...]) -> str:
-    """The rows as aligned plain text: ID, status, last change, description."""
+    """The rows as aligned plain text: ID, codename, status, last change, description.
+
+    The codename column is left out while no task has one.
+    """
     if not rows:
         return "No tasks."
+    named = any(row.codename for row in rows)
     cells = [
         (
             row.task_id,
+            *((row.codename or "",) if named else ()),
             row.status,
             _minute(row.updated_at),
             row.description or "",
         )
         for row in rows
     ]
-    widths = [max(len(cell[column]) for cell in cells) for column in range(3)]
+    aligned = len(cells[0]) - 1
+    widths = [max(len(cell[column]) for cell in cells) for column in range(aligned)]
     lines = [
-        "  ".join(cell[column].ljust(widths[column]) for column in range(3))
-        + ("  " + cell[3] if cell[3] else "")
+        "  ".join(cell[column].ljust(widths[column]) for column in range(aligned))
+        + ("  " + cell[-1] if cell[-1] else "")
         for cell in cells
     ]
     unreadable = [row.task_id for row in rows if row.unreadable]

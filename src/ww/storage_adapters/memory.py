@@ -36,6 +36,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self.shared_items: dict[str, tuple[WorkItem, ...]] = {}
         self.amendments: dict[str, tuple[Amendment, ...]] = {}
         self.direct_work: dict[str, tuple[DirectWork, ...]] = {}
+        self.codenames: dict[str, str] = {}
         self.aggregates: dict[str, tuple[tuple[TaskRunAggregate, ...], str | None]] = {}
         self.aggregate_revisions: dict[str, int] = {}
         # When each task's runs were last committed.
@@ -149,6 +150,15 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
     def append_direct_work(self, task_id: str, entry: DirectWork) -> None:
         self.direct_work[task_id] = (*self.read_direct_work(task_id), entry)
 
+    def read_codename(self, task_id: str) -> str | None:
+        return self.codenames.get(task_id)
+
+    def write_codename(self, task_id: str, codename: str | None) -> None:
+        if codename is None:
+            self.codenames.pop(task_id, None)
+        else:
+            self.codenames[task_id] = codename
+
     def remove_task(self, task_id: str) -> bool:
         existed = bool(
             task_id in self.aggregates
@@ -160,6 +170,7 @@ class MemoryTaskStorageAdapter(TaskStorageAdapter):
         self.shared_items.pop(task_id, None)
         self.amendments.pop(task_id, None)
         self.direct_work.pop(task_id, None)
+        self.codenames.pop(task_id, None)
         self.aggregates.pop(task_id, None)
         self.aggregate_revisions.pop(task_id, None)
         self.written_at.pop(task_id, None)

@@ -291,6 +291,8 @@ one:
 - `--requirements` is your request, normalized into the task's requirements.
 - `--description` is the task in one short line; `./ww tasks` lists every
   task with its description, status and last change.
+- An optional `--codename`, such as `Atlas`, is an alias you can give a task,
+  then or later with `./ww codename <task> <name>`, and use in place of its ID.
 - `--role manager` is the role driving the task; a worker performing a single
   assignment uses `--role worker`.
 

@@ -92,6 +92,7 @@ def test_start_stores_the_description_and_tasks_lists_it(
 
     assert row == {
         "task_id": "TASK-1",
+        "codename": None,
         "description": "Add a --quiet flag to greet",
         "status": "pending",
         "workflows": ["task"],

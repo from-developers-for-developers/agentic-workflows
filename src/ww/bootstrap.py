@@ -41,6 +41,7 @@ class StartBootstrapRun(Protocol):
         parent_task_id: str | None = None,
         start_operation_id: str | None = None,
         description: str | None = None,
+        codename: str | None = None,
     ) -> Instruction: ...
 
 
@@ -168,6 +169,7 @@ class BootstrapCoordinator:
         parent_task_id: str | None = None,
         start_operation_id: str | None = None,
         description: str | None = None,
+        codename: str | None = None,
     ) -> Instruction:
         """Record an identity request; a child's request reuses its temporary ID."""
         explicit = request_id is not None
@@ -187,6 +189,7 @@ class BootstrapCoordinator:
             "branch_naming_strategy": branch_naming_strategy,
             "init_artifact": init_artifact,
             "description": description,
+            "codename": codename,
             "project": project,
             "parent_task_id": parent_task_id,
             "start_operation_id": start_operation_id,
@@ -370,6 +373,11 @@ class BootstrapCoordinator:
                     description=(
                         str(request["description"])
                         if request.get("description") is not None
+                        else None
+                    ),
+                    codename=(
+                        str(request["codename"])
+                        if request.get("codename") is not None
                         else None
                     ),
                     project=(

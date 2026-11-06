@@ -196,6 +196,11 @@ from ww.storage_adapters import (
     ProjectMetadataStorage,
     TaskStorageAdapter,
 )
+from ww.task_codenames import (
+    check_codename,
+    require_id_not_a_codename,
+    set_codename,
+)
 from ww.task_descriptions import description_from, validate_description
 from ww.task_ids import (
     bare_request_id,
@@ -482,6 +487,7 @@ class WorkflowService:
         project: str | None = None,
         fresh_items: bool = False,
         description: str | None = None,
+        codename: str | None = None,
     ) -> Instruction:
         self._require_manager("start", caller_role)
         # ``"on_request"`` allows it: an agent starts a task only when asked.
@@ -496,6 +502,13 @@ class WorkflowService:
             raise StateError("start requires a non-empty --requirements")
         if description is not None:
             description = validate_description(description)
+        if codename is not None:
+            codename = check_codename(
+                self.tasks,
+                task_id or "",
+                codename,
+                self.extensions.task_format(project),
+            )
         self._validate_execution_metadata(model, reasoning)
         if workflow_runtime is None:
             # The flag outranks the workflow's own runtime, which outranks the
@@ -533,6 +546,7 @@ class WorkflowService:
                             init_artifact,
                             project,
                             description=description,
+                            codename=codename,
                         ),
                         caller_role,
                     ),
@@ -552,6 +566,7 @@ class WorkflowService:
                         init_artifact,
                         project,
                         description,
+                        codename,
                     ),
                     caller_role,
                 ),
@@ -575,6 +590,7 @@ class WorkflowService:
                         project=project,
                         fresh_items=fresh_items,
                         description=description,
+                        codename=codename,
                     ),
                     caller_role,
                 ),
@@ -650,6 +666,7 @@ class WorkflowService:
         init_artifact: str,
         project: str | None = None,
         description: str | None = None,
+        codename: str | None = None,
     ) -> Instruction:
         """Start under the first generated ID that is free.
 
@@ -673,6 +690,7 @@ class WorkflowService:
                         branch_naming_strategy=branch_naming_strategy,
                         project=project,
                         description=description,
+                        codename=codename,
                     )
         raise StateError(
             f"cannot generate an unused task ID from task format {task_format!r}"
@@ -697,7 +715,9 @@ class WorkflowService:
         project: str | None = None,
         fresh_items: bool = False,
         description: str | None = None,
+        codename: str | None = None,
     ) -> Instruction:
+        require_id_not_a_codename(self.tasks, task_id)
         configuration = self._load_configuration()
         working_directory = self._project_directory(project)
         if workflow_name not in configuration.workflows_by_name:
@@ -770,6 +790,10 @@ class WorkflowService:
             items=self._seed_shared_items(task_id, plan),
             bootstrap_request_id=bootstrap_request_id,
         )
+        if codename is not None:
+            set_codename(
+                self.tasks, task_id, codename, self.extensions.task_format(project)
+            )
         state, snapshot = self._complete_initialization(state, snapshot)
         return self.render(state, snapshot)
 
@@ -2869,6 +2893,27 @@ class WorkflowService:
             self.tasks.append_amendment(task_id, amendment)
         return amendment
 
+    def task_codename(self, task_id: str) -> str | None:
+        """The existing task's codename, or ``None`` when it has none."""
+        self._require_existing_task(task_id)
+        return self.tasks.read_codename(task_id)
+
+    def set_task_codename(self, task_id: str, codename: str | None) -> str | None:
+        """Give an existing task a codename, change it, or clear it with ``None``."""
+        self._require_existing_task(task_id)
+        project = None
+        state = self.tasks.read_execution_state(task_id)
+        if state is not None:
+            project = dict(state.workflow_values).get(PROJECT)
+        return set_codename(
+            self.tasks, task_id, codename, self.extensions.task_format(project)
+        )
+
+    def _require_existing_task(self, task_id: str) -> None:
+        validate_task_id(task_id)
+        if not self.tasks.task_exists(task_id):
+            raise StateError(f"task {task_id!r} was not found")
+
     def record_direct_work(self, task_id: str, summary: str) -> DirectWork:
         """Register work done outside any workflow, with the commits ww finds.
 
@@ -4944,9 +4989,14 @@ class WorkflowService:
         items: tuple[WorkItem, ...] | None = None,
     ) -> Instruction:
         """The page for ``state``; ``items`` come from the same read when given."""
-        return self._with_debug_events(
+        instruction = self._with_debug_events(
             self.instructions.build(state, snapshot, items=items), state, snapshot
         )
+        try:
+            codename = self.tasks.read_codename(state.task_id)
+        except StateError:
+            codename = None
+        return replace(instruction, task_codename=codename)
 
     def _with_debug_events(
         self, instruction: Instruction, state: ExecutionState, snapshot: PlanSnapshot

@@ -93,6 +93,7 @@ def _summary(tasks: TaskStorageAdapter, task_id: str) -> JSON:
     return {
         "id": task_id,
         "description": task_description(run.state.description for run in runs) or "",
+        "codename": _codename(tasks, task_id),
         "status": status,
         "workflows": [run.workflow for run in runs],
         "summary": summary or "",
@@ -131,6 +132,7 @@ def task_detail(project: Project, task_id: str) -> JSON:
     return {
         "id": task_id,
         "description": task_description(run.state.description for run in runs) or "",
+        "codename": _codename(tasks, task_id),
         "status": run_status(last) if last else "direct",
         "handoff": handoff,
         "metadata": dict(metadata.values) if metadata else {},
@@ -461,6 +463,7 @@ def _reduced_summary(project: Project, task_id: str, reason: str) -> JSON:
     return {
         "id": task_id,
         "description": _envelope_description(envelope),
+        "codename": _codename(project.storage.task_persistence, task_id),
         "status": _envelope_status(envelope),
         "workflows": [run.workflow or UNKNOWN for run in envelope.runs],
         # A format the page can name says enough; any other reason is shown.
@@ -490,6 +493,7 @@ def _reduced_detail(project: Project, task_id: str, reason: str) -> JSON:
     return {
         "id": task_id,
         "description": _envelope_description(envelope),
+        "codename": _codename(project.storage.task_persistence, task_id),
         "status": _envelope_status(envelope),
         "reduced": _reduced(envelope, reason),
         "handoff": None,
@@ -555,6 +559,13 @@ def _envelope_status(envelope: TaskEnvelope) -> str:
     if not envelope.runs:
         return "unreadable"
     return envelope.runs[-1].status or UNKNOWN
+
+
+def _codename(tasks: TaskStorageAdapter, task_id: str) -> str | None:
+    try:
+        return tasks.read_codename(task_id)
+    except StateError:
+        return None
 
 
 def _envelope_description(envelope: TaskEnvelope) -> str:

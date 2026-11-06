@@ -20,7 +20,10 @@ failure as a finding; ww repairs nothing there.
    carry out the request without ww and do not ask.
 2. To continue an existing task, run
    `./ww instruction <task-id> --role manager` instead of starting a new one;
-   `./ww tasks` lists every task with its description.
+   `./ww tasks` lists every task with its codename and description. The
+   operator may name a task by its codename, such as `Atlas`: every command
+   that addresses a task takes it in place of the ID, and `lookup` matches
+   it. Pass `--codename` on `start` only when the operator gives one.
 3. Otherwise decide how the request is carried out, in this order:
    a. It names a ticket or clearly matches a configured workflow's
       description, and is more than a small change: propose that workflow, and

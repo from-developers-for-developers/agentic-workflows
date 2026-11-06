@@ -253,6 +253,22 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help=f"How many recent commits to read (default {DEFAULT_COMMITS}).",
     )
+    codename = subparsers.add_parser(
+        "codename",
+        parents=[json_output],
+        help=(
+            "Show, set, change or clear a task's codename, an alias every "
+            "command addressing the task accepts in place of its ID."
+        ),
+    )
+    codename.add_argument("task_id")
+    codename_value = codename.add_mutually_exclusive_group()
+    codename_value.add_argument(
+        "name", nargs="?", default=None, help="The new codename, such as Atlas."
+    )
+    codename_value.add_argument(
+        "--clear", action="store_true", help="Remove the task's codename."
+    )
     subparsers.add_parser(
         "tasks",
         parents=[json_output],
@@ -349,6 +365,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "The task in one short line, at most 120 characters, such as "
             "'Add a --quiet flag to the greet command'; ww tasks lists it."
+        ),
+    )
+    start.add_argument(
+        "--codename",
+        default=None,
+        metavar="NAME",
+        help=(
+            "An optional alias for the task, such as Atlas, that every command "
+            "addressing the task accepts in place of its ID."
         ),
     )
     start.add_argument("--mode", action="append", default=[], dest="modes")

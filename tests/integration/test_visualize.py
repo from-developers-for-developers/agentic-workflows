@@ -158,7 +158,7 @@ def test_the_list_names_the_task_its_status_and_current_step(root: Path) -> None
     ] == [("TASK-1", "in_progress", ["task"], "check")]
 
 
-def test_the_list_and_the_task_show_its_description(root: Path) -> None:
+def test_the_list_and_the_task_show_its_description_and_codename(root: Path) -> None:
     service = WorkflowService(Storage(root))
     service.start(
         "task",
@@ -166,13 +166,19 @@ def test_the_list_and_the_task_show_its_description(root: Path) -> None:
         agent="codex",
         init_artifact="Do it, in detail.",
         description="Add a --quiet flag to greet",
+        codename="Atlas",
     )
     project = Project.load(Storage(root))
 
     (listed,) = task_list(project)["tasks"]
 
     assert listed["description"] == "Add a --quiet flag to greet"
-    assert task_detail(project, "TASK-1")["description"] == listed["description"]
+    assert listed["codename"] == "Atlas"
+    detail = task_detail(project, "TASK-1")
+    assert (detail["description"], detail["codename"]) == (
+        listed["description"],
+        "Atlas",
+    )
 
 
 def test_an_unreadable_task_is_listed_with_its_reason(root: Path) -> None:
