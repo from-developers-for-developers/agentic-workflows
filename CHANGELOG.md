@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-06
 
-- Added: optional task codenames, such as `Atlas`: give one with `start --codename` or `ww codename <task> <name>` (also to change or `--clear` it), and every command that addresses a task, `lookup` included, accepts it in place of the ID; `ww tasks`, `ww visualize` and page headings show it beside the ID, which still names the branch and files.
+- Added: optional task codenames, set with `start --codename` or `ww codename`, accepted in place of the task ID by every command that addresses a task and shown beside the ID in `ww tasks`, `ww visualize` and pages. `9f743be`
 
 ## 2026-11-05
 
