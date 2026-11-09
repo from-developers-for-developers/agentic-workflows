@@ -67,6 +67,7 @@ STEP_ONLY_KEYS: set[str] = {
     "explicit",
     "learnable",
     "read_feature_maps",
+    "write_feature_maps",
     "choices",
     "profile",
     "items",
@@ -250,16 +251,10 @@ def _parse_step(
         raise ConfigurationError(f"{path}.learnable must be true or false")
     if learnable and not artifact:
         raise ConfigurationError(f"{path}.learnable requires artifact: true")
-    read_feature_maps = mapping.get(
-        "read_feature_maps", referenced.read_feature_maps if referenced else False
+    read_feature_maps, write_feature_maps = (
+        _feature_maps_setting(mapping, path, referenced, name, artifact)
+        for name in ("read_feature_maps", "write_feature_maps")
     )
-    if not isinstance(read_feature_maps, bool):
-        raise ConfigurationError(f"{path}.read_feature_maps must be true or false")
-    if read_feature_maps and not artifact:
-        raise ConfigurationError(
-            f"{path}.read_feature_maps requires artifact: true, which reports the "
-            "maps used"
-        )
     hooks = _parse_step_hooks(mapping, path, referenced)
     rules = _parse_rules(mapping, path, base.name, referenced)
     select_rules_for = _parse_select_rules_for(mapping, path, referenced)
@@ -303,6 +298,7 @@ def _parse_step(
         explicit=explicit,
         learnable=learnable,
         read_feature_maps=read_feature_maps,
+        write_feature_maps=write_feature_maps,
         choices=choices,
         ui=ui,
         profile=profile["profile"],
@@ -632,6 +628,25 @@ def _parse_child_flow(
     if "children" in mapping:
         return _parse_children(mapping, path, handlers_by_name)
     return referenced.children if referenced is not None else None
+
+
+def _feature_maps_setting(
+    mapping: dict[str, Any],
+    path: str,
+    referenced: StepDefinition | None,
+    name: str,
+    artifact: bool,
+) -> bool:
+    """``read_feature_maps`` or ``write_feature_maps``: a boolean that needs
+    the artifact the step reports on the maps in."""
+    value = mapping.get(name, getattr(referenced, name) if referenced else False)
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{path}.{name} must be true or false")
+    if value and not artifact:
+        raise ConfigurationError(
+            f"{path}.{name} requires artifact: true, which reports on the maps"
+        )
+    return value
 
 
 def _parse_artifact(

@@ -15,6 +15,7 @@ file names one of its headings. Everything here is inert unless the repo
 
 from __future__ import annotations
 
+from .due import MapsDue, maps_due
 from .history import Staleness, changed_paths, staleness
 from .maps import (
     FEATURES_DIRECTORY,
@@ -27,7 +28,12 @@ from .maps import (
     load_feature_maps,
 )
 from .pointers import Pointer, pointer_problems
-from .reports import FEATURE_MAPS_HEADING, MapsReport, read_maps_report
+from .reports import (
+    FEATURE_MAPS_HEADING,
+    MapsReport,
+    read_maps_answers,
+    read_maps_report,
+)
 from .task_lists import TaskEntry, read_task_list, record_task, task_list_path
 
 __all__ = [
@@ -38,6 +44,7 @@ __all__ = [
     "Coverage",
     "FeatureMap",
     "FeatureMaps",
+    "MapsDue",
     "MapsReport",
     "Pointer",
     "Problem",
@@ -45,7 +52,9 @@ __all__ = [
     "TaskEntry",
     "changed_paths",
     "load_feature_maps",
+    "maps_due",
     "pointer_problems",
+    "read_maps_answers",
     "read_maps_report",
     "read_task_list",
     "record_task",

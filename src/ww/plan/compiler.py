@@ -1422,6 +1422,7 @@ class WorkflowPlanCompiler:
                 explicit=step.explicit is True and phase == "step",
                 learnable=step.learnable and phase == "step",
                 read_feature_maps=step.read_feature_maps and phase == "step",
+                write_feature_maps=step.write_feature_maps and phase == "step",
                 choices=step.choices if phase == "step" else (),
                 ui=step.ui and phase == "step",
                 # Explicit retained aliases for plan schemas <= 3.

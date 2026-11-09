@@ -16,6 +16,7 @@ from ww.features import (
     TaskEntry,
     load_feature_maps,
     pointer_problems,
+    read_maps_answers,
     read_maps_report,
     read_task_list,
     record_task,
@@ -391,3 +392,18 @@ def test_a_maps_report_is_read_from_the_artifact_section(
     artifact: str, report: MapsReport | None
 ) -> None:
     assert read_maps_report(artifact) == report
+
+
+def test_a_writing_step_s_answers_are_read_by_subject() -> None:
+    artifact = (
+        "Done.\n\n## Feature maps\nUsed: agents\n- agents: updated\n"
+        "* `src/billing.py`: not feature code\nhooks:no change needed\n"
+        "agents: said twice\nnot an answer\n\n## After\nusage: ignored\n"
+    )
+
+    assert read_maps_answers(artifact) == {
+        "agents": "updated",
+        "src/billing.py": "not feature code",
+        "hooks": "no change needed",
+    }
+    assert read_maps_answers("No section.\n") is None

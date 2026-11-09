@@ -213,6 +213,9 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         read_feature_maps=expect_bool(
             raw.get("read_feature_maps", False), f"{item_path}.read_feature_maps"
         ),
+        write_feature_maps=expect_bool(
+            raw.get("write_feature_maps", False), f"{item_path}.write_feature_maps"
+        ),
         choices=_choices_from_list(raw.get("choices", []), item_path),
         ui=expect_bool(raw.get("ui", False), f"{item_path}.ui"),
         model=expect_optional_string(raw.get("model"), "model"),
