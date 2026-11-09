@@ -22,6 +22,11 @@ class ResetResult:
 
 # Note added by init when ww.yaml defines no workflow.
 NO_WORKFLOWS_ACTION = "Define at least one workflow in ww.yaml."
+# What init suggests while feature maps are on and none exist yet.
+MAP_FEATURES_ACTION = (
+    "Feature maps are on and none exist yet: run the ww-map-features workflow "
+    "to map the project's features, or let tasks map what they touch."
+)
 # What every init ends with: the skill that sets ww up for the people using it.
 INITIALIZATION_NEXT_STEP = "Run the ww-setup skill to set ww up for this project."
 

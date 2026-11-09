@@ -15,10 +15,10 @@ from typing import Any
 
 import yaml
 
+from ww.config_files import FEATURES_DIRECTORY
+
 from .pointers import Pointer, pointer_problems
 
-# Where a project keeps its maps, relative to its root.
-FEATURES_DIRECTORY = Path(".ww") / "features"
 # The most entries one map holds: past it, the feature should be split.
 MAX_ENTRIES = 25
 _NAME = re.compile(r"[a-z0-9][a-z0-9-]*")

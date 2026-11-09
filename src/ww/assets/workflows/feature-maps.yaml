@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# ww-map-features writes the project's feature maps, or refreshes the ones
+# that fell behind their code, when the operator asks. It works in the
+# current checkout and is to change nothing outside .ww/features/: a check
+# refuses a completion that added or changed any other file (deletions are not
+# seen), and another refuses maps whose pointers do not resolve. It commits nothing; the operator reviews and commits the maps.
+workflows:
+  - name: ww-map-features
+    description: >-
+      Writes feature maps for the project's features, or refreshes the maps
+      that fell behind their code, changing nothing outside .ww/features/.
+    runtime: single
+    steps:
+      - name: survey
+        description: >-
+          Decide which feature maps to write or refresh. Read what exists:
+          `{{ww.executable}} features` (if it says feature maps are off, stop
+          and say that `feature_maps` must be true in the repo ww.json first),
+          `{{ww.executable}} features stale` and `{{ww.executable}} features
+          check`. When the requirements name features, paths or stale maps,
+          keep to those; otherwise take the features a task would name, as the
+          project's architecture documentation sections and its directory
+          layout show them: one map per feature, not per directory, split only
+          where a part changes on its own and reaches elsewhere. The artifact
+          lists each map to write or refresh, with its name (lowercase words
+          and dashes) and one line on what it covers. Change nothing.
+      - name: map
+        artifact_from: survey
+        description: >-
+          Write or refresh each map the survey lists as
+          .ww/features/<name>.yaml, starting from `{{ww.executable}} features
+          template`. A map points to where the feature lives, one line each:
+          its own code under `parts`, code elsewhere it relies on or changes
+          under `touches`, data it shares in free text under `reads`, other
+          maps under `uses`, and its `tests` and `docs`; a pointer is a path, a
+          directory, a glob, or path#Name for a word the file contains (a
+          Markdown file's heading). Find each place in the code and confirm
+          it; prefer the places a search would not connect over ones it finds
+          at once; keep a map under 25 entries. Do not explain the code: why
+          it is built so stays in the documentation. Change nothing outside
+          .ww/features/. Run `{{ww.executable}} features check` until it
+          passes. The artifact lists the maps written or refreshed, one line
+          each.
+        hooks:
+          before_complete:
+            - shell: >-
+                test -z "$WW_STEP_CHANGED_FILES" || { echo "ww-map-features
+                changes only .ww/features/; undo the changes to these files:";
+                echo "$WW_STEP_CHANGED_FILES"; exit 1; }
+              on_failure: fix
+            - argv: ["{{ww.executable}}", features, check]
+              on_failure: fix

@@ -2581,3 +2581,13 @@ mark, which `_change_mark` now also takes for a `step` answerer). The builder
 shows a `step` answerer's section only once something is due. The lint pass
 `_feature_maps_lint` in `ww.cli.main` reports both cases from the compiled
 plans.
+
+`ww-map-features` is an ordinary built-in workflow
+(`assets/workflows/feature-maps.yaml`): two `before_complete` hooks with
+`on_failure: fix` hold its `map` step, one failing when
+`WW_STEP_CHANGED_FILES` (added and modified files, `.ww/` left out; deletions
+are not listed) names any file, the other
+running `{{ww.executable}} features check`. `Storage._initialization_actions`
+suggests it (`results.MAP_FEATURES_ACTION`) while feature maps are on and no
+map exists. `FEATURES_DIRECTORY` lives in `config_files` beside the other
+`.ww` paths.

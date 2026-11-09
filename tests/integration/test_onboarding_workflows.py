@@ -189,6 +189,7 @@ def test_discover_leaves_the_learning_workflows_to_the_catalog(
     report = json.loads(capsys.readouterr().out)
     assert [item["name"] for item in report["builtin_workflows"]] == [
         "ww-check-rules",
+        "ww-map-features",
         "ww-migrate",
         *ONBOARDING,
         "ww-scriptize-rules",

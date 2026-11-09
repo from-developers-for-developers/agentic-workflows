@@ -15,10 +15,11 @@ file names one of its headings. Everything here is inert unless the repo
 
 from __future__ import annotations
 
+from ww.config_files import FEATURES_DIRECTORY
+
 from .due import MapsDue, maps_due
 from .history import Staleness, changed_paths, staleness
 from .maps import (
-    FEATURES_DIRECTORY,
     MAX_ENTRIES,
     TEMPLATE,
     Coverage,

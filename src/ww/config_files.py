@@ -68,6 +68,8 @@ RUNTIME_IGNORE_LINES = (
 # lists, to which parallel branches each append lines, by keeping both sides.
 FEATURE_MAPS_IGNORE_LINE = "!.ww/features/"
 FEATURE_MAPS_ATTRIBUTES_LINE = ".ww/features/*.tasks merge=union"
+# Where the maps live, relative to the project root.
+FEATURES_DIRECTORY = Path(".ww") / "features"
 # The lines that ignore ``.ww`` whole, as an operator may write them; ``init``
 # replaces them with :data:`RUNTIME_IGNORE_LINES`, since a directory ignored
 # whole cannot have files re-included.
