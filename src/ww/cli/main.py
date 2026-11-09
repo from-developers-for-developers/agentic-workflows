@@ -39,6 +39,7 @@ from ww.errors import StateError, WwError
 from ww.executable import printed_executable, project_command, ww_command
 from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
+from ww.feature_map_steps import has_writing_step
 from ww.hooks import (
     answer_hook,
     hook_snippet,
@@ -376,6 +377,7 @@ def _lint(context: _Context) -> _Outcome:
         f"{_launcher_warning(context.storage.root)}"
         f"{_retired_workflow_warning(context.extensions.config)}"
         f"{_unrecorded_namespace_warning(plans, context.extensions)}"
+        f"{_feature_maps_lint(plans, context.extensions.config)}"
         f"{_rules_summary(configuration)}"
         f"{_rule_store_summary(RuleStore(context.storage.root), configuration)}"
         f"{_unscriptized_warning(RuleStore(context.storage.root), configuration)}"
@@ -383,6 +385,31 @@ def _lint(context: _Context) -> _Outcome:
         f"{_never_applied_hint(RuleStatsStore(context.storage), configuration)}"
         f"{_disputes_summary(DisputeLog(context.storage.root))}"
     )
+
+
+def _feature_maps_lint(plans: tuple[WorkflowPlan, ...], config: ProjectConfig) -> str:
+    """What the feature maps mean for each workflow, while the project keeps
+    them: a setting no agent acts on, and who brings the maps up to date."""
+    if not config.feature_maps:
+        return ""
+    lines = [
+        f"Warning: step {item.step!r} of workflow {plan.workflow!r} sets {name}, "
+        "but no agent performs it, so it has no effect.\n"
+        for plan in plans
+        for item in plan.items
+        if item.phase == "step" and item.owner != "agent"
+        for name in ("read_feature_maps", "write_feature_maps")
+        if getattr(item, name)
+    ]
+    lines += [
+        f"Note: workflow {plan.workflow!r} has no write_feature_maps step; each "
+        "agent step that changes files brings the feature maps up to date itself.\n"
+        for plan in plans
+        if not plan.readonly
+        and not has_writing_step(plan)
+        and any(item.phase == "step" and item.owner == "agent" for item in plan.items)
+    ]
+    return "".join(lines)
 
 
 def _compile_for_lint(

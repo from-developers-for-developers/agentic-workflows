@@ -984,8 +984,8 @@ def _feature_maps_due(lines: Lines, instruction: Instruction) -> None:
         )
         return
     lines.append(
-        "This run changed code the feature maps below cover. Bring each one up "
-        "to date with the change: add, move or remove the pointers it changed, "
+        "The changes cover code the feature maps below point to. Bring each one "
+        "up to date with them: add, move or remove the pointers they changed, "
         "and keep each entry one line about where code lives, not how it works."
     )
     if due.maps:

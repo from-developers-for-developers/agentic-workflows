@@ -842,6 +842,24 @@ steps:
   - name: merge
 ```
 
+### Workflows without a writing step
+
+A workflow that changes files but has no `write_feature_maps` step still keeps
+the maps current: every step an agent performs answers for its own changes,
+measured from the mark taken as it began, the same way a writing step answers
+for the run's. Its page gains the "Feature maps to update" section only once
+its changes touch a map or leave a changed file no map covers; a step with
+nothing due completes exactly as before. Readonly workflows, which change
+nothing, and steps no agent performs answer for nothing, and an explicit
+writing step takes the answering over for its whole run. So the maps never
+fall behind in a workflow someone forgot to give a writing step; placing one
+costs fewer interruptions.
+
+`ww lint`, while feature maps are on, notes each such workflow ("has no
+write_feature_maps step; each agent step that changes files brings the
+feature maps up to date itself") and warns about `read_feature_maps` or
+`write_feature_maps` on a step no agent performs, where it has no effect.
+
 `ww visualize` adds a Feature maps tab while the setting is on: the maps with
 search, and for the one chosen its pointers by field with the broken ones
 marked, its staleness, the maps it uses and the tasks that changed it, beside

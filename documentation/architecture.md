@@ -2562,12 +2562,21 @@ storing a second copy.
 
 `write_feature_maps` takes the same path. `ww.feature_map_steps` joins the
 maps to a run: `run_base_branch` (shared with the readonly rule scope),
-`maps_reports` (the reading steps' reports), `run_maps_due` (the run
-workspace's change set through `changed_paths`, mapped by
+`maps_reports` (the reading steps' reports), `maps_due_for` (the change
+set through `changed_paths` or a step's mark, mapped by
 `ww.features.due.maps_due` into a `MapsDue` of touched maps, unmapped files,
 broken pointers and gaps), `refusal` and `record_run_tasks`. The instruction
 builder's `_feature_maps_due` and the service's `_settle_feature_maps`, which
-runs right after the readonly refusal in `complete`, both read `run_maps_due`,
+runs right after the readonly refusal in `complete`, both read `maps_due_for`,
 so the page and the completion agree. A refusal raises `StateError` before
 anything is recorded, like a missing artifact, so it counts no fix attempt and
 needs no rejection record; `read_maps_answers` reads the artifact's answers.
+
+`writes_maps(plan, item, config)` decides who answers: `run` for a
+`write_feature_maps` step, `step` for every agent step of a writable workflow
+without one, `None` otherwise; `maps_due_for` measures the matching change set
+(`changed_paths` since the fork, or `touched_files` since the step's change
+mark, which `_change_mark` now also takes for a `step` answerer). The builder
+shows a `step` answerer's section only once something is due. The lint pass
+`_feature_maps_lint` in `ww.cli.main` reports both cases from the compiled
+plans.
