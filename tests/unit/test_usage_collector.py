@@ -21,8 +21,9 @@ from tests.usage_logs import (
 from ww.agents import Agent, ClaudeCode, TokenCounts, TurnUsage, session_of
 from ww.project_config import UsagePrice, UsageSettings
 from ww.storage import Storage
+from ww.storage_adapters import FileTaskStorageAdapter
 from ww.usage import Collector, UsageStore, render_task_usage, task_usage
-from ww.usage.timeline import instant
+from ww.usage.timeline import TaskTimes, instant
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -509,3 +510,57 @@ def test_an_extension_agent_with_a_usage_reader_is_collected_under_its_own_name(
     (stretch,) = UsageStore(Storage(tmp_path)).task_records("TASK-1")
     assert (stretch.agent, stretch.file) == (name, f"{name}:{SESSION}")
     assert _collector(tmp_path, home, TASKS).collect().files == 0
+
+
+def test_a_long_quiet_session_leaves_its_waiting_tokens_outside(
+    tmp_path: Path, home: Path
+) -> None:
+    _log(tmp_path, _invocation("2026-11-01T10:02:00Z", "next", "TASK-1"))
+    path = claude_session(
+        home, [claude_assistant("2026-11-01T09:00:00Z", "m0", usage=_tokens(5))]
+    )
+    _collector(tmp_path, home, TASKS).collect()
+    state = UsageStore(Storage(tmp_path)).load()
+    assert state.files[f"claudecode:{SESSION}"].pending
+    silent = NOW.timestamp() - 7 * 3600
+    os.utime(path, (silent, silent))
+
+    _collector(tmp_path, home, TASKS).collect()
+
+    outside = UsageStore(Storage(tmp_path)).outside_records()
+    assert sum(stretch.counts.total for stretch in outside) == 5
+    assert (
+        not UsageStore(Storage(tmp_path)).load().files[f"claudecode:{SESSION}"].pending
+    )
+
+
+def test_a_task_this_ww_cannot_read_takes_tokens_without_a_step(tmp_path: Path) -> None:
+    directory = tmp_path / ".ww" / "tasks" / "TASK-9"
+    directory.mkdir(parents=True)
+    (directory / "state.json").write_text(
+        json.dumps(
+            {
+                "format": "ww.task-state",
+                "schema_version": 99,
+                "task_id": "TASK-9",
+                "runs": [
+                    {
+                        "run_id": "01-task",
+                        "workflow": "task",
+                        "state": {
+                            "status": "completed",
+                            "created_at": "2026-10-01T10:00:00Z",
+                            "updated_at": "2026-10-01T11:00:00Z",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    times = TaskTimes(FileTaskStorageAdapter(tmp_path), tmp_path / ".ww" / "tasks")
+
+    assert times.exists("TASK-9") and not times.exists("TASK-10")
+    assert times.place("TASK-9", "2026-10-01T10:30:00.000Z") == ("01-task", None)
+    assert times.active("TASK-9", "2026-10-01T11:04:00.000Z")
+    assert not times.active("TASK-9", "2026-10-01T12:00:00.000Z")

@@ -254,8 +254,8 @@ def test_codex_finds_subagent_threads_by_their_parent(tmp_path: Path) -> None:
         tmp_path,
         "2026/10/26",
         "2026-10-26T11-58-00",
-        "01a177e1-0000-7000-8000-000000000000",
-        [codex_meta("2026-10-26T10:58:00Z", "01a177e1-0000-7000-8000-000000000000")],
+        "01a00000-0000-7000-8000-000000000003",
+        [codex_meta("2026-10-26T10:58:00Z", "01a00000-0000-7000-8000-000000000003")],
     )
     reader = Codex().usage
     assert reader is not None
@@ -268,7 +268,7 @@ def test_codex_finds_subagent_threads_by_their_parent(tmp_path: Path) -> None:
     assert files[1].spawned_at == "2026-10-26T10:57:00Z"
     assert reader.sessions_in((tmp_path,), Path("/work/project")) == (
         THREAD,
-        "01a177e1-0000-7000-8000-000000000000",
+        "01a00000-0000-7000-8000-000000000003",
     )
 
 

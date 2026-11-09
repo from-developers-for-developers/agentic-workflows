@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from ww.errors import WwError
 from ww.execution_models.records import StepProgress
 from ww.storage_adapters.base import TaskStorageAdapter
+from ww.task_envelope import read_task_envelope
 
 # How long after its run finished a task still takes a session's tokens:
 # the agent's closing reply to the operator belongs to the task.
@@ -38,10 +40,19 @@ class _Run:
 
 
 class TaskTimes:
-    """Each known task's runs and steps, read once per collection."""
+    """Each known task's runs and steps, read once per collection.
 
-    def __init__(self, tasks: TaskStorageAdapter) -> None:
+    A task this ww cannot read in full, such as one an older ww wrote, still
+    takes its tokens: its runs come from its envelope (``ww.task_envelope``),
+    which knows when each ran and ended but not its steps.
+    """
+
+    def __init__(
+        self, tasks: TaskStorageAdapter, directory: Path | None = None
+    ) -> None:
         self.tasks = tasks
+        # The task directories, where an unreadable task's envelope is read.
+        self.directory = directory
         self._runs: dict[str, tuple[_Run, ...] | None] = {}
 
     def exists(self, task_id: str) -> bool:
@@ -52,8 +63,12 @@ class TaskTimes:
             try:
                 runs, _, _ = self.tasks.read_task_record(task_id)
             except (WwError, OSError, ValueError):
-                self._runs[task_id] = None
+                self._runs[task_id] = self._envelope(task_id)
             else:
+                # A task with no stored state reads as one without runs.
+                if not runs and not self._stored(task_id):
+                    self._runs[task_id] = None
+                    return None
                 self._runs[task_id] = tuple(
                     _Run(
                         run.run_id,
@@ -72,6 +87,27 @@ class TaskTimes:
                     for run in runs
                 )
         return self._runs[task_id]
+
+    def _stored(self, task_id: str) -> bool:
+        return self.directory is None or (self.directory / task_id).is_dir()
+
+    def _envelope(self, task_id: str) -> tuple[_Run, ...] | None:
+        """An unreadable task's runs without steps; ``None`` if it is not stored."""
+        if self.directory is None or not self._stored(task_id):
+            return None
+        envelope = read_task_envelope(self.directory / task_id, task_id)
+        return tuple(
+            _Run(
+                run.run_id,
+                instant(run.created_at or ""),
+                instant(run.updated_at)
+                if run.updated_at and run.status in _FINISHED
+                else None,
+                "",
+                (),
+            )
+            for run in envelope.runs
+        )
 
     def _run_at(self, task_id: str, at: str) -> _Run | None:
         runs = self._read(task_id) or ()

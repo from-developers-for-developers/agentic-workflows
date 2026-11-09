@@ -7,12 +7,12 @@
       "session": "0f5d3c1e-1111-4222-8333-444455556666",
       "path": "/home/dev/.claude/projects/-work-project/0f5d3c1e-1111-4222-8333-444455556666.jsonl",
       "offset": 48213,
-      "carry": {"seen": ["msg_011CgmfL", "msg_011CgmfM"]},
+      "carry": {"seen": ["msg_fixture_1", "msg_fixture_2"]},
       "calls": [
         ["2026-11-01T10:00:29.000Z", "TASK-1", "manager", "start"],
         ["2026-11-01T10:02:00.000Z", "TASK-1", "manager", "next"]
       ],
-      "spawns": {"toolu_018Vc1KeFv3GfKkb5L7tiE33": "2026-11-01T10:02:30.000Z"},
+      "spawns": {"toolu_fixture_spawn": "2026-11-01T10:02:30.000Z"},
       "pending": {
         "claude-opus-5-5": {
           "input": 2,

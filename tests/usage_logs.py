@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 SESSION = "0f5d3c1e-1111-4222-8333-444455556666"
-THREAD = "01a177d9-8c2c-7590-b05a-de4a98f1cbef"
-CHILD_THREAD = "01a177e0-aaaa-7bbb-8ccc-ddddeeeeffff"
+THREAD = "01a00000-0000-7000-8000-000000000001"
+CHILD_THREAD = "01a00000-0000-7000-8000-000000000002"
 
 
 def write_lines(path: Path, lines: list[dict[str, Any]]) -> Path:

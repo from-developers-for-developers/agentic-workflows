@@ -626,11 +626,15 @@ single runtime, otherwise. A response that runs a ww command did its work for
 that command's task. Tokens before a session's next command wait for it:
 `start` claims the conversation that led to it for the new task, and a
 worker's first `instruction` claims the subagent's reading of its prompt; any
-other command leaves them outside every task. A subagent that runs no ww
+other command leaves them outside every task, and so do six hours without a
+new line in the session's log, since no `start` will follow. A subagent that runs no ww
 command, such as a search, counts for whatever its spawner was doing when it
 started it, once it has been quiet for two minutes. A task whose run has
 finished takes a session's tokens for five more minutes, for the closing
-reply, and then none.
+reply, and then none. A task this ww cannot read in full, such as one an
+older ww wrote, still takes its tokens, without a step: its envelope says
+when each run ran and ended. Commands about a task no longer in the store
+place nothing.
 
 **When ww collects.** After every `complete`, `fail` and `record`, before
 `ww usage` and `ww tasks` show anything, and every 30 seconds while `ww

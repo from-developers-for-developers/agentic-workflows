@@ -9,9 +9,10 @@ stopped last time and places each model response's tokens:
   the step under way at the time, as ``worker`` when that command was a
   worker's and as ``manager`` or ``single`` otherwise.
 - Tokens before a session's next ww command wait: ``start``, and a worker's
-  first ``instruction``, claim them for their task; any other command leaves
-  them outside every task.  A task whose run has finished stops taking
-  tokens.
+  first ``instruction``, claim them for their task; any other command, or
+  six hours without a line, leaves them outside every task.  A task whose
+  run has finished stops taking tokens; one this ww cannot read in full
+  takes them without a step.
 - A subagent's tokens follow its own ww commands; until it runs one, they go
   to whatever its spawner was doing when it started it, once the subagent
   has fallen quiet.
@@ -64,6 +65,9 @@ from .timeline import TaskTimes, instant
 # A subagent that wrote nothing for this long has finished, so its tokens
 # with no ww command of its own can go to its spawner.
 QUIET = timedelta(minutes=2)
+# A session that wrote nothing for this long will run no ``start`` for the
+# tokens still waiting: they belong to no task.
+SESSION_QUIET = timedelta(hours=6)
 # Automatic collections read only sessions seen this recently.
 RECENT = timedelta(days=7)
 # How far a hook looks back for the ww command that names its task.
@@ -132,7 +136,7 @@ class Collector:
         self.environ = os.environ if environ is None else environ
         self.now = now or datetime.now(timezone.utc)
         self.store = UsageStore(storage)
-        self.times = TaskTimes(storage.task_persistence)
+        self.times = TaskTimes(storage.task_persistence, storage.runtime_path / "tasks")
         self.agents = {
             agent.name: agent
             for agent in (builtin_agents() if agents is None else agents)
@@ -395,9 +399,12 @@ class Collector:
                 elif isinstance(event, Usage):
                     self._usage(event, current, file)
             read = 1
-        quiet = self.now - datetime.fromtimestamp(stat.st_mtime, timezone.utc) > QUIET
-        if current.pending and not current.calls and _spawned(file) and quiet:
-            self._settle_with_spawner(current, file, state)
+        silent = self.now - datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+        if current.pending and _spawned(file):
+            if not current.calls and silent > QUIET:
+                self._settle_with_spawner(current, file, state)
+        elif current.pending and silent > SESSION_QUIET:
+            self._settle(current, file, _OUTSIDE)
         return read
 
     def _call(
