@@ -125,6 +125,10 @@ def _catalog_agents(extensions: ExtensionRegistry) -> str:
                     "name": agent.name,
                     "title": agent.title,
                     "directory": agent.layout.directory if agent.layout else None,
+                    "runs": [
+                        "session",
+                        *(launcher.transport for launcher in agent.launchers),
+                    ],
                 }
                 for agent in AgentRegistry.of(extensions).known()
             ],

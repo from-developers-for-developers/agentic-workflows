@@ -324,11 +324,29 @@ def build_parser() -> argparse.ArgumentParser:
         ("modes", "List configured modes as JSON."),
         ("workflows", "List configured workflows as JSON."),
         ("runtimes", "List supported runtimes as JSON."),
-        ("agents", "List supported agents as JSON."),
         ("projects", "List configured projects as JSON."),
         ("extensions", "List discovered extensions as JSON."),
     ):
         subparsers.add_parser(name, help=help_text)
+    agents = subparsers.add_parser(
+        "agents",
+        help="List supported agents as JSON, or check those ww can run headless.",
+    )
+    agents.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Check each agent's program: where it is, its version, its login, "
+            "and the models and reasoning it takes."
+        ),
+    )
+    agents.add_argument(
+        "names",
+        nargs="*",
+        metavar="AGENT",
+        help="With --check, the agents to check (default: every one ww can run "
+        "headless).",
+    )
     extension = subparsers.add_parser(
         "extension", help="Run a command an extension provides."
     )

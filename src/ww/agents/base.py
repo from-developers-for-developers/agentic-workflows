@@ -10,9 +10,10 @@ API has no project directory, no hooks, and no shell.
 An agent plays two roles.  The *host* is the agent of the session running a
 task (``start --agent``): it reads ww's pages, offers choices, waits for the
 operator, runs ww's hooks, and has ww's skills installed.  A *requested*
-agent is the one a step asks for with ``agent:``; today that request is
-advice for the manager, and its :attr:`Agent.launcher` is the seam for ww
-starting it itself.
+agent is the one a step asks for with ``agent:``.  Run in a session, that
+request is advice for the manager; run another way, such as ``headless``,
+ww starts the agent itself through one of its :attr:`Agent.launchers`
+(see :mod:`ww.agents.launch`).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import ClassVar
 
 from .hooks import HookProtocol
 from .interaction import FOREGROUND, PLAIN_TEXT, ChoiceMechanism, WaitMechanism
-from .launch import Launcher
+from .launch import Launcher, Transport
 from .layout import Layout
 from .permissions import Permissions
 from .usage import UsageReader
@@ -47,8 +48,9 @@ class Agent(ABC):
     waiting: WaitMechanism = FOREGROUND
     # What the operator types before a skill's name to run it.
     skill_prefix: str = "/"
-    # Reserved: ww does not launch agents yet; see :mod:`ww.agents.launch`.
-    launcher: Launcher | None = None
+    # How ww can start the agent itself, one launcher per transport; see
+    # :mod:`ww.agents.launch`.  An agent without one runs only in a session.
+    launchers: tuple[Launcher, ...] = ()
     # The environment variable through which the agent tells the commands it
     # runs which of its sessions runs them; ww records it on every call.
     session_variable: str | None = None
@@ -58,6 +60,12 @@ class Agent(ABC):
 
     def __init__(self, name: str | None = None) -> None:
         self.name = name or self.key
+
+    def launcher(self, transport: Transport) -> Launcher | None:
+        """The launcher that starts this agent through ``transport``."""
+        return next(
+            (each for each in self.launchers if each.transport == transport), None
+        )
 
     def skill_command(self, skill: str, request: str = "") -> str:
         """What the operator types to run ``skill``, with an optional request."""

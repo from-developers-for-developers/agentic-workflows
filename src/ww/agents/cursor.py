@@ -9,10 +9,13 @@ MIT, Copyright (c) 2026 iShaldam).
 from __future__ import annotations
 
 import json
+import re
 import shlex
+from collections.abc import Mapping
 from typing import Any
 
 from .base import Agent
+from .headless import HeadlessLauncher, ModelCatalog, Output, StreamFacts
 from .hooks import (
     FlatHooks,
     HookEvent,
@@ -22,6 +25,7 @@ from .hooks import (
     text_value,
 )
 from .interaction import question_tool
+from .launch import LaunchRequest
 from .layout import SHARED_INSTRUCTION_FILE, Layout
 from .usage import TokenCounts, TurnUsage, count
 
@@ -90,9 +94,123 @@ def _first(figures: dict[str, Any], names: tuple[str, ...]) -> int:
     return next((count(figures[name]) for name in names if name in figures), 0)
 
 
+class CursorHeadless(HeadlessLauncher):
+    """``cursor-agent -p``: https://cursor.com/docs/cli/headless.
+
+    Cursor takes no reasoning setting: a model's variants carry it in their
+    names, such as ``sonnet-4-thinking``.  ``cursor-agent models`` lists the
+    account's models, one per line (an account may have none listed).
+    ``status`` can report a login that ``-p`` then refuses ("unable to fetch
+    user details"), so only a plain answer counts.  The plan and ask modes
+    cannot run commands, so ``read-only`` is not offered: the worker could
+    not run ``./ww``.  ``-p`` may write files and run commands; ``--force``
+    also runs the commands a project's permissions do not allow.
+    """
+
+    agent = "cursor"
+    binary = "cursor-agent"
+    minimum_version = (2026, 6, 11)
+    tested_up_to = (2026, 6)
+    reasoning_levels = None
+    catalog_arguments = ("models",)
+    permission_levels = ("edit", "full")
+    owned_flags = frozenset(
+        {
+            "-p",
+            "--print",
+            "--output-format",
+            "--trust",
+            "--workspace",
+            "--model",
+            "--force",
+            "--yolo",
+            "--resume",
+            "--mode",
+            "--plan",
+        }
+    )
+
+    def auth_command(self, binary: str) -> list[str]:
+        return [binary, "status"]
+
+    def logged_in(self, output: Output) -> bool | None:
+        text = output.text.lower()
+        if "not logged in" in text or "authentication required" in text:
+            return False
+        if "unable to fetch" in text:
+            return None
+        if output.returncode == 0 and "logged in" in text:
+            return True
+        return None
+
+    def parse_catalog(self, output: Output) -> ModelCatalog | None:
+        if output.returncode != 0:
+            return None
+        found: dict[str, tuple[str, ...] | None] = {}
+        for line in output.text.splitlines():
+            match = _MODEL_LINE.match(line)
+            if match:
+                found[match.group(1)] = None
+        return ModelCatalog(found)
+
+    def _options(self, request: LaunchRequest) -> list[str]:
+        model, _ = self.model_arguments(request)
+        options = [
+            "--output-format",
+            "stream-json",
+            "--trust",
+            "--workspace",
+            str(request.working_directory),
+        ]
+        if model is not None:
+            options += ["--model", model]
+        if request.settings.permissions == "full":
+            options.append("--force")
+        return [*options, *request.settings.args]
+
+    def launch_command(self, binary: str, request: LaunchRequest) -> list[str]:
+        return [binary, "-p", *self._options(request), "--", request.prompt]
+
+    def resume_command(
+        self, binary: str, request: LaunchRequest, session_id: str
+    ) -> list[str]:
+        return [
+            binary,
+            "-p",
+            "--resume",
+            session_id,
+            *self._options(request),
+            "--",
+            request.prompt,
+        ]
+
+    def stream_facts(self, line: Mapping[str, Any]) -> StreamFacts:
+        session = text_value(line.get("session_id"))
+        usage = line.get("usage")
+        if line.get("type") == "result" and isinstance(usage, dict):
+            return StreamFacts(session, usage=_stream_usage(usage))
+        return StreamFacts(session, model=text_value(line.get("model")))
+
+
+# A model line: its name first, optionally followed by " - " and a title.
+_MODEL_LINE = re.compile(r"^\s*([A-Za-z0-9][\w.-]*)(?:\s+-\s+.*)?\s*$")
+
+
+def _stream_usage(usage: dict[str, Any]) -> TokenCounts:
+    read = _first(usage, _CACHE_READ)
+    written = _first(usage, _CACHE_WRITE)
+    return TokenCounts(
+        input=max(0, count(usage.get("input_tokens")) - read - written),
+        cache_write=written,
+        cache_read=read,
+        output=count(usage.get("output_tokens")),
+    )
+
+
 class Cursor(Agent):
     key = "cursor"
     title = "Cursor"
+    launchers = (CursorHeadless(),)
     layout = Layout(
         ".cursor",
         instruction_file=SHARED_INSTRUCTION_FILE,

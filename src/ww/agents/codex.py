@@ -7,12 +7,14 @@ https://developers.openai.com/codex/skills.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from .base import Agent
+from .headless import HeadlessLauncher, ModelCatalog, Output, StreamFacts
 from .hooks import (
     HookEvent,
     HookPayload,
@@ -22,6 +24,7 @@ from .hooks import (
     text_value,
 )
 from .interaction import ChoiceMechanism
+from .launch import LaunchRequest
 from .layout import SHARED_INSTRUCTION_FILE, Layout
 from .usage import (
     Call,
@@ -203,6 +206,138 @@ def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+class CodexHeadless(HeadlessLauncher):
+    """``codex exec``: https://developers.openai.com/codex/noninteractive.
+
+    ``codex debug models`` prints the model catalog as JSON, each model with
+    the reasoning levels it supports.  ``--json`` prints events as JSON
+    lines: ``thread.started`` names the thread (the session), each
+    ``turn.completed`` carries that turn's usage.  ``codex exec`` reads
+    standard input when it is not a terminal, so ww gives it none.
+
+    The sandbox confines writes to the workspace, and ww's state lives
+    outside it, so ``edit`` adds ww's state directory as writable and
+    ``read-only`` is not offered: its worker could not record its result.
+    ``codex exec resume`` takes no sandbox or directory flags, so a resume
+    sets the same sandbox through configuration and runs in the workspace.
+    """
+
+    agent = "codex"
+    binary = "codex"
+    minimum_version = (0, 164, 0)
+    tested_up_to = (0, 164)
+    reasoning_levels = ("low", "medium", "high", "xhigh", "max", "ultra")
+    catalog_arguments = ("debug", "models")
+    permission_levels = ("edit", "full")
+    supported_settings = frozenset({"isolated"})
+    owned_flags = frozenset(
+        {
+            "--json",
+            "-C",
+            "--cd",
+            "-m",
+            "--model",
+            "-s",
+            "--sandbox",
+            "--add-dir",
+            "--ignore-user-config",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+        }
+    )
+    _SANDBOX = {"edit": "workspace-write", "full": "danger-full-access"}
+
+    def auth_command(self, binary: str) -> list[str]:
+        return [binary, "login", "status"]
+
+    def logged_in(self, output: Output) -> bool | None:
+        text = output.text.lower()
+        if "not logged in" in text:
+            return False
+        if output.returncode == 0 and "logged in" in text:
+            return True
+        return None
+
+    def parse_catalog(self, output: Output) -> ModelCatalog | None:
+        try:
+            data = json.loads(output.text[output.text.find("{") :])
+        except ValueError:
+            return None
+        models = data.get("models") if isinstance(data, dict) else None
+        if output.returncode != 0 or not isinstance(models, list):
+            return None
+        found: dict[str, tuple[str, ...] | None] = {}
+        for model in models:
+            slug = model.get("slug") if isinstance(model, dict) else None
+            if not isinstance(slug, str):
+                continue
+            levels = model.get("supported_reasoning_levels")
+            found[slug] = (
+                tuple(
+                    level["effort"]
+                    for level in levels
+                    if isinstance(level, dict) and isinstance(level.get("effort"), str)
+                )
+                if isinstance(levels, list)
+                else None
+            )
+        return ModelCatalog(found)
+
+    def _model_options(self, request: LaunchRequest) -> list[str]:
+        model, reasoning = self.model_arguments(request)
+        options = ["--json", "--skip-git-repo-check"]
+        if model is not None:
+            options += ["-m", model]
+        if reasoning is not None:
+            options += ["-c", f"model_reasoning_effort={reasoning}"]
+        if request.settings.isolated:
+            options.append("--ignore-user-config")
+        return options
+
+    def launch_command(self, binary: str, request: LaunchRequest) -> list[str]:
+        sandbox = ["-s", self._SANDBOX[request.settings.permissions]]
+        if request.settings.permissions == "edit" and request.state_directory:
+            sandbox += ["--add-dir", str(request.state_directory)]
+        return [
+            binary,
+            "exec",
+            *self._model_options(request),
+            "-C",
+            str(request.working_directory),
+            *sandbox,
+            *request.settings.args,
+            "--",
+            request.prompt,
+        ]
+
+    def resume_command(
+        self, binary: str, request: LaunchRequest, session_id: str
+    ) -> list[str]:
+        mode = self._SANDBOX[request.settings.permissions]
+        sandbox = ["-c", f'sandbox_mode="{mode}"']
+        if request.settings.permissions == "edit" and request.state_directory:
+            roots = json.dumps([str(request.state_directory)])
+            sandbox += ["-c", f"sandbox_workspace_write.writable_roots={roots}"]
+        return [
+            binary,
+            "exec",
+            "resume",
+            *self._model_options(request),
+            *sandbox,
+            *request.settings.args,
+            "--",
+            session_id,
+            request.prompt,
+        ]
+
+    def stream_facts(self, line: Mapping[str, Any]) -> StreamFacts:
+        if line.get("type") == "thread.started":
+            return StreamFacts(_text(line.get("thread_id")))
+        if line.get("type") == "turn.completed":
+            return StreamFacts(usage=_counts(line.get("usage")))
+        return StreamFacts()
+
+
 class Codex(Agent):
     key = "codex"
     title = "Codex"
@@ -223,3 +358,4 @@ class Codex(Agent):
     skill_prefix = "$"
     session_variable = "CODEX_THREAD_ID"
     usage = CodexUsage()
+    launchers = (CodexHeadless(),)

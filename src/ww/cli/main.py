@@ -128,6 +128,7 @@ from ww.workflow_config import (
     every_step,
 )
 
+from .agent_checks import render_agent_checks
 from .audit import _log_record
 from .catalogs import (
     _catalog_agents,
@@ -348,6 +349,17 @@ def _plan(context: _Context) -> _Outcome:
     if not args.json_output:
         rendered += f"\n{_configuration_files(context.storage, context.extensions)}"
     return _Outcome(rendered)
+
+
+def _agents(context: _Context) -> _Outcome:
+    if not context.args.check:
+        if context.args.names:
+            raise StateError("agent names are taken only with --check")
+        return _Outcome(_catalog_agents(context.extensions) + "\n")
+    text, ok = render_agent_checks(
+        context.storage, context.extensions, context.args.names
+    )
+    return _Outcome(text, exit_code=0 if ok else 1)
 
 
 def _lint(context: _Context) -> _Outcome:
@@ -2152,7 +2164,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "modes": lambda c: _Outcome(_catalog_modes(c.storage, c.extensions) + "\n"),
     "workflows": lambda c: _Outcome(_catalog_workflows(c.storage, c.extensions) + "\n"),
     "runtimes": lambda c: _Outcome(_catalog_runtimes() + "\n"),
-    "agents": lambda c: _Outcome(_catalog_agents(c.extensions) + "\n"),
+    "agents": _agents,
     "projects": lambda c: _Outcome(_catalog_projects(c.extensions) + "\n"),
     "extensions": lambda c: _Outcome(_catalog_extensions(c.extensions) + "\n"),
     "extension": _extension,

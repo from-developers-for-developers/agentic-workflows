@@ -12,11 +12,12 @@ import re
 import shlex
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from ww.errors import StateError
 
 from .base import Agent
+from .headless import HeadlessLauncher, Output, StreamFacts
 from .hooks import (
     HookEvent,
     HookPayload,
@@ -26,6 +27,7 @@ from .hooks import (
     text_value,
 )
 from .interaction import BACKGROUND_WAIT_SECONDS, WaitMechanism, question_tool
+from .launch import LaunchRequest
 from .layout import Layout
 from .permissions import Permissions
 from .usage import (
@@ -255,6 +257,119 @@ def _logged_directory(path: Path) -> str | None:
     return None
 
 
+class ClaudeCodeHeadless(HeadlessLauncher):
+    """``claude -p``: https://code.claude.com/docs/en/headless.
+
+    Claude Code lists no models; ``--model`` takes an alias for the latest
+    of a family or a model's full name.  ``stream-json`` output needs
+    ``--verbose`` in print mode.  Its first line, ``system``/``init``, names
+    the session; the closing ``result`` line carries the whole run's usage.
+    """
+
+    agent = "claudecode"
+    binary = "claude"
+    minimum_version = (2, 1, 300)
+    tested_up_to = (2, 1)
+    reasoning_levels = ("low", "medium", "high", "xhigh", "max")
+    cheapest_model = "haiku"
+    supported_settings = frozenset({"fallback_model", "max_budget_usd", "isolated"})
+    owned_flags = frozenset(
+        {
+            "-p",
+            "--print",
+            "--output-format",
+            "--verbose",
+            "--model",
+            "--effort",
+            "--permission-mode",
+            "--allowedTools",
+            "--allowed-tools",
+            "--resume",
+            "--fallback-model",
+            "--max-budget-usd",
+            "--bare",
+            "--dangerously-skip-permissions",
+        }
+    )
+    aliases = ("fable", "opus", "sonnet", "haiku")
+    # Only the project's own launcher, as in :class:`ClaudePermissions`.
+    _WW = "Bash(./ww *)"
+    _PERMISSIONS: ClassVar[dict[str, tuple[str, ...]]] = {
+        # Read and search, and ww; everything else is refused unasked.
+        "read-only": (
+            "--permission-mode",
+            "dontAsk",
+            "--allowedTools",
+            "Read",
+            "Grep",
+            "Glob",
+            _WW,
+        ),
+        "edit": ("--permission-mode", "acceptEdits", "--allowedTools", _WW),
+        "full": ("--permission-mode", "bypassPermissions"),
+    }
+
+    def auth_command(self, binary: str) -> list[str]:
+        return [binary, "auth", "status"]
+
+    def logged_in(self, output: Output) -> bool | None:
+        try:
+            status = json.loads(output.text)
+        except ValueError:
+            return None
+        found = status.get("loggedIn") if isinstance(status, dict) else None
+        return found if isinstance(found, bool) else None
+
+    def known_model(self, model: str) -> bool:
+        return model in self.aliases or model.startswith("claude-")
+
+    def models_description(self) -> str:
+        return f"the aliases {', '.join(self.aliases)}, or a full claude-* model name"
+
+    def _options(self, request: LaunchRequest) -> list[str]:
+        model, reasoning = self.model_arguments(request)
+        settings = request.settings
+        options = ["--output-format", "stream-json", "--verbose"]
+        if model is not None:
+            options += ["--model", model]
+        if reasoning is not None:
+            options += ["--effort", reasoning]
+        options += self._PERMISSIONS[settings.permissions]
+        fallback = settings.fallback_model
+        if fallback is not None:
+            options += ["--fallback-model", settings.models.get(fallback, fallback)]
+        if settings.max_budget_usd is not None:
+            options += ["--max-budget-usd", str(settings.max_budget_usd)]
+        if settings.isolated:
+            options.append("--bare")
+        return [*options, *settings.args]
+
+    def launch_command(self, binary: str, request: LaunchRequest) -> list[str]:
+        return [binary, "-p", *self._options(request), "--", request.prompt]
+
+    def resume_command(
+        self, binary: str, request: LaunchRequest, session_id: str
+    ) -> list[str]:
+        return [
+            binary,
+            "-p",
+            "--resume",
+            session_id,
+            *self._options(request),
+            "--",
+            request.prompt,
+        ]
+
+    def stream_facts(self, line: Mapping[str, Any]) -> StreamFacts:
+        session = text_value(line.get("session_id"))
+        if line.get("type") == "system" and line.get("subtype") == "init":
+            return StreamFacts(session, model=text_value(line.get("model")))
+        usage = line.get("usage")
+        if line.get("type") == "result" and isinstance(usage, dict):
+            return StreamFacts(session, usage=_counts(usage))
+        return StreamFacts(session)
+
+
 class ClaudeCode(Agent):
     key = "claudecode"
     title = "Claude Code"
@@ -263,6 +378,7 @@ class ClaudeCode(Agent):
     permissions = ClaudePermissions()
     session_variable = "CLAUDE_CODE_SESSION_ID"
     usage = ClaudeCodeUsage()
+    launchers = (ClaudeCodeHeadless(),)
     choices = question_tool(
         "AskUserQuestion",
         "The operator picks with the keyboard; a free-form answer through "

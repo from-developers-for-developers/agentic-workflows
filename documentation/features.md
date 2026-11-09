@@ -5412,6 +5412,42 @@ agent is one of three kinds:
 A step's `agent:` names the agent the step prefers in the same way; it is
 advice for the manager today.
 
+### Checking an agent's program
+
+ww can run Claude Code, Codex and Cursor headless, through their own
+command-line programs. `ww agents --check` says whether each program is
+ready here: where it is, its version, whether it is logged in, and which
+models and reasoning levels it takes. Name agents to check only those;
+the command exits with 1 when any of them has an error.
+
+```console
+$ ww agents --check codex
+# Headless agents
+
+## Codex (`codex`)
+
+- Binary: /opt/homebrew/bin/codex
+- Version: codex-cli 0.164.0
+- Login: logged in
+- Models: `gpt-6-luna` (low, medium, high, xhigh, max), `gpt-6.1-sol` (low, medium, high, xhigh, max, ultra)
+- Reasoning: low, medium, high, xhigh, max, ultra
+```
+
+| Agent | Program | Oldest version | Models | Reasoning |
+| --- | --- | --- | --- | --- |
+| Claude Code | `claude` | 2.1.300 | no list: the aliases `fable`, `opus`, `sonnet`, `haiku`, or a full `claude-*` name | `low`, `medium`, `high`, `xhigh`, `max` |
+| Codex | `codex` | 0.164.0 | `codex debug models`, each with its own levels | as the model lists |
+| Cursor | `cursor-agent` | 2026.06.11 | `cursor-agent models` | none: choose a model variant such as `sonnet-4-thinking` |
+
+An error means ww will not start the agent: the program is missing, older
+than the oldest version, or logged out. A warning means something could not
+be confirmed: a version newer than ww was tested with, a login the program
+does not report clearly (Cursor), or a model list it would not give. Without
+a list, models are passed on unchecked. A model list is kept in
+`.ww/agents/catalogs/` until the program's version changes. `ww agents`
+also lists, for each agent, how it can run (`runs`): `session`, and
+`headless` for these three.
+
 ## Agent hooks
 
 Agent hooks are the agent's own hooks, installed with `ww hook` and separate

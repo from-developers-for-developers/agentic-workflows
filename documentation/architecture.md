@@ -2518,8 +2518,9 @@ may be absent, since an agent behind an API has no directory, hooks, or shell:
 - `choices` and `waiting` (`interaction.py`): how pages offer operator
   choices and run the operator-page wait.
 - `skill_prefix`: what the operator types before a skill's name.
-- `launcher` (`launch.py`): reserved for ww starting an agent itself,
-  headless or through an API; unused today.
+- `launchers` (`launch.py`): how ww starts the agent itself, one `Launcher`
+  per transport (`launcher(transport)` picks one); none means the agent runs
+  only in a session. See [Launchers](#launchers).
 - `session_variable`: the environment variable through which the agent
   tells the commands it runs which session runs them; `session_of` finds the
   one set, and `ww.cli.audit` records it with the host on every execution
@@ -2552,9 +2553,48 @@ An agent plays two roles. The host is the run's agent (`start --agent`): the
 compiler resolves it to find skills and profiles, the instruction builder puts
 it on each `Instruction` (`host`) so the Markdown adapter renders its choice
 and wait mechanisms, and `init` and `ww hook` use its layout, hooks, and
-permissions. A step's `agent:` is the requested agent, advice for the manager;
-its `launcher` is the seam for ww launching that agent with the ordinary worker
-bootstrap later.
+permissions. A step's `agent:` is the requested agent, advice for the manager
+when it runs in a session; its launchers are how ww starts it itself.
+
+### Launchers
+
+A transport is how a requested agent runs: `session` (the worker the manager
+starts or plays), `headless` (ww runs the agent's command-line program), or
+`api` (reserved: ww calls a model's API). `launch.py` holds the contract: a
+`Launcher` names its `transport` and its `recording`, who records the
+result, kept apart from how the agent starts: `ResultRecording.WORKER` for a
+headless agent, an ordinary worker that runs `./ww complete` itself, and
+`ResultRecording.WW` for an agent that cannot run ww's commands. A
+`LaunchRequest` carries the worker bootstrap as the prompt, the workspace,
+the model and reasoning, ww's state directory (which the agent must be able
+to write), and the agent's `HeadlessSettings`, whose every value has a
+neutral default.
+
+`headless.py` holds what every program shares. A `HeadlessLauncher`
+subclass states its program's facts (default binary name, `minimum_version`
+and `tested_up_to`, reasoning levels or `None` for none, `cheapest_model`,
+the permission levels it can honour, the settings it has flags for, the
+flags ww sets itself) and implements what differs: the login command and how
+to read it, the model-list command and its parser, `known_model` for a
+program without a list, the launch and resume commands, and
+`stream_facts`, which reads the session ID and usage from one line of its
+JSON output. From those the base derives the checks, which return `Finding`s
+(error: do not start; warning: not confirmed) and never print: `probe()`
+finds the binary (the configured path, else `PATH`), reads the version,
+the login and the model list into a `Readiness`; `selection_findings()`
+checks a model and reasoning against the list, per model where the list
+gives levels, and without a list checks only what is known (as linting
+will); `settings_findings()` reports settings the program cannot honour. A
+model list is cached by `CatalogCache` in `.ww/agents/catalogs/<agent>.json`
+and used only while the same binary reports the same version. Probes run
+with no input and a short timeout through a `Runner`, which tests replace.
+
+The built-in launchers are `ClaudeCodeHeadless`, `CodexHeadless` and
+`CursorHeadless`, beside their agents. Reasoning values pass through
+unchanged: Claude Code's `--effort`, Codex's `model_reasoning_effort`, and
+none for Cursor, whose model names carry it. `ww agents --check`
+(`ww.cli.agent_checks`) probes each agent that has a headless launcher, or
+the ones named, and exits 1 when one has an error.
 
 ## Feature maps
 
