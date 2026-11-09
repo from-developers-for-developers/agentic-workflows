@@ -604,6 +604,9 @@ class StepDefinition(HandlerDefinition):
     # The step's agent looks code up in the project's feature maps first and
     # reports the maps it used, and their gaps, in its artifact.
     read_feature_maps: bool = False
+    # The step's agent brings the feature maps up to date with the run's
+    # changes; its completion waits until they are.
+    write_feature_maps: bool = False
     # The options the operator chooses from during an interactive step.
     choices: tuple[ChoiceDefinition, ...] = ()
     # The operator answers this step on the operator page.

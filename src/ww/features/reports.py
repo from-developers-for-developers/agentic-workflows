@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The ``## Feature maps`` section a step that reads the maps ends its
-artifact with: the maps it used, and their gaps.
+"""The ``## Feature maps`` section a step ends its artifact with.
 
-``Used:`` lists map names, comma-separated. ``Gaps:`` says what a map got
-wrong or left out, on its line or the lines below it. ``none`` means none.
-The artifact stays the one record; ww reads the section from it when needed.
+A step that reads the maps reports the maps it used and their gaps:
+``Used:`` lists map names, comma-separated; ``Gaps:`` says what a map got
+wrong or left out, on its line or the lines below it; ``none`` means none. A
+step that writes them answers for each map its run's changes touch and each
+changed file no map covers, one ``<map or file>: <answer>`` line each. The
+artifact stays the one record; ww reads the section from it when needed.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ FEATURE_MAPS_HEADING = "## Feature maps"
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _FIELD = re.compile(r"^(used|gaps)\s*:\s*(.*)$", re.IGNORECASE)
 _NONE = frozenset({"", "none", "-", "n/a"})
+_ANSWER = re.compile(r"^(?:[-*]\s+)?`?([^`\s:][^`:]*?)`?\s*:\s*(\S.*)$")
 
 
 @dataclass(frozen=True)
@@ -72,3 +75,18 @@ def _section(artifact: str) -> list[str] | None:
                 body.append(following)
             return body
     return None
+
+
+def read_maps_answers(artifact: str) -> dict[str, str] | None:
+    """The answers a writing step gave in its Feature maps section, by the map
+    name or file each line starts with: ``agents: updated``,
+    ``src/billing.py: not feature code``. ``None`` without the section."""
+    lines = _section(artifact)
+    if lines is None:
+        return None
+    answers: dict[str, str] = {}
+    for raw in lines:
+        found = _ANSWER.match(raw.strip())
+        if found and found.group(1).lower() not in {"used", "gaps"}:
+            answers.setdefault(found.group(1), found.group(2).strip())
+    return answers

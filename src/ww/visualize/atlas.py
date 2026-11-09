@@ -342,6 +342,7 @@ def _node(
         "subagents": item.subagents,
         "explicit": item.explicit,
         "read_feature_maps": item.read_feature_maps,
+        "write_feature_maps": item.write_feature_maps,
         "interactive": "page"
         if item.ui
         else ("conversation" if item.interactive else None),

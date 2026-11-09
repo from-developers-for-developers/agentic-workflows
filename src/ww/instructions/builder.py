@@ -42,6 +42,7 @@ from ww.execution_models import (
     PlanItemExecution,
     PlanSnapshot,
 )
+from ww.feature_map_steps import run_maps_due
 from ww.gotos import allowed_targets
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
@@ -78,6 +79,7 @@ from .models import (
     ConversationEntry,
     DisputeView,
     DocumentTask,
+    FeatureMapsDue,
     FixFailure,
     FixRequired,
     GotoNotice,
@@ -693,6 +695,37 @@ class InstructionBuilder:
             for _, _, _, entry, record in candidates
         )
 
+    def _feature_maps_due(
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        record: PlanItemExecution,
+    ) -> FeatureMapsDue | None:
+        """What an in-progress writing step answers for, read as completion
+        reads it."""
+        if not item.write_feature_maps or item.owner != "agent":
+            return None
+        if record.status != "in_progress":
+            return None
+        config = load_project_config(self.config.directory / SETTINGS_FILE)
+        if not config.feature_maps:
+            return None
+        due = run_maps_due(
+            self.root, state, plan, config, self.tasks.read_execution_artifact
+        )
+        if due is None:
+            return FeatureMapsDue(measured=False)
+        return FeatureMapsDue(
+            maps=tuple(
+                (feature.name, tuple(str(pointer) for pointer in feature.docs))
+                for feature in due.affected
+            ),
+            unmapped=due.unmapped,
+            broken=tuple(str(problem) for problem in due.broken),
+            gaps=due.gaps,
+        )
+
     def _container_artifacts(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
     ) -> dict[str, ContainerArtifact]:
@@ -1193,6 +1226,7 @@ class InstructionBuilder:
                     self.config.directory / SETTINGS_FILE
                 ).feature_maps
             ),
+            feature_maps_due=self._feature_maps_due(state, plan, item, record),
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(

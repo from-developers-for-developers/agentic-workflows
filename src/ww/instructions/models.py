@@ -34,6 +34,29 @@ from ww.workflow_config import (
 
 
 @dataclass(frozen=True)
+class FeatureMapsDue:
+    """What a step that writes the feature maps answers for, as its page
+    shows it: each touched map with its documents, the changed files no map
+    covers, the pointers that no longer resolve, and the reading steps' gaps.
+    ``measured`` is false without Git, when there is nothing to compare."""
+
+    measured: bool = True
+    maps: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    unmapped: tuple[str, ...] = ()
+    broken: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "measured": self.measured,
+            "maps": [{"name": name, "docs": list(docs)} for name, docs in self.maps],
+            "unmapped": list(self.unmapped),
+            "broken": list(self.broken),
+            "gaps": list(self.gaps),
+        }
+
+
+@dataclass(frozen=True)
 class RecoveryCommand:
     """One operator choice for an interrupted automatic item."""
 
@@ -539,6 +562,8 @@ class Instruction:
     # This agent-owned step looks code up in the feature maps first, the
     # project keeping them, and reports the maps it used in its artifact.
     read_feature_maps: bool = False
+    # A step that writes the feature maps: what it answers for.
+    feature_maps_due: FeatureMapsDue | None = None
     # Optional suggestion after completion; never a plan item or assignment.
     feedback_deduction_command: str | None = None
     interaction_entries: int = 0
@@ -733,6 +758,9 @@ class Instruction:
             "interactive": self.interactive,
             "explicit": self.explicit,
             "read_feature_maps": self.read_feature_maps,
+            "feature_maps_due": (
+                self.feature_maps_due.to_dict() if self.feature_maps_due else None
+            ),
             "feedback_deduction_command": self.feedback_deduction_command,
             "interaction_entries": self.interaction_entries,
             "interaction_ended": self.interaction_ended,

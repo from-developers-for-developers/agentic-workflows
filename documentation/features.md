@@ -806,6 +806,42 @@ workflow says so: the research reaches later steps the usual way, through
 run's gaps; the artifact stays the one record. The visualizer marks such steps
 "reads feature maps first".
 
+### Steps that write the maps
+
+A step with `write_feature_maps: true` brings the maps up to date with
+everything its run changed: the files changed in the task's workspace since
+the run's branch forked from its ww/git base branch (or since `HEAD` without
+one), the maps' own files left out. Its page lists the maps those changes
+touch, each with the documents it names as a reminder, the changed files no
+map covers, the pointers of those maps that no longer resolve, and the gaps
+the run's reading steps reported. The artifact ends with one answer each:
+
+```markdown
+## Feature maps
+agents: updated
+usage: no change needed
+src/billing.py: not feature code
+```
+
+ww refuses the completion, as an error of the command that counts no fix
+attempt, while a pointer of a touched map does not resolve or a map or file
+has no answer; it checks that each is answered, not how. A file the step adds
+to a map is covered and needs no answer of its own. Once the completion
+passes, ww adds the task, with its description, to each touched map's task
+list. Place the step before any merge step, so the maps land with the code:
+
+```yaml
+steps:
+  - name: research
+    read_feature_maps: true
+  - name: develop
+    artifact_from: research
+  - name: update-maps
+    write_feature_maps: true
+    model: cheapest
+  - name: merge
+```
+
 `ww visualize` adds a Feature maps tab while the setting is on: the maps with
 search, and for the one chosen its pointers by field with the broken ones
 marked, its staleness, the maps it uses and the tasks that changed it, beside

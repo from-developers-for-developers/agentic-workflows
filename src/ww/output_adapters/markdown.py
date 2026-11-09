@@ -144,6 +144,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _work(lines, instruction)
         _explicit_guidance(lines, instruction)
         _feature_maps(lines, instruction)
+        _feature_maps_due(lines, instruction)
         _modes(lines, instruction)
         _rules(lines, instruction)
         _verification(lines, instruction)
@@ -962,6 +963,82 @@ def _feature_maps(lines: Lines, instruction: Instruction) -> None:
             "```",
         ]
     )
+
+
+def _feature_maps_due(lines: Lines, instruction: Instruction) -> None:
+    """What a writing step brings up to date, and how it answers for it."""
+    due = instruction.feature_maps_due
+    if due is None or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Feature maps to update")
+    if not due.measured:
+        lines.append(
+            "This workspace is not a Git checkout, so ww cannot tell which feature "
+            "maps the run's changes touch; nothing is checked at completion."
+        )
+        return
+    if not (due.maps or due.unmapped or due.broken):
+        lines.append(
+            "The run's changes touch no feature map and leave no file unmapped: "
+            "there is nothing to update."
+        )
+        return
+    lines.append(
+        "This run changed code the feature maps below cover. Bring each one up "
+        "to date with the change: add, move or remove the pointers it changed, "
+        "and keep each entry one line about where code lives, not how it works."
+    )
+    if due.maps:
+        lines.extend(["", "Maps the changes touch:", ""])
+        for name, docs in due.maps:
+            reminder = (
+                "; its documents may need the change too: "
+                + ", ".join(f"`{doc}`" for doc in docs)
+                if docs
+                else ""
+            )
+            lines.append(
+                f"- `{name}` (`{ww_command()} features show {name}`){reminder}"
+            )
+    if due.unmapped:
+        lines.extend(["", "Changed files no map covers:", ""])
+        lines.extend(f"- `{path}`" for path in due.unmapped)
+        lines.extend(
+            [
+                "",
+                "Add each to the map of its feature, start a map for a new feature "
+                f"from `{ww_command()} features template`, or answer that it is "
+                "not feature code.",
+            ]
+        )
+    if due.broken:
+        lines.extend(
+            ["", "Pointers that no longer resolve; completion waits for them:", ""]
+        )
+        lines.extend(f"- {problem}" for problem in due.broken)
+    if due.gaps:
+        lines.extend(["", "Gaps this run's research found in the maps:", ""])
+        lines.extend(f"- {gap}" for gap in due.gaps)
+    subjects = [*(name for name, _ in due.maps), *due.unmapped]
+    if subjects:
+        lines.extend(
+            [
+                "",
+                "End your artifact with one answer for each:",
+                "",
+                "```markdown",
+                FEATURE_MAPS_HEADING,
+                *(
+                    f"{subject}: <updated | no change needed | added to <map> | "
+                    "not feature code>"
+                    for subject in subjects
+                ),
+                "```",
+                "",
+                "ww refuses the completion while a pointer does not resolve or an "
+                "answer is missing; it checks that each is answered, not how.",
+            ]
+        )
 
 
 def _modes(lines: Lines, instruction: Instruction) -> None:

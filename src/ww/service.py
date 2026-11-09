@@ -52,7 +52,7 @@ from ww.completion_inputs import (
     validate_values,
 )
 from ww.config import YamlConfigurationLoader
-from ww.config_snapshots import GIT_EXTENSION, ConfigSnapshots
+from ww.config_snapshots import ConfigSnapshots
 from ww.contracts import (
     CALLER_ROLES,
     CLOSED_RUN_STATUSES,
@@ -95,7 +95,14 @@ from ww.execution_models import (
     operation_scope_for,
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
-from ww.features import MapsReport, read_maps_report
+from ww.feature_map_steps import (
+    maps_reports,
+    record_run_tasks,
+    refusal,
+    run_base_branch,
+    run_maps_due,
+)
+from ww.features import MapsReport
 from ww.feedback import FeedbackStore
 from ww.gotos import (
     drop_goto,
@@ -2121,6 +2128,7 @@ class WorkflowService:
             self._require_item_fields(state, snapshot.plan, item)
         active_record = state.item_executions[state.cursor]
         self._refuse_readonly_changes(state, snapshot.plan, item)
+        self._settle_feature_maps(state, snapshot.plan, item, artifact)
         if item.interactive and not active_record.interaction_ended:
             raise StateError(
                 f"{item.name!r} is interactive: once the operator says the "
@@ -4935,21 +4943,9 @@ class WorkflowService:
         )
 
     def _base_branch(self, plan: WorkflowPlan) -> str | None:
-        """The branch a run's work forks from: the ww/git ``base_branches``
-        entry of its lane, else the default one."""
-        settings = load_project_config(self.storage.project_config_path).settings_for(
-            GIT_EXTENSION
-        )
-        bases = settings.get("base_branches")
-        return next(
-            (
-                value
-                for key in (plan.lane, "default")
-                if isinstance(bases, dict)
-                and isinstance(value := bases.get(key), str)
-                and value
-            ),
-            None,
+        """The branch a run's work forks from (see :func:`run_base_branch`)."""
+        return run_base_branch(
+            load_project_config(self.storage.project_config_path), plan
         )
 
     def run_workspace(self, task_id: str) -> tuple[Path, str | None]:
@@ -4965,23 +4961,33 @@ class WorkflowService:
         section is left out."""
         validate_task_id(task_id)
         state, snapshot = self.load(task_id)
-        items = {item.id: item for item in snapshot.plan.items}
-        reports: list[tuple[str, MapsReport]] = []
-        for record in (*state.execution_history, *state.item_executions):
-            item = items.get(record.plan_item_id)
-            if (
-                item is None
-                or not item.read_feature_maps
-                or record.status != "completed"
-                or not record.artifact
-            ):
-                continue
-            report = read_maps_report(
-                self.tasks.read_execution_artifact(record.artifact)
-            )
-            if report is not None:
-                reports.append((item.step, report))
-        return tuple(reports)
+        return maps_reports(state, snapshot.plan, self.tasks.read_execution_artifact)
+
+    def _settle_feature_maps(
+        self,
+        state: ExecutionState,
+        plan: WorkflowPlan,
+        item: PlanItem,
+        artifact: str | None,
+    ) -> None:
+        """Refuse a writing step's completion until the maps are up to date
+        with the run's changes, then add the task to the touched maps' lists.
+
+        A refusal is an error of the command, like a missing artifact: nothing
+        is recorded and no fix attempt is counted.
+        """
+        config = load_project_config(self.storage.project_config_path)
+        if not item.write_feature_maps or not config.feature_maps:
+            return
+        due = run_maps_due(
+            self.storage.root, state, plan, config, self.tasks.read_execution_artifact
+        )
+        if due is None:
+            return
+        refused = refusal(due, artifact)
+        if refused is not None:
+            raise StateError(refused)
+        record_run_tasks(due, state)
 
     def _refuse_readonly_changes(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
