@@ -2512,3 +2512,22 @@ permissions. A step's `agent:` is the requested agent, advice for the manager;
 its `launcher` is the seam for ww launching that agent with the ordinary worker
 bootstrap later.
 
+## Feature maps
+
+`../src/ww/features/` owns feature maps and reads nothing but the project's
+files. `maps.py` reads `.ww/features/*.yaml` with PyYAML into `FeatureMap`s
+and collects every shape problem as a `Problem` instead of stopping at the
+first, so one unreadable map never hides the others; `FeatureMaps.check()`
+adds the pointers that no longer resolve. `pointers.py` parses a `Pointer`
+(path and optional anchor) and resolves it under the root with text
+operations only: existence, `Path.glob` after expanding `{a,b}`, a whole-word
+search, or a Markdown ATX heading. Nothing there knows a programming
+language, which keeps maps usable in any project.
+
+The `feature_maps` setting lives on `ProjectConfig`; `project_config` refuses
+it in any settings file but the repo's (`REPO_ONLY_SETTINGS`), so every
+checkout of a project treats maps alike. `init` asks for it and, when the
+repo file keeps it on, `Storage` re-includes `.ww/features/` in `.gitignore`
+and marks `.ww/features/*.tasks` `merge=union` in `.gitattributes`.
+`ww.cli.features` renders `ww features` and its `show`, `check` and
+`template` actions.

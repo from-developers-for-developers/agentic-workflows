@@ -383,7 +383,7 @@ def test_init_asks_when_agents_use_ww_and_explains_each_value(
         def isatty(self) -> bool:
             return True
 
-    monkeypatch.setattr("sys.stdin", InteractiveInput(f"{answer}\nuuid\ny\nnone\n"))
+    monkeypatch.setattr("sys.stdin", InteractiveInput(f"{answer}\nuuid\n\ny\nnone\n"))
 
     assert main(["--root", str(tmp_path), "init"]) == 0
     output = capsys.readouterr().out

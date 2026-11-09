@@ -297,6 +297,14 @@ once where the first one stood. A `.ww/*` line gains the re-inclusions it
 lacks, right after it; a re-inclusion only counts after the last `.ww/*` line,
 since a later one ignores the file again. Every other line is left alone, and
 the file keeps its line endings (CRLF stays CRLF).
+
+The wizard also asks "Keep feature maps for this project? [y/N]" unless the
+repo `ww.json` already sets `feature_maps`; the answer is remembered, and
+`--no-input` leaves them off. A yes writes `"feature_maps": true`, adds
+`!.ww/features/` after the `.ww` lines above so the maps are committed, and
+adds `.ww/features/*.tasks merge=union` to `.gitattributes` (created only in
+a Git repository), so the task lists parallel branches append to merge without
+conflicts. See [Feature maps](#feature-maps).
 The patterns `*ww.local.yaml`,
 `*ww.local.json` and `ww-setup.local.yaml` are added without
 asking, since [local configuration](#user-repo-and-local-configuration) belongs
@@ -680,6 +688,64 @@ session and file IDs, and times, in `.ww/usage/tasks/<id>.jsonl`,
 `.ww/usage/outside.jsonl` and its read positions in `.ww/usage/files.json`,
 apart from the task state, so resetting a task leaves its usage;
 never a line of a log's text.
+
+## Feature maps
+
+A feature map says where one feature lives: the files, names, tests and
+document sections it spreads over, one line each. It is a map, not
+documentation; why the code is shaped as it is stays in the project's docs.
+An agent reads it to find a feature's code without searching for it, and
+still confirms what it needs in the code.
+
+Feature maps are off until the repo `ww.json` sets `"feature_maps": true`
+(`init` asks). The setting applies to everyone working on the project, so the
+user and local settings files may not hold it. While it is off, ww ignores
+maps entirely.
+
+Each map is `.ww/features/<name>.yaml`, committed with the code:
+
+```yaml
+name: visualize
+summary: Live read-only page of workflows and tasks, plus a demo player.
+aliases: [ww visualize, visualizer]
+entry: src/ww/visualize/server.py
+parts:
+  - src/ww/visualize/
+  - src/ww/visualize/{atlas,project,tasks}.py
+touches:
+  - src/ww/cli/main.py#_visualize
+reads: [.ww/usage/, task state files]
+uses: [usage]
+tests: [tests/unit/test_visualize_*.py]
+docs:
+  - documentation/architecture.md#The visualizer
+```
+
+`name` (lowercase letters, digits and dashes, matching the file name),
+`summary` (one line) and at least one of `parts` are required. A pointer, in
+`entry`, `parts` (the feature's own code), `touches` (code elsewhere it relies
+on or changes), `tests` and `docs`, is a project-relative path, a directory, a
+glob (`*`, `?`, `[...]`, `**` and `{a,b}` alternatives), or a file with an
+anchor: `path#Name` for a word the file contains, or `file.md#Heading` for a
+heading of a Markdown file. `reads` names data the feature shares with others
+in free text, `uses` names other maps, and `aliases` are other names a task
+might use. A map holds at most 25 entries; past that, split the feature.
+
+ww never parses a programming language. It checks that a path exists, a glob
+matches at least one file, a `#Name` appears in the file as a whole word (not
+inside a longer identifier) and a `#Heading` is one of the Markdown file's
+`#` (ATX) headings; underlined headings do not count. It also checks each map's shape: unknown fields, a name that does
+not match its file, a summary over one line, a repeated entry, an alias
+another map already uses as its name or alias, and `uses` naming no map.
+
+```console
+./ww features              # the index: each map's name, summary and aliases
+./ww features show visualize   # one map, with any pointer that no longer resolves
+./ww features check        # every map's shape and pointers; exits 1 on a problem
+./ww features template     # a commented map to start a new one from
+```
+
+`--json` gives the index, a map and the check as data.
 
 ## Onboarding state
 

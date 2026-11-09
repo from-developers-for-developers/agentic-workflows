@@ -12,6 +12,8 @@ from typing import Any
 from ww.agents import SHARED_INSTRUCTION_FILE, AgentRegistry, instruction_files
 from ww.config.composition import compose_configuration
 from ww.config_files import (
+    FEATURE_MAPS_ATTRIBUTES_LINE,
+    FEATURE_MAPS_IGNORE_LINE,
     LOCAL_IGNORE_PATTERNS,
     RUNTIME_IGNORE_LINES,
     SETTINGS_FILE,
@@ -182,12 +184,20 @@ class Storage:
             tasks.mkdir(parents=True)
             created.append(".ww/tasks")
 
+        feature_maps = self._feature_maps_on()
         if ignore_runtime:
-            change = self._ignore_runtime_directory()
+            change = self._ignore_runtime_directory(feature_maps=feature_maps)
             if change:
                 created.append(change)
             else:
                 preserved.append(".gitignore entries for .ww")
+        if feature_maps:
+            if self._merge_task_lists_by_union():
+                created.append(".gitattributes entry: " + FEATURE_MAPS_ATTRIBUTES_LINE)
+            elif (self.root / ".gitattributes").exists():
+                preserved.append(
+                    ".gitattributes entry: " + FEATURE_MAPS_ATTRIBUTES_LINE
+                )
         # Local configuration belongs to one checkout, so it is always kept
         # out of version control.
         added = self._ignore_local_configuration()
@@ -288,19 +298,30 @@ class Storage:
         )
         return True
 
-    def _ignore_runtime_directory(self) -> str | None:
+    def _feature_maps_on(self) -> bool:
+        """Whether the repo settings file, the only one that may, keeps them."""
+        try:
+            raw = json.loads(self.project_config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return isinstance(raw, dict) and raw.get("feature_maps") is True
+
+    def _ignore_runtime_directory(self, *, feature_maps: bool = False) -> str | None:
         """Keep ``.ww`` out of Git but for the files a team shares.
 
         Every line that ignores ``.ww`` whole (:data:`WHOLE_RUNTIME_IGNORE_LINES`)
         gives way to :data:`RUNTIME_IGNORE_LINES`, written once where the first
         stood; a ``.ww/*`` line gains the re-inclusions it lacks after it, and
-        every other line is left alone. Returns what changed, or ``None``.
+        every other line is left alone. ``feature_maps`` re-includes their
+        directory too. Returns what changed, or ``None``.
         """
         # Reads and rewrites .gitignore; the project scope held by
         # initialize_project keeps that pair together.
         path = self.root / ".gitignore"
-        existing = _read_gitignore(path)
-        updated, added, replaced = with_runtime_ignored(existing)
+        existing = _read_text(path)
+        updated, added, replaced = with_runtime_ignored(
+            existing, (FEATURE_MAPS_IGNORE_LINE,) if feature_maps else ()
+        )
         if updated == existing:
             return None
         self.locks.atomic_write(path, updated)
@@ -311,6 +332,24 @@ class Storage:
             change += f" (replacing {', '.join(replaced)})"
         return change
 
+    def _merge_task_lists_by_union(self) -> bool:
+        """Add :data:`FEATURE_MAPS_ATTRIBUTES_LINE` to .gitattributes if missing.
+
+        An existing file gains it; one is created only in a Git checkout.
+        """
+        path = self.root / ".gitattributes"
+        if not path.exists() and not (self.root / ".git").exists():
+            return False
+        existing = _read_text(path)
+        if FEATURE_MAPS_ATTRIBUTES_LINE in (
+            line.strip() for line in existing.splitlines()
+        ):
+            return False
+        self.locks.atomic_write(
+            path, _appended(existing, (FEATURE_MAPS_ATTRIBUTES_LINE,))
+        )
+        return True
+
     def _ignore_local_configuration(self) -> tuple[str, ...]:
         """Add the local-file patterns missing from .gitignore.
 
@@ -320,7 +359,7 @@ class Storage:
         path = self.root / ".gitignore"
         if not path.exists() and not (self.root / ".git").exists():
             return ()
-        existing = _read_gitignore(path)
+        existing = _read_text(path)
         entries = {line.strip() for line in existing.splitlines()}
         missing = tuple(
             pattern for pattern in LOCAL_IGNORE_PATTERNS if pattern not in entries
@@ -412,16 +451,20 @@ class Storage:
         (self.runtime_path / "bootstrap" / f"{request_id}.json").unlink(missing_ok=True)
 
 
-def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+def with_runtime_ignored(
+    text: str, reincluded: tuple[str, ...] = ()
+) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
     """``text`` keeping ``.ww`` out of Git but for the shared files.
 
+    ``reincluded`` adds re-inclusion lines to :data:`RUNTIME_IGNORE_LINES`.
     Returns the new text, the lines it adds, and the whole-directory lines it
     replaces.
     A re-inclusion counts only after the last ``.ww/*`` line, since a later
     ``.ww/*`` would ignore the file again. The file's line ending is kept.
     """
     newline = newline_of(text)
-    star, *shared = RUNTIME_IGNORE_LINES
+    ignore_lines = (*RUNTIME_IGNORE_LINES, *reincluded)
+    star, *shared = ignore_lines
     lines = text.splitlines(keepends=True)
     if lines and not lines[-1].endswith(("\n", "\r")):
         lines[-1] += newline
@@ -436,14 +479,14 @@ def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ..
             if line.strip() not in WHOLE_RUNTIME_IGNORE_LINES:
                 kept.append(line)
             elif not has_star:
-                kept.extend(f"{entry}{newline}" for entry in RUNTIME_IGNORE_LINES)
-                added.extend(RUNTIME_IGNORE_LINES)
+                kept.extend(f"{entry}{newline}" for entry in ignore_lines)
+                added.extend(ignore_lines)
                 has_star = True
         lines = kept
     entries = [line.strip() for line in lines]
     if star not in entries:
-        lines.extend(f"{entry}{newline}" for entry in RUNTIME_IGNORE_LINES)
-        added.extend(RUNTIME_IGNORE_LINES)
+        lines.extend(f"{entry}{newline}" for entry in ignore_lines)
+        added.extend(ignore_lines)
     else:
         last = len(entries) - 1 - entries[::-1].index(star)
         missing = [entry for entry in shared if entry not in entries[last + 1 :]]
@@ -459,8 +502,9 @@ def with_runtime_ignored(text: str) -> tuple[str, tuple[str, ...], tuple[str, ..
     return updated, tuple(added), tuple(dict.fromkeys(whole))
 
 
-def _read_gitignore(path: Path) -> str:
-    """A .gitignore's text with its own line endings, or ``""`` when absent."""
+def _read_text(path: Path) -> str:
+    """A text file such as .gitignore with its own line endings, or ``""``
+    when absent."""
     return path.read_bytes().decode("utf-8") if path.exists() else ""
 
 

@@ -42,6 +42,7 @@ def default_settings() -> dict[str, Any]:
         "runtime": DEFAULT_RUNTIME,
         "update_check": True,
         "feedback_learning": True,
+        "feature_maps": False,
         "debug": DebugSettings().to_dict(),
         "feedback": FeedbackSettings().to_dict(),
         "usage": UsageSettings().to_dict(),

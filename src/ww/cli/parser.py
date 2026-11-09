@@ -277,6 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
             "change, children after their parent."
         ),
     )
+    _features_parser(subparsers, json_output)
     usage = subparsers.add_parser(
         "usage",
         parents=[json_output],
@@ -1131,6 +1132,40 @@ def _migrate_parser(
             "Rewrite every stored task's state in the current format instead, "
             "after copying it to .ww/backups/ (with --apply)."
         ),
+    )
+
+
+def _features_parser(
+    subparsers: argparse._SubParsersAction[_Parser],
+    json_output: _Parser,
+) -> None:
+    """``features``: the feature maps index, one map, a check, the template."""
+    features = subparsers.add_parser(
+        "features",
+        parents=[json_output],
+        help=(
+            "List the project's feature maps (where each feature's code lives); "
+            "`show NAME`, `check` or `template`."
+        ),
+    )
+    actions = features.add_subparsers(dest="features_action")
+    after = _Parser(add_help=False)
+    after.add_argument(
+        "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
+    )
+    show = actions.add_parser(
+        "show",
+        parents=[after],
+        help="Print one map, with any pointer that no longer resolves.",
+    )
+    show.add_argument("feature_name", metavar="NAME")
+    actions.add_parser(
+        "check",
+        parents=[after],
+        help=("Check every map's shape and pointers; exits non-zero on a problem."),
+    )
+    actions.add_parser(
+        "template", help="Print a commented map to start a new one from."
     )
 
 
