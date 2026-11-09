@@ -398,6 +398,7 @@ The built-in workflows:
 | `ww-suggest` | `onboarding.yaml` | Asks a few process questions (express setup skips them), designs a minimal setup with the operator, proposes it in full, and places it with `setup apply`. |
 | `ww-solve` | `onboarding.yaml` | Proposes a change for a problem the operator describes; a workflow already defined is changed with `setup update`. |
 | `ww-rules-from-artifacts` | `onboarding.yaml` | Proposes rules from past artifacts of chosen steps. |
+| `ww-map-features` | `feature-maps.yaml` | Writes feature maps for the project's features, or refreshes stale ones; changes nothing outside `.ww/features/` and ends with a passing `ww features check`. |
 | `ww-automate` | `onboarding.yaml` | Proposes a script and its handler for a step's mechanical work. |
 | `ww-scriptize-rules` | `scriptize.yaml` | Scriptizes every rule with no check yet into checks, built and proven on a branch of its own from the required `ww/git` default base, following its worktree settings; automatic Git hooks, `restartable`. |
 | `ww-check-rules` | `check-rules.yaml` | Checks the branch's changes, or the files the request names, against the project's rules and reports what breaks them; `readonly`, `restartable`. A `scope` step (`select_rules_for: [check]`) chooses the rules and, for existing code, the files; a `check` step carries `rules: ["*"]`. See [Readonly workflows](#readonly-workflows). |

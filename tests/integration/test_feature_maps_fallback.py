@@ -14,10 +14,11 @@ from ww.builtin_workflows import builtin_workflow_names
 from ww.cli import main
 from ww.config import load_configuration
 from ww.errors import StateError
+from ww.extensions import ExtensionRegistry
 from ww.feature_map_steps import falls_back
 from ww.features import read_task_list
 from ww.output_adapters.markdown import MarkdownOutputAdapter
-from ww.plan import compile_workflow_plan
+from ww.plan import WorkflowPlan, compile_for_any_agent
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -179,13 +180,19 @@ def test_lint_says_who_brings_the_maps_up_to_date(tmp_path: Path, capsys) -> Non
     assert "feature_maps" not in capsys.readouterr().out
 
 
+@pytest.mark.usefixtures("shipped_builtins")
 def test_ww_s_own_workflows_do_not_fall_back(tmp_path: Path) -> None:
-
     _project(tmp_path, PLAIN)
-    configuration = load_configuration(tmp_path / "ww.yaml")
-    names = {workflow.name for workflow in configuration.workflows}
+    extensions = ExtensionRegistry.discover(tmp_path, tmp_path / "ww.json")
+    configuration = load_configuration(tmp_path / "ww.yaml", extensions)
 
-    for name in sorted(names & builtin_workflow_names()):
-        plan = compile_workflow_plan(configuration, tmp_path, name, "codex")
-        assert not falls_back(plan), name
-    assert falls_back(compile_workflow_plan(configuration, tmp_path, "task", "codex"))
+    def plan(name: str) -> WorkflowPlan:
+        return compile_for_any_agent(
+            configuration, tmp_path, name, extensions, extensions.config
+        )
+
+    builtins = sorted(builtin_workflow_names())
+    assert {"ww-migrate", "ww-suggest", "ww-solve"} <= set(builtins)
+    for name in builtins:
+        assert not falls_back(plan(name)), name
+    assert falls_back(plan("task"))

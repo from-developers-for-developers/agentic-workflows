@@ -778,6 +778,25 @@ task`), oldest first. ww writes it, and `show` prints it. Branches each append
 to it, so `init` marks these files `merge=union` in `.gitattributes`; a line
 merged twice is read once.
 
+### Mapping a project
+
+Maps grow from ordinary work: every change that touches a map, or leaves a
+changed file no map covers, has it answered for. To map existing code at once,
+or to refresh the maps `ww features stale` lists, run the built-in
+`ww-map-features` workflow; `init` suggests it once feature maps are on and
+none exist. Its `survey` step lists the maps to write or refresh, from what the
+request names or else the project's architecture documentation and layout; its
+`map` step writes them from `ww features template`. Two checks hold that step
+until it changed nothing outside `.ww/features/` and `ww features check`
+passes. It works in the current checkout and commits nothing: review and
+commit the maps yourself. `ww docs features#feature-maps` prints this section.
+
+`ww-suggest` and `ww-solve`, when they propose a workflow that changes code in
+a project with feature maps, give it `read_feature_maps` on its research or
+plan step and `write_feature_maps` on a step before any merge. ww's other
+built-in workflows change its configuration, not the project's features, and
+need neither.
+
 ### Steps that read the maps
 
 A step with `read_feature_maps: true` gets a Feature maps section on its page

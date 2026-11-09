@@ -14,6 +14,7 @@ from ww.config.composition import compose_configuration
 from ww.config_files import (
     FEATURE_MAPS_ATTRIBUTES_LINE,
     FEATURE_MAPS_IGNORE_LINE,
+    FEATURES_DIRECTORY,
     LOCAL_IGNORE_PATTERNS,
     RUNTIME_IGNORE_LINES,
     SETTINGS_FILE,
@@ -28,7 +29,7 @@ from ww.config_snapshots import ConfigSource
 from ww.errors import ConfigurationError, StateError
 from ww.locking import FileLocks
 from ww.project_config import load_project_config
-from ww.results import NO_WORKFLOWS_ACTION, InitializationResult
+from ww.results import MAP_FEATURES_ACTION, NO_WORKFLOWS_ACTION, InitializationResult
 from ww.storage_adapters import (
     FileProjectMetadataStorageAdapter,
     FileTaskStorageAdapter,
@@ -389,6 +390,9 @@ class Storage:
             raw = {}
         if not raw.get("workflows"):
             actions.append(NO_WORKFLOWS_ACTION)
+        maps = self.root / FEATURES_DIRECTORY
+        if self._feature_maps_on() and not any(maps.glob("*.yaml")):
+            actions.append(MAP_FEATURES_ACTION)
         return actions
 
     def append_log(self, record: dict[str, Any]) -> None:
