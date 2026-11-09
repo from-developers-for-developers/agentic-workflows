@@ -247,8 +247,8 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         ),
         ancestors=ancestors,
         step_ordinals=step_ordinals,
-        artifact_dependency=expect_optional_string(
-            raw.get("artifact_dependency"), "artifact dependency"
+        artifact_dependencies=_string_list(
+            raw.get("artifact_dependencies", []), "plan item artifact dependencies"
         ),
         assessment_question=expect_optional_string(
             raw.get("assessment_question"), "assessment question"

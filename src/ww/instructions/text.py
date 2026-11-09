@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ww.actions import InstructionContext, PlannedAction, actions
@@ -57,12 +58,12 @@ def action_text(
     item: PlanItem,
     task_values: dict[str, str] | None = None,
     task_id: str | None = None,
-    container_artifact: ContainerArtifact | None = None,
+    container_artifacts: Mapping[str, ContainerArtifact] | None = None,
 ) -> str:
     """Render the work text for an ordinary action, plus item or child guidance.
 
-    ``container_artifact`` is what the step's ``artifact_from`` resolved to
-    when it names a group or an assessment; ``None`` for a single step.
+    ``container_artifacts`` holds what each ``artifact_from`` path naming a
+    group or an assessment resolved to; a path naming a single step is absent.
     """
     if not isinstance(item.operation, PlannedAction):
         raise ValueError(f"core operation {item.kind!r} has no ordinary action text")
@@ -80,7 +81,7 @@ def action_text(
         )
         if item.split_instruction:
             result += f"\n\nHow to split: {item.split_instruction}"
-        return _with_artifact_dependency(result, item, container_artifact)
+        return _with_artifact_dependencies(result, item, container_artifacts)
     if item.child_operation == "collect":
         projects = [
             name for name in (task_values or {}).get(PROJECTS, "").split(",") if name
@@ -107,35 +108,40 @@ def action_text(
                 + ". Pass `--project` with the project a child works in; omit it "
                 "for a child that works in the root."
             )
-        return _with_artifact_dependency(result, item, container_artifact)
+        return _with_artifact_dependencies(result, item, container_artifacts)
     text = content.text
-    return _with_artifact_dependency(text, item, container_artifact)
+    return _with_artifact_dependencies(text, item, container_artifacts)
 
 
-def _with_artifact_dependency(
-    text: str, item: PlanItem, container: ContainerArtifact | None
+def _with_artifact_dependencies(
+    text: str, item: PlanItem, containers: Mapping[str, ContainerArtifact] | None
 ) -> str:
-    if item.artifact_dependency is None:
-        return text
+    """``text`` and one paragraph per ``artifact_from`` step, in their order."""
+    return "\n\n".join(
+        (
+            text,
+            *(
+                _artifact_dependency(path, (containers or {}).get(path))
+                for path in item.artifact_dependencies
+            ),
+        )
+    )
+
+
+def _artifact_dependency(path: str, container: ContainerArtifact | None) -> str:
     if container is not None and container.artifact is None:
         return (
-            text + f"\n\nNo artifact is available from `{item.artifact_dependency}`: "
-            "no step inside it that saves one completed in this run. Continue "
-            "without it."
+            f"No artifact is available from `{path}`: no step inside it that "
+            "saves one completed in this run. Continue without it."
         )
-    if container is not None and container.step == item.artifact_dependency:
+    if container is not None and container.step == path:
         return (
-            text + f"\n\nUse the artifact produced by the `{container.step}` step as "
-            f"input to this work: `{container.artifact}`."
+            f"Use the artifact produced by the `{container.step}` step as input "
+            f"to this work: `{container.artifact}`."
         )
     if container is not None:
         return (
-            text + f"\n\nUse the artifact produced by the `{container.step}` step, "
-            f"the latest saved inside `{item.artifact_dependency}`, as input to "
-            f"this work: `{container.artifact}`."
+            f"Use the artifact produced by the `{container.step}` step, the latest "
+            f"saved inside `{path}`, as input to this work: `{container.artifact}`."
         )
-    return (
-        text
-        + f"\n\nUse the artifact produced by the `{item.artifact_dependency}` step "
-        "as input to this work."
-    )
+    return f"Use the artifact produced by the `{path}` step as input to this work."

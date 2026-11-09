@@ -284,7 +284,8 @@ class PlanItem:
     # One-based declaration ordinal for every path in ``(*ancestors, step)``.
     # Artifact storage uses these values to produce stable, ordered paths.
     step_ordinals: tuple[int, ...] = ()
-    artifact_dependency: str | None = None
+    # Plan paths of the steps whose artifacts this step reads, in order.
+    artifact_dependencies: tuple[str, ...] = ()
     assessment_question: str | None = None
     assessment_attached: bool = False
     repeat_until: str | None = None
@@ -553,7 +554,7 @@ class PlanItem:
             "child_number": self.child_number,
             "ancestors": list(self.ancestors),
             "step_ordinals": list(self.step_ordinals),
-            "artifact_dependency": self.artifact_dependency,
+            "artifact_dependencies": list(self.artifact_dependencies),
             "assessment_question": self.assessment_question,
             **({"assessment_attached": True} if self.assessment_attached else {}),
             **({"repeat_until": self.repeat_until} if self.repeat_until else {}),

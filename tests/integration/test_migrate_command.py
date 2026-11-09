@@ -14,6 +14,7 @@ from ww import __version__
 from ww.cli import main
 from ww.cli import migrate as migrate_command
 from ww.config import load_configuration
+from ww.execution_models import PlanSnapshot
 from ww.migrations import data
 from ww.migrations.config import (
     ConfigMigration,
@@ -451,8 +452,15 @@ def _renamed(value: Any, task_id: str) -> Any:
     return task_id if value == "TASK-1" else value
 
 
-def _stored_task(root: Path, task_id: str) -> dict[str, str]:
-    """The version 1 sample task stored as ``task_id``; its files' texts."""
+def _stored_task(
+    root: Path, task_id: str, *, current_snapshot: bool = True
+) -> dict[str, str]:
+    """The version 1 sample task stored as ``task_id``; its files' texts.
+
+    The run's nested plan snapshot is brought to the current schema, with the
+    plan digest it now has, unless ``current_snapshot`` is false, which keeps
+    it as the sample wrote it.
+    """
     directory = root / ".ww" / "tasks" / task_id
     files = {
         directory / "state.json": FORMATS / "task-state" / "v1.json",
@@ -464,6 +472,12 @@ def _stored_task(root: Path, task_id: str) -> dict[str, str]:
     for target, sample in files.items():
         target.parent.mkdir(parents=True, exist_ok=True)
         document = _renamed(json.loads(sample.read_text(encoding="utf-8")), task_id)
+        if current_snapshot and "run" in document:
+            run = document["run"]
+            run["snapshot"] = data.upgrade("plan snapshot", run["snapshot"])
+            run["state"]["plan_digest"] = PlanSnapshot.from_dict(
+                run["snapshot"]
+            ).plan_digest
         text = json.dumps(document, indent=2) + "\n"
         target.write_text(text, encoding="utf-8")
         texts[str(target.relative_to(root))] = text
@@ -494,6 +508,28 @@ def test_tasks_in_the_current_format_are_left_alone(
     for path, text in texts.items():
         assert (root / path).read_text(encoding="utf-8") == text
     assert not (root / ".ww" / "backups").exists()
+
+
+def test_a_run_whose_plan_snapshot_is_older_is_rewritten(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, MIGRATED)
+    _stored_task(root, "TASK-1", current_snapshot=False)
+
+    assert _ww(root, "--tasks", "--apply", "--json") == 0
+
+    report = json.loads(capsys.readouterr().out)
+    assert [(task["task_id"], task["rewritten"]) for task in report["tasks"]] == [
+        ("TASK-1", True)
+    ]
+    run_file = root / ".ww" / "tasks" / "TASK-1" / "runs" / "01-task" / "state.10.json"
+    snapshot = json.loads(run_file.read_text(encoding="utf-8"))["run"]["snapshot"]
+    assert snapshot["schema_version"] == data.FORMATS["plan snapshot"].current
+    [research] = [
+        item for item in snapshot["plan"]["items"] if item.get("artifact_dependencies")
+    ]
+    assert research["artifact_dependencies"] == ["research"]
+    assert "artifact_dependency" not in research
 
 
 def test_tasks_in_an_older_format_are_listed_then_rewritten_after_a_backup(

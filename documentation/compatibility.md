@@ -86,7 +86,10 @@ Finish that task with the ww named, or reset it, before upgrading further.
 | feedback store | `.ww/feedback.json` | `schema` |
 | run report | `.ww/debug/<id>.json`, `.ww/feedback/<id>.json` | `schema` |
 
-Every format is at schema 1, and no migration exists yet. The task index and
+Every format is at schema 1 except the plan snapshot, at schema 2: its plan
+items' `artifact_dependency` became the list `artifact_dependencies` when
+`artifact_from` began to accept several steps, and a snapshot at schema 1 is
+migrated as it is decoded (`ww.migrations.plan_snapshot`). The task index and
 the run documents are separate formats, versioned independently, because a
 commit rewrites only the runs whose content changed: an index can be newer
 than a run file beside it. A run's plan snapshot and execution state carry

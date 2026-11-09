@@ -839,7 +839,7 @@ function renderStep(wf, s, i) {
   if (s.subagents === false) facts.push('<span class="fact">works alone, no subagents</span>');
   if (s.explicit) facts.push('<span class="fact">explicit: narrates each edit</span>');
   if (s.artifact === false) facts.push('<span class="fact">no artifact</span>');
-  if (s.artifact_from) facts.push(`<span class="fact">${ICON.from} reads the artifact of <span class="mono">${esc(s.artifact_from)}</span></span>`);
+  if ((s.artifact_from || []).length) facts.push(`<span class="fact">${ICON.from} reads the artifact${s.artifact_from.length > 1 ? "s" : ""} of ${s.artifact_from.map(name => `<span class="mono">${esc(name)}</span>`).join(", ")}</span>`);
   (s.variables || []).forEach(v => facts.push(`<span class="fact">sets <span class="var">${esc(v)}</span></span>`));
   (s.saves || []).forEach(t => facts.push(`<span class="fact">${ICON.save} saves <span class="mono">${esc(t)}</span></span>`));
   if (s.on_failure === "fix") facts.push(`<span class="fact">${ICON.hook} on failure an agent repairs it${s.max_fixes ? `, up to ${esc(s.max_fixes)} times` : ""}</span>`);

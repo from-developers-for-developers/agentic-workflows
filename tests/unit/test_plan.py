@@ -85,7 +85,7 @@ workflows:
     assert init.payload_as(Prompt).text == INIT_STEP_PROMPT
     assert init.artifact
     assert hook.phase == "before_complete" and hook.step == "init"
-    assert work.artifact_dependency == "init"
+    assert work.artifact_dependencies == ("init",)
     assert summary.summary
 
 
@@ -137,9 +137,9 @@ def test_depends_on_resolves_the_nearest_earlier_upper_level_step(
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
     dependencies = {
-        item.step: item.artifact_dependency
+        item.step: dependency
         for item in plan.items
-        if item.artifact_dependency is not None
+        for dependency in item.artifact_dependencies
     }
     assert dependencies == {
         "group/inner/fix": "group/plan",
@@ -178,14 +178,38 @@ def test_artifact_from_resolves_a_nested_group_to_its_path(tmp_path: Path) -> No
     plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
 
     dependencies = {
-        item.step: item.artifact_dependency
+        item.step: dependency
         for item in plan.items
-        if item.artifact_dependency is not None
+        for dependency in item.artifact_dependencies
     }
     assert dependencies == {
         "outer/build": "outer/prepare",
         "outer/inner/fix": "outer/prepare",
     }
+
+
+def test_artifact_from_resolves_each_listed_step_to_its_path_in_order(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "ww.yaml"
+    path.write_text(
+        """workflows:
+  - name: task
+    steps:
+      - name: research
+      - name: outer
+        steps:
+          - name: plan
+          - name: build
+            artifact_from: [plan, research, init]
+""",
+        encoding="utf-8",
+    )
+
+    plan = compile_workflow_plan(load_configuration(path), tmp_path, "task", "codex")
+
+    build = next(item for item in plan.items if item.step == "outer/build")
+    assert build.artifact_dependencies == ("outer/plan", "research", "init")
 
 
 def test_extension_handler_can_be_used_as_a_step(tmp_path: Path) -> None:

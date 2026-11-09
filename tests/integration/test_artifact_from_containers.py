@@ -165,6 +165,45 @@ def test_an_assessment_without_an_artifact_whose_outcome_saved_nothing_offers_no
     )
 
 
+def test_a_list_supplies_each_artifact_in_order_and_names_one_that_is_missing(
+    tmp_path: Path,
+) -> None:
+    service = _service(
+        tmp_path,
+        """workflows:
+  - name: task
+    steps:
+      - name: research
+        description: Research it.
+      - assess:
+          artifact: false
+          question: Does it need a review?
+          outcomes:
+            positive:
+              steps:
+                - review: Review it.
+      - name: ship
+        description: Ship it.
+        artifact_from: [assess, research]
+""",
+    )
+    start_after_init(service, "task", "TASK-1", agent="codex")
+    _open(service)
+    _complete(service, "Researched.")
+    _open(service)
+    _complete_bare(service)
+
+    ship = _open(service, "negative")
+
+    assert ship.item_name == "ship"
+    paragraphs = (ship.action_text or "").split("\n\n")
+    assert paragraphs[-2:] == [
+        "No artifact is available from `assess`: no step inside it that saves "
+        "one completed in this run. Continue without it.",
+        "Use the artifact produced by the `research` step as input to this work.",
+    ]
+
+
 def test_an_outcome_naming_its_assessment_still_gets_the_assessment_artifact(
     tmp_path: Path,
 ) -> None:

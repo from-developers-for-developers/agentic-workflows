@@ -88,12 +88,12 @@ def test_a_nested_record_at_a_higher_schema_asks_for_an_upgrade() -> None:
     # A nested record never carries ``written_by``; its enclosing file names
     # the writer and was checked first, so a higher schema is a newer ww.
     with pytest.raises(UnsupportedSchemaError) as raised:
-        upgrade("plan snapshot", {"schema_version": 2})
+        upgrade("plan snapshot", {"schema_version": 3})
 
     assert raised.value.newer
     assert str(raised.value) == (
-        "plan snapshot written by a newer ww (schema 2); this ww reads up to "
-        "schema 1: upgrade ww"
+        "plan snapshot written by a newer ww (schema 3); this ww reads up to "
+        "schema 2: upgrade ww"
     )
 
 
@@ -210,3 +210,33 @@ def test_a_loader_refuses_a_file_a_newer_ww_wrote(tmp_path: Path) -> None:
 
     with pytest.raises(StateError, match=r"ww 3\.0\.0 \(schema 7\).*: upgrade ww"):
         DisputeLog(tmp_path).load()
+
+
+def test_a_plan_snapshot_1_lists_every_items_artifact_dependency() -> None:
+    def item(dependency: str | None, **nested: object) -> dict[str, object]:
+        return {"id": "x", "artifact_dependency": dependency, **nested}
+
+    verification = {"verifier": [item("develop")], "on_failure": [item(None)]}
+    snapshot = {
+        "schema_version": 1,
+        "plan": {"items": [item(None), item("research", verification_plan=None)]},
+        "template_plan": {
+            "items": [item("plan", verification_plan=verification)],
+        },
+    }
+
+    upgraded = upgrade("plan snapshot", snapshot)
+
+    assert upgraded["schema_version"] == 2
+    assert [entry["artifact_dependencies"] for entry in upgraded["plan"]["items"]] == [
+        [],
+        ["research"],
+    ]
+    template = upgraded["template_plan"]["items"][0]
+    assert template["artifact_dependencies"] == ["plan"]
+    assert "artifact_dependency" not in template
+    assert template["verification_plan"]["verifier"][0]["artifact_dependencies"] == [
+        "develop"
+    ]
+    assert template["verification_plan"]["on_failure"][0]["artifact_dependencies"] == []
+    assert snapshot["plan"]["items"][1]["artifact_dependency"] == "research"

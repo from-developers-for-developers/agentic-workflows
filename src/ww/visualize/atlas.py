@@ -347,7 +347,7 @@ def _node(
         "choices": [choice.to_dict() for choice in item.choices],
         "variables": [value.name for value in item.provide],
         "saves": _saves(item),
-        "artifact_from": item.artifact_dependency,
+        "artifact_from": list(item.artifact_dependencies),
         "artifact": item.artifact,
         "on_failure": item.on_failure if item.on_failure != "operator" else None,
         "max_fixes": item.max_handler_fixes if item.on_failure == "fix" else None,

@@ -332,11 +332,13 @@ def test_incompatible_snapshot_is_not_rewritten(tmp_path: Path) -> None:
     from dataclasses import replace
 
     from ww.execution_models import PlanSnapshot
+    from ww.migrations.data import FORMATS
 
     svc = service(tmp_path)
     _, snapshot = svc.load(TASK)
     before = snapshot.to_dict()
-    old = replace(snapshot, schema_version=2).to_dict()
+    newer = FORMATS["plan snapshot"].current + 1
+    old = replace(snapshot, schema_version=newer).to_dict()
     with pytest.raises(ValueError, match="plan snapshot written by a newer ww"):
         PlanSnapshot.from_dict(old)
     assert snapshot.to_dict() == before

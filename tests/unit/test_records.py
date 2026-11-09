@@ -308,7 +308,7 @@ def test_project_metadata_scope_round_trips_through_persisted_plan() -> None:
 @pytest.mark.parametrize(
     ("version", "message"),
     [
-        (2, r"plan snapshot written by a newer ww \(schema 2\); .*: upgrade ww"),
+        (3, r"plan snapshot written by a newer ww \(schema 3\); .*: upgrade ww"),
         (0, r"plan snapshot written by an older ww \(schema 0\)"),
         (True, "unsupported plan snapshot schema"),
         ("1", "unsupported plan snapshot schema"),

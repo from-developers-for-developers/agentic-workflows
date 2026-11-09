@@ -487,7 +487,7 @@ def verification_item(item: PlanItem, ordinal: int, hints: RuleHints) -> PlanIte
         artifact=True,
         child_operation=None,
         child_identity=False,
-        artifact_dependency=None,
+        artifact_dependencies=(),
         assessment_question=None,
         assessment_attached=False,
         repeat_until=None,

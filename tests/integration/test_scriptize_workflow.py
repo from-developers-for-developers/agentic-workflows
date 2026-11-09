@@ -111,7 +111,7 @@ def test_the_workflow_collects_agrees_builds_and_records() -> None:
     assert "Record nothing in this step" in checks
     assert [c.label for c in _step("checks").choices] == ["record", "none"]
     record = _step("record")
-    assert not record.interactive and record.artifact_dependency == "checks"
+    assert not record.interactive and record.artifact_dependencies == ("checks",)
     recorded = " ".join(record.description.split())
     assert "`--yes` in the place of `--dry-run`" in checks
     assert "never at the end" in checks

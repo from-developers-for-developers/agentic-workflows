@@ -625,7 +625,9 @@ class StepDefinition(HandlerDefinition):
     # A step with ``children`` collects child tasks, then runs each with
     # ``children.workflow``, or runs ``children.steps`` once per child.
     children: ChildFlow | None = None
-    artifact_dependency: str | None = None
+    # ``artifact_from``: the earlier steps whose artifacts this step reads,
+    # in the order written.
+    artifact_dependencies: tuple[str, ...] = ()
     # An assessment is an agent prompt whose named outcome selects a conditional
     # subtree.  Empty outcomes use the compact positive/negative continuation.
     assessment_question: str | None = None

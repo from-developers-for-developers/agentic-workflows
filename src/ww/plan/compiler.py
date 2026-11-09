@@ -1442,12 +1442,13 @@ class WorkflowPlanCompiler:
                 child_operation=annotations.child_operation,
                 child_stage=annotations.child_stage,
                 ancestors=ancestors,
-                artifact_dependency=(
-                    _artifact_dependency_path(
-                        step.artifact_dependency, ancestors, items
+                artifact_dependencies=(
+                    tuple(
+                        _artifact_dependency_path(name, ancestors, items)
+                        for name in step.artifact_dependencies
                     )
-                    if phase == "step" and step.artifact_dependency is not None
-                    else None
+                    if phase == "step"
+                    else ()
                 ),
                 assessment_question=annotations.assessment_question,
                 repeat_until=annotations.repeat_until,

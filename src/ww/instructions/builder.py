@@ -486,7 +486,12 @@ class InstructionBuilder:
         )
         if item.on_failure_instruction:
             text += "\n\n" + item.on_failure_instruction
-        text += "\n\n" + action_text(item, values, state.task_id, ContainerArtifact())
+        text += "\n\n" + action_text(
+            item,
+            values,
+            state.task_id,
+            dict.fromkeys(item.artifact_dependencies, ContainerArtifact()),
+        )
         text += "\n\nFailure:\n\n" + (
             _with_retry_note(
                 record.error or state.last_error or "Unknown command failure", record
@@ -688,13 +693,20 @@ class InstructionBuilder:
             for _, _, _, entry, record in candidates
         )
 
-    def _container_artifact(
+    def _container_artifacts(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem
+    ) -> dict[str, ContainerArtifact]:
+        """What each ``artifact_from`` path naming a container resolved to."""
+        resolved = (
+            (path, self._container_artifact(state, plan, item, path))
+            for path in item.artifact_dependencies
+        )
+        return {path: found for path, found in resolved if found is not None}
+
+    def _container_artifact(
+        self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem, path: str
     ) -> ContainerArtifact | None:
         """Resolve the latest artifact inside a group or selected outcome."""
-        path = item.artifact_dependency
-        if path is None:
-            return None
         inside = {
             entry.id: entry
             for entry in plan.items
@@ -1144,7 +1156,7 @@ class InstructionBuilder:
                     **self.child_values(state, plan, item),
                 },
                 state.task_id,
-                self._container_artifact(state, plan, item),
+                self._container_artifacts(state, plan, item),
             )
             + self._current_child(state, item),
             required_values=required,

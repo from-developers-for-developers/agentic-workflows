@@ -240,12 +240,77 @@ workflows:
     )
 
     steps = configuration.workflows[0].steps
-    assert [step.artifact_dependency for step in steps] == [
-        None,
-        "analysis",
-        None,
-        "group",
+    assert [step.artifact_dependencies for step in steps] == [
+        (),
+        ("analysis",),
+        (),
+        ("group",),
     ]
+
+
+def test_artifact_from_takes_a_list_of_steps_in_the_order_written(
+    tmp_path: Path,
+) -> None:
+    configuration = load_configuration(
+        _write(
+            tmp_path / "ww.yaml",
+            """workflows:
+  - name: task
+    steps:
+      - research: Research it.
+      - plan: Plan it.
+      - name: develop
+        artifact_from: [plan, research]
+""",
+        )
+    )
+
+    steps = configuration.workflows[0].steps
+    assert steps[-1].artifact_dependencies == ("plan", "research")
+
+
+@pytest.mark.parametrize(
+    ("artifact_from", "message"),
+    [
+        ("[]", r"steps\[1\]\.artifact_from must be a step name or a non-empty"),
+        ("[research, research]", r"artifact_from\[1\] names step 'research' twice"),
+        ("[research, 3]", r"artifact_from\[1\] must be a normalized step name"),
+        ("{research: true}", r"must be a step name or a non-empty list"),
+    ],
+)
+def test_artifact_from_refuses_a_malformed_list(
+    tmp_path: Path, artifact_from: str, message: str
+) -> None:
+    path = _write(
+        tmp_path / "ww.yaml",
+        "workflows:\n  - name: task\n    steps:\n"
+        "      - research: Research it.\n"
+        f"      - name: step\n        artifact_from: {artifact_from}\n",
+    )
+
+    with pytest.raises(ConfigurationError, match=message):
+        load_configuration(path)
+
+
+def test_artifact_from_refuses_each_listed_step_that_is_not_earlier(
+    tmp_path: Path,
+) -> None:
+    path = _write(
+        tmp_path / "ww.yaml",
+        """workflows:
+  - name: task
+    steps:
+      - research: Research it.
+      - name: develop
+        artifact_from: [research, review]
+      - review: Review it.
+""",
+    )
+
+    with pytest.raises(
+        ConfigurationError, match="step 'review', which is not an earlier"
+    ):
+        load_configuration(path)
 
 
 def test_parses_normalized_records_and_command_forms(tmp_path: Path) -> None:

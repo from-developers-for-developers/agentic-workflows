@@ -135,7 +135,7 @@ def default_repair(item: PlanItem) -> PlanItem:
         update_document=(),
         update_item=(),
         artifact=True,
-        artifact_dependency=None,
+        artifact_dependencies=(),
         rules=(),
         checks=(),
         verifies=None,
@@ -216,7 +216,9 @@ def open_repair(
                     ancestors=tuple(
                         rebase(path) or path for path in template.ancestors
                     ),
-                    artifact_dependency=rebase(template.artifact_dependency),
+                    artifact_dependencies=tuple(
+                        rebase(path) or path for path in template.artifact_dependencies
+                    ),
                     item_context=source.item_context,
                     child_stage=source.child_stage,
                     child_number=source.child_number,

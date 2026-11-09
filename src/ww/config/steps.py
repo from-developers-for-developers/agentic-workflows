@@ -303,7 +303,7 @@ def _parse_step(
         child_launch=child_launch,
         artifact=artifact,
         children=child_flow,
-        artifact_dependency=artifact_from,
+        artifact_dependencies=artifact_from,
         assessment_question=(
             question
             if question is not None
@@ -624,22 +624,37 @@ def _parse_child_flow(
 
 def _parse_artifact(
     mapping: dict[str, Any], path: str, referenced: StepDefinition | None
-) -> tuple[bool, str | None]:
-    """Parse ``artifact`` and ``artifact_from``."""
+) -> tuple[bool, tuple[str, ...]]:
+    """Parse ``artifact`` and ``artifact_from``: one step name or a list."""
     artifact = mapping.get("artifact", True)
     if not isinstance(artifact, bool):
         raise ConfigurationError(f"{path}.artifact must be true or false")
-    artifact_from = mapping.get("artifact_from")
-    if artifact_from is not None and (
-        not isinstance(artifact_from, str) or not _NAME.fullmatch(artifact_from)
-    ):
-        raise ConfigurationError(f"{path}.artifact_from must be a normalized step name")
+    artifact_from = _artifact_from(mapping.get("artifact_from"), path)
     if referenced is not None:
         if "artifact" not in mapping:
             artifact = referenced.artifact
         if "artifact_from" not in mapping:
-            artifact_from = referenced.artifact_dependency
+            artifact_from = referenced.artifact_dependencies
     return artifact, artifact_from
+
+
+def _artifact_from(value: Any, path: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    names = [value] if isinstance(value, str) else value
+    if not isinstance(names, list) or not names:
+        raise ConfigurationError(
+            f"{path}.artifact_from must be a step name or a non-empty list of them"
+        )
+    for index, name in enumerate(names):
+        where = f"{path}.artifact_from" + (
+            f"[{index}]" if isinstance(value, list) else ""
+        )
+        if not isinstance(name, str) or not _NAME.fullmatch(name):
+            raise ConfigurationError(f"{where} must be a normalized step name")
+        if name in names[:index]:
+            raise ConfigurationError(f"{where} names step {name!r} twice")
+    return tuple(names)
 
 
 def _parse_performer(

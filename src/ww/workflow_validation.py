@@ -242,9 +242,9 @@ def _validate_steps(
 ) -> None:
     """Validate one sibling list; ``enclosing`` holds earlier upper-level steps.
 
-    ``artifact_from`` resolves to the nearest earlier step of that name: an
-    earlier sibling first, then an earlier step of each enclosing level.  A
-    container's own step is visible to its nested steps only when its work
+    Each name in ``artifact_from`` resolves to the nearest earlier step of
+    that name: an earlier sibling first, then an earlier step of each enclosing
+    level.  A container's own step is visible to its nested steps only when its work
     has finished before them (``finished_containers``): an assessment to its
     outcomes and an items step to its substeps, but never an
     enclosing structural group. Such a container supplies its own artifact.
@@ -276,15 +276,13 @@ def _validate_steps(
             raise ConfigurationError(
                 f"step name {INIT_STEP_NAME!r} is reserved and must not be declared"
             )
-        if step.artifact_dependency is not None:
-            dependency = prior.get(step.artifact_dependency) or enclosing.get(
-                step.artifact_dependency
-            )
+        for name in step.artifact_dependencies:
+            dependency = prior.get(name) or enclosing.get(name)
             if dependency is None:
                 raise ConfigurationError(
                     f"step {step.name!r} in workflow {workflow_name!r} takes "
                     "artifact_from "
-                    f"step {step.artifact_dependency!r}, which is not an earlier "
+                    f"step {name!r}, which is not an earlier "
                     "step at its own or an enclosing level"
                 )
             if not _supplies_artifact(

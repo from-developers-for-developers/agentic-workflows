@@ -129,7 +129,7 @@ def test_a_goto_back_and_a_rule_selection(atlas: dict[str, Any]) -> None:
     develop = _step(loop["steps"], "develop")
     assert develop["rules_chosen_by"] == "plan"
     assert develop["explicit"] is True
-    assert develop["artifact_from"] == "plan"
+    assert develop["artifact_from"] == ["plan"]
     review = _step(loop["steps"], "review")
     assert (review["profile"], review["subagents"]) == ("code-reviewer", False)
     assessment = review["assessment"]

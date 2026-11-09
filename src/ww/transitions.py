@@ -1011,10 +1011,8 @@ def _expand_templates(
             ancestors=tuple(
                 concrete_path(path, segment) for path in template.ancestors
             ),
-            artifact_dependency=(
-                concrete_path(template.artifact_dependency, segment)
-                if template.artifact_dependency is not None
-                else None
+            artifact_dependencies=tuple(
+                concrete_path(path, segment) for path in template.artifact_dependencies
             ),
             assessment_parent=(
                 concrete_path(template.assessment_parent, segment)

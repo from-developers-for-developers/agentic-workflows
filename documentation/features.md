@@ -3692,6 +3692,10 @@ artifacts and hook artifacts keep their configured ownership and paths.
 
 `artifact_from` names an earlier artifact-producing step and adds its artifact
 to the later step's instruction; execution still follows the written order.
+A list, such as `artifact_from: [plan, research]`, names several: each resolves
+on its own by the rules below, and the instruction gives them in the order
+written, one paragraph each, with a step that supplied nothing named as such
+while the others are still given. A list may not be empty or name a step twice.
 Nested steps may refer to earlier siblings or to the nearest earlier step at
 any enclosing level, up through the workflow's top-level steps and `init`.
 An assessment outcome may name its assessment, and an items substep may name
@@ -3725,6 +3729,9 @@ workflows:
       - name: develop
         description: Implement the change.
         artifact_from: analysis   # investigate's or research's artifact
+      - name: review
+        description: Review the change against the analysis.
+        artifact_from: [analysis, develop]   # both, in this order
 ```
 
 Filesystem artifact names begin with each step's one-based declaration ordinal

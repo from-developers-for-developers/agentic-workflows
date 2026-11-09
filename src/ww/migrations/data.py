@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from ww import __version__
+from ww.migrations import plan_snapshot
 from ww.validation import is_strict_int
 
 # The key every persisted file records the version of ww that wrote it
@@ -177,7 +178,12 @@ FORMATS: dict[str, DataFormat] = _registry(
     DataFormat("task state", current=1),
     DataFormat("run state", current=1),
     # Nested in a run document, which records the writer for both.
-    DataFormat("plan snapshot", current=1, records_writer=False),
+    DataFormat(
+        "plan snapshot",
+        current=2,
+        records_writer=False,
+        migrations={1: plan_snapshot.artifact_dependency_lists},
+    ),
     DataFormat("execution state", current=1, records_writer=False),
     DataFormat("rule automation store", current=1),
     DataFormat("rule dispute log", current=1),

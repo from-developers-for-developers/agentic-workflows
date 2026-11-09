@@ -82,7 +82,7 @@ def test_per_child_stages_compile_as_templates_after_the_collection(
     assert isinstance(run.operation, ChildWorkflowRun)
     assert run.owner == "ww"
     review = stages[2]
-    assert review.artifact_dependency == "slices/{child}/implement"
+    assert review.artifact_dependencies == ("slices/{child}/implement",)
     assert set(review.dependencies) == {"ww.child.field.area", "ww.child.project"}
     assert "**Per-child stage:** repeats for every collected child" in render_plan(
         plan, False

@@ -279,13 +279,16 @@ rebuilds the recursive step projection. The executor therefore never has to
 infer hierarchy from display paths. Work items never expand the plan: an items
 container's substeps are compiled once (see [Workflow items](#workflow-items)).
 
-`artifact_from` is an artifact-reference hint, not a scheduler. Validation
-resolves it to the nearest earlier artifact-producing step: an earlier sibling
+`artifact_from` is an artifact-reference hint, not a scheduler. It names one
+step or a list of them (`artifact_dependencies` on the step and the plan item,
+in the order written), and validation resolves each name on its own to the
+nearest earlier artifact-producing step: an earlier sibling
 first, then an earlier step at each enclosing level. An assessment and an item
 collection are visible to their nested outcome or items substeps after their
 own work completes; a group has no artifact of its own. The compiler records
-the resolved plan path, and child materialization substitutes its concrete child
-path. The instruction builder names the dependency as `ww artifacts` lists it.
+each resolved plan path, and child materialization substitutes its concrete child
+path. The instruction builder names each dependency as `ww artifacts` lists it,
+in the written order.
 For a group or an assessment outside its chosen outcome, it selects the latest
 completed artifact beneath that path in the current run. An assessment with no
 artifact-producing outcome step falls back to its own artifact when available.
@@ -886,9 +889,14 @@ below the oldest is refused naming the ww to finish the task with. A document fo
 before defaults are restored; a nested format migrates its expanded mapping
 when it is decoded. `written_by` is in no digest or comparison. Decoders
 read every field that has a dataclass default as optional, so an additive
-field never needs a version. All of these formats use schema 1, and their
-chains are empty. A plan construct ww removed from its runtime is a
-`RemovedConstruct` in `ww.migrations.removals`, with a detector over the raw
+field never needs a version. All of these formats use schema 1, with empty
+chains, except the plan snapshot at schema 2: its one migration,
+`ww.migrations.plan_snapshot.artifact_dependency_lists`, rewrites every plan
+item mapping below the snapshot (plan, template plan, verification plans) from
+`artifact_dependency` to the list `artifact_dependencies`. The rewritten plan
+has a new digest, which `TaskRunAggregate.from_dict` re-derives, so the run
+document is rewritten on its next commit. A plan construct ww removed from its
+runtime is a `RemovedConstruct` in `ww.migrations.removals`, with a detector over the raw
 plan snapshot mapping: `decode_run_document` runs the detectors on the
 expanded run before decoding it, and a match raises `RemovedConstructError`
 (a `StateError` the filesystem adapter passes on unwrapped), naming the task,
