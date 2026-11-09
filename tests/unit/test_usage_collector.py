@@ -164,7 +164,7 @@ def test_a_session_charges_the_task_and_step_its_latest_command_put_it_on(
 
 
 def test_a_second_collection_reads_only_new_lines(tmp_path: Path, home: Path) -> None:
-    _log(tmp_path, _invocation("2026-11-01T10:00:30Z", "next", "TASK-1"))
+    _log(tmp_path, _invocation("2026-11-01T10:02:00Z", "next", "TASK-1"))
     path = claude_session(
         home,
         [
@@ -240,7 +240,11 @@ def test_a_finished_task_stops_taking_tokens(tmp_path: Path, home: Path) -> None
 def test_a_worker_subagent_charges_its_own_assignment(
     tmp_path: Path, home: Path
 ) -> None:
-    _log(tmp_path, _invocation("2026-11-01T10:02:00Z", "next", "TASK-1"))
+    _log(
+        tmp_path,
+        _invocation("2026-11-01T10:02:00Z", "next", "TASK-1"),
+        _invocation("2026-11-01T10:02:41Z", "instruction", "TASK-1"),
+    )
     claude_session(
         home,
         [
@@ -564,3 +568,36 @@ def test_a_task_this_ww_cannot_read_takes_tokens_without_a_step(tmp_path: Path) 
     assert times.place("TASK-9", "2026-10-01T10:30:00.000Z") == ("01-task", None)
     assert times.active("TASK-9", "2026-10-01T11:04:00.000Z")
     assert not times.active("TASK-9", "2026-10-01T12:00:00.000Z")
+
+
+def test_a_command_the_execution_log_never_saw_moves_nothing(
+    tmp_path: Path, home: Path
+) -> None:
+    tasks = {**TASKS, "TASK-2": {"steps": [("2026-11-01T09:00:00Z", "develop")]}}
+    _log(tmp_path, _invocation("2026-11-01T10:02:00Z", "next", "TASK-1"))
+    claude_session(
+        home,
+        [
+            claude_assistant(
+                "2026-11-01T10:02:00Z",
+                "m1",
+                usage=_tokens(5),
+                bash="./ww next TASK-1 --role manager",
+            ),
+            # A test the agent writes quotes another task's command.
+            claude_assistant(
+                "2026-11-01T10:03:00Z",
+                "m2",
+                usage=_tokens(7),
+                bash=(
+                    "cat > test_x.py <<'EOF'\n"
+                    "run('./ww complete TASK-2 --role worker')\nEOF"
+                ),
+            ),
+        ],
+    )
+
+    _collector(tmp_path, home, tasks).collect()
+
+    assert _by_place(tmp_path, "TASK-1") == {("develop", "manager", SESSION): 12}
+    assert _by_place(tmp_path, "TASK-2") == {}

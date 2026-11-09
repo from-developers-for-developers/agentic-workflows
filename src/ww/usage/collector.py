@@ -8,6 +8,9 @@ stopped last time and places each model response's tokens:
 - A session's tokens belong to the task its latest ww command put it on, on
   the step under way at the time, as ``worker`` when that command was a
   worker's and as ``manager`` or ``single`` otherwise.
+- A ww command counts only once the execution log shows it ran here, so a
+  command an agent merely wrote into a file or ran for another project
+  moves nothing.
 - Tokens before a session's next ww command wait: ``start``, and a worker's
   first ``instruction``, claim them for their task; any other command, or
   six hours without a line, leaves them outside every task.  A task whose
@@ -26,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+from bisect import bisect_left
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -74,6 +78,10 @@ RECENT = timedelta(days=7)
 HOOK_WINDOW = timedelta(hours=12)
 # How long a ``start`` that named no task may take to record the task.
 START_WINDOW = timedelta(minutes=15)
+# A command an agent ran appears in the execution log this soon: ww records
+# it as ``started`` before it does anything, in whole seconds.
+RAN_BEFORE = timedelta(seconds=5)
+RAN_AFTER = timedelta(minutes=10)
 
 
 @dataclass(frozen=True)
@@ -142,6 +150,7 @@ class Collector:
             for agent in (builtin_agents() if agents is None else agents)
         }
         self._invocations: list[Invocation] | None = None
+        self._invocation_times: list[str] | None = None
         self._known: tuple[tuple[str, ...], dict[str, str]] | None = None
         self._out: dict[tuple[Any, ...], _Totals] = {}
 
@@ -412,7 +421,7 @@ class Collector:
     ) -> None:
         at = instant(call.at)
         task = self._task(call, current.session, at)
-        if task is None:
+        if task is None or not self._ran(call.verb, task, at, current, file):
             return
         role = (
             "worker"
@@ -482,6 +491,42 @@ class Collector:
         own = [invocation for invocation in starts if invocation.session == session]
         chosen = (own or starts)[:1]
         return chosen[0].task if chosen else None
+
+    def _ran(
+        self, verb: str, task: str, at: str, current: FileState, file: LogFile
+    ) -> bool:
+        """Whether this project's execution log saw the command run.
+
+        A log quotes ww commands it never ran here: in a file it writes, a
+        test, a page it checks, or against another project's ``--root``.  A
+        command older than the execution log cannot be checked and counts.
+        """
+        invocations = self.invocations()
+        if not invocations or at < invocations[0].at:
+            return True
+        since = instant((_moment(at) - RAN_BEFORE).isoformat())
+        until = instant((_moment(at) + RAN_AFTER).isoformat())
+        # A Codex subagent runs with its own thread ID, a Claude Code one with
+        # its parent's session ID.
+        sessions = {None, current.session, file.key.rsplit(":", 1)[-1]}
+        start = bisect_left(self._times(), since)
+        for invocation in invocations[start:]:
+            if invocation.at > until:
+                return False
+            if (
+                invocation.command == verb
+                and invocation.task == task
+                and invocation.session in sessions
+            ):
+                return True
+        return False
+
+    def _times(self) -> list[str]:
+        if self._invocation_times is None:
+            self._invocation_times = [
+                invocation.at for invocation in self.invocations()
+            ]
+        return self._invocation_times
 
     def _tasks(self) -> tuple[tuple[str, ...], dict[str, str]]:
         if self._known is None:

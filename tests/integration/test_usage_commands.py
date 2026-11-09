@@ -112,6 +112,7 @@ def test_complete_collects_the_step_tokens_shown_by_usage_and_tasks(
 ) -> None:
     _start(project, capsys)
     _run(project, capsys, "next", "TASK-1", "--role", "manager")
+    # Each command is logged after the agent's line that runs it.
     claude_session(
         home,
         [
@@ -120,13 +121,19 @@ def test_complete_collects_the_step_tokens_shown_by_usage_and_tasks(
                 "m1",
                 usage=claude_usage(input=10, write=1000, read=20000, output=500),
                 bash="./ww instruction TASK-1 --role manager",
-            ),
+            )
+        ],
+    )
+    _run(project, capsys, "instruction", "TASK-1", "--role", "manager")
+    claude_session(
+        home,
+        [
             claude_assistant(
                 _now(),
                 "m2",
                 usage=claude_usage(input=5, output=100),
                 bash='./ww complete TASK-1 --role manager --summary "done"',
-            ),
+            )
         ],
     )
 

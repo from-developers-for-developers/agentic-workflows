@@ -623,7 +623,11 @@ that ID alone, never by a path or a working directory:
 command put it on, on the step under way when the model answered: as
 `worker` after a worker's command, and as `manager`, or `single` in the
 single runtime, otherwise. A response that runs a ww command did its work for
-that command's task. Tokens before a session's next command wait for it:
+that command's task. A command counts only once `.ww/executions.jsonl` shows
+it ran in this project, so a command an agent merely writes into a file or a
+test, or runs against another project's `--root`, moves nothing; a command
+older than the execution log cannot be checked and counts. Tokens before a
+session's next command wait for it:
 `start` claims the conversation that led to it for the new task, and a
 worker's first `instruction` claims the subagent's reading of its prompt; any
 other command leaves them outside every task, and so do six hours without a
