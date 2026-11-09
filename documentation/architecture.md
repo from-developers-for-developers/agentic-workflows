@@ -2574,7 +2574,8 @@ needs no rejection record; `read_maps_answers` reads the artifact's answers.
 
 `writes_maps(plan, item, config)` decides who answers: `run` for a
 `write_feature_maps` step, `step` for every agent step of a writable workflow
-without one, `None` otherwise; `maps_due_for` measures the matching change set
+of the project's without one (`falls_back`: not readonly, not one of ww's
+built-in workflows), `None` otherwise; `maps_due_for` measures the matching change set
 (`changed_paths` since the fork, or `touched_files` since the step's change
 mark, which `_change_mark` now also takes for a `step` answerer). The builder
 shows a `step` answerer's section only once something is due. The lint pass

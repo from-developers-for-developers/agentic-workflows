@@ -850,7 +850,9 @@ measured from the mark taken as it began, the same way a writing step answers
 for the run's. Its page gains the "Feature maps to update" section only once
 its changes touch a map or leave a changed file no map covers; a step with
 nothing due completes exactly as before. Readonly workflows, which change
-nothing, and steps no agent performs answer for nothing, and an explicit
+nothing, ww's own built-in workflows (`ww-migrate`, `ww-setup` and the like,
+which change ww's configuration rather than the project's features), and steps
+no agent performs answer for nothing, and an explicit
 writing step takes the answering over for its whole run. So the maps never
 fall behind in a workflow someone forgot to give a writing step; placing one
 costs fewer interruptions.

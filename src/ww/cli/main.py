@@ -39,7 +39,7 @@ from ww.errors import StateError, WwError
 from ww.executable import printed_executable, project_command, ww_command
 from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
-from ww.feature_map_steps import has_writing_step
+from ww.feature_map_steps import falls_back
 from ww.hooks import (
     answer_hook,
     hook_snippet,
@@ -405,8 +405,7 @@ def _feature_maps_lint(plans: tuple[WorkflowPlan, ...], config: ProjectConfig) -
         f"Note: workflow {plan.workflow!r} has no write_feature_maps step; each "
         "agent step that changes files brings the feature maps up to date itself.\n"
         for plan in plans
-        if not plan.readonly
-        and not has_writing_step(plan)
+        if falls_back(plan)
         and any(item.phase == "step" and item.owner == "agent" for item in plan.items)
     ]
     return "".join(lines)

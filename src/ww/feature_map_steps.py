@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
+from ww.builtin_workflows import builtin_workflow_names
 from ww.changes import take_mark, touched_files
 from ww.config_snapshots import GIT_EXTENSION
 from ww.executable import ww_command
@@ -78,21 +79,29 @@ def writes_maps(
     """Which changes ``item`` brings the feature maps up to date with.
 
     ``run``: a ``write_feature_maps`` step answers for the whole run's. ``step``:
-    in a writable workflow with no such step, every step an agent performs
-    answers for its own, so the maps never fall behind. ``None`` otherwise,
+    in a writable workflow of the project's with no such step, every step an
+    agent performs answers for its own, so the maps never fall behind. ww's
+    own built-in workflows change its configuration, not the project's
+    features, so they answer only through a writing step. ``None`` otherwise,
     and always while the project keeps no feature maps.
     """
     if not config.feature_maps or item.owner != "agent" or item.phase != "step":
         return None
     if item.write_feature_maps:
         return "run"
-    if plan.readonly or item.verifies is not None or has_writing_step(plan):
+    if item.verifies is not None or not falls_back(plan):
         return None
     return "step"
 
 
-def has_writing_step(plan: WorkflowPlan) -> bool:
-    return any(item.write_feature_maps for item in plan.items)
+def falls_back(plan: WorkflowPlan) -> bool:
+    """Whether every agent step of ``plan`` answers for its own changes: a
+    writable workflow of the project's without a ``write_feature_maps`` step."""
+    return not (
+        plan.readonly
+        or plan.workflow in builtin_workflow_names()
+        or any(item.write_feature_maps for item in plan.items)
+    )
 
 
 def maps_due_for(

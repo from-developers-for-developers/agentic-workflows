@@ -10,10 +10,14 @@ from pathlib import Path
 
 import pytest
 
+from ww.builtin_workflows import builtin_workflow_names
 from ww.cli import main
+from ww.config import load_configuration
 from ww.errors import StateError
+from ww.feature_map_steps import falls_back
 from ww.features import read_task_list
 from ww.output_adapters.markdown import MarkdownOutputAdapter
+from ww.plan import compile_workflow_plan
 from ww.service import WorkflowService
 from ww.storage import Storage
 
@@ -173,3 +177,15 @@ def test_lint_says_who_brings_the_maps_up_to_date(tmp_path: Path, capsys) -> Non
     (tmp_path / "ww.json").write_text('{"feature_maps": false}', "utf-8")
     assert main(["--root", str(tmp_path), "lint"]) == 0
     assert "feature_maps" not in capsys.readouterr().out
+
+
+def test_ww_s_own_workflows_do_not_fall_back(tmp_path: Path) -> None:
+
+    _project(tmp_path, PLAIN)
+    configuration = load_configuration(tmp_path / "ww.yaml")
+    names = {workflow.name for workflow in configuration.workflows}
+
+    for name in sorted(names & builtin_workflow_names()):
+        plan = compile_workflow_plan(configuration, tmp_path, name, "codex")
+        assert not falls_back(plan), name
+    assert falls_back(compile_workflow_plan(configuration, tmp_path, "task", "codex"))
