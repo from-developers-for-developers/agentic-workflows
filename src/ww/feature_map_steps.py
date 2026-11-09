@@ -1,19 +1,25 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Feature maps in a run: what its reading steps reported, what a writing
-step must answer for, and the task lists it leaves behind.
+"""Feature maps in a run: what its reading steps reported, what a step that
+writes them must answer for, and the task lists it leaves behind.
 
-The run's change set is every file changed in its workspace since the run's
-branch forked from its ww/git base branch (or since ``HEAD`` without one),
-the maps' own files left out. The page of a writing step and its completion
-both read it from here, so they always agree on what is due.
+A ``write_feature_maps`` step answers for the run's change set: every file
+changed in its workspace since the run's branch forked from its ww/git base
+branch (or since ``HEAD`` without one). In a workflow without one, every agent
+step answers for its own change set, since the mark taken as it began. The
+maps' own files never count. A step's page and its completion both read what
+is due from here, so they always agree.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
+from ww.builtin_workflows import builtin_workflow_names
+from ww.changes import take_mark, touched_files
 from ww.config_snapshots import GIT_EXTENSION
+from ww.executable import ww_command
 from ww.execution_models import ExecutionState
 from ww.features import (
     FEATURE_MAPS_HEADING,
@@ -25,7 +31,7 @@ from ww.features import (
     read_maps_report,
     record_task,
 )
-from ww.plan import WorkflowPlan
+from ww.plan import PlanItem, WorkflowPlan
 from ww.project_config import ProjectConfig
 from ww.workspace import resolve_workspace
 
@@ -67,16 +73,61 @@ def maps_reports(
     return tuple(reports)
 
 
-def run_maps_due(
+def writes_maps(
+    plan: WorkflowPlan, item: PlanItem, config: ProjectConfig
+) -> Literal["run", "step"] | None:
+    """Which changes ``item`` brings the feature maps up to date with.
+
+    ``run``: a ``write_feature_maps`` step answers for the whole run's. ``step``:
+    in a writable workflow of the project's with no such step, every step an
+    agent performs answers for its own, so the maps never fall behind. ww's
+    own built-in workflows change its configuration, not the project's
+    features, so they answer only through a writing step. ``None`` otherwise,
+    and always while the project keeps no feature maps.
+    """
+    if not config.feature_maps or item.owner != "agent" or item.phase != "step":
+        return None
+    if item.write_feature_maps:
+        return "run"
+    if item.verifies is not None or not falls_back(plan):
+        return None
+    return "step"
+
+
+def falls_back(plan: WorkflowPlan) -> bool:
+    """Whether every agent step of ``plan`` answers for its own changes: a
+    writable workflow of the project's without a ``write_feature_maps`` step."""
+    return not (
+        plan.readonly
+        or plan.workflow in builtin_workflow_names()
+        or any(item.write_feature_maps for item in plan.items)
+    )
+
+
+def maps_due_for(
     root: Path,
     state: ExecutionState,
     plan: WorkflowPlan,
+    item: PlanItem,
     config: ProjectConfig,
     read_artifact: Callable[[str], str],
 ) -> MapsDue | None:
-    """What a writing step of this run answers for; ``None`` without Git."""
+    """What ``item`` answers for (see :func:`writes_maps`); ``None`` when it
+    writes no maps, or without Git to measure its changes."""
+    scope = writes_maps(plan, item, config)
+    if scope is None:
+        return None
     directory = resolve_workspace(root, state.working_directory) or root
-    changed = changed_paths(directory, run_base_branch(config, plan))
+    if scope == "run":
+        changed = changed_paths(directory, run_base_branch(config, plan))
+    else:
+        since = state.item_executions[state.cursor].change_mark
+        now = take_mark(directory)
+        changed = (
+            touched_files(directory, since, now)
+            if since is not None and now is not None
+            else None
+        )
     if changed is None:
         return None
     gaps = tuple(
@@ -106,8 +157,9 @@ def refusal(due: MapsDue, artifact: str | None) -> str | None:
     if not problems:
         return None
     return (
-        "the feature maps are not up to date with this run's changes.\n\n"
-        + "\n".join(problems)
+        "the feature maps are not up to date with these changes; bring them up "
+        f"to date (`{ww_command()} features show <name>` prints a map) and "
+        "complete again.\n\n" + "\n".join(problems)
     )
 
 

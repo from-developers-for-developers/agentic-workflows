@@ -42,7 +42,7 @@ from ww.execution_models import (
     PlanItemExecution,
     PlanSnapshot,
 )
-from ww.feature_map_steps import run_maps_due
+from ww.feature_map_steps import maps_due_for, writes_maps
 from ww.gotos import allowed_targets
 from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
@@ -702,18 +702,24 @@ class InstructionBuilder:
         item: PlanItem,
         record: PlanItemExecution,
     ) -> FeatureMapsDue | None:
-        """What an in-progress writing step answers for, read as completion
-        reads it."""
-        if not item.write_feature_maps or item.owner != "agent":
-            return None
+        """What an in-progress step that writes the maps answers for, read as
+        its completion reads it.
+
+        A ``write_feature_maps`` step always shows the section. A step that
+        answers for its own changes only in a workflow without one shows it
+        once something is due, so the other steps' pages stay as they were.
+        """
         if record.status != "in_progress":
             return None
         config = load_project_config(self.config.directory / SETTINGS_FILE)
-        if not config.feature_maps:
+        scope = writes_maps(plan, item, config)
+        if scope is None:
             return None
-        due = run_maps_due(
-            self.root, state, plan, config, self.tasks.read_execution_artifact
+        due = maps_due_for(
+            self.root, state, plan, item, config, self.tasks.read_execution_artifact
         )
+        if scope == "step" and (due is None or due.empty):
+            return None
         if due is None:
             return FeatureMapsDue(measured=False)
         return FeatureMapsDue(

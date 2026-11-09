@@ -96,11 +96,12 @@ from ww.execution_models import (
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
 from ww.feature_map_steps import (
+    maps_due_for,
     maps_reports,
     record_run_tasks,
     refusal,
     run_base_branch,
-    run_maps_due,
+    writes_maps,
 )
 from ww.features import MapsReport
 from ww.feedback import FeedbackStore
@@ -4976,11 +4977,13 @@ class WorkflowService:
         A refusal is an error of the command, like a missing artifact: nothing
         is recorded and no fix attempt is counted.
         """
-        config = load_project_config(self.storage.project_config_path)
-        if not item.write_feature_maps or not config.feature_maps:
-            return
-        due = run_maps_due(
-            self.storage.root, state, plan, config, self.tasks.read_execution_artifact
+        due = maps_due_for(
+            self.storage.root,
+            state,
+            plan,
+            item,
+            load_project_config(self.storage.project_config_path),
+            self.tasks.read_execution_artifact,
         )
         if due is None:
             return
@@ -5018,10 +5021,19 @@ class WorkflowService:
         or a directory without git, has none. A step with rules needs it even
         without checks: its verifiers look at what it changed. In a readonly
         run every agent item takes one: its completion must have changed
-        nothing.
+        nothing. So does a step that answers for its own changes to the
+        feature maps (:func:`writes_maps`).
         """
         if (
-            not (item.checks or item.rules or plan.readonly)
+            not (
+                item.checks
+                or item.rules
+                or plan.readonly
+                or writes_maps(
+                    plan, item, load_project_config(self.storage.project_config_path)
+                )
+                == "step"
+            )
             or state.item_executions[state.cursor].change_mark
         ):
             return None
