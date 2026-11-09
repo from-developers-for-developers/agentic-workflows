@@ -181,7 +181,8 @@ def render_plan(plan: WorkflowPlan, json_output: bool) -> str:
             [
                 "**Requested execution settings**",
                 "",
-                f"- Agent: `{item.requested_agent or plan.agent}`",
+                f"- Agent: `{item.requested_agent or plan.agent}`"
+                + (", run headless by ww" if item.requested_run == "headless" else ""),
                 *requested_setting_lines(
                     item.requested_model, item.requested_reasoning
                 ),

@@ -69,7 +69,9 @@ settings files, never from a snapshot, since it says where snapshots come from.
 ``agents`` declares simple agents ww has no adapter for, by name, with data
 only: their title, project directory, instruction file, skill prefix, and
 question tool (see :mod:`ww.agents.generic`). A declared agent is then
-addressed by its bare name in ``--agent`` and in a step's ``agent:``.
+addressed by its bare name in ``--agent`` and in a step's ``agent:``.  A
+built-in agent's entry takes only ``headless``: how ww runs it headless
+(see :func:`ww.agents.launch.parse_headless_settings`).
 
 ``task_format`` is the generated task ID format: a template over the
 ``{{timestamp}}``, ``{{digit}}``, and ``{{uuid}}`` placeholders, or ``explicit`` to
@@ -88,12 +90,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
-from ww.agents.generic import DeclaredAgent, parse_declarations
+from ww.agents.generic import DeclaredAgent, parse_agent_settings
+from ww.agents.launch import HeadlessSettings
 from ww.agents.registry import BUILTIN_NAMES as BUILTIN_AGENT_NAMES
 from ww.builtin_workflows import builtin_workflow_names
 from ww.config_files import (
@@ -421,6 +425,8 @@ class ProjectConfig:
     config_ref: str | Literal[False] | None = None
     # Agents the project describes with data, addressed by their bare names.
     agents: tuple[DeclaredAgent, ...] = ()
+    # How each agent runs headless, by name: ``agents.<name>.headless``.
+    headless: Mapping[str, HeadlessSettings] = field(default_factory=dict)
     # Each settings file's own extension sections, user to local, so an
     # extension's settings migrations run file by file. Empty for a
     # configuration made in memory, whose ``extensions`` is then the one level.
@@ -445,6 +451,10 @@ class ProjectConfig:
     def workflow_enabled(self, name: str) -> bool:
         """Whether a built-in workflow is offered in this project."""
         return name not in self.disabled_workflows
+
+    def headless_settings(self, agent: str) -> HeadlessSettings:
+        """How ``agent`` runs headless: its settings, else every default."""
+        return self.headless.get(agent) or HeadlessSettings()
 
     def builtin_settings(self, name: str) -> dict[str, str]:
         """Return a built-in's complete model/reasoning request."""
@@ -798,6 +808,9 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
                     f"{path}.builtins.{name}.{hint_name} must be a non-empty string"
                 )
         normalized[name] = dict(value)
+    declared, headless = parse_agent_settings(
+        raw.get("agents"), path, BUILTIN_AGENT_NAMES
+    )
     return ProjectConfig(
         extensions=extensions,
         builtins=normalized,
@@ -817,7 +830,8 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         executable=_parse_executable(raw.get("executable"), path),
         task_format=_parse_task_format(raw.get("task_format"), path),
         config_ref=_parse_config_ref(raw.get("config_ref"), path),
-        agents=parse_declarations(raw.get("agents"), path, BUILTIN_AGENT_NAMES),
+        agents=declared,
+        headless=headless,
         **_parse_rules(raw.get("rules"), path),
     )
 

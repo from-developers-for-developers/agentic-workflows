@@ -2589,6 +2589,19 @@ model list is cached by `CatalogCache` in `.ww/agents/catalogs/<agent>.json`
 and used only while the same binary reports the same version. Probes run
 with no input and a short timeout through a `Runner`, which tests replace.
 
+A step's transport is parsed once at the frontend (`_agent_request` in
+`ww.config.values`): `HandlerDefinition.run` and `WorkflowDefinition.run` are
+set together with `agent` and are `None` when it is inherited. The compiler's
+`ExecutionHints` carries `run` with the agent, so a string agent resets it to
+`session`, and `WorkflowPlanCompiler._requested_run` records it on the plan
+(`PlanItem.requested_run`, `ParallelBranch.requested_run`, omitted from the
+persisted plan when `session`). It applies only to a worker's agent step;
+there it resolves the agent's headless launcher and turns the errors of
+`selection_findings` (without a model list) and `settings_findings` into a
+`ConfigurationError`. `agents.<builtin>.headless` in `ww.json` is parsed by
+`parse_agent_settings` and `parse_headless_settings` into
+`ProjectConfig.headless`, read through `headless_settings(name)`.
+
 The built-in launchers are `ClaudeCodeHeadless`, `CodexHeadless` and
 `CursorHeadless`, beside their agents. Reasoning values pass through
 unchanged: Claude Code's `--effort`, Codex's `model_reasoning_effort`, and

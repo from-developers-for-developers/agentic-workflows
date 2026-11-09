@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 if TYPE_CHECKING:
     from ww.actions import Commands, DefinedAction
 
+from ww.agents.launch import Transport
 from ww.contracts import (
     HookFailure,
     HookPhase,
@@ -318,6 +319,8 @@ class HandlerDefinition:
     update_item: tuple[ItemFieldUpdate, ...] = ()
     outputs: tuple[str, ...] = ()
     agent: str | None = None
+    # How ``agent`` runs: set together with it, ``None`` when it is inherited.
+    run: Transport | None = None
     model: str | None = None
     reasoning: str | None = None
     # The directory this handler or step works in; ``None`` leaves the
@@ -728,6 +731,7 @@ class WorkflowDefinition:
     hooks: tuple[HookDefinition, ...] = ()
     modes: tuple[str, ...] = ()
     agent: str | None = None
+    run: Transport | None = None
     model: str | None = None
     reasoning: str | None = None
     profile: str | None = None

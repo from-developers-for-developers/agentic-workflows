@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any, cast, get_args
 
+from ww.agents.launch import TRANSPORTS, Transport
 from ww.contracts import StepRole
 from ww.errors import ConfigurationError
 from ww.extensions import is_extension_reference
@@ -99,6 +100,38 @@ def _optional_agent(mapping: dict[str, Any], key: str, path: str) -> str | None:
     if value == "auto":
         raise ConfigurationError(f"{path}.{key} must not be 'auto'")
     return value
+
+
+def _agent_request(mapping: dict[str, Any], path: str) -> dict[str, Any]:
+    """``agent``, as the agent's name and the transport it runs through.
+
+    The string form names the agent and runs it in a session; the mapping
+    form ``{name, run}`` may choose another transport.  Both are ``None``
+    when the entry sets no agent, so it inherits both.
+    """
+    value = mapping.get("agent")
+    if not isinstance(value, dict):
+        agent = _optional_agent(mapping, "agent", path)
+        return {"agent": agent, "run": "session" if agent is not None else None}
+    where = f"{path}.agent"
+    unknown = set(value) - {"name", "run"}
+    if unknown:
+        raise ConfigurationError(
+            f"{where} has unknown key(s): {', '.join(sorted(map(str, unknown)))}; "
+            "it takes name and run"
+        )
+    agent = _optional_agent(value, "name", where)
+    if agent is None:
+        raise ConfigurationError(f"{where}.name is required")
+    run = value.get("run", "session")
+    if run not in TRANSPORTS:
+        raise ConfigurationError(f"{where}.run must be one of: {', '.join(TRANSPORTS)}")
+    if run == "api":
+        raise ConfigurationError(
+            f"{where}.run: api is reserved and not supported yet; use session "
+            "or headless"
+        )
+    return {"agent": agent, "run": cast(Transport, run)}
 
 
 def _role(mapping: dict[str, Any], path: str) -> StepRole | None:

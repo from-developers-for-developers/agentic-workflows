@@ -338,6 +338,8 @@ def _node(
         "handler": item.registered_handler,
         "model": item.model if kind in {"worker", "assess"} else None,
         "reasoning": item.reasoning if kind in {"worker", "assess"} else None,
+        # The agent ww starts itself, when it runs one headless.
+        "headless": item.requested_agent if item.requested_run == "headless" else None,
         "profile": item.profile,
         "subagents": item.subagents,
         "explicit": item.explicit,
@@ -366,6 +368,9 @@ def _node(
                 "description": branch.description,
                 "model": branch.requested_model,
                 "reasoning": branch.requested_reasoning,
+                "headless": branch.requested_agent
+                if branch.requested_run == "headless"
+                else None,
             }
             for branch in item.parallel_branches
         ]

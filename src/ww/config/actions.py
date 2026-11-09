@@ -25,6 +25,7 @@ from ww.workflow_config import (
 from ww.workspace import WORKDIRS, Workdir
 
 from .values import (
+    _agent_request,
     _description,
     _mapping,
     _name,
@@ -152,7 +153,7 @@ def _parse_handler(
             action=action,
             **_failure_policy(mapping, path),
             **handler_values(mapping, f"handler {name!r}"),
-            agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
+            **_agent_request(mapping, f"handler {name!r}"),
             model=_optional_string(mapping, "model", f"handler {name!r}"),
             reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
             workdir=_optional_workdir(mapping, f"handler {name!r}"),
@@ -196,7 +197,7 @@ def _parse_handler(
         action=typed_action,
         **_failure_policy(mapping, path),
         **handler_values(mapping, f"handler {name!r}"),
-        agent=_optional_agent(mapping, "agent", f"handler {name!r}"),
+        **_agent_request(mapping, f"handler {name!r}"),
         model=_optional_string(mapping, "model", f"handler {name!r}"),
         reasoning=_optional_string(mapping, "reasoning", f"handler {name!r}"),
         workdir=_optional_workdir(mapping, f"handler {name!r}"),

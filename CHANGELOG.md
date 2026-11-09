@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
+- Added: `agent: {name: codex, run: headless}` marks a step whose agent ww will run headless, checked when the workflow compiles (reasoning and `cheapest` against what the agent takes), with each agent's headless settings under `agents.<name>.headless` in `ww.json` and `ww.local.json`. `b390309`
 - Added: `ww agents --check` says whether Claude Code, Codex and Cursor can be run headless here: each program's path, version, login, and the models and reasoning levels it takes. `ca8df21`
 - Added: `parallel: true` on a group of steps runs them at once, each in its own subagent with its own model and reasoning, as one step that completes once every branch has recorded its artifact. `1dc16ba`
 - Added: the built-in `ww-map-features` workflow writes feature maps for existing code or refreshes stale ones, changing nothing outside `.ww/features/`; `init` suggests it while no map exists, and `ww-suggest` and `ww-solve` give proposed code workflows the feature-map settings. `4ed195e`

@@ -10,7 +10,6 @@ from ww.agents import (
     AgentRegistry,
     CatalogCache,
     HeadlessLauncher,
-    HeadlessSettings,
     Readiness,
 )
 from ww.extensions import ExtensionRegistry
@@ -48,7 +47,9 @@ def render_agent_checks(
             )
             ok = False
             continue
-        readiness = launcher.probe(HeadlessSettings(), cache=cache)
+        readiness = launcher.probe(
+            extensions.config.headless_settings(agent.name), cache=cache
+        )
         ok = ok and readiness.ready
         sections.append(_section(agent, launcher, readiness))
     if not sections:
