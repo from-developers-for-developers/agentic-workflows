@@ -734,7 +734,7 @@ might use. A map holds at most 25 entries; past that, split the feature.
 ww never parses a programming language. It checks that a path exists, a glob
 matches at least one file, a `#Name` appears in the file as a whole word (not
 inside a longer identifier) and a `#Heading` is one of the Markdown file's
-headings. It also checks each map's shape: unknown fields, a name that does
+`#` (ATX) headings; underlined headings do not count. It also checks each map's shape: unknown fields, a name that does
 not match its file, a summary over one line, a repeated entry, an alias
 another map already uses as its name or alias, and `uses` naming no map.
 

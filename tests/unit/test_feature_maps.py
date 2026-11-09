@@ -239,3 +239,20 @@ def test_the_template_is_a_valid_map_shape(tmp_path: Path) -> None:
     shape = [problem.message for problem in load_feature_maps(root).problems]
 
     assert shape == []
+
+
+def test_a_map_naming_another_is_keyed_by_its_file_and_shadows_nothing(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _map(root, "agents", "name: agents\nsummary: The real one.\nparts: [src/app/]\n")
+    _map(root, "hooks", "name: agents\nsummary: Misnamed.\nparts: [src/app/]\n")
+
+    maps = load_feature_maps(root)
+
+    assert [feature.name for feature in maps.maps] == ["agents", "hooks"]
+    agents = maps.get("agents")
+    assert agents is not None and agents.summary == "The real one."
+    assert "name 'agents' must match the file name 'hooks'" in [
+        problem.message for problem in maps.problems
+    ]

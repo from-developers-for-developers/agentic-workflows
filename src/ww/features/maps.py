@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -113,7 +113,7 @@ class FeatureMaps:
 
     root: Path
     maps: tuple[FeatureMap, ...] = ()
-    problems: tuple[Problem, ...] = field(default=())
+    problems: tuple[Problem, ...] = ()
 
     def get(self, name: str) -> FeatureMap | None:
         return next((found for found in self.maps if found.name == name), None)
@@ -169,6 +169,8 @@ def _read(path: Path, root: Path) -> tuple[FeatureMap | None, list[Problem]]:
         name = path.stem
     elif name != path.stem:
         problems.append(f"name {name!r} must match the file name {path.stem!r}")
+        # Keyed by its file, the map never shadows the one of that name.
+        name = path.stem
     summary = raw.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         problems.append("summary must be one line of text")

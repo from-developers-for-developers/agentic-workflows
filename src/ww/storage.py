@@ -318,7 +318,7 @@ class Storage:
         # Reads and rewrites .gitignore; the project scope held by
         # initialize_project keeps that pair together.
         path = self.root / ".gitignore"
-        existing = _read_gitignore(path)
+        existing = _read_text(path)
         updated, added, replaced = with_runtime_ignored(
             existing, (FEATURE_MAPS_IGNORE_LINE,) if feature_maps else ()
         )
@@ -340,7 +340,7 @@ class Storage:
         path = self.root / ".gitattributes"
         if not path.exists() and not (self.root / ".git").exists():
             return False
-        existing = _read_gitignore(path)
+        existing = _read_text(path)
         if FEATURE_MAPS_ATTRIBUTES_LINE in (
             line.strip() for line in existing.splitlines()
         ):
@@ -359,7 +359,7 @@ class Storage:
         path = self.root / ".gitignore"
         if not path.exists() and not (self.root / ".git").exists():
             return ()
-        existing = _read_gitignore(path)
+        existing = _read_text(path)
         entries = {line.strip() for line in existing.splitlines()}
         missing = tuple(
             pattern for pattern in LOCAL_IGNORE_PATTERNS if pattern not in entries
@@ -502,8 +502,9 @@ def with_runtime_ignored(
     return updated, tuple(added), tuple(dict.fromkeys(whole))
 
 
-def _read_gitignore(path: Path) -> str:
-    """A .gitignore's text with its own line endings, or ``""`` when absent."""
+def _read_text(path: Path) -> str:
+    """A text file such as .gitignore with its own line endings, or ``""``
+    when absent."""
     return path.read_bytes().decode("utf-8") if path.exists() else ""
 
 
