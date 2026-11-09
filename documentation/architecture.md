@@ -2566,9 +2566,9 @@ result, kept apart from how the agent starts: `ResultRecording.WORKER` for a
 headless agent, an ordinary worker that runs `./ww complete` itself, and
 `ResultRecording.WW` for an agent that cannot run ww's commands. A
 `LaunchRequest` carries the worker bootstrap as the prompt, the workspace,
-the model and reasoning, ww's state directory (which the agent must be able
-to write), and the agent's `HeadlessSettings`, whose every value has a
-neutral default.
+the model and reasoning, the directories outside the workspace the agent must
+be able to write (`writable`: ww's state and the repository's Git directory),
+and the agent's `HeadlessSettings`, whose every value has a neutral default.
 
 `headless.py` holds what every program shares. A `HeadlessLauncher`
 subclass states its program's facts (default binary name, `minimum_version`
@@ -2603,7 +2603,47 @@ there it resolves the agent's headless launcher and turns the errors of
 `ProjectConfig.headless`, read through `headless_settings(name)`.
 
 The built-in launchers are `ClaudeCodeHeadless`, `CodexHeadless` and
-`CursorHeadless`, beside their agents. Reasoning values pass through
+`CursorHeadless`, beside their agents.
+
+### Headless runs
+
+`../src/ww/headless/` runs them. `HeadlessRuns` (`runs.py`) sits at the
+service's public boundary: `WorkflowService.next` is `_advance` followed by
+`headless.dispatch(..., launch=True)`, and the manager's `instruction` is
+`_page` followed by `dispatch(..., launch=False)`. The assignment engine is
+untouched: it issues the assignment (with its token in `auto`) as for any
+worker; `dispatch` recognises a worker dispatch of a `requested_run ==
+"headless"` item and, once per assignment, checks the agent's program
+(`HeadlessLauncher.check`, with the catalog cache) and starts it with the
+worker bootstrap as its prompt (`worker_prompt`). The result is an
+`Instruction` with a `HeadlessView` (`not_started`, `refused`, `running`,
+`failed`), which `output_adapters/headless_pages.py` renders instead of the
+dispatch page. A run that was given back (`launch --session`) leaves the page
+as it was.
+
+Each start is a `LaunchRecord` (`records.py`), the run's single authority,
+at `.ww/tasks/<task>/runs/<run>/headless/<id>.json`, with the agent's output
+(`<id>.out.jsonl`) and errors (`<id>.err.log`) beside it; the environment is
+never written down. `HeadlessRuns` writes the record and starts the
+supervisor (`python -m ww.headless.supervisor`) detached, in a session of its
+own, with an environment that drops every known agent's session variable
+(so the agent's ww calls carry its own session, not the host's) and adds the
+settings' `env` and `WW_HEADLESS_LAUNCH`. The supervisor starts the agent in
+another session with no input and the workspace as its directory, copies its
+output to the log, feeds each JSON line to the launcher's `stream_facts` for
+the session ID and usage, stops the agent's process group past
+`timeout_minutes` or `idle_timeout_minutes`, and records the exit. Nothing
+else writes a record while its run goes on, except `stop_all`, which `reset`
+calls after killing the supervisor and the agent.
+
+`WorkflowService.wait` re-reads the manager's page every two seconds until the
+run is no longer going (the step completed and moved on, or the run ended
+without completing it) or the bound (`WW_OPERATOR_WAIT`) passes.
+`WorkflowService.launch` starts the step's agent again (`relaunch`, resuming
+the last record's session with the launcher's resume command) or marks the
+last record `released`. The CLI refuses every manager command, and `start`,
+`next`, `wait`, `launch`, `start-child` and `reset`, in a process whose
+environment has `WW_HEADLESS_LAUNCH`: a headless agent performs one step. Reasoning values pass through
 unchanged: Claude Code's `--effort`, Codex's `model_reasoning_effort`, and
 none for Cursor, whose model names carry it. `ww agents --check`
 (`ww.cli.agent_checks`) probes each agent that has a headless launcher, or

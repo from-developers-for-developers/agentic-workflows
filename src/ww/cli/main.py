@@ -40,6 +40,7 @@ from ww.executable import printed_executable, project_command, ww_command
 from ww.execution_models import ExecutionState
 from ww.extensions import ExtensionContext, ExtensionRegistry
 from ww.feature_map_steps import falls_back
+from ww.headless import LAUNCH_VARIABLE
 from ww.hooks import (
     answer_hook,
     hook_snippet,
@@ -159,6 +160,10 @@ from .prompts import (
 from .updates import announce, render_updates
 
 _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
+# What an agent ww started headless never runs: it is a worker for one step.
+_HEADLESS_REFUSED_COMMANDS = frozenset(
+    {"start", "next", "wait", "launch", "start-child", "reset"}
+)
 # Discovery, linting, and planning are side-effect free: no task state, artifacts,
 # commands, or execution-log records are created.
 _READ_ONLY_COMMANDS = frozenset(
@@ -1743,6 +1748,24 @@ def _instruction_page(context: _Context) -> _Outcome:
     )
 
 
+def _wait(context: _Context) -> _Outcome:
+    """Wait for the current step's headless run, within the host's bound."""
+    return _instruction_outcome(
+        context.service.wait(context.task_id, operator_wait_seconds()),
+        context.args.json_output,
+    )
+
+
+def _launch(context: _Context) -> _Outcome:
+    args = context.args
+    return _instruction_outcome(
+        context.service.launch(
+            context.task_id, resume=args.resume, session=args.session
+        ),
+        args.json_output,
+    )
+
+
 def _hook(context: _Context) -> _Outcome:
     """Install, remove, or show ww's hooks for one agent."""
     args = context.args
@@ -2184,6 +2207,8 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "workflow-feedback": _workflow_feedback,
     "fail": _fail,
     "status": _status,
+    "wait": _wait,
+    "launch": _launch,
     "instruction": _instruction,
     "requirements": _requirements,
     "handoff": _handoff,
@@ -2223,6 +2248,17 @@ def main(argv: list[str] | None = None) -> int:
         and args.command in _MANAGER_ONLY_COMMANDS
     ):
         print(f"ww error: {args.command} is a manager-role command", file=sys.stderr)
+        return 1
+    if os.environ.get(LAUNCH_VARIABLE) and (
+        getattr(args, "role", None) == "manager"
+        or args.command in _HEADLESS_REFUSED_COMMANDS
+    ):
+        print(
+            f"ww error: this agent was started headless by ww for one step "
+            f"(launch {os.environ[LAUNCH_VARIABLE]}); it performs that step as a "
+            f"worker and runs no {args.command} as the manager",
+            file=sys.stderr,
+        )
         return 1
     if args.command == "next":
         if args.force and not args.force_reason:

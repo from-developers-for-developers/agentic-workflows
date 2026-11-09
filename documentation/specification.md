@@ -617,6 +617,16 @@ line per entry, `- <summary> (<source>, <short SHAs>)`, and the JSON has a
 `direct_work` array of the stored entries. A task with direct work and no run
 reports `workflow: none` and the step state `direct work only`.
 
+**`wait <task>`** waits for the headless run of the task's current step (see
+[Running agents headless](features.md#running-agents-headless)) and prints the
+manager's page once the run is no longer going, or the same page after
+`WW_OPERATOR_WAIT` seconds. **`launch <task>`** starts the current step's
+agent again after a headless run ended without completing it;
+`--resume` continues that run's agent session, and `--session` gives the step
+back to a session instead. Both are the manager's; a process started headless
+by ww (`WW_HEADLESS_LAUNCH` set) is refused them and every `--role manager`
+command.
+
 **`lookup [<task>] --agent <agent>`** is read-only and answers one next step:
 `continue` (the task has an open run: its `instruction` command),
 `direct` (work directly, then the `record` command filled in, with the task ID

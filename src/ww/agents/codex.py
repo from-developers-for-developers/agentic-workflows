@@ -216,7 +216,8 @@ class CodexHeadless(HeadlessLauncher):
     standard input when it is not a terminal, so ww gives it none.
 
     The sandbox confines writes to the workspace, and ww's state lives
-    outside it, so ``edit`` adds ww's state directory as writable and
+    outside it, so ``edit`` makes the request's ``writable`` directories (ww's
+    state, the Git directory) writable too, and
     ``read-only`` is not offered: its worker could not record its result.
     ``codex exec resume`` takes no sandbox or directory flags, so a resume
     sets the same sandbox through configuration and runs in the workspace.
@@ -296,8 +297,9 @@ class CodexHeadless(HeadlessLauncher):
 
     def launch_command(self, binary: str, request: LaunchRequest) -> list[str]:
         sandbox = ["-s", self._SANDBOX[request.settings.permissions]]
-        if request.settings.permissions == "edit" and request.state_directory:
-            sandbox += ["--add-dir", str(request.state_directory)]
+        if request.settings.permissions == "edit":
+            for directory in request.writable:
+                sandbox += ["--add-dir", str(directory)]
         return [
             binary,
             "exec",
@@ -315,8 +317,8 @@ class CodexHeadless(HeadlessLauncher):
     ) -> list[str]:
         mode = self._SANDBOX[request.settings.permissions]
         sandbox = ["-c", f'sandbox_mode="{mode}"']
-        if request.settings.permissions == "edit" and request.state_directory:
-            roots = json.dumps([str(request.state_directory)])
+        if request.settings.permissions == "edit" and request.writable:
+            roots = json.dumps([str(directory) for directory in request.writable])
             sandbox += ["-c", f"sandbox_workspace_write.writable_roots={roots}"]
         return [
             binary,

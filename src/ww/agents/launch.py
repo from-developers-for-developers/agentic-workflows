@@ -82,9 +82,10 @@ class LaunchRequest:
     model: str | None = None
     reasoning: str | None = None
     settings: HeadlessSettings = field(default_factory=HeadlessSettings)
-    # ww's own state directory (``.ww``), which the worker must be able to
-    # write even where the agent confines writes to its workspace.
-    state_directory: Path | None = None
+    # Directories outside the workspace the worker must be able to write,
+    # such as ww's state (``.ww``) and the repository's Git directory, where
+    # the agent confines writes to its workspace.
+    writable: tuple[Path, ...] = ()
 
 
 class Launcher(ABC):

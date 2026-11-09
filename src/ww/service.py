@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -114,6 +115,7 @@ from ww.gotos import (
     take_goto,
 )
 from ww.handler_repairs import close_assignment, needs_repair, request_repair
+from ww.headless import HeadlessRuns
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.instructions.handoff import handoff_block
@@ -409,6 +411,10 @@ def _selection_entries(
 READONLY_FAILURE = "Reported, not repaired: this run is readonly."
 
 
+# How often ``wait`` looks at a headless run that is still going.
+WAIT_POLL_SECONDS = 2.0
+
+
 class WorkflowService:
     """Advance exactly the immutable plan snapshot persisted for each task."""
 
@@ -431,6 +437,11 @@ class WorkflowService:
             storage.config_path, self.extensions
         )
         self.documents = DocumentStore(self.storage)
+        self.headless = HeadlessRuns(
+            self.storage.root,
+            self.extensions.config,
+            AgentRegistry.of(self.extensions),
+        )
         self.interactions = InteractionLog(self.storage)
         self.feedback = feedback_store or FeedbackStore(self.storage)
         self.run_reports = {
@@ -1154,6 +1165,43 @@ class WorkflowService:
         self.runs.commit_runs(task_id, aggregates, handoff=handoff)
 
     def next(
+        self,
+        task_id: str,
+        model: str = "auto",
+        reasoning: str = "auto",
+        force: bool = False,
+        retry: bool = False,
+        force_reason: str | None = None,
+        outcome: str | None = None,
+        selected_agent: str | None = None,
+        *,
+        caller_role: CallerRole | None = None,
+        reassign: bool = False,
+        replan: bool = False,
+        keep_plan: bool = False,
+    ) -> Instruction:
+        """Advance the task, starting the step's agent when it runs headless.
+
+        See :meth:`_advance` for the decisions; a step ww runs headless is
+        launched here, once per assignment (see :mod:`ww.headless`).
+        """
+        instruction = self._advance(
+            task_id,
+            model,
+            reasoning,
+            force,
+            retry,
+            force_reason,
+            outcome,
+            selected_agent,
+            caller_role=caller_role,
+            reassign=reassign,
+            replan=replan,
+            keep_plan=keep_plan,
+        )
+        return self.headless.dispatch(instruction, launch=True)
+
+    def _advance(
         self,
         task_id: str,
         model: str = "auto",
@@ -2470,6 +2518,50 @@ class WorkflowService:
         caller_role: CallerRole | None = None,
         assignment: str | None = None,
     ) -> Instruction:
+        page = self._page(
+            task_id, run_id, caller_role=caller_role, assignment=assignment
+        )
+        if caller_role != "manager" or run_id is not None:
+            return page
+        return self.headless.dispatch(page, launch=False)
+
+    def wait(self, task_id: str, seconds: float) -> Instruction:
+        """The manager's page once the current step's headless run is no
+        longer going, or after ``seconds`` while it still is."""
+        deadline = time.monotonic() + seconds
+        while True:
+            page = self.instruction(task_id, caller_role="manager")
+            if (
+                page.headless is None
+                or page.headless.state != "running"
+                or time.monotonic() >= deadline
+            ):
+                return page
+            time.sleep(min(WAIT_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+
+    def launch(
+        self, task_id: str, *, resume: bool = False, session: bool = False
+    ) -> Instruction:
+        """The manager's decision after a headless run ended without completing
+        its step: start it again, ``resume`` its session, or give the step back
+        to a ``session``."""
+        if resume and session:
+            raise StateError("choose one of launch --resume or --session")
+        page = self._page(task_id, caller_role="manager")
+        if session:
+            self.headless.release(page)
+            return self.instruction(task_id, caller_role="manager")
+        self.headless.relaunch(page, resume=resume)
+        return self.headless.dispatch(page, launch=False)
+
+    def _page(
+        self,
+        task_id: str,
+        run_id: str | None = None,
+        *,
+        caller_role: CallerRole | None = None,
+        assignment: str | None = None,
+    ) -> Instruction:
         self._validate_caller_role(caller_role)
         task_id = bare_request_id(task_id)
         request = (
@@ -3319,6 +3411,8 @@ class WorkflowService:
                     f"cannot reset {task_id!r} while child task(s) exist: "
                     + ", ".join(children)
                 )
+            # A headless agent still working on the task stops first.
+            self.headless.stop_all(task_id)
             # Side records go first, so the task directory is empty for the
             # storage adapter to remove.
             self.interactions.remove(task_id)

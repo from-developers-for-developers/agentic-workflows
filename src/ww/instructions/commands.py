@@ -106,6 +106,17 @@ def instruction_command(
     return _command(*parts)
 
 
+def headless_wait_command(task_id: str) -> str:
+    """Wait for the headless run of the task's current step."""
+    return _command("wait", _arg(task_id))
+
+
+def headless_launch_command(task_id: str, mode: str | None = None) -> str:
+    """Start the current step's agent headless again: afresh, ``resume`` its
+    last session, or give the step back to a ``session``."""
+    return _command("launch", _arg(task_id), *((f"--{mode}",) if mode else ()))
+
+
 def start_command(task_id: str | None, workflow: str, agent: str) -> str:
     """Start ``workflow``; without ``task_id`` ww assigns one."""
     return _command(
