@@ -619,11 +619,13 @@ reports `workflow: none` and the step state `direct work only`.
 
 **`wait <task>`** waits for the headless run of the task's current step (see
 [Running agents headless](features.md#running-agents-headless)) and prints the
-manager's page once the run is no longer going, or the same page after
-`WW_OPERATOR_WAIT` seconds. **`launch <task>`** starts the current step's
-agent again after a headless run ended without completing it;
-`--resume` continues that run's agent session, and `--session` gives the step
-back to a session instead. Both are the manager's; a process started headless
+manager's page once no run is going or waiting for room (`max_parallel`), or
+the same page after `WW_OPERATOR_WAIT` seconds; waiting starts runs that were
+waiting for room. **`launch <task> [--branch <name>]`** starts the current
+step's (or its branch's) agent again after a headless run ended without
+completing it; `--resume` continues that run's agent session, and `--session`
+gives it back to a session instead. A relaunch is refused while the agent has
+no room under its `max_parallel`. Both are the manager's; a process started headless
 by ww (`WW_HEADLESS_LAUNCH` set) is refused them and every `--role manager`
 command.
 
@@ -1146,7 +1148,14 @@ their findings; without one it reports what each branch found.
 In the `auto` runtime the manager launches one worker per branch, all at
 once, with the branch's settings. In the `single` runtime the session
 launches them as its own subagents: a parallel step is the one place a
-`single` session spawns subagents and honours their settings. Either way the
+`single` session spawns subagents and honours their settings. A branch whose
+agent runs headless (`agent: {name, run: headless}`) is no subagent's: ww
+starts it itself when the step's page is shown by `next` or `wait`, as many at
+once as each agent's `max_parallel` allows (the rest wait as `queued` and
+start as `wait` finds room), with the branch's page command as its bootstrap;
+`wait` returns once no branch run is going or queued. A headless branch that
+ends without recording its artifact is offered `launch <task> --branch <name>`
+with `--resume` or `--session`, as a headless step is. Either way the
 step's performer completes it once with `complete --role manager` (or
 `--role worker` in `single`), with its own artifact and summary.
 
@@ -1163,8 +1172,9 @@ and the step stays in progress. It takes nothing else a completion does
 parallel step with that branch is in progress. The JSON of the step's page
 lists the branches as `parallel_branches`, each with `name`, `description`,
 `instruction_command`, `requested_agent`, `requested_model`,
-`requested_reasoning`, `profile`, `profile_instruction` and `artifact` (an
-absolute path, or `null` until recorded); a branch's records are kept in its
+`requested_reasoning`, `profile`, `profile_instruction`, `artifact` (an
+absolute path, or `null` until recorded), `requested_run` and `headless` (its
+headless run's state, or `null`); a branch's records are kept in its
 step's item record as `branch_artifacts`.
 
 The step's own completion is refused while a branch has not recorded its

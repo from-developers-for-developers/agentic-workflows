@@ -800,6 +800,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     launch.add_argument("task_id")
+    launch.add_argument(
+        "--branch",
+        default=None,
+        metavar="NAME",
+        help="The branch of the parallel step in progress to act on.",
+    )
     launch_mode = launch.add_mutually_exclusive_group()
     launch_mode.add_argument(
         "--resume",

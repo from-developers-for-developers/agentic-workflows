@@ -896,6 +896,7 @@ class InstructionBuilder:
                 requested_reasoning=branch.requested_reasoning,
                 profile=branch.profile,
                 profile_instruction=_branch_profile(branch, self.root),
+                requested_run=branch.requested_run,
                 artifact=(
                     str((self.root / recorded[branch.name]).resolve())
                     if branch.name in recorded

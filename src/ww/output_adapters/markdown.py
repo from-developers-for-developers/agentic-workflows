@@ -50,7 +50,11 @@ from ww.instructions.models import (
 from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
 from ww.output_adapters.base import OutputAdapter
-from ww.output_adapters.headless_pages import render_headless
+from ww.output_adapters.headless_pages import (
+    branch_lines,
+    render_headless,
+    wait_lines,
+)
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
 from ww.results import (
     INITIALIZATION_NEXT_STEP,
@@ -1052,16 +1056,24 @@ def _parallel_branches(lines: Lines, instruction: Instruction) -> None:
     if not branches or instruction.item_status != "in_progress":
         return
     _append_section(lines, "Parallel branches")
+    headless = [branch.headless for branch in branches if branch.headless is not None]
+    others = "for each other branch" if headless else "per branch"
     lines.extend(
         [
-            f"This step runs {len(branches)} branches at the same time. Launch "
-            "one subagent per branch now, all of them together, not one after "
-            "another, and do not do a branch's work yourself. Give each the "
-            "model and reasoning listed for it; where none is listed, choose "
-            "them as you would for any subagent. Tell each subagent to run its "
-            "page command first and follow the page it prints: it does its "
-            "branch's work, records its artifact with `complete --branch`, and "
-            "reports back.",
+            f"This step runs {len(branches)} branches at the same time."
+            + (
+                " ww runs the branches marked headless itself; do not launch "
+                "subagents for them."
+                if headless
+                else ""
+            )
+            + f" Launch one subagent {others} now, all of them together, "
+            "not one after another, and do not do a branch's work yourself. Give "
+            "each the model and reasoning listed for it; where none is listed, "
+            "choose them as you would for any subagent. Tell each subagent to "
+            "run its page command first and follow the page it prints: it does "
+            "its branch's work, records its artifact with `complete --branch`, "
+            "and reports back.",
             "",
         ]
     )
@@ -1074,6 +1086,8 @@ def _parallel_branches(lines: Lines, instruction: Instruction) -> None:
             details.insert(0, f"- Agent: `{branch.requested_agent}`")
         if branch.profile_instruction:
             details.append(f"- Profile: {branch.profile_instruction}")
+        if branch.headless is not None:
+            details.extend(branch_lines(branch.headless))
         details.append(f"- Page: `{branch.instruction_command}`")
         details.append(
             f"- Artifact: `{branch.artifact}`"
@@ -1081,6 +1095,19 @@ def _parallel_branches(lines: Lines, instruction: Instruction) -> None:
             else "- Artifact: not recorded yet"
         )
         lines.extend(f"  {detail}" for detail in details)
+    pending = [
+        view for view in headless if view.state in {"running", "queued", "not_started"}
+    ]
+    if pending:
+        lines.extend(
+            [
+                "",
+                "Wait for the headless branches; waiting also starts those "
+                "waiting for room:",
+                "",
+                *wait_lines(instruction, pending[0].wait_command),
+            ]
+        )
     lines.extend(
         [
             "",

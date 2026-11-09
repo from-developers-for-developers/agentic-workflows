@@ -128,14 +128,15 @@ class DocumentTask:
         }
 
 
-HeadlessState = Literal["not_started", "running", "failed", "refused"]
+HeadlessState = Literal["not_started", "queued", "running", "failed", "refused"]
 
 
 @dataclass(frozen=True)
 class HeadlessView:
     """The headless run of the step in hand, as the manager's page shows it.
 
-    ``not_started``: ``next`` will start it; ``refused``: its program failed
+    ``not_started``: ``next`` will start it; ``queued``: it waits for one of
+    the agent's ``max_parallel`` places; ``refused``: its program failed
     the checks (``findings``); ``running``: the manager waits with
     ``wait_command``; ``failed``: it ended without completing the step, for
     ``reason``, and the manager chooses ``resume_command`` (when the agent
@@ -205,12 +206,17 @@ class BranchView:
     profile: str | None = None
     profile_instruction: str | None = None
     artifact: str | None = None
+    # How the branch's agent runs, and its headless run when ww starts it.
+    requested_run: Transport = "session"
+    headless: HeadlessView | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
             "description": self.description,
             "instruction_command": self.instruction_command,
+            "requested_run": self.requested_run,
+            "headless": self.headless.to_dict() if self.headless else None,
             "requested_agent": self.requested_agent,
             "requested_model": self.requested_model,
             "requested_reasoning": self.requested_reasoning,

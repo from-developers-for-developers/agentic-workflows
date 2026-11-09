@@ -111,10 +111,17 @@ def headless_wait_command(task_id: str) -> str:
     return _command("wait", _arg(task_id))
 
 
-def headless_launch_command(task_id: str, mode: str | None = None) -> str:
-    """Start the current step's agent headless again: afresh, ``resume`` its
-    last session, or give the step back to a ``session``."""
-    return _command("launch", _arg(task_id), *((f"--{mode}",) if mode else ()))
+def headless_launch_command(
+    task_id: str, mode: str | None = None, *, branch: str | None = None
+) -> str:
+    """Start the current step's (or ``branch``'s) agent headless again:
+    afresh, ``resume`` its last session, or give it back to a ``session``."""
+    return _command(
+        "launch",
+        _arg(task_id),
+        *(("--branch", _arg(branch)) if branch else ()),
+        *((f"--{mode}",) if mode else ()),
+    )
 
 
 def start_command(task_id: str | None, workflow: str, agent: str) -> str:

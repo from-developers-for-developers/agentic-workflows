@@ -56,6 +56,8 @@ class LaunchRecord:
     workspace: str
     started_at: str
     assignment: str | None = None
+    # The parallel branch it works on, when the step is a parallel group.
+    branch: str | None = None
     # The launch this one resumes, continuing its agent session.
     resumes: str | None = None
     timeout_minutes: float | None = None
@@ -124,10 +126,26 @@ class LaunchStore:
                 records.append(record)
         return tuple(sorted(records, key=lambda each: (each.started_at, each.id)))
 
-    def latest(self, task_id: str, run_id: str, item_id: str) -> LaunchRecord | None:
-        """The newest launch for ``item_id`` in the run, if any."""
-        found = [each for each in self.runs(task_id, run_id) if each.item_id == item_id]
+    def latest(
+        self, task_id: str, run_id: str, item_id: str, branch: str | None = None
+    ) -> LaunchRecord | None:
+        """The newest launch for ``item_id`` (and ``branch``) in the run."""
+        found = [
+            each
+            for each in self.runs(task_id, run_id)
+            if each.item_id == item_id and each.branch == branch
+        ]
         return found[-1] if found else None
+
+    def running(self, agent: str) -> int:
+        """How many of ``agent``'s launches are going, in every task."""
+        return sum(
+            1
+            for path in self.tasks.glob(f"**/{DIRECTORY}/*.json")
+            if (record := read_record(path)) is not None
+            and record.agent == agent
+            and not record.finished
+        )
 
     def release(self, record: LaunchRecord) -> LaunchRecord:
         released = replace(record, released=True)
