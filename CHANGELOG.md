@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
-- Added: `artifact_from` accepts a list of step names, such as `[plan, research]`; each resolves as a single name does and the step's instruction gives their artifacts in that order, naming any that supplied none. The plan snapshot inside run state moves to schema 2, and runs an older ww started are migrated as they load. Breaking: older builds refuse the runs this version writes.
+- Added: `artifact_from` accepts a list of step names, such as `[plan, research]`; the step's instruction gives each one's artifact in that order and names any that supplied none. Runs an older ww started migrate as they load. Breaking: older builds refuse the runs this version writes. `5845270`
 - Added: `ww usage` shows the tokens the manager and every subagent spent per task, step, role and model, read from Claude Code and Codex session logs and Cursor's `stop` hook; `ww tasks` and `ww visualize` show each task's total, and `usage` in `ww.json` switches it off, adds log directories or prices models. `b7f3100`
 
 ## 2026-11-06
