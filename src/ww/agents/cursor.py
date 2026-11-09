@@ -112,7 +112,7 @@ class CursorHeadless(HeadlessLauncher):
     minimum_version = (2026, 6, 11)
     tested_up_to = (2026, 6)
     reasoning_levels = None
-    lists_models = True
+    catalog_arguments = ("models",)
     permission_levels = ("edit", "full")
     owned_flags = frozenset(
         {
@@ -142,9 +142,6 @@ class CursorHeadless(HeadlessLauncher):
         if output.returncode == 0 and "logged in" in text:
             return True
         return None
-
-    def catalog_command(self, binary: str) -> list[str]:
-        return [binary, "models"]
 
     def parse_catalog(self, output: Output) -> ModelCatalog | None:
         if output.returncode != 0:

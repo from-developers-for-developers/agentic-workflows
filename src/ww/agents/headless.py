@@ -225,10 +225,11 @@ class HeadlessLauncher(Launcher):
     supported_settings: ClassVar[frozenset[str]] = frozenset()
     # Flags ww sets itself, which ``args`` should not repeat.
     owned_flags: ClassVar[frozenset[str]] = frozenset()
-    # Whether the program lists its models (:meth:`catalog_command`).  A
-    # model missing from the list is an error; a program with no list takes
-    # the models :meth:`known_model` knows, and others with a warning.
-    lists_models: ClassVar[bool] = False
+    # The arguments that make the program list its models, or ``None`` when
+    # it cannot.  A model missing from the list is an error; a program with
+    # no list takes the models :meth:`known_model` knows, others with a
+    # warning.
+    catalog_arguments: ClassVar[tuple[str, ...] | None] = None
 
     # -- the program ---------------------------------------------------------
 
@@ -253,12 +254,12 @@ class HeadlessLauncher(Launcher):
     def logged_in(self, output: Output) -> bool | None:
         """Whether ``output`` of :meth:`auth_command` says logged in."""
 
-    def catalog_command(self, binary: str) -> list[str] | None:
-        """The command that lists the models, or ``None`` when there is none."""
-        return None
+    @property
+    def lists_models(self) -> bool:
+        return self.catalog_arguments is not None
 
     def parse_catalog(self, output: Output) -> ModelCatalog | None:
-        """The models in ``output`` of :meth:`catalog_command`."""
+        """The models in the output of :attr:`catalog_arguments`."""
         return None
 
     def known_model(self, model: str) -> bool:
@@ -392,9 +393,9 @@ class HeadlessLauncher(Launcher):
         cache: CatalogCache | None,
         findings: list[Finding],
     ) -> ModelCatalog | None:
-        command = self.catalog_command(binary)
-        if command is None:
+        if self.catalog_arguments is None:
             return None
+        command = [binary, *self.catalog_arguments]
         if cache is not None and version is not None:
             cached = cache.get(self.agent, binary, version)
             if cached is not None:

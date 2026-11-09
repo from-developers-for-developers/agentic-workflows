@@ -17,6 +17,7 @@ API cannot run ww's commands, so ww would record its result for it.
 from __future__ import annotations
 
 from abc import ABC
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -44,7 +45,8 @@ class HeadlessSettings:
 
     Every value has a neutral default, so an agent runs headless with no
     settings at all.  ``binary`` is a path or a name found on ``PATH``;
-    ``None`` is the adapter's own default name.
+    ``None`` is the adapter's own default name.  Settings are read-only once
+    parsed: nothing changes ``env`` or ``models`` after that.
     """
 
     binary: str | None = None
@@ -54,13 +56,13 @@ class HeadlessSettings:
     max_parallel: int | None = None
     fallback_model: str | None = None
     max_budget_usd: float | None = None
-    env: dict[str, str] = field(default_factory=dict)
+    env: Mapping[str, str] = field(default_factory=dict)
     # Ignore the operator's own configuration of the agent.
     isolated: bool = False
     # Appended to the command as given.
     args: tuple[str, ...] = ()
     # Names a step's ``model`` may use, mapped to the agent's own.
-    models: dict[str, str] = field(default_factory=dict)
+    models: Mapping[str, str] = field(default_factory=dict)
 
     def model(self, name: str | None) -> str | None:
         """``name`` with this agent's alias resolved."""

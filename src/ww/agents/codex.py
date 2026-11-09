@@ -227,7 +227,7 @@ class CodexHeadless(HeadlessLauncher):
     minimum_version = (0, 164, 0)
     tested_up_to = (0, 164)
     reasoning_levels = ("low", "medium", "high", "xhigh", "max", "ultra")
-    lists_models = True
+    catalog_arguments = ("debug", "models")
     permission_levels = ("edit", "full")
     supported_settings = frozenset({"isolated"})
     owned_flags = frozenset(
@@ -257,9 +257,6 @@ class CodexHeadless(HeadlessLauncher):
         if output.returncode == 0 and "logged in" in text:
             return True
         return None
-
-    def catalog_command(self, binary: str) -> list[str]:
-        return [binary, "debug", "models"]
 
     def parse_catalog(self, output: Output) -> ModelCatalog | None:
         try:
