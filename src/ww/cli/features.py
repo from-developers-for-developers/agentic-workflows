@@ -231,7 +231,7 @@ def _stale(request: FeaturesRequest, maps: FeatureMaps) -> str:
         )
     if not reports:
         return f"{len(maps.maps)} feature map(s), none behind its files.\n"
-    return "Feature maps behind their files:\n\n" + "".join(
+    return "Feature maps behind their files, or not committed yet:\n\n" + "".join(
         f"- `{feature.name}`: {stale.describe()}\n" for feature, stale in reports
     )
 
