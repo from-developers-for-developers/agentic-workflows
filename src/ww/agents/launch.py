@@ -21,7 +21,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
+
+from ww.errors import ConfigurationError
 
 Transport = Literal["session", "headless", "api"]
 TRANSPORTS: tuple[Transport, ...] = ("session", "headless", "api")
@@ -90,3 +92,91 @@ class Launcher(ABC):
 
     transport: ClassVar[Transport]
     recording: ClassVar[ResultRecording]
+
+
+# The keys of ``agents.<name>.headless`` in ``ww.json``.
+HEADLESS_KEYS = frozenset(
+    {
+        "binary",
+        "permissions",
+        "timeout_minutes",
+        "idle_timeout_minutes",
+        "max_parallel",
+        "fallback_model",
+        "max_budget_usd",
+        "env",
+        "isolated",
+        "args",
+        "models",
+    }
+)
+
+
+def parse_headless_settings(data: Any, where: str) -> HeadlessSettings:
+    """``agents.<name>.headless`` from ``ww.json``, every key checked."""
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{where} must be an object")
+    unknown = set(data) - HEADLESS_KEYS
+    if unknown:
+        raise ConfigurationError(
+            f"{where} has unknown key(s): {', '.join(sorted(map(str, unknown)))}"
+        )
+    permissions = data.get("permissions", "edit")
+    if permissions not in PERMISSIONS:
+        raise ConfigurationError(
+            f"{where}.permissions must be one of: {', '.join(PERMISSIONS)}"
+        )
+    isolated = data.get("isolated", False)
+    if not isinstance(isolated, bool):
+        raise ConfigurationError(f"{where}.isolated must be true or false")
+    max_parallel = data.get("max_parallel")
+    if max_parallel is not None and (
+        isinstance(max_parallel, bool)
+        or not isinstance(max_parallel, int)
+        or max_parallel < 1
+    ):
+        raise ConfigurationError(f"{where}.max_parallel must be a positive integer")
+    args = data.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        raise ConfigurationError(f"{where}.args must be a list of strings")
+    return HeadlessSettings(
+        binary=_text(data, "binary", where),
+        permissions=cast(Permission, permissions),
+        timeout_minutes=_positive(data, "timeout_minutes", where),
+        idle_timeout_minutes=_positive(data, "idle_timeout_minutes", where),
+        max_parallel=max_parallel,
+        fallback_model=_text(data, "fallback_model", where),
+        max_budget_usd=_positive(data, "max_budget_usd", where),
+        env=_strings(data, "env", where),
+        isolated=isolated,
+        args=tuple(args),
+        models=_strings(data, "models", where),
+    )
+
+
+def _text(data: dict[str, Any], key: str, where: str) -> str | None:
+    value = data.get(key)
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        raise ConfigurationError(f"{where}.{key} must be a non-empty string")
+    return value
+
+
+def _positive(data: dict[str, Any], key: str, where: str) -> float | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+        raise ConfigurationError(f"{where}.{key} must be a positive number")
+    return float(value)
+
+
+def _strings(data: dict[str, Any], key: str, where: str) -> dict[str, str]:
+    value = data.get(key, {})
+    if not isinstance(value, dict) or not all(
+        isinstance(name, str) and isinstance(item, str) and item
+        for name, item in value.items()
+    ):
+        raise ConfigurationError(
+            f"{where}.{key} must be an object of non-empty strings"
+        )
+    return dict(value)

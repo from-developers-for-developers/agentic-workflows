@@ -17,7 +17,7 @@ from ww.actions import (
     Prompt,
     actions,
 )
-from ww.agents import AgentDiscovery, AgentRegistry
+from ww.agents import AgentDiscovery, AgentRegistry, HeadlessLauncher, Transport
 from ww.config.rules import rule_source
 from ww.contracts import (
     ExecutionKind,
@@ -107,6 +107,8 @@ class ExecutionHints:
     role: StepRole = "worker"
     # Whether their performer may spawn subagents, inherited the same way.
     subagents: bool = True
+    # How ``agent`` runs; it is set and inherited together with the agent.
+    run: Transport = "session"
 
     @classmethod
     def builtin(cls, agent: str, settings: dict[str, str]) -> ExecutionHints:
@@ -114,7 +116,9 @@ class ExecutionHints:
         return cls(agent, settings["model"], settings["reasoning"])
 
     def overlay(self, value: HandlerDefinition | WorkflowDefinition) -> ExecutionHints:
-        agent = value.agent if value.agent is not None else self.agent
+        agent, run = self.agent, self.run
+        if value.agent is not None:
+            agent, run = value.agent, value.run or "session"
         model = self.model
         reasoning = self.reasoning
         if value.model is not None:
@@ -148,6 +152,7 @@ class ExecutionHints:
             workdir,
             role,
             subagents,
+            run,
         )
 
 
@@ -239,7 +244,8 @@ class WorkflowPlanCompiler:
         self.task_id = self.options.task_id
         self.extensions = extensions
         self.project_config = project_config or ProjectConfig()
-        host = AgentRegistry(self.project_config.agents, extensions).resolve(agent)
+        self.registry = AgentRegistry(self.project_config.agents, extensions)
+        host = self.registry.resolve(agent)
         self.discovery = AgentDiscovery(root, host.layout)
         self.available = self.discovery.available()
         self.builtins = compile_variable_values(
@@ -1197,6 +1203,7 @@ class WorkflowPlanCompiler:
                 "but subagents: false forbids the subagents its branches run in"
             )
         # The branches inherit the group's worker shape, not the manager's.
+        # The step's own worker shape, before a manager's step drops it.
         branch_hints = hints
         local = phase == "step" and role == "manager"
         if local:
@@ -1431,6 +1438,15 @@ class WorkflowPlanCompiler:
                 requested_agent=hints.agent if not local else None,
                 requested_model=hints.model if not local else None,
                 requested_reasoning=hints.reasoning if not local else None,
+                requested_run=self._requested_run(
+                    branch_hints,
+                    handler.run,
+                    f"{workflow.name}/{step_path}",
+                    applicable=phase == "step"
+                    and owner == "agent"
+                    and not local
+                    and not step.interactive,
+                ),
                 role=role,
                 subagents=hints.subagents,
                 interactive=step.interactive and phase == "step",
@@ -1531,9 +1547,63 @@ class WorkflowPlanCompiler:
                     profile=profile,
                     profile_instruction=instruction,
                     profile_path=profile_path,
+                    requested_run=self._requested_run(
+                        shape,
+                        branch.run,
+                        f"{group.name}.{branch.name}",
+                        applicable=True,
+                    ),
                 )
             )
         return tuple(result)
+
+    def _requested_run(
+        self,
+        hints: ExecutionHints,
+        declared: Transport | None,
+        where: str,
+        *,
+        applicable: bool,
+    ) -> Transport:
+        """How the item's agent runs, checked where ww starts it itself.
+
+        Only a worker's agent step can run headless.  Elsewhere a headless
+        agent the entry itself names is an error, and one it inherits, such
+        as from its workflow, runs in a session.
+        """
+        if hints.run != "headless":
+            return hints.run
+        if not applicable:
+            if declared == "headless":
+                raise ConfigurationError(
+                    f"{where}: run: headless needs a step a worker agent performs; "
+                    "a manager's or interactive step, a hook, and a step ww runs "
+                    "itself cannot run headless"
+                )
+            return "session"
+        agent = self.registry.resolve(hints.agent)
+        launcher = agent.launcher("headless")
+        if not isinstance(launcher, HeadlessLauncher):
+            raise ConfigurationError(
+                f"{where}: ww cannot run agent {hints.agent!r} headless; "
+                "choose one that runs headless (see `ww agents`) or run: session"
+            )
+        settings = self.project_config.headless_settings(agent.name)
+        errors = [
+            finding.message
+            for finding in (
+                *launcher.selection_findings(
+                    hints.model, hints.reasoning, None, settings
+                ),
+                *launcher.settings_findings(settings),
+            )
+            if finding.level == "error"
+        ]
+        if errors:
+            raise ConfigurationError(
+                f"{where} ({agent.name}, headless): " + "; ".join(errors)
+            )
+        return "headless"
 
     def _resolve_modes(self, names: tuple[str, ...]) -> tuple[PlannedMode, ...]:
         """The selected modes by name, with their descriptions frozen."""

@@ -292,6 +292,7 @@ def _parse_step(
         update_item=base.update_item,
         outputs=base.outputs,
         agent=base.agent,
+        run=base.run,
         model=base.model,
         reasoning=base.reasoning,
         workdir=base.workdir,
@@ -1168,6 +1169,7 @@ def _step_handler_reference(
             local.update_item if "saves" in mapping else referenced.update_item
         ),
         agent=local.agent if "agent" in mapping else referenced.agent,
+        run=local.run if "agent" in mapping else referenced.run,
         model=local.model if "model" in mapping else referenced.model,
         reasoning=(local.reasoning if "reasoning" in mapping else referenced.reasoning),
         workdir=local.workdir if "workdir" in mapping else referenced.workdir,

@@ -853,13 +853,14 @@ function renderStep(wf, s, i) {
 
   const facts = [];
   if (s.model && s.model !== "auto") facts.push(`<span class="fact">${ICON.gear} <span class="mono">${esc(s.model)}</span>${s.reasoning && s.reasoning !== "auto" ? ` · ${esc(s.reasoning)} reasoning` : ""}</span>`);
+  if (s.headless) facts.push(`<span class="fact">ww runs <span class="mono">${esc(s.headless)}</span> headless</span>`);
   if (s.profile) facts.push(`<span class="fact">profile <span class="mono">${esc(s.profile)}</span></span>`);
   if (s.subagents === false) facts.push('<span class="fact">works alone, no subagents</span>');
   if (s.explicit) facts.push('<span class="fact">explicit: narrates each edit</span>');
   if (s.read_feature_maps) facts.push('<span class="fact">reads feature maps first</span>');
   if (s.write_feature_maps) facts.push('<span class="fact">brings the feature maps up to date</span>');
   if (s.artifact === false) facts.push('<span class="fact">no artifact</span>');
-  if ((s.parallel || []).length) facts.push(`<span class="fact">runs ${s.parallel.length} branches at once: ${s.parallel.map(b => `<span class="mono" title="${esc(b.description || "")}">${esc(b.name)}</span>${b.model && b.model !== "auto" ? ` (${esc(b.model)}${b.reasoning && b.reasoning !== "auto" ? `, ${esc(b.reasoning)}` : ""})` : ""}`).join(", ")}</span>`);
+  if ((s.parallel || []).length) facts.push(`<span class="fact">runs ${s.parallel.length} branches at once: ${s.parallel.map(b => `<span class="mono" title="${esc(b.description || "")}">${esc(b.name)}</span>${b.model && b.model !== "auto" ? ` (${esc(b.model)}${b.reasoning && b.reasoning !== "auto" ? `, ${esc(b.reasoning)}` : ""})` : ""}${b.headless ? ` (<span class="mono">${esc(b.headless)}</span> headless)` : ""}`).join(", ")}</span>`);
   if ((s.artifact_from || []).length) facts.push(`<span class="fact">${ICON.from} reads the artifact${s.artifact_from.length > 1 ? "s" : ""} of ${s.artifact_from.map(name => `<span class="mono">${esc(name)}</span>`).join(", ")}</span>`);
   (s.variables || []).forEach(v => facts.push(`<span class="fact">sets <span class="var">${esc(v)}</span></span>`));
   (s.saves || []).forEach(t => facts.push(`<span class="fact">${ICON.save} saves <span class="mono">${esc(t)}</span></span>`));

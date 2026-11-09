@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import TypeVar
 
 from ww.actions import Commands, PlannedAction, actions
+from ww.agents.launch import TRANSPORTS, Transport
 from ww.contracts import (
     CheckSource,
     ChildOperation,
@@ -187,6 +188,8 @@ class ParallelBranch:
     own. ``requested_*`` are the branch's performer settings, inherited along
     the step chain, with ``auto`` or ``None`` leaving the choice to whoever
     launches it; ``profile_path`` is relative to the project root.
+    ``requested_run`` is how its agent runs: in a subagent (``session``) or
+    started by ww (``headless``).
     """
 
     name: str
@@ -197,6 +200,7 @@ class ParallelBranch:
     profile: str | None = None
     profile_instruction: str | None = None
     profile_path: str | None = None
+    requested_run: Transport = "session"
 
     _KEYS = (
         "name",
@@ -207,6 +211,7 @@ class ParallelBranch:
         "profile",
         "profile_instruction",
         "profile_path",
+        "requested_run",
     )
 
     def to_dict(self) -> dict[str, object]:
@@ -214,6 +219,8 @@ class ParallelBranch:
         for key in self._KEYS[2:]:
             if getattr(self, key) is not None:
                 data[key] = getattr(self, key)
+        if self.requested_run == "session":
+            del data["requested_run"]
         return data
 
     @classmethod
@@ -227,10 +234,15 @@ class ParallelBranch:
             raise ValueError(f"{path} must be an object of {', '.join(cls._KEYS)}")
         if not all(isinstance(value[key], str) for key in ("name", "description")):
             raise ValueError(f"{path} needs a string name and description")
-        optional = {key: value.get(key) for key in cls._KEYS[2:]}
+        optional = {key: value.get(key) for key in cls._KEYS[2:-1]}
         if not all(item is None or isinstance(item, str) for item in optional.values()):
             raise ValueError(f"{path} has a setting that is not a string")
-        return cls(value["name"], value["description"], **optional)
+        run = value.get("requested_run", "session")
+        if run not in TRANSPORTS:
+            raise ValueError(
+                f"{path}.requested_run must be one of: {', '.join(TRANSPORTS)}"
+            )
+        return cls(value["name"], value["description"], **optional, requested_run=run)
 
 
 @dataclass(frozen=True)
@@ -286,6 +298,8 @@ class PlanItem:
     requested_agent: str | None = None
     requested_model: str | None = None
     requested_reasoning: str | None = None
+    # How the requested agent runs: ``headless`` when ww starts it itself.
+    requested_run: Transport = "session"
     # Who performs the item: the manager in its own session, or a worker.
     role: StepRole = "worker"
     # ``False``: its performer spawns no subagents for anything.
@@ -561,6 +575,8 @@ class PlanItem:
             del data["selects_rules_for"]
         if not self.parallel_branches:
             del data["parallel_branches"]
+        if self.requested_run == "session":
+            del data["requested_run"]
         if self.child_stage is None:
             del data["child_stage"]
         if self.child_number is None:
@@ -591,6 +607,7 @@ class PlanItem:
             "requested_agent": self.requested_agent,
             "requested_model": self.requested_model,
             "requested_reasoning": self.requested_reasoning,
+            "requested_run": self.requested_run,
             "role": self.role,
             "subagents": self.subagents,
             "interactive": self.interactive,

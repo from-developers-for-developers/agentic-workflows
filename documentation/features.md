@@ -5386,7 +5386,7 @@ agent is one of three kinds:
 - An agent the project declares under `agents` in `ww.json`, addressed by its
   bare name. The user, repository, and local `ww.json` levels merge key by key,
   like other settings. Every key is optional; a name ww ships cannot be
-  declared:
+  declared (its entry holds only its `headless` settings, below):
 
   ```json
   {
@@ -5409,8 +5409,88 @@ agent is one of three kinds:
   the extensions the root settings list, even with an empty section, are
   listed by `discover` and `ww agents`, and `init` treats them like ww's own.
 
-A step's `agent:` names the agent the step prefers in the same way; it is
-advice for the manager today.
+A step's `agent:` names the agent the step prefers in the same way. Run in a
+session, the default, it is advice for the manager; run headless, ww starts
+it itself.
+
+### Running agents headless
+
+A step can have ww start its agent's own command-line program instead of
+asking the manager for a worker: Claude Code (`claude`), Codex (`codex`) or
+Cursor (`cursor-agent`). Give `agent:` the mapping form with `run: headless`;
+`model` and `reasoning` stay where they always are:
+
+```yaml
+workflows:
+  - name: task
+    steps:
+      - develop: Implement the change.
+      - review: Review the diff and list the findings.
+        agent: {name: codex, run: headless}
+        model: gpt-6.1-sol
+        reasoning: xhigh
+      - fix: Fix the findings.
+```
+
+The headless agent is an ordinary worker: it reads the step's page and
+completes it like any other. `run` is inherited with the agent, so
+`agent: {name: claudecode, run: headless}` on a workflow runs each of its
+worker steps headless, and a step that names another agent as a plain string
+runs that one in a session. Steps the manager keeps (`role: manager`,
+interactive steps) and steps ww runs itself never run headless. Branches of a
+[parallel group](#parallel-steps) may run headless too.
+
+ww checks a headless step when its workflow compiles, so `ww lint`, `plan`
+and `start` report it: the agent must be one of the three, its reasoning one
+the agent's program takes (none for Cursor, whose model names carry it, such
+as `sonnet-4-thinking`), and `cheapest` only where the agent defines one
+(`haiku` for Claude Code). The program itself — installed, recent enough,
+logged in, offering the model — is checked by `ww agents --check` (below).
+`ww plan` marks such steps "run headless by ww", and `ww visualize` shows it
+on the step.
+
+Each agent's headless settings live under `agents.<name>.headless` in
+`ww.json`; put machine-specific ones, such as the program's path, in
+`ww.local.json`, which merges over it key by key:
+
+```json
+{
+  "agents": {
+    "claudecode": {
+      "headless": {
+        "binary": "/opt/homebrew/bin/claude",
+        "permissions": "edit",
+        "timeout_minutes": 60,
+        "idle_timeout_minutes": 10,
+        "max_parallel": 3,
+        "fallback_model": "sonnet",
+        "max_budget_usd": 5,
+        "isolated": false,
+        "env": {"CLAUDE_CONFIG_DIR": "/srv/claude-work"},
+        "args": [],
+        "models": {"review-model": "opus"}
+      }
+    }
+  }
+}
+```
+
+| Setting | Meaning |
+| --- | --- |
+| `binary` | The program's path, or a name looked up on `PATH`. Default: `claude`, `codex`, `cursor-agent`. |
+| `permissions` | What the agent may do unasked: `read-only`, `edit` (default) or `full`. Claude Code: `read-only` allows reading, searching and `./ww`; `edit` accepts file edits and allows `./ww`; `full` bypasses its permission checks. Codex: `edit` is its workspace-write sandbox with ww's state directory writable; `full` is no sandbox. Cursor: `edit` is its default; `full` adds `--force`. Codex and Cursor offer no `read-only`: their worker could not record its result. |
+| `timeout_minutes`, `idle_timeout_minutes` | How long a run may last, and how long it may print nothing. |
+| `max_parallel` | How many runs of this agent may go at once. |
+| `fallback_model` | The model to fall back to when the chosen one is overloaded. Claude Code only. |
+| `max_budget_usd` | The most a run may spend. Claude Code only. |
+| `isolated` | Ignore the operator's own configuration of the agent: Claude Code's `--bare`, Codex's `--ignore-user-config`. |
+| `env` | Extra environment variables for the program. Keep secrets out of shared files. |
+| `args` | Extra arguments appended as given; ww warns when one repeats a flag it sets itself. |
+| `models` | Names a step's `model` may use for this agent, such as `review-model`, mapped to the agent's own. |
+
+A setting the agent cannot honour is reported: an unavailable permission
+level is an error for its headless steps, and an unsupported setting a
+warning in `ww agents --check`.
 
 ### Checking an agent's program
 

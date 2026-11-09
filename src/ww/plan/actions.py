@@ -67,6 +67,7 @@ class ActionResolver:
                     or registered.on_failure_instruction,
                     workdir=value.workdir or registered.workdir,
                     agent=value.agent or registered.agent,
+                    run=value.run if value.agent else registered.run,
                     model=value.model or registered.model,
                     reasoning=value.reasoning or registered.reasoning,
                 ),
@@ -99,6 +100,7 @@ class ActionResolver:
                     or handler.on_failure_instruction,
                     workdir=resolved.workdir or handler.workdir,
                     agent=resolved.agent or handler.agent,
+                    run=resolved.run if resolved.agent else handler.run,
                     model=resolved.model or handler.model,
                     reasoning=resolved.reasoning or handler.reasoning,
                 )

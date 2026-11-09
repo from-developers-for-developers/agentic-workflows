@@ -113,7 +113,7 @@ def test_a_project_declares_an_agent_with_data(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("agents", "message"),
     [
-        ({"codex": {}}, "built-in agent"),
+        ({"codex": {"title": "Codex"}}, "built-in agent"),
         ({"-x": {}}, "invalid agent name"),
         ({"aider": {"hooks": "x"}}, "unknown key"),
         ({"aider": {"title": ""}}, "non-empty string"),

@@ -37,6 +37,7 @@ from .rules import RuleGroupContribution, parse_rules_root, resolve_step_rules
 from .steps import _parse_handlers, _parse_step
 from .values import (
     _NAME,
+    _agent_request,
     _description,
     _description_items,
     _mapping,
@@ -44,7 +45,6 @@ from .values import (
     _name_filter,
     _named_entry,
     _only,
-    _optional_agent,
     _optional_string,
     _profile,
     _required_list,
@@ -265,7 +265,7 @@ def _parse_profiles(data: Any) -> tuple[ProfileDefinition, ...]:
 _OVERRIDES = {
     "description": ("description",),
     "modes": ("modes",),
-    "agent": ("agent",),
+    "agent": ("agent", "run"),
     "model": ("model",),
     "reasoning": ("reasoning",),
     "profile": ("profile", "profile_description"),
@@ -374,6 +374,7 @@ def _parse_workflow(
     needs_hooks_from = mapping.get("needs_hooks_from", False)
     if not isinstance(needs_hooks_from, bool):
         raise ConfigurationError(f"{path}.needs_hooks_from must be true or false")
+    requested = _agent_request(mapping, f"workflow {name!r}")
     definition = WorkflowDefinition(
         name=name,
         description=_description(mapping.get("description"), f"workflow {name!r}"),
@@ -382,7 +383,8 @@ def _parse_workflow(
             mapping.get("hooks", {}), "workflow", f"workflow {name!r} hooks"
         ),
         modes=_string_list(mapping.get("modes", []), f"workflow {name!r} modes"),
-        agent=_optional_agent(mapping, "agent", f"workflow {name!r}"),
+        agent=requested["agent"],
+        run=requested["run"],
         model=_optional_string(mapping, "model", f"workflow {name!r}"),
         reasoning=_optional_string(mapping, "reasoning", f"workflow {name!r}"),
         **_profile(mapping, f"workflow {name!r}"),

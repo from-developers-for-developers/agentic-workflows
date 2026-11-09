@@ -287,7 +287,7 @@ Each item in `workflows` accepts:
 | `description` | string | no | Human-readable purpose. |
 | `hooks` | hooks mapping | no | Hooks for this workflow. |
 | `modes` | list of names or extension references | no | Default modes; every local name must exist. |
-| `agent` | non-empty string other than `auto` | no | Preferred executor; currently advisory. |
+| `agent` | agent name other than `auto`, or `{name, run}` | no | Preferred executor, inherited by every step; see [Agents and how they run](#agents-and-how-they-run). |
 | `model` | non-empty string | no | Default model guidance; `auto` stops inheritance. A handoff into this workflow applies it to the new run; otherwise the new run keeps the source run's model. |
 | `reasoning` | non-empty string | no | Default reasoning guidance. A handoff into this workflow applies it to the new run; when the target declares a different `model` but no `reasoning`, the new run's reasoning resets to `auto`, otherwise it keeps the source run's. |
 | `profile` | profile value | no | Default agent profile. |
@@ -311,6 +311,33 @@ Model and reasoning are coupled: when a child changes the effective model and
 omits reasoning, reasoning resets to `auto`. Repeating the same model preserves
 the inherited reasoning. `agent` falls back to the agent passed to `plan` or
 `start` and may not be `auto`.
+
+### Agents and how they run
+
+`agent` names an agent: `agent: codex`. The mapping form also says how it
+runs: `agent: {name: codex, run: headless}`. `run` is one of:
+
+| `run` | Meaning |
+| --- | --- |
+| `session` | The default, and what the string form means: the agent is advice for the manager, who starts the worker or plays it. |
+| `headless` | ww starts the agent's own command-line program itself, with the ordinary worker bootstrap; see [Running agents headless](features.md#running-agents-headless). |
+| `api` | Reserved for calling a model's API; refused for now. |
+
+The mapping takes only `name` (required) and `run`. `run` is inherited
+together with the agent: a step that names an agent in either form sets both,
+so `agent: codex` below a headless workflow runs in a session again. Only a
+worker's agent step runs headless: `run: headless` written on a step with
+`role: manager`, an interactive step, a hook, or a step ww runs itself is an
+error, while one inherited there, such as from the workflow, runs in a
+session. The agent must be one ww can run headless (`claudecode`, `codex`,
+`cursor`). A headless step's `model` and `reasoning` are checked against
+what that agent's program takes when the plan compiles, after the agent's
+model aliases resolve: a reasoning level it does not offer, any reasoning
+for Cursor (whose model names carry it), and `cheapest` for an agent that
+defines no cheapest model (Claude Code's is `haiku`) are errors, as is a
+headless setting the agent cannot honour, such as `permissions: read-only`
+for Codex or Cursor. A rule's `agent` names its verifier and takes the
+string form only.
 
 Project behavior lives in `ww.json`, separately from workflow syntax.
 `enabled` defaults to `true`; `false` tells `discover` not to use ww and makes
@@ -342,6 +369,10 @@ base branch, or is `false` to read the checkout (see
 [Configuration read from a commit](#configuration-read-from-a-commit)).
 `task_format` controls generated task IDs, `rules` configures check guidance, `projects` lists
 available project directories, and `extensions` holds extension settings.
+`agents` declares agents ww has no adapter for, and holds under
+`agents.<name>.headless` how ww runs a built-in agent headless (see
+[Running agents headless](features.md#running-agents-headless)); a built-in
+agent's entry takes no other key.
 Missing keys retain their defaults; the following example shows the complete
 shape written by `init`:
 
@@ -1166,7 +1197,7 @@ Each root handler, and each step through the same shared shape, accepts:
 | `action` | mapping | no | The registry form, `{type: <action>, ...}`: selects a registered action by its identifier, with that action's own keys beside `type`. Extensions' actions use it; it cannot be combined with `kind`, `mcp`, `argv`, `shell`, `args`, `env`, `assert`, or `idempotent`, and the core controls (`workflow_transition`, `child_workflow`) are refused as types. |
 | `variables` | list of variables | no | What the step hands back, read later as `{{name}}`; see [Variables](#variables). |
 | `saves` | list of saved values | no | What an action writes to metadata, documents, or its item; see [Saves](#saves). |
-| `agent` | non-empty string other than `auto` | no | Preferred executor guidance. |
+| `agent` | agent name other than `auto`, or `{name, run}` | no | Preferred executor; see [Agents and how they run](#agents-and-how-they-run). |
 | `model` | non-empty string | no | Model guidance; `auto` stops inheritance. |
 | `reasoning` | non-empty string | no | Reasoning guidance for this action. |
 | `workdir` | `task`, `project`, or `root` | no | The directory this action works in; see [Working directory](#working-directory). Defaults to `task`. |

@@ -33,6 +33,7 @@ from ww.errors import ConfigurationError
 
 from .base import Agent
 from .interaction import ChoiceMechanism, question_tool
+from .launch import HeadlessSettings, parse_headless_settings
 from .layout import Layout
 
 CUSTOM_PREFIX = "custom:"
@@ -95,18 +96,21 @@ class DeclaredAgent(Agent):
         return hash((self.name, self.layout))
 
 
-def parse_declarations(
-    data: Any, path: str, reserved: frozenset[str]
-) -> tuple[DeclaredAgent, ...]:
-    """The agents a settings file's ``agents`` object declares.
+def parse_agent_settings(
+    data: Any, path: str, builtins: frozenset[str]
+) -> tuple[tuple[DeclaredAgent, ...], dict[str, HeadlessSettings]]:
+    """A settings file's ``agents`` object: declared agents, and how agents run
+    headless.
 
-    ``reserved`` holds the built-in names, which a declaration may not take.
+    A built-in agent (``builtins``) cannot be redeclared; its entry takes
+    only ``headless``.  A declared agent has no launcher, so it takes none.
     """
     if data is None:
-        return ()
+        return (), {}
     if not isinstance(data, dict):
         raise ConfigurationError(f"{path}.agents must be an object")
     agents: list[DeclaredAgent] = []
+    headless: dict[str, HeadlessSettings] = {}
     for name, value in data.items():
         where = f"{path}.agents.{name}"
         if not isinstance(name, str) or not AGENT_NAME.fullmatch(name):
@@ -114,12 +118,19 @@ def parse_declarations(
                 f"{path}.agents has an invalid agent name {name!r}; use letters, "
                 "digits, ., _, or -"
             )
-        if name in reserved:
-            raise ConfigurationError(
-                f"{where}: {name!r} is a built-in agent and cannot be redeclared"
-            )
         if not isinstance(value, dict):
             raise ConfigurationError(f"{where} must be an object")
+        if name in builtins:
+            if set(value) - {"headless"}:
+                raise ConfigurationError(
+                    f"{where}: {name!r} is a built-in agent and cannot be "
+                    "redeclared; its entry takes only headless settings"
+                )
+            if "headless" in value:
+                headless[name] = parse_headless_settings(
+                    value["headless"], f"{where}.headless"
+                )
+            continue
         unknown = set(value) - DECLARATION_KEYS
         if unknown:
             raise ConfigurationError(
@@ -145,4 +156,4 @@ def parse_declarations(
                 ),
             )
         )
-    return tuple(agents)
+    return tuple(agents), headless

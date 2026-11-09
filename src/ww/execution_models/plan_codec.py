@@ -12,6 +12,7 @@ from dataclasses import fields
 from typing import Any, cast
 
 from ww.actions import Commands, actions
+from ww.agents.launch import Transport
 from ww.contracts import (
     CheckSource,
     ChildOperation,
@@ -200,6 +201,14 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         requested_reasoning=expect_optional_string(
             raw.get("requested_reasoning", raw.get("reasoning", "auto")),
             "requested reasoning",
+        ),
+        requested_run=cast(
+            Transport,
+            expect_literal(
+                raw.get("requested_run", "session"),
+                Transport,
+                f"{item_path}.requested_run",
+            ),
         ),
         role=cast(
             StepRole,
