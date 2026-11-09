@@ -2426,6 +2426,26 @@ while tests pass stubs. `gh` is used when it is installed and `gh auth
 status` succeeds; otherwise the prefilled new-issue URL is opened and the
 operator submits it. ww never holds a credential of its own.
 
+## Token usage
+
+`../src/ww/usage/` places the agents' tokens on tasks. `collector.py` reads
+the sessions the execution log names (recent ones automatically, all with
+`ww usage collect`, plus a scan of the agents' directories for sessions
+whose logged working directory is inside the root) through each agent's
+`UsageReader`, from read positions kept in `.ww/usage/files.json` by file ID,
+under one lock. A session's tokens go to the task of its latest ww command,
+on the step `timeline.py` finds under way at that time, until the task's run
+finished; tokens before a command wait in the file's state until `start` or
+a worker's `instruction` claims them, any other command leaves them outside,
+or, for a quiet subagent without commands, its spawner's place at the spawn
+takes them. `store.py` appends one `Stretch` per task, step, role, model and
+file to `.ww/usage/tasks/<id>.jsonl` (or `.ww/usage/outside.jsonl`), apart
+from the task state, and
+`report.py` sums them for `ww usage`, `ww tasks` and `ww visualize`. The CLI
+collects after `complete`, `fail` and `record` and before showing usage, the
+visualize server every 30 seconds, and the Cursor `stop` hook records its
+turn through `Collector.record_turn`; every one suppresses failures.
+
 ## Agents
 
 Everything ww says or writes differently for one coding agent lives in
@@ -2446,6 +2466,15 @@ may be absent, since an agent behind an API has no directory, hooks, or shell:
 - `skill_prefix`: what the operator types before a skill's name.
 - `launcher` (`launch.py`): reserved for ww starting an agent itself,
   headless or through an API; unused today.
+- `session_variable`: the environment variable through which the agent
+  tells the commands it runs which session runs them; `session_of` finds the
+  one set, and `ww.cli.audit` records it with the host on every execution
+  log record.
+- `usage` (`usage.py`): a `UsageReader` that finds a session's log files by
+  its ID alone and turns their new lines into `Usage`, `Call` (a ww command
+  the agent ran, from its shell tool calls) and `Spawn` events, with numbers
+  and IDs only. A Cursor `stop` payload yields a `TurnUsage` on
+  `HookPayload.usage` instead.
 
 `ClaudeCode`, `Codex`, and `Cursor` are the built-in adapters. The
 `AgentRegistry` (`registry.py`) resolves a name, in order, to a built-in, an

@@ -25,6 +25,7 @@ from .interaction import FOREGROUND, PLAIN_TEXT, ChoiceMechanism, WaitMechanism
 from .launch import Launcher
 from .layout import Layout
 from .permissions import Permissions
+from .usage import UsageReader
 
 
 class Agent(ABC):
@@ -48,6 +49,12 @@ class Agent(ABC):
     skill_prefix: str = "/"
     # Reserved: ww does not launch agents yet; see :mod:`ww.agents.launch`.
     launcher: Launcher | None = None
+    # The environment variable through which the agent tells the commands it
+    # runs which of its sessions runs them; ww records it on every call.
+    session_variable: str | None = None
+    # Reads the agent's own session logs for token usage; see
+    # :mod:`ww.agents.usage`.
+    usage: UsageReader | None = None
 
     def __init__(self, name: str | None = None) -> None:
         self.name = name or self.key

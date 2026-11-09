@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "written_by": "1.0.0b19",
+  "files": {
+    "claudecode:0f5d3c1e-1111-4222-8333-444455556666": {
+      "agent": "claudecode",
+      "session": "0f5d3c1e-1111-4222-8333-444455556666",
+      "path": "/home/dev/.claude/projects/-work-project/0f5d3c1e-1111-4222-8333-444455556666.jsonl",
+      "offset": 48213,
+      "carry": {"seen": ["msg_011CgmfL", "msg_011CgmfM"]},
+      "calls": [
+        ["2026-11-01T10:00:29.000Z", "TASK-1", "manager", "start"],
+        ["2026-11-01T10:02:00.000Z", "TASK-1", "manager", "next"]
+      ],
+      "spawns": {"toolu_018Vc1KeFv3GfKkb5L7tiE33": "2026-11-01T10:02:30.000Z"},
+      "pending": {
+        "claude-opus-5-5": {
+          "input": 2,
+          "cache_write": 1190,
+          "cache_read": 49475,
+          "output": 427,
+          "reasoning": 0,
+          "first": "2026-11-01T11:00:00.000Z",
+          "last": "2026-11-01T11:00:00.000Z"
+        }
+      },
+      "directory": "/work/project"
+    },
+    "cursor:conv-1": {
+      "agent": "cursor",
+      "session": "conv-1",
+      "path": null,
+      "offset": 0,
+      "carry": {"seen": ["gen-1"]},
+      "calls": [],
+      "spawns": {},
+      "pending": {},
+      "directory": null
+    }
+  },
+  "sessions": {
+    "claudecode:0f5d3c1e-1111-4222-8333-444455556666": {
+      "agent": "claudecode",
+      "host": "dev-laptop",
+      "readable": true
+    },
+    "claudecode:elsewhere": {
+      "agent": "claudecode",
+      "host": "container-7",
+      "readable": false
+    }
+  }
+}

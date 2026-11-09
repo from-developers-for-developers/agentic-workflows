@@ -45,6 +45,7 @@ from ww.task_envelope import (
 )
 from ww.task_ids import validate_task_id
 from ww.task_list import run_status
+from ww.usage import UsageStore, task_total
 
 from .project import Project
 
@@ -56,16 +57,16 @@ UNKNOWN = "unknown"
 def task_list(project: Project) -> JSON:
     """Every task, children after their parent, unreadable ones reduced."""
     tasks = project.storage.task_persistence
+    usage = UsageStore(project.storage)
     unreadable = {entry.task_id: entry.reason for entry in unreadable_tasks(tasks)}
     listed: list[JSON] = []
     for task_id in tasks.task_ids():
         for candidate in (task_id, *tasks.child_task_ids(task_id)):
             if candidate in unreadable:
-                listed.append(
-                    _reduced_summary(project, candidate, unreadable[candidate])
-                )
+                summary = _reduced_summary(project, candidate, unreadable[candidate])
             else:
-                listed.append(_summary(tasks, candidate))
+                summary = _summary(tasks, candidate)
+            listed.append({**summary, "tokens": task_total(usage, candidate)})
     return {"tasks": listed}
 
 

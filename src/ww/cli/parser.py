@@ -277,6 +277,29 @@ def build_parser() -> argparse.ArgumentParser:
             "change, children after their parent."
         ),
     )
+    usage = subparsers.add_parser(
+        "usage",
+        parents=[json_output],
+        help=(
+            "Show the tokens agents spent on a task by run, step, role and "
+            "model, or every task's total; `usage collect [TASK]` reads the "
+            "agents' session logs for past sessions too."
+        ),
+    )
+    usage.add_argument(
+        "usage_words",
+        nargs="*",
+        metavar="[collect] [TASK]",
+        help="A task to show, or `collect` and an optional task to collect for.",
+    )
+    usage.add_argument(
+        "--rescan",
+        action="store_true",
+        help=(
+            "With collect: read the sessions' logs again from the start, "
+            "replacing what was recorded from them."
+        ),
+    )
     visualize = subparsers.add_parser(
         "visualize",
         help=(

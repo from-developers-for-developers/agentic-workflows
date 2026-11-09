@@ -329,7 +329,11 @@ off by name; a same-named workflow in a YAML configuration replaces the bundled
 one. `executable` selects the command printed for the project and run by the
 `./ww` launcher. `runtime` defaults `start` when neither the command nor the
 workflow sets one. `update_check` controls update notices. `debug` and
-`feedback` enable the optional local run reports. `config_ref` names the Git
+`feedback` enable the optional local run reports. `usage` controls token
+usage read from the agents' session logs: `false` switches it off,
+`log_roots` adds directories to look for logs in, and `prices` gives each
+model's price in dollars per million tokens of each kind (see `ww usage` in
+the features). `config_ref` names the Git
 ref whose committed configuration tasks read, defaulting to the ww/git default
 base branch, or is `false` to read the checkout (see
 [Configuration read from a commit](#configuration-read-from-a-commit)).
@@ -346,6 +350,7 @@ shape written by `init`:
   "feedback_learning": true,
   "debug": {"collect": false, "report": false},
   "feedback": {"collect": false},
+  "usage": {"enabled": true, "log_roots": [], "prices": {}},
   "task_format": "TASK-{{uuid}}",
   "limits": {"fixes": 3, "auto_retries": 0},
   "rules": {},

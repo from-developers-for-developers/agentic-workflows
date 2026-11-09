@@ -98,6 +98,7 @@ def test_start_stores_the_description_and_tasks_lists_it(
         "workflows": ["task"],
         "updated_at": row["updated_at"],
         "unreadable": None,
+        "tokens": 0,
     }
     assert row["updated_at"]
     (document,) = (project / ".ww/tasks/TASK-1/runs/01-task").glob("state.*.json")

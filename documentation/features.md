@@ -34,6 +34,8 @@ An installation carries the same-version copies of all three: read them with
   which lists every task with its description, status and last change.
 - Optional task codenames, such as `Atlas`, that every command addressing a
   task accepts in place of its ID.
+- Token usage per task, step, role and model, read from the agents' own
+  session logs for the manager and every subagent, with `ww usage`.
 - Resumable task execution from immutable plan snapshots.
 - Agent-owned prompts, skills, slash commands, profiles, and MCP calls.
 - ww-owned CLI handlers, output assertions, and lifecycle transitions.
@@ -517,13 +519,14 @@ description until the ID is bound.
 `ww tasks` lists every task in the store, children after their parent, in
 natural ID order (`TASK-2` before `TASK-10`): its ID, its codename when any
 task has one (see [Task codenames](#task-codenames)), the status of its
-latest run, when it last changed and its description.
+latest run, when it last changed, the tokens its agents spent when any task
+has some recorded (see [Token usage](#token-usage)) and its description.
 
 ```console
 $ ./ww tasks
-TASK-2   Atlas  completed          2026-11-04 16:12  Add a --quiet flag to greet
-TASK-3          direct             2026-11-05 09:30
-TASK-10         awaiting_operator  2026-11-05 11:02  Retry uploads after a timeout
+TASK-2   Atlas  completed          2026-11-04 16:12  4.1M   Add a --quiet flag to greet
+TASK-3          direct             2026-11-05 09:30  -
+TASK-10         awaiting_operator  2026-11-05 11:02  12.3k  Retry uploads after a timeout
 ```
 
 The status is the latest run's (`pending`, `in_progress`, `awaiting_operator`,
@@ -533,9 +536,9 @@ through direct work, is listed with an empty description. A task this ww
 cannot read in full is listed from its envelope, as `ww visualize` shows it,
 and named once more under the list; `ww tasks --json` gives each row as
 `task_id`, `codename` (or `null`), `description`, `status`, `workflows`,
-`updated_at` and `unreadable`, the reason the task could not be read in full
-or `null`. `ww tasks` is read-only and reads only the task store, not the
-configuration.
+`updated_at`, `unreadable`, the reason the task could not be read in full
+or `null`, and `tokens`. `ww tasks` changes no task: it reads the task store,
+not the configuration, and only collects new token usage first.
 
 ### Task codenames
 
@@ -570,6 +573,105 @@ letter case, and it must not read as a task ID: not an existing task's, not
 one the task format builds from it, and not a tracker key such as
 `PROJ-123`. A new task ID that is already another task's codename is refused
 too. Resetting a task removes its codename.
+
+## Token usage
+
+ww counts the tokens the agents spend on each task: the manager session's
+and every subagent's, per run, step, role and model. ww never sees a model's
+tokens itself. It reads them from the agents' own session logs, which keep
+every model response with its usage, and places each response on the task
+and step it worked for.
+
+```console
+$ ./ww usage TASK-64
+# TASK-64 token usage
+
+run      step                role     model             input  cache write  cache read  output       total
+01-task  —                   manager  claude-opus-5-5      38       34,588     789,004   6,468     830,098
+01-task  develop             manager  claude-opus-5-5     193      138,297  13,525,782  49,934  13,714,206
+01-task  check-code-quality  worker   claude-haiku-5-5     19       43,107     337,573     117     380,816
+01-task  run-tests           worker   claude-opus-5-5      36       63,100     841,333     208     904,677
+total                                                     286      279,092  15,493,692  56,727  15,829,797
+```
+
+`ww usage` without a task lists every task's total, the tokens spent outside
+any task, and the tokens still waiting to be placed; `--json` gives the same
+as data. `input` is fresh input only: cache reads and writes are counted
+apart, whatever an agent's log folds into its input figure, and the total is
+the four added up. Reasoning tokens are part of `output`; `--json` also
+gives them on their own.
+
+**How ww finds the logs.** Every ww command records the agent session that
+ran it, from the variable the agent sets for the commands it runs
+(`CLAUDE_CODE_SESSION_ID` for Claude Code, `CODEX_THREAD_ID` for Codex), and
+the host it ran on, in `.ww/executions.jsonl`. ww finds a session's logs by
+that ID alone, never by a path or a working directory:
+
+- Claude Code: `~/.claude/projects/*/<session>.jsonl` (or under
+  `$CLAUDE_CONFIG_DIR`), and each subagent's
+  `<session>/subagents/agent-<id>.jsonl` beside it. Subagents run with their
+  parent's session ID, so the one ID finds them all.
+- Codex: `~/.codex/sessions/<y>/<m>/<d>/rollout-*-<thread>.jsonl` (or under
+  `$CODEX_HOME`), and the rollouts of the threads it started, which name it
+  as their parent.
+- Cursor keeps no usage in its logs. Its `stop` hook reports each turn's
+  tokens, which ww records (`ww hook install --agent cursor` registers it);
+  they count the parent session only, never its subagents, and only where
+  Cursor runs that hook.
+
+**Where the tokens go.** A session's tokens belong to the task its latest ww
+command put it on, on the step under way when the model answered: as
+`worker` after a worker's command, and as `manager`, or `single` in the
+single runtime, otherwise. A response that runs a ww command did its work for
+that command's task. Tokens before a session's next command wait for it:
+`start` claims the conversation that led to it for the new task, and a
+worker's first `instruction` claims the subagent's reading of its prompt; any
+other command leaves them outside every task. A subagent that runs no ww
+command, such as a search, counts for whatever its spawner was doing when it
+started it, once it has been quiet for two minutes. A task whose run has
+finished takes a session's tokens for five more minutes, for the closing
+reply, and then none.
+
+**When ww collects.** After every `complete`, `fail` and `record`, before
+`ww usage` and `ww tasks` show anything, and every 30 seconds while `ww
+visualize` is open, ww reads the new lines of the sessions seen in the last
+seven days, from where it stopped. Collecting never fails a command. `ww
+usage collect [<task>]` reads every known session of any age, and also looks
+in the agents' directories for sessions that ran in this checkout before ww
+recorded sessions, so the history of earlier tasks can be collected once;
+`--rescan` reads the task's sessions, or every session, again from the start
+and replaces what was recorded from them.
+
+**Containers and other machines.** A session's logs are read where they
+are. When ww and the agent run in the same container, ww reads the
+container's logs at `complete`, so mount the agent's home on a volume if the
+container does not live as long as the task. A session whose logs are not on
+the machine that runs `ww usage` is named under the table with the host it
+ran on, rather than counted as nothing; `usage.log_roots` adds directories to
+look in, such as a container's agent home mounted on the host. A wrapper that
+runs ww in a container for an agent on the host passes the agent's session
+variable through, for example `docker run -e CLAUDE_CODE_SESSION_ID ...`.
+
+**Settings.** `usage` in `ww.json`:
+
+```json
+"usage": {
+  "enabled": true,
+  "log_roots": ["/mnt/devcontainer/.claude"],
+  "prices": {
+    "claude-opus-5-5": {"input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25}
+  }
+}
+```
+
+`"usage": false`, or `enabled: false`, keeps ww out of the agents'
+directories and stops collecting. `prices`, in US dollars per million tokens
+of each kind and keyed by the model name the logs report, adds a cost column;
+ww ships no prices, which change. ww keeps numbers only: counts, models,
+session and file IDs, and times, in `.ww/usage/tasks/<id>.jsonl`,
+`.ww/usage/outside.jsonl` and its read positions in `.ww/usage/files.json`,
+apart from the task state, so resetting a task leaves its usage;
+never a line of a log's text.
 
 ## Onboarding state
 
@@ -747,7 +849,9 @@ call that fails or takes too long leaves only its own fact not found.
 
 `ww visualize` is for the operator, not the agent: it serves a read-only page
 of the project on `127.0.0.1` and opens it in the browser, until Ctrl+C stops
-it. It never changes ww state and keeps no execution log.
+it. It never changes a task and keeps no execution log; while it is open it
+collects token usage every 30 seconds, and each task's row shows the tokens
+its agents spent (see [Token usage](#token-usage)).
 
 ```console
 $ ./ww visualize

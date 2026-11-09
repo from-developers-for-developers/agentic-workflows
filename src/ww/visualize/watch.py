@@ -27,8 +27,9 @@ from .project import Project
 
 Fingerprint = tuple[tuple[str, int, int], ...]
 # The runtime directories whose contents the Tasks tab shows: the tasks
-# themselves and what extensions record about them, such as a task's branch.
-TASK_DIRECTORIES = ("tasks", "ext")
+# themselves, what extensions record about them, such as a task's branch,
+# and the tokens their agents spent.
+TASK_DIRECTORIES = ("tasks", "ext", "usage")
 
 
 def configuration_paths(project: Project) -> tuple[Path, ...]:

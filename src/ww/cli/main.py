@@ -106,8 +106,16 @@ from ww.storage import Storage
 from ww.storage_adapters import FileTaskStorageAdapter
 from ww.task_codenames import resolve_task
 from ww.task_ids import bare_request_id
-from ww.task_list import render_task_rows, task_rows
+from ww.task_list import render_task_rows, task_ids_in_order, task_rows
 from ww.upgrade import upgrade
+from ww.usage import (
+    Collector,
+    UsageStore,
+    render_overview,
+    render_task_usage,
+    task_usage,
+    usage_overview,
+)
 from ww.visualize import serve_visualizer
 from ww.workflow_config import (
     ALL,
@@ -167,6 +175,8 @@ _READ_ONLY_COMMANDS = frozenset(
         "workflow-feedback",
         "visualize",
         "tasks",
+        # It writes only token usage, never task state.
+        "usage",
     }
 )
 # Commands that edit ww's configuration, or read none of it, read the
@@ -189,8 +199,11 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
         "visualize",
         # It reads only the task store.
         "tasks",
+        "usage",
     }
 )
+# Commands after which the agents' logs hold a finished step's tokens.
+_USAGE_COMMANDS = frozenset({"complete", "fail", "record"})
 # Commands after which a run may have ended or moved to another commit, so a
 # configuration snapshot may no longer be read by anyone.
 _PRUNING_COMMANDS = frozenset({"next", "complete", "reset", "cleanup", "config"})
@@ -692,10 +705,87 @@ def _codename(context: _Context) -> _Outcome:
 
 
 def _tasks(context: _Context) -> _Outcome:
+    _collect_usage(context.storage, context.extensions.config)
     rows = task_rows(context.storage)
     if context.args.json_output:
         return _Outcome(_json({"tasks": [row.to_dict() for row in rows]}))
     return _Outcome(render_task_rows(rows) + "\n")
+
+
+def _usage(context: _Context) -> _Outcome:
+    """A task's token usage, every task's total, or a collection."""
+    args = context.args
+    words = list(args.usage_words)
+    collecting = bool(words) and words[0] == "collect"
+    if collecting:
+        words.pop(0)
+    if len(words) > 1:
+        raise StateError("usage takes at most one task")
+    if args.rescan and not collecting:
+        raise StateError("--rescan applies to `usage collect` only")
+    config = context.extensions.config
+    task_id = (
+        resolve_task(context.storage.task_persistence, words[0]) if words else None
+    )
+    collector = Collector(context.storage, config.usage, config.task_format)
+    store = UsageStore(context.storage)
+    if collecting:
+        if not config.usage.enabled:
+            return _Outcome(
+                "Token usage is switched off: `usage` is false in ww.json.\n"
+            )
+        rescan: set[str] = set()
+        if args.rescan and task_id:
+            rescan = {
+                *collector.task_sessions(task_id),
+                *(
+                    f"{stretch.agent}:{stretch.session}"
+                    for stretch in store.task_records(task_id)
+                ),
+            }
+        result = collector.collect(
+            everything=True,
+            scan=True,
+            rescan=rescan,
+            rescan_all=args.rescan and task_id is None,
+        )
+        if args.json_output:
+            return _Outcome(
+                _json(
+                    {
+                        "files": result.files,
+                        "stretches": result.stretches,
+                        "unreadable": list(result.unreadable),
+                    }
+                )
+            )
+        text = (
+            f"Read {result.files} log file(s) with new lines and recorded "
+            f"{result.stretches} stretch(es) of tokens."
+        )
+        if result.unreadable:
+            text += (
+                f" {len(result.unreadable)} session(s) have no logs on this "
+                "machine; `ww usage <task>` names them."
+            )
+        return _Outcome(text + "\n")
+    _collect_usage(context.storage, config)
+    prices = config.usage.prices
+    if task_id is None:
+        overview = usage_overview(store, task_ids_in_order(context.storage), prices)
+        return _Outcome(
+            _json(overview.to_dict()) if args.json_output else render_overview(overview)
+        )
+    usage = task_usage(store, task_id, prices, collector.task_sessions(task_id))
+    return _Outcome(
+        _json(usage.to_dict()) if args.json_output else render_task_usage(usage)
+    )
+
+
+def _collect_usage(storage: Storage, config: ProjectConfig) -> None:
+    """Collect recent sessions' new tokens; this never fails the command."""
+    with contextlib.suppress(Exception):
+        Collector(storage, config.usage, config.task_format).collect()
 
 
 def _start(context: _Context) -> _Outcome:
@@ -1947,6 +2037,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "inspect": _inspect,
     "visualize": _visualize,
     "tasks": _tasks,
+    "usage": _usage,
     "codename": _codename,
     "lookup": lambda c: _Outcome(
         render_lookup(
@@ -2166,6 +2257,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     if result.exit_code == 0 and args.command in _PRUNING_COMMANDS:
         _prune_snapshots(service)
+    if (
+        result.exit_code == 0
+        and args.command in _USAGE_COMMANDS
+        and extensions is not None
+    ):
+        _collect_usage(storage, extensions.config)
     sys.stdout.write(result.text)
     return result.exit_code
 
@@ -2291,13 +2388,18 @@ def _answer_hook(arguments: list[str]) -> int:
         payload = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
         extensions = ExtensionRegistry.discover(root, root / SETTINGS_FILE)
         config = extensions.config
+        agent = AgentRegistry.of(extensions).resolve(args.agent)
+        hook_storage = storage
         with printed_executable(project_command(config.executable, root)):
             answer = answer_hook(
                 storage,
-                AgentRegistry.of(extensions).resolve(args.agent),
+                agent,
                 args.hook_action,
                 payload,
                 on_request=config.on_request,
+                on_turn=lambda turn: Collector(
+                    hook_storage, config.usage, config.task_format
+                ).record_turn(agent, turn),
             )
     except BaseException as error:  # noqa: BLE001 - a hook must never break the agent
         if isinstance(error, KeyboardInterrupt):

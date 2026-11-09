@@ -37,7 +37,23 @@ from .layout import (
     instruction_files,
 )
 from .permissions import Permissions
-from .registry import BUILTIN_AGENTS, AgentRegistry, builtin_agents, hook_agents
+from .registry import (
+    BUILTIN_AGENTS,
+    AgentRegistry,
+    builtin_agents,
+    hook_agents,
+    session_of,
+)
+from .usage import (
+    Call,
+    LogFile,
+    Reading,
+    Spawn,
+    TokenCounts,
+    TurnUsage,
+    Usage,
+    UsageReader,
+)
 
 __all__ = [
     "BUILTIN_AGENTS",
@@ -52,6 +68,7 @@ __all__ = [
     "AgentDiscovery",
     "AgentRegistry",
     "AvailableActions",
+    "Call",
     "ChoiceMechanism",
     "ClaudeCode",
     "Codex",
@@ -65,11 +82,19 @@ __all__ = [
     "LaunchRequest",
     "Launcher",
     "Layout",
+    "LogFile",
     "Permissions",
+    "Reading",
     "Registration",
+    "Spawn",
+    "TokenCounts",
+    "TurnUsage",
+    "Usage",
+    "UsageReader",
     "WaitMechanism",
     "builtin_agents",
     "hook_agents",
     "instruction_files",
     "question_tool",
+    "session_of",
 ]

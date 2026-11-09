@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ from ww.project_config import (
     Limits,
     ProjectConfig,
     ProjectDefinition,
+    UsagePrice,
+    UsageSettings,
     load_project_config,
     load_project_settings,
     overlay_settings,
@@ -587,3 +590,45 @@ def test_config_ref_is_unset_by_default(tmp_path: Path) -> None:
 def test_config_ref_is_validated(tmp_path: Path, value: object) -> None:
     with pytest.raises(ConfigurationError, match="config_ref must be a Git ref"):
         load_project_config(write(tmp_path, {"config_ref": value}))
+
+
+def test_usage_settings_load_with_roots_and_prices(tmp_path: Path) -> None:
+    assert load_project_config(tmp_path / "ww.json").usage == UsageSettings()
+    assert not load_project_config(write(tmp_path, {"usage": False})).usage.enabled
+    price = {"input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25}
+    path = write(
+        tmp_path,
+        {"usage": {"log_roots": ["/mnt/claude"], "prices": {"claude-opus-5-5": price}}},
+    )
+
+    usage = load_project_config(path).usage
+
+    assert usage.enabled and usage.log_roots == ("/mnt/claude",)
+    assert usage.prices == {"claude-opus-5-5": UsagePrice(5, 25, 0.5, 6.25)}
+    assert usage.to_dict()["prices"]["claude-opus-5-5"] == {
+        name: float(value) for name, value in price.items()
+    }
+
+
+@pytest.mark.parametrize(
+    ("usage", "message"),
+    [
+        ("yes", "usage must be true, false or an object"),
+        ({"daemon": True}, "usage has unknown key(s): daemon"),
+        ({"log_roots": "/mnt"}, "usage.log_roots must be a list"),
+        ({"prices": {"m": {"input": 1}}}, "must be an object with exactly"),
+        (
+            {
+                "prices": {
+                    "m": {"input": -1, "output": 1, "cache_read": 1, "cache_write": 1}
+                }
+            },
+            "usage.prices.m.input must be a non-negative number",
+        ),
+    ],
+)
+def test_bad_usage_settings_are_refused(
+    tmp_path: Path, usage: object, message: str
+) -> None:
+    with pytest.raises(ConfigurationError, match=re.escape(message)):
+        load_project_config(write(tmp_path, {"usage": usage}))

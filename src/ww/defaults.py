@@ -18,6 +18,7 @@ from ww.project_config import (
     DebugSettings,
     FeedbackSettings,
     Limits,
+    UsageSettings,
 )
 from ww.runtimes import DEFAULT_RUNTIME
 
@@ -43,6 +44,7 @@ def default_settings() -> dict[str, Any]:
         "feedback_learning": True,
         "debug": DebugSettings().to_dict(),
         "feedback": FeedbackSettings().to_dict(),
+        "usage": UsageSettings().to_dict(),
         "task_format": "TASK-{{uuid}}",
         "limits": Limits().to_dict(),
         "rules": {},

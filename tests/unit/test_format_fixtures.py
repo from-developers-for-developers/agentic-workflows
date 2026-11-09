@@ -29,6 +29,7 @@ from ww.run_reports import KINDS, RunReportStore
 from ww.storage import Storage
 from ww.storage_adapters.filesystem import FileTaskStorageAdapter
 from ww.storage_adapters.task_document import decode_run_document, decode_task_index
+from ww.usage import UsageStore
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "formats"
 SAMPLE = re.compile(r"v([1-9][0-9]*)\.json")
@@ -65,6 +66,14 @@ def _run_report(root: Path, data: dict[str, Any]) -> None:
     assert store.get(data["id"])["run_id"] == data["run_id"]
 
 
+def _usage_state(root: Path, data: dict[str, Any]) -> None:
+    store = UsageStore(Storage(root))
+    _write(store.state_path, data)
+    loaded = store.load()
+    assert set(loaded.files) == set(data["files"])
+    assert set(loaded.sessions) == set(data["sessions"])
+
+
 LOADERS: dict[str, Callable[[Path, dict[str, Any]], None]] = {
     "task state": lambda _, data: decode_task_index(data, data["task_id"]),
     "run state": lambda _, data: decode_run_document(
@@ -77,6 +86,7 @@ LOADERS: dict[str, Callable[[Path, dict[str, Any]], None]] = {
     "rule stats": _rule_stats,
     "feedback store": _feedback_store,
     "run report": _run_report,
+    "usage state": _usage_state,
 }
 
 

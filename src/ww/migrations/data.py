@@ -61,6 +61,7 @@ FormatName = Literal[
     "rule stats",
     "feedback store",
     "run report",
+    "usage state",
 ]
 # One step of a format's chain: the mapping at version N, owned by the
 # migration, to the mapping at N + 1. The version key is set by the chain.
@@ -185,6 +186,7 @@ FORMATS: dict[str, DataFormat] = _registry(
     DataFormat("rule stats", current=1, version_key="schema"),
     DataFormat("feedback store", current=1, version_key="schema"),
     DataFormat("run report", current=1, version_key="schema"),
+    DataFormat("usage state", current=1, version_key="schema"),
 )
 
 

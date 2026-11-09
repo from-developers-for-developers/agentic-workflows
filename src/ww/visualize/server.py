@@ -22,7 +22,9 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from ww.errors import StateError, WwError
+from ww.extensions import ExtensionRegistry
 from ww.storage import Storage
+from ww.usage import Collector
 
 from . import demo
 from .atlas import build_atlas
@@ -234,6 +236,23 @@ def _warm(server: VisualizerServer) -> None:
         server.demo()
 
 
+# How often the open page has new token usage collected; the task list
+# follows the usage files like any other task change.
+USAGE_INTERVAL = 30.0
+
+
+def _collect_usage(storage: Storage, stopped: threading.Event) -> None:
+    """Collect recent sessions' tokens until the server stops; never raises."""
+    while True:
+        with contextlib.suppress(Exception):
+            config = ExtensionRegistry.discover(
+                storage.root, storage.project_config_path
+            ).config
+            Collector(storage, config.usage, config.task_format).collect()
+        if stopped.wait(USAGE_INTERVAL):
+            return
+
+
 def serve_visualizer(
     storage: Storage,
     *,
@@ -249,6 +268,10 @@ def serve_visualizer(
     )
     url = visualizer_url(server.server_address[1])
     watcher.start()
+    stopped = threading.Event()
+    threading.Thread(
+        target=_collect_usage, args=(storage, stopped), daemon=True
+    ).start()
     # The recording takes a moment; have it ready before the page asks.
     threading.Thread(target=_warm, args=(server,), daemon=True).start()
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -260,6 +283,7 @@ def serve_visualizer(
             open_browser(url)
         thread.join()
     finally:
+        stopped.set()
         watcher.stop()
         server.shutdown()
         server.server_close()

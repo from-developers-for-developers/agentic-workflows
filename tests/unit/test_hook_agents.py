@@ -90,7 +90,8 @@ def test_the_session_start_hook_is_registered_without_a_subagent_start() -> None
     ("agent", "events"),
     [
         ("codex", {"SessionStart"}),
-        ("cursor", {"sessionStart"}),
+        # Cursor's stop reports the turn's tokens.
+        ("cursor", {"sessionStart", "stop"}),
     ],
 )
 def test_each_agent_registers_its_native_events(agent: str, events: set[str]) -> None:
@@ -104,7 +105,8 @@ def test_cursor_commands_run_from_the_project_root() -> None:
     assert snippet["hooks"] == {
         "sessionStart": [
             {"command": "./ww hook session-start --agent cursor", "timeout": 10}
-        ]
+        ],
+        "stop": [{"command": "./ww hook stop --agent cursor", "timeout": 10}],
     }
 
 

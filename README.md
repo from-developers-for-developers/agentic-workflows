@@ -333,6 +333,7 @@ the commands worth knowing:
 ./ww status TASK-123        # compact: workflow, current step and state, runtime, agent
 ./ww artifacts TASK-123     # what each step produced
 ./ww instruction TASK-123 --role manager   # the full current instructions
+./ww usage TASK-123         # the tokens its agents spent, by step, role and model
 ./ww visualize              # a live, read-only browser page of workflows and tasks
 ```
 

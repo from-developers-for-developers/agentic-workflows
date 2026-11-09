@@ -2,7 +2,8 @@
 """Every task in the store, one row each, as ``ww tasks`` lists them.
 
 A row names the task, its codename when it has one, its one-line
-description, the status of its latest run and when it last changed. Children
+description, the status of its latest run, when it last changed and the
+tokens its agents spent, as far as ww has collected them. Children
 follow their parent. A task this build cannot read in full, such as one an
 older ww wrote, is listed from its envelope (``ww.task_envelope``), with why
 it could not be read.
@@ -20,6 +21,7 @@ from ww.instructions.policy import operator_reason
 from ww.storage import Storage
 from ww.task_descriptions import task_description
 from ww.task_envelope import read_task_envelope
+from ww.usage import UsageStore, format_tokens, task_total
 
 # The status of a task registered only through direct work.
 DIRECT_STATUS = "direct"
@@ -37,6 +39,8 @@ class TaskRow:
     # Why only the task's envelope could be read; ``None`` when it was read.
     unreadable: str | None = None
     codename: str | None = None
+    # Every token recorded for the task (``ww usage``).
+    tokens: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -47,21 +51,31 @@ class TaskRow:
             "workflows": list(self.workflows),
             "updated_at": self.updated_at,
             "unreadable": self.unreadable,
+            "tokens": self.tokens,
         }
 
 
 def task_rows(storage: Storage) -> tuple[TaskRow, ...]:
     """Every task, in natural task ID order, children after their parent."""
+    return tuple(task_row(storage, task_id) for task_id in task_ids_in_order(storage))
+
+
+def task_ids_in_order(storage: Storage) -> tuple[str, ...]:
+    """Every task ID in natural order, children after their parent."""
     tasks = storage.task_persistence
     return tuple(
-        task_row(storage, candidate)
+        candidate
         for task_id in sorted(tasks.task_ids(), key=_natural)
         for candidate in (task_id, *sorted(tasks.child_task_ids(task_id), key=_natural))
     )
 
 
 def task_row(storage: Storage, task_id: str) -> TaskRow:
-    return replace(_row(storage, task_id), codename=_codename(storage, task_id))
+    return replace(
+        _row(storage, task_id),
+        codename=_codename(storage, task_id),
+        tokens=task_total(UsageStore(storage), task_id),
+    )
 
 
 def _row(storage: Storage, task_id: str) -> TaskRow:
@@ -137,19 +151,23 @@ def _natural(task_id: str) -> tuple[tuple[int, int | str], ...]:
 
 
 def render_task_rows(rows: tuple[TaskRow, ...]) -> str:
-    """The rows as aligned plain text: ID, codename, status, last change, description.
+    """The rows as aligned plain text: ID, codename, status, last change,
+    tokens, description.
 
-    The codename column is left out while no task has one.
+    The codename column is left out while no task has one, and the tokens
+    column while no task has any recorded.
     """
     if not rows:
         return "No tasks."
     named = any(row.codename for row in rows)
+    counted = any(row.tokens for row in rows)
     cells = [
         (
             row.task_id,
             *((row.codename or "",) if named else ()),
             row.status,
             _minute(row.updated_at),
+            *((format_tokens(row.tokens) if row.tokens else "-",) if counted else ()),
             row.description or "",
         )
         for row in rows

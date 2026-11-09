@@ -10,7 +10,7 @@ subclasses the registry creates with the name they were addressed by.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from ww.errors import ConfigurationError
@@ -110,3 +110,16 @@ def hook_agents(agents: Iterable[Agent]) -> tuple[Agent, ...]:
 def builtin_agents() -> tuple[Agent, ...]:
     """The agents ww ships an adapter for, for places that read no settings."""
     return tuple(agent() for agent in BUILTIN_AGENTS)
+
+
+def session_of(environ: Mapping[str, str]) -> tuple[Agent, str] | None:
+    """The built-in agent whose session runs this process, and the session's ID.
+
+    Each agent tells the commands it runs its session through its own
+    environment variable; an agent without one, such as Cursor, is unknown.
+    """
+    for agent in builtin_agents():
+        value = environ.get(agent.session_variable) if agent.session_variable else None
+        if value:
+            return agent, value
+    return None

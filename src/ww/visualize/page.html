@@ -1085,6 +1085,11 @@ function fmtDur(n) {
   if (m < 60) return `${m}m ${String(r).padStart(2, "0")}s`;
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
+function fmtTokens(n) {
+  if (n < 1000) return String(n);
+  if (n < 1e6) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1e6).toFixed(1)}M`;
+}
 function ago(iso) {
   if (!iso) return "";
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -1120,7 +1125,7 @@ function renderTaskList() {
     const wf = (t.workflows || []).join(" → ") || (t.reduced ? "" : "direct work");
     const child = t.id.includes("/");
     return `<button class="trow${t.status === "unreadable" ? " unreadable" : ""}${t.reduced ? " reduced" : ""}${child ? " child" : ""}" type="button" data-task="${esc(t.id)}" aria-current="${currentTask === t.id}">
-      <span class="trow-top"><span class="trow-id">${esc(child ? t.id.split("/").pop() : t.id)}</span>${t.codename ? `<span class="trow-codename">${esc(t.codename)}</span>` : ""}${pill(t.status)}<span class="trow-wf">${esc(wf)}</span><span class="trow-when">${esc(ago(t.updated_at))}</span></span>
+      <span class="trow-top"><span class="trow-id">${esc(child ? t.id.split("/").pop() : t.id)}</span>${t.codename ? `<span class="trow-codename">${esc(t.codename)}</span>` : ""}${pill(t.status)}<span class="trow-wf">${esc(wf)}</span>${t.tokens ? `<span class="trow-wf" title="tokens agents spent on this task; ww usage ${esc(t.id)} breaks them down">${esc(fmtTokens(t.tokens))} tokens</span>` : ""}<span class="trow-when">${esc(ago(t.updated_at))}</span></span>
       ${t.current_step ? `<span class="trow-wf">at ${esc(t.current_step)}</span>` : ""}
       ${t.reduced ? `<span><span class="badge reduced" title="${esc(t.reduced.reason)}">${esc(t.reduced.badge)}</span></span>` : ""}
       ${t.description ? `<span class="trow-desc">${esc(t.description)}</span>` : ""}

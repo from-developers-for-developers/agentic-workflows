@@ -55,6 +55,27 @@ def isolated_user_configuration(
         yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def isolated_agent_sessions(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """Keep the agent session running the suite, and its logs, out of it.
+
+    ww records the session of the agent that runs it and reads that agent's
+    logs for token usage; a suite run by an agent would otherwise read the
+    operator's own sessions. Tests of usage set these for themselves.
+    """
+    environment = {
+        "CLAUDE_CONFIG_DIR": str(tmp_path_factory.mktemp("claude-home")),
+        "CODEX_HOME": str(tmp_path_factory.mktemp("codex-home")),
+    }
+    # ``patch.dict`` restores the whole environment, the removed names too.
+    with patch.dict(os.environ, environment):
+        for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+            os.environ.pop(name, None)
+        yield
+
+
 # The built-in files every test sees unless it asks for all of them.
 DEFAULT_TEST_BUILTINS: tuple[str, ...] = ()
 

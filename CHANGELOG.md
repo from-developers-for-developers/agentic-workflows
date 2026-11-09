@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-09
+
+- Added: token usage per task, run, step, role and model, read from the agents' own session logs for the manager session and every subagent (Claude Code transcripts, Codex rollouts; Cursor's `stop` hook reports its turns). Every ww command records the agent session and host that ran it; ww collects after `complete`, `fail` and `record`, before `ww usage` and `ww tasks`, and while `ww visualize` is open; `ww usage [<task>]` shows it, `ww usage collect [<task>] [--rescan]` reads earlier sessions too, and `ww tasks` and `ww visualize` show each task's total. `usage` in `ww.json` switches it off, adds log directories (`log_roots`, for container homes) and prices models. ww keeps numbers only, under `.ww/usage/`. `ww hook install --agent cursor` registers the new `stop` hook.
+
 ## 2026-11-06
 
 - Added: optional task codenames, set with `start --codename` or `ww codename`, accepted in place of the task ID by every command that addresses a task and shown beside the ID in `ww tasks`, `ww visualize` and pages. `9f743be`

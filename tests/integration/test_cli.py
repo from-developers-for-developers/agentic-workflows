@@ -616,6 +616,7 @@ def test_init_writes_every_setting_with_its_default(tmp_path: Path, capsys) -> N
         "feedback_learning",
         "debug",
         "feedback",
+        "usage",
         "task_format",
         "limits",
         "rules",

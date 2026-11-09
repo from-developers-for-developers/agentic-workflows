@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from .usage import TurnUsage
+
 HookEvent = Literal["session-start", "stop", "interrupt"]
 HOOK_EVENTS: tuple[HookEvent, ...] = ("session-start", "stop", "interrupt")
 # Every command ww registers carries this, so ww recognises its own entries
@@ -39,6 +41,9 @@ class HookPayload:
     # ``False`` when the agent calls the session-start hook for a later turn
     # that needs no context.
     wants_context: bool = True
+    # The tokens of the turn that just ended, from an agent whose stop hook
+    # reports them.
+    usage: TurnUsage | None = None
 
 
 @dataclass(frozen=True)

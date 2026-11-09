@@ -42,8 +42,11 @@ confused another, and nothing in them was needed to continue a task.
 
 The events stay accepted so a hooks file written by an older ww keeps
 working. `ww hook stop` and `ww hook interrupt` exit 0 with no output and
-record nothing; the audit log notes the call. Running `hook install` again replaces an
-older registration with the one `session-start` entry, and `hook uninstall`
+record nothing; the audit log notes the call. The one exception is Cursor's
+`stop`, which ww registers again for a different purpose: its payload
+reports the turn's tokens, which ww records as token usage, since Cursor
+keeps none in its logs. It still answers nothing. Running `hook install` again replaces an
+older registration with the current entries, and `hook uninstall`
 removes every ww entry, whichever events it registered.
 
 ## Agents and their files
@@ -52,7 +55,7 @@ removes every ww entry, whichever events it registered.
 | --- | --- | --- | --- |
 | Claude Code | `.claude/settings.json` | `SessionStart` | `.claude/settings.local.json` |
 | Codex | `.codex/hooks.json` | `SessionStart` | none; user file `~/.codex/hooks.json` |
-| Cursor | `.cursor/hooks.json` | `sessionStart` | none; user file `~/.cursor/hooks.json` |
+| Cursor | `.cursor/hooks.json` | `sessionStart`, `stop` (token usage) | none; user file `~/.cursor/hooks.json` |
 
 Claude Code's `SessionStart` has no matcher, so it fires for every source,
 compaction included. Codex loads project hooks only once the project's

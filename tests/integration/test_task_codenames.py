@@ -129,9 +129,7 @@ def test_the_codename_command_shows_sets_changes_and_clears_it(
 ) -> None:
     _start(project, capsys, "TASK-1")
 
-    assert _run(project, capsys, "codename", "TASK-1") == (
-        "TASK-1 has no codename.\n"
-    )
+    assert _run(project, capsys, "codename", "TASK-1") == ("TASK-1 has no codename.\n")
     assert _run(project, capsys, "codename", "TASK-1", "Atlas") == (
         "TASK-1 is now also called Atlas.\n"
     )

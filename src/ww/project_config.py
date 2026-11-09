@@ -336,6 +336,47 @@ class FeedbackSettings:
 
 
 @dataclass(frozen=True)
+class UsagePrice:
+    """What one model costs, in US dollars per million tokens of each kind."""
+
+    input: float
+    output: float
+    cache_read: float
+    cache_write: float
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "input": self.input,
+            "output": self.output,
+            "cache_read": self.cache_read,
+            "cache_write": self.cache_write,
+        }
+
+
+@dataclass(frozen=True)
+class UsageSettings:
+    """``usage`` in ``ww.json``: reading agents' session logs for token usage.
+
+    ``enabled: false`` (or ``"usage": false``) keeps ww out of the agents'
+    own directories and stops collecting.  ``log_roots`` adds directories to
+    look for logs in, such as an agent home mounted from a container.
+    ``prices`` gives each model's price, keyed by the model name its logs
+    report; without one ww shows tokens only.
+    """
+
+    enabled: bool = True
+    log_roots: tuple[str, ...] = ()
+    prices: dict[str, UsagePrice] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "log_roots": list(self.log_roots),
+            "prices": {model: price.to_dict() for model, price in self.prices.items()},
+        }
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     """Settings that apply to a project rather than to one workflow."""
 
@@ -360,6 +401,8 @@ class ProjectConfig:
     # Local collection of ww's self-assessment and of workflow feedback.
     debug: DebugSettings = DebugSettings()
     feedback: FeedbackSettings = FeedbackSettings()
+    # Token usage read from the agents' session logs.
+    usage: UsageSettings = UsageSettings()
     # Built-in workflows switched off for this project.
     disabled_workflows: frozenset[str] = frozenset()
     # Names under ``workflows`` of workflows ww no longer provides; ignored.
@@ -619,6 +662,55 @@ def _parse_feedback(raw: object, path: str) -> FeedbackSettings:
     return FeedbackSettings(**_parse_switches(raw, path, "feedback", ("collect",)))
 
 
+def _parse_usage(raw: object, path: str) -> UsageSettings:
+    if raw is None or isinstance(raw, bool):
+        return UsageSettings(enabled=raw is not False)
+    if not isinstance(raw, dict):
+        raise ConfigurationError(f"{path}.usage must be true, false or an object")
+    unknown = set(raw) - {"enabled", "log_roots", "prices"}
+    if unknown:
+        raise ConfigurationError(
+            f"{path}.usage has unknown key(s): " + ", ".join(sorted(unknown))
+        )
+    enabled = raw.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ConfigurationError(f"{path}.usage.enabled must be true or false")
+    roots = raw.get("log_roots", [])
+    if not isinstance(roots, list) or not all(
+        isinstance(root, str) and root.strip() for root in roots
+    ):
+        raise ConfigurationError(
+            f"{path}.usage.log_roots must be a list of directory paths"
+        )
+    prices = raw.get("prices", {})
+    if not isinstance(prices, dict):
+        raise ConfigurationError(f"{path}.usage.prices must be an object")
+    return UsageSettings(
+        enabled=enabled,
+        log_roots=tuple(roots),
+        prices={
+            model: _parse_price(price, f"{path}.usage.prices.{model}")
+            for model, price in prices.items()
+        },
+    )
+
+
+def _parse_price(raw: object, path: str) -> UsagePrice:
+    names = ("input", "output", "cache_read", "cache_write")
+    if not isinstance(raw, dict) or set(raw) != set(names):
+        raise ConfigurationError(
+            f"{path} must be an object with exactly: " + ", ".join(names)
+        )
+    for name in names:
+        value = raw[name]
+        if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+            raise ConfigurationError(
+                f"{path}.{name} must be a non-negative number of dollars "
+                "per million tokens"
+            )
+    return UsagePrice(**{name: float(raw[name]) for name in names})
+
+
 def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     unknown = set(raw) - {
         "enabled",
@@ -638,6 +730,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "rules",
         "config_ref",
         "agents",
+        "usage",
     }
     if unknown:
         raise ConfigurationError(
@@ -696,6 +789,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         feedback_learning=feedback_learning,
         debug=debug,
         feedback=feedback,
+        usage=_parse_usage(raw.get("usage"), path),
         disabled_workflows=disabled_workflows,
         retired_workflows=retired_workflows,
         executable=_parse_executable(raw.get("executable"), path),

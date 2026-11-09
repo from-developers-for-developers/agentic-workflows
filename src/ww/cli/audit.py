@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
+import socket
 from datetime import datetime, timezone
 
 from ww import __version__
+from ww.agents import session_of
 
 
 def _log_record(
@@ -38,6 +41,25 @@ def _log_record(
         # Who confirmed a gated choice: the operator at a terminal, or an
         # agent carrying out the operator's decision with --yes.
         "confirmation": getattr(args, "confirmation", None),
+        **_session(),
+    }
+
+
+def _session() -> dict[str, str | None]:
+    """The agent session that ran the command, and the machine it ran on.
+
+    Token usage is read from that session's own logs; the host, a
+    container's ID inside a container, says where those logs are.
+    """
+    session = session_of(os.environ)
+    try:
+        host: str | None = socket.gethostname() or None
+    except OSError:
+        host = None
+    return {
+        "agent": session[0].name if session else None,
+        "agent_session": session[1] if session else None,
+        "host": host,
     }
 
 
