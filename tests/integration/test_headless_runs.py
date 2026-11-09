@@ -12,13 +12,23 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from ww.agents import AgentRegistry
 from ww.cli import main
-from ww.headless import LAUNCH_VARIABLE, LaunchStore, worker_prompt
+from ww.headless import (
+    LAUNCH_VARIABLE,
+    HeadlessRuns,
+    LaunchRecord,
+    LaunchStore,
+    worker_prompt,
+)
+from ww.headless.records import write_record
+from ww.project_config import ProjectConfig
 
 WORKFLOW = """workflows:
   - name: task
@@ -359,3 +369,39 @@ def test_the_prompt_names_the_page_and_forbids_manager_commands(
     assert "instruction TASK-1 --run 01-task --role worker`" in prompt
     assert "never run a command with `--role manager`" in prompt
     assert worker_prompt.__module__ == "ww.headless.runs"
+
+
+def test_reset_waits_for_a_just_launched_supervisor_before_stopping_it(
+    tmp_path: Path,
+) -> None:
+    runs = HeadlessRuns(tmp_path, ProjectConfig(), AgentRegistry())
+    sleeper = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    record = LaunchRecord(
+        id="late",
+        task_id="TASK-1",
+        run_id="01-task",
+        item_id="item",
+        step="review",
+        agent="codex",
+        argv=("codex",),
+        workspace=str(tmp_path),
+        started_at="2026-11-09T00:00:00+00:00",
+    )
+    runs.store.write(record)
+
+    def supervisor_reports() -> None:
+        time.sleep(0.5)
+        write_record(
+            runs.store.path(record),
+            LaunchRecord.from_dict(
+                {**record.to_dict(), "status": "running", "supervisor_pid": sleeper.pid}
+            ),
+        )
+
+    reporter = threading.Thread(target=supervisor_reports)
+    reporter.start()
+    (stopped,) = runs.stop_all("TASK-1")
+    reporter.join()
+
+    assert stopped.status == "stopped"
+    assert sleeper.wait(timeout=15) != 0

@@ -16,6 +16,7 @@ import os
 import secrets
 import subprocess
 import sys
+import time
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -46,6 +47,8 @@ from .supervisor import stop_group
 LAUNCH_VARIABLE = "WW_HEADLESS_LAUNCH"
 # How many lines of each stream a failure page shows.
 TAIL_LINES = 20
+# How long stopping waits for a just-launched supervisor to record its pid.
+STARTUP_SECONDS = 10.0
 
 
 class LaunchRefusedError(StateError):
@@ -311,7 +314,7 @@ class HeadlessRuns:
         for path in sorted(
             (self.store.tasks / task_id / "runs").glob("*/headless/*.json")
         ):
-            record = read_record(path)
+            record = _started(path)
             if record is None or record.finished:
                 continue
             stop_group(record.supervisor_pid)
@@ -378,6 +381,26 @@ class HeadlessRuns:
                 for finding in refused.findings
             ),
         )
+
+
+def _started(path: Path, seconds: float = STARTUP_SECONDS) -> LaunchRecord | None:
+    """The record at ``path`` once its supervisor has recorded its pid.
+
+    A run just launched is ``starting`` until its supervisor's first write;
+    stopping it before then would leave the supervisor to start the agent
+    anyway.  After ``seconds`` the record is taken as it is.
+    """
+    deadline = time.monotonic() + seconds
+    record = read_record(path)
+    while (
+        record is not None
+        and not record.finished
+        and record.supervisor_pid is None
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.1)
+        record = read_record(path)
+    return record
 
 
 def failure_reason(record: LaunchRecord) -> str:
