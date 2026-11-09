@@ -5,12 +5,16 @@ A pointer is a project-relative path, a glob (``*``, ``?``, ``[...]`` and
 ``{a,b}`` alternatives), a directory, or a file path with an anchor after
 ``#``: a heading of a Markdown file, or a word any other file contains.
 Checks read files as text and never parse a language.
+
+Whether a pointer covers a path is decided from the path alone, so a file a
+change deleted is still covered by the pointer that named it.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
 _GLOB = re.compile(r"[*?\[{]")
@@ -61,6 +65,25 @@ class Pointer:
         }
         return tuple(sorted(found))
 
+    def patterns(self) -> tuple[str, ...]:
+        """The path with every ``{a,b}`` group expanded: git pathspecs."""
+        return _expanded(self.path)
+
+    def covers(self, path: str) -> bool:
+        """Whether the project-relative ``path`` is, or lies inside, what this
+        pointer names: the file itself, a file in the directory, or a match of
+        the glob or of a directory it matches."""
+        parts = PurePosixPath(path).parts
+        for pattern in self.patterns():
+            named = PurePosixPath(pattern).parts
+            if not _GLOB.search(pattern):
+                if parts[: len(named)] == named:
+                    return True
+                continue
+            if any(_glob_match(named, parts[:end]) for end in range(1, len(parts) + 1)):
+                return True
+        return False
+
 
 def pointer_problems(pointer: Pointer, root: Path) -> tuple[str, ...]:
     """Why ``pointer`` does not resolve under ``root``; empty when it does."""
@@ -98,6 +121,22 @@ def _expanded(pattern: str) -> tuple[str, ...]:
         for expanded in _expanded(
             pattern[: match.start()] + option + pattern[match.end() :]
         )
+    )
+
+
+def _glob_match(pattern: tuple[str, ...], parts: tuple[str, ...]) -> bool:
+    """Whether path ``parts`` match glob ``pattern`` segment by segment, ``**``
+    standing for any number of segments."""
+    if not pattern:
+        return not parts
+    if pattern[0] == "**":
+        return any(
+            _glob_match(pattern[1:], parts[skip:]) for skip in range(len(parts) + 1)
+        )
+    return (
+        bool(parts)
+        and fnmatchcase(parts[0], pattern[0])
+        and _glob_match(pattern[1:], parts[1:])
     )
 
 

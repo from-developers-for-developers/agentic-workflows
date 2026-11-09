@@ -739,13 +739,49 @@ not match its file, a summary over one line, a repeated entry, an alias
 another map already uses as its name or alias, and `uses` naming no map.
 
 ```console
-./ww features              # the index: each map's name, summary and aliases
-./ww features show visualize   # one map, with any pointer that no longer resolves
-./ww features check        # every map's shape and pointers; exits 1 on a problem
-./ww features template     # a commented map to start a new one from
+./ww features                    # the index: each map's name, summary and aliases
+./ww features lookup visualizer  # the maps a name, alias, words or a path find
+./ww features show visualize     # one map, its broken pointers, staleness and tasks
+./ww features changed [TASK]     # the maps a task's run, or the checkout's changes, touch
+./ww features stale              # the maps behind their files
+./ww features check              # every map's shape and pointers; exits 1 on a problem
+./ww features template           # a commented map to start a new one from
 ```
 
-`--json` gives the index, a map and the check as data.
+`--json` gives each of them but `template` as data.
+
+`lookup` finds a map by its name or an alias, whatever the case; by a path,
+or `path#Name`, that one of its pointers covers (a file inside a mapped
+directory or matching a glob counts) or that holds one of its pointers; and
+otherwise by words that start words of its name, aliases and summary. Maps
+named come first. Each map found is checked as it is read: a pointer that no
+longer resolves is listed under it, and so is how far its files moved on, so a
+reader knows what not to trust.
+
+Whether a pointer covers a path is decided from the path alone, so a deleted
+file still belongs to the map that named it. `changed` measures with Git:
+without a task, the checkout's uncommitted changes since `HEAD`; with one, the
+changes in the task's workspace since its branch forked from the run's
+ww/git base branch. It lists the maps they touch and the changed files no map
+covers. The maps' own files under `.ww/features/` never count.
+
+A map is stale by the commits that changed the files it points to after the
+last commit that changed the map itself; nothing is stamped into the map.
+`stale`, `lookup` and `show` name those commits' tasks: by the `WW-Operation`
+trailer ww writes on its own commits, else by a subject in the ww/git
+`commit_format`; a commit naming no task is counted as made outside ww. A map
+with no commit of its own yet has no staleness to measure.
+
+Beside each map, `.ww/features/<name>.tasks` lists the tasks that changed the
+feature, one per line with its description (`TASK-65  Collect token usage per
+task`), oldest first. ww writes it, and `show` prints it. Branches each append
+to it, so `init` marks these files `merge=union` in `.gitattributes`; a line
+merged twice is read once.
+
+`ww visualize` adds a Feature maps tab while the setting is on: the maps with
+search, and for the one chosen its pointers by field with the broken ones
+marked, its staleness, the maps it uses and the tasks that changed it, beside
+the problems `check` reports. It follows the maps as they change.
 
 ## Onboarding state
 
@@ -936,7 +972,8 @@ $ ./ww visualize --port 8765 --no-open   # print the address only
 The port is fixed per project, so a bookmarked page finds it again; when it is
 in use, ww says a page may already be open there and suggests `--port`.
 
-The page has two tabs:
+The page has two tabs, and a third, Feature maps, while the repo `ww.json`
+keeps [feature maps](#feature-maps):
 
 | Tab | Shows |
 | --- | --- |

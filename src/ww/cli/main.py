@@ -30,7 +30,7 @@ from ww.config_files import (
     display_path,
     staged_files,
 )
-from ww.config_snapshots import ConfigSnapshots, ConfigSource
+from ww.config_snapshots import GIT_EXTENSION, ConfigSnapshots, ConfigSource
 from ww.config_writes import FileWrite
 from ww.defaults import PROJECT_LAUNCHER
 from ww.design_docs import read_design_document
@@ -136,7 +136,7 @@ from .catalogs import (
     _catalog_workflows,
 )
 from .discover import render_discover
-from .features import features
+from .features import FeaturesRequest, features
 from .initialization import (
     _finish_initialization,
     _initialization_options,
@@ -717,14 +717,24 @@ def _tasks(context: _Context) -> _Outcome:
 
 
 def _features(context: _Context) -> _Outcome:
-    """The feature maps index, one map, a check of them all, or the template."""
+    """Feature maps: the index, a lookup, one map, a change's maps, the
+    stale ones, a check of them all, or the template."""
     args = context.args
+    config = context.extensions.config
+    commit_format = config.settings_for(GIT_EXTENSION).get("commit_format")
+    task = getattr(args, "task", None)
     text, exit_code = features(
-        context.storage.root,
-        context.extensions.config.feature_maps,
-        args.features_action,
-        getattr(args, "feature_name", None),
-        args.json_output,
+        FeaturesRequest(
+            root=context.storage.root,
+            enabled=config.feature_maps,
+            action=args.features_action,
+            json_output=args.json_output,
+            run_workspace=context.service.run_workspace,
+            name=getattr(args, "feature_name", None),
+            query=tuple(getattr(args, "query", ())),
+            task=resolve_task(context.storage.task_persistence, task) if task else None,
+            commit_format=commit_format if isinstance(commit_format, str) else None,
+        )
     )
     return _Outcome(text, exit_code=exit_code)
 

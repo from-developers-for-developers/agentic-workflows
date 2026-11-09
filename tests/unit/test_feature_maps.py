@@ -12,8 +12,12 @@ from ww.features import (
     MAX_ENTRIES,
     TEMPLATE,
     Pointer,
+    TaskEntry,
     load_feature_maps,
     pointer_problems,
+    read_task_list,
+    record_task,
+    task_list_path,
 )
 
 
@@ -256,3 +260,108 @@ def test_a_map_naming_another_is_keyed_by_its_file_and_shadows_nothing(
     assert "name 'agents' must match the file name 'hooks'" in [
         problem.message for problem in maps.problems
     ]
+
+
+@pytest.mark.parametrize(
+    ("pointer", "path", "covered"),
+    [
+        ("src/app/registry.py", "src/app/registry.py", True),
+        ("src/app/registry.py#Registry", "src/app/registry.py", True),
+        ("src/app/registry.py", "src/app/registry.pyc", False),
+        ("src/app", "src/app/deep/gone.py", True),
+        ("src/app/", "src/app/hooks.py", True),
+        ("src/app", "src/application.py", False),
+        ("src/app/*.py", "src/app/new.py", True),
+        ("src/app/*.py", "src/app/deep/new.py", False),
+        ("src/**/*.py", "src/app/deep/new.py", True),
+        ("src/*", "src/app/deep/new.py", True),
+        ("src/app/{registry,hooks}.py", "src/app/hooks.py", True),
+        ("src/app/{registry,hooks}.py", "src/app/other.py", False),
+    ],
+)
+def test_a_pointer_covers_a_path_from_the_path_alone(
+    pointer: str, path: str, covered: bool
+) -> None:
+    assert Pointer.parse(pointer).covers(path) is covered
+
+
+def _two_maps(root: Path) -> None:
+    _map(
+        root,
+        "agents",
+        "name: agents\nsummary: Agent adapters behind one registry.\n"
+        "aliases: [Adapters]\nparts: [src/app/registry.py#Registry]\n"
+        "docs: [docs/guide.md#The registry]\n",
+    )
+    _map(
+        root,
+        "hooks",
+        "name: hooks\nsummary: Hook protocols agents answer.\n"
+        "parts: [src/app/hooks.py]\n",
+    )
+
+
+def test_coverage_names_the_affected_maps_and_the_unmapped_files(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _two_maps(root)
+
+    coverage = load_feature_maps(root).coverage(
+        [
+            "docs/guide.md",
+            "src/app/new.py",
+            ".ww/features/agents.yaml",
+            ".ww/features/agents.tasks",
+        ]
+    )
+
+    assert [feature.name for feature in coverage.affected] == ["agents"]
+    assert coverage.unmapped == ("src/app/new.py",)
+
+
+@pytest.mark.parametrize(
+    ("query", "found"),
+    [
+        ("agents", ["agents", "hooks"]),
+        ("adapters", ["agents"]),
+        ("HOOKS", ["hooks"]),
+        ("hook protocol", ["hooks"]),
+        ("agent", ["agents", "hooks"]),
+        ("registry", ["agents"]),
+        ("src/app/hooks.py", ["hooks"]),
+        ("src/app/registry.py#Registry", ["agents"]),
+        ("src/app", ["agents", "hooks"]),
+        ("docs/guide.md", ["agents"]),
+        ("src/elsewhere.py", []),
+        ("nothing here", []),
+    ],
+)
+def test_lookup_finds_maps_by_name_alias_words_or_path(
+    tmp_path: Path, query: str, found: list[str]
+) -> None:
+    root = _project(tmp_path)
+    _two_maps(root)
+
+    assert [feature.name for feature in load_feature_maps(root).lookup(query)] == found
+
+
+def test_a_task_list_records_each_task_once_on_one_line(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+
+    assert record_task(root, "agents", "TASK-1", "Add the\nregistry") is True
+    assert record_task(root, "agents", "TASK-2", "Add hooks") is True
+    assert record_task(root, "agents", "TASK-1", "Again") is False
+
+    assert task_list_path(root, "agents").read_text("utf-8") == (
+        "TASK-1  Add the registry\nTASK-2  Add hooks\n"
+    )
+    # A union merge can repeat a line; the first one stands.
+    with task_list_path(root, "agents").open("a", encoding="utf-8") as file:
+        file.write("TASK-1  Add the registry\nTASK-3\n")
+    assert read_task_list(root, "agents") == (
+        TaskEntry("TASK-1", "Add the registry"),
+        TaskEntry("TASK-2", "Add hooks"),
+        TaskEntry("TASK-3", ""),
+    )
+    assert read_task_list(root, "hooks") == ()

@@ -2,9 +2,10 @@
 """What the page follows: the configuration's files and the task store.
 
 The files come from the core: the YAML levels and the imports they fold,
-the JSON settings levels, the rule files the configuration declares and the
-rule-automation store. A level that has no file yet is watched too, so
-creating ``ww.local.yaml`` is noticed. Polling keeps this dependency-free;
+the JSON settings levels, the rule files the configuration declares, the
+rule-automation store, and the feature maps with their task lists. A level
+that has no file yet is watched too, so creating ``ww.local.yaml`` is
+noticed. Polling keeps this dependency-free;
 a change is a different modification time or size, or a file appearing or
 going away.
 """
@@ -19,6 +20,7 @@ from pathlib import Path
 from ww.config.composition import configuration_files
 from ww.config_files import settings_levels, workflow_levels
 from ww.errors import WwError
+from ww.features import FEATURES_DIRECTORY
 from ww.project_config import compose_settings
 from ww.rule_conversion import every_rule
 from ww.rule_store import RuleStore
@@ -41,6 +43,9 @@ def configuration_paths(project: Project) -> tuple[Path, ...]:
     with contextlib.suppress(WwError, OSError, ValueError):
         paths |= set(compose_settings(storage.project_config_path)[1])
     paths.add(RuleStore(storage.config_root).path)
+    # Feature maps and their task lists; the directory too, for a map added.
+    features = storage.root / FEATURES_DIRECTORY
+    paths |= {features, *features.glob("*")}
     if project.configuration is not None:
         for rule in every_rule(project.configuration):
             if rule.source:

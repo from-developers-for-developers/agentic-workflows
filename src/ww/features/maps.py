@@ -8,9 +8,9 @@ every problem is collected, so ``ww features check`` reports them all at once.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -87,6 +87,14 @@ class FeatureMap:
             for index, pointer in enumerate(getattr(self, name)):
                 yield f"{name}[{index}]", pointer
 
+    def covers(self, path: str) -> bool:
+        """Whether any pointer covers the project-relative ``path``."""
+        return any(pointer.covers(path) for _, pointer in self.pointers())
+
+    def names(self) -> tuple[str, ...]:
+        """The name and every alias, as a lookup matches them."""
+        return (self.name, *self.aliases)
+
     @property
     def entries(self) -> int:
         """How many lines the map holds, against :data:`MAX_ENTRIES`."""
@@ -108,6 +116,19 @@ class FeatureMap:
 
 
 @dataclass(frozen=True)
+class Coverage:
+    """What a set of changed files means for the maps.
+
+    ``affected`` are the maps a pointer of which covers a changed file;
+    ``unmapped`` are the changed files no map covers. The maps' own files
+    are neither.
+    """
+
+    affected: tuple[FeatureMap, ...] = ()
+    unmapped: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class FeatureMaps:
     """A project's maps that read, and every problem found reading them."""
 
@@ -126,6 +147,65 @@ class FeatureMaps:
             for where, pointer in feature.pointers()
             for message in pointer_problems(pointer, self.root)
         )
+
+    def coverage(self, paths: Iterable[str]) -> Coverage:
+        """Which maps ``paths`` touch, and which of them no map covers."""
+        changed = [path for path in paths if not _is_map_file(path)]
+        return Coverage(
+            tuple(
+                feature
+                for feature in self.maps
+                if any(feature.covers(path) for path in changed)
+            ),
+            tuple(
+                path
+                for path in changed
+                if not any(feature.covers(path) for feature in self.maps)
+            ),
+        )
+
+    def lookup(self, query: str) -> tuple[FeatureMap, ...]:
+        """The maps ``query`` finds, those it names first.
+
+        A query names a map by its name or an alias, whatever the case. A
+        query that is a path, or ``path#Name``, finds the maps a pointer of
+        which covers that path, or lies inside it as a directory. Any other
+        query finds the maps whose name, aliases and summary hold each of its
+        words.
+        """
+        wanted = query.strip()
+        if not wanted:
+            return ()
+        named = tuple(
+            feature
+            for feature in self.maps
+            if wanted.casefold() in (name.casefold() for name in feature.names())
+        )
+        if _is_path(wanted):
+            pointer = Pointer.parse(wanted)
+            found = tuple(
+                feature
+                for feature in self.maps
+                if feature.covers(pointer.path)
+                or any(
+                    ptr.path.startswith(pointer.path.rstrip("/") + "/")
+                    for _, ptr in feature.pointers()
+                )
+            )
+        else:
+            words = wanted.casefold().split()
+            found = tuple(
+                feature
+                for feature in self.maps
+                if all(
+                    re.search(rf"(?<!\w){re.escape(word)}", text)
+                    for text in (
+                        " ".join((*feature.names(), feature.summary)).casefold(),
+                    )
+                    for word in words
+                )
+            )
+        return tuple(dict.fromkeys((*named, *found)))
 
     def check(self) -> tuple[Problem, ...]:
         """Every shape problem, then every pointer that does not resolve."""
@@ -255,6 +335,15 @@ def _across(maps: list[FeatureMap], root: Path) -> list[Problem]:
             elif used == feature.name:
                 problems.append(Problem(file, "uses itself", feature.name))
     return problems
+
+
+def _is_map_file(path: str) -> bool:
+    return PurePosixPath(path).parts[:2] == FEATURES_DIRECTORY.parts
+
+
+def _is_path(query: str) -> bool:
+    """Whether a lookup query reads as a path rather than words."""
+    return " " not in query.split("#", 1)[0] and ("/" in query or "." in query)
 
 
 def _relative(path: Path, root: Path) -> str:

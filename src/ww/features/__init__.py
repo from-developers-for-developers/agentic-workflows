@@ -15,25 +15,36 @@ file names one of its headings. Everything here is inert unless the repo
 
 from __future__ import annotations
 
+from .history import Staleness, changed_paths, staleness
 from .maps import (
     FEATURES_DIRECTORY,
     MAX_ENTRIES,
     TEMPLATE,
+    Coverage,
     FeatureMap,
     FeatureMaps,
     Problem,
     load_feature_maps,
 )
 from .pointers import Pointer, pointer_problems
+from .task_lists import TaskEntry, read_task_list, record_task, task_list_path
 
 __all__ = [
     "FEATURES_DIRECTORY",
     "MAX_ENTRIES",
     "TEMPLATE",
+    "Coverage",
     "FeatureMap",
     "FeatureMaps",
     "Pointer",
     "Problem",
+    "Staleness",
+    "TaskEntry",
+    "changed_paths",
     "load_feature_maps",
     "pointer_problems",
+    "read_task_list",
+    "record_task",
+    "staleness",
+    "task_list_path",
 ]

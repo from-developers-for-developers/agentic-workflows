@@ -28,6 +28,7 @@ from ww.usage import project_collector
 
 from . import demo
 from .atlas import build_atlas
+from .features import feature_maps_view
 from .project import Project
 from .tasks import artifact_text, document_text, task_detail, task_list
 from .watch import Watcher
@@ -125,6 +126,10 @@ class _Handler(BaseHTTPRequestHandler):
                         "versions": [watcher.config, watcher.tasks],
                     }
                 )
+            elif url.path == "/api/features":
+                # Not cached: whether a pointer resolves and how stale a map
+                # is follow the code, which the watcher does not.
+                self._json(feature_maps_view(self.server.project()))
             elif url.path == "/api/tasks":
                 self._json(
                     {
