@@ -2,9 +2,9 @@
 #
 # ww-map-features writes the project's feature maps, or refreshes the ones
 # that fell behind their code, when the operator asks. It works in the
-# current checkout and changes nothing outside .ww/features/: a check refuses
-# any other changed file, and another refuses maps whose pointers do not
-# resolve. It commits nothing; the operator reviews and commits the maps.
+# current checkout and is to change nothing outside .ww/features/: a check
+# refuses a completion that added or changed any other file (deletions are not
+# seen), and another refuses maps whose pointers do not resolve. It commits nothing; the operator reviews and commits the maps.
 workflows:
   - name: ww-map-features
     description: >-

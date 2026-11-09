@@ -787,8 +787,8 @@ or to refresh the maps `ww features stale` lists, run the built-in
 none exist. Its `survey` step lists the maps to write or refresh, from what the
 request names or else the project's architecture documentation and layout; its
 `map` step writes them from `ww features template`. Two checks hold that step
-until it changed nothing outside `.ww/features/` and `ww features check`
-passes. It works in the current checkout and commits nothing: review and
+until it added or changed no file outside `.ww/features/` (a deleted file is
+not seen) and `ww features check` passes. It works in the current checkout and commits nothing: review and
 commit the maps yourself. `ww docs features#feature-maps` prints this section.
 
 `ww-suggest` and `ww-solve`, when they propose a workflow that changes code in
