@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
-- Added: token usage per task, run, step, role and model, read from the agents' own session logs for the manager session and every subagent (Claude Code transcripts, Codex rollouts; Cursor's `stop` hook reports its turns). Every ww command records the agent session and host that ran it; ww collects after `complete`, `fail` and `record`, before `ww usage` and `ww tasks`, and while `ww visualize` is open; `ww usage [<task>]` shows it, `ww usage collect [<task>] [--rescan]` reads earlier sessions too, and `ww tasks` and `ww visualize` show each task's total. `usage` in `ww.json` switches it off, adds log directories (`log_roots`, for container homes) and prices models. ww keeps numbers only, under `.ww/usage/`. `ww hook install --agent cursor` registers the new `stop` hook.
+- Added: `ww usage` shows the tokens the manager and every subagent spent per task, step, role and model, read from Claude Code and Codex session logs and Cursor's `stop` hook; `ww tasks` and `ww visualize` show each task's total, and `usage` in `ww.json` switches it off, adds log directories or prices models. `b7f3100`
 
 ## 2026-11-06
 
