@@ -202,25 +202,24 @@ class ParallelBranch:
     profile_path: str | None = None
     requested_run: Transport = "session"
 
-    _KEYS = (
-        "name",
-        "description",
+    # The optional settings that are strings, written only when set.
+    _SETTINGS = (
         "requested_agent",
         "requested_model",
         "requested_reasoning",
         "profile",
         "profile_instruction",
         "profile_path",
-        "requested_run",
     )
+    _KEYS = ("name", "description", *_SETTINGS, "requested_run")
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {"name": self.name, "description": self.description}
-        for key in self._KEYS[2:]:
+        for key in self._SETTINGS:
             if getattr(self, key) is not None:
                 data[key] = getattr(self, key)
-        if self.requested_run == "session":
-            del data["requested_run"]
+        if self.requested_run != "session":
+            data["requested_run"] = self.requested_run
         return data
 
     @classmethod
@@ -234,7 +233,7 @@ class ParallelBranch:
             raise ValueError(f"{path} must be an object of {', '.join(cls._KEYS)}")
         if not all(isinstance(value[key], str) for key in ("name", "description")):
             raise ValueError(f"{path} needs a string name and description")
-        optional = {key: value.get(key) for key in cls._KEYS[2:-1]}
+        optional = {key: value.get(key) for key in cls._SETTINGS}
         if not all(item is None or isinstance(item, str) for item in optional.values()):
             raise ValueError(f"{path} has a setting that is not a string")
         run = value.get("requested_run", "session")
