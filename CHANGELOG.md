@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
-- Added: `parallel: true` on a group of steps runs its steps at once as branches of one step the manager performs: its page lists each branch with its model and reasoning and asks for one subagent per branch, in `auto` and `single` alike; a branch's subagent reads its page with `instruction --branch` and records its artifact with `complete --branch`, the group completes once every branch has, and `artifact_from` naming it gives every branch's artifact. `ww visualize` shows the branches.
+- Added: `parallel: true` on a group of steps runs them at once, each in its own subagent with its own model and reasoning, as one step that completes once every branch has recorded its artifact. `1dc16ba`
 - Added: the built-in `ww-map-features` workflow writes feature maps for existing code or refreshes stale ones, changing nothing outside `.ww/features/`; `init` suggests it while no map exists, and `ww-suggest` and `ww-solve` give proposed code workflows the feature-map settings. `4ed195e`
 - Added: in a workflow with no `write_feature_maps` step, each agent step whose changes touch a feature map or leave a file no map covers brings the maps up to date before it completes, and `ww lint` notes such workflows and warns about feature-map settings on steps no agent performs. `77c521c`
 - Added: `write_feature_maps: true` on a step brings the feature maps up to date with its run's changes: its page lists the maps they touch, the files no map covers, broken pointers and the research's gaps, its completion waits until each is answered for and every pointer resolves, and the task joins each touched map's task list. `5cdc545`
