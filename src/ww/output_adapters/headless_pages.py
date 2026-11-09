@@ -20,6 +20,15 @@ def render_headless(instruction: Instruction, view: HeadlessView) -> list[str]:
         ]
     if view.state == "refused":
         return [f"## Manager: ww did not start {agent} for {step}", "", *_refused(view)]
+    if view.state == "queued":
+        return [
+            f"## Manager: {agent} waits for room to run headless for {step}",
+            "",
+            f"{agent} already runs as many headless runs as its `max_parallel` "
+            "allows. Waiting starts this one as soon as one of them ends:",
+            "",
+            *wait_lines(instruction, view.wait_command),
+        ]
     if view.state == "not_started":
         return [
             f"## Manager: ww runs {agent} headless for {step}",
@@ -37,9 +46,10 @@ def render_headless(instruction: Instruction, view: HeadlessView) -> list[str]:
     ]
 
 
-def _running(instruction: Instruction, view: HeadlessView, agent: str) -> list[str]:
+def wait_lines(instruction: Instruction, wait_command: str) -> list[str]:
+    """How the manager waits for headless runs, as its host can."""
     mechanism = instruction.host.waiting if instruction.host else FOREGROUND
-    command = view.wait_command
+    command = wait_command
     if mechanism.wait_seconds is not None:
         command = f"{WAIT_VARIABLE}={mechanism.wait_seconds} {command}"
     if mechanism.background:
@@ -55,24 +65,61 @@ def _running(instruction: Instruction, view: HeadlessView, agent: str) -> list[s
             "again, run it then."
         )
     return [
-        f"ww started {agent} (launch `{view.launch_id}`, {view.started_at}) on "
-        "this step, with the ordinary worker bootstrap: it performs the step "
-        "and records its own result. You do not perform or delegate it.",
-        "",
-        "Wait for it:",
-        "",
         "```console",
         command,
         "```",
         "",
         how,
         "",
-        "The command prints your next page once the run has ended, or this page "
-        "again after a while if it is still going: then run it again. Until it "
-        "has ended, do not run commands that change this task; `status` and "
-        "`instruction` are fine.",
+        "The command prints your next page once no run is going, or this page "
+        "again after a while if one still is: then run it again. Until then, do "
+        "not run commands that change this task; `status` and `instruction` "
+        "are fine.",
+    ]
+
+
+def _running(instruction: Instruction, view: HeadlessView, agent: str) -> list[str]:
+    return [
+        f"ww started {agent} (launch `{view.launch_id}`, {view.started_at}) on "
+        "this step, with the ordinary worker bootstrap: it performs the step "
+        "and records its own result. You do not perform or delegate it.",
+        "",
+        "Wait for it:",
+        "",
+        *wait_lines(instruction, view.wait_command),
         "",
         f"The agent's output is logged in `{view.output_log}`.",
+    ]
+
+
+def branch_lines(view: HeadlessView) -> list[str]:
+    """One headless branch's state and, after a failure, its choices."""
+    agent = f"`{view.agent}`"
+    if view.state == "running":
+        return [
+            f"- Headless: ww runs {agent} (launch `{view.launch_id}`, "
+            f"{view.started_at}); log `{view.output_log}`"
+        ]
+    if view.state == "queued":
+        return [f"- Headless: {agent} waits for room under its `max_parallel`"]
+    if view.state == "not_started":
+        return [f"- Headless: ww starts {agent} when you run `{view.wait_command}`"]
+    if view.state == "refused":
+        return [
+            f"- Headless: ww did not start {agent}:",
+            *(f"  - {finding}" for finding in view.findings),
+            f"- Then: `{view.relaunch_command}` once fixed, or "
+            f"`{view.session_command}` to give the branch to a subagent",
+        ]
+    choices = [
+        *([f"`{view.resume_command}`"] if view.resume_command else []),
+        f"`{view.relaunch_command}`",
+        f"`{view.session_command}`",
+    ]
+    return [
+        f"- Headless: {agent} (launch `{view.launch_id}`) {view.reason}; "
+        f"logs `{view.output_log}` and `{view.error_log}`",
+        "- Then, once you know why: " + ", or ".join(choices),
     ]
 
 

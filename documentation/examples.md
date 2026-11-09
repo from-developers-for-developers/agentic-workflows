@@ -958,3 +958,61 @@ workflows:
       - fix: Fix every finding and verify the result.
         artifact_from: review
 ```
+
+## 26. Headless agents for reviews
+
+ww starts a step's agent itself when the step asks for it with `run:
+headless`: here Codex reviews the change alone, then Codex and Claude Code
+review it at once as branches of one parallel step, while a third branch
+stays the manager's subagent. The manager waits with `ww wait` and, if a run
+ends without completing its work, chooses `ww launch` to resume it, start it
+again or take it back.
+
+```yaml
+workflows:
+  - name: reviewed-change
+    steps:
+      - develop: Implement the change and its tests.
+      - first-review: Review the diff and list the findings.
+        agent: {name: codex, run: headless}
+        model: gpt-6.1-sol
+        reasoning: high
+      - name: review
+        description: Merge the reviews into one list of findings.
+        parallel: true
+        artifact_from: develop
+        steps:
+          - security: Review the change for security issues.
+            agent: {name: codex, run: headless}
+            model: gpt-6.1-sol
+            reasoning: xhigh
+          - performance: Review the change for performance regressions.
+            agent: {name: claudecode, run: headless}
+            model: opus
+            reasoning: high
+          - quality: Review readability, naming and tests.
+      - fix: Fix every finding.
+        artifact_from: review
+```
+
+Each machine says where its programs are, and how much they may do, in its
+untracked `ww.local.json`:
+
+```json
+{
+  "agents": {
+    "codex": {"headless": {"binary": "/opt/homebrew/bin/codex", "max_parallel": 2}},
+    "claudecode": {
+      "headless": {
+        "permissions": "full",
+        "timeout_minutes": 45,
+        "idle_timeout_minutes": 10,
+        "fallback_model": "sonnet"
+      }
+    }
+  }
+}
+```
+
+`ww agents --check` shows whether both programs are installed, recent enough
+and logged in, and which models and reasoning levels they take.

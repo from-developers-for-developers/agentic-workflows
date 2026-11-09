@@ -59,10 +59,16 @@ if [ -n "$FAKE_FAIL" ]; then echo 'something broke' >&2; exit 3; fi
 page=$(printf '%s' "$last" | sed -n 's/.*[Rr]un `[^ ]* \\([^`]*\\)`.*/\\1/p')
 task=$(printf '%s' "$page" | cut -d' ' -f2)
 assignment=$(printf '%s' "$page" | sed -n 's/.*--assignment \\([^ ]*\\).*/\\1/p')
+branch=$(printf '%s' "$page" | sed -n 's/.*--branch \\([^ ]*\\).*/\\1/p')
 "$PYTHON" -m ww.cli $page >/dev/null
-"$PYTHON" -m ww.cli complete "$task" --role worker \\
-  ${assignment:+--assignment "$assignment"} \\
-  --artifact "Reviewed headless." --summary "Reviewed." >&2
+if [ -n "$branch" ]; then
+  "$PYTHON" -m ww.cli complete "$task" --role worker --branch "$branch" \\
+    --artifact "Reviewed $branch headless." >&2
+else
+  "$PYTHON" -m ww.cli complete "$task" --role worker \\
+    ${assignment:+--assignment "$assignment"} \\
+    --artifact "Reviewed headless." --summary "Reviewed." >&2
+fi
 printf '%s%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,' \\
   '"cached_input_tokens":40,"output_tokens":7}}'
 """
@@ -405,3 +411,113 @@ def test_reset_waits_for_a_just_launched_supervisor_before_stopping_it(
 
     assert stopped.status == "stopped"
     assert sleeper.wait(timeout=15) != 0
+
+
+GROUP = """workflows:
+  - name: task
+    steps:
+      - name: review
+        description: Merge the reviews.
+        parallel: true
+        steps:
+          - security: Review security.
+            agent: {name: codex, run: headless}
+          - performance: Review performance.
+            agent: {name: codex, run: headless}
+          - quality: Review quality.
+      - fix: Fix the findings.
+"""
+
+
+def _group(project: Path, tmp_path: Path, **headless: object) -> None:
+    (project / "ww.yaml").write_text(GROUP, encoding="utf-8")
+    _settings(project, tmp_path / "codex", **headless)
+
+
+def test_headless_branches_run_at_once_within_max_parallel(
+    project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _group(project, tmp_path, max_parallel=1)
+    _start(project, capsys)
+
+    code, page = _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+    assert code == 0, page
+    assert "ww runs the branches marked headless itself" in page
+    assert "Headless: ww runs `codex`" in page
+    assert "Headless: `codex` waits for room under its `max_parallel`" in page
+    assert "wait TASK-1" in page
+
+    code, page = _ww(project, capsys, "wait", "TASK-1")
+    assert code == 0, page
+    launches = _launches(project)
+    assert [launch["branch"] for launch in launches] == ["security", "performance"]
+    assert all(launch["status"] == "exited" for launch in launches)
+    # The headless branches recorded their artifacts; the session one is the
+    # manager's subagent's, and nothing more is waited for.
+    assert page.count("- Artifact: `") == 2
+    assert "Wait for the headless branches" not in page
+    assert "- Page: `" in page and "--branch quality" in page
+
+
+def test_a_failed_branch_offers_its_own_choices(
+    project: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _group(project, tmp_path)
+    _start(project, capsys)
+    monkeypatch.setenv("FAKE_FAIL", "1")
+    _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+
+    code, page = _ww(project, capsys, "wait", "TASK-1")
+    assert "exited with code 3 without recording the branch's artifact" in page
+    assert "launch TASK-1 --branch security --resume" in page
+    assert "launch TASK-1 --branch performance --session" in page
+
+    monkeypatch.delenv("FAKE_FAIL")
+    code, page = _ww(
+        project, capsys, "launch", "TASK-1", "--branch", "security", "--resume"
+    )
+    assert code == 0, page
+    code, page = _ww(
+        project, capsys, "launch", "TASK-1", "--branch", "performance", "--session"
+    )
+    assert code == 0, page
+    code, page = _ww(project, capsys, "wait", "TASK-1")
+    assert page.count("- Artifact: `") == 1
+    assert "launch TASK-1 --branch performance" not in page
+    code, page = _ww(project, capsys, "launch", "TASK-1", "--branch", "quality")
+    assert code == 1
+    assert "does not run headless" in page
+
+
+def test_a_relaunch_waits_for_room_under_max_parallel(
+    project: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _settings(project, tmp_path / "codex", max_parallel=1)
+    _start(project, capsys)
+    monkeypatch.setenv("FAKE_FAIL", "1")
+    _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+    _ww(project, capsys, "wait", "TASK-1")
+    # Another run of the same agent, in another task, takes the only place.
+    other = LaunchRecord(
+        id="other",
+        task_id="TASK-9",
+        run_id="01-task",
+        item_id="item",
+        step="review",
+        agent="codex",
+        argv=("codex",),
+        workspace=str(project),
+        started_at="2026-11-09T00:00:00+00:00",
+        status="running",
+    )
+    LaunchStore(project).write(other)
+
+    code, page = _ww(project, capsys, "launch", "TASK-1")
+    assert code == 1
+    assert "as many headless runs as its max_parallel allows" in page

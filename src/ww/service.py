@@ -415,6 +415,17 @@ READONLY_FAILURE = "Reported, not repaired: this run is readonly."
 WAIT_POLL_SECONDS = 2.0
 
 
+def _headless_pending(page: Instruction) -> bool:
+    """Whether a headless run on ``page`` is going or waiting for room."""
+    views = [
+        page.headless,
+        *(branch.headless for branch in page.parallel_branches),
+    ]
+    return any(
+        view is not None and view.state in {"running", "queued"} for view in views
+    )
+
+
 class WorkflowService:
     """Advance exactly the immutable plan snapshot persisted for each task."""
 
@@ -2526,33 +2537,40 @@ class WorkflowService:
         return self.headless.dispatch(page, launch=False)
 
     def wait(self, task_id: str, seconds: float) -> Instruction:
-        """The manager's page once the current step's headless run is no
-        longer going, or after ``seconds`` while it still is."""
+        """The manager's page once no headless run of the current step is
+        going or waiting for room, or after ``seconds`` while one still is.
+
+        Runs that were waiting for room (``max_parallel``) start as room
+        frees up, so waiting is what moves them on.
+        """
         deadline = time.monotonic() + seconds
         while True:
-            page = self.instruction(task_id, caller_role="manager")
-            if (
-                page.headless is None
-                or page.headless.state != "running"
-                or time.monotonic() >= deadline
-            ):
+            page = self.headless.dispatch(
+                self._page(task_id, caller_role="manager"), launch=True
+            )
+            if not _headless_pending(page) or time.monotonic() >= deadline:
                 return page
             time.sleep(min(WAIT_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
 
     def launch(
-        self, task_id: str, *, resume: bool = False, session: bool = False
+        self,
+        task_id: str,
+        *,
+        resume: bool = False,
+        session: bool = False,
+        branch: str | None = None,
     ) -> Instruction:
         """The manager's decision after a headless run ended without completing
-        its step: start it again, ``resume`` its session, or give the step back
-        to a ``session``."""
+        its step (or ``branch``): start it again, ``resume`` its session, or
+        give it back to a ``session``."""
         if resume and session:
             raise StateError("choose one of launch --resume or --session")
         page = self._page(task_id, caller_role="manager")
         if session:
-            self.headless.release(page)
-            return self.instruction(task_id, caller_role="manager")
-        self.headless.relaunch(page, resume=resume)
-        return self.headless.dispatch(page, launch=False)
+            self.headless.release(page, branch=branch)
+        else:
+            self.headless.relaunch(page, resume=resume, branch=branch)
+        return self.instruction(task_id, caller_role="manager")
 
     def _page(
         self,

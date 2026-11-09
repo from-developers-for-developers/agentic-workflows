@@ -8,9 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
-- Added: ww starts a headless step's agent itself when the manager's `next` reaches it; `ww wait` waits for the run, and when it ends without completing the step the page says why, with its logs, and `ww launch` resumes its session, starts it again or gives the step back to a session. `1f7a022`
-- Added: `agent: {name: codex, run: headless}` marks a step whose agent ww will run headless, checked when the workflow compiles (reasoning and `cheapest` against what the agent takes), with each agent's headless settings under `agents.<name>.headless` in `ww.json` and `ww.local.json`. `b390309`
-- Added: `ww agents --check` says whether Claude Code, Codex and Cursor can be run headless here: each program's path, version, login, and the models and reasoning levels it takes. `ca8df21`
+- Added: `agent: {name: codex, run: headless}` has ww start a step's or parallel branch's agent (Claude Code, Codex or Cursor) itself, after checking its program, model and reasoning; `ww wait` waits for it, a run that ends without completing its work says why and `ww launch` resumes, restarts or hands it back; settings such as the program's path, permissions, timeouts and `max_parallel` go under `agents.<name>.headless`, and `ww agents --check` shows each program's state. `8b1387d`
 - Added: `parallel: true` on a group of steps runs them at once, each in its own subagent with its own model and reasoning, as one step that completes once every branch has recorded its artifact. `1dc16ba`
 - Added: the built-in `ww-map-features` workflow writes feature maps for existing code or refreshes stale ones, changing nothing outside `.ww/features/`; `init` suggests it while no map exists, and `ww-suggest` and `ww-solve` give proposed code workflows the feature-map settings. `4ed195e`
 - Added: in a workflow with no `write_feature_maps` step, each agent step whose changes touch a feature map or leave a file no map covers brings the maps up to date before it completes, and `ww lint` notes such workflows and warns about feature-map settings on steps no agent performs. `77c521c`

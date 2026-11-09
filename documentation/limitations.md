@@ -164,6 +164,19 @@ collects the limitations, so it is not repeated there.
   When an asynchronous answer is pending, the workflow waits for the
   operator's explicit answer; a timeout, dismissal, or preselected value does
   not complete the choice.
+- Headless agents: ww starts only Claude Code, Codex and Cursor headless,
+  through the command-line flags of the versions it was tested with (Claude
+  Code 2.1, Codex 0.164, Cursor 2026.06); a newer program is run with a
+  warning, since its flags may have changed. A headless agent cannot talk to
+  the operator or ask for permissions: what it may do is decided up front by
+  `permissions`, and Codex and Cursor offer no `read-only` level that still
+  lets the worker record its result. Cursor takes no reasoning setting; its
+  model names carry it. Cursor's `status` can report a login that its
+  headless mode then refuses, so ww only warns about it. Claude Code lists no
+  models, so a model name other than its aliases and `claude-*` names is
+  passed on unchecked. Runs are watched by a process ww leaves running; a
+  queued run starts only while the manager waits. Process groups and signals
+  make this POSIX-only, like the rest of ww.
 - Editing its own workflow files: some agents' safety layers, such as Claude
   Code's auto mode, refuse an agent's edits to the workflow files it runs
   under (`ww.yaml` and `.json`) as self-modification, even

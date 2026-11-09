@@ -2636,9 +2636,18 @@ the session ID and usage, stops the agent's process group past
 else writes a record while its run goes on, except `stop_all`, which `reset`
 calls after killing the supervisor and the agent.
 
-`WorkflowService.wait` re-reads the manager's page every two seconds until the
-run is no longer going (the step completed and moved on, or the run ended
-without completing it) or the bound (`WW_OPERATOR_WAIT`) passes.
+A run's `Target` is what it works on: a step (its bootstrap with the
+assignment token), or one branch of a parallel step in progress (the branch's
+page command; `LaunchRecord.branch`), each with its agent, model and
+reasoning. For a parallel step `dispatch` handles every headless branch
+without an artifact the same way and returns the `BranchView`s with their
+`HeadlessView`. A target whose agent already has `max_parallel` runs going in
+any task (`LaunchStore.running`) is shown `queued` instead of started.
+
+`WorkflowService.wait` dispatches with `launch=True` every two seconds, which
+starts queued runs as room frees up, until no step or branch run is going or
+queued (the step completed and moved on, or the runs ended without completing
+it) or the bound (`WW_OPERATOR_WAIT`) passes.
 `WorkflowService.launch` starts the step's agent again (`relaunch`, resuming
 the last record's session with the launcher's resume command) or marks the
 last record `released`. The CLI refuses every manager command, and `start`,

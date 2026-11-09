@@ -1760,7 +1760,10 @@ def _launch(context: _Context) -> _Outcome:
     args = context.args
     return _instruction_outcome(
         context.service.launch(
-            context.task_id, resume=args.resume, session=args.session
+            context.task_id,
+            resume=args.resume,
+            session=args.session,
+            branch=args.branch,
         ),
         args.json_output,
     )

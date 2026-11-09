@@ -2231,6 +2231,25 @@ and completes the step; completing earlier is refused.
 
 A branch is a plain prompt with `profile`, `agent`, `model` and `reasoning`;
 hooks, rules, `assess` and the rest belong on the group, which keeps them.
+A branch may also [run headless](#running-agents-headless): ww then starts
+that branch's agent itself, and the manager launches subagents only for the
+others and waits for the headless ones with `ww wait`:
+
+```yaml
+- name: review
+  description: Merge the reviews.
+  parallel: true
+  steps:
+    - security: Review the change for security issues.
+      agent: {name: codex, run: headless}
+      model: gpt-6.1-sol
+      reasoning: xhigh
+    - performance: Review the change for performance regressions.
+      agent: {name: claudecode, run: headless}
+      model: opus
+    - quality: Review readability and tests.   # a subagent, as before
+```
+
 Parallel groups need at least two branches, cannot sit in an `items` body or
 a child's stages, and contradict `subagents: false`. See
 [Parallel steps](specification.md#parallel-steps) for the exact contract.
@@ -5521,7 +5540,7 @@ Each agent's headless settings live under `agents.<name>.headless` in
 | `binary` | The program's path, or a name looked up on `PATH`. Default: `claude`, `codex`, `cursor-agent`. |
 | `permissions` | What the agent may do unasked: `read-only`, `edit` (default) or `full`. Claude Code: `read-only` allows reading, searching and `./ww`; `edit` accepts file edits and allows `./ww`; `full` bypasses its permission checks. Codex: `edit` is its workspace-write sandbox with ww's state directory writable; `full` is no sandbox. Cursor: `edit` is its default; `full` adds `--force`. Codex and Cursor offer no `read-only`: their worker could not record its result. |
 | `timeout_minutes`, `idle_timeout_minutes` | How long a run may last, and how long it may print nothing. |
-| `max_parallel` | How many runs of this agent may go at once. |
+| `max_parallel` | How many runs of this agent may go at once, across the project's tasks. Further runs wait as queued; `ww wait` starts them as room frees up. |
 | `fallback_model` | The model to fall back to when the chosen one is overloaded. Claude Code only. |
 | `max_budget_usd` | The most a run may spend. Claude Code only. |
 | `isolated` | Ignore the operator's own configuration of the agent: Claude Code's `--bare`, Codex's `--ignore-user-config`. |
