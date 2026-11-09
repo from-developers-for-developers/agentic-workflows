@@ -931,3 +931,30 @@ continues to publication. Positive returns to development, carrying the
 review summary and the additional detail. To fix locally while retaining
 the reviewer, instead declare `repeat_until: negative` and give the positive
 branch ordinary fix steps.
+
+## 25. Parallel reviews with their own models
+
+`parallel: true` runs a group's steps at once, each in a subagent the manager
+launches with the branch's model and reasoning; a branch without them leaves
+the choice to the agent. Each branch records its own artifact, and the group
+completes once, with the merged result, after every branch has.
+
+```yaml
+workflows:
+  - name: reviewed-change
+    steps:
+      - develop: Implement the change and its tests.
+      - name: review
+        description: Merge the reviews into one list of findings, most severe first.
+        parallel: true
+        artifact_from: develop
+        steps:
+          - security: Review the change for security issues.
+            model: claude-opus-5-5
+            reasoning: high
+          - performance: Review the change for performance regressions.
+            model: claude-sonnet-5-5
+          - quality: Review readability, naming and tests.
+      - fix: Fix every finding and verify the result.
+        artifact_from: review
+```

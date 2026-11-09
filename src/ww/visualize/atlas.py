@@ -359,6 +359,16 @@ def _node(
         ],
         "rules": _rules(item, group_of),
     }
+    if item.parallel_branches:
+        node["parallel"] = [
+            {
+                "name": branch.name,
+                "description": branch.description,
+                "model": branch.requested_model,
+                "reasoning": branch.requested_reasoning,
+            }
+            for branch in item.parallel_branches
+        ]
     operation = item.operation
     if isinstance(operation, ChildWorkflowRun):
         node["workflow"] = operation.workflow

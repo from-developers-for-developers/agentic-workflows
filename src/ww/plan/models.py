@@ -180,6 +180,60 @@ class PlannedCheck:
 
 
 @dataclass(frozen=True)
+class ParallelBranch:
+    """One branch of a ``parallel`` group: a prompt one subagent answers.
+
+    The group's item carries its branches; a branch has no plan item of its
+    own. ``requested_*`` are the branch's performer settings, inherited along
+    the step chain, with ``auto`` or ``None`` leaving the choice to whoever
+    launches it; ``profile_path`` is relative to the project root.
+    """
+
+    name: str
+    description: str
+    requested_agent: str | None = None
+    requested_model: str | None = None
+    requested_reasoning: str | None = None
+    profile: str | None = None
+    profile_instruction: str | None = None
+    profile_path: str | None = None
+
+    _KEYS = (
+        "name",
+        "description",
+        "requested_agent",
+        "requested_model",
+        "requested_reasoning",
+        "profile",
+        "profile_instruction",
+        "profile_path",
+    )
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {"name": self.name, "description": self.description}
+        for key in self._KEYS[2:]:
+            if getattr(self, key) is not None:
+                data[key] = getattr(self, key)
+        return data
+
+    @classmethod
+    def from_dict(cls, value: object, path: str) -> ParallelBranch:
+        """Read a branch written by :meth:`to_dict`, rejecting any other shape."""
+        if (
+            not isinstance(value, dict)
+            or not {"name", "description"} <= set(value)
+            or not set(value) <= set(cls._KEYS)
+        ):
+            raise ValueError(f"{path} must be an object of {', '.join(cls._KEYS)}")
+        if not all(isinstance(value[key], str) for key in ("name", "description")):
+            raise ValueError(f"{path} needs a string name and description")
+        optional = {key: value.get(key) for key in cls._KEYS[2:]}
+        if not all(item is None or isinstance(item, str) for item in optional.values()):
+            raise ValueError(f"{path} has a setting that is not a string")
+        return cls(value["name"], value["description"], **optional)
+
+
+@dataclass(frozen=True)
 class VerificationTarget:
     """What a ww-generated verification item verifies.
 
@@ -313,6 +367,9 @@ class PlanItem:
     # Set on the rule-selection item ww compiles after a step with
     # ``select_rules_for``: the plan item IDs of the steps it chooses for.
     selects_rules_for: tuple[str, ...] = ()
+    # On a ``parallel`` group's item: the branches its performer runs at
+    # once, one subagent each, in declaration order.
+    parallel_branches: tuple[ParallelBranch, ...] = ()
     on_failure: str = "operator"
     on_failure_instruction: str | None = None
     max_handler_fixes: int = 3
@@ -502,6 +559,8 @@ class PlanItem:
             del data["verifies"]
         if not self.selects_rules_for:
             del data["selects_rules_for"]
+        if not self.parallel_branches:
+            del data["parallel_branches"]
         if self.child_stage is None:
             del data["child_stage"]
         if self.child_number is None:
@@ -591,6 +650,9 @@ class PlanItem:
             "modes": [mode.to_dict() for mode in self.modes],
             "verifies": self.verifies.to_dict() if self.verifies else None,
             "selects_rules_for": list(self.selects_rules_for),
+            "parallel_branches": [
+                branch.to_dict() for branch in self.parallel_branches
+            ],
         }
 
 

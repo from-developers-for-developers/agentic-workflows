@@ -62,7 +62,10 @@ failure as a finding; ww repairs nothing there.
    "done for today" as a pause. Record and end the interaction before
    completing it. Use the host choice tool when available; keep asynchronous
    choices pending until an answer arrives, and do not treat timeouts or
-   preselection as answers. After completion, relay any optional
+   preselection as answers. On a `parallel` step, launch one subagent per
+   branch at once with the branch's settings, in `single` too, each told to
+   follow only its `--branch` page; complete the step once every branch has
+   recorded its artifact. After completion, relay any optional
    `ww-deduce-feedback` suggestion; do not insert learning into the plan.
    Deduction uses ww commands and explicit existing point IDs; rule review
    and pruning are separate, and rules require operator approval.

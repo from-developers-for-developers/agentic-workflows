@@ -48,7 +48,7 @@ from ww.handler_repairs import needs_repair
 from ww.interactions import InteractionLog
 from ww.interpolation import interpolate
 from ww.items import WorkItem
-from ww.plan import PlanItem, PlannedMode, PlannedRule, WorkflowPlan
+from ww.plan import ParallelBranch, PlanItem, PlannedMode, PlannedRule, WorkflowPlan
 from ww.plan.gotos import step_span
 from ww.project_config import load_project_config
 from ww.runtimes import requested_setting, runtime_instruction
@@ -65,6 +65,9 @@ from ww.workspace import resolve_workspace
 
 from .collection import collection_guidance
 from .commands import (
+    artifacts_command,
+    branch_complete_command,
+    branch_instruction_command,
     complete_command,
     instruction_command,
     interact_commands,
@@ -75,6 +78,8 @@ from .commands import (
     update_child_command,
 )
 from .models import (
+    BranchPage,
+    BranchView,
     CheckUnavailable,
     ConversationEntry,
     DisputeView,
@@ -101,7 +106,14 @@ from .policy import (
     _result_saved,
     operator_reason,
 )
-from .text import NO_SUBAGENTS, READONLY, ContainerArtifact, _stage, action_text
+from .text import (
+    NO_SUBAGENTS,
+    READONLY,
+    ContainerArtifact,
+    _stage,
+    _with_artifact_dependencies,
+    action_text,
+)
 
 TaskValues = Callable[[ExecutionState, WorkflowPlan], dict[str, str]]
 
@@ -745,7 +757,22 @@ class InstructionBuilder:
     def _container_artifact(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem, path: str
     ) -> ContainerArtifact | None:
-        """Resolve the latest artifact inside a group or selected outcome."""
+        """Resolve the latest artifact inside a group or selected outcome.
+
+        A parallel step resolves to its own artifact and its branches'.
+        """
+        group = next(
+            (
+                entry
+                for entry in plan.items
+                if entry.phase == "step"
+                and entry.step == path
+                and entry.parallel_branches
+            ),
+            None,
+        )
+        if group is not None:
+            return self._parallel_artifacts(state, plan, group)
         inside = {
             entry.id: entry
             for entry in plan.items
@@ -828,6 +855,99 @@ class InstructionBuilder:
                 f"`{update_child_command(state.task_id, child.id)}`."
             )
         return text
+
+    def _parallel_artifacts(
+        self, state: ExecutionState, plan: WorkflowPlan, group: PlanItem
+    ) -> ContainerArtifact:
+        """A completed parallel step's own artifact and its branches', in the
+        order the branches are declared."""
+        index = next(
+            index for index, entry in enumerate(plan.items) if entry.id == group.id
+        )
+        record = state.item_executions[index]
+        if record.status != "completed":
+            return ContainerArtifact()
+        recorded = dict(record.branch_artifacts)
+        return ContainerArtifact(
+            group.step,
+            str((self.root / record.artifact).resolve()) if record.artifact else None,
+            tuple(
+                (branch.name, str((self.root / recorded[branch.name]).resolve()))
+                for branch in group.parallel_branches
+                if branch.name in recorded
+            ),
+        )
+
+    def _branch_views(
+        self, state: ExecutionState, item: PlanItem, record: PlanItemExecution
+    ) -> tuple[BranchView, ...]:
+        """A parallel step's branches, with the artifacts recorded so far."""
+        recorded = dict(record.branch_artifacts)
+        return tuple(
+            BranchView(
+                name=branch.name,
+                description=branch.description,
+                instruction_command=branch_instruction_command(
+                    state.task_id, branch.name
+                ),
+                requested_agent=branch.requested_agent,
+                requested_model=branch.requested_model,
+                requested_reasoning=branch.requested_reasoning,
+                profile=branch.profile,
+                profile_instruction=_branch_profile(branch, self.root),
+                artifact=(
+                    str((self.root / recorded[branch.name]).resolve())
+                    if branch.name in recorded
+                    else None
+                ),
+            )
+            for branch in item.parallel_branches
+        )
+
+    def branch_page(
+        self, state: ExecutionState, snapshot: PlanSnapshot, name: str
+    ) -> BranchPage:
+        """The page of branch ``name`` of the parallel step in progress.
+
+        The caller has checked that the cursor's item is that step, in
+        progress, and that it has the branch.
+        """
+        plan = snapshot.plan
+        item = plan.items[state.cursor]
+        record = state.item_executions[state.cursor]
+        view = next(
+            branch
+            for branch in self._branch_views(state, item, record)
+            if branch.name == name
+        )
+        workspace, values = item_workspace_values(
+            self.root,
+            item.workdir,
+            state.working_directory,
+            {**dict(state.workflow_values), **self.task_values(state, plan)},
+        )
+        return BranchPage(
+            task_id=state.task_id,
+            workflow=state.workflow,
+            step=item.step,
+            branch=view,
+            action_text=_with_artifact_dependencies(
+                interpolate(view.description, values),
+                item,
+                self._container_artifacts(state, plan, item),
+            ),
+            completion_command=branch_complete_command(state.task_id, name),
+            siblings=tuple(
+                branch.name for branch in item.parallel_branches if branch.name != name
+            ),
+            task_requirements=self.requirements(state, plan),
+            requirements_command=requirements_command(state.task_id),
+            task_amendments=self.tasks.read_amendments(state.task_id),
+            working_directory=str(workspace) if workspace is not None else None,
+            modes=item.modes,
+            readonly=plan.readonly,
+            artifacts_command=artifacts_command(state.task_id, state.run_id),
+        )
 
     def _document_tasks(
         self, plan: WorkflowPlan, item: PlanItem, state: ExecutionState
@@ -1223,6 +1343,7 @@ class InstructionBuilder:
             ),
             goto_notice=self._goto_notice(state, plan, item, record),
             documents=self._document_tasks(plan, item, state),
+            parallel_branches=self._branch_views(state, item, record),
             interactive=item.interactive,
             explicit=item.explicit and item.owner == "agent",
             read_feature_maps=(
@@ -1524,6 +1645,13 @@ def profile_instruction(item: PlanItem, root: Path) -> str | None:
     if item.profile_path is not None:
         return f"Use the profile defined in `{(root / item.profile_path).resolve()}`."
     return item.profile_instruction
+
+
+def _branch_profile(branch: ParallelBranch, root: Path) -> str | None:
+    """A branch's profile text: a file under ``root`` or configured text."""
+    if branch.profile_path is not None:
+        return f"Use the profile defined in `{(root / branch.profile_path).resolve()}`."
+    return branch.profile_instruction
 
 
 def _current_assignment(

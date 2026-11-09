@@ -129,6 +129,114 @@ class DocumentTask:
 
 
 @dataclass(frozen=True)
+class BranchView:
+    """One branch of the parallel step in progress, as a page shows it.
+
+    ``requested_*`` and ``profile`` are what the branch's subagent runs
+    with, ``None`` or ``auto`` leaving the choice to whoever launches it;
+    ``instruction_command`` prints the branch's own page, and ``artifact``
+    is the absolute path of its recorded artifact, ``None`` until then.
+    """
+
+    name: str
+    description: str
+    instruction_command: str
+    requested_agent: str | None = None
+    requested_model: str | None = None
+    requested_reasoning: str | None = None
+    profile: str | None = None
+    profile_instruction: str | None = None
+    artifact: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "instruction_command": self.instruction_command,
+            "requested_agent": self.requested_agent,
+            "requested_model": self.requested_model,
+            "requested_reasoning": self.requested_reasoning,
+            "profile": self.profile,
+            "profile_instruction": self.profile_instruction,
+            "artifact": self.artifact,
+        }
+
+
+@dataclass(frozen=True)
+class BranchPage:
+    """The page of one branch of a parallel step, for the worker running it.
+
+    It changes nothing: the worker does the branch's work and records its
+    artifact with ``completion_command``; the group's performer completes
+    the step once every branch has.  ``action_text`` is the branch's prompt
+    with the group's ``artifact_from`` inputs; ``siblings`` are the other
+    branches, which run at the same time.
+    """
+
+    task_id: str
+    workflow: str
+    step: str
+    branch: BranchView
+    action_text: str
+    completion_command: str
+    siblings: tuple[str, ...] = ()
+    task_requirements: str | None = None
+    requirements_command: str | None = None
+    task_amendments: tuple[Amendment, ...] = ()
+    working_directory: str | None = None
+    modes: tuple[PlannedMode, ...] = ()
+    readonly: bool = False
+    # Lists the earlier steps' artifacts, which ``action_text`` may name.
+    artifacts_command: str | None = None
+    task_codename: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            **(
+                {"task_codename": self.task_codename}
+                if self.task_codename is not None
+                else {}
+            ),
+            "workflow": self.workflow,
+            "step": self.step,
+            "branch": self.branch.to_dict(),
+            "siblings": list(self.siblings),
+            "action_text": self.action_text,
+            "task_requirements": self.task_requirements,
+            "requirements_command": self.requirements_command,
+            "task_amendments": [entry.to_dict() for entry in self.task_amendments],
+            "working_directory": self.working_directory,
+            "modes": [mode.to_dict() for mode in self.modes],
+            "readonly": self.readonly,
+            "artifacts_command": self.artifacts_command,
+            "completion_command": self.completion_command,
+        }
+
+
+@dataclass(frozen=True)
+class BranchRecorded:
+    """What ``complete --branch`` recorded, and what the group still waits for."""
+
+    task_id: str
+    step: str
+    branch: str
+    artifact: str
+    recorded: tuple[str, ...]
+    missing: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            "step": self.step,
+            "branch": self.branch,
+            "artifact": self.artifact,
+            "recorded": list(self.recorded),
+            "missing": list(self.missing),
+        }
+
+
+@dataclass(frozen=True)
 class InteractCommands:
     """The commands of an interactive step, spelled for the role that holds it."""
 
@@ -555,6 +663,8 @@ class Instruction:
     input_context: tuple[StepHandover, ...] = ()
     # Documents the active step promised to create or update in place.
     documents: tuple[DocumentTask, ...] = ()
+    # A parallel step's branches, which its performer runs at once.
+    parallel_branches: tuple[BranchView, ...] = ()
     # An interactive step: its conversation state and the recording commands.
     interactive: bool = False
     # This agent-owned step requests concrete pre/post operation visibility.
@@ -755,6 +865,15 @@ class Instruction:
             "run_handovers": [item.to_dict() for item in self.run_handovers],
             "input_context": [item.to_dict() for item in self.input_context],
             "documents": [item.to_dict() for item in self.documents],
+            **(
+                {
+                    "parallel_branches": [
+                        branch.to_dict() for branch in self.parallel_branches
+                    ]
+                }
+                if self.parallel_branches
+                else {}
+            ),
             "interactive": self.interactive,
             "explicit": self.explicit,
             "read_feature_maps": self.read_feature_maps,

@@ -10,9 +10,11 @@ RUNTIME_INSTRUCTIONS = {
         "Use this session for both manager and worker responsibilities. The "
         "manager dispatches an assignment; the worker completes its action and "
         "associated hooks until ww hands control back.",
-        "Do not spawn subagents.",
+        "Do not spawn subagents, except for the branches of a parallel step, "
+        "which its page asks you to launch.",
         "Configured agent, model, reasoning, profile, skill, and built-in hints "
-        "are ignored. The user-controlled session settings are authoritative.",
+        "are ignored, except a parallel step's branch settings. The "
+        "user-controlled session settings are authoritative.",
     ),
     "auto": (
         "The manager dispatches each assignment to a worker and handles recovery.",

@@ -560,6 +560,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     complete.add_argument(
+        "--branch",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Record the artifact of this branch of the parallel step in "
+            "progress; the step itself stays in progress."
+        ),
+    )
+    complete.add_argument(
         "--rule-result",
         action="append",
         default=[],
@@ -807,6 +816,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the current detailed workflow instruction.",
     )
     instruction.add_argument("task_id")
+    instruction.add_argument(
+        "--branch",
+        default=None,
+        metavar="NAME",
+        help="Show the page of this branch of the parallel step in progress.",
+    )
     metadata = subparsers.add_parser(
         "metadata", help="Show task or project metadata as JSON."
     )

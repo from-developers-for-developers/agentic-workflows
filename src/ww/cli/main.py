@@ -66,6 +66,7 @@ from ww.output import (
     render_reset,
     render_status,
 )
+from ww.output_adapters.branch_pages import render_branch_page, render_branch_recorded
 from ww.output_adapters.rule_pages import (
     render_check_preview,
     render_convert_preview,
@@ -1328,6 +1329,8 @@ def _prune(context: _Context, configuration: WorkflowConfiguration) -> _Outcome:
 
 def _complete(context: _Context) -> _Outcome:
     args = context.args
+    if args.branch is not None:
+        return _complete_branch(context)
     instruction = context.service.complete(
         context.task_id,
         _variables(args.variable),
@@ -1352,6 +1355,37 @@ def _complete(context: _Context) -> _Outcome:
         if followed is not None:
             return _instruction_outcome(followed, args.json_output)
     return _instruction_outcome(instruction, args.json_output, completing=True)
+
+
+def _complete_branch(context: _Context) -> _Outcome:
+    """Record one branch's artifact; it takes nothing a step's completion does."""
+    args = context.args
+    others = {
+        "--summary": args.summary,
+        "--adjustments": args.adjustments,
+        "--goto": args.goto,
+        "--variable": args.variable,
+        "--metadata": args.metadata,
+        "--rule-result": args.rule_result,
+        "--select-rules": args.select_rules,
+        "--select-files": args.select_files,
+        "--selected-agent": args.selected_agent,
+        "--selected-model": args.selected_model,
+        "--selected-reasoning": args.selected_reasoning,
+    }
+    given = [flag for flag, value in others.items() if value]
+    if given:
+        raise StateError(
+            "complete --branch records only the branch's --artifact; drop "
+            + ", ".join(given)
+        )
+    result = context.service.complete_branch(
+        context.task_id, args.branch, args.artifact, caller_role=args.role
+    )
+    text = (
+        _json(result.to_dict()) if args.json_output else render_branch_recorded(result)
+    )
+    return _Outcome(text, task_id=context.task_id)
 
 
 def _interact(context: _Context) -> _Outcome:
@@ -1675,6 +1709,17 @@ def _with_direct_work_notice(
 
 def _instruction_page(context: _Context) -> _Outcome:
     args = context.args
+    if args.branch is not None:
+        if args.run_id is not None:
+            raise StateError("--branch shows the run in progress; drop --run")
+        page = context.service.branch_instruction(
+            context.task_id, args.branch, caller_role=args.role
+        )
+        return _Outcome(
+            _json(page.to_dict()) if args.json_output else render_branch_page(page),
+            page.workflow,
+            context.task_id,
+        )
     return _instruction_outcome(
         context.service.instruction(
             context.task_id,

@@ -36,10 +36,13 @@ class ContainerArtifact:
     ``step`` and ``artifact`` (an absolute path) name the latest step inside
     the container that saved one in its current round, or the assessment
     itself when its outcome saved none; both are ``None`` when none has.
+    A parallel step names itself, and ``branches`` holds each of its
+    branches with the absolute path of the artifact it recorded.
     """
 
     step: str | None = None
     artifact: str | None = None
+    branches: tuple[tuple[str, str], ...] = ()
 
 
 def _stage(item: PlanItem | None) -> str | None:
@@ -129,6 +132,19 @@ def _with_artifact_dependencies(
 
 
 def _artifact_dependency(path: str, container: ContainerArtifact | None) -> str:
+    if container is not None and container.branches:
+        branches = "; ".join(
+            f"`{name}`: `{artifact}`" for name, artifact in container.branches
+        )
+        own = (
+            f" and the step's own result, `{container.artifact}`"
+            if container.artifact
+            else ""
+        )
+        return (
+            f"Use the artifacts of the parallel step `{path}` as input to this "
+            f"work: each branch's ({branches}){own}."
+        )
     if container is not None and container.artifact is None:
         return (
             f"No artifact is available from `{path}`: no step inside it that "

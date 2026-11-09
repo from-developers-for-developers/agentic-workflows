@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import replace
 from types import MappingProxyType
 
@@ -141,6 +141,7 @@ def validate_configuration(
     _validate_item_saves(normalized)
     _validate_child_launches(normalized)
     _validate_rule_selections(normalized)
+    _validate_parallel_groups(normalized)
     return normalized
 
 
@@ -944,6 +945,87 @@ def _validate_child_tasks(workflows: tuple[WorkflowDefinition, ...]) -> None:
                 f"child workflow {target.name!r} cannot define child tasks; "
                 "recursive child tasks are not supported"
             )
+
+
+# A parallel group runs at least this many branches at once.
+MIN_PARALLEL_BRANCHES = 2
+
+# What a parallel branch may not carry: a branch is one prompt a subagent
+# answers with an artifact, and only its group has a lifecycle in the plan.
+_BRANCH_FEATURES: tuple[tuple[str, Callable[[StepDefinition], object]], ...] = (
+    ("hooks", lambda step: step.hooks),
+    ("rules", lambda step: step.rules or step.select_rules_for),
+    ("an assessment", lambda step: step.assessment_question is not None),
+    ("verification", lambda step: step.verification),
+    ("saves", lambda step: step.provide or step.save_metadata or step.outputs),
+    ("document or item updates", lambda step: step.update_document or step.update_item),
+    ("steps, items or children", lambda step: _is_container(step)),
+    ("interactive", lambda step: step.interactive),
+    ("role", lambda step: step.role),
+    ("subagents", lambda step: step.subagents is not None),
+    ("artifact_from", lambda step: step.artifact_dependencies),
+    ("artifact: false", lambda step: not step.artifact),
+    (
+        "feature-map settings",
+        lambda step: step.read_feature_maps or step.write_feature_maps,
+    ),
+    ("a transition or child launch", lambda step: step.operation or step.child_launch),
+    ("handlers", lambda step: step.handlers),
+    ("workdir", lambda step: step.workdir),
+)
+
+
+def _validate_parallel_groups(configuration: WorkflowConfiguration) -> None:
+    """Keep every ``parallel`` group to two or more plain agent branches.
+
+    The group is one assignment whose performer runs each branch in a
+    subagent, so a branch is a prompt with performer settings and nothing
+    with a lifecycle of its own.  A group never sits in an items body or a
+    child's stages, which repeat over a collection.
+    """
+
+    def walk(steps: tuple[StepDefinition, ...], where: str, repeated: bool) -> None:
+        for step in steps:
+            if step.parallel:
+                check(step, where, repeated)
+            walk(step.child_steps, where, repeated)
+            walk(_template_steps(step), where, True)
+            walk(step.assessment_outcomes, where, repeated)
+            if step.verification is not None and step.verification.on_failure:
+                walk((step.verification.on_failure,), where, repeated)
+
+    def check(group: StepDefinition, where: str, repeated: bool) -> None:
+        label = f"parallel step {group.name!r} in {where}"
+        if repeated:
+            raise ConfigurationError(
+                f"{label} sits in an items body or a child's stages; "
+                "parallel groups are not supported there"
+            )
+        if len(group.child_steps) < MIN_PARALLEL_BRANCHES:
+            raise ConfigurationError(f"{label} needs at least two branches")
+        for branch in group.child_steps:
+            found = [name for name, has in _BRANCH_FEATURES if has(branch)]
+            if found:
+                raise ConfigurationError(
+                    f"branch {branch.name!r} of {label} sets {', '.join(found)}; "
+                    "a branch takes only its prompt, profile, agent, model "
+                    "and reasoning"
+                )
+            if branch.action is not None and branch.action.identifier != "prompt":
+                raise ConfigurationError(
+                    f"branch {branch.name!r} of {label} runs a command; "
+                    "a branch is an agent prompt"
+                )
+            if not branch.description:
+                raise ConfigurationError(
+                    f"branch {branch.name!r} of {label} needs a prompt"
+                )
+
+    for workflow in configuration.workflows:
+        walk(workflow.steps, f"workflow {workflow.name!r}", False)
+    for handler in configuration.handlers:
+        if isinstance(handler, StepDefinition):
+            walk((handler,), f"handler {handler.name!r}", False)
 
 
 def _unique(names: Iterable[str], label: str) -> None:

@@ -11,6 +11,7 @@ from .compiler import (
     compile_workflow_plan,
 )
 from .models import (
+    ParallelBranch,
     PlanItem,
     PlannedCheck,
     PlannedGoto,
@@ -27,6 +28,7 @@ __all__ = [
     "ChildWorkflowRun",
     "PlanOperation",
     "PlanCompilationOptions",
+    "ParallelBranch",
     "PlanItem",
     "PlannedCheck",
     "PlannedGoto",

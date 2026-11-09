@@ -77,6 +77,7 @@ from .constructs import (
 )
 from .gotos import planned_gotos
 from .models import (
+    ParallelBranch,
     PlanItem,
     PlannedCheck,
     PlannedMode,
@@ -1181,12 +1182,22 @@ class WorkflowPlanCompiler:
             or (definition.workdir if definition is not None else None)
             or "task"
         )
-        # A hook of a step the manager performs is the manager's too.
+        # A hook of a step the manager performs is the manager's too, and the
+        # manager launches a parallel group's branches.
         role: StepRole = (
             "manager"
-            if hints.role == "manager" or (phase == "step" and step.interactive)
+            if hints.role == "manager"
+            or (phase == "step" and (step.interactive or step.parallel))
             else "worker"
         )
+        parallel = phase == "step" and source == "step" and step.parallel
+        if parallel and not hints.subagents:
+            raise ConfigurationError(
+                f"step {step_path!r} in workflow {workflow.name!r} is parallel, "
+                "but subagents: false forbids the subagents its branches run in"
+            )
+        # The branches inherit the group's worker shape, not the manager's.
+        branch_hints = hints
         local = phase == "step" and role == "manager"
         if local:
             # An explicitly local step, or a conversation with the operator
@@ -1306,10 +1317,14 @@ class WorkflowPlanCompiler:
             if handler.description
             else ""
         )
+        branches = (
+            self._parallel_branches(step, branch_hints, allowed) if parallel else ()
+        )
         dependency_names = tuple(
             dict.fromkeys(
                 name
                 for value in (
+                    *(branch.description for branch in step.child_steps if parallel),
                     *(
                         actions.get(action.identifier).templates(action.payload)
                         if action is not None
@@ -1461,6 +1476,7 @@ class WorkflowPlanCompiler:
                 rules=rules,
                 checks=checks,
                 modes=modes,
+                parallel_branches=branches,
             )
         )
         if handler.update_item and owner == "ww":
@@ -1494,6 +1510,30 @@ class WorkflowPlanCompiler:
             *(item.name for item in handler.provide),
             *handler.outputs,
         )
+
+    def _parallel_branches(
+        self, group: StepDefinition, hints: ExecutionHints, allowed: set[str]
+    ) -> tuple[ParallelBranch, ...]:
+        """Each branch's prompt and the worker shape it inherits from ``group``."""
+        result = []
+        for branch in group.child_steps:
+            shape = hints.overlay(branch)
+            profile, instruction, profile_path = self._resolve_profile(
+                shape.profile, shape.profile_description
+            )
+            result.append(
+                ParallelBranch(
+                    name=branch.name,
+                    description=self.actions._interpolate(branch.description, allowed),
+                    requested_agent=shape.agent,
+                    requested_model=shape.model,
+                    requested_reasoning=shape.reasoning,
+                    profile=profile,
+                    profile_instruction=instruction,
+                    profile_path=profile_path,
+                )
+            )
+        return tuple(result)
 
     def _resolve_modes(self, names: tuple[str, ...]) -> tuple[PlannedMode, ...]:
         """The selected modes by name, with their descriptions frozen."""

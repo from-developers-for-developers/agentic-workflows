@@ -23,6 +23,7 @@ from ww.contracts import (
 )
 from ww.operations import decode_operation
 from ww.plan import (
+    ParallelBranch,
     PlanItem,
     PlannedCheck,
     PlannedGoto,
@@ -289,6 +290,9 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         selects_rules_for=_string_list(
             raw.get("selects_rules_for", []), f"{item_path}.selects_rules_for"
         ),
+        parallel_branches=_parallel_branches_from_list(
+            raw.get("parallel_branches", []), item_path
+        ),
     )
 
 
@@ -340,6 +344,17 @@ def _planned_modes_from_list(value: Any, item_path: str) -> tuple[PlannedMode, .
         raise ValueError(f"{item_path}.modes must be a list")
     return tuple(
         PlannedMode.from_dict(raw, f"{item_path}.modes[{index}]")
+        for index, raw in enumerate(value)
+    )
+
+
+def _parallel_branches_from_list(
+    value: Any, item_path: str
+) -> tuple[ParallelBranch, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{item_path}.parallel_branches must be a list")
+    return tuple(
+        ParallelBranch.from_dict(raw, f"{item_path}.parallel_branches[{index}]")
         for index, raw in enumerate(value)
     )
 

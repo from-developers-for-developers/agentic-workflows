@@ -621,6 +621,9 @@ class StepDefinition(HandlerDefinition):
     select_rules_for: tuple[str, ...] = ()
     # The compiler flattens nested steps while preserving their parent identity.
     child_steps: tuple[StepDefinition, ...] = ()
+    # ``parallel: true``: ``child_steps`` are branches one assignment runs at
+    # once, each in its own subagent, instead of steps run in turn.
+    parallel: bool = False
     # A step with ``items`` collects work items, then runs ``items.steps``
     # once for every collected item.
     items: ItemFlow | None = None

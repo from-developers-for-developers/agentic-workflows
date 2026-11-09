@@ -788,6 +788,9 @@ class PlanItemExecution:
     # The goto, numbered from 1 in the run's ``gotos``, that brought the flow
     # to this item: back over it, or ahead to it.
     goto: int | None = None
+    # On a ``parallel`` group's record: each branch that recorded its
+    # artifact, by branch name, with the artifact's reference.
+    branch_artifacts: tuple[tuple[str, str], ...] = ()
 
     def check_failures(self, check_id: str) -> int:
         """How many rejected completions this check failed.
@@ -888,6 +891,11 @@ class PlanItemExecution:
             **({"retry_errors": list(self.retry_errors)} if self.retry_errors else {}),
             **({"goto_round": self.goto_round} if self.goto_round else {}),
             **({"goto": self.goto} if self.goto is not None else {}),
+            **(
+                {"branch_artifacts": dict(self.branch_artifacts)}
+                if self.branch_artifacts
+                else {}
+            ),
         }
 
     @classmethod
@@ -1023,6 +1031,9 @@ class PlanItemExecution:
                 for entry in _list(data.get("rule_selection", []), "rule selection")
             ),
             goto_round=expect_nonnegative_int(data.get("goto_round", 0), "goto round"),
+            branch_artifacts=_variables(
+                data.get("branch_artifacts", {}), "branch artifacts"
+            ),
             goto=(
                 None
                 if data.get("goto") is None

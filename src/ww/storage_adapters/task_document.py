@@ -69,7 +69,7 @@ def _serialized_defaults(cls: type, **overrides: object) -> dict[str, object]:
 _RUN_DEFAULTS = _serialized_defaults(TaskRunAggregate)
 _PLAN_ITEM_DEFAULTS = _serialized_defaults(PlanItem)
 _ITEM_EXECUTION_DEFAULTS = _serialized_defaults(
-    PlanItemExecution, supplied_values={}, output_values={}
+    PlanItemExecution, supplied_values={}, output_values={}, branch_artifacts={}
 )
 _COMMAND_DEFAULTS = _serialized_defaults(CommandExecution)
 _STEP_DEFAULTS = _serialized_defaults(StepProgress)

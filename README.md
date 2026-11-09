@@ -394,7 +394,7 @@ commands are identical either way; only the division of labour differs.
 
 | Runtime | Who does the work |
 | --- | --- |
-| `single` (the default) | One session is both manager and worker and performs every assignment itself. No subagents. |
+| `single` (the default) | One session is both manager and worker and performs every assignment itself. No subagents, except the branches of a [parallel step](documentation/features.md#parallel-steps). |
 | `auto` | The manager delegates each assignment to a worker agent it selects, and records which one it used. |
 
 Choose one with `--runtime` / `-r` on `start`. Omitted, ww takes the workflow's

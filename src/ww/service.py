@@ -117,7 +117,12 @@ from ww.handler_repairs import close_assignment, needs_repair, request_repair
 from ww.instructions import Instruction, InstructionBuilder
 from ww.instructions.commands import SUMMARY_FLAG, instruction_command
 from ww.instructions.handoff import handoff_block
-from ww.instructions.models import CheckPreview, HandoffBlock
+from ww.instructions.models import (
+    BranchPage,
+    BranchRecorded,
+    CheckPreview,
+    HandoffBlock,
+)
 from ww.instructions.policy import manager_continues_itself, operator_reason
 from ww.interactions import InteractionLog, parse_transcript
 from ww.interpolation import dependencies, interpolate
@@ -130,6 +135,14 @@ from ww.item_collections import (
 from ww.items import EDITABLE_WORK_ITEM_FIELDS, WorkItem, validate_item_fields
 from ww.metadata_publication import MetadataPublisher, validate_metadata_values
 from ww.operations import ChildLaunch
+from ww.parallel_branches import (
+    active_group,
+    find_branch,
+    missing_branches,
+    record_branch,
+    require_branches,
+    write_branch_artifact,
+)
 from ww.plan import (
     PlanCompilationOptions,
     PlanItem,
@@ -2130,6 +2143,8 @@ class WorkflowService:
         active_record = state.item_executions[state.cursor]
         self._refuse_readonly_changes(state, snapshot.plan, item)
         self._settle_feature_maps(state, snapshot.plan, item, artifact)
+        if item.parallel_branches:
+            require_branches(item, active_record)
         if item.interactive and not active_record.interaction_ended:
             raise StateError(
                 f"{item.name!r} is interactive: once the operator says the "
@@ -2495,6 +2510,64 @@ class WorkflowService:
                 interact_commands=None,
             )
         return replace(self._tag_caller(instruction, caller_role), manager_intro=True)
+
+    def branch_instruction(
+        self, task_id: str, branch: str, *, caller_role: CallerRole | None = None
+    ) -> BranchPage:
+        """The page of one branch of the parallel step in progress.
+
+        Reading it changes nothing: the branch's worker does the work and
+        records its artifact with :meth:`complete_branch`.
+        """
+        self._validate_caller_role(caller_role)
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        item, _ = active_group(state, snapshot)
+        find_branch(item, branch)
+        page = self.instructions.branch_page(state, snapshot, branch)
+        try:
+            codename = self.tasks.read_codename(task_id)
+        except StateError:
+            codename = None
+        return replace(page, task_codename=codename)
+
+    def complete_branch(
+        self,
+        task_id: str,
+        branch: str,
+        artifact: str | None,
+        *,
+        caller_role: CallerRole | None = None,
+    ) -> BranchRecorded:
+        """Record one branch's artifact on the parallel step in progress.
+
+        The step stays in progress: its performer completes it once every
+        branch has recorded. Recording a branch again replaces its artifact.
+        """
+        self._validate_caller_role(caller_role)
+        validate_task_id(task_id)
+        if artifact is None or not artifact.strip():
+            raise StateError(
+                f"branch {branch!r} needs its result: pass a non-empty --artifact"
+            )
+        with self.tasks.lock_task(task_id):
+            state, snapshot = self.load(task_id)
+            item, _ = active_group(state, snapshot)
+            find_branch(item, branch)
+            reference = write_branch_artifact(
+                self.tasks, state, snapshot, item, branch, artifact
+            )
+            state = record_branch(state, branch, reference)
+            self.commit(state, snapshot)
+        record = state.item_executions[state.cursor]
+        return BranchRecorded(
+            task_id=task_id,
+            step=item.step,
+            branch=branch,
+            artifact=str((self.storage.root / reference).resolve()),
+            recorded=tuple(name for name, _ in record.branch_artifacts),
+            missing=missing_branches(item, record),
+        )
 
     def rule_candidates(self, task_id: str) -> RuleCandidates:
         """The rules the rule selection in progress chooses among."""
@@ -3413,6 +3486,17 @@ class WorkflowService:
         for item, record in zip(
             snapshot.plan.items, state.item_executions, strict=True
         ):
+            # A parallel step's branches are listed as they record, before
+            # the step itself completes.
+            artifacts.extend(
+                {
+                    "step": f"{item.step}/{name}",
+                    "branch": name,
+                    "artifact": reference,
+                    "path": str(self.storage.root / reference),
+                }
+                for name, reference in record.branch_artifacts
+            )
             if record.status != "completed" or record.artifact is None:
                 continue
             artifact = {

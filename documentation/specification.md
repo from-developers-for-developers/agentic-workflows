@@ -736,6 +736,7 @@ A step accepts every [handler key](#handlers), plus:
 | `write_feature_maps` | boolean | With `feature_maps` on, the step brings the feature maps up to date with the run's changes: its page lists the maps those changes touch (with their documents), the changed files no map covers, pointers that no longer resolve and the reading steps' gaps, and its completion is refused until each map and file has a `<map or file>: <answer>` line under `## Feature maps` in the artifact and every pointer of those maps resolves. The run's task is then added to each touched map's task list. Place it before any merge step. Inert while feature maps are off; requires `artifact: true`. Defaults to `false`. |
 | `choices` | list of choices | Options the operator picks from during an interactive step, `- <label>: <description>`; the label is shown as written. The agent follows the host's actual question-tool schema, using structured options when offered and a text-only question only when required, and otherwise presents a numbered list in chat. An asynchronous answer remains pending until the operator explicitly answers; timeout, dismissal, or preselection is not an answer. The pick must be recorded before the interaction ends. Requires `interactive: true`. |
 | `steps` | list of steps | Nested ordered steps. |
+| `parallel` | boolean | `true` runs `steps` at once, as branches of one step, instead of one after another; see [Parallel steps](#parallel-steps). Requires `steps`. Defaults to `false`. |
 | `artifact` | boolean | Whether agent completion requires an artifact; default `true`. |
 | `artifact_from` | name or list of names | Earlier artifact-producing step, or a list of them, whose artifacts are supplied to this step in the order written; a list names no step twice and is never empty. Each name resolves on its own: an earlier sibling, or an earlier step of an enclosing level, the nearest one first. Inside assessment outcomes the assessment itself is eligible, and inside `items.steps` the `items` step, each supplying its own artifact; an enclosing group is not. A plain group, or an assessment named after its outcomes, supplies the artifact of the latest step inside it (inside the chosen outcome) that saved one , and needs some step inside that can save one; when none did, an assessment supplies its own artifact if it saved one, and otherwise the step is told that no artifact is available. An assessment whose outcomes cannot save an artifact supplies its own. |
 | `items` | `null`, string, or mapping | Registers a bounded collection of work items, then runs its ordinary `items.steps` once over the collection and checks the collection at its end; see [Items](#items). |
@@ -1064,6 +1065,84 @@ retry preserve the current run's outcomes. Earlier run evidence remains readable
 Item phases, `items.assignment`, item-only worker settings and the phase
 properties `analyze`/`resolve`/`report` do not exist; a plan item with a key ww
 does not know is rejected when its state is read.
+
+### Parallel steps
+
+`parallel: true` on a step with `steps` makes the nested steps its
+**branches**, which run at the same time, each in a subagent of its own, as
+parts of one step. The step is one plan item and one assignment: ww tracks no
+branch as a step of its own, and the run's current item stays the parallel
+step until it completes.
+
+```yaml
+workflows:
+  - name: task
+    steps:
+      - develop: Implement the change.
+      - name: review
+        description: Merge the three reviews into one list of findings.
+        parallel: true
+        artifact_from: develop
+        steps:
+          - security: Review the change for security issues.
+            model: claude-opus-5-5
+            reasoning: high
+          - performance: Review the change for performance regressions.
+          - quality: Review readability and tests.
+      - fix: Fix the findings.
+        artifact_from: review
+```
+
+The step is always the manager's (`role: manager` is implied, and
+`role: worker` beside it is an error): its performer launches the branches.
+Its page lists every branch with its prompt, the model, reasoning, agent and
+profile it inherits along the step chain (where none is set, whoever launches
+it chooses, as for any subagent), the command that prints the branch's page,
+and the branch's artifact once recorded. The step's own `description`, when
+given, is the performer's work once the branches are done, such as merging
+their findings; without one it reports what each branch found.
+
+In the `auto` runtime the manager launches one worker per branch, all at
+once, with the branch's settings. In the `single` runtime the session
+launches them as its own subagents: a parallel step is the one place a
+`single` session spawns subagents and honours their settings. Either way the
+step's performer completes it once with `complete --role manager` (or
+`--role worker` in `single`), with its own artifact and summary.
+
+`instruction <task> --role worker --branch <name> [--json]` prints the page
+of one branch of the parallel step in progress: the branch's prompt with the
+step's `artifact_from` inputs, the task's requirements and amendments, the
+working directory, the step's modes, and the branch's completion command. It
+changes nothing. `complete <task> --role worker --branch <name>
+--artifact "<Markdown>" [--json]` records the branch's artifact at
+`steps/<NN>-<step>/<MM>-<branch>.md` beside the step's own, and returns which
+branches are still missing; recording a branch again replaces its artifact,
+and the step stays in progress. It takes nothing else a completion does
+(`--summary`, `--variable` and the rest are refused) and is refused unless a
+parallel step with that branch is in progress. The JSON of the step's page
+lists the branches as `parallel_branches`, each with `name`, `description`,
+`instruction_command`, `requested_agent`, `requested_model`,
+`requested_reasoning`, `profile`, `profile_instruction` and `artifact` (an
+absolute path, or `null` until recorded); a branch's records are kept in its
+step's item record as `branch_artifacts`.
+
+The step's own completion is refused while a branch has not recorded its
+artifact. Its rules, checks, hooks and attached `assess` apply to the step as
+to any agent step, after the branches. `artifact_from` naming the step gives
+the step's own artifact and every branch's, in the order the branches are
+written; `ww artifacts` lists the branches' artifacts as they are recorded,
+with `branch` beside `step`. A goto or repeat that returns to the step starts
+its branches over.
+
+A parallel step has at least two branches. A branch is a plain agent prompt:
+its own `description` and its `profile`, `agent`, `model` and `reasoning`;
+it may not set hooks, rules, `assess`, `verification`, saves, document or
+item updates, nested `steps`, `items` or `children`, `interactive`, `role`,
+`subagents`, `artifact_from` (the step's applies to every branch),
+`artifact: false`, feature-map settings, `workdir`, a handler group, a
+command or a transition. A parallel step may not sit in an `items` body or a
+child's stages, and an effective `subagents: false` on it is an error, since
+its branches run in subagents.
 
 ## Handlers
 

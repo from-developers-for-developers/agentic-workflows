@@ -142,6 +142,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _goto_notice(lines, instruction)
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
+        _parallel_branches(lines, instruction)
         _explicit_guidance(lines, instruction)
         _feature_maps(lines, instruction)
         _feature_maps_due(lines, instruction)
@@ -1039,6 +1040,53 @@ def _feature_maps_due(lines: Lines, instruction: Instruction) -> None:
                 "answer is missing; it checks that each is answered, not how.",
             ]
         )
+
+
+def _parallel_branches(lines: Lines, instruction: Instruction) -> None:
+    """A parallel step's branches: launch them all at once, then complete."""
+    branches = instruction.parallel_branches
+    if not branches or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Parallel branches")
+    lines.extend(
+        [
+            f"This step runs {len(branches)} branches at the same time. Launch "
+            "one subagent per branch now, all of them together, not one after "
+            "another, and do not do a branch's work yourself. Give each the "
+            "model and reasoning listed for it; where none is listed, choose "
+            "them as you would for any subagent. Tell each subagent to run its "
+            "page command first and follow the page it prints: it does its "
+            "branch's work, records its artifact with `complete --branch`, and "
+            "reports back.",
+            "",
+        ]
+    )
+    for branch in branches:
+        lines.append(f"- `{branch.name}`: {branch.description}")
+        details = requested_setting_lines(
+            branch.requested_model, branch.requested_reasoning
+        )
+        if branch.requested_agent and branch.requested_agent != instruction.agent:
+            details.insert(0, f"- Agent: `{branch.requested_agent}`")
+        if branch.profile_instruction:
+            details.append(f"- Profile: {branch.profile_instruction}")
+        details.append(f"- Page: `{branch.instruction_command}`")
+        details.append(
+            f"- Artifact: `{branch.artifact}`"
+            if branch.artifact
+            else "- Artifact: not recorded yet"
+        )
+        lines.extend(f"  {detail}" for detail in details)
+    lines.extend(
+        [
+            "",
+            "Once every branch has reported, read the branches' artifacts, do "
+            "this step's own work with them, and complete the step. Its "
+            "completion is refused while a branch has not recorded its "
+            "artifact; relaunch that branch's subagent instead of doing its "
+            "work yourself.",
+        ]
+    )
 
 
 def _modes(lines: Lines, instruction: Instruction) -> None:
@@ -2547,6 +2595,15 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 return []
             # Kept on a continuing page too: it bans subagents, and the role
             # it names may have just changed.
+            if _runs_branches(instruction):
+                return [
+                    f"You play both roles in this session: act as the {active_role}. "
+                    "This step is parallel: launch its branches as subagents, as "
+                    "its Parallel branches section says, and do the rest of its "
+                    "work yourself. It is the one place this session spawns "
+                    "subagents and honours their model and reasoning.",
+                    "",
+                ]
             return [
                 f"You play both roles in this session: act as the {active_role} "
                 "and do the work yourself, not through a subagent.",
@@ -2554,6 +2611,16 @@ def _role_instruction(instruction: Instruction) -> Lines:
             ]
         case Audience.WORKER_RETURNING:
             return _assignment_complete(instruction)
+        case Audience.MANAGER_DELEGATING if _runs_branches(instruction):
+            return [
+                "You are the manager. This step is parallel, so it is yours: "
+                "launch a worker for each of its branches yourself, all at once, "
+                "as its Parallel branches section says, then do the rest of its "
+                "work in this session and run the displayed manager completion "
+                "command; a worker's completion of the step is refused.",
+                "",
+                *_assignment_coverage(instruction),
+            ]
         case Audience.MANAGER_DELEGATING if instruction.role == "manager":
             return [
                 "You are the manager. This step is yours (`role: manager`): perform "
@@ -2603,6 +2670,13 @@ def _role_instruction(instruction: Instruction) -> Lines:
                 # who performs it.
                 return [_RUN_MANAGER_COMMAND, ""]
             return [_RUN_MANAGER_COMMAND, ""]
+
+
+def _runs_branches(instruction: Instruction) -> bool:
+    """Whether the page asks its reader to launch a parallel step's branches."""
+    return bool(instruction.parallel_branches) and instruction.item_status == (
+        "in_progress"
+    )
 
 
 def requested_setting_lines(model: str | None, reasoning: str | None) -> list[str]:

@@ -61,6 +61,7 @@ from .values import (
 STEP_ONLY_KEYS: set[str] = {
     "hooks",
     "steps",
+    "parallel",
     "role",
     "subagents",
     "interactive",
@@ -226,6 +227,7 @@ def _parse_step(
     children = _parse_nested_steps(mapping, "steps", path, handlers_by_name)
     if "steps" not in mapping and referenced is not None:
         children = referenced.child_steps
+    parallel = _parse_parallel(mapping, path, referenced, children)
     child_launch = _parse_child_launch(mapping, path)
     child_flow = _parse_child_flow(mapping, path, handlers_by_name, referenced)
     if "children" in mapping and base.operation is not None:
@@ -244,6 +246,11 @@ def _parse_step(
     if interactive and role == "worker":
         raise ConfigurationError(
             f"{path} is interactive, so the manager holds the conversation; "
+            "role: worker contradicts it"
+        )
+    if parallel and role == "worker":
+        raise ConfigurationError(
+            f"{path} is parallel, so the manager launches its branches; "
             "role: worker contradicts it"
         )
     learnable = mapping.get("learnable", referenced.learnable if referenced else False)
@@ -307,6 +314,7 @@ def _parse_step(
         rules=rules,
         select_rules_for=select_rules_for,
         child_steps=children,
+        parallel=parallel,
         items=items,
         child_launch=child_launch,
         artifact=artifact,
@@ -682,6 +690,25 @@ def _artifact_from(value: Any, path: str) -> tuple[str, ...]:
         if name in names[:index]:
             raise ConfigurationError(f"{where} names step {name!r} twice")
     return tuple(names)
+
+
+def _parse_parallel(
+    mapping: dict[str, Any],
+    path: str,
+    referenced: StepDefinition | None,
+    children: tuple[StepDefinition, ...],
+) -> bool:
+    """Parse ``parallel``: the nested steps run at once, as branches."""
+    value = mapping.get(
+        "parallel", referenced.parallel if referenced is not None else False
+    )
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{path}.parallel must be true or false")
+    if value and not children:
+        raise ConfigurationError(
+            f"{path}.parallel needs steps: the branches it runs at once"
+        )
+    return value
 
 
 def _parse_performer(

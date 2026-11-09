@@ -555,7 +555,7 @@ accidental way to change workflow lifecycle policy.
 
 Composite definition expansion has an internal planning contract in
 `../src/ww/plan/constructs.py`. The compiler normalizes a `StepDefinition` as a
-sequence, assessment, item flow, child workflow, or leaf and dispatches it
+sequence, parallel group, assessment, item flow, child workflow, or leaf and dispatches it
 through a checked registry. Construct planners request nested compilation, a
 scoped annotated region, or a leaf emission; they do not receive the compiler,
 mutable plan list, execution state, or persistence services. The compiler
@@ -1041,6 +1041,10 @@ executor never branches on runtime.
 `single` is one session switching between both roles. Its defining constraint is
 that an agent cannot change its own execution settings, so a `single` run lives
 with the session's model and reasoning and does not delegate hooks.
+A parallel step is the one exception: its page asks the session to launch
+its branches as subagents with their own settings (see
+[Parallel steps](#parallel-steps)), and the `single` runtime instruction says
+so.
 
 `auto` keeps manager commands and recovery in the main session and gives
 each assignment to a worker. The worker submits its own item and hook results
@@ -1885,6 +1889,46 @@ there is no implicit current work item. A `status` page takes the collection's
 records from the same aggregate read as its state, so its guidance never mixes
 two revisions. The task-state and plan schema boundaries
 reject old execution plans before any mutation, with previous-build guidance.
+
+## Parallel steps
+
+A `parallel: true` group is one plan item, not a sequence. `normalize_construct`
+turns it into a `ParallelDefinition`, and `ParallelPlanner` in
+`../src/ww/plan/constructs.py` emits a single prompt leaf for it (its
+`description`, or a default asking for each branch's findings). The compiler
+makes that item the manager's, refuses it under an effective
+`subagents: false`, and freezes the branches on it as
+`PlanItem.parallel_branches`: one `ParallelBranch` each (`../src/ww/plan/models.py`)
+with its interpolated prompt and the agent, model, reasoning and profile it
+inherits along the step chain. No branch is a plan item, an assignment or a
+cursor position, so the executor, assignments, gotos and recovery see an
+ordinary agent step; the shape limits (at least two leaf branches, nothing but
+a prompt and performer settings on a branch, no parallel group in an `items`
+body or a child stage) are checked in `../src/ww/workflow_validation.py`.
+
+The branches' runtime state is one field on the group's execution record,
+`PlanItemExecution.branch_artifacts` (branch name to artifact reference).
+`../src/ww/parallel_branches.py` owns it: `active_group` refuses any branch
+command unless the cursor's item is a parallel step in progress,
+`write_branch_artifact` writes a branch's artifact into the step's directory
+numbered by the branch's ordinal and the step's goto round, `record_branch`
+records it, and `require_branches` is the gate `complete` applies before a
+parallel step's checks, rules and hooks. The service's `branch_instruction`
+is read-only; `complete_branch` takes the task lock, records one branch and
+returns which are still missing, and never completes the step. A goto or
+repeat that re-enters the step starts with a fresh record, so its branches
+start over.
+
+Pages follow the same split. The step's own page carries `BranchView`s (with
+each recorded artifact) and asks its performer to launch one subagent per
+branch at once, in `auto` and `single` alike. A branch's page is a
+`BranchPage` rendered by `../src/ww/output_adapters/branch_pages.py`: the
+branch prompt with the step's `artifact_from` inputs, the task, the working
+directory and modes, and the one `complete --branch` command. `artifact_from`
+naming a parallel step resolves through `InstructionBuilder._parallel_artifacts`
+to the step's own artifact followed by each branch's, in declaration order.
+`ww visualize` shows a parallel item's branches with their model and
+reasoning.
 
 ## Interactive steps and the operator page
 

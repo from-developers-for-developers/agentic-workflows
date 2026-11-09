@@ -267,6 +267,26 @@ def complete_command(
     return _command(*parts)
 
 
+def branch_instruction_command(task_id: str, branch: str) -> str:
+    """The page of one branch of the parallel step in progress."""
+    return _command(
+        "instruction", _arg(task_id), "--role", "worker", "--branch", _arg(branch)
+    )
+
+
+def branch_complete_command(task_id: str, branch: str) -> str:
+    """The command a branch's worker records the branch's artifact with."""
+    return _command(
+        "complete",
+        _arg(task_id),
+        "--role",
+        "worker",
+        "--branch",
+        _arg(branch),
+        '--artifact="<whole result in Markdown>"',
+    )
+
+
 def interact_commands(
     task_id: str,
     role: CallerRole,

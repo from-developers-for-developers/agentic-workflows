@@ -2199,6 +2199,42 @@ it covers every step inside, and a nested step may set `subagents: true` again.
       model: sonnet       # its own model, still no subagents
 ```
 
+### Parallel steps
+
+`parallel: true` on a group of steps runs them at once, each in its own
+subagent, as branches of one step: code reviews on security, performance and
+quality at the same time, each with its own model and reasoning, for example.
+
+```yaml
+- name: review
+  description: Merge the three reviews into one list of findings.
+  parallel: true
+  steps:
+    - security: Review the change for security issues.
+      model: claude-opus-5-5
+      reasoning: high
+    - performance: Review the change for performance regressions.
+    - quality: Review readability and tests.   # no model: the agent chooses
+- fix: Fix the findings.
+  artifact_from: review                        # every branch's artifact
+```
+
+ww keeps it simple: the group is one step, which the manager performs. Its
+page lists the branches with their settings and tells the manager to launch
+one subagent per branch, all together, in `auto` and in `single` alike. Each
+subagent reads its branch's page with
+`./ww instruction <task> --role worker --branch <name>`, does the work, and
+records its result with `./ww complete <task> --role worker --branch <name>
+--artifact "..."`. Once every branch has, the manager reads their artifacts,
+does the step's own work (its `description`, such as merging the findings)
+and completes the step; completing earlier is refused.
+
+A branch is a plain prompt with `profile`, `agent`, `model` and `reasoning`;
+hooks, rules, `assess` and the rest belong on the group, which keeps them.
+Parallel groups need at least two branches, cannot sit in an `items` body or
+a child's stages, and contradict `subagents: false`. See
+[Parallel steps](specification.md#parallel-steps) for the exact contract.
+
 ## Manager and worker assignments
 
 Caller role describes responsibility for one command. It is explicit workflow

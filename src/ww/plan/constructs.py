@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Protocol, TypeVar, runtime_checkable
 
-from ww.actions import DefinedAction
+from ww.actions import DefinedAction, Prompt
 from ww.contracts import (
     ChildOperation,
     ItemOperation,
@@ -166,6 +166,11 @@ class SequenceDefinition:
 
 
 @dataclass(frozen=True)
+class ParallelDefinition:
+    step: StepDefinition
+
+
+@dataclass(frozen=True)
 class AssessmentDefinition:
     step: StepDefinition
     question: str
@@ -183,6 +188,9 @@ class ChildFlowDefinition:
     step: StepDefinition
     flow: ChildFlow
 
+
+# The work of a ``parallel`` group that does not describe its own.
+PARALLEL_PROMPT = "Run the branches at once and report what each one found."
 
 # The leaf under a ``children`` step that runs the collected children.
 CHILDREN_RUN_STEP_NAME = "children"
@@ -209,6 +217,31 @@ class SequencePlanner(ConstructPlanner[SequenceDefinition]):
         )
         return ExpansionResult(
             available_values=context.compile_steps(definition.body, scope)
+        )
+
+
+class ParallelPlanner(ConstructPlanner[ParallelDefinition]):
+    """One agent item for the whole group; its branches ride on the item.
+
+    The group's performer launches a subagent per branch and completes the
+    group once every branch recorded its artifact, so no branch is a plan
+    item of its own and the run keeps one current item.
+    """
+
+    def expand(
+        self, definition: ParallelDefinition, context: PlanningContext
+    ) -> ExpansionResult:
+        step = definition.step
+        return ExpansionResult(
+            outputs=context.emit_leaf(
+                LeafRequest(
+                    step,
+                    action=DefinedAction(
+                        "prompt", Prompt(step.description or PARALLEL_PROMPT)
+                    ),
+                    annotations=step_annotations(step),
+                )
+            )
         )
 
 
@@ -370,6 +403,8 @@ def normalize_construct(step: StepDefinition) -> object:
         )
     if step.items is not None:
         return ItemFlowDefinition(step, step.items)
+    if step.parallel:
+        return ParallelDefinition(step)
     if step.child_steps:
         return SequenceDefinition(step, step.child_steps)
     if step.children is not None:
@@ -381,6 +416,7 @@ def builtin_construct_planners() -> ConstructPlannerRegistry:
     registry = ConstructPlannerRegistry()
     registry.register(LeafDefinition, LeafPlanner())
     registry.register(SequenceDefinition, SequencePlanner())
+    registry.register(ParallelDefinition, ParallelPlanner())
     registry.register(AssessmentDefinition, AssessmentPlanner())
     registry.register(ItemFlowDefinition, ItemFlowPlanner())
     registry.register(ChildFlowDefinition, ChildFlowPlanner())
