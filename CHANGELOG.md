@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
+- Added: ww starts a headless step's agent itself when the manager's `next` reaches it; `ww wait` waits for the run, and when it ends without completing the step the page says why, with its logs, and `ww launch` resumes its session, starts it again or gives the step back to a session. `1f7a022`
 - Added: `agent: {name: codex, run: headless}` marks a step whose agent ww will run headless, checked when the workflow compiles (reasoning and `cheapest` against what the agent takes), with each agent's headless settings under `agents.<name>.headless` in `ww.json` and `ww.local.json`. `b390309`
 - Added: `ww agents --check` says whether Claude Code, Codex and Cursor can be run headless here: each program's path, version, login, and the models and reasoning levels it takes. `ca8df21`
 - Added: `parallel: true` on a group of steps runs them at once, each in its own subagent with its own model and reasoning, as one step that completes once every branch has recorded its artifact. `1dc16ba`
