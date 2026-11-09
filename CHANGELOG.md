@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
-- Added: in a workflow with no `write_feature_maps` step, each agent step whose changes touch a feature map or leave a file no map covers brings the maps up to date before it completes, and `ww lint` notes such workflows and warns about feature-map settings on steps no agent performs.
+- Added: in a workflow with no `write_feature_maps` step, each agent step whose changes touch a feature map or leave a file no map covers brings the maps up to date before it completes, and `ww lint` notes such workflows and warns about feature-map settings on steps no agent performs. `77c521c`
 - Added: `write_feature_maps: true` on a step brings the feature maps up to date with its run's changes: its page lists the maps they touch, the files no map covers, broken pointers and the research's gaps, its completion waits until each is answered for and every pointer resolves, and the task joins each touched map's task list. `5cdc545`
 - Added: `read_feature_maps: true` on a step tells its agent, while feature maps are on, to look code up with `ww features lookup` before searching and to end its artifact with the maps it used and their gaps; `ww visualize` marks such steps. `8f9658f`
 - Added: `ww features lookup` finds feature maps by name, alias, words or path and says which pointers no longer resolve and how many commits changed the map's files since it did; `changed [TASK]` lists the maps a run's or the checkout's changes touch and the files no map covers, `stale` lists the maps behind their files, `show` prints the tasks that changed a feature, and `ww visualize` gains a Feature maps tab. `22cb362`
