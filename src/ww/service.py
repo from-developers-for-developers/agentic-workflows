@@ -4926,11 +4926,21 @@ class WorkflowService:
                     "files", empty_tree(scope.directory), chosen.selection.files
                 ),
             )
+        return replace(
+            scope,
+            subject=RuleSubject(
+                "branch", branch_base(scope.directory, self._base_branch(plan))
+            ),
+        )
+
+    def _base_branch(self, plan: WorkflowPlan) -> str | None:
+        """The branch a run's work forks from: the ww/git ``base_branches``
+        entry of its lane, else the default one."""
         settings = load_project_config(self.storage.project_config_path).settings_for(
             GIT_EXTENSION
         )
         bases = settings.get("base_branches")
-        base = next(
+        return next(
             (
                 value
                 for key in (plan.lane, "default")
@@ -4940,9 +4950,13 @@ class WorkflowService:
             ),
             None,
         )
-        return replace(
-            scope, subject=RuleSubject("branch", branch_base(scope.directory, base))
-        )
+
+    def run_workspace(self, task_id: str) -> tuple[Path, str | None]:
+        """Where a task's run works, and the branch its work forks from."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        directory = resolve_workspace(self.storage.root, state.working_directory)
+        return directory or self.storage.root, self._base_branch(snapshot.plan)
 
     def _refuse_readonly_changes(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

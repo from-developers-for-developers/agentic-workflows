@@ -475,6 +475,9 @@ body { margin: 0; }
 .rstat.bad { color: var(--bad); background: var(--bad-soft); }
 .rstat.warn { color: var(--warn); background: var(--warn-soft); }
 .rstat.muted { color: var(--muted); background: var(--sunken); }
+.fm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.fm-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; overflow-wrap: anywhere; }
+.fm-list li.broken code { color: var(--bad); text-decoration: line-through; }
 .rs-ok { color: var(--ok); } .rs-bad { color: var(--bad); } .rs-warn { color: var(--warn); }
 .rule-sum { display: inline; }
 .fails { margin: 4px 0 0; padding-left: 1.2em; font-size: 12.5px; color: var(--bad); }
@@ -589,6 +592,7 @@ body.no-scroll { overflow: hidden; }
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" type="button" data-view="workflows" aria-selected="true">Workflows</button>
       <button class="tab" role="tab" type="button" data-view="tasks" aria-selected="false">Tasks <span class="tab-n" id="tabTasksN"></span></button>
+      <button class="tab" role="tab" type="button" data-view="features" aria-selected="false" id="tabFeatures" hidden>Feature maps <span class="tab-n" id="tabFeaturesN"></span></button>
       <span class="live" id="live" title="The page reloads its data when a watched file changes"><span class="pulse"></span><span id="liveText">Connecting</span></span>
     </nav>
   </div>
@@ -630,6 +634,20 @@ body.no-scroll { overflow: hidden; }
   <div class="wrap tasks-main">
     <div class="tlist" id="tlist"><div class="empty">Loading tasks…</div></div>
     <section class="tdetail" id="tdetail"></section>
+  </div>
+</div>
+<div id="view-features" class="view" hidden>
+  <div class="toolbar">
+    <div class="wrap">
+      <label class="search" for="fq">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
+        <input id="fq" type="search" placeholder="Find a map by name, alias, summary or path" autocomplete="off">
+      </label>
+    </div>
+  </div>
+  <div class="wrap tasks-main">
+    <div class="tlist" id="flist"><div class="empty">Loading feature maps…</div></div>
+    <section class="tdetail" id="fdetail"></section>
   </div>
 </div>
 <div class="scrim" id="scrim" hidden></div>
@@ -1575,6 +1593,70 @@ async function loadDemo() {
 /* ================================================================
    Shell: census, views, live updates
 ================================================================ */
+/* Feature maps: where each feature lives, read through ww's core
+   (/api/features). The tab shows only while the repo ww.json keeps them. */
+let features = { enabled: false, maps: [], problems: [] };
+let currentFeature = store.get("feature", null);
+async function loadFeatures() {
+  try { features = await getJSON("/api/features"); } catch (e) { features = { enabled: false, maps: [], problems: [] }; }
+  $("#tabFeatures").hidden = !features.enabled;
+  $("#tabFeaturesN").textContent = features.enabled ? features.maps.length : "";
+  if (!features.enabled) { if (!$("#view-features").hidden) showView("workflows"); return; }
+  renderFeatureList();
+  renderFeatureDetail();
+}
+function featurePointers(m) { return [m.entry, ...Object.values(m.fields).flat()].filter(Boolean); }
+function featureMatches(m) {
+  const q = $("#fq").value.trim().toLowerCase();
+  return !q || [m.name, ...m.aliases, m.summary, ...featurePointers(m).map(p => p.pointer)].join(" ").toLowerCase().includes(q);
+}
+function renderFeatureList() {
+  const rows = features.maps.filter(featureMatches);
+  $("#flist").innerHTML = rows.map(m => {
+    const broken = featurePointers(m).filter(p => p.broken.length).length;
+    const behind = m.staleness && m.staleness.commits;
+    return `<button class="trow" type="button" data-feature="${esc(m.name)}" aria-current="${currentFeature === m.name}">
+      <span class="trow-top"><span class="trow-id">${esc(m.name)}</span>${broken ? `<span class="badge reduced">${broken} broken</span>` : ""}${behind ? `<span class="trow-wf" title="${esc(m.staleness.text)}">${behind} commit${behind > 1 ? "s" : ""} behind</span>` : ""}</span>
+      ${m.aliases.length ? `<span class="trow-wf">also ${esc(m.aliases.join(", "))}</span>` : ""}
+      <span class="trow-desc">${esc(m.summary)}</span></button>`;
+  }).join("") || `<div class="empty">${features.maps.length ? "No map matches." : "No feature maps yet. ww features template prints a starting point."}</div>`;
+}
+function featureProblems(problems) {
+  return problems.length ? `<details class="panel" open><summary><h3>Problems</h3><span class="n">${problems.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body"><ul class="fm-list">${problems.map(p => `<li><span class="mono">${esc(p.file)}</span> ${esc(p.message)}</li>`).join("")}</ul></div></details>` : "";
+}
+function renderFeatureDetail() {
+  const el = $("#fdetail"), m = features.maps.find(x => x.name === currentFeature);
+  if (!m) { el.innerHTML = featureProblems(features.problems) + '<div class="empty">Choose a map to see where its feature lives.</div>'; return; }
+  const pointer = p => `<li class="${p.broken.length ? "broken" : ""}"><code>${esc(p.pointer)}</code>${p.broken.map(b => `<span class="rstat bad">${esc(b)}</span>`).join("")}</li>`;
+  const text = v => `<li>${esc(v)}</li>`;
+  const panel = (title, items, render) => items.length ? `<details class="panel" open><summary><h3>${title}</h3><span class="n">${items.length}</span><span class="chev">${ICON.chev}</span></summary><div class="panel-body"><ul class="fm-list">${items.map(render).join("")}</ul></div></details>` : "";
+  const stale = m.staleness;
+  el.innerHTML = `
+    <div class="td-head">
+      <div class="td-title"><h2>${esc(m.name)}</h2>${stale && stale.commits ? `<span class="rstat warn">${stale.commits} commit${stale.commits > 1 ? "s" : ""} behind</span>` : stale && stale.committed ? '<span class="rstat ok">up to date</span>' : ""}</div>
+      <p class="td-desc">${esc(m.summary)}</p>
+      <div class="td-sub">
+        ${m.aliases.length ? `<span>also <span class="mono">${esc(m.aliases.join(", "))}</span></span>` : ""}
+        ${m.entry ? `<span>start at <span class="mono">${esc(m.entry.pointer)}</span>${m.entry.broken.length ? ` <span class="rstat bad">${esc(m.entry.broken.join("; "))}</span>` : ""}</span>` : ""}
+        ${stale ? `<span>${esc(stale.text)}</span>` : ""}
+      </div>
+    </div>
+    ${featureProblems(features.problems.filter(p => p.map === m.name))}
+    ${panel("Parts", m.fields.parts, pointer)}
+    ${panel("Touches", m.fields.touches, pointer)}
+    ${panel("Reads", m.reads, text)}
+    ${panel("Uses", m.uses, u => `<li><button class="linkbtn" type="button" data-feature="${esc(u)}">${esc(u)}</button></li>`)}
+    ${panel("Tests", m.fields.tests, pointer)}
+    ${panel("Docs", m.fields.docs, pointer)}
+    ${panel("Tasks that changed it", m.tasks, t => `<li><button class="linkbtn" type="button" data-task="${esc(t.id)}">${esc(t.id)}</button><span>${esc(t.description)}</span></li>`)}`;
+}
+function selectFeature(name) {
+  currentFeature = name;
+  store.set("feature", name);
+  renderFeatureList();
+  renderFeatureDetail();
+}
+
 function renderCensus() {
   if (!atlas) return;
   const own = atlas.workflows.filter(w => !w.builtin);
@@ -1588,6 +1670,7 @@ function showView(v) {
   $$(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.view === v));
   $("#view-workflows").hidden = v !== "workflows";
   $("#view-tasks").hidden = v !== "tasks";
+  $("#view-features").hidden = v !== "features";
   store.set("view", v);
   if (v === "workflows") $$(".wf.open").forEach(drawArcs);
 }
@@ -1614,7 +1697,7 @@ function connect() {
   source.addEventListener("hello", () => { live.classList.remove("off"); text.textContent = "Live · following the configuration and .ww/tasks"; });
   source.addEventListener("change", e => {
     const change = JSON.parse(e.data);
-    if (change.config) loadAtlas();
+    if (change.config) { loadAtlas(); loadFeatures(); }
     if (change.tasks) loadTasks();
   });
   source.onerror = () => { live.classList.add("off"); text.textContent = "Not connected · is ww visualize still running?"; };
@@ -1643,7 +1726,8 @@ document.addEventListener("click", e => {
   const head = e.target.closest(".wf-head"); if (head && head.tagName === "BUTTON") { const c = head.closest(".wf"); setOpen(c, !c.classList.contains("open")); saveOpen(); return; }
   const g = e.target.closest("[data-goto]"); if (g) { goTo(g.dataset.goto); return; }
   const wo = e.target.closest("[data-wfopen]"); if (wo) { showView("workflows"); goTo(wo.dataset.wfopen); return; }
-  const tr = e.target.closest("[data-task]"); if (tr) { selectTask(tr.dataset.task); return; }
+  const fm = e.target.closest("[data-feature]"); if (fm) { selectFeature(fm.dataset.feature); return; }
+  const tr = e.target.closest("[data-task]"); if (tr) { if (!$("#view-features").hidden) showView("tasks"); selectTask(tr.dataset.task); return; }
   const ch = e.target.closest("[data-filter]"); if (ch) { taskFilter = ch.dataset.filter; store.set("taskFilter", taskFilter); renderChips(); renderTaskList(); return; }
   const ar = e.target.closest("[data-art]"); if (ar) { openArtifact(+ar.dataset.art); return; }
   const dc = e.target.closest("[data-doc]"); if (dc) { openDrawer({ doc: dc.dataset.doc, task: dc.dataset.docTask || null, ref: `documents.${dc.dataset.doc}`, title: dc.dataset.docTitle }); return; }
@@ -1677,12 +1761,13 @@ $("#toggleRules").onclick = e => {
 $("#toggleBuiltin").onclick = () => toggleBuiltin(!showBuiltin);
 $("#q").addEventListener("input", applyFilters);
 $("#tq").addEventListener("input", renderTaskList);
+$("#fq").addEventListener("input", renderFeatureList);
 toggleBuiltin(showBuiltin);
 
 const hash = decodeURIComponent(location.hash.slice(1));
 showView(hash.startsWith("wf-") ? "workflows" : hash ? "tasks" : store.get("view", "workflows"));
 if (hash.startsWith("wf-")) loadAtlas.after = () => goTo(hash.slice(3));
-loadAtlas().then(loadTasks).then(connect);
+loadAtlas().then(loadTasks).then(loadFeatures).then(connect);
 loadDemo();
 </script>
 

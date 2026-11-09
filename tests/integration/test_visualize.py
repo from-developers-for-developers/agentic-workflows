@@ -578,3 +578,24 @@ def test_nested_items_carry_their_depth(root: Path) -> None:
     depth = {(item["name"], item["kind"]): item["depth"] for item in items}
     assert depth[("develop", "agent")] == 0
     assert ("develop-verify-1", "verification") not in depth
+
+
+def test_the_feature_maps_tab_follows_the_setting(server: VisualizerServer) -> None:
+    root = server.storage.root
+    assert b'data-view="features"' in _get(server, "/")[1]
+    assert json.loads(_get(server, "/api/features")[1]) == {"enabled": False}
+
+    (root / "ww.json").write_text('{"feature_maps": true}', encoding="utf-8")
+    features = root / ".ww" / "features"
+    features.mkdir(parents=True)
+    (features / "readme.yaml").write_text(
+        "name: readme\nsummary: The project's introduction.\nparts: [README.md]\n",
+        encoding="utf-8",
+    )
+
+    body = json.loads(_get(server, "/api/features")[1])
+    assert body["enabled"] is True
+    assert [entry["name"] for entry in body["maps"]] == ["readme"]
+    assert body["maps"][0]["fields"]["parts"] == [
+        {"pointer": "README.md", "broken": []}
+    ]

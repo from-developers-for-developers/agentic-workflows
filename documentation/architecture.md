@@ -2529,5 +2529,23 @@ it in any settings file but the repo's (`REPO_ONLY_SETTINGS`), so every
 checkout of a project treats maps alike. `init` asks for it and, when the
 repo file keeps it on, `Storage` re-includes `.ww/features/` in `.gitignore`
 and marks `.ww/features/*.tasks` `merge=union` in `.gitattributes`.
-`ww.cli.features` renders `ww features` and its `show`, `check` and
-`template` actions.
+`ww.cli.features` renders `ww features` and its `lookup`, `show`, `changed`,
+`stale`, `check` and `template` actions from a `FeaturesRequest`.
+
+`Pointer.covers` decides from a path alone whether a pointer names it, so
+deleted files still map; `FeatureMap.covers`, `FeatureMaps.coverage` (affected
+maps and unmapped files, the maps' own files left out) and
+`FeatureMaps.lookup` build on it. `history.py` asks Git only: `staleness`
+counts the commits to a map's pointers (as pathspecs, `:(glob)` for globs)
+after the map's last commit and names their tasks from the `WW-Operation`
+trailer or the ww/git `commit_format`; `changed_paths` reuses
+`ww.changes` (`branch_base`, `take_mark`, `touched_files`) for a directory's
+changes since `HEAD` or since it forked from a base branch. The service's
+`run_workspace` gives a task's workspace and base branch, sharing
+`_base_branch` with the readonly rule scope. `task_lists.py` owns the
+`<name>.tasks` files: `record_task` appends a task once, and
+`read_task_list` keeps the first line of each task, which a union merge may
+repeat. `ww.visualize.features` builds the Feature maps tab through the same
+functions; `/api/features` is not cached, since whether pointers resolve and
+how stale a map is follow the code, while the watcher follows
+`.ww/features/` to say when to refetch.

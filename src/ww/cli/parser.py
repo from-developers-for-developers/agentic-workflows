@@ -1145,13 +1145,37 @@ def _features_parser(
         parents=[json_output],
         help=(
             "List the project's feature maps (where each feature's code lives); "
-            "`show NAME`, `check` or `template`."
+            "`lookup`, `show NAME`, `changed [TASK]`, `stale`, `check` or "
+            "`template`."
         ),
     )
     actions = features.add_subparsers(dest="features_action")
     after = _Parser(add_help=False)
     after.add_argument(
         "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
+    )
+    lookup = actions.add_parser(
+        "lookup",
+        parents=[after],
+        help=(
+            "Find the maps for a name, an alias, words of a summary, a path or "
+            "path#Name, with pointers that no longer resolve and staleness."
+        ),
+    )
+    lookup.add_argument("query", nargs="+", metavar="QUERY")
+    changed = actions.add_parser(
+        "changed",
+        parents=[after],
+        help=(
+            "The maps a task's run changes touch, and changed files no map "
+            "covers; without a task, the checkout's uncommitted changes."
+        ),
+    )
+    changed.add_argument("task", nargs="?", metavar="TASK")
+    actions.add_parser(
+        "stale",
+        parents=[after],
+        help="List the maps whose files changed in commits since the map did.",
     )
     show = actions.add_parser(
         "show",
