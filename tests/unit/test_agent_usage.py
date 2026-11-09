@@ -144,8 +144,8 @@ def test_claude_finds_subagents_with_the_tool_call_that_started_them(
     files = reader.files(SESSION, (tmp_path / "projects",))
 
     assert [file.key for file in files] == [
-        f"claudecode:{SESSION}",
-        f"claudecode:{SESSION}/agent-a1",
+        SESSION,
+        f"{SESSION}/agent-a1",
     ]
     assert files[1].spawn_tool == "toolu_spawn" and files[1].depth == 1
 
@@ -262,8 +262,9 @@ def test_codex_finds_subagent_threads_by_their_parent(tmp_path: Path) -> None:
 
     files = reader.files(THREAD, (tmp_path,))
 
-    assert [file.key for file in files] == [f"codex:{THREAD}", f"codex:{CHILD_THREAD}"]
-    assert files[1].parent == f"codex:{THREAD}"
+    # A reader's keys are bare IDs: the collector adds the agent's name.
+    assert [file.key for file in files] == [THREAD, CHILD_THREAD]
+    assert files[1].parent == THREAD
     assert files[1].spawned_at == "2026-10-26T10:57:00Z"
     assert reader.sessions_in((tmp_path,), Path("/work/project")) == (
         THREAD,

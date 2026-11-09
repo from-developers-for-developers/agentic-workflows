@@ -7,7 +7,7 @@ their hooks report.  :mod:`.collector` places the tokens on tasks, steps
 and roles, :mod:`.store` keeps them, and :mod:`.report` sums them up.
 """
 
-from .collector import Collection, Collector, Invocation
+from .collector import Collection, Collector, Invocation, project_collector
 from .report import (
     TaskUsage,
     UnreadableSession,
@@ -36,6 +36,7 @@ __all__ = [
     "UsageRow",
     "UsageStore",
     "format_tokens",
+    "project_collector",
     "render_overview",
     "render_task_usage",
     "task_total",

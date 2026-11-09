@@ -72,7 +72,7 @@ class CodexUsage(UsageReader):
                 own = sorted(base.glob(f"*/*/*/rollout-*-{session}.jsonl"))
                 if own and own[0].is_file():
                     return (
-                        LogFile(f"codex:{session}", own[0]),
+                        LogFile(session, own[0]),
                         *self._descendants(session, base, own[0]),
                     )
         return ()
@@ -100,10 +100,10 @@ class CodexUsage(UsageReader):
                 threads[thread] = threads[parent] + 1
                 found.append(
                     LogFile(
-                        f"codex:{thread}",
+                        thread,
                         path,
                         depth=threads[thread],
-                        parent=f"codex:{parent}",
+                        parent=parent,
                         spawned_at=_text(payload.get("timestamp")),
                     )
                 )

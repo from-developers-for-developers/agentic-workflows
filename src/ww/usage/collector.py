@@ -26,13 +26,14 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from ww.agents import (
     Agent,
+    AgentRegistry,
     Call,
     LogFile,
     Spawn,
@@ -43,6 +44,7 @@ from ww.agents import (
     builtin_agents,
 )
 from ww.errors import WwError
+from ww.extensions import ExtensionRegistry
 from ww.project_config import UsageSettings
 from ww.storage import Storage
 from ww.task_codenames import codenames
@@ -117,9 +119,13 @@ class Collector:
         settings: UsageSettings,
         task_format: str | None = None,
         *,
+        agents: Iterable[Agent] | None = None,
         environ: Mapping[str, str] | None = None,
         now: datetime | None = None,
     ) -> None:
+        """``agents`` are the project's (``AgentRegistry.known()``), so a
+        declared or extension agent with a usage reader is read like a
+        built-in one; without them, the built-ins."""
         self.storage = storage
         self.settings = settings
         self.task_format = task_format
@@ -127,7 +133,10 @@ class Collector:
         self.now = now or datetime.now(timezone.utc)
         self.store = UsageStore(storage)
         self.times = TaskTimes(storage.task_persistence)
-        self.agents = {agent.name: agent for agent in builtin_agents()}
+        self.agents = {
+            agent.name: agent
+            for agent in (builtin_agents() if agents is None else agents)
+        }
         self._invocations: list[Invocation] | None = None
         self._known: tuple[tuple[str, ...], dict[str, str]] | None = None
         self._out: dict[tuple[Any, ...], _Totals] = {}
@@ -335,9 +344,20 @@ class Collector:
         if agent is None or agent.usage is None:
             return ()
         try:
-            return agent.usage.files(key.split(":", 1)[1], self.roots(agent))
+            found = agent.usage.files(
+                key.removeprefix(f"{agent.name}:"), self.roots(agent)
+            )
         except OSError:
             return ()
+        # A reader's keys are bare IDs; ww's carry the agent's name.
+        return tuple(
+            replace(
+                file,
+                key=f"{agent.name}:{file.key}",
+                parent=f"{agent.name}:{file.parent}" if file.parent else None,
+            )
+            for file in found
+        )
 
     # Reading --------------------------------------------------------------
 
@@ -349,7 +369,8 @@ class Collector:
         file: LogFile,
         state: UsageState,
     ) -> int:
-        session = session_key.split(":", 1)[1]
+        # An agent's name may hold a colon (``ext/.../agents:<key>``).
+        session = session_key.removeprefix(f"{agent.name}:")
         current = state.files.get(file.key) or FileState(agent.name, session)
         current.path = str(file.path)
         state.files[file.key] = current
@@ -568,6 +589,17 @@ class Collector:
         ]
         self._out = {}
         return stretches
+
+
+def project_collector(storage: Storage, extensions: ExtensionRegistry) -> Collector:
+    """A collector with the project's usage settings and every agent it names."""
+    config = extensions.config
+    return Collector(
+        storage,
+        config.usage,
+        config.task_format,
+        agents=AgentRegistry.of(extensions).known(),
+    )
 
 
 def _claims(verb: str, role: str | None) -> bool:

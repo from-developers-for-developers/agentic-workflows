@@ -18,7 +18,7 @@ from tests.usage_logs import (
     claude_usage,
     claude_user,
 )
-from ww.agents import ClaudeCode, TokenCounts, TurnUsage
+from ww.agents import Agent, ClaudeCode, TokenCounts, TurnUsage, session_of
 from ww.project_config import UsagePrice, UsageSettings
 from ww.storage import Storage
 from ww.usage import Collector, UsageStore, render_task_usage, task_usage
@@ -80,10 +80,17 @@ def home(tmp_path: Path) -> Path:
     return tmp_path / "claude"
 
 
-def _collector(root: Path, home: Path, tasks: dict[str, dict], **settings) -> Collector:
+def _collector(
+    root: Path,
+    home: Path,
+    tasks: dict[str, dict],
+    agents: tuple[Agent, ...] | None = None,
+    **settings,
+) -> Collector:
     collector = Collector(
         Storage(root),
         UsageSettings(**settings),
+        agents=agents,
         environ={"CLAUDE_CONFIG_DIR": str(home)},
         now=NOW,
     )
@@ -465,3 +472,40 @@ def test_prices_turn_tokens_into_cost(tmp_path: Path, home: Path) -> None:
 
 def test_the_claude_reader_is_the_one_collected_with() -> None:
     assert ClaudeCode().session_variable == "CLAUDE_CODE_SESSION_ID"
+
+
+class VendorAgent(Agent):
+    """An extension's agent that writes Claude Code's log format."""
+
+    key = "vendor"
+    title = "Vendor"
+    session_variable = "VENDOR_SESSION_ID"
+    usage = ClaudeCode.usage
+
+
+def test_an_extension_agent_with_a_usage_reader_is_collected_under_its_own_name(
+    tmp_path: Path, home: Path
+) -> None:
+    name = "ext/acme/vendor/agents:vendor"
+    agent = VendorAgent(name)
+    found = session_of({"VENDOR_SESSION_ID": SESSION}, (agent,))
+    assert found is not None and found[0] is agent
+    record = _invocation("2026-11-01T10:02:00Z", "next", "TASK-1")
+    _log(tmp_path, {**record, "agent": name})
+    claude_session(
+        home,
+        [
+            claude_assistant(
+                "2026-11-01T10:02:00Z",
+                "m1",
+                usage=_tokens(5),
+                bash="./ww next TASK-1 --role manager",
+            )
+        ],
+    )
+
+    _collector(tmp_path, home, TASKS, agents=(agent,)).collect()
+
+    (stretch,) = UsageStore(Storage(tmp_path)).task_records("TASK-1")
+    assert (stretch.agent, stretch.file) == (name, f"{name}:{SESSION}")
+    assert _collector(tmp_path, home, TASKS).collect().files == 0

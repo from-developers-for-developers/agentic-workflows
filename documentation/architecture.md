@@ -2428,7 +2428,9 @@ operator submits it. ww never holds a credential of its own.
 
 ## Token usage
 
-`../src/ww/usage/` places the agents' tokens on tasks. `collector.py` reads
+`../src/ww/usage/` places the agents' tokens on tasks, for every agent the
+project names (`project_collector` takes them from `AgentRegistry.known()`,
+as the execution log's session lookup does). `collector.py` reads
 the sessions the execution log names (recent ones automatically, all with
 `ww usage collect`, plus a scan of the agents' directories for sessions
 whose logged working directory is inside the root) through each agent's
@@ -2473,7 +2475,9 @@ may be absent, since an agent behind an API has no directory, hooks, or shell:
 - `usage` (`usage.py`): a `UsageReader` that finds a session's log files by
   its ID alone and turns their new lines into `Usage`, `Call` (a ww command
   the agent ran, from its shell tool calls) and `Spawn` events, with numbers
-  and IDs only. A Cursor `stop` payload yields a `TurnUsage` on
+  and IDs only. Like a hook protocol it holds no agent identity: its file
+  keys are bare IDs, which the collector qualifies with the name ww
+  addresses the agent by, so an extension agent may reuse a built-in reader. A Cursor `stop` payload yields a `TurnUsage` on
   `HookPayload.usage` instead.
 
 `ClaudeCode`, `Codex`, and `Cursor` are the built-in adapters. The

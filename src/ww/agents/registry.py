@@ -112,13 +112,17 @@ def builtin_agents() -> tuple[Agent, ...]:
     return tuple(agent() for agent in BUILTIN_AGENTS)
 
 
-def session_of(environ: Mapping[str, str]) -> tuple[Agent, str] | None:
-    """The built-in agent whose session runs this process, and the session's ID.
+def session_of(
+    environ: Mapping[str, str], agents: Iterable[Agent] | None = None
+) -> tuple[Agent, str] | None:
+    """The agent whose session runs this process, and the session's ID.
 
     Each agent tells the commands it runs its session through its own
     environment variable; an agent without one, such as Cursor, is unknown.
+    ``agents`` are the project's (``AgentRegistry.known()``); without them,
+    the built-ins.
     """
-    for agent in builtin_agents():
+    for agent in builtin_agents() if agents is None else agents:
         value = environ.get(agent.session_variable) if agent.session_variable else None
         if value:
             return agent, value

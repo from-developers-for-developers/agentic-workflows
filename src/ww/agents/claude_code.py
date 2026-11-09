@@ -114,7 +114,7 @@ class ClaudeCodeUsage(UsageReader):
                 for own in sorted(root.glob(pattern)):
                     if own.is_file():
                         return (
-                            LogFile(f"claudecode:{session}", own),
+                            LogFile(session, own),
                             *self._subagents(session, own.parent / session),
                         )
         return ()
@@ -127,7 +127,7 @@ class ClaudeCodeUsage(UsageReader):
             tool = meta.get("toolUseId")
             found.append(
                 LogFile(
-                    f"claudecode:{session}/{path.stem}",
+                    f"{session}/{path.stem}",
                     path,
                     depth=depth if isinstance(depth, int) else 1,
                     spawn_tool=tool if isinstance(tool, str) else None,

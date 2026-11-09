@@ -74,12 +74,14 @@ TOKEN_FIELDS = ("input", "cache_write", "cache_read", "output", "reasoning")
 class LogFile:
     """One log file of a session: the session's own, or a subagent's.
 
-    ``key`` identifies the file by IDs alone, ``<agent>:<session>`` or
-    ``<agent>:<session>/<subagent>``, so the same file read on a host and in a
-    container is one file; ``path`` is only where it is found here.  A
-    subagent's file names its spawner either directly (``parent``, the
-    spawner file's key) or through the tool call that started it
-    (``spawn_tool``, found among the session's :class:`Spawn` events).
+    ``key`` identifies the file by IDs alone, ``<session>`` or
+    ``<session>/<subagent>``, so the same file read on a host and in a
+    container is one file; ``path`` is only where it is found here.  A reader
+    holds no agent identity: whoever reads the file qualifies the key with
+    the name ww addresses the agent by.  A subagent's file names its spawner
+    either directly (``parent``, the spawner file's key) or through the tool
+    call that started it (``spawn_tool``, found among the session's
+    :class:`Spawn` events).
     """
 
     key: str

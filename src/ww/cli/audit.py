@@ -7,10 +7,11 @@ import argparse
 import os
 import shlex
 import socket
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 from ww import __version__
-from ww.agents import session_of
+from ww.agents import Agent, session_of
 
 
 def _log_record(
@@ -20,6 +21,7 @@ def _log_record(
     outcome: str,
     error: str | None,
     args: argparse.Namespace,
+    agents: Iterable[Agent] | None = None,
 ) -> dict[str, str | None]:
     return {
         "invocation_id": args.invocation_id,
@@ -41,17 +43,18 @@ def _log_record(
         # Who confirmed a gated choice: the operator at a terminal, or an
         # agent carrying out the operator's decision with --yes.
         "confirmation": getattr(args, "confirmation", None),
-        **_session(),
+        **_session(agents),
     }
 
 
-def _session() -> dict[str, str | None]:
+def _session(agents: Iterable[Agent] | None) -> dict[str, str | None]:
     """The agent session that ran the command, and the machine it ran on.
 
     Token usage is read from that session's own logs; the host, a
     container's ID inside a container, says where those logs are.
+    ``agents`` are the project's, once its settings are read.
     """
-    session = session_of(os.environ)
+    session = session_of(os.environ, agents)
     try:
         host: str | None = socket.gethostname() or None
     except OSError:

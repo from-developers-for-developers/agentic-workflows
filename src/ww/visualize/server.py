@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlsplit
 from ww.errors import StateError, WwError
 from ww.extensions import ExtensionRegistry
 from ww.storage import Storage
-from ww.usage import Collector
+from ww.usage import project_collector
 
 from . import demo
 from .atlas import build_atlas
@@ -245,10 +245,10 @@ def _collect_usage(storage: Storage, stopped: threading.Event) -> None:
     """Collect recent sessions' tokens until the server stops; never raises."""
     while True:
         with contextlib.suppress(Exception):
-            config = ExtensionRegistry.discover(
-                storage.root, storage.project_config_path
-            ).config
-            Collector(storage, config.usage, config.task_format).collect()
+            project_collector(
+                storage,
+                ExtensionRegistry.discover(storage.root, storage.project_config_path),
+            ).collect()
         if stopped.wait(USAGE_INTERVAL):
             return
 

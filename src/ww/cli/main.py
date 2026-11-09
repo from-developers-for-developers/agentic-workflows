@@ -109,8 +109,8 @@ from ww.task_ids import bare_request_id
 from ww.task_list import render_task_rows, task_ids_in_order, task_rows
 from ww.upgrade import upgrade
 from ww.usage import (
-    Collector,
     UsageStore,
+    project_collector,
     render_overview,
     render_task_usage,
     task_usage,
@@ -705,7 +705,7 @@ def _codename(context: _Context) -> _Outcome:
 
 
 def _tasks(context: _Context) -> _Outcome:
-    _collect_usage(context.storage, context.extensions.config)
+    _collect_usage(context.storage, context.extensions)
     rows = task_rows(context.storage)
     if context.args.json_output:
         return _Outcome(_json({"tasks": [row.to_dict() for row in rows]}))
@@ -727,7 +727,7 @@ def _usage(context: _Context) -> _Outcome:
     task_id = (
         resolve_task(context.storage.task_persistence, words[0]) if words else None
     )
-    collector = Collector(context.storage, config.usage, config.task_format)
+    collector = project_collector(context.storage, context.extensions)
     store = UsageStore(context.storage)
     if collecting:
         if not config.usage.enabled:
@@ -769,7 +769,7 @@ def _usage(context: _Context) -> _Outcome:
                 "machine; `ww usage <task>` names them."
             )
         return _Outcome(text + "\n")
-    _collect_usage(context.storage, config)
+    _collect_usage(context.storage, context.extensions)
     prices = config.usage.prices
     if task_id is None:
         overview = usage_overview(store, task_ids_in_order(context.storage), prices)
@@ -782,10 +782,10 @@ def _usage(context: _Context) -> _Outcome:
     )
 
 
-def _collect_usage(storage: Storage, config: ProjectConfig) -> None:
+def _collect_usage(storage: Storage, extensions: ExtensionRegistry) -> None:
     """Collect recent sessions' new tokens; this never fails the command."""
     with contextlib.suppress(Exception):
-        Collector(storage, config.usage, config.task_format).collect()
+        project_collector(storage, extensions).collect()
 
 
 def _start(context: _Context) -> _Outcome:
@@ -2182,11 +2182,20 @@ def main(argv: list[str] | None = None) -> int:
         or (args.command == "migrate" and not args.apply)
     )
 
+    # The project's agents, once its settings are read; the built-ins before.
+    agents: tuple[Agent, ...] | None = None
+
     def log(outcome: str, error: str | None, *scope: str | None) -> None:
         record_workflow, record_task = scope if scope else (workflow, task_id)
         storage.append_log(
             _log_record(
-                args.command, record_workflow, record_task, outcome, error, args
+                args.command,
+                record_workflow,
+                record_task,
+                outcome,
+                error,
+                args,
+                agents,
             )
         )
 
@@ -2205,6 +2214,7 @@ def main(argv: list[str] | None = None) -> int:
         extensions = ExtensionRegistry.discover(
             storage.root, storage.project_config_path
         )
+        agents = AgentRegistry.of(extensions).known()
         service = WorkflowService(storage, extensions=extensions)
         if args.command != "lint":
             for notice in _configuration_deprecations(storage, extensions):
@@ -2262,7 +2272,7 @@ def main(argv: list[str] | None = None) -> int:
         and args.command in _USAGE_COMMANDS
         and extensions is not None
     ):
-        _collect_usage(storage, extensions.config)
+        _collect_usage(storage, extensions)
     sys.stdout.write(result.text)
     return result.exit_code
 
@@ -2377,6 +2387,7 @@ def _answer_hook(arguments: list[str]) -> int:
     """
     storage: Storage | None = None
     args: argparse.Namespace | None = None
+    agents: tuple[Agent, ...] | None = None
     try:
         with contextlib.redirect_stderr(io.StringIO()):
             args = build_parser().parse_args(arguments)
@@ -2388,8 +2399,10 @@ def _answer_hook(arguments: list[str]) -> int:
         payload = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
         extensions = ExtensionRegistry.discover(root, root / SETTINGS_FILE)
         config = extensions.config
-        agent = AgentRegistry.of(extensions).resolve(args.agent)
-        hook_storage = storage
+        registry = AgentRegistry.of(extensions)
+        agents = registry.known()
+        agent = registry.resolve(args.agent)
+        collector = project_collector(storage, extensions)
         with printed_executable(project_command(config.executable, root)):
             answer = answer_hook(
                 storage,
@@ -2397,16 +2410,14 @@ def _answer_hook(arguments: list[str]) -> int:
                 args.hook_action,
                 payload,
                 on_request=config.on_request,
-                on_turn=lambda turn: Collector(
-                    hook_storage, config.usage, config.task_format
-                ).record_turn(agent, turn),
+                on_turn=lambda turn: collector.record_turn(agent, turn),
             )
     except BaseException as error:  # noqa: BLE001 - a hook must never break the agent
         if isinstance(error, KeyboardInterrupt):
             return 0
-        _log_hook(storage, args, "error", type(error).__name__)
+        _log_hook(storage, args, "error", type(error).__name__, agents)
         return 0
-    _log_hook(storage, args, "ok", answer.decision)
+    _log_hook(storage, args, "ok", answer.decision, agents)
     sys.stdout.write(answer.text)
     return 0
 
@@ -2416,12 +2427,13 @@ def _log_hook(
     args: argparse.Namespace | None,
     outcome: str,
     decision: str,
+    agents: tuple[Agent, ...] | None = None,
 ) -> None:
     """Record one hook call and what ww decided, never the agent's payload."""
     if storage is None or args is None:
         return
     record: dict[str, object] = {
-        **_log_record("hook", None, None, outcome, None, args),
+        **_log_record("hook", None, None, outcome, None, args, agents),
         "hook_event": args.hook_action,
         "hook_agent": args.agent,
         "hook_decision": decision,
