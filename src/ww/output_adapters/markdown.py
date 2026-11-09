@@ -50,6 +50,7 @@ from ww.instructions.models import (
 from ww.instructions.policy import Audience, audience
 from ww.instructions.text import NO_SUBAGENTS
 from ww.output_adapters.base import OutputAdapter
+from ww.output_adapters.headless_pages import render_headless
 from ww.output_adapters.terminal import initialization_progress, terminal_accent
 from ww.results import (
     INITIALIZATION_NEXT_STEP,
@@ -93,6 +94,9 @@ class MarkdownOutputAdapter(OutputAdapter):
             return _document(lines)
         if instruction.manager_only:
             _manager_only(lines, instruction)
+            return _document(lines)
+        if instruction.headless is not None:
+            lines.extend(render_headless(instruction, instruction.headless))
             return _document(lines)
         verification_repair = (
             instruction.repeat_communication is not None

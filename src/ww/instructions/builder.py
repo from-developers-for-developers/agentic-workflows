@@ -327,6 +327,7 @@ class InstructionBuilder:
             requested_model=shape.requested_model if shape else None,
             requested_reasoning=shape.requested_reasoning if shape else None,
             requested_profile=shape.profile if shape else None,
+            requested_run=shape.requested_run if shape else "session",
             role=shape.role if shape else "worker",
             subagents=shape.subagents if shape else True,
             assignment_token=worker_token(state),
@@ -1800,6 +1801,17 @@ def _assignment_preview(
                     "worker is "
                     "selected: after the manager command, perform it yourself "
                     "in this session."
+                ),
+            }
+        if driver.requested_run == "headless":
+            return {
+                "first_item_id": assignment.first_item_id,
+                "start": assignment.start,
+                "stop": assignment.stop,
+                "message": (
+                    f"ww runs `{driver.requested_agent}` headless for "
+                    f"`{driver.name}`, so no worker is selected: the manager "
+                    "command starts it, and its page says how to wait for it."
                 ),
             }
         items = plan.items[assignment.start : assignment.stop]

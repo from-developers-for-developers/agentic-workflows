@@ -117,7 +117,7 @@ def _request(**values: object) -> LaunchRequest:
         "task_id": "TASK-1",
         "prompt": "./ww instruction TASK-1 --role worker",
         "working_directory": Path("/work/TASK-1"),
-        "state_directory": Path("/work/.ww"),
+        "writable": (Path("/work/.ww"),),
     }
     return LaunchRequest(**{**defaults, **values})  # type: ignore[arg-type]
 

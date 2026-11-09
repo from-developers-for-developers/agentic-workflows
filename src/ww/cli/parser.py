@@ -782,6 +782,38 @@ def build_parser() -> argparse.ArgumentParser:
         "status", parents=[with_run], help="Show a compact current-task summary."
     )
     status.add_argument("task_id")
+    wait = subparsers.add_parser(
+        "wait",
+        parents=[_shared("json")],
+        help=(
+            "Wait for the headless run of the task's current step, then print "
+            "the manager's page."
+        ),
+    )
+    wait.add_argument("task_id")
+    launch = subparsers.add_parser(
+        "launch",
+        parents=[_shared("json")],
+        help=(
+            "After a headless run ended without completing its step: start the "
+            "step's agent again, or give the step back to a session."
+        ),
+    )
+    launch.add_argument("task_id")
+    launch_mode = launch.add_mutually_exclusive_group()
+    launch_mode.add_argument(
+        "--resume",
+        action="store_true",
+        help="Continue the last run's agent session instead of starting afresh.",
+    )
+    launch_mode.add_argument(
+        "--session",
+        action="store_true",
+        help=(
+            "Stop running the step headless: the manager performs or delegates "
+            "it as usual."
+        ),
+    )
     requirements = subparsers.add_parser(
         "requirements",
         parents=[with_run],

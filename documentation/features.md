@@ -5449,6 +5449,47 @@ logged in, offering the model — is checked by `ww agents --check` (below).
 `ww plan` marks such steps "run headless by ww", and `ww visualize` shows it
 on the step.
 
+When the manager's `next` reaches such a step, ww checks the agent's
+program (installed, recent enough, logged in, offering the model and
+reasoning) and starts it with the ordinary worker bootstrap; the manager does
+not perform or delegate the step. In `auto` the step's dispatch page selects
+no worker. The manager's page then says the run is going and how to wait:
+
+```console
+$ ww next TASK-123 --role manager
+## Manager: ww runs `codex` headless for `review`
+...
+$ ww wait TASK-123
+```
+
+`ww wait` returns the manager's next page once the agent has completed the
+step, or the same page after a while (`WW_OPERATOR_WAIT`, half an hour in
+Claude Code) if it is still going; it is then run again. Claude Code runs it
+in the background and goes on talking to the operator; an agent without a
+background shell can end its turn instead and wait when the operator writes
+again. Until the run ends, the manager changes nothing in the task. The
+agent's output goes to `.ww/tasks/<task>/runs/<run>/headless/`, beside a
+record of each run (its command, session, exit code and tokens).
+
+A run that ends without completing its step does not fail the step: the
+page says why (it exited, with its code, ran past its timeout, went silent,
+or could not start), shows the end of its output and errors, the agent's
+session and the tokens it used, and tells the manager to find out what went
+wrong (the logs, `git status` and `git diff` for half-done changes) before
+choosing:
+
+| Command | What it does |
+| --- | --- |
+| `ww launch TASK-123 --resume` | Continue the same agent session, which keeps what it knew. |
+| `ww launch TASK-123` | Start the agent again from the beginning. |
+| `ww launch TASK-123 --session` | Give the step back: the manager performs or delegates it as usual. |
+
+or asking the operator, when the cause is theirs (a login that expired, a
+missing program, a spent budget). A program that fails the checks is not
+started at all; its page lists what failed, with the same choices. `reset`
+stops a run still going. A headless agent is a worker for its step only: ww
+refuses it any manager command.
+
 Each agent's headless settings live under `agents.<name>.headless` in
 `ww.json`; put machine-specific ones, such as the program's path, in
 `ww.local.json`, which merges over it key by key:

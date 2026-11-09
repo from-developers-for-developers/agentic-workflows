@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from ww.agents import Agent
+from ww.agents import Agent, TokenCounts, Transport
 from ww.amendments import Amendment
 from ww.assessments import AssessmentOutcome
 from ww.children import ChildTask
@@ -125,6 +125,64 @@ class DocumentTask:
             "instruction": self.instruction,
             "path": self.path,
             "exists": self.exists,
+        }
+
+
+HeadlessState = Literal["not_started", "running", "failed", "refused"]
+
+
+@dataclass(frozen=True)
+class HeadlessView:
+    """The headless run of the step in hand, as the manager's page shows it.
+
+    ``not_started``: ``next`` will start it; ``refused``: its program failed
+    the checks (``findings``); ``running``: the manager waits with
+    ``wait_command``; ``failed``: it ended without completing the step, for
+    ``reason``, and the manager chooses ``resume_command`` (when the agent
+    named its session), ``relaunch_command`` or ``session_command``.
+    """
+
+    state: HeadlessState
+    agent: str
+    wait_command: str
+    relaunch_command: str
+    session_command: str
+    launch_id: str | None = None
+    status: str | None = None
+    reason: str | None = None
+    exit_code: int | None = None
+    session_id: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    output_log: str | None = None
+    error_log: str | None = None
+    output_tail: tuple[str, ...] = ()
+    error_tail: tuple[str, ...] = ()
+    usage: TokenCounts | None = None
+    resume_command: str | None = None
+    findings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "state": self.state,
+            "agent": self.agent,
+            "launch_id": self.launch_id,
+            "status": self.status,
+            "reason": self.reason,
+            "exit_code": self.exit_code,
+            "session_id": self.session_id,
+            "started_at": self.started_at,
+            "ended_at": self.ended_at,
+            "output_log": self.output_log,
+            "error_log": self.error_log,
+            "output_tail": list(self.output_tail),
+            "error_tail": list(self.error_tail),
+            "usage": self.usage.to_dict() if self.usage is not None else None,
+            "wait_command": self.wait_command,
+            "resume_command": self.resume_command,
+            "relaunch_command": self.relaunch_command,
+            "session_command": self.session_command,
+            "findings": list(self.findings),
         }
 
 
@@ -740,6 +798,9 @@ class Instruction:
     requested_model: str | None = None
     requested_reasoning: str | None = None
     requested_profile: str | None = None
+    # How the requested agent runs, and its headless run when ww starts it.
+    requested_run: Transport = "session"
+    headless: HeadlessView | None = None
     role: StepRole = "worker"
     # ``False``: whoever performs the item spawns no subagents.
     subagents: bool = True
@@ -935,6 +996,8 @@ class Instruction:
             "requested_model": self.requested_model,
             "requested_reasoning": self.requested_reasoning,
             "requested_profile": self.requested_profile,
+            "requested_run": self.requested_run,
+            "headless": self.headless.to_dict() if self.headless else None,
             "role": self.role,
             "subagents": self.subagents,
             "selected_agent": self.selected_agent,
