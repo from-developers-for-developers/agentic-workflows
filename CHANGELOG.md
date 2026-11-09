@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-09
 
-- Added: `read_feature_maps: true` on a step tells its agent, while feature maps are on, to look code up with `ww features lookup` before searching and to end its artifact with the maps it used and their gaps; `ww visualize` marks such steps.
+- Added: `read_feature_maps: true` on a step tells its agent, while feature maps are on, to look code up with `ww features lookup` before searching and to end its artifact with the maps it used and their gaps; `ww visualize` marks such steps. `8f9658f`
 - Added: `ww features lookup` finds feature maps by name, alias, words or path and says which pointers no longer resolve and how many commits changed the map's files since it did; `changed [TASK]` lists the maps a run's or the checkout's changes touch and the files no map covers, `stale` lists the maps behind their files, `show` prints the tasks that changed a feature, and `ww visualize` gains a Feature maps tab. `22cb362`
 - Added: feature maps, `.ww/features/<name>.yaml` files pointing from a feature to the paths, names, tests and documents it spreads over, turned on by `feature_maps` in the repo `ww.json` (init asks); `ww features` lists, shows, checks and templates them, verifying that every pointer still resolves. `6f80c41`
 - Added: `artifact_from` accepts a list of step names, such as `[plan, research]`; the step's instruction gives each one's artifact in that order and names any that supplied none. Runs an older ww started migrate as they load. Breaking: older builds refuse the runs this version writes. `5845270`
