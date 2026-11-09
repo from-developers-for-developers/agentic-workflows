@@ -63,6 +63,11 @@ RUNTIME_IGNORE_LINES = (
     ".ww/*",
     *(f"!.ww/{name}" for name in SHARED_RUNTIME_FILES),
 )
+# Feature maps are committed: with them on, ``init`` re-includes their
+# directory after :data:`RUNTIME_IGNORE_LINES`, and lets Git merge their task
+# lists, to which parallel branches each append lines, by keeping both sides.
+FEATURE_MAPS_IGNORE_LINE = "!.ww/features/"
+FEATURE_MAPS_ATTRIBUTES_LINE = ".ww/features/*.tasks merge=union"
 # The lines that ignore ``.ww`` whole, as an operator may write them; ``init``
 # replaces them with :data:`RUNTIME_IGNORE_LINES`, since a directory ignored
 # whole cannot have files re-included.

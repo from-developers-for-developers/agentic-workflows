@@ -136,6 +136,7 @@ from .catalogs import (
     _catalog_workflows,
 )
 from .discover import render_discover
+from .features import features
 from .initialization import (
     _finish_initialization,
     _initialization_options,
@@ -177,6 +178,7 @@ _READ_ONLY_COMMANDS = frozenset(
         "tasks",
         # It writes only token usage, never task state.
         "usage",
+        "features",
     }
 )
 # Commands that edit ww's configuration, or read none of it, read the
@@ -200,6 +202,8 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
         # It reads only the task store.
         "tasks",
         "usage",
+        # Maps and their setting are the checkout's files.
+        "features",
     }
 )
 # Commands after which the agents' logs hold a finished step's tokens.
@@ -710,6 +714,19 @@ def _tasks(context: _Context) -> _Outcome:
     if context.args.json_output:
         return _Outcome(_json({"tasks": [row.to_dict() for row in rows]}))
     return _Outcome(render_task_rows(rows) + "\n")
+
+
+def _features(context: _Context) -> _Outcome:
+    """The feature maps index, one map, a check of them all, or the template."""
+    args = context.args
+    text, exit_code = features(
+        context.storage.root,
+        context.extensions.config.feature_maps,
+        args.features_action,
+        getattr(args, "feature_name", None),
+        args.json_output,
+    )
+    return _Outcome(text, exit_code=exit_code)
 
 
 def _usage(context: _Context) -> _Outcome:
@@ -2038,6 +2055,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "visualize": _visualize,
     "tasks": _tasks,
     "usage": _usage,
+    "features": _features,
     "codename": _codename,
     "lookup": lambda c: _Outcome(
         render_lookup(

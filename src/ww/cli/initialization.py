@@ -415,6 +415,7 @@ def _initialization_options(
         ignore_runtime = True
     if isinstance(ignore_runtime, bool):
         _save_init_choice(storage, "update_gitignore", ignore_runtime)
+    project["feature_maps"] = _feature_maps_choice(storage, choices, interactive)
     if args.link_instructions is None:
         linked = choices.get("link_instructions")
         if _instructions_linked(storage):
@@ -447,6 +448,24 @@ def _initialization_options(
         bool(ignore_runtime),
         _skill_installs(storage, args.skills, interactive, progress=True, force=force),
     )
+
+
+def _feature_maps_choice(
+    storage: Storage, choices: dict[str, object], interactive: bool
+) -> bool:
+    """Whether the project keeps feature maps: the repo file's own value
+    stands, then the remembered answer, then the operator's, default no."""
+    configured = _settings_by_level(storage).get("repo", {}).get("feature_maps")
+    if isinstance(configured, bool):
+        return configured
+    remembered = choices.get("feature_maps")
+    if isinstance(remembered, bool):
+        return remembered
+    keep = interactive and _ask_yes_no(
+        _init_prompt(48, "Keep feature maps for this project? [y/N]: "), False
+    )
+    _save_init_choice(storage, "feature_maps", keep)
+    return keep
 
 
 # The settings init writes with their defaults without asking about them.

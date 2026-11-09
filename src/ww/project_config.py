@@ -398,6 +398,9 @@ class ProjectConfig:
     update_check: bool = True
     # Analyse operator feedback into candidates, never automatic rules.
     feedback_learning: bool = True
+    # Feature maps under ``.ww/features``; set only in the repo file, so
+    # everyone working on the project keeps them the same way.
+    feature_maps: bool = False
     # Local collection of ww's self-assessment and of workflow feedback.
     debug: DebugSettings = DebugSettings()
     feedback: FeedbackSettings = FeedbackSettings()
@@ -567,14 +570,28 @@ class _SettingsFile:
     notices: tuple[str, ...] = ()
 
 
+# Settings that apply to everyone working on the project alike, so only the
+# repo file may hold them.
+REPO_ONLY_SETTINGS = ("feature_maps",)
+
+
 def _read_levels(levels: tuple[ConfigurationLevel, ...]) -> tuple[_SettingsFile, ...]:
     """The settings files of ``levels`` that exist, named from the repo level's."""
-    base = next(level.path.parent for level in levels if level.name == "repo")
-    return tuple(
-        file
+    repo = next(level.path for level in levels if level.name == "repo")
+    files = tuple(
+        (level, file)
         for level in levels
-        if (file := _read_level(level, display_path(level.path, base))) is not None
+        if (file := _read_level(level, display_path(level.path, repo.parent)))
+        is not None
     )
+    for level, file in files:
+        held = [key for key in REPO_ONLY_SETTINGS if key in file.raw]
+        if level.name != "repo" and held:
+            raise ConfigurationError(
+                f"{file.label} sets {', '.join(held)}, which applies to everyone "
+                f"working on the project: set it in {repo.name} instead"
+            )
+    return tuple(file for _, file in files)
 
 
 def _merged(files: tuple[_SettingsFile, ...]) -> dict[str, Any]:
@@ -722,6 +739,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         "projects",
         "update_check",
         "feedback_learning",
+        "feature_maps",
         "debug",
         "feedback",
         "workflows",
@@ -744,6 +762,9 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
     feedback_learning = raw.get("feedback_learning", True)
     if not isinstance(feedback_learning, bool):
         raise ConfigurationError(f"{path}.feedback_learning must be true or false")
+    feature_maps = raw.get("feature_maps", False)
+    if not isinstance(feature_maps, bool):
+        raise ConfigurationError(f"{path}.feature_maps must be true or false")
     debug = _parse_debug(raw.get("debug"), path)
     feedback = _parse_feedback(raw.get("feedback"), path)
     runtime = raw.get("runtime", DEFAULT_RUNTIME)
@@ -787,6 +808,7 @@ def _parse_settings(raw: dict[str, Any], path: str) -> ProjectConfig:
         runtime=runtime,
         update_check=update_check,
         feedback_learning=feedback_learning,
+        feature_maps=feature_maps,
         debug=debug,
         feedback=feedback,
         usage=_parse_usage(raw.get("usage"), path),

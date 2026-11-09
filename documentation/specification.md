@@ -333,7 +333,10 @@ workflow sets one. `update_check` controls update notices. `debug` and
 usage read from the agents' session logs: `false` switches it off,
 `log_roots` adds directories to look for logs in, and `prices` gives each
 model's price in dollars per million tokens of each kind (see `ww usage` in
-the features). `config_ref` names the Git
+the features). `feature_maps` (default `false`) keeps
+[feature maps](features.md#feature-maps) under `.ww/features/`; it may be set
+only in the repo `ww.json`, since it applies to everyone working on the
+project, and the user or local file that sets it is refused. `config_ref` names the Git
 ref whose committed configuration tasks read, defaulting to the ww/git default
 base branch, or is `false` to read the checkout (see
 [Configuration read from a commit](#configuration-read-from-a-commit)).
@@ -348,6 +351,7 @@ shape written by `init`:
   "runtime": "single",
   "update_check": true,
   "feedback_learning": true,
+  "feature_maps": false,
   "debug": {"collect": false, "report": false},
   "feedback": {"collect": false},
   "usage": {"enabled": true, "log_roots": [], "prices": {}},
