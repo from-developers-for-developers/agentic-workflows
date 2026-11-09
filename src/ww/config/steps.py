@@ -66,6 +66,7 @@ STEP_ONLY_KEYS: set[str] = {
     "interactive",
     "explicit",
     "learnable",
+    "read_feature_maps",
     "choices",
     "profile",
     "items",
@@ -249,6 +250,16 @@ def _parse_step(
         raise ConfigurationError(f"{path}.learnable must be true or false")
     if learnable and not artifact:
         raise ConfigurationError(f"{path}.learnable requires artifact: true")
+    read_feature_maps = mapping.get(
+        "read_feature_maps", referenced.read_feature_maps if referenced else False
+    )
+    if not isinstance(read_feature_maps, bool):
+        raise ConfigurationError(f"{path}.read_feature_maps must be true or false")
+    if read_feature_maps and not artifact:
+        raise ConfigurationError(
+            f"{path}.read_feature_maps requires artifact: true, which reports the "
+            "maps used"
+        )
     hooks = _parse_step_hooks(mapping, path, referenced)
     rules = _parse_rules(mapping, path, base.name, referenced)
     select_rules_for = _parse_select_rules_for(mapping, path, referenced)
@@ -291,6 +302,7 @@ def _parse_step(
         interactive=interactive,
         explicit=explicit,
         learnable=learnable,
+        read_feature_maps=read_feature_maps,
         choices=choices,
         ui=ui,
         profile=profile["profile"],

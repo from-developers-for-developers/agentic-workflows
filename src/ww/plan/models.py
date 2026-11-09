@@ -241,6 +241,7 @@ class PlanItem:
     interactive: bool = False
     explicit: bool = False
     learnable: bool = False
+    read_feature_maps: bool = False
     choices: tuple[ChoiceDefinition, ...] = ()
     # A step the operator answers on the operator page.
     ui: bool = False
@@ -476,6 +477,8 @@ class PlanItem:
             del data["explicit"]
         if not self.learnable:
             del data["learnable"]
+        if not self.read_feature_maps:
+            del data["read_feature_maps"]
         if not self.choices:
             del data["choices"]
         if not self.ui:
@@ -531,6 +534,7 @@ class PlanItem:
             "interactive": self.interactive,
             "explicit": self.explicit,
             "learnable": self.learnable,
+            "read_feature_maps": self.read_feature_maps,
             "choices": [choice.to_dict() for choice in self.choices],
             "ui": self.ui,
             "model": self.model,

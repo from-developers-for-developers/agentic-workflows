@@ -778,6 +778,34 @@ task`), oldest first. ww writes it, and `show` prints it. Branches each append
 to it, so `init` marks these files `merge=union` in `.gitattributes`; a line
 merged twice is read once.
 
+### Steps that read the maps
+
+A step with `read_feature_maps: true` gets a Feature maps section on its page
+while the setting is on: run `ww features lookup <words or paths>` before
+searching the code, read what it finds with `ww features show`, confirm in
+the code, and treat a broken pointer or a stale map as a hint only. Its
+artifact ends with:
+
+```markdown
+## Feature maps
+Used: agents, usage
+Gaps: agents map misses src/ww/cli/audit.py
+```
+
+```yaml
+steps:
+  - name: research
+    read_feature_maps: true
+  - name: develop
+    artifact_from: research
+```
+
+Nothing is added to any other step, and no step reads the maps unless a
+workflow says so: the research reaches later steps the usual way, through
+`artifact_from`. ww reads the section back from the artifact when it needs the
+run's gaps; the artifact stays the one record. The visualizer marks such steps
+"reads feature maps first".
+
 `ww visualize` adds a Feature maps tab while the setting is on: the maps with
 search, and for the one chosen its pointers by field with the broken ones
 marked, its staleness, the maps it uses and the tasks that changed it, beside

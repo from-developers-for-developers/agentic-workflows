@@ -601,6 +601,9 @@ class StepDefinition(HandlerDefinition):
     explicit: bool | None = None
     # Opt-in artifact source for feedback deduction after workflow completion.
     learnable: bool = False
+    # The step's agent looks code up in the project's feature maps first and
+    # reports the maps it used, and their gaps, in its artifact.
+    read_feature_maps: bool = False
     # The options the operator chooses from during an interactive step.
     choices: tuple[ChoiceDefinition, ...] = ()
     # The operator answers this step on the operator page.
