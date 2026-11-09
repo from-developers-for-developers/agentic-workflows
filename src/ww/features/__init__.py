@@ -27,15 +27,18 @@ from .maps import (
     load_feature_maps,
 )
 from .pointers import Pointer, pointer_problems
+from .reports import FEATURE_MAPS_HEADING, MapsReport, read_maps_report
 from .task_lists import TaskEntry, read_task_list, record_task, task_list_path
 
 __all__ = [
+    "FEATURE_MAPS_HEADING",
     "FEATURES_DIRECTORY",
     "MAX_ENTRIES",
     "TEMPLATE",
     "Coverage",
     "FeatureMap",
     "FeatureMaps",
+    "MapsReport",
     "Pointer",
     "Problem",
     "Staleness",
@@ -43,6 +46,7 @@ __all__ = [
     "changed_paths",
     "load_feature_maps",
     "pointer_problems",
+    "read_maps_report",
     "read_task_list",
     "record_task",
     "staleness",

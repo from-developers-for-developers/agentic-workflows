@@ -1186,6 +1186,13 @@ class InstructionBuilder:
             documents=self._document_tasks(plan, item, state),
             interactive=item.interactive,
             explicit=item.explicit and item.owner == "agent",
+            read_feature_maps=(
+                item.read_feature_maps
+                and item.owner == "agent"
+                and load_project_config(
+                    self.config.directory / SETTINGS_FILE
+                ).feature_maps
+            ),
             interaction_entries=record.interaction_entries,
             interaction_ended=record.interaction_ended,
             interact_commands=(

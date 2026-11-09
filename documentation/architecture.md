@@ -2549,3 +2549,13 @@ repeat. `ww.visualize.features` builds the Feature maps tab through the same
 functions; `/api/features` is not cached, since whether pointers resolve and
 how stale a map is follow the code, while the watcher follows
 `.ww/features/` to say when to refetch.
+
+`read_feature_maps` is a step boolean carried from `StepDefinition` to
+`PlanItem` (omitted from the persisted plan while false, so older plans
+read unchanged). The instruction builder sets `Instruction.read_feature_maps`
+only for an agent-owned item while the repo settings keep feature maps, and
+the Markdown adapter's `_feature_maps` renders the page section and the
+`## Feature maps` artifact template. `ww.features.reports.read_maps_report`
+parses that section (`Used:`, `Gaps:`); `WorkflowService.feature_map_reports`
+reads it from the run's completed reading steps' artifacts on demand instead of
+storing a second copy.

@@ -536,6 +536,9 @@ class Instruction:
     interactive: bool = False
     # This agent-owned step requests concrete pre/post operation visibility.
     explicit: bool = False
+    # This agent-owned step looks code up in the feature maps first, the
+    # project keeping them, and reports the maps it used in its artifact.
+    read_feature_maps: bool = False
     # Optional suggestion after completion; never a plan item or assignment.
     feedback_deduction_command: str | None = None
     interaction_entries: int = 0
@@ -729,6 +732,7 @@ class Instruction:
             "documents": [item.to_dict() for item in self.documents],
             "interactive": self.interactive,
             "explicit": self.explicit,
+            "read_feature_maps": self.read_feature_maps,
             "feedback_deduction_command": self.feedback_deduction_command,
             "interaction_entries": self.interaction_entries,
             "interaction_ended": self.interaction_ended,

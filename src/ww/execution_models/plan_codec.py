@@ -210,6 +210,9 @@ def _plan_item_from_dict(raw: Any, item_index: int, default_agent: Any) -> PlanI
         ),
         explicit=expect_bool(raw.get("explicit", False), f"{item_path}.explicit"),
         learnable=expect_bool(raw.get("learnable", False), f"{item_path}.learnable"),
+        read_feature_maps=expect_bool(
+            raw.get("read_feature_maps", False), f"{item_path}.read_feature_maps"
+        ),
         choices=_choices_from_list(raw.get("choices", []), item_path),
         ui=expect_bool(raw.get("ui", False), f"{item_path}.ui"),
         model=expect_optional_string(raw.get("model"), "model"),

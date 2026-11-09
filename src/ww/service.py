@@ -95,6 +95,7 @@ from ww.execution_models import (
     operation_scope_for,
 )
 from ww.extensions import ExtensionRegistry, is_extension_reference, parse_reference
+from ww.features import MapsReport, read_maps_report
 from ww.feedback import FeedbackStore
 from ww.gotos import (
     drop_goto,
@@ -4957,6 +4958,30 @@ class WorkflowService:
         state, snapshot = self.load(task_id)
         directory = resolve_workspace(self.storage.root, state.working_directory)
         return directory or self.storage.root, self._base_branch(snapshot.plan)
+
+    def feature_map_reports(self, task_id: str) -> tuple[tuple[str, MapsReport], ...]:
+        """What the run's completed ``read_feature_maps`` steps reported, by
+        step, read from their artifacts; a step that wrote no Feature maps
+        section is left out."""
+        validate_task_id(task_id)
+        state, snapshot = self.load(task_id)
+        items = {item.id: item for item in snapshot.plan.items}
+        reports: list[tuple[str, MapsReport]] = []
+        for record in (*state.execution_history, *state.item_executions):
+            item = items.get(record.plan_item_id)
+            if (
+                item is None
+                or not item.read_feature_maps
+                or record.status != "completed"
+                or not record.artifact
+            ):
+                continue
+            report = read_maps_report(
+                self.tasks.read_execution_artifact(record.artifact)
+            )
+            if report is not None:
+                reports.append((item.step, report))
+        return tuple(reports)
 
     def _refuse_readonly_changes(
         self, state: ExecutionState, plan: WorkflowPlan, item: PlanItem

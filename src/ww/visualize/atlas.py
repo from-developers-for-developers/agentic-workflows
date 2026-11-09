@@ -341,6 +341,7 @@ def _node(
         "profile": item.profile,
         "subagents": item.subagents,
         "explicit": item.explicit,
+        "read_feature_maps": item.read_feature_maps,
         "interactive": "page"
         if item.ui
         else ("conversation" if item.interactive else None),

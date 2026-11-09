@@ -11,10 +11,12 @@ from ww.features import (
     FEATURES_DIRECTORY,
     MAX_ENTRIES,
     TEMPLATE,
+    MapsReport,
     Pointer,
     TaskEntry,
     load_feature_maps,
     pointer_problems,
+    read_maps_report,
     read_task_list,
     record_task,
     task_list_path,
@@ -365,3 +367,27 @@ def test_a_task_list_records_each_task_once_on_one_line(tmp_path: Path) -> None:
         TaskEntry("TASK-3", ""),
     )
     assert read_task_list(root, "hooks") == ()
+
+
+@pytest.mark.parametrize(
+    ("artifact", "report"),
+    [
+        ("# Research\n\nFound it.\n", None),
+        (
+            "# Research\n\n## Feature maps\nUsed: agents, `usage`\n"
+            "Gaps: agents map misses src/cli/audit.py\n\n## Next\nmore\n",
+            MapsReport(("agents", "usage"), ("agents map misses src/cli/audit.py",)),
+        ),
+        (
+            "## Feature maps\n\nUsed: none\nGaps:\n- usage lacks .ww/usage/\n"
+            "- hooks summary is outdated\n",
+            MapsReport((), ("usage lacks .ww/usage/", "hooks summary is outdated")),
+        ),
+        ("### Feature Maps ###\nused: agents\ngaps: none\n", MapsReport(("agents",))),
+        ("## Feature maps\n", MapsReport()),
+    ],
+)
+def test_a_maps_report_is_read_from_the_artifact_section(
+    artifact: str, report: MapsReport | None
+) -> None:
+    assert read_maps_report(artifact) == report

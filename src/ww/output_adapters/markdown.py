@@ -19,7 +19,8 @@ from ww.children import ChildTask
 from ww.config_files import SETTINGS_FILE
 from ww.contracts import BOOTSTRAP_REQUEST_PREFIX, OperatorReason
 from ww.direct_work import SHORT_SHA
-from ww.executable import DEFAULT_EXECUTABLE
+from ww.executable import DEFAULT_EXECUTABLE, ww_command
+from ww.features import FEATURE_MAPS_HEADING
 from ww.instructions import Instruction, InteractCommands
 from ww.instructions.commands import (
     artifacts_command,
@@ -142,6 +143,7 @@ class MarkdownOutputAdapter(OutputAdapter):
         _previous_step_result(lines, instruction)
         _work(lines, instruction)
         _explicit_guidance(lines, instruction)
+        _feature_maps(lines, instruction)
         _modes(lines, instruction)
         _rules(lines, instruction)
         _verification(lines, instruction)
@@ -932,6 +934,32 @@ def _explicit_guidance(lines: Lines, instruction: Instruction) -> None:
             "For large changes, provide a concrete diff artifact. Name every "
             "changed file, and redact secrets. You may group related files into "
             "batches, but do not hide edits behind a vague summary.",
+        ]
+    )
+
+
+def _feature_maps(lines: Lines, instruction: Instruction) -> None:
+    """How a step that reads feature maps finds code, and what it reports."""
+    if not instruction.read_feature_maps or instruction.item_status != "in_progress":
+        return
+    _append_section(lines, "Feature maps")
+    lines.extend(
+        [
+            "This project keeps feature maps: each says where one feature's code, "
+            "tests and documents live. Before searching the code, run "
+            f"`{ww_command()} features lookup <words or paths>` and read the maps "
+            f"it finds with `{ww_command()} features show <name>`. A map lists "
+            "where code lives and does not explain it: confirm what you need in "
+            "the code, and treat a pointer the lookup reports as no longer "
+            "resolving, or a map behind its files, as a hint only.",
+            "",
+            "End your artifact with this section:",
+            "",
+            "```markdown",
+            FEATURE_MAPS_HEADING,
+            "Used: <the maps you relied on, comma-separated, or none>",
+            "Gaps: <what a map got wrong or left out, one per line, or none>",
+            "```",
         ]
     )
 
