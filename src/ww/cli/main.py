@@ -113,6 +113,7 @@ from ww.task_list import render_task_rows, task_ids_in_order, task_rows
 from ww.upgrade import upgrade
 from ww.usage import (
     UsageStore,
+    note_run,
     project_collector,
     render_overview,
     render_task_usage,
@@ -216,6 +217,8 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
 )
 # Commands after which the agents' logs hold a finished step's tokens.
 _USAGE_COMMANDS = frozenset({"complete", "fail", "record"})
+# Commands that may open a task run, whose starting facts usage records.
+_RUN_COMMANDS = frozenset({"start", "next", "start-child"})
 # Commands after which a run may have ended or moved to another commit, so a
 # configuration snapshot may no longer be read by anyone.
 _PRUNING_COMMANDS = frozenset({"next", "complete", "reset", "cleanup", "config"})
@@ -851,6 +854,14 @@ def _usage(context: _Context) -> _Outcome:
     return _Outcome(
         _json(usage.to_dict()) if args.json_output else render_task_usage(usage)
     )
+
+
+def _note_run(service: WorkflowService, storage: Storage, task_id: str) -> None:
+    """Record what was true when the task's current run started, once; this
+    never fails the command."""
+    with contextlib.suppress(Exception):
+        state, _ = service.load(task_id)
+        note_run(storage, task_id, state.run_id, state.workflow, state.created_at)
 
 
 def _collect_usage(storage: Storage, extensions: ExtensionRegistry) -> None:
@@ -2423,6 +2434,8 @@ def main(argv: list[str] | None = None) -> int:
         and extensions is not None
     ):
         _collect_usage(storage, extensions)
+    if result.exit_code == 0 and args.command in _RUN_COMMANDS and result.task_id:
+        _note_run(service, storage, result.task_id)
     sys.stdout.write(result.text)
     return result.exit_code
 

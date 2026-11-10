@@ -20,7 +20,9 @@ from .report import (
     task_usage,
     usage_overview,
 )
-from .store import HOOK, TRANSCRIPT, FileState, Stretch, UsageStore
+from .runs import map_counts, note_run
+from .stats import usage_stats
+from .store import HOOK, TRANSCRIPT, FileState, RunFacts, Stretch, UsageStore
 
 __all__ = [
     "HOOK",
@@ -29,6 +31,7 @@ __all__ = [
     "Collector",
     "FileState",
     "Invocation",
+    "RunFacts",
     "Stretch",
     "TaskUsage",
     "UnreadableSession",
@@ -36,10 +39,13 @@ __all__ = [
     "UsageRow",
     "UsageStore",
     "format_tokens",
+    "map_counts",
+    "note_run",
     "project_collector",
     "render_overview",
     "render_task_usage",
     "task_total",
     "task_usage",
     "usage_overview",
+    "usage_stats",
 ]

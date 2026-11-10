@@ -333,6 +333,39 @@ table.settings td:last-child { font-family: var(--f-mono); font-size: 12px; over
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 @media (max-width: 640px) { .live { margin-left: 0; width: 100%; padding: 4px 0 10px; } }
 
+/* ---------- Usage ---------- */
+:root {
+  --u1: #2E44C2; --u2: #0E7C74; --u3: #B54A17; --u4: #8B3D9E; --u5: #457519; --u6: #A86400; --u7: #C2185B; --u8: #3F6E9E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --u1: #93A3FF; --u2: #5CCFC3; --u3: #F59569; --u4: #D79BE6; --u5: #9BD161; --u6: #F0B357; --u7: #F48FB1; --u8: #8CB8E8; }
+}
+:root[data-theme="dark"] { --u1: #93A3FF; --u2: #5CCFC3; --u3: #F59569; --u4: #D79BE6; --u5: #9BD161; --u6: #F0B357; --u7: #F48FB1; --u8: #8CB8E8; }
+.usage-main { padding-block: 24px 72px; display: grid; gap: 22px; }
+.ucontrols { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.ugroup { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.ugroup > .ulabel { font-size: 12px; color: var(--faint); margin-right: 4px; }
+.uselect { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; max-width: 100%; }
+.ugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 18px; }
+.uchart { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px 10px; min-width: 0; }
+.uchart h3 { margin: 0; font-family: var(--f-display); font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.uchart .usub { font-size: 12px; color: var(--muted); margin: 2px 0 6px; font-variant-numeric: tabular-nums; }
+.uchart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.uchart .axis { stroke: var(--line); stroke-width: 1; }
+.uchart .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; }
+.uchart .tick { fill: var(--faint); font-family: var(--f-mono); font-size: 11px; }
+.uchart .vmark { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 3 3; }
+.uchart .vlabel { fill: var(--muted); font-family: var(--f-mono); font-size: 10.5px; }
+.ulegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.ulegend span { display: inline-flex; align-items: center; gap: 6px; }
+.ulegend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.utable-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+table.utable { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.utable th, table.utable td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+table.utable th:first-child, table.utable td:first-child { text-align: left; }
+table.utable th { font-weight: 600; color: var(--muted); font-size: 12px; }
+table.utable tr.ustep td:first-child { padding-left: 28px; color: var(--muted); }
+.unote { font-size: 13px; color: var(--muted); margin: 0; }
 /* tasks layout */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12.5px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
@@ -593,6 +626,7 @@ body.no-scroll { overflow: hidden; }
       <button class="tab" role="tab" type="button" data-view="workflows" aria-selected="true">Workflows</button>
       <button class="tab" role="tab" type="button" data-view="tasks" aria-selected="false">Tasks <span class="tab-n" id="tabTasksN"></span></button>
       <button class="tab" role="tab" type="button" data-view="features" aria-selected="false" id="tabFeatures" hidden>Feature maps <span class="tab-n" id="tabFeaturesN"></span></button>
+      <button class="tab" role="tab" type="button" data-view="usage" aria-selected="false">Usage</button>
       <span class="live" id="live" title="The page reloads its data when a watched file changes"><span class="pulse"></span><span id="liveText">Connecting</span></span>
     </nav>
   </div>
@@ -649,6 +683,12 @@ body.no-scroll { overflow: hidden; }
     <div class="tlist" id="flist"><div class="empty">Loading feature maps…</div></div>
     <section class="tdetail" id="fdetail"></section>
   </div>
+</div>
+<div id="view-usage" class="view" hidden>
+  <div class="toolbar">
+    <div class="wrap ucontrols" id="ucontrols"></div>
+  </div>
+  <div class="wrap usage-main" id="usageCharts"><div class="empty">Loading token usage…</div></div>
 </div>
 <div class="scrim" id="scrim" hidden></div>
 <div class="player" id="player" hidden role="dialog" aria-modal="true" aria-label="ww demo"></div>
@@ -1661,6 +1701,164 @@ function selectFeature(name) {
   renderFeatureDetail();
 }
 
+/* Usage: tokens per task run and per step over time, by ww version and model
+   (/api/usage). Charts are drawn here as SVG; the page loads no library. */
+let usage = null;
+const uState = Object.assign({ view: "workflows", workflow: null, measure: "total", mode: "run", colour: "version" }, store.get("usage", {}));
+const U_MEASURES = {
+  total: ["All tokens", c => c.input + c.cache_write + c.cache_read + c.output],
+  fresh: ["Without cache reads", c => c.input + c.cache_write + c.output],
+  output: ["Output only", c => c.output],
+};
+const U_PALETTE = ["--u1", "--u2", "--u3", "--u4", "--u5", "--u6", "--u7", "--u8"];
+const U_DAY = 86400000;
+function uMeasure(counts) { return counts ? U_MEASURES[uState.measure][1](counts) : 0; }
+function uKeys() {
+  if (uState.colour === "model") return usage.models;
+  const known = usage.versions.map(v => v.version);
+  return usage.runs.some(r => r.versions.unknown) ? [...known, "unknown"] : known;
+}
+function uColour(key, keys) { return key === "unknown" ? "var(--faint)" : `var(${U_PALETTE[keys.indexOf(key) % U_PALETTE.length]})`; }
+function uDay(iso) { return iso.slice(0, 10); }
+function uDate(ms) { return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+function uNice(max) { if (max <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(max))); return [1, 2, 2.5, 5, 10].map(m => m * p).find(v => v >= max); }
+function uWorkflows() {
+  const n = {};
+  usage.runs.forEach(r => { n[r.workflow] = (n[r.workflow] || 0) + 1; });
+  return Object.keys(n).sort((a, b) => n[b] - n[a] || a.localeCompare(b));
+}
+async function loadUsage() {
+  try { usage = await getJSON("/api/usage"); } catch (e) { $("#usageCharts").innerHTML = `<div class="empty">ww cannot read the token usage: ${esc(e.message)}</div>`; return; }
+  renderUsage();
+}
+function uSet(key, value) { uState[key] = value; store.set("usage", uState); renderUsage(); }
+function uSeg(key, options) {
+  return options.map(([value, label]) => `<button type="button" class="seg" data-uset="${key}" data-uvalue="${esc(value)}" aria-selected="${uState[key] === value}">${esc(label)}</button>`).join("");
+}
+function renderUsageControls(workflows) {
+  const needsWorkflow = uState.view === "steps";
+  $("#ucontrols").innerHTML = `
+    <div class="ugroup" role="group" aria-label="Show">${uSeg("view", [["workflows", "Per workflow"], ["steps", "Per step"], ["maps", "Feature maps"], ["models", "Models"]])}</div>
+    ${needsWorkflow || uState.view === "models" ? `<label class="ugroup"><span class="ulabel">Workflow</span><select class="uselect" data-uselect="workflow">${workflows.map(w => `<option value="${esc(w)}"${w === uState.workflow ? " selected" : ""}>${esc(w)}</option>`).join("")}</select></label>` : ""}
+    <label class="ugroup"><span class="ulabel">Tokens</span><select class="uselect" data-uselect="measure">${Object.entries(U_MEASURES).map(([k, [label]]) => `<option value="${k}"${k === uState.measure ? " selected" : ""}>${label}</option>`).join("")}</select></label>
+    ${uState.view === "models" ? "" : `<div class="ugroup" role="group" aria-label="Points">${uState.view === "maps" ? "" : uSeg("mode", [["run", "Per run"], ["day", "Daily total"]])}</div>
+    <div class="ugroup" role="group" aria-label="Colour by"><span class="ulabel">Colour by</span>${uSeg("colour", [["version", "ww version"], ["model", "Model"]])}</div>`}`;
+}
+function uLegend(keys) {
+  return `<div class="ulegend">${keys.map(k => `<span><i style="background:${uColour(k, keys)}"></i>${esc(k)}</span>`).join("")}</div>`;
+}
+/* One chart's marks: per run, a point per run (or per run and model); per
+   day, a bar per day stacked by version or model. */
+function uMarks(rows, keys, label) {
+  const split = uState.colour === "model" ? "models" : "versions";
+  if (uState.mode === "day") {
+    const days = {};
+    rows.forEach(r => {
+      const d = (days[uDay(r.date)] = days[uDay(r.date)] || {});
+      Object.entries(r[split]).forEach(([k, c]) => { d[k] = (d[k] || 0) + uMeasure(c); });
+    });
+    return { bars: Object.entries(days).map(([day, stack]) => ({ x: Date.parse(day + "T12:00:00Z"), stack, title: day })) };
+  }
+  const points = [];
+  rows.forEach(r => {
+    if (uState.colour === "model") {
+      Object.entries(r.models).forEach(([m, c]) => points.push({ x: Date.parse(r.date), y: uMeasure(c), key: m, title: `${label(r)} · ${m} · ${fmtTokens(uMeasure(c))}` }));
+    } else {
+      points.push({ x: Date.parse(r.date), y: uMeasure(r.tokens), key: r.ww_version, title: `${label(r)} · ww ${r.ww_version} · ${fmtTokens(uMeasure(r.tokens))}` });
+    }
+  });
+  return { points };
+}
+function uTimeChart(title, sub, marks, keys, domain) {
+  const W = 520, H = 220, L = 52, R = 12, T = 22, B = 26, pw = W - L - R, ph = H - T - B;
+  const [x0, x1] = domain[0] === domain[1] ? [domain[0] - U_DAY, domain[1] + U_DAY] : domain;
+  const X = x => L + (x - x0) / (x1 - x0) * pw;
+  const stacked = (marks.bars || []).map(b => Object.values(b.stack).reduce((a, v) => a + v, 0));
+  const ymax = uNice(Math.max(1, ...(marks.points || []).map(p => p.y), ...stacked));
+  const Y = y => T + ph - y / ymax * ph;
+  const ticksY = [0, ymax / 2, ymax].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="tick" x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${fmtTokens(Math.round(v))}</text>`).join("");
+  const ticksX = [0, 1 / 3, 2 / 3, 1].map(f => x0 + f * (x1 - x0)).map((v, i) => `<text class="tick" x="${X(v)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === 3 ? "end" : "middle"}">${uDate(v)}</text>`).join("");
+  const versions = usage.versions.filter(v => Date.parse(v.first) > x0 && Date.parse(v.first) <= x1)
+    .map(v => { const x = X(Date.parse(v.first)), right = x > W - 90; return `<line class="vmark" x1="${x}" x2="${x}" y1="${T - 4}" y2="${T + ph}"/><text class="vlabel" x="${right ? x - 3 : x + 3}" y="${T - 7}" text-anchor="${right ? "end" : "start"}">${esc(v.version)}</text>`; }).join("");
+  const days = Math.max(1, (x1 - x0) / U_DAY);
+  const bw = Math.max(3, Math.min(28, pw / days * 0.7));
+  const bars = (marks.bars || []).map(b => {
+    let y = 0;
+    return keys.filter(k => b.stack[k]).map(k => {
+      const v = b.stack[k], top = Y(y + v), h = Y(y) - top; y += v;
+      return `<rect x="${X(b.x) - bw / 2}" y="${top}" width="${bw}" height="${Math.max(h, 0.5)}" fill="${uColour(k, keys)}" rx="1.5"><title>${esc(b.title)} · ${esc(k)} · ${fmtTokens(v)}</title></rect>`;
+    }).join("");
+  }).join("");
+  const points = (marks.points || []).map(p => `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="3.6" fill="${uColour(p.key, keys)}" fill-opacity=".85"><title>${esc(p.title)}</title></circle>`).join("");
+  return `<figure class="uchart"><h3>${esc(title)}</h3><p class="usub">${sub}</p>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}: ${esc(U_MEASURES[uState.measure][0])} by date">
+      ${ticksY}<line class="axis" x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}"/>${versions}${bars}${points}${ticksX}
+    </svg></figure>`;
+}
+function uScatter(title, rows, keys) {
+  const W = 520, H = 220, L = 52, R = 12, T = 14, B = 26, pw = W - L - R, ph = H - T - B;
+  const xmax = Math.max(1, ...rows.map(r => r.feature_maps));
+  const ymax = uNice(Math.max(1, ...rows.map(r => uMeasure(r.tokens))));
+  const X = x => L + x / xmax * pw, Y = y => T + ph - y / ymax * ph;
+  const ticksY = [0, ymax / 2, ymax].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="tick" x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${fmtTokens(Math.round(v))}</text>`).join("");
+  const ticksX = [0, Math.round(xmax / 2), xmax].map((v, i) => `<text class="tick" x="${X(v)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}">${v} map${v === 1 ? "" : "s"}</text>`).join("");
+  const key = r => uState.colour === "model" ? (Object.entries(r.models).sort((a, b) => uMeasure(b[1]) - uMeasure(a[1]))[0] || ["unknown"])[0] : r.ww_version;
+  const points = rows.map(r => `<circle cx="${X(r.feature_maps)}" cy="${Y(uMeasure(r.tokens))}" r="3.6" fill="${uColour(key(r), keys)}" fill-opacity=".85"><title>${esc(r.task)} · ${r.feature_maps} maps, ${r.mapped_files} files covered · ${fmtTokens(uMeasure(r.tokens))}</title></circle>`).join("");
+  return `<figure class="uchart"><h3>${esc(title)}</h3><p class="usub">${rows.length} run${rows.length === 1 ? "" : "s"} · tokens per run against the feature maps the project had when the run started</p>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}: tokens per run by feature map count">${ticksY}<line class="axis" x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}"/>${points}${ticksX}</svg></figure>`;
+}
+function uMedian(values) { if (!values.length) return 0; const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; }
+function uSub(rows) {
+  const unit = uState.view === "steps" ? "execution" : "run";
+  return `${rows.length} ${unit}${rows.length === 1 ? "" : "s"} · median ${fmtTokens(uMedian(rows.map(r => uMeasure(r.tokens))))} per ${unit}`;
+}
+function uModelsTable(workflows) {
+  const models = usage.models, sum = (rows, m) => rows.reduce((a, r) => a + uMeasure(r.models[m]), 0);
+  const row = (label, rows, cls) => `<tr class="${cls}"><td>${esc(label)}</td>${models.map(m => `<td>${sum(rows, m) ? fmtTokens(sum(rows, m)) : "–"}</td>`).join("")}<td><b>${fmtTokens(rows.reduce((a, r) => a + uMeasure(r.tokens), 0))}</b></td></tr>`;
+  const body = workflows.map(w => {
+    const out = [row(w, usage.runs.filter(r => r.workflow === w), "")];
+    if (w === uState.workflow) {
+      const steps = usage.steps.filter(s => s.workflow === w), names = [...new Set(steps.map(s => s.step))];
+      names.forEach(n => out.push(row(n, steps.filter(s => s.step === n), "ustep")));
+    }
+    return out.join("");
+  }).join("");
+  return `<div class="utable-wrap"><table class="utable"><thead><tr><th>Workflow / step</th>${models.map(m => `<th>${esc(m)}</th>`).join("")}<th>All models</th></tr></thead><tbody>${body}</tbody></table></div>
+    <p class="unote">${esc(U_MEASURES[uState.measure][0])}, summed over every run. The chosen workflow's steps are listed under it.</p>`;
+}
+function renderUsage() {
+  if (!usage) return;
+  const workflows = uWorkflows();
+  if (!workflows.includes(uState.workflow)) uState.workflow = workflows[0] || null;
+  renderUsageControls(workflows);
+  const el = $("#usageCharts");
+  if (!usage.runs.length) {
+    el.innerHTML = '<div class="empty">No token usage recorded yet. ww reads it from the agents\' session logs as tasks complete; <code>ww usage</code> shows what it has.</div>';
+    return;
+  }
+  if (uState.view === "models") { el.innerHTML = uModelsTable(workflows); return; }
+  const keys = uKeys();
+  if (uState.view === "maps") {
+    const charts = workflows.map(w => [w, usage.runs.filter(r => r.workflow === w && r.feature_maps != null)]).filter(([, rows]) => rows.length);
+    el.innerHTML = uLegend(keys) + (charts.length ? `<div class="ugrid">${charts.map(([w, rows]) => uScatter(w, rows, keys)).join("")}</div>` : '<div class="empty">No run has recorded its feature maps yet: ww records them when a run starts, from this version on.</div>');
+    return;
+  }
+  const groups = uState.view === "steps"
+    ? (() => { const steps = usage.steps.filter(s => s.workflow === uState.workflow); return [...new Set(steps.map(s => s.step))].map(n => [n, steps.filter(s => s.step === n)]); })()
+    : workflows.map(w => [w, usage.runs.filter(r => r.workflow === w)]);
+  const all = groups.flatMap(([, rows]) => rows.map(r => Date.parse(r.date)));
+  const domain = [Math.min(...all), Math.max(...all)];
+  const label = r => uState.view === "steps" ? `${r.task} · ${r.step} · ${uDay(r.date)}` : `${r.task} · ${uDay(r.date)}`;
+  el.innerHTML = uLegend(keys) + `<div class="ugrid">${groups.map(([name, rows]) => uTimeChart(name, uSub(rows), uMarks(rows, keys, label), keys, domain)).join("")}</div>
+    <p class="unote">Dashed lines mark the first run on each ww version. ${uState.mode === "day" ? "Bars sum each day's tokens." : "Each point is one " + (uState.view === "steps" ? "execution of the step" : "run of the workflow") + (uState.colour === "model" ? ", one per model it used." : ".")}</p>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-uset]"); if (b) uSet(b.dataset.uset, b.dataset.uvalue);
+});
+document.addEventListener("change", e => {
+  const s = e.target.closest("[data-uselect]"); if (s) uSet(s.dataset.uselect, s.value);
+});
+
 function renderCensus() {
   if (!atlas) return;
   const own = atlas.workflows.filter(w => !w.builtin);
@@ -1675,6 +1873,8 @@ function showView(v) {
   $("#view-workflows").hidden = v !== "workflows";
   $("#view-tasks").hidden = v !== "tasks";
   $("#view-features").hidden = v !== "features";
+  $("#view-usage").hidden = v !== "usage";
+  if (v === "usage" && !usage) loadUsage();
   store.set("view", v);
   if (v === "workflows") $$(".wf.open").forEach(drawArcs);
 }
@@ -1702,7 +1902,7 @@ function connect() {
   source.addEventListener("change", e => {
     const change = JSON.parse(e.data);
     if (change.config) { loadAtlas(); loadFeatures(); }
-    if (change.tasks) loadTasks();
+    if (change.tasks) { loadTasks(); if (usage) loadUsage(); }
   });
   source.onerror = () => { live.classList.add("off"); text.textContent = "Not connected · is ww visualize still running?"; };
 }
@@ -1769,7 +1969,7 @@ $("#fq").addEventListener("input", renderFeatureList);
 toggleBuiltin(showBuiltin);
 
 const hash = decodeURIComponent(location.hash.slice(1));
-showView(hash.startsWith("wf-") ? "workflows" : hash ? "tasks" : store.get("view", "workflows"));
+showView(hash === "usage" ? "usage" : hash.startsWith("wf-") ? "workflows" : hash ? "tasks" : store.get("view", "workflows"));
 if (hash.startsWith("wf-")) loadAtlas.after = () => goTo(hash.slice(3));
 loadAtlas().then(loadTasks).then(loadFeatures).then(connect);
 loadDemo();

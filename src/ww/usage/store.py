@@ -9,6 +9,9 @@ task.
   belong to the task, appended by each collection.
 - ``outside.jsonl``: the same records for tokens that belong to no task,
   such as a conversation between tasks.
+- ``runs.jsonl``: one line per task run, written when ww first sees the run:
+  its workflow, when it started, the ww version, and how many feature maps
+  the project had then.
 - ``files.json``: what ww knows about each log file, keyed by the
   file's IDs alone, never its path: how far it has read it, the ww commands
   and subagent starts it found there, and tokens still waiting for the
@@ -50,9 +53,13 @@ class Stretch:
     first: str
     last: str
     counts: TokenCounts
+    # The version of the ww command that placed the tokens; ``None`` in
+    # records written before ww recorded it.
+    ww_version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            **({"ww_version": self.ww_version} if self.ww_version else {}),
             "task": self.task,
             "run": self.run,
             "step": self.step,
@@ -86,6 +93,65 @@ class Stretch:
             first=text("first") or "",
             last=text("last") or "",
             counts=TokenCounts.from_dict(data),
+            ww_version=text("ww_version"),
+        )
+
+
+@dataclass(frozen=True)
+class RunFacts:
+    """What was true when a task run started, for comparing runs' tokens."""
+
+    task: str
+    run: str
+    workflow: str
+    started: str
+    ww_version: str
+    # Feature maps in the project, and the tracked files they cover;
+    # ``None`` where ww could not count them.
+    feature_maps: int | None = None
+    mapped_files: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task": self.task,
+            "run": self.run,
+            "workflow": self.workflow,
+            "started": self.started,
+            "ww_version": self.ww_version,
+            "feature_maps": self.feature_maps,
+            "mapped_files": self.mapped_files,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RunFacts | None:
+        task, run, workflow, started = (
+            data.get(name) for name in ("task", "run", "workflow", "started")
+        )
+        if not (
+            isinstance(task, str)
+            and isinstance(run, str)
+            and isinstance(workflow, str)
+            and isinstance(started, str)
+        ):
+            return None
+
+        def number(name: str) -> int | None:
+            value = data.get(name)
+            return (
+                value
+                if isinstance(value, int) and not isinstance(value, bool)
+                else None
+            )
+
+        version = data.get("ww_version")
+        return cls(
+            task=task,
+            run=run,
+            workflow=workflow,
+            started=started,
+            ww_version=version if isinstance(version, str) else "",
+            feature_maps=number("feature_maps"),
+            mapped_files=number("mapped_files"),
         )
 
 
@@ -164,6 +230,7 @@ class UsageStore:
         self.directory = storage.runtime_path / "usage"
         self.state_path = self.directory / "files.json"
         self.outside_path = self.directory / "outside.jsonl"
+        self.runs_path = self.directory / "runs.jsonl"
 
     def task_path(self, task_id: str) -> Path:
         # A child's ID, ``parent/child``, nests like its task directory.
@@ -256,6 +323,33 @@ class UsageStore:
                 continue
             if isinstance(data, dict):
                 yield Stretch.from_dict(data)
+
+    def run_facts(self) -> dict[tuple[str, str], RunFacts]:
+        """Each recorded run's facts, by task and run; the first line wins."""
+        found: dict[tuple[str, str], RunFacts] = {}
+        try:
+            lines = self.runs_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return found
+        for line in lines:
+            try:
+                data = json.loads(line)
+            except ValueError:
+                continue
+            facts = RunFacts.from_dict(data) if isinstance(data, dict) else None
+            if facts is not None:
+                found.setdefault((facts.task, facts.run), facts)
+        return found
+
+    def note_run(self, facts: RunFacts) -> bool:
+        """Record ``facts`` unless the run already has a line; whether it did."""
+        with self.lock():
+            if (facts.task, facts.run) in self.run_facts():
+                return False
+            self.directory.mkdir(parents=True, exist_ok=True)
+            with self.runs_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(facts.to_dict(), sort_keys=True) + "\n")
+        return True
 
     def task_records(self, task_id: str) -> list[Stretch]:
         return list(self.records(self.task_path(task_id)))

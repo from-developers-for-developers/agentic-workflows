@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlsplit
 from ww.errors import StateError, WwError
 from ww.extensions import ExtensionRegistry
 from ww.storage import Storage
-from ww.usage import project_collector
+from ww.usage import UsageStore, project_collector, usage_stats
 
 from . import demo
 from .atlas import build_atlas
@@ -143,6 +143,10 @@ class _Handler(BaseHTTPRequestHandler):
                 )
             elif url.path == "/api/task":
                 self._json(task_detail(self.server.project(), _required(query, "id")))
+            elif url.path == "/api/usage":
+                # Not cached: collections append to the usage files, which
+                # the watcher does not follow.
+                self._json(usage_stats(UsageStore(self.server.storage)))
             elif url.path == "/api/demo":
                 self._json(self.server.demo())
             elif url.path == "/api/document":

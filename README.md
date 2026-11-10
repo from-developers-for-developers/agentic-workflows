@@ -334,7 +334,7 @@ the commands worth knowing:
 ./ww artifacts TASK-123     # what each step produced
 ./ww instruction TASK-123 --role manager   # the full current instructions
 ./ww usage TASK-123         # the tokens its agents spent, by step, role and model
-./ww visualize              # a live, read-only browser page of workflows and tasks
+./ww visualize              # a live, read-only browser page of workflows, tasks and token usage
 ```
 
 `instruction` is also how work resumes: a new session, or a different agent,

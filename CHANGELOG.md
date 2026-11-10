@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-10
+
+- Added: `ww visualize` gains a Usage tab charting tokens per workflow run and per step execution over time, coloured by ww version (marking each upgrade) or model, against the project's feature map count, with a table of tokens per model; usage records now name the ww version that placed them. `bc5ffaa`
+
 ## 2026-11-09
 
 - Added: `agent: {name: codex, run: headless}` has ww start a step's or parallel branch's agent (Claude Code, Codex or Cursor) itself, after checking its program, model and reasoning; `ww wait` waits for it, a run that ends without completing its work says why and `ww launch` resumes, restarts or hands it back; settings such as the program's path, permissions, timeouts and `max_parallel` go under `agents.<name>.headless`, and `ww agents --check` shows each program's state. `8b1387d`
