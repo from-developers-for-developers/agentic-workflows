@@ -2023,7 +2023,9 @@ configuration, not a snapshot, so edits show while it runs.
   `127.0.0.1` on a port hashed from the project (30000–39999; the operator
   page uses 40000 and up). It serves `/`, `/api/atlas`, `/api/tasks`,
   `/api/task?id=`, `/api/artifact?task=&run=&ref=` (only references the run
-  records), `/api/demo` (the demo, recorded once per server, warmed in a
+  records), `/api/usage` (`ww.usage.usage_stats`, built per request and not
+  cached, since collections append to usage files the watcher does not
+  follow), `/api/demo` (the demo, recorded once per server, warmed in a
   background thread at start) and `/api/events`, a server-sent event stream whose `change`
   event says whether the configuration, the tasks or both changed. Built data
   is cached per watcher version. A request whose `Host` is not `127.0.0.1` or
@@ -2492,13 +2494,34 @@ on the step `timeline.py` finds under way at that time, until the task's run
 finished; tokens before a command wait in the file's state until `start` or
 a worker's `instruction` claims them, any other command leaves them outside,
 or, for a quiet subagent without commands, its spawner's place at the spawn
-takes them. `store.py` appends one `Stretch` per task, step, role, model and
-file to `.ww/usage/tasks/<id>.jsonl` (or `.ww/usage/outside.jsonl`), apart
+takes them. `store.py` appends one `Stretch` per task, step, role, model,
+file and ww version to `.ww/usage/tasks/<id>.jsonl` (or `.ww/usage/outside.jsonl`), apart
 from the task state, and
 `report.py` sums them for `ww usage`, `ww tasks` and `ww visualize`. The CLI
 collects after `complete`, `fail` and `record` and before showing usage, the
 visualize server every 30 seconds, and the Cursor `stop` hook records its
 turn through `Collector.record_turn`; every one suppresses failures.
+
+Each `Stretch` also carries `ww_version`: `Collector._version` takes it from
+the `ww_version` the execution log records on every command, as the version
+of the owner's (the task's, or `session:<id>` outside tasks) latest command
+at the stretch's first token, or its first command after for tokens a
+`start` claims. The version is part of the grouping key, so an upgrade in
+the middle of a step splits its tokens. It is written only when known, so
+older records load unchanged with `None`. `runs.py` adds what the records
+cannot know: `note_run`, which the CLI calls (failures suppressed) after a
+successful `start`, `next` or `start-child`, appends one `RunFacts` per task
+run to `.ww/usage/runs.jsonl` under the store's lock, the first line per run
+winning: workflow, start time (the run's `created_at`), ww version, and
+`map_counts`, the feature maps under `.ww/features/` and how many of the
+project's files (`ww.changes.project_files`, `.ww/` excluded) they cover.
+`stats.py`'s `usage_stats` turns the task records and run facts into the
+visualize page's data, reading no log: one point per task run and per run
+step with its tokens split by model and by version and its dominant
+version, the run dated by its recorded start (else its first token) and its
+workflow recorded or read from the run ID (`NN-<workflow>`), plus each
+version's first run and the models seen. Tokens outside any task are left
+out. The Usage tab draws its charts from that as inline SVG.
 
 ## Agents
 

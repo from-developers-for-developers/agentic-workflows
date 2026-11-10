@@ -16,12 +16,14 @@ from typing import Any
 
 import pytest
 
+from ww.agents import TokenCounts
 from ww.direct_work import COMMITS_FILE, GIT_EXTENSION
 from ww.errors import StateError
 from ww.extensions.store import ExtensionStore
 from ww.service import WorkflowService
 from ww.storage import Storage
 from ww.task_envelope import read_task_envelope
+from ww.usage import Stretch, UsageStore
 from ww.visualize.project import Project
 from ww.visualize.server import VisualizerServer
 from ww.visualize.tasks import artifact_text, document_text, task_detail, task_list
@@ -599,3 +601,47 @@ def test_the_feature_maps_tab_follows_the_setting(server: VisualizerServer) -> N
     assert body["maps"][0]["fields"]["parts"] == [
         {"pointer": "README.md", "broken": []}
     ]
+
+
+def test_the_usage_endpoint_serves_runs_steps_versions_and_models(
+    server: VisualizerServer,
+) -> None:
+    store = UsageStore(server.storage)
+    status, body = _get(server, "/api/usage")
+    assert status == 200
+    assert json.loads(body) == {"runs": [], "steps": [], "versions": [], "models": []}
+
+    store.append(
+        [
+            Stretch(
+                task="TASK-1",
+                run="01-task",
+                step="develop",
+                role="worker",
+                agent="claudecode",
+                session="s",
+                file="claudecode:s",
+                model="opus",
+                source="transcript",
+                first="2026-11-01T10:00:00Z",
+                last="2026-11-01T10:05:00Z",
+                counts=TokenCounts(input=10, output=2),
+                ww_version="1.0.0b18",
+            )
+        ]
+    )
+    data = json.loads(_get(server, "/api/usage")[1])
+
+    (run,) = data["runs"]
+    assert (run["workflow"], run["ww_version"], run["tokens"]["output"]) == (
+        "task",
+        "1.0.0b18",
+        2,
+    )
+    assert [step["step"] for step in data["steps"]] == ["develop"]
+    assert data["versions"] == [
+        {"version": "1.0.0b18", "first": "2026-11-01T10:00:00Z"}
+    ]
+    assert data["models"] == ["opus"]
+    page = _get(server, "/")[1].decode("utf-8")
+    assert 'data-view="usage"' in page and 'id="usageCharts"' in page

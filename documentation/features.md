@@ -658,6 +658,18 @@ recorded sessions, so the history of earlier tasks can be collected once;
 `--rescan` reads the task's sessions, or every session, again from the start
 and replaces what was recorded from them.
 
+**Over time.** Each usage record also names the ww version that placed its
+tokens: the version of the task's latest ww command when they were spent
+(the execution log records it on every command), or the first command's
+version for the conversation that led to `start`. A task that ran across an
+upgrade so has records for both versions. When ww first sees a task run, at
+`start`, `next` or `start-child`, it notes the run's workflow, start time
+and ww version, and how many feature maps the project had then and how many
+of its files they covered (0 and 0 without maps). The
+[Usage tab](#usage-tab) of `ww visualize` charts both. Records written
+before this have no version and count as `unknown`; `ww usage collect
+--rescan` reads their sessions again and fills it in.
+
 **Containers and other machines.** A session's logs are read where they
 are. When ww and the agent run in the same container, ww reads the
 container's logs at `complete`, so mount the agent's home on a volume if the
@@ -684,8 +696,9 @@ variable through, for example `docker run -e CLAUDE_CODE_SESSION_ID ...`.
 directories and stops collecting. `prices`, in US dollars per million tokens
 of each kind and keyed by the model name the logs report, adds a cost column;
 ww ships no prices, which change. ww keeps numbers only: counts, models,
-session and file IDs, and times, in `.ww/usage/tasks/<id>.jsonl`,
-`.ww/usage/outside.jsonl` and its read positions in `.ww/usage/files.json`,
+session and file IDs, ww versions, feature map counts and times, in
+`.ww/usage/tasks/<id>.jsonl`, `.ww/usage/outside.jsonl`, each run's facts in
+`.ww/usage/runs.jsonl` and its read positions in `.ww/usage/files.json`,
 apart from the task state, so resetting a task leaves its usage;
 never a line of a log's text.
 
@@ -1075,13 +1088,14 @@ $ ./ww visualize --port 8765 --no-open   # print the address only
 The port is fixed per project, so a bookmarked page finds it again; when it is
 in use, ww says a page may already be open there and suggests `--port`.
 
-The page has two tabs, and a third, Feature maps, while the repo `ww.json`
-keeps [feature maps](#feature-maps):
+The page has three tabs, and a fourth, Feature maps, while the repo
+`ww.json` keeps [feature maps](#feature-maps):
 
 | Tab | Shows |
 | --- | --- |
 | Workflows | Each resolved workflow, expandable into the steps ww would run: agent, manager and automatic steps, handlers and handler groups (one entry per member), commands, assessments (standalone or attached, outcomes, `stop_workflow`, `repeat_until`) with gotos drawn as arcs back or forward, items, children and per-child stages, `handoff_to`, interactive steps and choices, inherited steps, `hooks_from` lanes, workflow and step hooks, saves, `artifact_from`, variables, model, reasoning, profile, subagents and `explicit`. Each step carries a count of its rules, expandable into each rule's scope, check command or verifier and group. A switch on each card shows its YAML instead: the entry exactly as the file that defines it has it, comments included, syntax-highlighted, with the file named and a copy button. A sidebar lists handlers, rule groups (with statistics), documents, modes, profiles and settings, and a key to the notation. ww's own built-in workflows are hidden until switched on. The demo workflow comes first, marked as the demo (see below). A configuration that does not load is shown with ww's error; the Tasks tab still works. |
 | Tasks | Every task in the store with its codename, if it has one, and its description, active ones first, with status filters and search (which matches codenames too); a task this ww cannot read in full is shown in a reduced view (below). A task shows its outcome, why it waits for the operator, branch and other extension values, its commits (those ww made, those registered as direct work, and its recorded branch's), its documents (opened in the side panel), metadata, direct work and each run: its steps grouped by phase with status, owner, model, duration and timing bar, summary, goto round and attempts, and its artifacts rendered as Markdown in a side panel. An item that belongs to a step is indented under it: an assessment's outcome steps, items and children substeps, the members of a handler group after the first, and a step's own hooks and rule verifiers. An assessment's outcome steps appear only for the outcome it chose, or one that ran in an earlier round. Each step also shows how its rules worked: each check's attempts with command and output (passed, failed or unavailable), fix attempts, waivers, verifier verdicts and disputes; rules that did not apply to the change are left out. Project documents that have a file open from the Workflows library. |
+| Usage | Token spending over time: tokens per run of each workflow and per execution of each step, ww's version and each model's share, tokens against the feature maps the project had, and a table of tokens per model; see [Usage tab](#usage-tab). |
 
 The page is live. ww watches the configuration as the checkout has it — every
 YAML level and import, the JSON settings levels, the rule files and the
@@ -1091,6 +1105,32 @@ keeps the open cards, panels and scroll position. Only artifacts a run
 records are served, and only to a request addressed to `127.0.0.1` or
 `localhost` on the page's port, so another site cannot read the page by
 pointing its own domain at this machine.
+
+### Usage tab
+
+The Usage tab shows how token spending changes over time and with ww
+upgrades, from the usage ww already collects (see
+[Token usage](#token-usage)); `#usage` opens it directly. Its views:
+
+- **Per workflow**: one chart per workflow, a point per run of it, dated by
+  when the run started.
+- **Per step**: for the chosen workflow, one chart per step, a point per
+  execution of the step, dated by its first token.
+- **Feature maps**: per workflow, each run's tokens against how many
+  feature maps the project had when the run started; the tooltip adds how
+  many files the maps covered.
+- **Models**: a table of tokens per model for each workflow, with the
+  chosen workflow's steps listed under it.
+
+The charts plot all tokens, tokens without cache reads, or output only, and
+show each run as a point or each day's total as a bar. Points and bars are
+coloured by the ww version that placed the tokens, or by model, one point per
+model a run used; a dashed line marks the first run on each ww version, so an
+upgrade's effect shows as a change after the line. Tokens recorded before ww
+kept versions show as `unknown`, and runs started before ww recorded feature
+maps are left out of the Feature maps view. Every point names its task (and
+step) in a tooltip. The charts are drawn by the page itself, in both themes
+and at phone width; the choices are remembered in the browser.
 
 ### Reduced view
 

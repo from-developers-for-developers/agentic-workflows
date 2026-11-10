@@ -94,6 +94,7 @@ class Invocation:
     agent: str | None
     session: str | None
     host: str | None
+    ww_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,7 @@ class Collector:
             for agent in (builtin_agents() if agents is None else agents)
         }
         self._invocations: list[Invocation] | None = None
+        self._versions: dict[str, tuple[list[str], list[str]]] | None = None
         self._invocation_times: list[str] | None = None
         self._known: tuple[tuple[str, ...], dict[str, str]] | None = None
         self._out: dict[tuple[Any, ...], _Totals] = {}
@@ -293,6 +295,7 @@ class Collector:
                                 _text(record.get("agent")),
                                 _text(record.get("agent_session")),
                                 _text(record.get("host")),
+                                _text(record.get("ww_version")),
                             )
                         )
             self._invocations = sorted(found, key=lambda invocation: invocation.at)
@@ -607,8 +610,34 @@ class Collector:
         last: str,
         counts: TokenCounts,
     ) -> None:
-        key = (*place, agent, session, file, model, source)
+        version = self._version(place[0] or f"session:{session}", first)
+        key = (*place, agent, session, file, model, source, version)
         self._out.setdefault(key, _Totals()).add(counts, first, last)
+
+    def _version(self, owner: str, at: str) -> str | None:
+        """The ww version of the last command ``owner`` (a task, or
+        ``session:<id>`` outside tasks) ran by ``at``, or its first after."""
+        if self._versions is None:
+            versions: dict[str, tuple[list[str], list[str]]] = {}
+            for invocation in self.invocations():
+                if not invocation.ww_version:
+                    continue
+                for key in (
+                    invocation.task,
+                    f"session:{invocation.session}" if invocation.session else None,
+                ):
+                    if key:
+                        times, found = versions.setdefault(key, ([], []))
+                        times.append(invocation.at)
+                        found.append(invocation.ww_version)
+            self._versions = versions
+        times, found = self._versions.get(owner, ([], []))
+        if not times:
+            return None
+        index = bisect_left(times, at)
+        if index < len(times) and times[index] == at:
+            return found[index]
+        return found[max(index - 1, 0)]
 
     def _stretches(self) -> list[Stretch]:
         stretches = [
@@ -625,6 +654,7 @@ class Collector:
                 first=totals.first,
                 last=totals.last,
                 counts=totals.counts,
+                ww_version=version,
             )
             for (
                 task,
@@ -636,6 +666,7 @@ class Collector:
                 file,
                 model,
                 source,
+                version,
             ), totals in (self._out.items())
             if totals.counts.total
         ]
