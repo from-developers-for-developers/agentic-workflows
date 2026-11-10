@@ -8,6 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-10
 
+- Fixed: `ww wait` could return while a headless run was still completing its step, with a page telling the manager to run `next` instead of the next step's page. `317e032`
 - Added: `ww visualize` gains a Usage tab charting tokens per workflow run and per step execution over time, coloured by ww version (marking each upgrade) or model, against the project's feature map count, with a table of tokens per model; usage records now name the ww version that placed them. `bc5ffaa`
 
 ## 2026-11-09
