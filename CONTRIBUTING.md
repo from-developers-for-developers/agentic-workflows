@@ -139,8 +139,9 @@ Run the focused recovery and external-storage-adapter release gates:
 ```
 
 Build and validate the distributable artifacts. This checks that the sdist and
-wheel contain the license and runtime resources, then installs the wheel in a
-clean virtual environment outside this checkout:
+wheel contain the license and runtime resources, then installs the wheel with
+its declared dependencies, as a user would, in a clean virtual environment
+outside this checkout, so it needs access to the package index:
 
 ```console
 .venv/bin/python scripts/check_distribution.py
