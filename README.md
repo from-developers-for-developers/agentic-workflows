@@ -657,7 +657,7 @@ ww-agentic-workflows complete TASK-123 --role worker \
 For fresh-clone setup and the complete check list, see
 [CONTRIBUTING.md](CONTRIBUTING.md). The release artifact check builds an sdist
 and wheel, inspects their bundled resources and license, and installs the wheel
-in an isolated virtual environment.
+with its dependencies in an isolated virtual environment, as a user would.
 
 ```console
 scripts/test
