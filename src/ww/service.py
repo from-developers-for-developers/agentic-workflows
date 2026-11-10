@@ -2544,13 +2544,27 @@ class WorkflowService:
         frees up, so waiting is what moves them on.
         """
         deadline = time.monotonic() + seconds
+        settled = False
         while True:
             page = self.headless.dispatch(
                 self._page(task_id, caller_role="manager"), launch=True
             )
-            if not _headless_pending(page) or time.monotonic() >= deadline:
+            if _headless_pending(page):
+                settled = False
+                if time.monotonic() >= deadline:
+                    return page
+                time.sleep(
+                    min(WAIT_POLL_SECONDS, max(0.0, deadline - time.monotonic()))
+                )
+            elif settled:
                 return page
-            time.sleep(min(WAIT_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+            else:
+                # The run's completion writes in steps under the task lock (in
+                # the single runtime it then opens the next step), and this
+                # page was read without it: once the lock is free, read the
+                # page again so it is not one from midway.
+                with self.tasks.lock_task(task_id):
+                    settled = True
 
     def launch(
         self,

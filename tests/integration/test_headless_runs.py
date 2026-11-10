@@ -28,7 +28,10 @@ from ww.headless import (
     worker_prompt,
 )
 from ww.headless.records import write_record
+from ww.instructions.models import Instruction
 from ww.project_config import ProjectConfig
+from ww.service import WorkflowService
+from ww.storage import Storage
 
 WORKFLOW = """workflows:
   - name: task
@@ -318,6 +321,45 @@ def test_a_wait_that_ends_while_the_run_goes_on_shows_the_waiting_page(
     code, page = _ww(project, capsys, "reset", "TASK-1", "--yes")
     assert code == 0, page
     assert not list((project / ".ww").rglob("headless/*.json"))
+
+
+def test_wait_does_not_return_a_page_read_midway_through_the_completion(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _start(project, capsys)
+    monkeypatch.setenv("FAKE_SLEEP", "60")
+    _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+    # The run's agent completes the step: in the single runtime that records
+    # `review` and then opens `fix`, holding the task lock throughout.
+    midway, release = threading.Event(), threading.Event()
+    open_next = WorkflowService._open_next_in_single
+
+    def held_midway(
+        service: WorkflowService, task_id: str, instruction: Instruction
+    ) -> Instruction:
+        midway.set()
+        release.wait(timeout=30)
+        return open_next(service, task_id, instruction)
+
+    monkeypatch.setattr(WorkflowService, "_open_next_in_single", held_midway)
+    worker = threading.Thread(
+        target=lambda: WorkflowService(Storage(project)).complete(
+            "TASK-1",
+            artifact="Reviewed.",
+            summary_for_next="Reviewed.",
+            caller_role="worker",
+        )
+    )
+    worker.start()
+    assert midway.wait(timeout=30)
+    threading.Timer(0.5, release.set).start()
+
+    page = WorkflowService(Storage(project)).wait("TASK-1", 30)
+    worker.join()
+
+    # Midway, `fix` is pending and the page tells the manager to run `next`.
+    assert (page.step, page.status) == ("fix", "in_progress")
+    _ww(project, capsys, "reset", "TASK-1", "--yes")
 
 
 def test_reset_stops_a_run_that_is_still_going(
