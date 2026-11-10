@@ -136,7 +136,6 @@ def main() -> int:
             "-m",
             "pip",
             "install",
-            "--no-deps",
             str(wheel),
             cwd=temporary_root,
         )
