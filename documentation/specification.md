@@ -179,8 +179,19 @@ checkout. The commit is the one `config_ref` in `ww.json` names, by default the 
 `base_branches.default`. ww copies `ww.yaml`, `ww.json`,
 `ww-rule-automation.json`, their imports, the rule files and directories
 they declare, and every committed file a check reaches as
-`{{ww.root}}/<path>` or `$WW_ROOT/<path>` into the read-only directory
-`.ww/config/<sha>/`, which `{{ww.root}}` and `WW_ROOT` then name. A run
+`{{ww.root}}/<path>` or `$WW_ROOT/<path>`, in those files or in a rule
+file's `check`, or lists in a rule file's `check.files`, a step rule's
+`files` or a store check's `config`, into the read-only directory
+`.ww/config/<sha>/`, which `{{ww.root}}` and `WW_ROOT` then name. A file a
+script calls, such as a helper or a PHP file a shell script runs, is copied
+only when the check lists it in `files`: ww reads commands, not scripts. A
+copy records the files its commands reach that the commit lacks; every
+command reading the configuration warns about each on stderr (`ww warning:
+<rule file or store check> reaches <path>, which commit <sha> ... does not
+hold`), and, reading the checkout, about each the checkout lacks, from a scan
+kept in `.ww/reached-files.json` until a file it looked at changes. A copy
+without that record, written by an ww that left out what a rule file's
+check reaches, is written again. A run
 records the commit it starts with and reads it until it ends; `ww config
 refresh <task>` moves it to the ref's current commit. Commands outside a
 task read the ref's current commit. Commands that edit the configuration
@@ -1904,7 +1915,7 @@ Controllers must not instantiate services; inject them.
 | `contains_in_file` | non-empty list of non-empty strings | Narrows the rule to files whose text contains any of the strings. Each is a plain, case-sensitive substring of the file read as UTF-8 text from the step's directory; there is no regular expression, and `*`, `.` and the like mean themselves. With `paths`, a file must match a glob and contain a string; without `paths`, any changed file containing a string counts. A file that cannot be read as text is not selected. A check whose strings are in no changed file does not run, and a rule without a check is not applicable then, as for `paths`. The step page prints the strings after the globs, as `in file "<string>"`. |
 | `contains_in_diff` | non-empty list of non-empty strings | Narrows the rule to files whose changed lines contain any of the strings: the lines the step added or removed, read from the diff between its two tree marks (no context lines; a new file contributes every line, a binary file none). Plain substrings as for `contains_in_file`, and the two keys combine: a file must satisfy each key present. Without git there are no marks and the whole file is read, as for `contains_in_file`. The step page prints the strings as `in diff "<string>"`. |
 | `contains` | — | Refused: the error names `contains_in_file` and `contains_in_diff`. |
-| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. An optional `files` lists the project files the command needs, such as the script it runs, relative to the project root and without a `..` part: when one is missing where ww reads its configuration, the check is unavailable (see [Running checks](#running-checks)). A check with `files` must reach them there, as `{{ww.root}}/<path>` in `argv`, `args` or `env`, or `"$WW_ROOT/<path>"` in a `shell` source, since it runs in the step's directory, which may be a worktree of a branch without them; one that does neither is refused. |
+| `check` | command | `argv`, or `shell` with `args` and `env`, and optional `assert`, as in [Commands](#commands); `command` and `idempotent` are not accepted. An optional `files` lists the project files the command needs, such as the script it runs and every file that script calls, relative to the project root and without a `..` part: a configuration snapshot copies them, and when one is missing where ww reads its configuration, the check is unavailable (see [Running checks](#running-checks)). A check with `files` must reach them there, as `{{ww.root}}/<path>` in `argv`, `args` or `env`, or `"$WW_ROOT/<path>"` in a `shell` source, since it runs in the step's directory, which may be a worktree of a branch without them; one that does neither is refused. |
 | `max_fixes` | positive integer | Rejections this check allows; defaults to `limits.fixes` in `ww.json` (3). |
 | `agent`, `model`, `reasoning` | string | The worker that verifies the rule; see [Verifying rules without a command](#verifying-rules-without-a-command). |
 
@@ -2003,8 +2014,11 @@ A check gets its tools from `PATH` or the step's directory. `WW_ROOT` holds
 only committed files.
 
 A check that cannot run is `unavailable`, never failed: a file its `files`
-lists is missing where ww reads its configuration (tested before the command runs),
-the command could not be launched (an `argv` program that does not exist),
+lists, or one its command reaches as `{{ww.root}}/<path>` or
+`$WW_ROOT/<path>`, is missing where ww reads its configuration (tested before
+the command runs, since an interpreter given a missing script exits like a
+failed check, `python3` with 2; a path built at run time, such as
+`$WW_ROOT/tools/*.sh`, is not tested), the command could not be launched (an `argv` program that does not exist),
 or the shell exited 126 or 127 because the program was not found or not
 executable. The result carries the reason. An unavailable check rejects no
 completion, counts toward no `max_fixes`, is not reused from a held
@@ -2314,7 +2328,7 @@ or `schema_version` is an error.
 | `rules edit <id> [--text "<text>"] [--paths <glob>...] [--contains-in-file <text>...] [--contains-in-diff <text>...]` | Replaces a rule file's body, its `paths`, its `contains_in_file`, its `contains_in_diff`, or any of them, keeping every other byte, and reports matches as `rules add` does; warns when the wording's hash changes and names the store entry and approved check that stop matching. Refuses a rule written in a step's `rules` list. |
 | `rules move <id> <group>` | Moves the rule file unchanged into the group's first directory, or beside the group's last file item and into its `rules` list as `rules add` lists a file; the rule's ID becomes `<group>/<stem>`. |
 | `rules filter <group> [--workflows <name>...] [--steps <name>...] [--all-workflows] [--all-steps]` | Sets a `ww-rules.yaml` group's filters; `--workflows '*'` / `--steps '*'` writes `"*"`, and `--all-*` removes one, which also admits all. Refuses a group declared in another file. |
-| `rules promote <check>` | Copies a `converted` store check without a pending revision into the `check` of every rule file whose wording it covers, then deletes the check and those rules' entries from the store. Refuses when a covered rule is written in a step's `rules` list or already has a check. |
+| `rules promote <check>` | Copies a `converted` store check without a pending revision into the `check` of every rule file whose wording it covers, its `config` becoming the check's `files` (when its command reaches them through the root; otherwise a warning names them), then deletes the check and those rules' entries from the store. Refuses when a covered rule is written in a step's `rules` list or already has a check. |
 
 Every write loads the configuration once the files are written; when it does
 not load, or the write would not have its effect, every file is restored and

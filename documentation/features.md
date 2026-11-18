@@ -1686,7 +1686,26 @@ ww resolves the ref to a commit and copies the configuration out of that
 commit, without a checkout, into `.ww/config/<sha>/`. The copy holds
 `ww.yaml`, `ww.json`, `ww-rule-automation.json`, their imports, every rule
 file and rule directory they declare, and every committed file a check
-reaches as `{{ww.root}}/<path>` or `$WW_ROOT/<path>`. The copy is written to
+reaches as `{{ww.root}}/<path>` or `$WW_ROOT/<path>`, a rule file's own
+`check` included, or lists in its `files` (a store check's `config`). ww
+reads commands, not the scripts they run: list a file a script calls, such
+as the PHP file a shell script runs, in the check's `files`, or the copy
+lacks it:
+
+```yaml
+---
+check:
+  shell: sh "$WW_ROOT/tools/structure.sh" $WW_STEP_CHANGED_FILES
+  files: [tools/structure.sh, tools/structure.php]
+---
+```
+
+Every command that reads the configuration warns on stderr about each file
+a check reaches that the copy lacks, naming the rule file or store check and
+the file; the copy records them when it is written, so the warning costs
+nothing more. Reading the checkout, the same scan is kept in
+`.ww/reached-files.json` and repeated only when a file it looked at changes.
+The copy is written to
 a temporary directory and renamed into place, and it is read-only. Each
 commit gets one copy, made the first time it is needed. A copy that is
 missing, for example after `git clean`, is written again on the next read.
@@ -3094,7 +3113,9 @@ with a `check` field naming the check.
 
 A check that cannot run here is **unavailable**, not failed: the script it
 runs is missing where ww reads its configuration (its `check` lists it under
-`files`, tested before anything runs), the `argv` program does not exist, or the shell
+`files` or reaches it as `{{ww.root}}/<path>` or `$WW_ROOT/<path>`, tested
+before anything runs; the message names the file and the snapshot), the
+`argv` program does not exist, or the shell
 answered `command not found` or `not executable` (exit 127 or 126), as when
 a check is written on a branch its tool has not reached yet. The worker is
 not sent back for it, it counts toward no `max_fixes`, the rule statistics
@@ -3555,9 +3576,10 @@ Reaches these steps (an agent step's page shows it):
   `--all-steps` remove a filter, which also means all); a group declared
   elsewhere is yours, and the command says what to write there.
 - `rules promote <check>` copies an approved store check into the `check`
-  frontmatter of every rule file it covers and removes the check and those
-  rules' entries from the store, since a rule with its own command is never
-  looked up there. It refuses a check that is not converted, or that has a
+  frontmatter of every rule file it covers, its `config` files into the
+  check's `files`, so the configuration snapshot keeps copying them, and
+  removes the check and those rules' entries from the store, since a rule
+  with its own command is never looked up there. It refuses a check that is not converted, or that has a
   pending revision an earlier ww left, and a rule written in a step's own
   `rules` list.
 

@@ -797,6 +797,7 @@ def test_a_check_reaching_a_missing_root_file_is_unavailable_not_failed(
     )
     assert reached.unavailable is not None
     assert "tools/gone.py" in reached.unavailable
+    assert "is missing from" in reached.unavailable
     _, record = _record(service)
     assert record.check_failures("docs/reached") == 0
 

@@ -888,7 +888,7 @@ def test_promote_moves_an_approved_check_into_the_rule_files(
     )
     assert "Promoted check `docs-lint`" in out
     assert "now runs once for each of these 2 rules" in out
-    assert "Its configuration stays where it is: docs-lint.yaml" in out
+    assert "stay where they are: docs-lint.yaml" in out
     automation = RuleStore(root).load()
     assert automation.checks == {}
     assert set(automation.rules) == {other}
@@ -922,7 +922,8 @@ def test_promote_writes_the_store_checks_configuration_into_check_files(
 
     assert _ww(root, "rules", "promote", "docs-lint") == 0
 
-    capsys.readouterr()
+    out = capsys.readouterr().out
+    assert "Listed the files it needs in each rule's `check.files`" in out
     frontmatter = yaml.safe_load(_text(root / "rules/docs/header.md").split("---\n")[1])
     assert frontmatter["check"]["files"] == ["tools/header.sh"]
     rule = load_configuration(root / "ww.yaml").rule_groups[0].rules[0]

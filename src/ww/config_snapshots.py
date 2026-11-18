@@ -6,10 +6,15 @@ In a Git project the configuration tasks read is the one committed on a ref,
 copies it out of that commit, without a checkout, into
 ``<root>/.ww/config/<sha>/``: ``ww.yaml``, ``ww.json``, the rule-automation
 store, and every committed file their values name, such as an import, a rule
-file or directory, or a check's script reached as ``{{ww.root}}/<path>``. The
-copy is written to a temporary directory and renamed into place, so a reader
-never sees half of one, and made read-only: a commit's copy never changes.
-One missing, as after ``git clean``, is written again on the next read.
+file or directory, or a check's script reached as ``{{ww.root}}/<path>``,
+and every file a rule file's ``check`` reaches or lists in ``files`` (see
+:mod:`ww.reached_files`). The copy is written to a temporary directory and
+renamed into place, so a reader never sees half of one, and made read-only: a
+commit's copy never changes. One missing, as after ``git clean``, is written
+again on the next read. Each copy keeps, inside it, the files its commands
+reach that the commit lacks, for the warning every command gives; a copy
+without that record, written by an earlier ww that left out what a rule
+file's check reaches, is written again.
 
 Every run records the commit it started with and reads that copy until it
 ends, whatever the operator checks out meanwhile or commits on the ref;
@@ -26,38 +31,32 @@ the untracked ``ww.local.*`` files stay in the checkout.
 
 from __future__ import annotations
 
-import json
+import contextlib
 import os
 import posixpath
-import re
 import shutil
 import stat
 import subprocess
 import tempfile
-from collections.abc import Iterable, Iterator
+import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
-from typing import Any
 
-import yaml
-
-from ww.config_files import (
-    RULE_AUTOMATION_FILE,
-    SETTINGS_FILE,
-    SNAPSHOT_DIRECTORY,
-    WORKFLOWS_FILE,
-)
+from ww.config_files import SETTINGS_FILE, SNAPSHOT_DIRECTORY, WORKFLOWS_FILE
 from ww.errors import ConfigurationError, StateError
 from ww.project_config import load_project_config
+from ww.reached_files import (
+    SNAPSHOT_RECORD,
+    Reach,
+    checkout_missing,
+    scan,
+    snapshot_missing,
+    snapshot_record,
+)
 
 GIT_EXTENSION = "ww/git"
-# The files a snapshot starts from; everything else is found through them.
-_ENTRY_FILES = (WORKFLOWS_FILE, SETTINGS_FILE, RULE_AUTOMATION_FILE)
-# A configured path reached from the root in a check's command.
-_ROOT_REFERENCE = re.compile(
-    r"(?:\{\{\s*ww\.root\s*\}\}|\$\{?WW_ROOT\}?)/([^\s\"'`;|&()<>]+)"
-)
-_STRUCTURED = (".yaml", ".yml", ".json")
 
 
 @dataclass(frozen=True)
@@ -79,15 +78,36 @@ class ConfigSource:
 
 @dataclass(frozen=True)
 class _Tree:
-    """The files of one commit under the project root, by relative path."""
+    """The files of one commit under the project root, by relative path.
+
+    ``blobs`` maps each to its mode and blob; ``read_blob`` reads a blob's
+    content.
+    """
 
     blobs: dict[str, tuple[str, str]]
+    read_blob: Callable[[str], bytes] = lambda _blob: b""
 
-    @property
+    @cached_property
     def directories(self) -> set[str]:
-        return {
-            posixpath.dirname(path) for path in self.blobs if posixpath.dirname(path)
-        }
+        found: set[str] = set()
+        for path in self.blobs:
+            parent = posixpath.dirname(path)
+            while parent and parent not in found:
+                found.add(parent)
+                parent = posixpath.dirname(parent)
+        return found
+
+    def is_file(self, path: str) -> bool:
+        return path in self.blobs
+
+    def is_dir(self, path: str) -> bool:
+        return path in self.directories
+
+    def listing(self, directory: str) -> Iterable[str]:
+        return (file for file in self.blobs if posixpath.dirname(file) == directory)
+
+    def read(self, path: str) -> bytes:
+        return self.read_blob(self.blobs[path][1])
 
 
 class ConfigSnapshots:
@@ -165,9 +185,14 @@ class ConfigSnapshots:
     # ----- writing snapshots ------------------------------------------
 
     def materialize(self, commit: str) -> Path:
-        """The read-only copy of ``commit``'s configuration, written once."""
+        """The read-only copy of ``commit``'s configuration, written once.
+
+        A copy without the record of what its commands reach was written by
+        an earlier ww, which left out the files a rule file's check reaches:
+        it is written again and swapped in.
+        """
         target = self.directory / commit
-        if target.is_dir():
+        if (target / SNAPSHOT_RECORD).is_file():
             return target
         tree = self._tree(commit)
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -175,15 +200,54 @@ class ConfigSnapshots:
         try:
             self._write(tree, staging, commit)
             _make_read_only(staging)
-            try:
-                staging.rename(target)
-            except OSError:
-                if not target.is_dir():
-                    raise
+            self._install(staging, target)
         finally:
             if staging.exists():
                 _remove(staging)
         return target
+
+    def missing(self, source: ConfigSource) -> tuple[Reach, ...]:
+        """The files ``source``'s commands reach that it lacks.
+
+        Read from the snapshot's record, or for the checkout from a scan
+        kept until a file it looked at changes.
+        """
+        if source.pinned:
+            return snapshot_missing(source.directory)
+        return checkout_missing(source.directory)
+
+    def missing_notice(self, reach: Reach, source: ConfigSource) -> str:
+        """The warning about one file a command reaches that ``source`` lacks."""
+        if source.commit is not None:
+            on = f" on {source.ref}" if source.ref else ""
+            return (
+                f"{reach.owner} reaches `{reach.file}`, which commit "
+                f"{source.commit[:12]}{on} does not hold, so its configuration "
+                "snapshot lacks it and the check cannot run; commit it, and "
+                "list every file the command needs, a script its script calls "
+                "included, in the check's `files`"
+            )
+        return (
+            f"{reach.owner} reaches `{reach.file}`, which is missing from "
+            f"{source.directory}, so the check cannot run; add it, or correct "
+            "the path"
+        )
+
+    def _install(self, staging: Path, target: Path) -> None:
+        """Rename ``staging`` to ``target``, moving an earlier copy aside."""
+        stale = self.directory / f".{target.name}.stale.{uuid.uuid4().hex}"
+        if target.is_dir():
+            # Another reader may have swapped it already: then it is gone.
+            with contextlib.suppress(OSError):
+                target.rename(stale)
+        try:
+            staging.rename(target)
+        except OSError:
+            if not (target / SNAPSHOT_RECORD).is_file():
+                raise
+        finally:
+            if stale.exists():
+                _remove(stale)
 
     def snapshots(self) -> tuple[str, ...]:
         """The commits with a snapshot, sorted."""
@@ -215,26 +279,22 @@ class ConfigSnapshots:
         return tuple(removed)
 
     def _write(self, tree: _Tree, staging: Path, commit: str) -> None:
-        """Write the entry files and every committed file they name."""
-        pending = [path for path in _ENTRY_FILES if path in tree.blobs]
-        written: set[str] = set()
-        while pending:
-            path = pending.pop(0)
-            if path in written:
-                continue
-            written.add(path)
-            mode, blob = tree.blobs[path]
+        """Write the entry files, every committed file they name, and the
+        record of the files their commands reach that the commit lacks."""
+
+        def copy(path: str, content: bytes) -> None:
             destination = staging / path
             destination.parent.mkdir(parents=True, exist_ok=True)
-            content = self._blob(blob, commit)
             destination.write_bytes(content)
-            if mode == "100755":
+            if tree.blobs[path][0] == "100755":
                 destination.chmod(0o755)
-            pending.extend(
-                found
-                for found in _named_files(path, content, tree)
-                if found not in written
-            )
+
+        result = scan(
+            _Tree(tree.blobs, lambda blob: self._blob(blob, commit)), on_file=copy
+        )
+        (staging / SNAPSHOT_RECORD).write_text(
+            snapshot_record(result.missing), encoding="utf-8"
+        )
 
     # ----- Git ---------------------------------------------------------
 
@@ -287,65 +347,6 @@ class ConfigSnapshots:
         except OSError:
             return None
         return result.stdout if result.returncode == 0 else None
-
-
-def _named_files(path: str, content: bytes, tree: _Tree) -> Iterator[str]:
-    """The committed files a configuration file's values name.
-
-    A value names a file relative to the root or to the file's own directory,
-    or, in a command, as ``{{ww.root}}/<path>`` or ``$WW_ROOT/<path>``; a
-    directory stands for the ``*.md`` files directly inside it, as a rule
-    directory does. Values naming nothing committed are ignored.
-    """
-    if not path.endswith(_STRUCTURED):
-        return
-    try:
-        text = content.decode("utf-8")
-        data = json.loads(text) if path.endswith(".json") else yaml.safe_load(text)
-    except (UnicodeDecodeError, ValueError, yaml.YAMLError):
-        return
-    base = posixpath.dirname(path)
-    directories = tree.directories
-    for value in _strings(data):
-        candidates = [value, *_ROOT_REFERENCE.findall(value)]
-        for candidate in candidates:
-            for relative in {candidate, posixpath.join(base, candidate)}:
-                normalized = _normalized(relative)
-                if normalized is None:
-                    continue
-                if normalized in tree.blobs:
-                    yield normalized
-                elif normalized in directories:
-                    yield from (
-                        file
-                        for file in tree.blobs
-                        if posixpath.dirname(file) == normalized
-                        and file.endswith(".md")
-                    )
-
-
-def _normalized(path: str) -> str | None:
-    """``path`` inside the root, normalised, or ``None`` when it leaves it."""
-    stripped = path.strip()
-    if not stripped or stripped.startswith("/") or "\n" in stripped:
-        return None
-    normalized = posixpath.normpath(stripped)
-    if normalized in {".", ""} or normalized.split("/")[0] == "..":
-        return None
-    return normalized
-
-
-def _strings(data: Any) -> Iterator[str]:
-    if isinstance(data, str):
-        yield data
-    elif isinstance(data, dict):
-        for key, value in data.items():
-            if isinstance(key, str):
-                yield key
-            yield from _strings(value)
-    elif isinstance(data, list):
-        for value in data:
-            yield from _strings(value)
 
 
 def _make_read_only(directory: Path) -> None:

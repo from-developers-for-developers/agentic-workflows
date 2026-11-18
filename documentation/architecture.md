@@ -1610,7 +1610,18 @@ the ref to a commit and materializes `<root>/.ww/config/<sha>/` without a
 checkout (`git ls-tree` and `git cat-file`). The materialization starts from
 `ww.yaml`, `ww.json` and `ww-rule-automation.json` and follows every YAML or
 JSON string that names a committed file, every `{{ww.root}}/<path>` and
-`$WW_ROOT/<path>` reference, and every rule directory's `*.md`. A project in
+`$WW_ROOT/<path>` reference, every rule directory's `*.md`, and in a rule
+file's frontmatter the files its `check` reaches or lists in `files`. The
+walk is `reached_files.scan` over a `ConfigFiles` source, the commit's tree
+here; it also returns the files a command reaches (`Reach`: a mapping with
+`argv` or `shell`, its root references and its `files` or `config` list)
+that the source lacks, which the snapshot keeps in `.ww-reached-files.json`
+inside the copy. A copy without that record was written by an earlier ww and
+is written again and swapped in. Every command warns from the record
+(`ConfigSnapshots.missing`); reading the checkout, `checkout_missing` runs
+the same scan over `CheckoutFiles` and keeps it in `.ww/reached-files.json`
+with a digest of every path it looked at, reused while their `stat`s match.
+A project in
 a subdirectory of its repository is addressed through `rev-parse
 --show-prefix`. The copy is written to a temporary directory, made read-only,
 and renamed into place, so a reader never sees half of one. One commit has
@@ -2149,8 +2160,10 @@ repeatable, so they keep no command ledger; their outputs are stored like
 other command output and their reports live on the item record, one per
 attempt, which is the single authority for how often a step was rejected.
 A check that cannot run here is `unavailable` (`CheckStatus`) with its
-reason, never failed: a file it declares under `files` is missing where
-ww reads its configuration (`missing_file` against `CheckScope.root`, tested before the
+reason, never failed: a file it declares under `files`, or one its command
+reaches as `{{ww.root}}/<path>` or `$WW_ROOT/<path>`
+(`reached_files.command_references`), is missing where ww reads its
+configuration (`missing_file` against `CheckScope.root`, tested before the
 command runs, which itself runs in `CheckScope.directory`), the
 command could not be launched, or the shell exited 126 or 127.
 `CheckReport.failed` leaves such results out, so they reject no completion,

@@ -10,11 +10,13 @@ to the step's directory) narrowed to the check's globs. A check whose globs
 select no changed file is not applicable and does not run; a judged rule is
 narrowed the same way (``applicable_files``), by its verifiers. A check fails
 on a non-zero exit or a failed assertion. A check that cannot run here is
-unavailable, not failed: a file it declares is missing where ww reads its
-configuration,
-its command could not be launched, or the shell found no command to run
-(exit 126 or 127); the result says why, the rules it checks are judged by a
-verifier instead, and nothing counts it.
+unavailable, not failed: a file it declares, or one its command reaches as
+``{{ww.root}}/<path>`` or ``$WW_ROOT/<path>``, is missing where ww reads its
+configuration, its command could not be launched, or the shell found no
+command to run (exit 126 or 127); the result says why, the rules it checks
+are judged by a verifier instead, and nothing counts it. A missing script
+is looked for before the command runs, since an interpreter given one exits
+like a failed check (``python3`` with 2).
 
 A check is defined with ww's configuration and applied in the step's
 directory: its declared files are looked up where the configuration is read,
@@ -55,9 +57,11 @@ from ww.changes import (
     select_files,
     take_mark,
 )
+from ww.config_files import snapshot_of
 from ww.errors import StateError
 from ww.execution_models import CheckReport, CheckResult, ExecutionState
 from ww.plan import PlanItem, PlannedCheck
+from ww.reached_files import command_references
 from ww.rule_store import is_config_path
 from ww.storage_adapters import CommandOutputAddress
 from ww.variables import ROOT_ENVIRONMENT
@@ -208,6 +212,14 @@ class RuleChecker:
                 "unavailable",
                 output=missing_file_reason(missing),
             )
+        reached = missing_file(command_references(check.command), scope.root)
+        if reached is not None:
+            return CheckResult(
+                check.id,
+                check.source,
+                "unavailable",
+                output=reached_file_reason(reached, scope.root),
+            )
         action = CommandAction()
         outputs: list[str] = []
         stdout_ref = stderr_ref = None
@@ -348,6 +360,22 @@ def missing_file_reason(path: str) -> str:
     return (
         f"`{path}` is missing where ww reads its configuration, so the check is "
         "skipped until it is committed there"
+    )
+
+
+def reached_file_reason(path: str, root: Path) -> str:
+    """Why a check whose command reaches a missing ``path`` does not run."""
+    snapshot = snapshot_of(root.resolve())
+    where = (
+        f"the configuration snapshot of commit {snapshot.name[:12]} ({snapshot})"
+        if snapshot is not None
+        else f"the project root ({root})"
+    )
+    return (
+        f"the command reaches `{path}`, which is missing from {where}, so the "
+        "check is skipped until it is committed there; list every file the "
+        "command needs, a script its script calls included, in the check's "
+        "`files`"
     )
 
 

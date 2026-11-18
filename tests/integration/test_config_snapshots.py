@@ -14,9 +14,10 @@ from pathlib import Path
 
 import pytest
 
+from ww import reached_files
 from ww.cli import main
 from ww.config_files import checkout_directory, snapshot_of
-from ww.config_snapshots import ConfigSnapshots
+from ww.config_snapshots import ConfigSnapshots, _make_read_only
 from ww.errors import ConfigurationError, StateError
 from ww.rule_conversion import require_committable
 from ww.storage import Storage
@@ -120,6 +121,7 @@ def test_a_snapshot_holds_the_committed_configuration_and_what_it_names(
         if path.is_file()
     )
     assert files == [
+        ".ww-reached-files.json",
         "rules/style/naming.md",
         "tools/lint.py",
         "ww-rules.yaml",
@@ -163,6 +165,116 @@ def test_a_snapshot_holds_the_files_a_rule_files_check_reaches(
 
     tools = sorted(path.name for path in (source.directory / "tools").iterdir())
     assert tools == ["lint.py", "structure.php", "structure.sh", "timestamps.py"]
+
+
+def test_a_snapshot_records_the_files_its_checks_reach_that_the_commit_lacks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """TASK-74: the scan runs once, as the snapshot is written; every
+    command then warns from its record, which no checkout change touches."""
+    _project(tmp_path)
+    (tmp_path / "rules/style/gone.md").write_text(
+        "---\ncheck:\n"
+        '  shell: python3 "$WW_ROOT/tools/gone.py" "$WW_ROOT/tools/$NAME.py"\n'
+        "  files: [tools/lint.py, tools/helper.php]\n"
+        "---\nCheck it.\n",
+        encoding="utf-8",
+    )
+    commit = _commit(tmp_path, "a check reaching uncommitted files")
+
+    snapshots = ConfigSnapshots(tmp_path)
+    source = snapshots.current()
+
+    assert [(reach.owner, reach.file) for reach in snapshots.missing(source)] == [
+        ("rule file rules/style/gone.md", "tools/gone.py"),
+        ("rule file rules/style/gone.md", "tools/helper.php"),
+    ]
+    assert main(["--root", str(tmp_path), "rules", "--json"]) == 0
+    err = capsys.readouterr().err
+    assert (
+        "ww warning: rule file rules/style/gone.md reaches `tools/gone.py`, "
+        f"which commit {commit[:12]} on main does not hold"
+    ) in err
+    assert "`tools/helper.php`" in err
+    assert "a script its script calls included, in the check's `files`" in err
+    # The record is the snapshot's: creating the file in the checkout
+    # changes nothing until it is committed.
+    (tmp_path / "tools/gone.py").write_text("# script\n", encoding="utf-8")
+    (tmp_path / "tools/helper.php").write_text("<?php\n", encoding="utf-8")
+    assert len(ConfigSnapshots(tmp_path).missing(source)) == 2
+    _commit(tmp_path, "commit the scripts")
+    assert main(["--root", str(tmp_path), "rules", "--json"]) == 0
+    assert "ww warning" not in capsys.readouterr().err
+
+
+def test_a_snapshot_an_earlier_ww_wrote_is_written_again(tmp_path: Path) -> None:
+    """TASK-74: a copy without the record left out what rule files' checks
+    reach; it is replaced by a complete one."""
+    _project(tmp_path)
+    (tmp_path / "rules/style/reached.md").write_text(
+        '---\ncheck:\n  shell: python3 "$WW_ROOT/tools/reached.py"\n---\nCheck.\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "tools/reached.py").write_text("# script\n", encoding="utf-8")
+    commit = _commit(tmp_path, "rule-file check")
+    old = tmp_path / ".ww/config" / commit
+    (old / "tools").mkdir(parents=True)
+    (old / "ww.yaml").write_text(CONFIG, encoding="utf-8")
+    (old / "tools/lint.py").write_text(LINT, encoding="utf-8")
+    _make_read_only(old)
+
+    source = ConfigSnapshots(tmp_path).current()
+
+    assert source.directory == old.resolve()
+    assert (source.directory / "tools/reached.py").is_file()
+    assert (source.directory / ".ww-reached-files.json").is_file()
+    assert [entry.name for entry in (tmp_path / ".ww/config").iterdir()] == [commit]
+
+
+def test_the_checkout_keeps_its_scan_until_a_file_it_read_changes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TASK-74: read from the checkout, the scan is kept in ``.ww`` and read
+    again only when a file it looked at changes, as a few ``stat`` calls
+    tell."""
+    _project(tmp_path, {"config_ref": False})
+    (tmp_path / ".ww").mkdir()
+    snapshots = ConfigSnapshots(tmp_path)
+    source = snapshots.current()
+    assert snapshots.missing(source) == ()
+    assert (tmp_path / ".ww/reached-files.json").is_file()
+
+    scans: list[str] = []
+    real_scan = reached_files.scan
+
+    def counted(files: reached_files.ConfigFiles) -> reached_files.Scan:
+        scans.append("scan")
+        return real_scan(files)
+
+    monkeypatch.setattr(reached_files, "scan", counted)
+    assert snapshots.missing(source) == ()
+    assert scans == []
+
+    # A new rule file changes its directory; the scan runs again.
+    (tmp_path / "rules/style/gone.md").write_text(
+        '---\ncheck:\n  argv: [python3, "{{ww.root}}/tools/gone.py"]\n---\nCheck.\n',
+        encoding="utf-8",
+    )
+    assert [reach.file for reach in snapshots.missing(source)] == ["tools/gone.py"]
+    assert len(scans) == 1
+    assert main(["--root", str(tmp_path), "rules", "--json"]) == 0
+    err = capsys.readouterr().err
+    assert (
+        "ww warning: rule file rules/style/gone.md reaches `tools/gone.py`, which "
+        f"is missing from {tmp_path.resolve()}"
+    ) in err
+    assert len(scans) == 1
+    # Creating the reached file is seen, too.
+    (tmp_path / "tools/gone.py").write_text("# script\n", encoding="utf-8")
+    assert snapshots.missing(source) == ()
+    assert len(scans) == 2
 
 
 def test_without_git_or_with_config_ref_false_the_checkout_is_read(

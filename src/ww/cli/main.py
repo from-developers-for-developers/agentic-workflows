@@ -2380,6 +2380,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command != "lint":
             for notice in _configuration_deprecations(storage, extensions):
                 print(f"ww warning: {notice}", file=sys.stderr)
+        _warn_reached_files(storage)
         # Check what the force would do before asking the operator to approve
         # it, so a refused force is reported instead of confirmed and refused.
         if args.command == "next" and args.force:
@@ -2461,6 +2462,25 @@ def _configuration_deprecations(
         for project in extensions.config.projects:
             notices.extend(extensions.project_settings(project.name).notices)
     return tuple(notices)
+
+
+def _warn_reached_files(storage: Storage) -> None:
+    """Warn about each file a configured command reaches that is missing
+    where ww reads its configuration.
+
+    The snapshot keeps what it lacks; the checkout's scan is kept until a
+    file it looked at changes. A warning only: nothing here fails a command.
+    """
+    snapshots = ConfigSnapshots(storage.root)
+    try:
+        missing = snapshots.missing(storage.config)
+    except Exception:  # noqa: BLE001 - an early warning never breaks a command
+        return
+    for reach in missing:
+        print(
+            f"ww warning: {snapshots.missing_notice(reach, storage.config)}",
+            file=sys.stderr,
+        )
 
 
 def _warn_extension_notices(

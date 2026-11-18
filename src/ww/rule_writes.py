@@ -42,6 +42,7 @@ from ww.config import load_configuration
 from ww.config.composition import ComposedConfiguration
 from ww.config.rules import (
     parse_check_command,
+    references_root,
     rule_summary,
     rule_text_hash,
 )
@@ -482,6 +483,13 @@ def plan_promote(
     command = dict(check.spec.command.commands[0].to_dict())
     if check.spec.command.assertion is not None:
         command["assert"] = check.spec.command.assertion.to_data()
+    # The store check was where a configuration snapshot found its files;
+    # the rule's ``files`` names them once it is gone. A rule's check may
+    # declare files only when its command reaches the root, as only a
+    # hand-edited store's check would not.
+    listed = bool(check.spec.config) and references_root(check.spec.command)
+    if listed:
+        command["files"] = list(check.spec.config)
     writes: dict[Path, FileWrite] = {}
     for rule in rules:
         if rule.check is not None:
@@ -505,9 +513,17 @@ def plan_promote(
             f"The command now runs once for each of these {len(writes)} rules, "
             "on the changed files each rule's globs select, instead of once."
         )
-    if check.spec.config:
+    if listed:
         report.append(
-            "Its configuration stays where it is: " + ", ".join(check.spec.config)
+            "Listed the files it needs in each rule's `check.files`: "
+            + ", ".join(check.spec.config)
+        )
+    elif check.spec.config:
+        warnings.append(
+            "Its command does not reach the files it needs as "
+            '`{{ww.root}}/<path>` or `"$WW_ROOT/<path>"`, so they are not '
+            "listed in `check.files` and stay where they are: "
+            + ", ".join(check.spec.config)
         )
     return RuleWrite(
         writes=tuple(writes.values()),
