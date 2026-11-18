@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-18
 
-- Fixed: the configuration snapshot left out the scripts a rule file's `check` reaches as `$WW_ROOT/<path>` or `{{ww.root}}/<path>` or lists in `files`, so those checks failed with "No such file or directory"; snapshots an earlier ww wrote are written again. `rules promote` now writes the store check's `config` into the rule's `check.files`, a check whose command reaches a file missing where ww reads its configuration is unavailable (judged instead, counting against no fix limit) rather than failed, and every command warns on stderr about each file a check reaches that is missing there, from a record kept with the snapshot. A file a script calls must be listed in the check's `files`. `dbb5366`
+- Fixed: the configuration snapshot left out the scripts a rule file's `check` reaches as `$WW_ROOT/<path>` or `{{ww.root}}/<path>` or lists in `files`, so those checks failed with "No such file or directory"; snapshots an earlier ww wrote are written again. `rules promote` now writes the store check's `config` into the rule's `check.files`, a check whose command reaches a file missing where ww reads its configuration is unavailable (judged instead, counting against no fix limit) rather than failed, and every command warns on stderr about each file a check reaches that is missing there. A file a script calls must be listed in the check's `files`. `dbb5366`
 
 ## 2026-11-10
 
