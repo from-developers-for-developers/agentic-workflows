@@ -132,6 +132,39 @@ def test_a_snapshot_holds_the_committed_configuration_and_what_it_names(
     assert ConfigSnapshots(tmp_path).current() == source
 
 
+def test_a_snapshot_holds_the_files_a_rule_files_check_reaches(
+    tmp_path: Path,
+) -> None:
+    """TASK-74: scripts named only in a rule file's ``check`` are copied too.
+
+    One rule reaches its script through ``$WW_ROOT`` in ``shell`` alone, the
+    other through ``{{ww.root}}`` in ``argv`` and lists a helper the script
+    calls in ``files``; no YAML or JSON file names any of them.
+    """
+    _project(tmp_path)
+    (tmp_path / "rules/style/timestamps.md").write_text(
+        "---\ncheck:\n"
+        '  shell: python3 "$WW_ROOT/tools/timestamps.py" $WW_STEP_CHANGED_FILES\n'
+        "  assert: [empty]\n---\nKeep migration timestamps in order.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "rules/style/structure.md").write_text(
+        "---\ncheck:\n"
+        "  argv: [sh, '{{ww.root}}/tools/structure.sh']\n"
+        "  files: [tools/structure.sh, tools/structure.php]\n"
+        "---\nKeep the structure.\n",
+        encoding="utf-8",
+    )
+    for name in ("timestamps.py", "structure.sh", "structure.php", "unused.sh"):
+        (tmp_path / "tools" / name).write_text("# script\n", encoding="utf-8")
+    _commit(tmp_path, "rule-file checks")
+
+    source = ConfigSnapshots(tmp_path).current()
+
+    tools = sorted(path.name for path in (source.directory / "tools").iterdir())
+    assert tools == ["lint.py", "structure.php", "structure.sh", "timestamps.py"]
+
+
 def test_without_git_or_with_config_ref_false_the_checkout_is_read(
     tmp_path: Path,
 ) -> None:

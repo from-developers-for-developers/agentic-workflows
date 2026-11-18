@@ -896,6 +896,39 @@ def test_promote_moves_an_approved_check_into_the_rule_files(
     assert all(rule.check is not None for rule in groups[0].rules)
 
 
+def test_promote_writes_the_store_checks_configuration_into_check_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """TASK-74: the promoted rule lists the files the store check named.
+
+    Promote removes the store check, the only place a configuration snapshot
+    found the script; the rule's ``check.files`` must name it instead.
+    """
+    root = _project(tmp_path)
+    (root / "tools").mkdir()
+    (root / "tools/header.sh").write_text("exit 0\n", encoding="utf-8")
+    header = rule_text_hash(HEADER_RULE.split("---\n", 2)[2])
+    _store(
+        root,
+        {header: _converted("Include foo.", "docs-lint")},
+        {
+            "docs-lint": _check(
+                [header],
+                shell='sh "$WW_ROOT/tools/header.sh" $WW_STEP_CHANGED_FILES',
+                config=["tools/header.sh"],
+            )
+        },
+    )
+
+    assert _ww(root, "rules", "promote", "docs-lint") == 0
+
+    capsys.readouterr()
+    frontmatter = yaml.safe_load(_text(root / "rules/docs/header.md").split("---\n")[1])
+    assert frontmatter["check"]["files"] == ["tools/header.sh"]
+    rule = load_configuration(root / "ww.yaml").rule_groups[0].rules[0]
+    assert rule.check_files == ("tools/header.sh",)
+
+
 def test_promote_refuses_what_it_cannot_move(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

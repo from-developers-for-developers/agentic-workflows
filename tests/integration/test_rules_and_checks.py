@@ -767,6 +767,40 @@ def test_a_check_that_cannot_run_is_unavailable_not_failed(tmp_path: Path) -> No
     ]
 
 
+def test_a_check_reaching_a_missing_root_file_is_unavailable_not_failed(
+    tmp_path: Path,
+) -> None:
+    """TASK-74: a script reached through ``$WW_ROOT`` but not declared in
+    ``files`` and missing where ww reads its configuration is unavailable.
+
+    ``python3`` on a missing script exits 2, which is neither 126 nor 127, so
+    the check used to fail and count against the worker's fix limit.
+    """
+    root = _project(tmp_path)
+    (root / "rules/docs/reached.md").write_text(
+        '---\npaths: ["*.md"]\ncheck:\n'
+        '  shell: python3 "$WW_ROOT/tools/gone.py" $WW_STEP_CHANGED_FILES\n'
+        "---\nCheck the docs with the script.\n",
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=root)
+    _git("commit", "-qm", "reached", cwd=root)
+    service = _develop(root)
+    (root / "notes.md").write_text("foo now\n", encoding="utf-8")
+
+    held = _complete(service, "Done.")
+
+    assert held.fix_required is None
+    assert held.verification is not None
+    reached = next(
+        rule for rule in held.verification.rules if rule.id == "docs/reached"
+    )
+    assert reached.unavailable is not None
+    assert "tools/gone.py" in reached.unavailable
+    _, record = _record(service)
+    assert record.check_failures("docs/reached") == 0
+
+
 def test_a_rule_whose_check_is_unavailable_is_judged_for_that_completion(
     tmp_path: Path,
 ) -> None:
