@@ -5,9 +5,11 @@ Releases are built from `main`; `dev` is never published. Every push to
 (Python compatibility, formatting, lint, types, tests, packaging and
 dependency audit), chooses the next version, builds it, publishes it to PyPI
 as `ww-agentic-workflows`, and tags the released commit `v<version>`. A push
-that changes nothing under `src/`, `ext/` or `pyproject.toml`, such as a
-documentation fix, releases nothing: the run ends with the notice "Nothing to
-release". Pushes to `dev` run the same gates through
+whose `src/`, `ext/` and `pyproject.toml` are the same as at the last `v*`
+tag, such as a documentation fix after a release, releases nothing: the run
+ends with the notice "Nothing to release". Because the comparison is with the
+last release, not the previous push, a change pushed while a release failed
+is released by the next push to `main`, whatever that push changes. Pushes to `dev` run the same gates through
 `.github/workflows/dev-ci.yml` and publish nothing.
 
 ## Branches
