@@ -2680,10 +2680,17 @@ without an artifact the same way and returns the `BranchView`s with their
 `HeadlessView`. A target whose agent already has `max_parallel` runs going in
 any task (`LaunchStore.running`) is shown `queued` instead of started.
 
-`WorkflowService.wait` dispatches with `launch=True` every two seconds, which
-starts queued runs as room frees up, until no step or branch run is going or
-queued (the step completed and moved on, or the runs ended without completing
-it) or the bound (`WW_OPERATOR_WAIT`) passes.
+`WorkflowService.wait` polls every two seconds until no step or branch run is
+going or queued (the step completed and moved on, or the runs ended without
+completing it) or the bound (`WW_OPERATOR_WAIT`) passes. Each poll first
+dispatches with `launch=False` and asks `HeadlessRuns.ending` for the run's
+records that are neither finished nor released and that the page no longer
+shows: an agent that completed its step, or recorded its branch's artifact,
+and has not yet exited, so its supervisor has not written its exit code,
+session and usage. While there are such runs and the bound has not passed,
+`wait` keeps the page without launching, so the next step's run does not start
+beside them; otherwise it dispatches with `launch=True`, which starts queued
+runs as room frees up.
 `WorkflowService.launch` starts the step's agent again (`relaunch`, resuming
 the last record's session with the launcher's resume command) or marks the
 last record `released`. The CLI refuses every manager command, and `start`,
