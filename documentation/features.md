@@ -5544,8 +5544,9 @@ $ ww wait TASK-123
 ```
 
 `ww wait` returns the manager's next page once the agent has completed the
-step, or the same page after a while (`WW_OPERATOR_WAIT`, half an hour in
-Claude Code) if it is still going; it is then run again. Claude Code runs it
+step and exited, so its record holds its exit code, session and tokens, or
+the same page after a while (`WW_OPERATOR_WAIT`, half an hour in Claude Code)
+if it is still going; it is then run again. Claude Code runs it
 in the background and goes on talking to the operator; an agent without a
 background shell can end its turn instead and wait when the operator writes
 again. Until the run ends, the manager changes nothing in the task. The

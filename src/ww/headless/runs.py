@@ -214,6 +214,26 @@ class HeadlessRuns:
         view = self._run(instruction, _step_target(instruction), launch=launch)
         return instruction if view is None else replace(instruction, headless=view)
 
+    def ending(self, instruction: Instruction) -> tuple[LaunchRecord, ...]:
+        """The runs of ``instruction``'s run still going that its page no
+        longer shows: their step or branch is done, but the agent has not
+        ended and its record (exit code, usage, session) is not final yet.
+
+        ``instruction`` is a page :meth:`dispatch` returned.
+        """
+        if instruction.run_id is None:
+            return ()
+        views = (
+            instruction.headless,
+            *(branch.headless for branch in instruction.parallel_branches),
+        )
+        shown = {view.launch_id for view in views if view is not None}
+        return tuple(
+            record
+            for record in self.store.runs(instruction.task_id, instruction.run_id)
+            if not record.finished and not record.released and record.id not in shown
+        )
+
     def _branch(
         self, instruction: Instruction, branch: BranchView, *, launch: bool
     ) -> BranchView:

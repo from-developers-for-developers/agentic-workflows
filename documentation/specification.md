@@ -632,8 +632,12 @@ reports `workflow: none` and the step state `direct work only`.
 [Running agents headless](features.md#running-agents-headless)) and prints the
 manager's page once no run is going or waiting for room (`max_parallel`), or
 the same page after `WW_OPERATOR_WAIT` seconds; waiting starts runs that were
-waiting for room. **`launch <task> [--branch <name>]`** starts the current
-step's (or its branch's) agent again after a headless run ended without
+waiting for room. A run whose agent has completed its step (or recorded its
+branch's artifact) but not yet exited still counts as going: `wait` returns,
+and starts the next step's runs, only once it has ended and its record holds
+its exit code, session and tokens, or once `WW_OPERATOR_WAIT` is up.
+**`launch <task> [--branch <name>]`** starts the current step's (or its
+branch's) agent again after a headless run ended without
 completing it; `--resume` continues that run's agent session, and `--session`
 gives it back to a session instead. A relaunch is refused while the agent has
 no room under its `max_parallel`. Both are the manager's; a process started headless
@@ -1164,9 +1168,11 @@ agent runs headless (`agent: {name, run: headless}`) is no subagent's: ww
 starts it itself when the step's page is shown by `next` or `wait`, as many at
 once as each agent's `max_parallel` allows (the rest wait as `queued` and
 start as `wait` finds room), with the branch's page command as its bootstrap;
-`wait` returns once no branch run is going or queued. A headless branch that
-ends without recording its artifact is offered `launch <task> --branch <name>`
-with `--resume` or `--session`, as a headless step is. Either way the
+`wait` returns once no branch run is going or queued, including the runs of
+branches that recorded their artifact while their agent was still exiting.
+A headless branch that ends without recording its artifact is offered
+`launch <task> --branch <name>` with `--resume` or `--session`, as a headless
+step is. Either way the
 step's performer completes it once with `complete --role manager` (or
 `--role worker` in `single`), with its own artifact and summary.
 

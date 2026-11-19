@@ -2538,20 +2538,29 @@ class WorkflowService:
 
     def wait(self, task_id: str, seconds: float) -> Instruction:
         """The manager's page once no headless run of the current step is
-        going or waiting for room, or after ``seconds`` while one still is.
+        going or waiting for room, and every run whose step or branch is done
+        has ended and recorded how; or after ``seconds`` while one still is.
 
         Runs that were waiting for room (``max_parallel``) start as room
-        frees up, so waiting is what moves them on.
+        frees up, so waiting is what moves them on.  An agent may complete
+        its step and only then print its usage and exit: no new run starts
+        and the page is not returned until it has ended.
         """
         deadline = time.monotonic() + seconds
         settled = False
         while True:
-            page = self.headless.dispatch(
-                self._page(task_id, caller_role="manager"), launch=True
+            page = self._page(task_id, caller_role="manager")
+            shown = self.headless.dispatch(page, launch=False)
+            ending = self.headless.ending(shown)
+            timed_out = time.monotonic() >= deadline
+            page = (
+                shown
+                if ending and not timed_out
+                else self.headless.dispatch(page, launch=True)
             )
-            if _headless_pending(page):
+            if ending or _headless_pending(page):
                 settled = False
-                if time.monotonic() >= deadline:
+                if timed_out:
                     return page
                 time.sleep(
                     min(WAIT_POLL_SECONDS, max(0.0, deadline - time.monotonic()))
