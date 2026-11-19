@@ -50,6 +50,13 @@ def _runner_project(tmp_path: Path, *, supported: bool = True) -> tuple[Path, Pa
         encoding="utf-8",
     )
     interpreter.chmod(0o755)
+    # The runner looks for every name below; each one but the fake stands in
+    # for none, so a real interpreter on the host's PATH, such as
+    # /usr/bin/python3.14, is never selected.
+    for name in ("python3.14", "python3.13", "python3.11", "python3.10", "python3"):
+        absent = fake_bin / name
+        absent.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        absent.chmod(0o755)
     return project, fake_bin
 
 
