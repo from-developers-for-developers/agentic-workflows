@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-19
+
+- Fixed: `ww wait` returned the next page as soon as a headless agent completed its step (or recorded its branch's artifact), while the agent was still exiting, so its run showed as `running` without its exit code or tokens and the next step's run could start beside it; it now waits, within `WW_OPERATOR_WAIT`, until those runs have ended. `4f2d2f4`
+
 ## 2026-11-18
 
 - Fixed: the configuration snapshot left out the scripts a rule file's `check` reaches as `$WW_ROOT/<path>` or `{{ww.root}}/<path>` or lists in `files`, so those checks failed with "No such file or directory"; snapshots an earlier ww wrote are written again. `rules promote` now writes the store check's `config` into the rule's `check.files`, a check whose command reaches a file missing where ww reads its configuration is unavailable (judged instead, counting against no fix limit) rather than failed, and every command warns on stderr about each file a check reaches that is missing there. A file a script calls must be listed in the check's `files`. `dbb5366`
