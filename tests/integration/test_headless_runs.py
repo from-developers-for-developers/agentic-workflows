@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -72,6 +73,7 @@ else
     ${assignment:+--assignment "$assignment"} \\
     --artifact "Reviewed headless." --summary "Reviewed." >&2
 fi
+if [ -n "$FAKE_LINGER" ]; then sleep "$FAKE_LINGER"; fi
 printf '%s%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,' \\
   '"cached_input_tokens":40,"output_tokens":7}}'
 """
@@ -101,7 +103,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "host-session")
     monkeypatch.setenv("WW_OPERATOR_WAIT", "30")
     monkeypatch.delenv(LAUNCH_VARIABLE, raising=False)
-    for name in ("FAKE_SLEEP", "FAKE_FAIL"):
+    for name in ("FAKE_SLEEP", "FAKE_FAIL", "FAKE_LINGER"):
         monkeypatch.delenv(name, raising=False)
     return root
 
@@ -150,6 +152,21 @@ def _launches(root: Path) -> list[dict[str, object]]:
     return [record.to_dict() for record in LaunchStore(root).runs("TASK-1", "01-task")]
 
 
+def _alive(pid: int) -> bool:
+    """Whether ``pid`` still runs.  A zombie has ended: under a PID 1 that
+    reaps no orphans, such as pytest in a container without an init, the
+    stopped agent stays one, and signal 0 still reaches it."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return stat.rpartition(")")[2].split()[0] != "Z"
+
+
 def _error_log(root: Path, launch: dict[str, object]) -> str:
     path = root / ".ww/tasks/TASK-1/runs/01-task/headless" / f"{launch['id']}.err.log"
     return path.read_text(encoding="utf-8")
@@ -194,6 +211,54 @@ def test_ww_starts_the_steps_agent_and_wait_returns_the_next_page(
     # The host's session is not handed to the agent; its launch is.
     assert "host session: none" in errors
     assert f"launch: {launch['id']}" in errors
+
+
+def test_wait_returns_the_next_page_only_once_the_completing_run_has_ended(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The agent completes the step, then takes a while before it prints its
+    # usage and exits: the page has moved on while its run is still going.
+    _start(project, capsys)
+    monkeypatch.setenv("FAKE_LINGER", "3")
+    _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+
+    code, page = _ww(project, capsys, "wait", "TASK-1")
+
+    assert code == 0, page
+    assert "perform `fix`" in page
+    (launch,) = _launches(project)
+    assert launch["status"] == "exited"
+    assert launch["exit_code"] == 0
+    assert launch["session_id"] == "thread-1"
+    assert launch["usage"] == {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 40,
+        "output": 7,
+        "reasoning": 0,
+    }
+
+
+def test_a_run_that_lingers_after_completing_holds_wait_only_until_its_deadline(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _start(project, capsys)
+    monkeypatch.setenv("FAKE_LINGER", "60")
+    _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+    monkeypatch.setenv("WW_OPERATOR_WAIT", "1")
+
+    deadline = time.monotonic() + 30
+    page = ""
+    while "perform `fix`" not in page and time.monotonic() < deadline:
+        started = time.monotonic()
+        code, page = _ww(project, capsys, "wait", "TASK-1")
+        assert code == 0, page
+        assert time.monotonic() - started < 10
+
+    assert "perform `fix`" in page
+    (launch,) = _launches(project)
+    assert launch["status"] == "running"
+    _ww(project, capsys, "reset", "TASK-1", "--yes")
 
 
 def test_in_auto_the_preview_selects_no_worker_and_the_agent_gets_the_token(
@@ -339,7 +404,13 @@ def test_wait_does_not_return_a_page_read_midway_through_the_completion(
     ) -> Instruction:
         midway.set()
         release.wait(timeout=30)
-        return open_next(service, task_id, instruction)
+        opened = open_next(service, task_id, instruction)
+        # The agent ends once its step is completed; `wait` waits for that.
+        (launch,) = _launches(project)
+        pid = launch["agent_pid"]
+        assert isinstance(pid, int)
+        os.killpg(pid, signal.SIGTERM)
+        return opened
 
     monkeypatch.setattr(WorkflowService, "_open_next_in_single", held_midway)
     worker = threading.Thread(
@@ -381,9 +452,7 @@ def test_reset_stops_a_run_that_is_still_going(
 
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
+        if not _alive(pid):
             break
         time.sleep(0.1)
     else:
@@ -499,6 +568,26 @@ def test_headless_branches_run_at_once_within_max_parallel(
     assert page.count("- Artifact: `") == 2
     assert "Wait for the headless branches" not in page
     assert "- Page: `" in page and "--branch quality" in page
+
+
+def test_wait_returns_only_once_the_branches_that_recorded_artifacts_have_ended(
+    project: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _group(project, tmp_path)
+    _start(project, capsys)
+    monkeypatch.setenv("FAKE_LINGER", "3")
+    _ww(project, capsys, "next", "TASK-1", "--role", "manager")
+
+    code, page = _ww(project, capsys, "wait", "TASK-1")
+
+    assert code == 0, page
+    assert page.count("- Artifact: `") == 2
+    records = LaunchStore(project).runs("TASK-1", "01-task")
+    assert [record.status for record in records] == ["exited", "exited"]
+    assert all(record.usage.output == 7 for record in records)
 
 
 def test_a_failed_branch_offers_its_own_choices(
