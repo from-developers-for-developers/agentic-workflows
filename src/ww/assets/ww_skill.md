@@ -24,6 +24,10 @@ failure as a finding; ww repairs nothing there.
    operator may name a task by its codename, such as `Atlas`: every command
    that addresses a task takes it in place of the ID, and `lookup` matches
    it. Pass `--codename` on `start` only when the operator gives one.
+   For a fully automated workflow requested from the terminal, use
+   `./ww run <workflow>`. It checks the resolved steps and hooks before
+   executing them, supplies the task records, and reports recovery commands
+   if the run stops.
 3. Otherwise decide how the request is carried out, in this order:
    a. It names a ticket or clearly matches a configured workflow's
       description, and is more than a small change: propose that workflow, and

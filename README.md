@@ -308,6 +308,11 @@ you want the agent to leave ww out.
 If you would rather open the task yourself — to pin an external ticket key, or
 to hand a prepared task to an agent — the same command works typed in.
 
+For a workflow made entirely of automated steps and hooks, you can run it
+yourself with one terminal command, for example `./ww run release`. ww checks
+the whole plan first, then runs it and records the result under a new task ID.
+[Terminal workflow runs](documentation/features.md#run-an-automated-workflow-from-the-terminal)
+
 ### 5. Let it run, and watch what it does
 
 From there the agent works the task to its end. Every ww response finishes by

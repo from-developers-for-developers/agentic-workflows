@@ -712,6 +712,15 @@ one `next` per step. The chain stops at the first assignment that involves an
 agent, and at any failure, wait, repeat round or handoff; a handler that fails
 there has its repair dispatched by that `next`, as it would have been alone.
 
+The terminal entry point (`../src/ww/cli/terminal_run.py`) checks the compiled
+plan at the service boundary, before `start` creates state or executes init
+hooks. Validating the compiled items covers generated steps, inherited hooks
+and catalog handlers exactly as execution sees them. A static handoff's target
+is checked here too, before the source workflow can have side effects. The
+wrapper supplies init requirements and completes the built-in summary from
+the saved handler results. Normal task creation, dispatch, completion and
+recovery consequently use the same contracts for terminal and agent runs.
+
 `../src/ww/assignments.py` derives assignment membership from step paths,
 ancestors, lifecycle phases, coordinator kinds, and the final summary marker.
 Execution state persists the assignment's first plan-item identity and

@@ -158,12 +158,13 @@ from .prompts import (
     confirm_operator,
     confirm_question,
 )
+from .terminal_run import run_terminal
 from .updates import announce, render_updates
 
 _MANAGER_ONLY_COMMANDS = frozenset({"start", "next"})
 # What an agent ww started headless never runs: it is a worker for one step.
 _HEADLESS_REFUSED_COMMANDS = frozenset(
-    {"start", "next", "wait", "launch", "start-child", "reset"}
+    {"start", "run", "next", "wait", "launch", "start-child", "reset"}
 )
 # Discovery, linting, and planning are side-effect free: no task state, artifacts,
 # commands, or execution-log records are created.
@@ -218,10 +219,10 @@ _CHECKOUT_CONFIG_COMMANDS = frozenset(
 # Commands after which the agents' logs hold a finished step's tokens.
 _USAGE_COMMANDS = frozenset({"complete", "fail", "record"})
 # Commands that may open a task run, whose starting facts usage records.
-_RUN_COMMANDS = frozenset({"start", "next", "start-child"})
+_RUN_COMMANDS = frozenset({"start", "run", "next", "start-child"})
 # Commands after which a run may have ended or moved to another commit, so a
 # configuration snapshot may no longer be read by anyone.
-_PRUNING_COMMANDS = frozenset({"next", "complete", "reset", "cleanup", "config"})
+_PRUNING_COMMANDS = frozenset({"run", "next", "complete", "reset", "cleanup", "config"})
 # Commands whose stdout is consumed by a program rather than read, whether or
 # not ``--json`` was passed. An update notice goes to stderr for these, so it
 # never lands in the middle of a document someone is parsing.
@@ -868,6 +869,37 @@ def _collect_usage(storage: Storage, extensions: ExtensionRegistry) -> None:
     """Collect recent sessions' new tokens; this never fails the command."""
     with contextlib.suppress(Exception):
         project_collector(storage, extensions).collect()
+
+
+def _run_terminal(context: _Context) -> _Outcome:
+    args = context.args
+    page = run_terminal(
+        context.storage,
+        context.extensions,
+        args.workflow,
+        tuple(args.modes),
+        args.project,
+        args.requirements,
+        args.description,
+    )
+    if page.status == "completed":
+        text = (
+            _json(page.to_dict())
+            if args.json_output
+            else f"{page.task_id} · {page.workflow} completed.\n"
+        )
+        return _Outcome(text, page.workflow, page.task_id)
+    error = page.error or "Workflow needs operator input"
+    result = _instruction_outcome(page, args.json_output)
+    if not args.json_output and page.recovery_commands:
+        commands = "\n".join(
+            f"{command.action}: {command.command}" for command in page.recovery_commands
+        )
+        result = replace(
+            result,
+            text=f"{page.task_id} · {page.workflow} stopped.\n{error}\n\n{commands}\n",
+        )
+    return replace(result, error=error, exit_code=1)
 
 
 def _start(context: _Context) -> _Outcome:
@@ -2208,6 +2240,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "plan": _plan,
     "lint": _lint,
     "start": _start,
+    "run": _run_terminal,
     "next": _next,
     "complete": _complete,
     "check": _check,
@@ -2295,7 +2328,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.command != "init":
         split_store = _split_store_primary(args, root)
-        if args.command == "start" and split_store is not None:
+        if args.command in {"run", "start"} and split_store is not None:
             if not args.separate_store:
                 print(
                     f"ww error: --root {root} is a git worktree of the ww project "

@@ -20,6 +20,9 @@ To continue a task, run `./ww instruction <task-id> --role manager` instead;
 `./ww tasks` lists every task with its codename and description, and a
 task's codename, such as `Atlas`, works wherever its ID does.
 
+For a terminal run of a fully automated workflow, use `./ww run <workflow>`.
+If it stops, use the reported task ID and recovery command.
+
 For `repeat_until` assessments, follow the page's session and exact-message
 protocol. In auto, keep the assessor alive; delegate outcome agent work to a
 separate worker. If nested delegation is unavailable, the manager relays the

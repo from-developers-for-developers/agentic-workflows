@@ -8,7 +8,7 @@ import json
 import secrets
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -438,7 +438,9 @@ class WorkflowService:
         configuration_loader: ConfigurationLoader | None = None,
         project_metadata: ProjectMetadataStorage | None = None,
         feedback_store: FeedbackStore | None = None,
+        validate_start_plan: Callable[[WorkflowPlan], None] | None = None,
     ) -> None:
+        self.validate_start_plan = validate_start_plan
         self.storage = storage
         self.tasks = task_persistence or storage.task_persistence
         self.project_metadata_store = project_metadata or storage.project_metadata
@@ -787,6 +789,8 @@ class WorkflowService:
             ),
             self.extensions.config,
         )
+        if self.validate_start_plan is not None:
+            self.validate_start_plan(plan)
         snapshot = PlanSnapshot(
             schema_version=PLAN_SCHEMA_VERSION,
             compiler_version=PLAN_COMPILER_VERSION,
@@ -4381,6 +4385,8 @@ class WorkflowService:
             ),
             self.extensions.config,
         )
+        if self.validate_start_plan is not None:
+            self.validate_start_plan(target_plan)
         new_snapshot = PlanSnapshot(
             schema_version=PLAN_SCHEMA_VERSION,
             compiler_version=PLAN_COMPILER_VERSION,

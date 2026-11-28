@@ -379,6 +379,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate ww.yaml without compiling a workflow plan.",
     )
 
+    run = subparsers.add_parser(
+        "run",
+        parents=[json_output],
+        help="Run a fully automated workflow to completion.",
+    )
+    run.add_argument("workflow")
+    run.add_argument(
+        "--requirements", help="Requirements to save in the init artifact."
+    )
+    run.add_argument("--description", help="One-line description for the task list.")
+    run.add_argument("--mode", action="append", default=[], dest="modes")
+    run.add_argument("--project", help="Work in this configured project directory.")
+    run.add_argument(
+        "--separate-store",
+        action="store_true",
+        help="Allow a separate worktree task store.",
+    )
+
     start = subparsers.add_parser(
         "start", parents=[json_and_role], help="Start a task workflow."
     )

@@ -4944,6 +4944,47 @@ A project cannot provide a second `ww/git`; duplicate extension IDs are an
 error. A handler is one unit of work: a retry re-runs the whole thing, so write
 handlers that tolerate that.
 
+## Run an automated workflow from the terminal
+
+`./ww run <workflow>` executes a workflow that ww can perform from start to
+finish. For example, this workflow checks a release and packages it.
+
+```yaml
+workflows:
+  - name: release
+    steps:
+      - check: ~
+        argv: [make, check]
+      - package: ~
+        argv: [make, package]
+```
+
+```console
+./ww run release
+```
+
+Before executing the first hook or creating the task, ww checks every item in
+the resolved plan. That includes inherited hooks, members of handler groups,
+failure policies, and the target of a static workflow handoff. A prompt, an
+assessment, a judged rule, a repair that needs an agent, or a handler that
+requests a value makes the workflow ineligible. Values produced by commands
+are fine. A dynamic handoff target cannot be checked in advance. A refusal
+names the offending item and directs you to `ww start`.
+
+ww allocates the task ID and records the agent as `custom:terminal-invoked`.
+The workflow name becomes the task description and the default requirements for
+this example are `Run workflow release.` To record a particular purpose, pass
+`--description` and `--requirements`. Use `--project` to select a configured
+project and repeat `--mode` to select modes.
+
+On success, ww writes the summary artifact, prints the task ID, and exits
+with status zero. `ww status <task>` and `ww artifacts <task>` show the
+ordinary run records. A failed handler leaves its task open and returns
+a nonzero exit status with the failure and recovery commands. Fix the cause
+and run the printed retry command to continue that task. The printed force
+command skips the failed handler when you explicitly choose to do so.
+Use `--json` to read the completion or stopped instruction programmatically.
+
 ## Execute a workflow
 
 ```console
