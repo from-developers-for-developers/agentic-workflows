@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ww.assessment_repeats import repeat_owner
 from ww.control import is_coordinator, workflow_transition
 from ww.errors import StateError
 from ww.plan import PlanItem, WorkflowPlan
@@ -97,6 +98,27 @@ def input_only(plan: WorkflowPlan, assignment: Assignment) -> bool:
     # make a value-only span worth a worker.
     return not any(item.owner == "agent" and not item.summary for item in span) and any(
         item.requires_agent_input for item in span
+    )
+
+
+def unattended(plan: WorkflowPlan, assignment: Assignment) -> bool:
+    """Whether ww performs every item of an assignment by itself.
+
+    Such a span, for example a step of handlers alone, asks no agent for
+    work, a value or a verdict, so dispatching it would only ask the
+    manager for another ``next``.
+    """
+    return all(
+        item.owner == "ww"
+        and item.execution == "automatic"
+        and not item.requires_agent_input
+        and item.verifies is None
+        and item.repair_of is None
+        and item.verification_hook is None
+        and repeat_owner(plan, index) is None
+        for index, item in enumerate(
+            plan.items[assignment.start : assignment.stop], assignment.start
+        )
     )
 
 

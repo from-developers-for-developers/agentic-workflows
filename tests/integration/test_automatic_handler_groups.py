@@ -306,3 +306,40 @@ workflows:
     )
     with pytest.raises(ConfigurationError, match="combine"):
         service.start("task", "T")
+
+
+CHAIN = """workflows:
+  - name: task
+    steps:
+      - first: ~
+        shell: echo first >> order
+      - second: ~
+        shell: echo second >> order
+      - work: Manual work.
+      - third: ~
+        shell: echo third >> order
+      - fourth: ~
+        shell: echo fourth >> order
+      - later: More manual work.
+"""
+
+
+@pytest.mark.parametrize("runtime", ["single", "auto"])
+def test_one_next_runs_a_chain_of_handler_steps(tmp_path: Path, runtime: str) -> None:
+    service = configured_service(tmp_path, CHAIN)
+    service.start("task", "T", workflow_runtime=runtime)
+    result = service.next("T", caller_role="manager")
+    assert result.item_name == "work"
+    assert (tmp_path / "order").read_text() == "first\nsecond\n"
+    service.next("T", caller_role="manager")
+    worker = runtime == "auto"
+    service.complete(
+        "T",
+        artifact="Done.",
+        summary_for_next="Next.",
+        caller_role="worker" if worker else None,
+        assignment=service.load("T")[0].assignment_token if worker else None,
+    )
+    if runtime == "auto":
+        assert service.next("T", caller_role="manager").item_name == "later"
+    assert (tmp_path / "order").read_text() == "first\nsecond\nthird\nfourth\n"

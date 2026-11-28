@@ -704,7 +704,13 @@ leaf, the assignment contains its preparation hooks, main action, and completion
 hooks. Worker-role completion stores each agent result and advances through
 eligible automatic and agent-owned items inside that bound. When the bound ends,
 the durable assignment marker is cleared and control returns to the manager
-before the next lifecycle starts.
+before the next lifecycle starts. Assignments that follow and that ww performs
+entirely by itself, with no agent item, value request, verifier, repair or
+repeating assessment (`unattended` in `../src/ww/assignments.py`), run within
+the same `next`, so a chain of handler-only steps does not cost the manager
+one `next` per step. The chain stops at the first assignment that involves an
+agent, and at any failure, wait, repeat round or handoff; a handler that fails
+there has its repair dispatched by that `next`, as it would have been alone.
 
 `../src/ww/assignments.py` derives assignment membership from step paths,
 ancestors, lifecycle phases, coordinator kinds, and the final summary marker.

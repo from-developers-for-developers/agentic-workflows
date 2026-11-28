@@ -6,6 +6,10 @@ change landed, newest first. Pulled a week ago? Read down to that date and stop.
 change between two releases, and what ww does not promise yet, is in
 [documentation/limitations.md](documentation/limitations.md).
 
+## 2026-11-28
+
+- Fixed: a manager's `next` ran one handler-only step and stopped, so a chain of steps ww performs entirely by itself needed one `next` per step; it now runs the whole chain and stops at the first step that involves an agent, or at a failure or a wait.
+
 ## 2026-11-19
 
 - Fixed: `ww wait` returned the next page as soon as a headless agent completed its step (or recorded its branch's artifact), while the agent was still exiting, so its run showed as `running` without its exit code or tokens and the next step's run could start beside it; it now waits, within `WW_OPERATOR_WAIT`, until those runs have ended. `4f2d2f4`

@@ -40,6 +40,7 @@ from ww.assignments import (
     assignment_at,
     completion_window,
     completion_window_items,
+    unattended,
 )
 from ww.bootstrap import BootstrapCoordinator
 from ww.builtin_workflows import missing_lane, require_lane
@@ -1658,6 +1659,21 @@ class WorkflowService:
             or state.assignment_item_id is not None
         ):
             state, snapshot = self._activate_or_handoff(state, snapshot)
+            repairing = needs_repair(state)
+            state, snapshot = self._run_unattended(
+                state,
+                snapshot,
+                starting_instance,
+                model=model,
+                reasoning=reasoning,
+                selected_agent=selected_agent,
+            )
+            if needs_repair(state) and not repairing:
+                # A handler of the chain failed: dispatch its repair, as the
+                # ``next`` that ran it alone would have.
+                return self._dispatch_repair(
+                    state, snapshot, model, reasoning, selected_agent
+                )
             return self.render(state, snapshot)
         if state.status in {"completed", "awaiting_input", "failed"}:
             return self.render(state, snapshot)
@@ -4555,6 +4571,50 @@ class WorkflowService:
         )
         self.commit(state, snapshot)
         return state
+
+    def _run_unattended(
+        self,
+        state: ExecutionState,
+        snapshot: PlanSnapshot,
+        starting_instance: str | None,
+        *,
+        model: str,
+        reasoning: str,
+        selected_agent: str | None,
+    ) -> tuple[ExecutionState, PlanSnapshot]:
+        """Run the following assignments ww performs by itself, as ``next`` would.
+
+        A chain of handler-only steps then needs one ``next``, not one per
+        step. It stops at the first assignment that involves an agent, or
+        when a run stops, fails, waits, repeats or hands off.
+        """
+        while (
+            state.status in {"pending", "in_progress"}
+            and state.execution_instance_id == starting_instance
+            and state.assignment_item_id is None
+            and state.active_item_id is None
+            and not needs_repair(state)
+            and repeat_due(state, snapshot.plan) is None
+            and pending_assessment(state, snapshot.plan) is None
+            and state.cursor < len(snapshot.plan.items)
+        ):
+            assignment = assignment_at(
+                snapshot.plan, state.cursor, runtime=state.workflow_runtime
+            )
+            if assignment is None or not unattended(snapshot.plan, assignment):
+                break
+            cursor = state.cursor
+            state = self._begin_assignment(
+                state,
+                snapshot,
+                model=model,
+                reasoning=reasoning,
+                selected_agent=selected_agent,
+            )
+            state, snapshot = self._activate_or_handoff(state, snapshot)
+            if state.cursor <= cursor:
+                break
+        return state, snapshot
 
     def _activate_or_handoff(
         self,
