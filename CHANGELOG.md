@@ -8,7 +8,7 @@ change between two releases, and what ww does not promise yet, is in
 
 ## 2026-11-28
 
-- Fixed: a manager's `next` ran one handler-only step and stopped, so a chain of steps ww performs entirely by itself needed one `next` per step; it now runs the whole chain and stops at the first step that involves an agent, or at a failure or a wait.
+- Fixed: a manager's `next` ran one handler-only step and stopped, so a chain of steps ww performs entirely by itself needed one `next` per step; it now runs the whole chain and stops at the first step that involves an agent, or at a failure or a wait. `28a9e56`
 
 ## 2026-11-19
 
